@@ -1,0 +1,16 @@
+# Secrets — never commit
+.env
+
+# Virtual env
+.resume/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Test / tooling caches
+.pytest_cache/
+
+# Runtime data (regenerated)
+.chroma/
+data/flywheel.jsonl

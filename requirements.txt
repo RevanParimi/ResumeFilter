@@ -1,0 +1,32 @@
+# depth-eval-engine — runtime + test dependencies (pip install -r requirements.txt)
+# Python 3.11+ required.
+
+# --- Orchestration ---
+langgraph>=0.2.0
+langchain-core>=0.3.0
+
+# --- API ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Vector store ---
+chromadb>=0.5.0
+
+# --- Models / validation / config ---
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+
+# --- LLM (OpenRouter via the OpenAI-compatible SDK) ---
+openai>=1.40.0
+
+# --- IO ---
+httpx>=0.27.0
+pypdf>=4.2.0
+
+# --- Logging ---
+structlog>=24.1.0
+
+# --- Tests ---
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
+respx>=0.21.0

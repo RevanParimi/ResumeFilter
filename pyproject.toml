@@ -1,0 +1,52 @@
+[project]
+name = "depth-eval-engine"
+version = "0.1.0"
+description = "Domain-agnostic agent that evaluates resumes for authenticity and technical depth via coherence reasoning (M0: GenAI domain)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Revan Parimi" }]
+
+dependencies = [
+    # Orchestration
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    # API
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    # Vector store
+    "chromadb>=0.5.0",
+    # Models / validation / config
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    # LLM (OpenRouter via the OpenAI-compatible SDK)
+    "openai>=1.40.0",
+    # IO
+    "httpx>=0.27.0",
+    "pypdf>=4.2.0",
+    # Logging
+    "structlog>=24.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "respx>=0.21.0",          # httpx mocking for github/provenance tests
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.uv]
+# uv resolves from the [project] table above; dev deps via: uv sync --extra dev
+package = true

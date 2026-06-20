@@ -1,0 +1,10 @@
+Priya Nair — Senior Machine Learning Engineer
+Product company (mid-size SaaS), 6 years experience
+
+Experience
+- Fine-tuned Llama-3-8B with QLoRA on a 25,000-example curated support-ticket dataset; eval F1 improved from 0.71 to 0.84 against the prompted baseline on a held-out test set, trained on 4xA100 GPUs over ~9 hours.
+- Built a production RAG system using the text-embedding-3-large embedding model with recursive chunking (512 tokens, 64 overlap); measured retrieval recall@10 of 0.92 and held p95 latency under 800ms with an embedding cache.
+- Designed a multi-agent system in production: a LangGraph supervisor orchestrating a planner and tool-calling agents, shared state via checkpoints, function-calling tools, and retry/timeout fallback handling for failed steps.
+- Owned offline evaluation: built a regression benchmark of 1,200 labeled examples and tracked F1/accuracy across releases.
+
+Links the candidate shared: https://github.com/priya-nair/rag-support-bot

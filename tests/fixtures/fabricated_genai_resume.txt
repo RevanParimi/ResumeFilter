@@ -1,0 +1,8 @@
+Rahul Verma — "GenAI Architect"
+IT services firm, 2 years experience
+
+Experience
+- Fine-tuned GPT-4 to dramatically improve accuracy for our enterprise chatbot.
+- Built production RAG at scale serving millions of users with cutting-edge AI.
+- Deployed a multi-agent agentic system in prod that autonomously handles everything end-to-end.
+- Leveraged state-of-the-art LLMs to deliver transformative business value across verticals.

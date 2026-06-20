@@ -1,0 +1,113 @@
+"""Centralized, env-driven configuration.
+
+Everything tunable lives here so behavior changes without code changes:
+model tiers, calibration thresholds, store locations. Read from environment
+(prefix ``DEE_``) or a local ``.env``. Secrets are NEVER hardcoded.
+
+Usage:
+    from app.core.config import get_settings
+    settings = get_settings()        # cached singleton
+    model = settings.model_reasoning
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Literal
+
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings, sourced from env / .env with the ``DEE_`` prefix."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="DEE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # --- LLM provider: OpenRouter (OpenAI-wire-compatible) --------------------
+    # OpenRouter fronts many model vendors behind one OpenAI-compatible API, so
+    # the whole pipeline stays vendor-neutral and economical. Key is required for
+    # live calls; empty is allowed so tests/offline scaffolding import without it.
+    openrouter_api_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="OpenRouter API key (sk-or-...). Never hardcode in source.",
+    )
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Optional attribution headers OpenRouter uses for app rankings (both optional).
+    openrouter_app_url: str = ""
+    openrouter_app_title: str = "depth-eval-engine"
+
+    # Tiered models. Domain/node code asks for a *tier*, never a literal model id.
+    #   reasoning      → claim_extraction + plausibility
+    #   reasoning_hard → override for the hardest plausibility reasoning
+    #   parsing        → cheap structural work (maps to the FAST model)
+    #   bulk           → high-volume text gen/classification (future flywheel
+    #                    re-scoring/labeling). NOT embeddings — those use a
+    #                    dedicated embedder, never a chat tier. Unused at M0.
+    model_reasoning: str = "qwen/qwen3.7-max"
+    model_reasoning_hard: str = "qwen/qwen3.7-max"
+    model_fast: str = "qwen/qwen3.6-flash"
+    model_bulk: str = "qwen/qwen3.6-35b-a3b"
+    llm_max_tokens: int = 4096
+    llm_timeout_seconds: float = 60.0
+
+    # --- GitHub (provenance) --------------------------------------------------
+    github_token: SecretStr = Field(default=SecretStr(""))
+    github_api_base: str = "https://api.github.com"
+
+    # --- Vector store (ChromaDB) ----------------------------------------------
+    chroma_persist_dir: str = "./.chroma"
+    chroma_collection: str = "depth-eval-evidence"
+
+    # --- Flywheel (training-data sink) ----------------------------------------
+    flywheel_path: str = "./data/flywheel.jsonl"
+
+    # --- Calibration (CONSERVATIVE: false positives are the existential risk) --
+    # Flag a claim only when coherence is low AND we are confident enough to act.
+    # When confidence is below the defer threshold we NEVER assert — we defer to a
+    # human. These are advisory thresholds for an advisory system.
+    flag_coherence_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    flag_min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
+    defer_confidence_threshold: float = Field(default=0.50, ge=0.0, le=1.0)
+
+    # --- Service --------------------------------------------------------------
+    log_level: str = "INFO"
+    log_json: bool = True
+    env: Literal["local", "staging", "prod"] = "local"
+
+    @field_validator("log_level")
+    @classmethod
+    def _upper_level(cls, v: str) -> str:
+        return v.upper()
+
+    # --- Convenience ----------------------------------------------------------
+    @property
+    def has_openrouter_key(self) -> bool:
+        return bool(self.openrouter_api_key.get_secret_value())
+
+    @property
+    def has_github_token(self) -> bool:
+        return bool(self.github_token.get_secret_value())
+
+    def model_for_tier(
+        self, tier: Literal["reasoning", "reasoning_hard", "parsing", "bulk"]
+    ) -> str:
+        """Resolve a logical tier to a concrete, config-driven model id."""
+        return {
+            "reasoning": self.model_reasoning,
+            "reasoning_hard": self.model_reasoning_hard,
+            "parsing": self.model_fast,
+            "bulk": self.model_bulk,
+        }[tier]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Cached settings singleton. Call this everywhere instead of instantiating."""
+    return Settings()

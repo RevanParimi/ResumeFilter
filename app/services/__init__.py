@@ -1,0 +1,39 @@
+"""Service container — the dependency bundle nodes close over.
+
+Node factories receive a :class:`Services` instance (never global singletons),
+so tests inject fakes (FakeLLM, InMemoryVectorStore, InMemoryFlywheel) trivially.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+from app.core.config import Settings, get_settings
+from app.services.flywheel import Flywheel, build_flywheel
+from app.services.github import GitHubClient, GitHubService
+from app.services.llm import LLMClient, build_llm
+from app.services.vectorstore import VectorStore, build_vectorstore
+
+
+@dataclass
+class Services:
+    settings: Settings
+    llm: LLMClient
+    vectorstore: VectorStore
+    github: GitHubService
+    flywheel: Flywheel
+
+
+def build_default_services(settings: Optional[Settings] = None) -> Services:
+    settings = settings or get_settings()
+    return Services(
+        settings=settings,
+        llm=build_llm(settings),
+        vectorstore=build_vectorstore(settings),
+        github=GitHubClient(settings),
+        flywheel=build_flywheel(settings),
+    )
+
+
+__all__ = ["Services", "build_default_services"]
