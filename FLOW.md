@@ -11,12 +11,15 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              CLIENT (HTTP)                                    │
 │            POST /evaluate {resume_text|pdf_b64, github_url?, domain}          │
-│            GET  /report/{id}        GET /healthz                              │
+│            GET  /report/{id}   POST/GET /report/{id}/outcome(s)               │
+│            GET  /domains       GET /healthz      (X-API-Key when configured)  │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                      │
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  API LAYER          app/main.py  (FastAPI + lifespan)                        │
-│                     app/api/routes.py  → validates, calls engine, advisory   │
+│  API LAYER          app/main.py  create_app(): request-id middleware,        │
+│                     access logs, generic 500s, optional API-key auth         │
+│                     app/api/routes.py → caps, domain pre-check, engine,      │
+│                     ReportStore persistence, outcome endpoints (advisory)    │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                      │ EvaluationEngine.evaluate(...)
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
@@ -51,8 +54,10 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 │ domains/base  │ │ services/llm  │ │ vectorstore   │ │ github        │ │ flywheel     │
 │  DomainModel  │ │ OpenRouterLLM │ │ Chroma /      │ │ httpx GitHub  │ │ JSONL sink   │
 │  + Rule + reg │ │  (OpenAI SDK) │ │ InMemory      │ │  API (1st-    │ │ (claim→probe │
-│ domains/genai │ │ tiers→models  │ │ Hashing embed │ │  party only)  │ │  →verdict→   │
-│  3 seed rules │ │ NullLLM(no key)│ │               │ │               │ │  outcome)    │
+│ rules.py      │ │ tiers→models  │ │ Hashing embed │ │  party only)  │ │  →verdict→   │
+│  SignalRule   │ │ NullLLM(no key)│ │ bounded init  │ │               │ │  outcome)    │
+│ genai·data_eng│ │ retries       │ │               │ │               │ │ report_store │
+│  3+3 rules    │ │               │ │               │ │               │ │  SQLite      │
 └───────┬───────┘ └───────┬───────┘ └───────────────┘ └───────────────┘ └──────────────┘
         │                 │
         │                 ▼  OpenRouter (https://openrouter.ai/api/v1)
@@ -118,17 +123,20 @@ depth-eval-engine/
 │   │
 │   ├── domains/                 ─────────────── DOMAIN KNOWLEDGE (pluggable) ──────────────
 │   │   ├── base.py              ← DomainModel + Rule interfaces + registry (@register_domain)
-│   │   └── genai.py             ← GenAI rules (fine_tuning · rag · multi_agent) + prompts
+│   │   ├── rules.py             ← shared SignalRule machinery (all domains build on it)
+│   │   ├── genai.py             ← GenAI rules (fine_tuning · rag · multi_agent) + prompts
+│   │   └── data_eng.py          ← Data-eng rules (etl · streaming · warehouse) + prompts
 │   │
 │   ├── schemas/                 ─────────────── DATA CONTRACTS ─────────────────────────────
 │   │   ├── claims.py            ← Claim, ClaimSet, CandidateContext, Specificity
 │   │   └── report.py            ← Report, CoherenceVerdict, Evidence, VerdictStatus, DepthBand
 │   │
 │   ├── services/               ─────────────── EXTERNAL I/O (injectable) ──────────────────
-│   │   ├── llm.py               ← OpenRouterLLM (OpenAI SDK) · NullLLM fallback · tier→model
-│   │   ├── vectorstore.py       ← ChromaVectorStore · InMemory · HashingEmbedding
+│   │   ├── llm.py               ← OpenRouterLLM (OpenAI SDK, retries) · NullLLM · tier→model
+│   │   ├── vectorstore.py       ← Chroma (bounded init) · InMemory · HashingEmbedding
 │   │   ├── github.py            ← httpx GitHub API client (first-party repos only)
-│   │   └── flywheel.py          ← JSONL sink (claim→probe→verdict→outcome)
+│   │   ├── flywheel.py          ← JSONL sink (claim→probe→verdict→outcome)
+│   │   └── report_store.py      ← SQLite ReportStore: durable reports + human outcomes
 │   │
 │   └── core/                   ─────────────── CROSS-CUTTING ──────────────────────────────
 │       ├── config.py            ← Settings: YAML source + env(DEE_*) + .env, precedence
@@ -399,7 +407,26 @@ Assembles the advisory `Report` and feeds the flywheel.
   confidence, status, probes, evidence_count, outcome:null}`.
   `outcome` is left open, closed later by a human/hiring signal — the training loop (constraint #6).
 
-**Out:** `report: Report` → returned by the API.
+**Out:** `report: Report` → persisted via `ReportStore` and returned by the API.
+
+---
+
+## 8. The outcome loop — [report_store.py](app/services/report_store.py) + [routes.py](app/api/routes.py)
+
+Reports are persisted in SQLite (`reports` table, full JSON body; WAL). A human
+reviewer closes the loop after the screen/interview:
+
+```
+POST /report/{id}/outcome  {outcome, claim_id?, notes?}
+  outcome ∈ verified_genuine | verified_fabricated | candidate_clarified | inconclusive
+  claim_id present → judgment on one claim; absent → on the whole report
+```
+
+Each judgment lands in **two** places: the store's `outcomes` table (queryable
+per report, `GET /report/{id}/outcomes`) and the flywheel JSONL
+(`record_type: "outcome"`), so one stream joins every evaluation row to its
+eventual ground truth — the training loop (constraint #6) is now closable.
+`ReportStore.delete()` erases a report + outcomes for DPDP requests.
 
 ---
 
@@ -434,6 +461,7 @@ and secrets never appear in YAML.
 |---|---|---|---|
 | `DEE_OPENROUTER_API_KEY` | **Required for live LLM** | Your OpenRouter key `sk-or-…` | none → runs rule-only (`NullLLM`) |
 | `DEE_GITHUB_TOKEN` | Optional | Read-only GitHub PAT | unauth (works, rate-limited) |
+| `DEE_API_AUTH_KEY` | Optional | Shared secret; clients must send `X-API-Key` | none → API open (local/dev) |
 
 That's it for "must touch." Everything below has a working default — change only
 to tune cost/quality/behavior.
@@ -452,10 +480,16 @@ YAML key (env override = `DEE_<KEY>`):
 | `model_bulk` | `qwen/qwen3.6-35b-a3b` | Cheapest open-weight; future batch work (unused at M0) |
 | `llm_max_tokens` | `4096` | Per-call output cap |
 | `llm_timeout_seconds` | `60` | Per-call timeout |
+| `llm_max_retries` | `2` | SDK retries w/ backoff; provider blips degrade to rules, not 500s |
 | `github_api_base` | `https://api.github.com` | GitHub REST base (the *token* is a secret in `.env`) |
+| `vectorstore_backend` | `chroma` | `chroma` \| `memory`. Chroma can hang on some machines — see next row |
+| `vectorstore_init_timeout_seconds` | `15` | Bounded Chroma init; on timeout/error startup degrades to in-memory |
 | `chroma_persist_dir` | `./.chroma` | Vector store on disk |
 | `chroma_collection` | `depth-eval-evidence` | Collection name |
 | `flywheel_path` | `./data/flywheel.jsonl` | Training-data sink |
+| `report_db_path` | `./data/reports.db` | SQLite report store (reports + human outcomes) |
+| `max_resume_chars` | `200000` | Evaluate-input cap; oversize → 422, never OOM |
+| `max_pdf_b64_chars` | `14000000` | ≈10 MB PDF cap (base64 length) |
 | `flag_coherence_threshold` | `0.35` | Below this = potentially incoherent |
 | `flag_min_confidence` | `0.70` | Need ≥ this confidence to flag at all |
 | `defer_confidence_threshold` | `0.50` | Below this = defer to human, never assert |
