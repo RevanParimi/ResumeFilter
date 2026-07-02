@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     # --- Flywheel (training-data sink) ----------------------------------------
     flywheel_path: str = "./data/flywheel.jsonl"
 
+    # --- Report store (durable advisory reports + human outcomes) --------------
+    report_db_path: str = "./data/reports.db"
+
     # --- Calibration (CONSERVATIVE: false positives are the existential risk) --
     # Flag a claim only when coherence is low AND we are confident enough to act.
     # When confidence is below the defer threshold we NEVER assert — we defer to a

@@ -35,6 +35,9 @@ chroma_collection: "depth-eval-evidence"
 # --- Flywheel (training-data sink) -------------------------------------------
 flywheel_path: "./data/flywheel.jsonl"
 
+# --- Report store (durable reports + human outcome records; SQLite) -----------
+report_db_path: "./data/reports.db"
+
 # --- Calibration (CONSERVATIVE: false positives are the existential risk) -----
 # A claim is flagged INCOHERENT only when coherence is low AND confidence is high
 # enough to act; otherwise we DEFER to a human. Never auto-reject.

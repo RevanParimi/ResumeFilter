@@ -16,6 +16,7 @@ from app.core.config import Settings
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.llm import LLMClient, NullLLM
+from app.services.report_store import InMemoryReportStore
 from app.services.vectorstore import InMemoryVectorStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -81,6 +82,7 @@ def make_services(
         vectorstore=InMemoryVectorStore(),
         github=github or FakeGitHub(),
         flywheel=flywheel or InMemoryFlywheel(),
+        report_store=InMemoryReportStore(),
     )
 
 
