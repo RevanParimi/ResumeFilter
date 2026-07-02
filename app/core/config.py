@@ -89,6 +89,8 @@ class Settings(BaseSettings):
     model_bulk: str = "qwen/qwen3.6-35b-a3b"
     llm_max_tokens: int = 4096
     llm_timeout_seconds: float = 60.0
+    # SDK-level retries with backoff; provider blips degrade to rules, not 500s.
+    llm_max_retries: int = 2
 
     # --- GitHub (provenance) --------------------------------------------------
     github_token: SecretStr = Field(default=SecretStr(""))

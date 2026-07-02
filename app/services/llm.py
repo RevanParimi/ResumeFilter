@@ -100,6 +100,7 @@ class OpenRouterLLM(LLMClient):
             api_key=self.settings.openrouter_api_key.get_secret_value(),
             base_url=self.settings.openrouter_base_url,
             timeout=self.settings.llm_timeout_seconds,
+            max_retries=self.settings.llm_max_retries,
             default_headers=headers or None,
         )
 

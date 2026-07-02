@@ -23,6 +23,7 @@ model_fast: "qwen/qwen3.6-flash"
 model_bulk: "qwen/qwen3.6-35b-a3b"
 llm_max_tokens: 4096
 llm_timeout_seconds: 60
+llm_max_retries: 2                  # SDK retries w/ backoff before degrading to rules
 
 # --- GitHub (provenance; first-party URLs the candidate shares only) ----------
 # NOTE: the TOKEN is a secret and lives in .env, not here.
