@@ -84,6 +84,149 @@ No LLM key → `NullLLM` and every node falls back to deterministic logic.
 
 ---
 
+## Project tree (annotated)
+
+```
+depth-eval-engine/
+│
+├── config.yaml                  ← non-sensitive config (committed): models, thresholds, paths
+├── .env                         ← SECRETS ONLY (gitignored): OPENROUTER_API_KEY, GITHUB_TOKEN
+├── pyproject.toml               ← deps + pytest config (uv/pip)
+├── requirements.txt             ← pip install -r target
+├── .gitignore                   ← ignores .env, .venv, caches, .chroma, flywheel.jsonl
+├── README.md                    ← run + add-a-domain guide
+├── FLOW.md                      ← architecture + node logic + decision factors
+│
+├── app/
+│   │
+│   ├── main.py                  ← FastAPI app + lifespan (builds EvaluationEngine once)
+│   │
+│   ├── api/
+│   │   └── routes.py            ← POST /evaluate · GET /report/{id} · GET /healthz
+│   │
+│   ├── graph/                   ─────────────── ORCHESTRATION (domain-agnostic) ───────────
+│   │   ├── build.py             ← wires LangGraph; EvaluationEngine.evaluate()
+│   │   ├── state.py             ← EvaluationState (Pydantic) threaded through all nodes
+│   │   └── nodes/               ← the 7-stage pipeline (linear)
+│   │       ├── ingest.py            ① parse PDF/text                    (LLM-free)
+│   │       ├── claim_extraction.py  ② atomic typed claims              → LLM(parsing) + domain
+│   │       ├── provenance.py        ③ ground anchored claims           → GitHub + VectorStore
+│   │       ├── plausibility.py      ④ THE CORE: rules ⊕ LLM coherence  → domain.rules + LLM(reasoning)
+│   │       ├── probe_generation.py  ⑤ probes for suspicious claims     → LLM(reasoning) + domain
+│   │       ├── scoring.py           ⑥ calibrate → status + depth band  → core/calibration
+│   │       └── report.py            ⑦ assemble Report + log flywheel
+│   │
+│   ├── domains/                 ─────────────── DOMAIN KNOWLEDGE (pluggable) ──────────────
+│   │   ├── base.py              ← DomainModel + Rule interfaces + registry (@register_domain)
+│   │   └── genai.py             ← GenAI rules (fine_tuning · rag · multi_agent) + prompts
+│   │
+│   ├── schemas/                 ─────────────── DATA CONTRACTS ─────────────────────────────
+│   │   ├── claims.py            ← Claim, ClaimSet, CandidateContext, Specificity
+│   │   └── report.py            ← Report, CoherenceVerdict, Evidence, VerdictStatus, DepthBand
+│   │
+│   ├── services/               ─────────────── EXTERNAL I/O (injectable) ──────────────────
+│   │   ├── llm.py               ← OpenRouterLLM (OpenAI SDK) · NullLLM fallback · tier→model
+│   │   ├── vectorstore.py       ← ChromaVectorStore · InMemory · HashingEmbedding
+│   │   ├── github.py            ← httpx GitHub API client (first-party repos only)
+│   │   └── flywheel.py          ← JSONL sink (claim→probe→verdict→outcome)
+│   │
+│   └── core/                   ─────────────── CROSS-CUTTING ──────────────────────────────
+│       ├── config.py            ← Settings: YAML source + env(DEE_*) + .env, precedence
+│       ├── calibration.py       ← classify() + aggregate_depth()  (conservative decision math)
+│       └── logging.py           ← structlog (JSON/console)
+│
+├── data/
+│   └── flywheel.jsonl           ← runtime training-data sink (gitignored)
+│
+└── tests/
+    ├── conftest.py              ← offline fixtures: NullLLM/FakeLLM, InMemory stores, FakeGitHub
+    ├── fixtures/
+    │   ├── genuine_genai_resume.txt
+    │   └── fabricated_genai_resume.txt
+    └── test_*.py                ← one per node + calibration + integration (20 tests)
+```
+
+Layering (top→bottom = request flow): `api` receives → `graph` orchestrates the 7
+nodes → nodes reach *sideways* into `domains` (what to check) + `services` (how to
+fetch/infer) → `core` supplies config, scoring math, logging. Two independence axes:
+`graph/` never imports `genai`; `services/` are injected (real vs. fakes in tests).
+
+---
+
+## Data flow (input → output)
+
+`EvaluationState` grows field-by-field. Legend: `+` field added · `~` field mutated
+· `ext` external call · `side-effect` write-out.
+
+```
+INPUT  (POST /evaluate)
+  { resume_text | resume_pdf_b64 (one required), github_url?, portfolio_url?, domain="genai" }
+   │
+   ▼
+┌─ ① ingest ──────────────────────────────────────────────────────────────────┐
+│  in : raw_resume_text | resume_pdf_b64                                        │
+│  out: + resume_text  (normalized)   + errors[] (if PDF/empty)                │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ resume_text
+   ▼
+┌─ ② claim_extraction ────────────────────────────────────────────────────────┐
+│  in : resume_text, github_url, portfolio_url                                 │
+│  out: + claims[]  Claim{ text, claim_type, specificity, external_anchor? }   │
+│       + candidate_context { role, employer_type, github_url, … }             │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ claims[]
+   ▼
+┌─ ③ provenance ──────────────────────────────────────────────────────────────┐
+│  in : claims[].external_anchor, github_url                                   │
+│  ext: GitHub API ─► repo signals ─► VectorStore.add ─► query per claim       │
+│  out: + provenance{ claim_id -> [evidence strings] }                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ claims[] + provenance{}
+   ▼
+┌─ ④ plausibility (THE CORE) ─────────────────────────────────────────────────┐
+│  in : per claim → domain.rules ⊕ LLM(reasoning) ⊕ provenance                 │
+│       rule: coherence = 0.30 + 0.55·fraction (− penalties / ± 'tells')       │
+│       llm : {coherence, confidence, missing_signals} (conf ≤ 0.85)           │
+│       fuse: confidence-weighted blend → (coherence, confidence)              │
+│  out: + verdicts[] CoherenceVerdict{ coherence_score, confidence, reasoning, │
+│              evidence[], expected/missing_signals, probes(seed) } (no status)│
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ verdicts[] (scored, unclassified)
+   ▼
+┌─ ⑤ probe_generation ────────────────────────────────────────────────────────┐
+│  in : verdicts where coherence_score < 0.35                                  │
+│  ext: LLM(reasoning) scoped to missing_signals                               │
+│  out: ~ verdicts[].probes  (augmented; coherent claims untouched)            │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ verdicts[] (+ probes)
+   ▼
+┌─ ⑥ scoring (calibration) ───────────────────────────────────────────────────┐
+│  classify(): coh<0.35 AND conf≥0.70 → INCOHERENT │ conf<0.50 → DEFER         │
+│              coh≥0.35 → COHERENT │ no evidence → UNVERIFIED                   │
+│  out: ~ verdicts[].status                                                    │
+│       + depth_score, overall_confidence, depth_band                          │
+│         (DEEP≥.80 SOLID≥.60 EMERGING≥.40 else SUPERFICIAL; conf<.50 → INSUFFICIENT)│
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ verdicts[] (classified) + aggregates
+   ▼
+┌─ ⑦ report ──────────────────────────────────────────────────────────────────┐
+│  side-effect: flywheel.log() one JSONL row/claim { …, outcome: null }        │
+│  out: + report (Report)                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │
+   ▼
+OUTPUT  (Report)
+  { id, domain, verdicts[]{coherence_score, confidence, status, reasoning,
+    evidence[], probes[]}, depth_score, depth_band, overall_confidence,
+    flagged_claim_ids[] (INCOHERENT), deferred_claim_ids[] (DEFER),
+    advisory=true, human_review_required=true, summary }
+```
+
+Status is assigned **only at ⑥** — plausibility produces scores without labels so
+the conservative decision lives in exactly one place.
+
+---
+
 ## 0. Entry
 
 `POST /evaluate` → [routes.py](app/api/routes.py) builds an `EvaluationState`
@@ -270,7 +413,81 @@ Assembles the advisory `Report` and feeds the flywheel.
   Resolution is config-driven in [config.py `model_for_tier`](app/core/config.py).
 - **Explainability:** every verdict carries `evidence[]` + `reasoning` + `missing_signals`
   + `probes`. No bare "fake/real" label exists in the schema (constraint #2).
-- **Calibration knobs** are all in `.env` (`DEE_FLAG_*`, `DEE_DEFER_*`) — tune without code.
+- **Calibration knobs** are all in `config.yaml` (`flag_*`, `defer_*`) — tune without code.
+
+---
+
+## Configuration & Decision Factors
+
+Two layers ([config.py](app/core/config.py)):
+- **`config.yaml`** — all non-sensitive tunables (models, thresholds, paths).
+  Committed to git, reviewable, keys = field names (no prefix).
+- **`.env`** — secrets ONLY (API keys/tokens), `DEE_`-prefixed, never committed.
+
+Precedence (highest first): `constructor args > env (DEE_*) > .env > config.yaml > defaults`.
+So any YAML value can be overridden per-deploy by setting the matching `DEE_*` env var,
+and secrets never appear in YAML.
+
+### A. What YOU fill in `.env` (secrets only)
+
+| Variable | Required? | What to set | Default if blank |
+|---|---|---|---|
+| `DEE_OPENROUTER_API_KEY` | **Required for live LLM** | Your OpenRouter key `sk-or-…` | none → runs rule-only (`NullLLM`) |
+| `DEE_GITHUB_TOKEN` | Optional | Read-only GitHub PAT | unauth (works, rate-limited) |
+
+That's it for "must touch." Everything below has a working default — change only
+to tune cost/quality/behavior.
+
+### B. Tunables in `config.yaml` (override only to tune)
+
+YAML key (env override = `DEE_<KEY>`):
+
+| `config.yaml` key | Default | Why this default |
+|---|---|---|
+| `openrouter_base_url` | `https://openrouter.ai/api/v1` | OpenRouter's OpenAI-compatible endpoint |
+| `openrouter_app_url` / `_title` | `""` / `depth-eval-engine` | Optional OpenRouter attribution headers |
+| `model_reasoning` | `qwen/qwen3.7-max` | Flagship reasoning for claim extraction + plausibility |
+| `model_reasoning_hard` | `qwen/qwen3.7-max` | Override slot; point at a stronger model for the hardest cases |
+| `model_fast` | `qwen/qwen3.6-flash` | Cheap structural parsing (the `parsing` tier) |
+| `model_bulk` | `qwen/qwen3.6-35b-a3b` | Cheapest open-weight; future batch work (unused at M0) |
+| `llm_max_tokens` | `4096` | Per-call output cap |
+| `llm_timeout_seconds` | `60` | Per-call timeout |
+| `github_api_base` | `https://api.github.com` | GitHub REST base (the *token* is a secret in `.env`) |
+| `chroma_persist_dir` | `./.chroma` | Vector store on disk |
+| `chroma_collection` | `depth-eval-evidence` | Collection name |
+| `flywheel_path` | `./data/flywheel.jsonl` | Training-data sink |
+| `flag_coherence_threshold` | `0.35` | Below this = potentially incoherent |
+| `flag_min_confidence` | `0.70` | Need ≥ this confidence to flag at all |
+| `defer_confidence_threshold` | `0.50` | Below this = defer to human, never assert |
+| `log_level` | `INFO` | Log verbosity |
+| `log_json` | `true` | `true`=JSON (prod), `false`=console (dev) |
+| `env` | `local` | `local` \| `staging` \| `prod` |
+
+### C. Key decisions & the rationale (why it's built this way)
+
+| Decision | Choice | Why |
+|---|---|---|
+| **LLM provider** | OpenRouter via the `openai` SDK | Vendor-neutral + economical; one wire-format reaches many models. Swapping a model = one `config.yaml` line, no code change. |
+| **Reasoning model** | `qwen/qwen3.7-max` | Strongest current Qwen; the plausibility verdict quality matters most here. Override `_HARD` to e.g. `anthropic/claude-opus-4-8` through the same client for the hardest claims. |
+| **Parsing model** | `qwen/qwen3.6-flash` | Claim extraction is structural, not deep — cheapest fast tier is right. |
+| **Bulk model** | `qwen/qwen3.6-35b-a3b` | Cheapest ($0.14/$1.00), open-weight (self-hostable later), MoE-efficient. Heavy models are wrong for high-volume work. |
+| **Conservative thresholds** | flag at coherence<0.35 **AND** confidence≥0.70; defer<0.50 | False positives (flagging a real person) are the existential risk. We only assert INCOHERENT when clearly incoherent *and* confident; every uncertain case defers to a human. |
+| **Rule ⊕ LLM fusion** | confidence-weighted blend; LLM confidence capped at 0.85 | Deterministic rules give a defensible floor; the LLM adds nuance but can't single-handedly dominate a verdict. |
+| **Always advisory** | `advisory=True`, `human_review_required=True`, no auto-reject | Hiring decisions stay human; the engine only surfaces evidence + probes. |
+| **Consent-clean** | first-party GitHub/portfolio links only, no scraping | DPDP compliance — only candidate-shared data. |
+| **Domain-agnostic core** | graph resolves `DomainModel` by `state.domain` | New domain = one file + `@register_domain`, zero graph changes. |
+| **Embeddings** | local `HashingEmbedding` stand-in at M0 | Keeps M0 offline/reproducible. Swap for a real embedding model (separate from the chat tiers) for production retrieval quality. |
+
+### D. Scoring constants (in code, not env — change deliberately)
+
+| Constant | Value | Location |
+|---|---|---|
+| Rule coherence base / slope | `0.30 + 0.55·fraction` | [genai.py](app/domains/genai.py#L85) |
+| Vague-specificity penalty | `−0.12` | [genai.py](app/domains/genai.py#L87) |
+| Rule confidence | `0.45 + 0.40·decisiveness` | [genai.py](app/domains/genai.py#L108) |
+| Closed-model 'tell' penalty | `−0.35` (confidence pinned ≥0.85) | [genai.py](app/domains/genai.py#L146) |
+| LLM confidence cap | `0.85` | [plausibility.py](app/graph/nodes/plausibility.py#L24) |
+| Depth bands | DEEP≥0.80, SOLID≥0.60, EMERGING≥0.40, else SUPERFICIAL | [calibration.py](app/core/calibration.py#L63) |
 
 ---
 

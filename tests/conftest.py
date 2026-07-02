@@ -51,8 +51,10 @@ class FakeLLM(LLMClient):
 
 
 @pytest.fixture
-def settings() -> Settings:
-    # Fresh defaults, independent of any local .env.
+def settings(monkeypatch) -> Settings:
+    # Hermetic: bypass both .env and config.yaml so tests run on code defaults,
+    # independent of any local config the developer may have changed.
+    monkeypatch.setenv("DEE_CONFIG_FILE", "__tests_no_config__.yaml")
     return Settings(_env_file=None, openrouter_api_key="")
 
 

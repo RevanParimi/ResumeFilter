@@ -59,7 +59,8 @@ python -m venv .venv
 .venv\Scripts\activate              # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 
-# Edit .env and set DEE_OPENROUTER_API_KEY for live LLM reasoning.
+# Secrets go in .env (DEE_OPENROUTER_API_KEY for live LLM); all other
+# config (models, thresholds, paths) lives in config.yaml.
 
 # Run the tests
 pytest -q
@@ -101,8 +102,9 @@ by tier in [app/services/llm.py](app/services/llm.py):
 | `reasoning_hard` | override for the hardest reasoning | `qwen/qwen3.7-max` |
 | `bulk` | high-volume gen/classification (future; unused at M0) | `qwen/qwen3.6-35b-a3b` |
 
-Override any of them via `DEE_MODEL_*` env vars (e.g. point `reasoning_hard` at
-`anthropic/claude-opus-4-8` through the same OpenRouter client when you want it).
+Defaults live in `config.yaml` (`model_reasoning`, `model_fast`, …); override any
+of them there, or per-deploy via the matching `DEE_MODEL_*` env var (e.g. point
+`reasoning_hard` at `anthropic/claude-opus-4-8` through the same OpenRouter client).
 
 ---
 

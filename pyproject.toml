@@ -19,6 +19,7 @@ dependencies = [
     # Models / validation / config
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
+    "pyyaml>=6.0",
     # LLM (OpenRouter via the OpenAI-compatible SDK)
     "openai>=1.40.0",
     # IO

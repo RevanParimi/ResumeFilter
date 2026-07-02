@@ -1,8 +1,15 @@
-"""Centralized, env-driven configuration.
+"""Centralized configuration: YAML for tunables, env for secrets.
 
-Everything tunable lives here so behavior changes without code changes:
-model tiers, calibration thresholds, store locations. Read from environment
-(prefix ``DEE_``) or a local ``.env``. Secrets are NEVER hardcoded.
+Non-sensitive config (model tiers, calibration thresholds, store locations) lives
+in ``config.yaml`` so behavior changes without code changes and is reviewable in
+git. Secrets (API keys, tokens) live ONLY in the environment / ``.env`` and are
+never committed. Precedence (highest first):
+
+    constructor args  >  environment (DEE_*)  >  .env  >  config.yaml  >  defaults
+
+So env can always override a YAML value (handy per-deploy), and secrets never
+need to appear in YAML. The YAML path is ``config.yaml`` by default; override it
+with ``DEE_CONFIG_FILE`` (tests point this at a nonexistent path for pure defaults).
 
 Usage:
     from app.core.config import get_settings
@@ -12,11 +19,17 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    YamlConfigSettingsSource,
+)
 
 
 class Settings(BaseSettings):
@@ -29,6 +42,26 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Add a YAML source UNDER env/.env. Missing file → contributes nothing."""
+        yaml_path = os.environ.get("DEE_CONFIG_FILE", "config.yaml")
+        yaml_source = YamlConfigSettingsSource(settings_cls, yaml_file=yaml_path)
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            yaml_source,
+            file_secret_settings,
+        )
 
     # --- LLM provider: OpenRouter (OpenAI-wire-compatible) --------------------
     # OpenRouter fronts many model vendors behind one OpenAI-compatible API, so

@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# depth-eval-engine — non-sensitive configuration (committed to git).
+# Read by app/core/config.py (Settings). Keys are field names (NO DEE_ prefix).
+#
+# Secrets (API keys / tokens) do NOT belong here — they live in .env only.
+# Any value below can be overridden per-deploy by the matching DEE_* env var.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# --- LLM provider: OpenRouter (OpenAI-compatible) ----------------------------
+openrouter_base_url: "https://openrouter.ai/api/v1"
+# Optional attribution headers OpenRouter uses for app rankings.
+openrouter_app_url: ""
+openrouter_app_title: "depth-eval-engine"
+
+# Tiered, config-driven model IDs. Domain/node code asks for a *tier*, never a
+# literal model id.
+#   reasoning      = plausibility + claim_extraction (override _HARD for hardest)
+#   fast (parsing) = cheap structural work
+#   bulk           = high-volume gen/classification (future flywheel; unused at M0)
+model_reasoning: "qwen/qwen3.7-max"
+model_reasoning_hard: "qwen/qwen3.7-max"
+model_fast: "qwen/qwen3.6-flash"
+model_bulk: "qwen/qwen3.6-35b-a3b"
+llm_max_tokens: 4096
+llm_timeout_seconds: 60
+
+# --- GitHub (provenance; first-party URLs the candidate shares only) ----------
+# NOTE: the TOKEN is a secret and lives in .env, not here.
+github_api_base: "https://api.github.com"
+
+# --- Vector store (ChromaDB) -------------------------------------------------
+chroma_persist_dir: "./.chroma"
+chroma_collection: "depth-eval-evidence"
+
+# --- Flywheel (training-data sink) -------------------------------------------
+flywheel_path: "./data/flywheel.jsonl"
+
+# --- Calibration (CONSERVATIVE: false positives are the existential risk) -----
+# A claim is flagged INCOHERENT only when coherence is low AND confidence is high
+# enough to act; otherwise we DEFER to a human. Never auto-reject.
+flag_coherence_threshold: 0.35      # below this = potentially incoherent
+flag_min_confidence: 0.70           # need this much confidence to flag at all
+defer_confidence_threshold: 0.50    # below this = defer to human, never assert
+
+# --- Service -----------------------------------------------------------------
+log_level: "INFO"
+log_json: true                      # true = JSON logs (prod); false = console (dev)
+env: "local"                        # local | staging | prod
