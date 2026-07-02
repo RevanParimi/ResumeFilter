@@ -45,6 +45,12 @@ flag_coherence_threshold: 0.35      # below this = potentially incoherent
 flag_min_confidence: 0.70           # need this much confidence to flag at all
 defer_confidence_threshold: 0.50    # below this = defer to human, never assert
 
+# --- API hardening -------------------------------------------------------------
+# Input caps so a hostile/buggy client can't OOM the service. The optional
+# API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
+max_resume_chars: 200000
+max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
+
 # --- Service -----------------------------------------------------------------
 log_level: "INFO"
 log_json: true                      # true = JSON logs (prod); false = console (dev)

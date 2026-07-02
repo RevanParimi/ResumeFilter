@@ -112,6 +112,14 @@ class Settings(BaseSettings):
     flag_min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
     defer_confidence_threshold: float = Field(default=0.50, ge=0.0, le=1.0)
 
+    # --- API hardening ----------------------------------------------------------
+    # Input caps so a hostile/buggy client can't OOM the service (FR-11).
+    max_resume_chars: int = 200_000
+    max_pdf_b64_chars: int = 14_000_000  # ≈ 10 MB PDF once base64-decoded
+    # Optional shared-secret gate (FR-15). SECRET → env/.env only, never YAML.
+    # Empty (default) = auth disabled (local/dev). /healthz and / stay open.
+    api_auth_key: SecretStr = Field(default=SecretStr(""))
+
     # --- Service --------------------------------------------------------------
     log_level: str = "INFO"
     log_json: bool = True

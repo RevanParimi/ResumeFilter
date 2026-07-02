@@ -9,18 +9,33 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
+from app import __version__
+from app.domains.base import get_domain, list_domains
 from app.schemas.report import Report
 from app.services import Services
+from app.services.llm import NullLLM
 from app.services.report_store import OutcomeLabel, OutcomeRecord
-
-router = APIRouter()
 
 
 def _services(request: Request) -> Services:
     return request.app.state.services
+
+
+async def require_api_key(
+    request: Request, x_api_key: Optional[str] = Header(default=None)
+) -> None:
+    """Shared-secret gate (FR-15). No key configured → open (local/dev)."""
+    expected = _services(request).settings.api_auth_key.get_secret_value()
+    if expected and x_api_key != expected:
+        raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
+
+
+# Everything except "/" and /healthz sits behind the (optional) API key.
+router = APIRouter(dependencies=[Depends(require_api_key)])
+public_router = APIRouter()
 
 
 class EvaluateRequest(BaseModel):
@@ -43,6 +58,25 @@ class EvaluateRequest(BaseModel):
 async def evaluate(req: EvaluateRequest, request: Request) -> Report:
     services = _services(request)
     engine = request.app.state.engine
+
+    # Input caps (FR-11): reject oversize payloads before any work happens.
+    caps = services.settings
+    if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resume_text exceeds max_resume_chars={caps.max_resume_chars}",
+        )
+    if req.resume_pdf_b64 and len(req.resume_pdf_b64) > caps.max_pdf_b64_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
+        )
+    # Domain pre-check (FR-12): fail fast, never run the graph on a bad domain.
+    try:
+        get_domain(req.domain)
+    except KeyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     try:
         report = await engine.evaluate(
             resume_text=req.resume_text,
@@ -121,6 +155,26 @@ async def list_outcomes(report_id: str, request: Request) -> dict:
     }
 
 
-@router.get("/healthz")
-async def healthz() -> dict:
-    return {"status": "ok"}
+@router.get("/domains")
+async def domains() -> list[dict]:
+    """Registered evaluation domains (FR-9)."""
+    out = []
+    for key in list_domains():
+        d = get_domain(key)
+        out.append(
+            {"key": d.key, "display_name": d.display_name, "claim_types": d.claim_types}
+        )
+    return out
+
+
+@public_router.get("/healthz")
+async def healthz(request: Request) -> dict:
+    """Liveness + effective mode (FR-10). Open — load balancers don't have keys."""
+    services = _services(request)
+    return {
+        "status": "ok",
+        "version": __version__,
+        "env": services.settings.env,
+        "llm_mode": "null" if isinstance(services.llm, NullLLM) else "live",
+        "domains": list_domains(),
+    }
