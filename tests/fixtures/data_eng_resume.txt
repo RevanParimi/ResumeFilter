@@ -1,0 +1,5 @@
+Senior Data Engineer — fintech product company (5 yrs)
+
+- Built daily batch ETL processing 2 TB across 40 pipelines with Apache Spark on EMR, orchestrated by Airflow with incremental loads and automated backfills; data quality gates in Great Expectations with SLA alerting.
+- Designed streaming ingestion on Kafka with Flink delivering exactly-once semantics; sustained 50k events/sec with consumer lag alerting and dead-letter queues.
+- Modeled the Snowflake warehouse with dbt (120 models, star schema for finance marts), dbt tests in CI, and cut query spend 35% via clustering keys and warehouse right-sizing.

@@ -93,6 +93,13 @@ class DomainModel(ABC):
     def claim_types(self) -> list[str]:
         ...
 
+    # --- heuristic hints (LLM-free extraction fallback) ------------------------
+    def heuristic_type_hints(self) -> list[tuple[str, tuple[str, ...]]]:
+        """Ordered (claim_type, keywords) pairs for the deterministic extraction
+        fallback — first match wins, so put the most specific types first.
+        Domains that don't provide hints get no heuristic claims (LLM only)."""
+        return []
+
     # --- prompt fragments (injected into services/llm by the nodes) -----------
     @abstractmethod
     def extraction_guidance(self) -> str:

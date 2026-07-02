@@ -22,16 +22,6 @@ from app.schemas.claims import (
 from app.services import Services
 from app.services.github import parse_github_url
 
-# claim_type detection for the heuristic fallback (domain-flavored but cheap).
-_TYPE_HINTS: list[tuple[str, tuple[str, ...]]] = [
-    ("fine_tuning", ("fine-tune", "fine tune", "finetun", "fine-tuned", "lora", "qlora")),
-    ("rag", ("rag", "retrieval-augmented", "retrieval augmented", "vector search", "embeddings retrieval")),
-    ("multi_agent", ("multi-agent", "multi agent", "agentic", "agent system", "agents")),
-    ("deployment", ("deploy", "production", "in prod", "serving", "inference endpoint")),
-    ("evaluation", ("eval", "benchmark", "metric", "f1", "accuracy")),
-    ("data_pipeline", ("pipeline", "etl", "ingestion", "data pipeline")),
-    ("prompt_engineering", ("prompt", "few-shot", "chain-of-thought", "system prompt")),
-]
 _NUM = re.compile(r"\d")
 _NAMED = re.compile(
     r"(llama|mistral|gpt-|claude|gemini|bert|t5|qwen|gemma|ada-002|bge|e5|"
@@ -40,10 +30,12 @@ _NAMED = re.compile(
 )
 
 
-def _classify_type(line: str) -> str | None:
+def _classify_type(line: str, hints: list[tuple[str, tuple[str, ...]]]) -> str | None:
+    """First matching (claim_type, keywords) pair wins — hints come from the
+    active DomainModel, so the fallback works for every registered domain."""
     low = line.lower()
-    for ctype, hints in _TYPE_HINTS:
-        if any(h in low for h in hints):
+    for ctype, kws in hints:
+        if any(k in low for k in kws):
             return ctype
     return None
 
@@ -58,7 +50,9 @@ def _specificity(line: str) -> Specificity:
     return Specificity.VAGUE
 
 
-def _heuristic_extract(text: str, domain: str) -> ClaimSet:
+def _heuristic_extract(
+    text: str, domain: str, hints: list[tuple[str, tuple[str, ...]]]
+) -> ClaimSet:
     claims: list[Claim] = []
     for raw in re.split(r"[\n\r]+", text):
         line = raw.strip().lstrip("-•*• ").strip()
@@ -68,7 +62,7 @@ def _heuristic_extract(text: str, domain: str) -> ClaimSet:
         # must not be mistaken for a claim about RAG.
         m = re.search(r"https?://\S+", line)
         prose = re.sub(r"https?://\S+", "", line).strip()
-        ctype = _classify_type(prose)
+        ctype = _classify_type(prose, hints)
         if ctype is None:
             continue
         anchor = None
@@ -132,7 +126,10 @@ def make_claim_extraction_node(services: Services):
             log.warning("extraction_llm_failed", error=str(exc))
 
         if not claimset.claims:
-            claimset = _heuristic_extract(text, state.domain)
+            # Hints come from the active domain, never hardcoded here (FR-17).
+            claimset = _heuristic_extract(
+                text, state.domain, domain.heuristic_type_hints()
+            )
 
         # Fold first-party links into candidate context (consent-clean).
         ctx = claimset.candidate_context
