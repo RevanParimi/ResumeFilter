@@ -23,17 +23,25 @@ model_fast: "qwen/qwen3.6-flash"
 model_bulk: "qwen/qwen3.6-35b-a3b"
 llm_max_tokens: 4096
 llm_timeout_seconds: 60
+llm_max_retries: 2                  # SDK retries w/ backoff before degrading to rules
 
 # --- GitHub (provenance; first-party URLs the candidate shares only) ----------
 # NOTE: the TOKEN is a secret and lives in .env, not here.
 github_api_base: "https://api.github.com"
 
 # --- Vector store (ChromaDB) -------------------------------------------------
+# backend: chroma | memory. Chroma init is bounded — if it hangs/fails, the
+# service starts anyway with the in-memory store (grounding is best-effort).
+vectorstore_backend: "chroma"
+vectorstore_init_timeout_seconds: 15
 chroma_persist_dir: "./.chroma"
 chroma_collection: "depth-eval-evidence"
 
 # --- Flywheel (training-data sink) -------------------------------------------
 flywheel_path: "./data/flywheel.jsonl"
+
+# --- Report store (durable reports + human outcome records; SQLite) -----------
+report_db_path: "./data/reports.db"
 
 # --- Calibration (CONSERVATIVE: false positives are the existential risk) -----
 # A claim is flagged INCOHERENT only when coherence is low AND confidence is high
@@ -41,6 +49,12 @@ flywheel_path: "./data/flywheel.jsonl"
 flag_coherence_threshold: 0.35      # below this = potentially incoherent
 flag_min_confidence: 0.70           # need this much confidence to flag at all
 defer_confidence_threshold: 0.50    # below this = defer to human, never assert
+
+# --- API hardening -------------------------------------------------------------
+# Input caps so a hostile/buggy client can't OOM the service. The optional
+# API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
+max_resume_chars: 200000
+max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
 
 # --- Service -----------------------------------------------------------------
 log_level: "INFO"

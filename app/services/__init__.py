@@ -13,6 +13,7 @@ from app.core.config import Settings, get_settings
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
 from app.services.llm import LLMClient, build_llm
+from app.services.report_store import ReportStore, build_report_store
 from app.services.vectorstore import VectorStore, build_vectorstore
 
 
@@ -23,6 +24,7 @@ class Services:
     vectorstore: VectorStore
     github: GitHubService
     flywheel: Flywheel
+    report_store: ReportStore
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -33,6 +35,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         vectorstore=build_vectorstore(settings),
         github=GitHubClient(settings),
         flywheel=build_flywheel(settings),
+        report_store=build_report_store(settings),
     )
 
 

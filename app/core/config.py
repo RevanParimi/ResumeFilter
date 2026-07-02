@@ -89,17 +89,27 @@ class Settings(BaseSettings):
     model_bulk: str = "qwen/qwen3.6-35b-a3b"
     llm_max_tokens: int = 4096
     llm_timeout_seconds: float = 60.0
+    # SDK-level retries with backoff; provider blips degrade to rules, not 500s.
+    llm_max_retries: int = 2
 
     # --- GitHub (provenance) --------------------------------------------------
     github_token: SecretStr = Field(default=SecretStr(""))
     github_api_base: str = "https://api.github.com"
 
     # --- Vector store (ChromaDB) ----------------------------------------------
+    # Chroma's PersistentClient can hang (not raise) on some machines; startup
+    # gives it this long, then degrades to the in-memory store (grounding is
+    # best-effort). Set backend="memory" to skip Chroma entirely.
+    vectorstore_backend: Literal["chroma", "memory"] = "chroma"
+    vectorstore_init_timeout_seconds: float = 15.0
     chroma_persist_dir: str = "./.chroma"
     chroma_collection: str = "depth-eval-evidence"
 
     # --- Flywheel (training-data sink) ----------------------------------------
     flywheel_path: str = "./data/flywheel.jsonl"
+
+    # --- Report store (durable advisory reports + human outcomes) --------------
+    report_db_path: str = "./data/reports.db"
 
     # --- Calibration (CONSERVATIVE: false positives are the existential risk) --
     # Flag a claim only when coherence is low AND we are confident enough to act.
@@ -108,6 +118,14 @@ class Settings(BaseSettings):
     flag_coherence_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
     flag_min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
     defer_confidence_threshold: float = Field(default=0.50, ge=0.0, le=1.0)
+
+    # --- API hardening ----------------------------------------------------------
+    # Input caps so a hostile/buggy client can't OOM the service (FR-11).
+    max_resume_chars: int = 200_000
+    max_pdf_b64_chars: int = 14_000_000  # ≈ 10 MB PDF once base64-decoded
+    # Optional shared-secret gate (FR-15). SECRET → env/.env only, never YAML.
+    # Empty (default) = auth disabled (local/dev). /healthz and / stay open.
+    api_auth_key: SecretStr = Field(default=SecretStr(""))
 
     # --- Service --------------------------------------------------------------
     log_level: str = "INFO"

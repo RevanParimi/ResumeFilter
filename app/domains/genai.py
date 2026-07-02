@@ -1,9 +1,9 @@
-"""GenAI domain model — M0's single domain.
+"""GenAI domain model — the first domain.
 
 Encodes how a senior GenAI engineer reasons about whether a claim COHERES with
 the infrastructure, data, and access the candidate would actually have needed.
 Three seed rules (fine-tuning, production RAG, multi-agent), written to be
-extended: add a ``_SignalRule(...)`` to ``RULES`` or append a new rule class.
+extended: add a ``SignalRule(...)`` to ``RULES`` or append a new rule class.
 
 This is the ONLY file that knows GenAI specifics. The core never imports it
 directly — it arrives through the registry.
@@ -11,11 +11,11 @@ directly — it arrives through the registry.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Optional
 
-from app.domains.base import DomainModel, Rule, RuleFinding, register_domain
-from app.schemas.claims import CandidateContext, Claim, Specificity
-from app.schemas.report import Polarity
+from app.domains.base import DomainModel, Rule, register_domain
+from app.domains.rules import SignalRule, present as _present_kw
+from app.schemas.claims import CandidateContext
 
 # Claim-type vocabulary owned by this domain.
 CLAIM_TYPES = [
@@ -30,103 +30,16 @@ CLAIM_TYPES = [
 ]
 
 
-def _present(haystack: str, keywords: tuple[str, ...]) -> bool:
-    h = haystack.lower()
-    return any(k in h for k in keywords)
-
-
-class _SignalRule(Rule):
-    """A coherence rule expressed as 'which expected signals are present?'.
-
-    Coherence rises with the fraction of expected signal categories evidenced in
-    the claim text/excerpt/provenance, falls for vague phrasing, and is
-    overridden by domain-specific contradictions (a 'tell').
-    """
-
-    def __init__(
-        self,
-        *,
-        id: str,
-        claim_types: tuple[str, ...],
-        description: str,
-        categories: dict[str, tuple[str, ...]],
-        probes: dict[str, str],
-        contradiction: Optional[
-            Callable[[str, CandidateContext], Optional[tuple[float, str, list[str]]]]
-        ] = None,
-    ) -> None:
-        self.id = id
-        self.claim_types = claim_types
-        self.description = description
-        self._categories = categories  # display_name -> keywords
-        self._probes = probes          # display_name -> probe question
-        self._contradiction = contradiction
-
-    def evaluate(
-        self,
-        claim: Claim,
-        context: CandidateContext,
-        provenance: Optional[list[str]] = None,
-    ) -> Optional[RuleFinding]:
-        if not self.handles(claim):
-            return None
-
-        hay = " ".join(
-            filter(None, [claim.text, claim.source_excerpt, context.notes, *(provenance or [])])
-        )
-
-        present: list[str] = []
-        missing: list[str] = []
-        for name, kws in self._categories.items():
-            (present if _present(hay, kws) else missing).append(name)
-
-        n = len(self._categories)
-        fraction = len(present) / n if n else 0.0
-        coherence = 0.30 + 0.55 * fraction
-        if claim.specificity == Specificity.VAGUE:
-            coherence -= 0.12
-
-        reasoning_bits = [
-            f"Expected signals present: {present or 'none'}.",
-            f"Missing: {missing or 'none'}.",
-        ]
-        probes = [self._probes[m] for m in missing if m in self._probes]
-
-        # Domain-specific 'tell' override (e.g. fine-tuning a closed model).
-        if self._contradiction is not None:
-            hit = self._contradiction(hay, context)
-            if hit is not None:
-                delta, why, extra_probes = hit
-                coherence += delta
-                reasoning_bits.append(why)
-                missing = [*missing, "coherence_contradiction"]
-                probes = [*extra_probes, *probes]
-
-        coherence = max(0.0, min(1.0, coherence))
-
-        decisiveness = abs(fraction - 0.5) * 2  # extreme present/absent => decisive
-        confidence = 0.45 + 0.40 * decisiveness
-        if "coherence_contradiction" in missing:
-            confidence = max(confidence, 0.85)
-        confidence = max(0.0, min(1.0, confidence))
-
-        if coherence < 0.40:
-            polarity = Polarity.CONTRADICTS
-        elif coherence > 0.65:
-            polarity = Polarity.SUPPORTS
-        else:
-            polarity = Polarity.NEUTRAL
-
-        return RuleFinding(
-            rule_id=self.id,
-            polarity=polarity,
-            coherence=coherence,
-            confidence=confidence,
-            reasoning=" ".join(reasoning_bits),
-            expected_signals=list(self._categories.keys()),
-            missing_signals=missing,
-            suggested_probes=probes[:4],
-        )
+# Ordered hints for the LLM-free extraction fallback (first match wins).
+_TYPE_HINTS: list[tuple[str, tuple[str, ...]]] = [
+    ("fine_tuning", ("fine-tune", "fine tune", "finetun", "fine-tuned", "lora", "qlora")),
+    ("rag", ("rag", "retrieval-augmented", "retrieval augmented", "vector search", "embeddings retrieval")),
+    ("multi_agent", ("multi-agent", "multi agent", "agentic", "agent system", "agents")),
+    ("deployment", ("deploy", "production", "in prod", "serving", "inference endpoint")),
+    ("evaluation", ("eval", "benchmark", "metric", "f1", "accuracy")),
+    ("data_pipeline", ("pipeline", "etl", "ingestion", "data pipeline")),
+    ("prompt_engineering", ("prompt", "few-shot", "chain-of-thought", "system prompt")),
+]
 
 
 # --- contradiction detectors --------------------------------------------------
@@ -140,8 +53,8 @@ _OPEN_MODELS = (
 def _finetune_contradiction(
     hay: str, ctx: CandidateContext
 ) -> Optional[tuple[float, str, list[str]]]:
-    closed = _present(hay, _CLOSED_NONFT)
-    open_ = _present(hay, _OPEN_MODELS)
+    closed = _present_kw(hay, _CLOSED_NONFT)
+    open_ = _present_kw(hay, _OPEN_MODELS)
     if closed and not open_:
         return (
             -0.35,
@@ -151,7 +64,7 @@ def _finetune_contradiction(
              "and on what hardware?"],
         )
     # Tier-3 services / unknown employer claiming FT with no infra signal.
-    if ctx.employer_type in {"services_firm", "unknown", None} and not _present(
+    if ctx.employer_type in {"services_firm", "unknown", None} and not _present_kw(
         hay, ("gpu", "a100", "h100", "lora", "qlora", "cluster", "deepspeed")
     ):
         return (
@@ -165,7 +78,7 @@ def _finetune_contradiction(
 
 # --- the three seed rules -----------------------------------------------------
 RULES: list[Rule] = [
-    _SignalRule(
+    SignalRule(
         id="genai.fine_tuning.coherence",
         claim_types=("fine_tuning",),
         description="Fine-tuning implies dataset + eval harness + sustained GPU on a "
@@ -196,7 +109,7 @@ RULES: list[Rule] = [
         },
         contradiction=_finetune_contradiction,
     ),
-    _SignalRule(
+    SignalRule(
         id="genai.rag.coherence",
         claim_types=("rag",),
         description="Production RAG implies a named embedding model, chunking, "
@@ -229,7 +142,7 @@ RULES: list[Rule] = [
             "at scale?",
         },
     ),
-    _SignalRule(
+    SignalRule(
         id="genai.multi_agent.coherence",
         claim_types=("multi_agent",),
         description="A multi-agent system in prod implies orchestration, state "
@@ -277,6 +190,9 @@ class GenAIDomain(DomainModel):
     @property
     def claim_types(self) -> list[str]:
         return list(CLAIM_TYPES)
+
+    def heuristic_type_hints(self) -> list[tuple[str, tuple[str, ...]]]:
+        return list(_TYPE_HINTS)
 
     def extraction_guidance(self) -> str:
         return (

@@ -11,7 +11,9 @@ have needed.
 > as the existential risk, so the calibration is conservative: when unsure, it
 > **defers** instead of flagging.
 
-M0 ships a single domain (**GenAI engineering**). Adding more domains is one file.
+Ships with two domains (**GenAI engineering**, **Data Engineering**). Adding
+more is one file. End-to-end requirements live in
+[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 ---
 
@@ -67,11 +69,35 @@ pytest -q
 
 # Serve the API
 uvicorn app.main:app --reload
-# → POST /evaluate, GET /report/{id}, GET /healthz, GET /docs
 ```
 
 > Without an API key the engine still runs: it falls back to the deterministic
 > rule registry (`NullLLM`), which is exactly how the test suite stays offline.
+
+Or with Docker:
+
+```bash
+docker build -t depth-eval-engine .
+docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-engine
+```
+
+### Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /evaluate` | Evaluate a resume (`resume_text` or `resume_pdf_b64`, optional `github_url`/`portfolio_url`, `domain`). Persists and returns a `Report`. |
+| `GET /report/{id}` | Fetch a persisted report (survives restarts — SQLite store). |
+| `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`. Also appended to the flywheel — this closes the training loop. |
+| `GET /report/{id}/outcomes` | List recorded outcomes for a report. |
+| `GET /domains` | Registered domains + claim taxonomies. |
+| `GET /healthz` | Liveness + effective mode (`version`, `env`, `llm_mode`, `domains`). |
+
+Operational behavior: every response carries an `X-Request-ID` (propagated into
+all structured log lines), oversize payloads are rejected via config-driven caps
+(`max_resume_chars`, `max_pdf_b64_chars`), unknown domains 422 before the graph
+runs, and unhandled errors return a generic 500 (details stay in the logs). Set
+`DEE_API_AUTH_KEY` in `.env` to require an `X-API-Key` header on everything
+except `/` and `/healthz`.
 
 ### Example request
 
@@ -111,22 +137,27 @@ of them there, or per-deploy via the matching `DEE_MODEL_*` env var (e.g. point
 ## Adding a new domain (the M2 path)
 
 The LangGraph core has **zero** domain-specific logic — all of it lives behind
-the [`DomainModel`](app/domains/base.py) interface. To add, say, a data-eng domain:
+the [`DomainModel`](app/domains/base.py) interface.
+[app/domains/data_eng.py](app/domains/data_eng.py) is the proof: the second
+domain landed as one module with zero graph changes. To add, say, a cloud-infra
+domain:
 
-1. Create `app/domains/data_eng.py`:
+1. Create `app/domains/cloud_infra.py`:
 
    ```python
    from app.domains.base import DomainModel, Rule, register_domain
+   from app.domains.rules import SignalRule
 
    @register_domain
-   class DataEngDomain(DomainModel):
-       key = "data_eng"
-       display_name = "Data Engineering"
+   class CloudInfraDomain(DomainModel):
+       key = "cloud_infra"
+       display_name = "Cloud Infrastructure"
 
        @property
-       def rules(self) -> list[Rule]: ...        # your coherence rules
+       def rules(self) -> list[Rule]: ...        # your coherence rules (SignalRule)
        @property
        def claim_types(self) -> list[str]: ...   # your claim vocabulary
+       def heuristic_type_hints(self): ...       # keywords for the LLM-free fallback
        def extraction_guidance(self) -> str: ...
        def plausibility_system_prompt(self, ctx) -> str: ...
        def probe_guidance(self) -> str: ...
@@ -134,12 +165,13 @@ the [`DomainModel`](app/domains/base.py) interface. To add, say, a data-eng doma
 
 2. Register it by importing it from [app/domains/__init__.py](app/domains/__init__.py).
 
-3. Call the API with `"domain": "data_eng"`. Nothing in the graph changes.
+3. Call the API with `"domain": "cloud_infra"`. Nothing in the graph changes.
 
-A rule is a small, deterministic coherence check — see the three seed rules in
-[app/domains/genai.py](app/domains/genai.py) (fine-tuning, production RAG,
-multi-agent). The reusable `_SignalRule` lets you express a rule as "which
-expected signals are present, and what's the domain-specific tell?".
+A rule is a small, deterministic coherence check. The shared
+[`SignalRule`](app/domains/rules.py) lets you express one as "which expected
+signals are present, and what's the domain-specific tell?" — see the seed rules
+in [genai.py](app/domains/genai.py) (fine-tuning, RAG, multi-agent) and
+[data_eng.py](app/domains/data_eng.py) (ETL, streaming, warehouse).
 
 ---
 
@@ -153,8 +185,10 @@ profiles.
 
 Every `(claim → probe → verdict → outcome?)` record is appended to a pluggable
 store ([app/services/flywheel.py](app/services/flywheel.py), JSONL by default)
-with an open `outcome` field, ready to be closed later by human/hiring feedback
-and used for future model training.
+with an open `outcome` field. Human reviewers close the loop through
+`POST /report/{id}/outcome`; each judgment lands in both the report store and
+the flywheel (`record_type: "outcome"`), so one stream joins evaluations to
+ground truth for future calibration/training.
 
 ---
 
@@ -162,25 +196,34 @@ and used for future model training.
 
 ```
 app/
-  main.py                FastAPI entrypoint
-  api/routes.py          POST /evaluate, GET /report/{id}
+  main.py                create_app(): middleware, error handler, lifespan
+  api/routes.py          evaluate · report · outcomes · domains · healthz
   graph/
     state.py             EvaluationState (Pydantic)
     build.py             LangGraph assembly + EvaluationEngine
     nodes/               one module per pipeline node
   domains/
     base.py              DomainModel interface + rule registry
-    genai.py             GenAI rules + plausibility prompts (3 seed rules)
+    rules.py             shared SignalRule machinery (all domains build on it)
+    genai.py             GenAI domain (fine-tuning · RAG · multi-agent)
+    data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
   schemas/               claims.py, report.py  (Pydantic v2 contracts)
-  services/              llm (OpenRouter) · vectorstore (Chroma) · github · flywheel
+  services/              llm (OpenRouter) · vectorstore (Chroma, bounded init)
+                         · github · flywheel · report_store (SQLite)
   core/                  config · calibration · logging
-tests/                   per-node + integration, with genuine & fabricated fixtures
+tests/                   per-node + API + integration, fully offline
+docs/REQUIREMENTS.md     end-to-end requirements + milestones
+Dockerfile               non-root image with /healthz healthcheck
+.github/workflows/ci.yml offline pytest on 3.11/3.12
 ```
 
 ## Roadmap
 
-- **M1–M9 (done):** contracts → domain layer → services → calibration → nodes →
-  graph → API → tests → docs.
-- **Next:** more domains (data-eng, cloud, backend), real embedding model for
-  retrieval, persistent report store, LLM-path integration tests with recorded
-  fixtures, and closing the flywheel loop with hiring outcomes.
+- **M0 (done):** 7-node pipeline, genai domain, conservative calibration,
+  offline tests.
+- **M1 (done):** persistent SQLite report store, outcome endpoints closing the
+  flywheel loop, API hardening (caps, auth, request IDs, generic 500s),
+  LLM retries, shared `SignalRule` + `data_eng` domain, Docker + CI.
+- **Next (M2):** more domains (cloud, backend), real embedding model for
+  retrieval, recorded LLM fixtures, per-claim LLM concurrency, flywheel export.
+  See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
