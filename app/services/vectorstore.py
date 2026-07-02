@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import hashlib
 import math
+import threading
 from typing import Optional, Protocol, Sequence, runtime_checkable
 
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
 
 
 @runtime_checkable
@@ -84,9 +88,13 @@ class ChromaVectorStore:
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         import chromadb
+        from chromadb.config import Settings as ChromaSettings
 
         settings = settings or get_settings()
-        self._client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+        self._client = chromadb.PersistentClient(
+            path=settings.chroma_persist_dir,
+            settings=ChromaSettings(anonymized_telemetry=False),  # no phone-home
+        )
         self._collection = self._client.get_or_create_collection(
             name=settings.chroma_collection,
             embedding_function=HashingEmbedding(),  # swap for production embeddings
@@ -104,8 +112,36 @@ class ChromaVectorStore:
 
 
 def build_vectorstore(settings: Optional[Settings] = None) -> VectorStore:
-    """Default = Chroma; falls back to in-memory if chromadb isn't importable."""
-    try:
-        return ChromaVectorStore(settings)
-    except Exception:  # pragma: no cover - environment-dependent
+    """Bounded construction: Chroma if it comes up in time, else in-memory.
+
+    ChromaDB's PersistentClient can HANG (not raise) on some machines/networks,
+    and grounding is best-effort by design — so a broken vector store must
+    never take service startup down with it (NFR-1). Construction runs in a
+    daemon thread with a config-driven deadline; on timeout or error we degrade
+    to the in-memory store and log why.
+    """
+    settings = settings or get_settings()
+    if settings.vectorstore_backend == "memory":
         return InMemoryVectorStore()
+
+    result: list[object] = []
+
+    def _build() -> None:
+        try:
+            result.append(ChromaVectorStore(settings))
+        except Exception as exc:  # pragma: no cover - environment-dependent
+            result.append(exc)
+
+    worker = threading.Thread(target=_build, daemon=True, name="chroma-init")
+    worker.start()
+    worker.join(settings.vectorstore_init_timeout_seconds)
+
+    if result and not isinstance(result[0], Exception):
+        return result[0]  # type: ignore[return-value]
+
+    reason = (
+        f"init raised: {result[0]}" if result
+        else f"init exceeded {settings.vectorstore_init_timeout_seconds}s"
+    )
+    log.warning("vectorstore_fallback_memory", detail=reason)
+    return InMemoryVectorStore()

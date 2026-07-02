@@ -11,7 +11,9 @@ have needed.
 > as the existential risk, so the calibration is conservative: when unsure, it
 > **defers** instead of flagging.
 
-M0 ships a single domain (**GenAI engineering**). Adding more domains is one file.
+Ships with two domains (**GenAI engineering**, **Data Engineering**). Adding
+more is one file. End-to-end requirements live in
+[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 ---
 
@@ -67,11 +69,35 @@ pytest -q
 
 # Serve the API
 uvicorn app.main:app --reload
-# → POST /evaluate, GET /report/{id}, GET /healthz, GET /docs
 ```
 
 > Without an API key the engine still runs: it falls back to the deterministic
 > rule registry (`NullLLM`), which is exactly how the test suite stays offline.
+
+Or with Docker:
+
+```bash
+docker build -t depth-eval-engine .
+docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-engine
+```
+
+### Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /evaluate` | Evaluate a resume (`resume_text` or `resume_pdf_b64`, optional `github_url`/`portfolio_url`, `domain`). Persists and returns a `Report`. |
+| `GET /report/{id}` | Fetch a persisted report (survives restarts — SQLite store). |
+| `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`. Also appended to the flywheel — this closes the training loop. |
+| `GET /report/{id}/outcomes` | List recorded outcomes for a report. |
+| `GET /domains` | Registered domains + claim taxonomies. |
+| `GET /healthz` | Liveness + effective mode (`version`, `env`, `llm_mode`, `domains`). |
+
+Operational behavior: every response carries an `X-Request-ID` (propagated into
+all structured log lines), oversize payloads are rejected via config-driven caps
+(`max_resume_chars`, `max_pdf_b64_chars`), unknown domains 422 before the graph
+runs, and unhandled errors return a generic 500 (details stay in the logs). Set
+`DEE_API_AUTH_KEY` in `.env` to require an `X-API-Key` header on everything
+except `/` and `/healthz`.
 
 ### Example request
 

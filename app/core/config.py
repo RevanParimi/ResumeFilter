@@ -97,6 +97,11 @@ class Settings(BaseSettings):
     github_api_base: str = "https://api.github.com"
 
     # --- Vector store (ChromaDB) ----------------------------------------------
+    # Chroma's PersistentClient can hang (not raise) on some machines; startup
+    # gives it this long, then degrades to the in-memory store (grounding is
+    # best-effort). Set backend="memory" to skip Chroma entirely.
+    vectorstore_backend: Literal["chroma", "memory"] = "chroma"
+    vectorstore_init_timeout_seconds: float = 15.0
     chroma_persist_dir: str = "./.chroma"
     chroma_collection: str = "depth-eval-evidence"
 

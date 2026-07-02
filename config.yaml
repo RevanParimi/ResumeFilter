@@ -30,6 +30,10 @@ llm_max_retries: 2                  # SDK retries w/ backoff before degrading to
 github_api_base: "https://api.github.com"
 
 # --- Vector store (ChromaDB) -------------------------------------------------
+# backend: chroma | memory. Chroma init is bounded — if it hangs/fails, the
+# service starts anyway with the in-memory store (grounding is best-effort).
+vectorstore_backend: "chroma"
+vectorstore_init_timeout_seconds: 15
 chroma_persist_dir: "./.chroma"
 chroma_collection: "depth-eval-evidence"
 
