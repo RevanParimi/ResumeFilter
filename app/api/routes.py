@@ -7,12 +7,17 @@ outcomes close the flywheel loop (claim → probe → verdict → OUTCOME).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from app import __version__
+from app.candidates.extractor import extract_profile
+from app.candidates.schema import CandidateProfile
+from app.candidates.store import MatchedOn, ResumeSummary
+from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.schemas.report import Report
 from app.services import Services
@@ -90,6 +95,95 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
 
     services.report_store.save(report)
     return report
+
+
+class CandidateCreateRequest(BaseModel):
+    """Exactly one of resume_text / resume_pdf_b64 is required."""
+
+    resume_text: str | None = None
+    resume_pdf_b64: str | None = None
+    domain: str = "genai"
+    # Auto depth-eval is the default (S1.3 mandate); clients doing bulk import
+    # can opt out and evaluate later.
+    evaluate: bool = True
+
+    @model_validator(mode="after")
+    def _need_one_source(self) -> "CandidateCreateRequest":
+        if not (self.resume_text or self.resume_pdf_b64):
+            raise ValueError("Provide resume_text or resume_pdf_b64.")
+        return self
+
+
+class CandidateCreateResponse(BaseModel):
+    """What one upload did (S1.2 IngestOutcome) + the advisory report, if run."""
+
+    candidate_id: str
+    resume_id: str
+    resume_version: int
+    matched_existing: bool
+    matched_on: Optional[MatchedOn] = None
+    duplicate_resume: bool
+    extraction_method: str  # "llm" | "heuristic"
+    report: Optional[Report] = None
+
+
+@router.post("/candidates", response_model=CandidateCreateResponse)
+async def create_candidate(
+    req: CandidateCreateRequest, request: Request
+) -> CandidateCreateResponse:
+    """Upload → extract → store → (auto) depth-eval. The graph stays
+    candidate-unaware: the API stamps report.candidate_id after evaluation."""
+    services = _services(request)
+
+    caps = services.settings
+    if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resume_text exceeds max_resume_chars={caps.max_resume_chars}",
+        )
+    if req.resume_pdf_b64 and len(req.resume_pdf_b64) > caps.max_pdf_b64_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
+        )
+    try:
+        get_domain(req.domain)
+    except KeyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    text = req.resume_text
+    if not text and req.resume_pdf_b64:
+        try:
+            text = pdf_b64_to_text(req.resume_pdf_b64)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422, detail=f"pdf_parse_failed: {exc}"
+            ) from exc
+    text = (text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="empty_resume")
+
+    result = await extract_profile(text, llm=services.llm, settings=services.settings)
+    outcome = services.candidates.ingest(result, text)
+
+    report: Optional[Report] = None
+    if req.evaluate:
+        report = await request.app.state.engine.evaluate(
+            resume_text=text, domain=req.domain
+        )
+        report.candidate_id = outcome.candidate_id
+        services.report_store.save(report)
+
+    return CandidateCreateResponse(
+        candidate_id=outcome.candidate_id,
+        resume_id=outcome.resume_id,
+        resume_version=outcome.resume_version,
+        matched_existing=outcome.matched_existing,
+        matched_on=outcome.matched_on,
+        duplicate_resume=outcome.duplicate_resume,
+        extraction_method=result.method,
+        report=report,
+    )
 
 
 @router.get("/report/{report_id}", response_model=Report)
