@@ -46,6 +46,9 @@ report_db_path: "./data/reports.db"
 # --- Candidates (PI-1) ---------------------------------------------------------
 # Salt for contact dedup hashes (email/phone). Stable across deploys; NOT a secret.
 contact_hash_salt: "veritas-dedup-v1"
+# SQLAlchemy URL for the candidate store (S1.2; SQLAlchemy + Alembic).
+# Postgres later = change this string and run `alembic upgrade head`.
+candidates_db_url: "sqlite:///./data/veritas.db"
 
 # --- Calibration (CONSERVATIVE: false positives are the existential risk) -----
 # A claim is flagged INCOHERENT only when coherence is low AND confidence is high
