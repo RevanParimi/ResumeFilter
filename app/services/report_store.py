@@ -51,6 +51,8 @@ class ReportStore(Protocol):
     def add_outcome(self, rec: OutcomeRecord) -> None: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
     def delete(self, report_id: str) -> bool: ...
+    def for_candidate(self, candidate_id: str) -> list[Report]: ...
+    def delete_for_candidate(self, candidate_id: str) -> int: ...
 
 
 class SqliteReportStore:
@@ -66,7 +68,16 @@ class SqliteReportStore:
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS reports ("
             " id TEXT PRIMARY KEY, domain TEXT, created_at TEXT,"
-            " depth_band TEXT, body TEXT NOT NULL)"
+            " depth_band TEXT, candidate_id TEXT, body TEXT NOT NULL)"
+        )
+        # Pre-S1.3 DBs lack candidate_id; this store is stdlib-sqlite (not
+        # Alembic-managed), so upgrade in place. Fresh DBs hit the except.
+        try:
+            self._conn.execute("ALTER TABLE reports ADD COLUMN candidate_id TEXT")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reports_candidate ON reports(candidate_id)"
         )
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS outcomes ("
@@ -82,13 +93,15 @@ class SqliteReportStore:
     def save(self, report: Report) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO reports (id, domain, created_at, depth_band, body)"
-                " VALUES (?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO reports"
+                " (id, domain, created_at, depth_band, candidate_id, body)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     report.id,
                     report.domain,
                     report.created_at.isoformat(),
                     report.depth_band.value,
+                    report.candidate_id,
                     report.model_dump_json(),
                 ),
             )
@@ -131,6 +144,33 @@ class SqliteReportStore:
             self._conn.commit()
             return cur.rowcount > 0
 
+    def for_candidate(self, candidate_id: str) -> list[Report]:
+        rows = self._conn.execute(
+            "SELECT body FROM reports WHERE candidate_id = ? ORDER BY created_at",
+            (candidate_id,),
+        ).fetchall()
+        return [Report.model_validate_json(r[0]) for r in rows]
+
+    def delete_for_candidate(self, candidate_id: str) -> int:
+        """DPDP: erase every report derived from this candidate (+ outcomes)."""
+        with self._lock:
+            ids = [
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT id FROM reports WHERE candidate_id = ?", (candidate_id,)
+                ).fetchall()
+            ]
+            if ids:
+                marks = ",".join("?" * len(ids))
+                self._conn.execute(
+                    f"DELETE FROM outcomes WHERE report_id IN ({marks})", ids
+                )
+                self._conn.execute(
+                    "DELETE FROM reports WHERE candidate_id = ?", (candidate_id,)
+                )
+            self._conn.commit()
+            return len(ids)
+
 
 class InMemoryReportStore:
     """Test/inspection store; dict-backed, same surface."""
@@ -155,6 +195,16 @@ class InMemoryReportStore:
         existed = self._reports.pop(report_id, None) is not None
         self._outcomes = [o for o in self._outcomes if o.report_id != report_id]
         return existed
+
+    def for_candidate(self, candidate_id: str) -> list[Report]:
+        linked = [r for r in self._reports.values() if r.candidate_id == candidate_id]
+        return sorted(linked, key=lambda r: r.created_at)
+
+    def delete_for_candidate(self, candidate_id: str) -> int:
+        ids = [rid for rid, r in self._reports.items() if r.candidate_id == candidate_id]
+        for rid in ids:
+            self.delete(rid)
+        return len(ids)
 
 
 def build_report_store(settings: Optional[Settings] = None) -> ReportStore:
