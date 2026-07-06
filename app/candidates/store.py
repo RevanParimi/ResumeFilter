@@ -40,6 +40,23 @@ class IngestOutcome(BaseModel):
     duplicate_resume: bool = False
 
 
+class ResumeSummary(BaseModel):
+    id: str
+    version: int
+    text_sha256: str
+    created_at: datetime
+
+
+class CandidateSummary(BaseModel):
+    id: str
+    full_name: Optional[str] = None
+    email_hash: Optional[str] = None
+    phone_hash: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    resume_count: int = 0
+
+
 class CandidateStore:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
@@ -139,3 +156,83 @@ class CandidateStore:
         if profile.full_name and profile.full_name.value:
             cand.full_name = profile.full_name.value
         cand.updated_at = _utcnow()
+
+    def get_candidate(self, candidate_id: str) -> Optional[CandidateSummary]:
+        with self._session_factory() as session:
+            cand = session.get(CandidateRow, candidate_id)
+            if cand is None:
+                return None
+            return CandidateSummary(
+                id=cand.id,
+                full_name=cand.full_name,
+                email_hash=cand.email_hash,
+                phone_hash=cand.phone_hash,
+                created_at=cand.created_at,
+                updated_at=cand.updated_at,
+                resume_count=len(cand.resumes),
+            )
+
+    def latest_profile(self, candidate_id: str) -> Optional[CandidateProfile]:
+        """Profile from the newest resume version (ties: newest extraction)."""
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    select(ExtractionRow)
+                    .join(ResumeRow, ExtractionRow.resume_id == ResumeRow.id)
+                    .where(ExtractionRow.candidate_id == candidate_id)
+                    .order_by(ResumeRow.version.desc(), ExtractionRow.created_at.desc())
+                    .limit(1)
+                )
+                .scalars()
+                .first()
+            )
+            return CandidateProfile.model_validate(row.profile) if row else None
+
+    def list_resumes(self, candidate_id: str) -> list[ResumeSummary]:
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(ResumeRow)
+                    .where(ResumeRow.candidate_id == candidate_id)
+                    .order_by(ResumeRow.version)
+                )
+                .scalars()
+                .all()
+            )
+            return [
+                ResumeSummary(
+                    id=r.id,
+                    version=r.version,
+                    text_sha256=r.text_sha256,
+                    created_at=r.created_at,
+                )
+                for r in rows
+            ]
+
+    def delete_candidate(self, candidate_id: str) -> bool:
+        """DPDP erasure: candidate + all resumes (raw text) + extractions."""
+        with self._session_factory() as session:
+            cand = session.get(CandidateRow, candidate_id)
+            if cand is None:
+                return False
+            session.delete(cand)
+            session.commit()
+            return True
+
+    def delete_resume(self, resume_id: str) -> bool:
+        """DPDP erasure of ONE resume version + its extractions; candidate stays."""
+        with self._session_factory() as session:
+            resume = session.get(ResumeRow, resume_id)
+            if resume is None:
+                return False
+            session.delete(resume)
+            session.commit()
+            return True
+
+
+def build_candidate_store(settings: Optional[Settings] = None) -> CandidateStore:
+    """Store on the configured URL. Schema is Alembic's job (`alembic upgrade
+    head`), NOT the builder's — no create_all here by design."""
+    settings = settings or get_settings()
+    engine = make_engine(settings.candidates_db_url)
+    return CandidateStore(make_session_factory(engine))
