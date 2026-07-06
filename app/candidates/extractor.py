@@ -16,22 +16,27 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from app.candidates import hashing
 from app.candidates.dates import date_points, has_date_range, parse_date_range
 from app.candidates.schema import (
     CandidateProfile,
     CertificationEntry,
     ContactInfo,
+    DateRange,
     EducationEntry,
     EmploymentType,
     ExperienceEntry,
     ExtractedStr,
+    ExtractionResult,
     LinkItem,
     LinkType,
     ProjectEntry,
     SkillItem,
     SourceSpan,
 )
+from app.core.config import Settings
 from app.core.logging import get_logger
+from app.services.llm import LLMClient
 
 log = get_logger("candidates.extractor")
 
@@ -330,3 +335,224 @@ def heuristic_profile(text: str) -> CandidateProfile:
         certifications=_certifications(sections.get("certifications", [])),
         links=_links(text),
     )
+
+
+PROFILE_EXTRACTION_SYSTEM = """You are a precise resume parser for the Indian job market.
+Extract a structured candidate profile from the resume.
+
+Return ONE JSON object with exactly these keys (use null / [] when absent):
+{
+  "full_name":  {"value": str, "confidence": 0-1, "source_excerpt": str},
+  "headline":   {"value": str, "confidence": 0-1, "source_excerpt": str},
+  "contact": {
+    "email":    {"value": str, "confidence": 0-1, "source_excerpt": str},
+    "phone":    {"value": str, "confidence": 0-1, "source_excerpt": str},
+    "location": {"value": str, "confidence": 0-1, "source_excerpt": str}
+  },
+  "education":  [{"degree": str, "field_of_study": str, "institution": str,
+                  "grade_value": number, "grade_scale": "cgpa_10"|"cgpa_4"|"percentage",
+                  "start": "YYYY-MM"|"YYYY", "end": "YYYY-MM"|"YYYY"|null, "is_current": bool,
+                  "confidence": 0-1, "source_excerpt": str}],
+  "experience": [{"employer": str, "title": str,
+                  "seniority": "junior"|"mid"|"senior"|"staff",
+                  "employment_type": "full_time"|"part_time"|"internship"|"contract"|"freelance"|"unknown",
+                  "start": "YYYY-MM"|"YYYY", "end": "YYYY-MM"|"YYYY"|null, "is_current": bool,
+                  "confidence": 0-1, "source_excerpt": str}],
+  "skills":         [{"name": str, "confidence": 0-1, "source_excerpt": str}],
+  "projects":       [{"name": str, "description": str, "technologies": [str],
+                      "url": str, "confidence": 0-1, "source_excerpt": str}],
+  "certifications": [{"name": str, "issuer": str, "year": int,
+                      "confidence": 0-1, "source_excerpt": str}],
+  "links":          [{"type": "github"|"linkedin"|"portfolio"|"other", "url": str}]
+}
+
+Rules:
+- Copy each source_excerpt VERBATIM from the resume; it is used to locate provenance spans.
+- Report only what the resume states; never invent values. Lower confidence when inferring.
+- Dates: "YYYY-MM" when the month is stated, else "YYYY".
+"""
+
+
+def _clamp(value: object, default: float = 0.5) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _find_span(text: str, excerpt: str) -> Optional[SourceSpan]:
+    """Re-locate an LLM-quoted excerpt in the resume (case-insensitive rescue)."""
+    if not excerpt:
+        return None
+    idx = text.find(excerpt)
+    if idx < 0:
+        idx = text.lower().find(excerpt.lower())
+    if idx < 0:
+        return None
+    return SourceSpan(start=idx, end=idx + len(excerpt), text=text[idx : idx + len(excerpt)])
+
+
+def _scalar(node: object, text: str) -> Optional[ExtractedStr]:
+    if not isinstance(node, dict) or not node.get("value"):
+        return None
+    return ExtractedStr(
+        value=str(node["value"]),
+        confidence=_clamp(node.get("confidence")),
+        span=_find_span(text, str(node.get("source_excerpt") or "")),
+    )
+
+
+def _node_dates(node: dict) -> DateRange:
+    return DateRange(
+        start=node.get("start") or None,
+        end=node.get("end") or None,
+        is_current=bool(node.get("is_current")),
+    )
+
+
+def _parse_llm_profile(payload: dict, text: str) -> CandidateProfile:
+    """Defensive payload→profile mapping: skip malformed entries, never raise."""
+    contact_raw = payload.get("contact") or {}
+    profile = CandidateProfile(
+        full_name=_scalar(payload.get("full_name"), text),
+        headline=_scalar(payload.get("headline"), text),
+        contact=ContactInfo(
+            email=_scalar(contact_raw.get("email"), text),
+            phone=_scalar(contact_raw.get("phone"), text),
+            location=_scalar(contact_raw.get("location"), text),
+        ),
+    )
+    for e in payload.get("education") or []:
+        if not isinstance(e, dict):
+            continue
+        try:
+            profile.education.append(
+                EducationEntry(
+                    degree=e.get("degree"),
+                    field_of_study=e.get("field_of_study"),
+                    institution=e.get("institution"),
+                    grade_value=e.get("grade_value"),
+                    grade_scale=e.get("grade_scale"),
+                    dates=_node_dates(e),
+                    confidence=_clamp(e.get("confidence")),
+                    span=_find_span(text, str(e.get("source_excerpt") or "")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    for x in payload.get("experience") or []:
+        if not isinstance(x, dict):
+            continue
+        try:
+            raw_type = str(x.get("employment_type") or "unknown")
+            etype = (
+                EmploymentType(raw_type)
+                if raw_type in EmploymentType._value2member_map_
+                else EmploymentType.UNKNOWN
+            )
+            profile.experience.append(
+                ExperienceEntry(
+                    employer=x.get("employer"),
+                    title=x.get("title"),
+                    seniority=x.get("seniority"),
+                    employment_type=etype,
+                    dates=_node_dates(x),
+                    confidence=_clamp(x.get("confidence")),
+                    span=_find_span(text, str(x.get("source_excerpt") or "")),
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    for s in payload.get("skills") or []:
+        if isinstance(s, dict) and s.get("name"):
+            profile.skills.append(
+                SkillItem(
+                    name=str(s["name"]),
+                    confidence=_clamp(s.get("confidence")),
+                    span=_find_span(text, str(s.get("source_excerpt") or "")),
+                )
+            )
+    for pr in payload.get("projects") or []:
+        if isinstance(pr, dict) and pr.get("name"):
+            profile.projects.append(
+                ProjectEntry(
+                    name=str(pr["name"]),
+                    description=pr.get("description"),
+                    technologies=[str(t) for t in pr.get("technologies") or []],
+                    url=pr.get("url"),
+                    confidence=_clamp(pr.get("confidence")),
+                    span=_find_span(text, str(pr.get("source_excerpt") or "")),
+                )
+            )
+    for c in payload.get("certifications") or []:
+        if isinstance(c, dict) and c.get("name"):
+            try:
+                year = int(c["year"]) if c.get("year") is not None else None
+            except (TypeError, ValueError):
+                year = None
+            profile.certifications.append(
+                CertificationEntry(
+                    name=str(c["name"]),
+                    issuer=c.get("issuer"),
+                    year=year,
+                    confidence=_clamp(c.get("confidence")),
+                    span=_find_span(text, str(c.get("source_excerpt") or "")),
+                )
+            )
+    for lk in payload.get("links") or []:
+        if isinstance(lk, dict) and lk.get("url"):
+            raw_type = str(lk.get("type") or "other")
+            ltype = (
+                LinkType(raw_type)
+                if raw_type in LinkType._value2member_map_
+                else LinkType.OTHER
+            )
+            profile.links.append(
+                LinkItem(type=ltype, url=str(lk["url"]), span=_find_span(text, str(lk["url"])))
+            )
+    return profile
+
+
+def _is_empty(profile: CandidateProfile) -> bool:
+    return (
+        profile.full_name is None
+        and profile.contact.email is None
+        and profile.contact.phone is None
+        and not profile.education
+        and not profile.experience
+        and not profile.skills
+    )
+
+
+async def extract_profile(
+    resume_text: str, *, llm: LLMClient, settings: Optional[Settings] = None
+) -> ExtractionResult:
+    """LLM extraction with a deterministic floor — never returns nothing."""
+    settings = settings or llm.settings
+    warnings: list[str] = []
+    profile: Optional[CandidateProfile] = None
+    method = "heuristic"
+    try:
+        payload = await llm.acomplete_json(
+            tier="parsing",
+            system=PROFILE_EXTRACTION_SYSTEM,
+            prompt=f"RESUME:\n{resume_text}",
+        )
+        if payload:
+            profile = _parse_llm_profile(payload, resume_text)
+            method = "llm"
+    except Exception as exc:  # any LLM failure → heuristic floor
+        warnings.append(f"llm_extraction_failed: {exc}")
+        log.warning("profile_llm_failed", error=str(exc))
+    if profile is None or _is_empty(profile):
+        profile = heuristic_profile(resume_text)
+        method = "heuristic"
+    hashing.apply_contact_hashes(profile, settings.contact_hash_salt)
+    log.info(
+        "profile_extracted",
+        method=method,
+        education=len(profile.education),
+        experience=len(profile.experience),
+        skills=len(profile.skills),
+    )
+    return ExtractionResult(profile=profile, method=method, warnings=warnings)
