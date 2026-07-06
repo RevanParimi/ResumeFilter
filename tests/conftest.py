@@ -12,7 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from app.candidates.store import CandidateStore
 from app.core.config import Settings
+from app.core.db import Base, make_engine, make_session_factory
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.llm import LLMClient, NullLLM
@@ -69,12 +71,21 @@ def fake_github() -> FakeGitHub:
     return FakeGitHub()
 
 
+def make_candidate_store() -> CandidateStore:
+    """In-memory candidate store for tests. create_all is a TEST convenience;
+    real deployments migrate via Alembic (S1.2 decision)."""
+    engine = make_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    return CandidateStore(make_session_factory(engine))
+
+
 def make_services(
     settings: Settings,
     *,
     llm: LLMClient | None = None,
     github: FakeGitHub | None = None,
     flywheel: InMemoryFlywheel | None = None,
+    candidates: CandidateStore | None = None,
 ) -> Services:
     return Services(
         settings=settings,
@@ -83,6 +94,7 @@ def make_services(
         github=github or FakeGitHub(),
         flywheel=flywheel or InMemoryFlywheel(),
         report_store=InMemoryReportStore(),
+        candidates=candidates or make_candidate_store(),
     )
 
 
