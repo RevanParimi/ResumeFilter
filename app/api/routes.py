@@ -237,6 +237,39 @@ async def list_candidate_reports(candidate_id: str, request: Request) -> list[Re
     return services.report_store.for_candidate(candidate_id)
 
 
+@router.delete("/candidates/{candidate_id}")
+async def delete_candidate(candidate_id: str, request: Request) -> dict:
+    """DPDP erasure: candidate + resumes (raw text) + extractions + all reports
+    derived from them. Hard delete — there is nothing to un-delete."""
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    reports_deleted = services.report_store.delete_for_candidate(candidate_id)
+    services.candidates.delete_candidate(candidate_id)
+    return {
+        "candidate_id": candidate_id,
+        "deleted": True,
+        "reports_deleted": reports_deleted,
+    }
+
+
+@router.delete("/candidates/{candidate_id}/resumes/{resume_id}")
+async def delete_candidate_resume(
+    candidate_id: str, resume_id: str, request: Request
+) -> dict:
+    """DPDP erasure of ONE resume version (+ its extractions). The candidate
+    row and other versions stay; ownership is checked so one candidate's URL
+    can never erase another's data."""
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    owned = {r.id for r in services.candidates.list_resumes(candidate_id)}
+    if resume_id not in owned:
+        raise HTTPException(status_code=404, detail="resume not found for candidate")
+    services.candidates.delete_resume(resume_id)
+    return {"resume_id": resume_id, "deleted": True}
+
+
 @router.get("/report/{report_id}", response_model=Report)
 async def get_report(report_id: str, request: Request) -> Report:
     report = _services(request).report_store.get(report_id)

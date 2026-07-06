@@ -170,3 +170,62 @@ def test_list_candidate_reports(api):
     assert reports[0]["id"] == first["report"]["id"]
     assert reports[0]["candidate_id"] == cid
     assert client.get("/candidates/no-such-id/reports").status_code == 404
+
+
+# ── DPDP deletes ──────────────────────────────────────────────────────────────
+RESUME_B = """Ravi Kumar
+Email: ravi.kumar@example.com
+
+SKILLS
+Java, Spring
+"""
+
+
+def test_delete_candidate_erases_store_and_reports(api):
+    client, services = api
+    body = client.post("/candidates", json={"resume_text": RESUME}).json()
+    cid, report_id = body["candidate_id"], body["report"]["id"]
+
+    resp = client.delete(f"/candidates/{cid}")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["deleted"] is True
+    assert payload["reports_deleted"] == 1
+    # Everything derived from the resume is gone (DPDP erasure).
+    assert client.get(f"/candidates/{cid}").status_code == 404
+    assert client.get(f"/report/{report_id}").status_code == 404
+    assert services.candidates.get_candidate(cid) is None
+
+
+def test_delete_missing_candidate_404(api):
+    client, _ = api
+    assert client.delete("/candidates/no-such-id").status_code == 404
+
+
+def test_delete_one_resume_keeps_candidate(api):
+    client, _ = api
+    client.post("/candidates", json={"resume_text": RESUME, "evaluate": False})
+    second = client.post(
+        "/candidates",
+        json={"resume_text": RESUME + "\n- Extra line.", "evaluate": False},
+    ).json()
+    cid = second["candidate_id"]
+
+    resp = client.delete(f"/candidates/{cid}/resumes/{second['resume_id']}")
+    assert resp.status_code == 200 and resp.json()["deleted"] is True
+    versions = [
+        r["version"] for r in client.get(f"/candidates/{cid}/resumes").json()["resumes"]
+    ]
+    assert versions == [1]
+    assert client.get(f"/candidates/{cid}").status_code == 200
+
+
+def test_delete_resume_of_another_candidate_404(api):
+    client, _ = api
+    a = client.post("/candidates", json={"resume_text": RESUME, "evaluate": False}).json()
+    b = client.post("/candidates", json={"resume_text": RESUME_B, "evaluate": False}).json()
+    assert a["candidate_id"] != b["candidate_id"]  # distinct contacts ⇒ distinct people
+    # A's resume under B's candidate id must not delete anything.
+    resp = client.delete(f"/candidates/{b['candidate_id']}/resumes/{a['resume_id']}")
+    assert resp.status_code == 404
+    assert client.get(f"/candidates/{a['candidate_id']}/resumes").json()["resumes"] != []

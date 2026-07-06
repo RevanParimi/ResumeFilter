@@ -98,6 +98,12 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             "human_review_required": True,
             "endpoints": [
                 "POST /evaluate",
+                "POST /candidates",
+                "GET /candidates/{id}",
+                "GET /candidates/{id}/resumes",
+                "GET /candidates/{id}/reports",
+                "DELETE /candidates/{id}",
+                "DELETE /candidates/{id}/resumes/{resume_id}",
                 "GET /report/{id}",
                 "POST /report/{id}/outcome",
                 "GET /report/{id}/outcomes",
