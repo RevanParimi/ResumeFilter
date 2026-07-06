@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     # --- Report store (durable advisory reports + human outcomes) --------------
     report_db_path: str = "./data/reports.db"
 
+    # --- Candidates (PI-1) ------------------------------------------------------
+    # Salt for contact dedup hashes (email/phone). NOT a secret — it must stay
+    # stable across deploys or identity resolution breaks; changing it orphans
+    # every stored hash.
+    contact_hash_salt: str = "veritas-dedup-v1"
+
     # --- Calibration (CONSERVATIVE: false positives are the existential risk) --
     # Flag a claim only when coherence is low AND we are confident enough to act.
     # When confidence is below the defer threshold we NEVER assert — we defer to a

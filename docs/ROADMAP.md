@@ -9,11 +9,15 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S1.1 — Prod-grade extraction schema + extractor
-- **Next action:** Write implementation plan for S1.1 (superpowers:writing-plans),
-  then build `app/candidates/schema.py` (CandidateProfile) test-first.
-- **Last session (2026-07-06):** Product designed and approved. Spec, roadmap,
-  CLAUDE.md, memory pointer committed. No implementation code yet.
+- **Current sprint:** S1.2 — Candidate store (SQLAlchemy + Alembic on SQLite)
+- **Next action:** Write implementation plan for S1.2 (superpowers:writing-plans):
+  tables `candidates` / `resumes` (versioned) / `extractions`, PG-shaped
+  (UUIDs, FKs, JSON columns), identity resolution via the S1.1
+  `email_hash`/`phone_hash` dedup, DPDP delete path per table.
+- **Last session (2026-07-06):** S1.1 built TDD-offline and merged-ready on
+  branch `s11-extraction-schema`: `app/candidates/` (schema, hashing, dates,
+  extractor), 26 new tests (88 total green), smoke green live + offline via
+  `scripts/smoke_s11.py`. Plan: `docs/superpowers/plans/2026-07-06-s11-extraction-schema-extractor.md`.
 
 ## Status board
 
@@ -23,12 +27,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done
 VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer first)
 │
 ├── PI-1  CANDIDATE DATA BACKBONE
-│   ├── [~] S1.1  Prod-grade extraction schema + extractor
+│   ├── [x] S1.1  Prod-grade extraction schema + extractor
 │   │            CandidateProfile: identity, contact(hashed), education[],
 │   │            experience[], skills[], projects[], certifications[], links[];
 │   │            per-field confidence + source-span provenance;
 │   │            LLM extraction + deterministic fallback
-│   ├── [ ] S1.2  Candidate store — SQLAlchemy + Alembic on SQLite (PG-shaped);
+│   ├── [~] S1.2  Candidate store — SQLAlchemy + Alembic on SQLite (PG-shaped);
 │   │            candidates / resumes(versioned) / extractions;
 │   │            identity resolution via email+phone hash dedup
 │   ├── [ ] S1.3  API + engine wiring — POST /candidates (upload → extract →
@@ -85,3 +89,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 - **2026-07-06** — Brainstormed + approved product design (Talent Intelligence
   Platform slice of a Mercor-style marketplace; SQLite-now/PG-shaped; modular
   monolith). Created spec, roadmap, CLAUDE.md, memory pointer. Next: S1.1 plan.
+- **2026-07-06 (2)** — S1.1 done, TDD-offline on branch `s11-extraction-schema`:
+  `app/candidates/{schema,hashing,dates,extractor}.py` — CandidateProfile with
+  per-field confidence + SourceSpan provenance, salted contact-dedup hashing
+  (`contact_hash_salt` in config.yaml), deterministic date parser, section-based
+  heuristic extractor + LLM path (`parsing` tier) with fallback. 26 new tests
+  (88 green). Smoke `scripts/smoke_s11.py` green with live OpenRouter key AND
+  key-less (heuristic floor). Next: S1.2 plan (candidate store).
