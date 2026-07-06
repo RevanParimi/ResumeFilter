@@ -1,0 +1,23 @@
+Arjun Mehta
+Senior Data Engineer | Bengaluru, Karnataka
+Email: arjun.mehta@example.com | Phone: +91 98765 43210
+GitHub: https://github.com/arjun-mehta | LinkedIn: https://www.linkedin.com/in/arjun-mehta
+
+EXPERIENCE
+Senior Data Engineer, Flipkart — Jun 2021 - Present
+- Built streaming pipelines on Kafka and Spark processing 2TB/day.
+Data Engineer, Infosys — Jul 2018 - May 2021
+- Developed ETL workflows in Airflow for retail clients.
+
+EDUCATION
+B.Tech in Computer Science, NIT Trichy — 2014 - 2018, CGPA: 8.6/10
+
+SKILLS
+Python, SQL, Apache Spark, Kafka, Airflow, AWS
+
+PROJECTS
+open-lineage-tracker — https://github.com/arjun-mehta/open-lineage-tracker
+- Metadata lineage tracking tool for Spark jobs.
+
+CERTIFICATIONS
+AWS Certified Data Analytics - Specialty, Amazon Web Services, 2022
