@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     # stable across deploys or identity resolution breaks; changing it orphans
     # every stored hash.
     contact_hash_salt: str = "veritas-dedup-v1"
+    # SQLAlchemy URL for the candidate store (S1.2). SQLite file locally; the
+    # Postgres migration is this one string plus `alembic upgrade head`.
+    candidates_db_url: str = "sqlite:///./data/veritas.db"
 
     # --- Calibration (CONSERVATIVE: false positives are the existential risk) --
     # Flag a claim only when coherence is low AND we are confident enough to act.

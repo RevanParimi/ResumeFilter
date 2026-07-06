@@ -9,15 +9,17 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S1.2 — Candidate store (SQLAlchemy + Alembic on SQLite)
-- **Next action:** Write implementation plan for S1.2 (superpowers:writing-plans):
-  tables `candidates` / `resumes` (versioned) / `extractions`, PG-shaped
-  (UUIDs, FKs, JSON columns), identity resolution via the S1.1
-  `email_hash`/`phone_hash` dedup, DPDP delete path per table.
-- **Last session (2026-07-06):** S1.1 built TDD-offline and merged-ready on
-  branch `s11-extraction-schema`: `app/candidates/` (schema, hashing, dates,
-  extractor), 26 new tests (88 total green), smoke green live + offline via
-  `scripts/smoke_s11.py`. Plan: `docs/superpowers/plans/2026-07-06-s11-extraction-schema-extractor.md`.
+- **Current sprint:** S1.3 — API + engine wiring
+- **Next action:** Write implementation plan for S1.3 (superpowers:writing-plans):
+  POST /candidates (upload → extract → store → auto depth-eval), reports
+  linked to `candidate_id`, wire `build_candidate_store` into `Services`,
+  DPDP delete endpoints over the S1.2 store delete paths.
+- **Last session (2026-07-06):** S1.2 built TDD-offline on branch
+  `s12-candidate-store`: `app/core/db.py` (shared SQLAlchemy Base/engine),
+  `app/candidates/{models,store}.py`, Alembic env + migration
+  `0001_candidate_store`, 25 new tests (113 total green), smoke green live +
+  offline via `scripts/smoke_s12.py`. Plan:
+  `docs/superpowers/plans/2026-07-06-s12-candidate-store.md`.
 
 ## Status board
 
@@ -32,10 +34,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            experience[], skills[], projects[], certifications[], links[];
 │   │            per-field confidence + source-span provenance;
 │   │            LLM extraction + deterministic fallback
-│   ├── [~] S1.2  Candidate store — SQLAlchemy + Alembic on SQLite (PG-shaped);
+│   ├── [x] S1.2  Candidate store — SQLAlchemy + Alembic on SQLite (PG-shaped);
 │   │            candidates / resumes(versioned) / extractions;
 │   │            identity resolution via email+phone hash dedup
-│   ├── [ ] S1.3  API + engine wiring — POST /candidates (upload → extract →
+│   ├── [~] S1.3  API + engine wiring — POST /candidates (upload → extract →
 │   │            store → auto depth-eval); reports linked to candidate_id
 │   └── [ ] S1.4  India normalization — skill taxonomy, degree/CGPA normalizer,
 │                institution + employer canonicalization, city/notice-period
@@ -96,3 +98,13 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   heuristic extractor + LLM path (`parsing` tier) with fallback. 26 new tests
   (88 green). Smoke `scripts/smoke_s11.py` green with live OpenRouter key AND
   key-less (heuristic floor). Next: S1.2 plan (candidate store).
+- **2026-07-06 (3)** — S1.2 done, TDD-offline on branch `s12-candidate-store`:
+  shared SQLAlchemy core (`app/core/db.py`: Base, engine w/ SQLite FK pragma +
+  StaticPool, session factory; `candidates_db_url` setting), PG-shaped ORM rows
+  (`app/candidates/models.py`: candidates / resumes versioned-unique /
+  extractions JSON), Alembic env + `0001_candidate_store` (+ drift-guard test),
+  `CandidateStore` (`app/candidates/store.py`: ingest with email→phone hash
+  identity resolution + backfill, sha256 resume dedup, latest_profile,
+  DPDP hard deletes, `build_candidate_store`). 25 new tests (113 green).
+  Smoke `scripts/smoke_s12.py` green live (llm) AND key-less (heuristic).
+  Next: S1.3 plan (API + engine wiring).
