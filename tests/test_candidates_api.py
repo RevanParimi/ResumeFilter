@@ -119,3 +119,54 @@ def test_candidates_unknown_domain_422(api):
 def test_candidates_requires_a_source_422(api):
     client, _ = api
     assert client.post("/candidates", json={}).status_code == 422
+
+
+# ── candidate reads ───────────────────────────────────────────────────────────
+def test_candidate_detail_includes_latest_profile(api):
+    client, _ = api
+    cid = client.post(
+        "/candidates", json={"resume_text": RESUME, "evaluate": False}
+    ).json()["candidate_id"]
+    resp = client.get(f"/candidates/{cid}")
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["id"] == cid
+    assert detail["resume_count"] == 1
+    assert detail["email_hash"]
+    assert detail["latest_profile"] is not None
+    assert detail["latest_profile"]["contact"]["email_hash"] == detail["email_hash"]
+
+
+def test_candidate_detail_404(api):
+    client, _ = api
+    assert client.get("/candidates/no-such-id").status_code == 404
+
+
+def test_list_candidate_resumes(api):
+    client, _ = api
+    cid = client.post(
+        "/candidates", json={"resume_text": RESUME, "evaluate": False}
+    ).json()["candidate_id"]
+    client.post(
+        "/candidates",
+        json={"resume_text": RESUME + "\n- New project shipped.", "evaluate": False},
+    )
+    resp = client.get(f"/candidates/{cid}/resumes")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["candidate_id"] == cid
+    assert [r["version"] for r in body["resumes"]] == [1, 2]
+    assert client.get("/candidates/no-such-id/resumes").status_code == 404
+
+
+def test_list_candidate_reports(api):
+    client, _ = api
+    first = client.post("/candidates", json={"resume_text": RESUME}).json()
+    cid = first["candidate_id"]
+    resp = client.get(f"/candidates/{cid}/reports")
+    assert resp.status_code == 200
+    reports = resp.json()
+    assert len(reports) == 1
+    assert reports[0]["id"] == first["report"]["id"]
+    assert reports[0]["candidate_id"] == cid
+    assert client.get("/candidates/no-such-id/reports").status_code == 404

@@ -186,6 +186,57 @@ async def create_candidate(
     )
 
 
+class CandidateDetail(BaseModel):
+    """Store summary + the newest extracted profile (hashes only — no raw PII)."""
+
+    id: str
+    full_name: Optional[str] = None
+    email_hash: Optional[str] = None
+    phone_hash: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    resume_count: int = 0
+    latest_profile: Optional[CandidateProfile] = None
+
+
+class CandidateResumesResponse(BaseModel):
+    candidate_id: str
+    resumes: list[ResumeSummary]
+
+
+@router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
+async def get_candidate(candidate_id: str, request: Request) -> CandidateDetail:
+    services = _services(request)
+    summary = services.candidates.get_candidate(candidate_id)
+    if summary is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return CandidateDetail(
+        **summary.model_dump(),
+        latest_profile=services.candidates.latest_profile(candidate_id),
+    )
+
+
+@router.get("/candidates/{candidate_id}/resumes", response_model=CandidateResumesResponse)
+async def list_candidate_resumes(
+    candidate_id: str, request: Request
+) -> CandidateResumesResponse:
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return CandidateResumesResponse(
+        candidate_id=candidate_id,
+        resumes=services.candidates.list_resumes(candidate_id),
+    )
+
+
+@router.get("/candidates/{candidate_id}/reports", response_model=list[Report])
+async def list_candidate_reports(candidate_id: str, request: Request) -> list[Report]:
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return services.report_store.for_candidate(candidate_id)
+
+
 @router.get("/report/{report_id}", response_model=Report)
 async def get_report(report_id: str, request: Request) -> Report:
     report = _services(request).report_store.get(report_id)
