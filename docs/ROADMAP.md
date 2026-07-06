@@ -10,16 +10,18 @@
 ## ▶ Current state
 
 - **Current sprint:** S1.3 — API + engine wiring
-- **Next action:** Write implementation plan for S1.3 (superpowers:writing-plans):
-  POST /candidates (upload → extract → store → auto depth-eval), reports
-  linked to `candidate_id`, wire `build_candidate_store` into `Services`,
-  DPDP delete endpoints over the S1.2 store delete paths.
-- **Last session (2026-07-06):** S1.2 built TDD-offline on branch
-  `s12-candidate-store`: `app/core/db.py` (shared SQLAlchemy Base/engine),
-  `app/candidates/{models,store}.py`, Alembic env + migration
-  `0001_candidate_store`, 25 new tests (113 total green), smoke green live +
-  offline via `scripts/smoke_s12.py`. Plan:
-  `docs/superpowers/plans/2026-07-06-s12-candidate-store.md`.
+- **Next action:** Execute the S1.3 plan
+  (`docs/superpowers/plans/2026-07-06-s13-api-engine-wiring.md`) task-by-task
+  via superpowers:subagent-driven-development or superpowers:executing-plans,
+  on branch `s13-api-wiring`. 7 tasks: Report.candidate_id + store queries →
+  shared pdf helper → Services wiring → POST /candidates → candidate reads →
+  DPDP deletes → uvicorn smoke (`scripts/smoke_s13.py`) + close-out.
+  Expected: 137 tests green (113 today).
+- **Last session (2026-07-06):** Wrote the S1.3 implementation plan (no code
+  changes). Key decisions: graph/`/evaluate` untouched — the API stamps
+  `report.candidate_id` after `engine.evaluate`; reports.db gets `candidate_id`
+  via guarded ALTER (stdlib sqlite, not Alembic); candidate erasure also
+  deletes linked reports; no new Alembic migration needed.
 
 ## Status board
 
@@ -108,3 +110,12 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   DPDP hard deletes, `build_candidate_store`). 25 new tests (113 green).
   Smoke `scripts/smoke_s12.py` green live (llm) AND key-less (heuristic).
   Next: S1.3 plan (API + engine wiring).
+- **2026-07-06 (4)** — S1.3 implementation plan written:
+  `docs/superpowers/plans/2026-07-06-s13-api-engine-wiring.md` (7 TDD tasks,
+  branch `s13-api-wiring`, 113→137 tests). Scope: `Report.candidate_id` +
+  `for_candidate`/`delete_for_candidate` on both report stores (guarded ALTER
+  for legacy reports.db), shared `app/core/pdf.py` helper, `Services.candidates`
+  via `build_candidate_store`, POST /candidates (extract → ingest → auto
+  depth-eval, graph untouched), GET candidate/resumes/reports, DPDP DELETE
+  endpoints (candidate erasure also deletes linked reports), uvicorn smoke
+  `scripts/smoke_s13.py`. Next: execute the plan.
