@@ -74,8 +74,9 @@ class SqliteReportStore:
         # Alembic-managed), so upgrade in place. Fresh DBs hit the except.
         try:
             self._conn.execute("ALTER TABLE reports ADD COLUMN candidate_id TEXT")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_reports_candidate ON reports(candidate_id)"
         )

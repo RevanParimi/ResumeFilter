@@ -229,3 +229,25 @@ def test_delete_resume_of_another_candidate_404(api):
     resp = client.delete(f"/candidates/{b['candidate_id']}/resumes/{a['resume_id']}")
     assert resp.status_code == 404
     assert client.get(f"/candidates/{a['candidate_id']}/resumes").json()["resumes"] != []
+
+
+def test_report_not_persisted_if_candidate_erased_during_eval(api):
+    """DPDP: a depth-eval racing a candidate erasure must not leave a report."""
+    client, services = api
+    cid = client.post(
+        "/candidates", json={"resume_text": RESUME, "evaluate": False}
+    ).json()["candidate_id"]
+
+    real_engine = client.app.state.engine
+
+    class EraseMidEval:
+        async def evaluate(self, **kwargs):
+            report = await real_engine.evaluate(**kwargs)
+            services.candidates.delete_candidate(cid)  # erasure lands mid-flight
+            return report
+
+    client.app.state.engine = EraseMidEval()
+    body = client.post("/candidates", json={"resume_text": RESUME}).json()
+    assert body["candidate_id"] == cid  # ingest matched before the erasure
+    assert body["report"] is None
+    assert services.report_store.for_candidate(cid) == []

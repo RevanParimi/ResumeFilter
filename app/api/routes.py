@@ -173,6 +173,11 @@ async def create_candidate(
         )
         report.candidate_id = outcome.candidate_id
         services.report_store.save(report)
+        # DPDP: if the candidate was erased while the eval ran, a derived
+        # report must not outlive the erasure — drop it and return nothing.
+        if services.candidates.get_candidate(outcome.candidate_id) is None:
+            services.report_store.delete(report.id)
+            report = None
 
     return CandidateCreateResponse(
         candidate_id=outcome.candidate_id,

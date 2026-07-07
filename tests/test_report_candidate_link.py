@@ -1,5 +1,6 @@
 """Report ⇄ candidate linkage: schema field, store queries, legacy-DB upgrade."""
 
+import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -66,10 +67,12 @@ def test_legacy_reports_db_upgraded_in_place(tmp_path):
         " depth_band TEXT, body TEXT NOT NULL)"
     )
     old = Report()
+    legacy_body = old.model_dump(mode="json")
+    legacy_body.pop("candidate_id")  # pre-S1.3 bodies never had the key
     conn.execute(
         "INSERT INTO reports VALUES (?, ?, ?, ?, ?)",
         (old.id, old.domain, old.created_at.isoformat(), old.depth_band.value,
-         old.model_dump_json()),
+         json.dumps(legacy_body)),
     )
     conn.commit()
     conn.close()
