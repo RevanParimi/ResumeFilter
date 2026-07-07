@@ -124,5 +124,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   graph/`/evaluate` untouched), GET candidate/resumes/reports, DPDP DELETE
   resume + candidate (erasure also deletes linked reports). 24 new tests
   (137 green). Smoke `scripts/smoke_s13.py` green live (llm) AND key-less
-  (heuristic) — 11/11 checks OK both runs. Next: S1.4 plan (India
+  (heuristic) — 11/11 checks OK both runs. Final review fix: POST /candidates
+  re-checks the candidate after saving the report and drops the report if the
+  candidate was erased mid-eval (25 new tests, 138 green). Accepted residual:
+  a milliseconds-wide erasure race between that re-check and a concurrent
+  delete's report sweep — mop up via a future orphaned-reports sweep (reports
+  whose candidate_id no longer resolves). Next: S1.4 plan (India
   normalization).
