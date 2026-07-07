@@ -9,19 +9,16 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S1.3 — API + engine wiring
-- **Next action:** Execute the S1.3 plan
-  (`docs/superpowers/plans/2026-07-06-s13-api-engine-wiring.md`) task-by-task
-  via superpowers:subagent-driven-development or superpowers:executing-plans,
-  on branch `s13-api-wiring`. 7 tasks: Report.candidate_id + store queries →
-  shared pdf helper → Services wiring → POST /candidates → candidate reads →
-  DPDP deletes → uvicorn smoke (`scripts/smoke_s13.py`) + close-out.
-  Expected: 137 tests green (113 today).
-- **Last session (2026-07-06):** Wrote the S1.3 implementation plan (no code
-  changes). Key decisions: graph/`/evaluate` untouched — the API stamps
-  `report.candidate_id` after `engine.evaluate`; reports.db gets `candidate_id`
-  via guarded ALTER (stdlib sqlite, not Alembic); candidate erasure also
-  deletes linked reports; no new Alembic migration needed.
+- **Current sprint:** S1.4 — India normalization
+- **Next action:** Write the S1.4 plan (spec → plan under
+  `docs/superpowers/`): skill taxonomy, degree/CGPA normalizer, institution +
+  employer canonicalization, city/notice-period.
+- **Last session (2026-07-06):** S1.3 done on branch `s13-api-wiring`:
+  POST /candidates (extract → ingest → auto depth-eval), GET
+  candidate/resumes/reports, DPDP DELETE endpoints; `Services.candidates`
+  wired via `build_candidate_store`; `Report.candidate_id` stamped after
+  `engine.evaluate` and erased with the candidate. 137 tests green; smoke
+  `scripts/smoke_s13.py` green live (llm) AND key-less (heuristic).
 
 ## Status board
 
@@ -39,9 +36,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S1.2  Candidate store — SQLAlchemy + Alembic on SQLite (PG-shaped);
 │   │            candidates / resumes(versioned) / extractions;
 │   │            identity resolution via email+phone hash dedup
-│   ├── [~] S1.3  API + engine wiring — POST /candidates (upload → extract →
+│   ├── [x] S1.3  API + engine wiring — POST /candidates (upload → extract →
 │   │            store → auto depth-eval); reports linked to candidate_id
-│   └── [ ] S1.4  India normalization — skill taxonomy, degree/CGPA normalizer,
+│   └── [~] S1.4  India normalization — skill taxonomy, degree/CGPA normalizer,
 │                institution + employer canonicalization, city/notice-period
 │
 ├── PI-2  FABRICATION DEFENSE 2.0
@@ -119,3 +116,18 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   depth-eval, graph untouched), GET candidate/resumes/reports, DPDP DELETE
   endpoints (candidate erasure also deletes linked reports), uvicorn smoke
   `scripts/smoke_s13.py`. Next: execute the plan.
+- **2026-07-06 (5)** — S1.3 done, TDD-offline on branch `s13-api-wiring`:
+  `Report.candidate_id` + `for_candidate`/`delete_for_candidate` on both report
+  stores (guarded ALTER on legacy reports.db), shared `app/core/pdf.py`,
+  `Services.candidates` via `build_candidate_store`, POST /candidates
+  (extract → ingest → auto depth-eval; report stamped with candidate_id;
+  graph/`/evaluate` untouched), GET candidate/resumes/reports, DPDP DELETE
+  resume + candidate (erasure also deletes linked reports). 24 new tests
+  (137 green). Smoke `scripts/smoke_s13.py` green live (llm) AND key-less
+  (heuristic) — 11/11 checks OK both runs. Final review fix: POST /candidates
+  re-checks the candidate after saving the report and drops the report if the
+  candidate was erased mid-eval (25 new tests, 138 green). Accepted residual:
+  a milliseconds-wide erasure race between that re-check and a concurrent
+  delete's report sweep — mop up via a future orphaned-reports sweep (reports
+  whose candidate_id no longer resolves). Next: S1.4 plan (India
+  normalization).

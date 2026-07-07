@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
@@ -25,6 +26,7 @@ class Services:
     github: GitHubService
     flywheel: Flywheel
     report_store: ReportStore
+    candidates: CandidateStore
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -36,6 +38,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         github=GitHubClient(settings),
         flywheel=build_flywheel(settings),
         report_store=build_report_store(settings),
+        candidates=build_candidate_store(settings),
     )
 
 

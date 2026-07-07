@@ -86,6 +86,9 @@ class Report(BaseModel):
     id: str = Field(default_factory=lambda: f"rep_{uuid.uuid4().hex[:12]}")
     domain: str = "genai"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # PI-1 linkage: which stored candidate this report evaluates. None for
+    # ad-hoc POST /evaluate runs that never touched the candidate store.
+    candidate_id: Optional[str] = None
 
     candidate_context: CandidateContext = Field(default_factory=CandidateContext)
     verdicts: list[CoherenceVerdict] = Field(default_factory=list)
