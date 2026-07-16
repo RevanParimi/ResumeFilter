@@ -9,16 +9,18 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S1.4 — India normalization
-- **Next action:** Write the S1.4 plan (spec → plan under
-  `docs/superpowers/`): skill taxonomy, degree/CGPA normalizer, institution +
-  employer canonicalization, city/notice-period.
-- **Last session (2026-07-06):** S1.3 done on branch `s13-api-wiring`:
-  POST /candidates (extract → ingest → auto depth-eval), GET
-  candidate/resumes/reports, DPDP DELETE endpoints; `Services.candidates`
-  wired via `build_candidate_store`; `Report.candidate_id` stamped after
-  `engine.evaluate` and erased with the candidate. 137 tests green; smoke
-  `scripts/smoke_s13.py` green live (llm) AND key-less (heuristic).
+- **Current sprint:** S2.1 — AI-generated-resume signals
+- **Next action:** Write the S2.1 plan (new pipeline node; deterministic
+  signals first, LLM-assisted second; conservative gate stays). Also: the
+  OpenRouter key in `.env` now returns 401 "User not found" (expired/revoked)
+  — refresh it before the next live smoke.
+- **Last session (2026-07-16):** S1.4 done on branch `s14-india-normalization`:
+  `app/candidates/normalize/` package (skills taxonomy, degrees + CGPA/10,
+  institutions with tiers, employers, city gazetteer, notice-period parser,
+  `normalize_profile` orchestrator); schema grew Optional canonical sibling
+  fields; extractor lifts location + notice period and normalizes both paths.
+  190 tests green; smoke `scripts/smoke_s14.py` 8/8 OK key-less (heuristic) —
+  live run fell back to heuristic because of the 401 key.
 
 ## Status board
 
@@ -38,11 +40,11 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            identity resolution via email+phone hash dedup
 │   ├── [x] S1.3  API + engine wiring — POST /candidates (upload → extract →
 │   │            store → auto depth-eval); reports linked to candidate_id
-│   └── [~] S1.4  India normalization — skill taxonomy, degree/CGPA normalizer,
+│   └── [x] S1.4  India normalization — skill taxonomy, degree/CGPA normalizer,
 │                institution + employer canonicalization, city/notice-period
 │
 ├── PI-2  FABRICATION DEFENSE 2.0
-│   ├── [ ] S2.1  AI-generated-resume signals (new pipeline node; deterministic
+│   ├── [~] S2.1  AI-generated-resume signals (new pipeline node; deterministic
 │   │            first, LLM-assisted second; conservative gate stays)
 │   ├── [ ] S2.2  Cross-field forensics — timeline overlaps/gaps,
 │   │            education↔experience coherence, seniority-vs-claims
@@ -131,3 +133,21 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   delete's report sweep — mop up via a future orphaned-reports sweep (reports
   whose candidate_id no longer resolves). Next: S1.4 plan (India
   normalization).
+- **2026-07-09** — S1.4 implementation plan written:
+  `docs/superpowers/plans/2026-07-09-s14-india-normalization.md` (7 TDD tasks,
+  branch `s14-india-normalization`, 138→190 tests). Scope: pure deterministic
+  `app/candidates/normalize/` package (no LLM, no migration, no new tables),
+  Optional canonical sibling fields on the S1.1 schema, extractor wiring.
+- **2026-07-16** — S1.4 done, TDD-offline on branch `s14-india-normalization`:
+  `app/candidates/normalize/{text,skills,degrees,orgs,location}.py` + the
+  `normalize_profile` orchestrator — norm_key alias indexing, ~85-skill
+  taxonomy, Indian degree families + canonical CGPA/10 (cgpa_4×2.5, %÷9.5
+  clamped), institution alias table + IIT/IIM/NIT/IIIT campus patterns with
+  tiers, ~60-employer alias table with legal-suffix stripping, city gazetteer
+  (metro/tier_2) + notice-period parser (both offset-preserving for
+  provenance). Schema grew all-Optional canonical fields (legacy JSON still
+  validates); `heuristic_profile` lifts location + notice period with spans;
+  `extract_profile` normalizes both paths; prompt asks for `notice_period`.
+  52 new tests (190 green). Smoke `scripts/smoke_s14.py` 8/8 OK key-less;
+  live run hit OpenRouter 401 "User not found" (key expired — refresh
+  `.env`) and passed on the heuristic floor. PI-1 complete. Next: S2.1 plan.
