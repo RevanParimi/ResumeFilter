@@ -18,6 +18,8 @@ from typing import Optional
 
 from app.candidates import hashing
 from app.candidates.dates import date_points, has_date_range, parse_date_range
+from app.candidates.normalize import normalize_profile
+from app.candidates.normalize.location import find_city, parse_notice_period
 from app.candidates.schema import (
     CandidateProfile,
     CertificationEntry,
@@ -144,6 +146,34 @@ def _contact(text: str) -> ContactInfo:
             span=SourceSpan(start=m.start(), end=m.end(), text=m.group(0)),
         )
     return contact
+
+
+def _location(sections: dict[str, list[tuple[int, str]]]) -> Optional[ExtractedStr]:
+    """First known Indian city in the pre-section header block."""
+    for start, line in sections.get("header", []):
+        hit = find_city(line)
+        if hit:
+            return ExtractedStr(
+                value=hit.text,
+                confidence=0.7,
+                span=SourceSpan(
+                    start=start + hit.start, end=start + hit.end, text=hit.text
+                ),
+            )
+    return None
+
+
+def _notice_period(text: str) -> Optional[ExtractedStr]:
+    """Whole-text notice-period scan; normalization to days is S1.4's
+    normalize_profile, this only captures the claim + provenance."""
+    hit = parse_notice_period(text)
+    if hit is None:
+        return None
+    return ExtractedStr(
+        value=hit.text,
+        confidence=0.85,
+        span=SourceSpan(start=hit.start, end=hit.end, text=hit.text),
+    )
 
 
 def _links(text: str) -> list[LinkItem]:
@@ -324,10 +354,13 @@ def heuristic_profile(text: str) -> CandidateProfile:
     """Deterministic extraction — the no-LLM floor the pipeline can trust."""
     sections = _split_sections(text)
     full_name, headline = _header_identity(sections)
+    contact = _contact(text)
+    contact.location = _location(sections)
     return CandidateProfile(
         full_name=full_name,
         headline=headline,
-        contact=_contact(text),
+        contact=contact,
+        notice_period=_notice_period(text),
         education=_education(sections.get("education", [])),
         experience=_experience(sections.get("experience", [])),
         skills=_skills(sections.get("skills", [])),
@@ -349,6 +382,7 @@ Return ONE JSON object with exactly these keys (use null / [] when absent):
     "phone":    {"value": str, "confidence": 0-1, "source_excerpt": str},
     "location": {"value": str, "confidence": 0-1, "source_excerpt": str}
   },
+  "notice_period": {"value": str, "confidence": 0-1, "source_excerpt": str},
   "education":  [{"degree": str, "field_of_study": str, "institution": str,
                   "grade_value": number, "grade_scale": "cgpa_10"|"cgpa_4"|"percentage",
                   "start": "YYYY-MM"|"YYYY", "end": "YYYY-MM"|"YYYY"|null, "is_current": bool,
@@ -370,6 +404,7 @@ Rules:
 - Copy each source_excerpt VERBATIM from the resume; it is used to locate provenance spans.
 - Report only what the resume states; never invent values. Lower confidence when inferring.
 - Dates: "YYYY-MM" when the month is stated, else "YYYY".
+- notice_period: the stated notice period / joining availability, verbatim (e.g. "30 days", "immediate joiner"); null when the resume does not state one.
 """
 
 
@@ -421,6 +456,7 @@ def _parse_llm_profile(payload: dict, text: str) -> CandidateProfile:
             phone=_scalar(contact_raw.get("phone"), text),
             location=_scalar(contact_raw.get("location"), text),
         ),
+        notice_period=_scalar(payload.get("notice_period"), text),
     )
     for e in payload.get("education") or []:
         if not isinstance(e, dict):
@@ -547,6 +583,7 @@ async def extract_profile(
     if profile is None or _is_empty(profile):
         profile = heuristic_profile(resume_text)
         method = "heuristic"
+    normalize_profile(profile)  # S1.4: same enrichment for both paths
     hashing.apply_contact_hashes(profile, settings.contact_hash_salt)
     log.info(
         "profile_extracted",
