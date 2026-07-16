@@ -11,16 +11,14 @@
 
 - **Current sprint:** S2.1 — AI-generated-resume signals
 - **Next action:** Write the S2.1 plan (new pipeline node; deterministic
-  signals first, LLM-assisted second; conservative gate stays). Also: the
-  OpenRouter key in `.env` now returns 401 "User not found" (expired/revoked)
-  — refresh it before the next live smoke.
+  signals first, LLM-assisted second; conservative gate stays).
 - **Last session (2026-07-16):** S1.4 done on branch `s14-india-normalization`:
   `app/candidates/normalize/` package (skills taxonomy, degrees + CGPA/10,
   institutions with tiers, employers, city gazetteer, notice-period parser,
   `normalize_profile` orchestrator); schema grew Optional canonical sibling
   fields; extractor lifts location + notice period and normalizes both paths.
-  190 tests green; smoke `scripts/smoke_s14.py` 8/8 OK key-less (heuristic) —
-  live run fell back to heuristic because of the 401 key.
+  190 tests green; smoke `scripts/smoke_s14.py` 8/8 OK key-less (heuristic)
+  AND live (llm, after refreshing the expired OpenRouter key).
 
 ## Status board
 
@@ -148,6 +146,6 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   provenance). Schema grew all-Optional canonical fields (legacy JSON still
   validates); `heuristic_profile` lifts location + notice period with spans;
   `extract_profile` normalizes both paths; prompt asks for `notice_period`.
-  52 new tests (190 green). Smoke `scripts/smoke_s14.py` 8/8 OK key-less;
-  live run hit OpenRouter 401 "User not found" (key expired — refresh
-  `.env`) and passed on the heuristic floor. PI-1 complete. Next: S2.1 plan.
+  52 new tests (190 green). Smoke `scripts/smoke_s14.py` 8/8 OK key-less
+  (heuristic floor) AND live (llm) after the user refreshed the expired
+  OpenRouter key. PI-1 complete. Next: S2.1 plan.
