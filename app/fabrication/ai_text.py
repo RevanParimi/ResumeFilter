@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import re
 import statistics
+from dataclasses import dataclass, field
 
-from app.schemas.fabrication import AISignal
+from app.core.config import Settings
+from app.schemas.fabrication import AILikelihoodBand, AISignal
 
 # Stylistic tells common in LLM-drafted resume prose (lowercase substrings).
 TEMPLATE_PHRASES = [
@@ -141,3 +143,77 @@ def detect_symmetric_structure(runs: list[int]) -> AISignal | None:
             f"({runs[0]} each)"
         ),
     )
+
+
+@dataclass
+class DeterministicAssessment:
+    """Outcome of the pure pass: which tells fired + how much text we had."""
+
+    signals: list[AISignal] = field(default_factory=list)
+    likelihood: float = 0.0
+    confidence: float = 0.0
+    evaluated: int = 0  # detectors that had enough text to run (max 4)
+
+
+def assess_deterministic(text: str) -> DeterministicAssessment:
+    """Run every detector that has enough text; non-fired ones count as 0."""
+    words = len(text.split())
+    bullets = extract_bullets(text)
+    runs = bullet_runs(text)
+
+    signals: list[AISignal] = []
+    scores: list[float] = []
+
+    def _run(fired: AISignal | None) -> None:
+        scores.append(fired.score if fired else 0.0)
+        if fired:
+            signals.append(fired)
+
+    if words >= _MIN_WORDS:
+        _run(detect_template_phrases(text))
+    if len(bullets) >= _MIN_BULLETS:
+        _run(detect_uniform_bullets(bullets))
+        _run(detect_metric_saturation(bullets))
+    if len(runs) >= _MIN_RUNS:
+        _run(detect_symmetric_structure(runs))
+
+    evaluated = len(scores)
+    if not evaluated:
+        return DeterministicAssessment()
+    return DeterministicAssessment(
+        signals=signals,
+        likelihood=sum(scores) / evaluated,
+        confidence=min(0.9, 0.30 + 0.15 * evaluated),
+        evaluated=evaluated,
+    )
+
+
+def fuse_pairs(pairs: list[tuple[float, float]]) -> tuple[float, float]:
+    """Confidence-weighted fusion of (likelihood, confidence) pairs.
+
+    Same math as plausibility's _fuse, but the empty case is (0.0, 0.0):
+    zero confidence means banding says INSUFFICIENT_TEXT, never a score.
+    """
+    if not pairs:
+        return 0.0, 0.0
+    weight = sum(c for _, c in pairs)
+    if weight == 0:
+        return sum(lk for lk, _ in pairs) / len(pairs), 0.0
+    likelihood = sum(lk * c for lk, c in pairs) / weight
+    confidence = min(1.0, weight / len(pairs))
+    return likelihood, confidence
+
+
+def band_for(
+    likelihood: float, confidence: float, fired_deterministic: int, settings: Settings
+) -> AILikelihoodBand:
+    """Conservative banding. LIKELY needs >= 2 independent deterministic tells."""
+    if confidence < settings.ai_min_confidence:
+        return AILikelihoodBand.INSUFFICIENT_TEXT
+    if likelihood >= settings.ai_likely_threshold:
+        if fired_deterministic >= 2:
+            return AILikelihoodBand.LIKELY
+        return AILikelihoodBand.POSSIBLE  # the LLM alone can never say LIKELY
+    if likelihood >= settings.ai_possible_threshold:
+        return AILikelihoodBand.POSSIBLE
+    return AILikelihoodBand.UNLIKELY

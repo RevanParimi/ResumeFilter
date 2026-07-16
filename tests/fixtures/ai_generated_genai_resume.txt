@@ -1,0 +1,23 @@
+Arjun Mehta — Senior Generative AI Engineer
+Results-driven AI professional with a proven track record of delivering
+transformative, cutting-edge GenAI solutions in fast-paced environments.
+
+EXPERIENCE
+
+Lead GenAI Engineer — TechNova Solutions (2023–Present)
+- Spearheaded development of cutting-edge RAG pipelines, boosting retrieval accuracy by 40%
+- Leveraged state-of-the-art LLM fine-tuning workflows to enhance model precision by 35%
+- Orchestrated seamless deployment of scalable inference services, cutting latency by 50%
+- Championed innovative solutions for prompt optimization, improving output quality by 30%
+
+Senior AI Engineer — DataSphere Analytics (2021–2023)
+- Engineered robust and scalable multi-agent workflows, increasing team throughput by 45%
+- Optimized cutting-edge embedding pipelines, reducing overall processing costs by 25%
+- Streamlined cross-functional collaboration on LLM evaluation, lifting coverage by 60%
+- Delivered impactful analytics dashboards showcasing model performance, saving 20% time
+
+AI Engineer — CloudMind Technologies (2019–2021)
+- Developed innovative solutions for document intelligence, accelerating reviews by 55%
+- Enhanced meticulous data curation workflows, improving overall dataset quality by 30%
+- Automated seamless model retraining pipelines, reducing manual team effort by 65%
+- Transformed legacy NLP systems with transformative LLM upgrades, raising accuracy by 40%
