@@ -4,7 +4,7 @@ The graph is DOMAIN-AGNOSTIC: it wires the seven nodes in order and never
 references GenAI. Domain selection happens at runtime via ``state.domain`` and
 the registry. Importing ``app.domains`` registers the built-in domains.
 
-    ingest → claim_extraction → provenance → plausibility
+    ingest → ai_signals → claim_extraction → provenance → plausibility
            → probe_generation → scoring → report
 """
 
@@ -17,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 import app.domains  # noqa: F401  (registers domains on import)
 from app.core.logging import get_logger
 from app.graph.nodes import (
+    make_ai_signals_node,
     make_claim_extraction_node,
     make_ingest_node,
     make_plausibility_node,
@@ -33,6 +34,7 @@ log = get_logger("graph.build")
 
 _PIPELINE = [
     ("ingest", make_ingest_node),
+    ("ai_signals", make_ai_signals_node),
     ("claim_extraction", make_claim_extraction_node),
     ("provenance", make_provenance_node),
     ("plausibility", make_plausibility_node),
