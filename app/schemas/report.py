@@ -19,6 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext
+from app.schemas.fabrication import AIGenerationAssessment
 
 
 class EvidenceSource(StrEnum):
@@ -105,3 +106,7 @@ class Report(BaseModel):
     # Claims the reviewer should look at first (incoherent or deferred).
     flagged_claim_ids: list[str] = Field(default_factory=list)
     deferred_claim_ids: list[str] = Field(default_factory=list)
+
+    # S2.1: advisory AI-generation signals (stylistic context, never a verdict;
+    # fusion into calibration is S2.4). None for pre-S2.1 stored reports.
+    ai_generation: Optional[AIGenerationAssessment] = None
