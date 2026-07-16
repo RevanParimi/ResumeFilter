@@ -55,6 +55,9 @@ class ContactInfo(BaseModel):
     location: Optional[ExtractedStr] = None
     email_hash: Optional[str] = None
     phone_hash: Optional[str] = None
+    # S1.4: canonical Indian city lifted from `location` (None = no known city).
+    location_city: Optional[str] = None   # e.g. "Bengaluru"
+    location_tier: Optional[str] = None   # "metro" | "tier_2"
 
 
 class EmploymentType(StrEnum):
@@ -84,6 +87,12 @@ class EducationEntry(BaseModel):
     dates: DateRange = Field(default_factory=DateRange)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     span: Optional[SourceSpan] = None
+    # S1.4 normalization — the claimed values above stay verbatim.
+    degree_canonical: Optional[str] = None       # taxonomy id, e.g. "btech"
+    degree_level: Optional[str] = None           # diploma|bachelor|master|doctorate
+    grade_cgpa_10: Optional[float] = None        # canonical CGPA on the 10-point scale
+    institution_canonical: Optional[str] = None  # e.g. "NIT Trichy"
+    institution_tier: Optional[str] = None       # "tier_1" | "tier_2" | None
 
 
 class ExperienceEntry(BaseModel):
@@ -95,12 +104,17 @@ class ExperienceEntry(BaseModel):
     dates: DateRange = Field(default_factory=DateRange)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     span: Optional[SourceSpan] = None
+    # S1.4: canonical employer (None = not in the alias table; claim untouched).
+    employer_canonical: Optional[str] = None     # e.g. "Flipkart"
 
 
 class SkillItem(BaseModel):
     name: str
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     span: Optional[SourceSpan] = None
+    # S1.4 taxonomy mapping (None = unknown skill; the claimed name stays).
+    canonical: Optional[str] = None  # taxonomy id, e.g. "apache_spark"
+    category: Optional[str] = None   # taxonomy category, e.g. "data"
 
 
 class ProjectEntry(BaseModel):
@@ -144,6 +158,10 @@ class CandidateProfile(BaseModel):
     projects: list[ProjectEntry] = Field(default_factory=list)
     certifications: list[CertificationEntry] = Field(default_factory=list)
     links: list[LinkItem] = Field(default_factory=list)
+    # S1.4: claimed notice period / availability + normalized day count
+    # (0 = immediate joiner; None = not stated or not quantifiable).
+    notice_period: Optional[ExtractedStr] = None
+    notice_period_days: Optional[int] = None
 
 
 class ExtractionResult(BaseModel):
