@@ -9,17 +9,20 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S2.3 — Resume-farm detection
-- **Next action:** Write the S2.3 plan (near-duplicate detection across
-  candidates: minhash/embeddings).
-- **Last session (2026-07-17):** S2.2 done on branch `s22-cross-field`:
-  `app/fabrication/cross_field.py` (conservative interval math + 4
-  deterministic checks — timeline overlaps, gaps, education↔employment,
-  seniority-vs-tenure; no LLM by design), `cross_field` node after
-  ai_signals with heuristic-profile fallback, `candidate_profile`
-  pass-through from POST /candidates, advisory `Report.cross_field` +
-  flywheel record. 270 tests green; smoke `scripts/smoke_s22.py` 9/9 OK
-  key-less AND live.
+- **Current sprint:** S2.4 — Unified fabrication_risk
+- **Next action:** Write the S2.4 plan (fuse ai_generation + cross_field +
+  resume_farm into a unified advisory fabrication_risk on calibration +
+  Report).
+- **Last session (2026-07-17):** S2.3 done on branch `s23-resume-farm`:
+  `app/fabrication/similarity.py` (contact-masked word shingles,
+  deterministic MinHash 128 perms, algo id "minhash-v1:128x3",
+  `assess_resume_farm` with cluster escalation), migration
+  `0002_resume_fingerprints` (CASCADE FKs = DPDP deletes), store
+  `save_fingerprint`/`similar_resumes`, API-layer detection in POST
+  /candidates (self-exclusion by candidate_id — the graph never sees
+  identity, so no new node), `Report.resume_farm` + near_duplicate-only
+  summary note + flywheel `record_type: "resume_farm"`. Config knobs `rf_*`.
+  312 tests green; smoke `scripts/smoke_s23.py` 11/11 OK key-less AND live.
 
 ## Status board
 
@@ -48,8 +51,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S2.2  Cross-field forensics — cross_field node (deterministic
 │   │            timeline/coherence checks over the extracted profile),
 │   │            advisory findings on Report
-│   ├── [~] S2.3  Resume-farm detection — near-duplicates across candidates
-│   │            (minhash/embeddings)
+│   ├── [x] S2.3  Resume-farm detection — MinHash near-duplicates across
+│   │            candidates (resume_fingerprints table, API-layer detection,
+│   │            advisory Report.resume_farm)
 │   └── [ ] S2.4  Unified fabrication_risk score fused into calibration +
 │                Report; still advisory, never auto-reject
 │
@@ -203,3 +207,29 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   (NullLLM + heuristic extraction) AND live (LLM extraction; both profile
   paths land major_issues on the inconsistent fixture, genuine stays clean).
   Next: S2.3 plan.
+- **2026-07-17 (5)** — S2.3 done, TDD-offline on branch `s23-resume-farm`:
+  `app/fabrication/similarity.py` (contact-masking before shingling so
+  identity swaps don't dodge detection, word shingles + deterministic
+  MinHash over 128 permutations, algo id "minhash-v1:128x3",
+  `assess_resume_farm` bands unique/near_duplicate/insufficient_data with
+  escalation once a cluster of matches appears), migration
+  `0002_resume_fingerprints` with CASCADE FKs so DPDP deletes cascade
+  cleanly, store `save_fingerprint`/`similar_resumes`. Detection lives at
+  the API layer inside POST /candidates rather than as a graph node — the
+  comparison must self-exclude by candidate_id (re-uploads and new versions
+  are legitimate), and the graph is deliberately kept identity-blind.
+  `Report.resume_farm` + near_duplicate-only advisory summary note +
+  flywheel `record_type: "resume_farm"`. Config knobs `rf_*` in
+  config.yaml/Settings. 42 new tests (312 green). One review fix
+  (commit f0ba555) tightened advisory framing on all reasoning paths.
+  Smoke `scripts/smoke_s23.py` 11/11 OK key-less (NullLLM + heuristic
+  extraction) AND live (LLM extraction): first upload of a farm template is
+  unique, an identity-swapped copy from a different candidate lands
+  near_duplicate pointing back at the original, the uploader's own
+  re-upload dedupes and self-excludes cleanly while still correctly
+  matching the other farm member, a genuine resume stays unique, and
+  POST /evaluate carries no farm assessment (no identity, no comparison).
+  The smoke script's original re-upload check asserted the wrong property
+  (expected `unique`, ignoring that a genuine near-duplicate was already in
+  the corpus) and was corrected mid-session to assert self-exclusion
+  directly — a script bug, not a product bug. Next: S2.4 plan.
