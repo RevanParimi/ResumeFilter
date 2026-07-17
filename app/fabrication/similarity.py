@@ -116,3 +116,54 @@ def fingerprint_text(text: str, settings: Settings) -> Fingerprint | None:
         values=minhash_signature(shingles, settings.rf_num_permutations),
         shingle_count=len(shingles),
     )
+
+
+def assess_resume_farm(
+    matches: list[ResumeMatch],
+    *,
+    shingle_count: int,
+    corpus_size: int,
+    settings: Settings,
+) -> ResumeFarmAssessment:
+    """Band the store's match list (already filtered at rf_similar_threshold).
+
+    NEAR_DUPLICATE fires on one near-identical copy OR a farm-like cluster
+    (matches from >= rf_cluster_candidates_min distinct other candidates).
+    Pure so S2.4 can reuse it when fusing fabrication_risk."""
+    if shingle_count < settings.rf_min_shingles:
+        return ResumeFarmAssessment()  # INSUFFICIENT_DATA defaults
+
+    confidence = min(0.9, 0.6 + 0.05 * min(corpus_size, 6))
+    distinct = len({m.candidate_id for m in matches})
+    if any(m.similarity >= settings.rf_near_dup_threshold for m in matches) or (
+        distinct >= settings.rf_cluster_candidates_min
+    ):
+        band = DuplicationBand.NEAR_DUPLICATE
+    elif matches:
+        band = DuplicationBand.SIMILAR
+    else:
+        band = DuplicationBand.UNIQUE
+    score = max((m.similarity for m in matches), default=0.0)
+
+    if matches:
+        reasoning = (
+            f"[deterministic] {len(matches)} stored resume(s) from {distinct} other "
+            f"candidate(s) share >= {settings.rf_similar_threshold:.0%} estimated "
+            f"content overlap (max {score:.0%}) out of {corpus_size} compared; "
+            f"shared templates are common and legitimate — reviewer context, "
+            f"never a rejection signal"
+        )
+    else:
+        reasoning = (
+            f"[deterministic] no stored resume among {corpus_size} compared shares "
+            f">= {settings.rf_similar_threshold:.0%} estimated content overlap"
+        )
+    return ResumeFarmAssessment(
+        score=score,
+        confidence=confidence,
+        band=band,
+        matches=matches,
+        corpus_size=corpus_size,
+        reasoning=reasoning,
+        advisory=True,
+    )
