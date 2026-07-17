@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.graph.state import EvaluationState
-from app.schemas.fabrication import AILikelihoodBand
+from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, FindingSeverity
 from app.schemas.report import Report, VerdictStatus
 from app.services import Services
 
@@ -37,6 +37,14 @@ def make_report_node(services: Services):
                 f"stylistic context only; AI-assisted writing is common and this "
                 f"is never a rejection signal."
             )
+        xf = state.cross_field
+        if xf is not None and xf.band is ConsistencyBand.MAJOR_ISSUES:
+            majors = sum(1 for f in xf.findings if f.severity is FindingSeverity.MAJOR)
+            summary += (
+                f" Cross-field consistency: {xf.band.value} ({majors} major of "
+                f"{len(xf.findings)} findings) — timeline observations for the "
+                f"reviewer to probe in conversation; never a rejection signal."
+            )
 
         rep = Report(
             id=f"rep_{state.evaluation_id.split('_', 1)[-1]}",
@@ -52,6 +60,7 @@ def make_report_node(services: Services):
             flagged_claim_ids=flagged,
             deferred_claim_ids=deferred,
             ai_generation=state.ai_generation,
+            cross_field=state.cross_field,
         )
 
         # Flywheel: one record per claim, outcome left open for later feedback.
@@ -84,6 +93,21 @@ def make_report_node(services: Services):
                     "likelihood": state.ai_generation.likelihood,
                     "confidence": state.ai_generation.confidence,
                     "signal_ids": [s.id for s in state.ai_generation.signals],
+                    "outcome": None,  # closed later by human/hiring signal
+                }
+            )
+
+        if state.cross_field is not None:
+            services.flywheel.log(
+                {
+                    "record_type": "cross_field",
+                    "evaluation_id": state.evaluation_id,
+                    "report_id": rep.id,
+                    "domain": state.domain,
+                    "band": state.cross_field.band.value,
+                    "score": state.cross_field.score,
+                    "confidence": state.cross_field.confidence,
+                    "finding_ids": [f.id for f in state.cross_field.findings],
                     "outcome": None,  # closed later by human/hiring signal
                 }
             )

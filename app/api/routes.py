@@ -169,7 +169,7 @@ async def create_candidate(
     report: Optional[Report] = None
     if req.evaluate:
         report = await request.app.state.engine.evaluate(
-            resume_text=text, domain=req.domain
+            resume_text=text, domain=req.domain, candidate_profile=result.profile
         )
         report.candidate_id = outcome.candidate_id
         services.report_store.save(report)

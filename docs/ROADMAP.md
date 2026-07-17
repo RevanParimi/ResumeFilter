@@ -9,15 +9,17 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S2.2 — Cross-field forensics
-- **Next action:** Write the S2.2 plan (timeline overlaps/gaps,
-  education↔experience coherence, seniority-vs-claims).
-- **Last session (2026-07-17):** S2.1 done on branch `s21-ai-signals`:
-  `app/fabrication/ai_text.py` (4 deterministic detectors + fusion +
-  conservative banding), `ai_signals` node after ingest (LLM stylometry
-  capped at 0.75 confidence; LIKELY needs ≥2 deterministic tells),
-  advisory `Report.ai_generation` + flywheel record, adversarial fixture.
-  225 tests green; smoke `scripts/smoke_s21.py` 6/6 OK key-less AND live.
+- **Current sprint:** S2.3 — Resume-farm detection
+- **Next action:** Write the S2.3 plan (near-duplicate detection across
+  candidates: minhash/embeddings).
+- **Last session (2026-07-17):** S2.2 done on branch `s22-cross-field`:
+  `app/fabrication/cross_field.py` (conservative interval math + 4
+  deterministic checks — timeline overlaps, gaps, education↔employment,
+  seniority-vs-tenure; no LLM by design), `cross_field` node after
+  ai_signals with heuristic-profile fallback, `candidate_profile`
+  pass-through from POST /candidates, advisory `Report.cross_field` +
+  flywheel record. 270 tests green; smoke `scripts/smoke_s22.py` 9/9 OK
+  key-less AND live.
 
 ## Status board
 
@@ -43,9 +45,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 ├── PI-2  FABRICATION DEFENSE 2.0
 │   ├── [x] S2.1  AI-generated-resume signals — ai_signals node after ingest
 │   │            (deterministic stylometry ⊕ capped LLM), advisory band on Report
-│   ├── [~] S2.2  Cross-field forensics — timeline overlaps/gaps,
-│   │            education↔experience coherence, seniority-vs-claims
-│   ├── [ ] S2.3  Resume-farm detection — near-duplicates across candidates
+│   ├── [x] S2.2  Cross-field forensics — cross_field node (deterministic
+│   │            timeline/coherence checks over the extracted profile),
+│   │            advisory findings on Report
+│   ├── [~] S2.3  Resume-farm detection — near-duplicates across candidates
 │   │            (minhash/embeddings)
 │   └── [ ] S2.4  Unified fabrication_risk score fused into calibration +
 │                Report; still advisory, never auto-reject
@@ -174,3 +177,29 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   35 new tests (225 green). Smoke `scripts/smoke_s21.py` 6/6 OK key-less
   (deterministic floor) AND live (llm; read timeout raised to 600s — the
   12-bullet fixture pays one reasoning call per claim). Next: S2.2 plan.
+- **2026-07-17 (3)** — S2.2 implementation plan written:
+  `docs/superpowers/plans/2026-07-17-s22-cross-field-forensics.md` (8 TDD
+  tasks, branch `s22-cross-field`, 225→~268 tests). Scope: pure
+  `app/fabrication/cross_field.py` (conservative interval math: year-only
+  dates shrink inward for overlaps / expand outward for tenure; 4 checks),
+  `cross_field` node after ai_signals (explicit profile from POST
+  /candidates, else deterministic heuristic fallback; NO LLM in S2.2),
+  advisory `Report.cross_field` + flywheel record. Gaps always minor.
+- **2026-07-17 (4)** — S2.2 done, TDD-offline on branch `s22-cross-field`:
+  `app/schemas/fabrication.py` grew FindingSeverity / ConsistencyBand /
+  CrossFieldFinding / CrossFieldAssessment; `app/fabrication/cross_field.py`
+  (narrow/wide/month-precise intervals, timeline_overlap ≥3mo (major ≥12),
+  timeline_gap ≥12mo (always minor, neutral copy), education_employment_overlap
+  ≥12mo bachelor-only (major ≥24), seniority_vs_tenure with 24/48-month
+  floors (senior=minor, lead+=major) needing ≥2 dated entries;
+  band_for_findings + assess_cross_field with the S2.1 confidence formula),
+  `cross_field` node wired ai_signals → cross_field → claim_extraction
+  (uses `state.candidate_profile` when POST /candidates supplies it, else
+  `normalize_profile(heuristic_profile(text))`), `EvaluationEngine.evaluate`
+  + POST /candidates pass the extracted profile through,
+  `Report.cross_field` + major-only summary note + flywheel
+  `record_type: "cross_field"`. Config knobs `xf_*` in config.yaml/Settings.
+  45 new tests (270 green). Smoke `scripts/smoke_s22.py` 9/9 OK key-less
+  (NullLLM + heuristic extraction) AND live (LLM extraction; both profile
+  paths land major_issues on the inconsistent fixture, genuine stays clean).
+  Next: S2.3 plan.

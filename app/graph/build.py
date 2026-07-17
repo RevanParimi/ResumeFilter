@@ -4,8 +4,8 @@ The graph is DOMAIN-AGNOSTIC: it wires the seven nodes in order and never
 references GenAI. Domain selection happens at runtime via ``state.domain`` and
 the registry. Importing ``app.domains`` registers the built-in domains.
 
-    ingest → ai_signals → claim_extraction → provenance → plausibility
-           → probe_generation → scoring → report
+    ingest → ai_signals → cross_field → claim_extraction → provenance
+           → plausibility → probe_generation → scoring → report
 """
 
 from __future__ import annotations
@@ -15,10 +15,12 @@ from typing import Optional
 from langgraph.graph import END, START, StateGraph
 
 import app.domains  # noqa: F401  (registers domains on import)
+from app.candidates.schema import CandidateProfile
 from app.core.logging import get_logger
 from app.graph.nodes import (
     make_ai_signals_node,
     make_claim_extraction_node,
+    make_cross_field_node,
     make_ingest_node,
     make_plausibility_node,
     make_probe_generation_node,
@@ -35,6 +37,7 @@ log = get_logger("graph.build")
 _PIPELINE = [
     ("ingest", make_ingest_node),
     ("ai_signals", make_ai_signals_node),
+    ("cross_field", make_cross_field_node),
     ("claim_extraction", make_claim_extraction_node),
     ("provenance", make_provenance_node),
     ("plausibility", make_plausibility_node),
@@ -73,6 +76,7 @@ class EvaluationEngine:
         github_url: Optional[str] = None,
         portfolio_url: Optional[str] = None,
         domain: str = "genai",
+        candidate_profile: Optional[CandidateProfile] = None,
     ) -> Report:
         initial = EvaluationState(
             domain=domain,
@@ -80,6 +84,7 @@ class EvaluationEngine:
             resume_pdf_b64=resume_pdf_b64,
             github_url=github_url,
             portfolio_url=portfolio_url,
+            candidate_profile=candidate_profile,
         )
         result = await self.graph.ainvoke(initial)
         # LangGraph returns the final state (dict-like or model depending on version).

@@ -116,3 +116,8 @@ def fabricated_resume() -> str:
 @pytest.fixture
 def ai_resume() -> str:
     return (FIXTURES / "ai_generated_genai_resume.txt").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def inconsistent_resume() -> str:
+    return (FIXTURES / "inconsistent_genai_resume.txt").read_text(encoding="utf-8")

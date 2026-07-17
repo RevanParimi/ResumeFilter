@@ -19,7 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext
-from app.schemas.fabrication import AIGenerationAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment
 
 
 class EvidenceSource(StrEnum):
@@ -110,3 +110,8 @@ class Report(BaseModel):
     # S2.1: advisory AI-generation signals (stylistic context, never a verdict;
     # fusion into calibration is S2.4). None for pre-S2.1 stored reports.
     ai_generation: Optional[AIGenerationAssessment] = None
+
+    # S2.2: advisory cross-field forensics (timeline/coherence observations for
+    # the reviewer, never a verdict; fusion into calibration is S2.4). None for
+    # pre-S2.2 stored reports.
+    cross_field: Optional[CrossFieldAssessment] = None

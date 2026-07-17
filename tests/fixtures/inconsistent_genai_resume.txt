@@ -1,0 +1,22 @@
+Rohan Iyer — Lead GenAI Engineer
+Bengaluru | rohan.iyer@example.com | +91 98450 12345
+
+EXPERIENCE
+
+Lead AI Engineer at DataSphere Analytics, Jan 2021 - Aug 2022
+- Built retrieval pipelines over 40M documents with pgvector and a reranker
+- Owned the LLM evaluation harness used across three product teams
+- Cut inference cost by moving batch scoring onto quantized open-weight models
+
+Senior GenAI Engineer at TechNova Solutions, Jun 2020 - Aug 2022
+- Shipped a RAG assistant for support workflows end to end
+- Fine-tuned open-weight models on curated internal ticket datasets
+- Ran A/B evaluations against the hosted-API baseline before each release
+
+EDUCATION
+
+B.Tech in Computer Science — NIT Trichy, 2018 - 2022, CGPA 8.4/10
+
+SKILLS
+
+Python, PyTorch, LangChain, pgvector, AWS
