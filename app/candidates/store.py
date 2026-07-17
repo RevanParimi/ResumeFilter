@@ -20,10 +20,12 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.candidates.models import CandidateRow, ExtractionRow, ResumeRow, _utcnow
+from app.candidates.models import CandidateRow, ExtractionRow, FingerprintRow, ResumeRow, _utcnow
 from app.candidates.schema import CandidateProfile, ExtractionResult
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
+from app.fabrication.similarity import Fingerprint, estimate_similarity
+from app.schemas.fabrication import ResumeMatch
 
 MatchedOn = Literal["email_hash", "phone_hash"]
 
@@ -228,6 +230,68 @@ class CandidateStore:
             session.delete(resume)
             session.commit()
             return True
+
+    def save_fingerprint(
+        self, fp: Fingerprint, *, resume_id: str, candidate_id: str
+    ) -> bool:
+        """Idempotent per (resume, algo): re-uploads of an existing version
+        write nothing. Returns True when a row was actually written."""
+        with self._session_factory() as session:
+            exists = session.execute(
+                select(FingerprintRow.id).where(
+                    FingerprintRow.resume_id == resume_id,
+                    FingerprintRow.algo == fp.algo,
+                )
+            ).first()
+            if exists:
+                return False
+            session.add(
+                FingerprintRow(
+                    resume_id=resume_id,
+                    candidate_id=candidate_id,
+                    algo=fp.algo,
+                    signature=list(fp.values),
+                    shingle_count=fp.shingle_count,
+                )
+            )
+            session.commit()
+            return True
+
+    def similar_resumes(
+        self,
+        fp: Fingerprint,
+        *,
+        exclude_candidate_id: str,
+        threshold: float,
+        limit: int,
+    ) -> tuple[list[ResumeMatch], int]:
+        """Estimated-similarity matches from OTHER candidates, best first, plus
+        how many stored fingerprints were compared (the corpus size). Linear
+        scan in Python — signatures are small int lists and SQLite-scale
+        corpora are thousands, not millions; LSH banding is the flagged
+        optimization if this ever grows past that."""
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(FingerprintRow).where(
+                        FingerprintRow.algo == fp.algo,
+                        FingerprintRow.candidate_id != exclude_candidate_id,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            matches = [
+                ResumeMatch(
+                    candidate_id=r.candidate_id,
+                    resume_id=r.resume_id,
+                    similarity=sim,
+                )
+                for r in rows
+                if (sim := estimate_similarity(fp.values, list(r.signature))) >= threshold
+            ]
+            matches.sort(key=lambda m: m.similarity, reverse=True)
+            return matches[:limit], len(rows)
 
 
 def build_candidate_store(settings: Optional[Settings] = None) -> CandidateStore:

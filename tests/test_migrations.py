@@ -26,7 +26,7 @@ def _migrated_engine(tmp_path):
 def test_upgrade_head_creates_candidate_tables(tmp_path):
     engine = _migrated_engine(tmp_path)
     names = set(inspect(engine).get_table_names())
-    assert {"candidates", "resumes", "extractions"} <= names
+    assert {"candidates", "resumes", "extractions", "resume_fingerprints"} <= names
 
 
 def test_migrated_schema_matches_orm_models(tmp_path):
