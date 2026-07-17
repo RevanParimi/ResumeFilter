@@ -15,8 +15,9 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.candidates.schema import CandidateProfile
 from app.schemas.claims import CandidateContext, Claim
-from app.schemas.fabrication import AIGenerationAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment
 from app.schemas.report import CoherenceVerdict, DepthBand, Report
 
 
@@ -34,6 +35,9 @@ class EvaluationState(BaseModel):
     # First-party links the candidate chose to share (consent-clean).
     github_url: Optional[str] = None
     portfolio_url: Optional[str] = None
+    # S2.2: the extracted profile, when the caller already has one
+    # (POST /candidates). None => cross_field derives a heuristic profile.
+    candidate_profile: Optional[CandidateProfile] = None
 
     # --- ingest ---------------------------------------------------------------
     resume_text: Optional[str] = None  # normalized, parsed text
@@ -41,6 +45,10 @@ class EvaluationState(BaseModel):
     # --- ai_signals (S2.1) ------------------------------------------------------
     # Advisory AI-generation assessment; None when resume text never arrived.
     ai_generation: Optional[AIGenerationAssessment] = None
+
+    # --- cross_field (S2.2) -----------------------------------------------------
+    # Advisory cross-field forensics; None when resume text never arrived.
+    cross_field: Optional[CrossFieldAssessment] = None
 
     # --- claim_extraction -----------------------------------------------------
     candidate_context: CandidateContext = Field(default_factory=CandidateContext)

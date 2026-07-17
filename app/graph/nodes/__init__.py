@@ -7,6 +7,7 @@ wires them in order; tests call them directly with fake services.
 
 from app.graph.nodes.ai_signals import make_ai_signals_node
 from app.graph.nodes.claim_extraction import make_claim_extraction_node
+from app.graph.nodes.cross_field import make_cross_field_node
 from app.graph.nodes.ingest import make_ingest_node
 from app.graph.nodes.plausibility import make_plausibility_node
 from app.graph.nodes.probe_generation import make_probe_generation_node
@@ -17,6 +18,7 @@ from app.graph.nodes.scoring import make_scoring_node
 __all__ = [
     "make_ingest_node",
     "make_ai_signals_node",
+    "make_cross_field_node",
     "make_claim_extraction_node",
     "make_provenance_node",
     "make_plausibility_node",
