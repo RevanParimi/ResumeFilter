@@ -68,3 +68,6 @@ def test_reasoning_carries_the_advisory_framing(settings):
     assert a.advisory is True
     clean = assess_resume_farm([], shingle_count=200, corpus_size=4, settings=settings)
     assert "no stored resume" in clean.reasoning
+    assert "never a rejection signal" in clean.reasoning
+    short = assess_resume_farm([], shingle_count=10, corpus_size=4, settings=settings)
+    assert "never a rejection signal" in short.reasoning

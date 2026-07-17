@@ -131,7 +131,13 @@ def assess_resume_farm(
     (matches from >= rf_cluster_candidates_min distinct other candidates).
     Pure so S2.4 can reuse it when fusing fabrication_risk."""
     if shingle_count < settings.rf_min_shingles:
-        return ResumeFarmAssessment()  # INSUFFICIENT_DATA defaults
+        return ResumeFarmAssessment(
+            reasoning=(
+                f"[deterministic] resume text too short to fingerprint honestly "
+                f"(< {settings.rf_min_shingles} shingles); no comparison performed — "
+                f"reviewer context only, never a rejection signal"
+            )
+        )
 
     confidence = min(0.9, 0.6 + 0.05 * min(corpus_size, 6))
     distinct = len({m.candidate_id for m in matches})
@@ -156,7 +162,8 @@ def assess_resume_farm(
     else:
         reasoning = (
             f"[deterministic] no stored resume among {corpus_size} compared shares "
-            f">= {settings.rf_similar_threshold:.0%} estimated content overlap"
+            f">= {settings.rf_similar_threshold:.0%} estimated content overlap — "
+            f"reviewer context only, never a rejection signal"
         )
     return ResumeFarmAssessment(
         score=score,
