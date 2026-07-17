@@ -35,8 +35,11 @@ async def _llm_assessment(
         "Return JSON: {likelihood: 0..1, confidence: 0..1, "
         "indicators: [str], reasoning: str}."
     )
+    # FAST tier on purpose: this opinion is architecturally non-decisive
+    # (confidence-capped, can never produce LIKELY alone), so it doesn't earn
+    # flagship-model spend the way plausibility's per-claim reasoning does.
     try:
-        data = await services.llm.acomplete_json(tier="reasoning", system=system, prompt=prompt)
+        data = await services.llm.acomplete_json(tier="parsing", system=system, prompt=prompt)
     except Exception:
         return None, [], ""
     if not data or "likelihood" not in data:
