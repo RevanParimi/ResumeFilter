@@ -95,3 +95,28 @@ class ExtractionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     resume: Mapped[ResumeRow] = relationship(back_populates="extractions")
+
+
+class FingerprintRow(Base):
+    """MinHash signature of one resume's contact-masked content (S2.3).
+
+    One row per resume per algo id — rows only ever join on an exact algo so
+    incompatible signatures are never compared. DPDP: cascades away with the
+    resume/candidate, like every other derived row."""
+
+    __tablename__ = "resume_fingerprints"
+    __table_args__ = (
+        UniqueConstraint("resume_id", "algo", name="uq_fingerprints_resume_algo"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    resume_id: Mapped[str] = mapped_column(
+        ForeignKey("resumes.id", ondelete="CASCADE"), index=True
+    )
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
+    )
+    algo: Mapped[str] = mapped_column(String(32), index=True)
+    signature: Mapped[list] = mapped_column(JSON)
+    shingle_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

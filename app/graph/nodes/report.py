@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.graph.state import EvaluationState
-from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, FindingSeverity
+from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, DuplicationBand, FindingSeverity
 from app.schemas.report import Report, VerdictStatus
 from app.services import Services
 
@@ -45,6 +45,14 @@ def make_report_node(services: Services):
                 f"{len(xf.findings)} findings) — timeline observations for the "
                 f"reviewer to probe in conversation; never a rejection signal."
             )
+        rf = state.resume_farm
+        if rf is not None and rf.band is DuplicationBand.NEAR_DUPLICATE:
+            summary += (
+                f" Resume-farm signals: {len(rf.matches)} stored resume(s) from "
+                f"other candidates share up to {rf.score:.0%} estimated content "
+                f"overlap — shared templates are common and legitimate; reviewer "
+                f"context only, never a rejection signal."
+            )
 
         rep = Report(
             id=f"rep_{state.evaluation_id.split('_', 1)[-1]}",
@@ -61,6 +69,7 @@ def make_report_node(services: Services):
             deferred_claim_ids=deferred,
             ai_generation=state.ai_generation,
             cross_field=state.cross_field,
+            resume_farm=state.resume_farm,
         )
 
         # Flywheel: one record per claim, outcome left open for later feedback.
@@ -108,6 +117,22 @@ def make_report_node(services: Services):
                     "score": state.cross_field.score,
                     "confidence": state.cross_field.confidence,
                     "finding_ids": [f.id for f in state.cross_field.findings],
+                    "outcome": None,  # closed later by human/hiring signal
+                }
+            )
+
+        if state.resume_farm is not None:
+            services.flywheel.log(
+                {
+                    "record_type": "resume_farm",
+                    "evaluation_id": state.evaluation_id,
+                    "report_id": rep.id,
+                    "domain": state.domain,
+                    "band": state.resume_farm.band.value,
+                    "score": state.resume_farm.score,
+                    "confidence": state.resume_farm.confidence,
+                    "match_count": len(state.resume_farm.matches),
+                    "corpus_size": state.resume_farm.corpus_size,
                     "outcome": None,  # closed later by human/hiring signal
                 }
             )

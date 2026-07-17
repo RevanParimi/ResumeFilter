@@ -19,6 +19,8 @@ from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
+from app.fabrication.similarity import assess_resume_farm, fingerprint_text
+from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
 from app.services.llm import NullLLM
@@ -125,6 +127,9 @@ class CandidateCreateResponse(BaseModel):
     duplicate_resume: bool
     extraction_method: str  # "llm" | "heuristic"
     report: Optional[Report] = None
+    # S2.3: cross-candidate near-duplicate signals, computed at ingest so bulk
+    # imports (evaluate=False) still see them. Advisory, like everything else.
+    resume_farm: Optional[ResumeFarmAssessment] = None
 
 
 @router.post("/candidates", response_model=CandidateCreateResponse)
@@ -166,10 +171,36 @@ async def create_candidate(
     result = await extract_profile(text, llm=services.llm, settings=services.settings)
     outcome = services.candidates.ingest(result, text)
 
+    # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
+    # comparison must exclude the uploader's own candidate (re-uploads and new
+    # versions are legitimate), and the graph deliberately never learns the
+    # candidate identity.
+    farm = ResumeFarmAssessment()  # insufficient_data when the text is too short
+    fp = fingerprint_text(text, services.settings)
+    if fp is not None:
+        services.candidates.save_fingerprint(
+            fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
+        )
+        matches, corpus = services.candidates.similar_resumes(
+            fp,
+            exclude_candidate_id=outcome.candidate_id,
+            threshold=services.settings.rf_similar_threshold,
+            limit=services.settings.rf_max_matches,
+        )
+        farm = assess_resume_farm(
+            matches,
+            shingle_count=fp.shingle_count,
+            corpus_size=corpus,
+            settings=services.settings,
+        )
+
     report: Optional[Report] = None
     if req.evaluate:
         report = await request.app.state.engine.evaluate(
-            resume_text=text, domain=req.domain, candidate_profile=result.profile
+            resume_text=text,
+            domain=req.domain,
+            candidate_profile=result.profile,
+            resume_farm=farm,
         )
         report.candidate_id = outcome.candidate_id
         services.report_store.save(report)
@@ -188,6 +219,7 @@ async def create_candidate(
         duplicate_resume=outcome.duplicate_resume,
         extraction_method=result.method,
         report=report,
+        resume_farm=farm,
     )
 
 
