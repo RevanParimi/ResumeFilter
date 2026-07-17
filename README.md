@@ -1,6 +1,7 @@
-# depth-eval-engine
+# veritas — talent intelligence platform (depth-eval engine core)
 
-A **domain-agnostic** agent that evaluates a candidate's resume for both
+An Indian-market talent intelligence platform growing around a
+**domain-agnostic** engine that evaluates a candidate's resume for both
 **authenticity** and **technical depth** — the way a senior engineer would. It
 does **not** keyword-match. For each claim it reasons about whether the claim
 *coheres* with the infrastructure, data, and access the candidate would actually
@@ -11,21 +12,36 @@ have needed.
 > as the existential risk, so the calibration is conservative: when unsure, it
 > **defers** instead of flagging.
 
-Ships with two domains (**GenAI engineering**, **Data Engineering**). Adding
-more is one file. End-to-end requirements live in
-[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Around that engine, the platform currently ships:
+
+- **Candidate data backbone** (PI-1, done) — production extraction into a
+  versioned, deduplicated, India-normalized candidate store with DPDP delete
+  paths → [CANDIDATES.md](CANDIDATES.md)
+- **Fabrication defense 2.0** (PI-2, in progress) — advisory AI-generated-text
+  signals, cross-field timeline forensics, and resume-farm near-duplicate
+  detection → [FABRICATION.md](FABRICATION.md)
+
+Ships with two evaluation domains (**GenAI engineering**, **Data
+Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
+(pipeline internals) · [CANDIDATES.md](CANDIDATES.md) ·
+[FABRICATION.md](FABRICATION.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
+(live sprint status) · [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
+(original engine requirements).
 
 ---
 
 ## How it works
 
 ```
-ingest → claim_extraction → provenance → plausibility → probe_generation → scoring → report
+ingest → ai_signals → cross_field → claim_extraction → provenance
+       → plausibility → probe_generation → scoring → report
 ```
 
 | Node | Responsibility |
 |------|----------------|
 | `ingest` | Parse resume (PDF/text); capture first-party github/portfolio URLs. |
+| `ai_signals` | **Advisory** AI-generated-text band: 4 deterministic stylometry detectors ⊕ optional capped LLM pass. Never touches scores ([FABRICATION.md](FABRICATION.md)). |
+| `cross_field` | **Advisory** timeline forensics over the extracted profile (overlaps, gaps, education↔employment, seniority-vs-tenure). Pure date math, no LLM. |
 | `claim_extraction` | LLM extracts atomic claims tagged `{domain, claim_type, specificity, anchor?}` + candidate context. Deterministic heuristic fallback when no API key. |
 | `provenance` | For anchored claims, fetch GitHub signals (repo/commits/languages/recency), embed in ChromaDB, retrieve grounding. **First-party links only.** |
 | `plausibility` ★ | **The core.** Hybrid of (a) the active domain's rule registry and (b) an LLM senior-engineer reasoning pass. Produces per-claim coherence + expected/missing signals + evidence. |
@@ -67,6 +83,10 @@ pip install -r requirements.txt
 # Run the tests
 pytest -q
 
+# Create/upgrade the candidate-store schema (SQLite by default; the
+# Postgres migration is the same command on a different candidates_db_url)
+alembic upgrade head
+
 # Serve the API
 uvicorn app.main:app --reload
 ```
@@ -86,6 +106,9 @@ docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-eng
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /evaluate` | Evaluate a resume (`resume_text` or `resume_pdf_b64`, optional `github_url`/`portfolio_url`, `domain`). Persists and returns a `Report`. |
+| `POST /candidates` | Upload → extract profile → store (identity dedup, versioning) → resume-farm check → auto depth-eval (`evaluate: false` for bulk import). Returns ingest outcome + `resume_farm` + `Report`. |
+| `GET /candidates/{id}` · `/resumes` · `/reports` | Candidate summary + newest profile (hashes only), resume versions, linked reports. |
+| `DELETE /candidates/{id}` (and `/resumes/{rid}`) | DPDP hard erasure: resumes (raw text), extractions, fingerprints, linked reports. |
 | `GET /report/{id}` | Fetch a persisted report (survives restarts — SQLite store). |
 | `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`. Also appended to the flywheel — this closes the training loop. |
 | `GET /report/{id}/outcomes` | List recorded outcomes for a report. |
@@ -110,8 +133,11 @@ curl -s localhost:8000/evaluate -H 'content-type: application/json' -d '{
 ```
 
 The response is a `Report`: per-claim `CoherenceVerdict`s (score, confidence,
-status, evidence, probes), an aggregate `depth_band`, and the always-on
-`advisory` / `human_review_required` flags.
+status, evidence, probes), an aggregate `depth_band`, the always-on
+`advisory` / `human_review_required` flags, and three optional **advisory**
+fabrication assessments — `ai_generation`, `cross_field`, `resume_farm`
+(bands + explained signals; never a rejection signal — see
+[FABRICATION.md](FABRICATION.md)).
 
 ---
 
@@ -197,33 +223,48 @@ ground truth for future calibration/training.
 ```
 app/
   main.py                create_app(): middleware, error handler, lifespan
-  api/routes.py          evaluate · report · outcomes · domains · healthz
+  api/routes.py          evaluate · candidates (upload/read/DPDP-delete)
+                         · report · outcomes · domains · healthz
   graph/
     state.py             EvaluationState (Pydantic)
     build.py             LangGraph assembly + EvaluationEngine
-    nodes/               one module per pipeline node
+    nodes/               one module per pipeline node (9 stages)
+  candidates/            PI-1 backbone → CANDIDATES.md
+    schema.py            CandidateProfile (confidence + SourceSpan provenance)
+    extractor.py         LLM extraction + deterministic fallback
+    hashing.py, dates.py salted contact hashes · date parsing
+    normalize/           India normalization (skills/degrees/orgs/location)
+    models.py, store.py  ORM rows + CandidateStore (identity, fingerprints)
+  fabrication/           PI-2 signals → FABRICATION.md
+    ai_text.py           S2.1 AI-text detectors + fusion/banding
+    cross_field.py       S2.2 interval math + timeline/coherence checks
+    similarity.py        S2.3 MinHash fingerprints + farm banding
   domains/
     base.py              DomainModel interface + rule registry
     rules.py             shared SignalRule machinery (all domains build on it)
     genai.py             GenAI domain (fine-tuning · RAG · multi-agent)
     data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
-  schemas/               claims.py, report.py  (Pydantic v2 contracts)
+  schemas/               claims.py, report.py, fabrication.py (Pydantic v2)
   services/              llm (OpenRouter) · vectorstore (Chroma, bounded init)
                          · github · flywheel · report_store (SQLite)
-  core/                  config · calibration · logging
-tests/                   per-node + API + integration, fully offline
-docs/REQUIREMENTS.md     end-to-end requirements + milestones
+  core/                  config · calibration · logging · db (shared SQLAlchemy)
+alembic/                 candidate-store migrations (0001 store, 0002 fingerprints)
+tests/                   per-node + API + integration + adversarial fixtures,
+                         fully offline (312 tests)
+docs/ROADMAP.md          live PI/sprint status (start here each session)
 Dockerfile               non-root image with /healthz healthcheck
 .github/workflows/ci.yml offline pytest on 3.11/3.12
 ```
 
-## Roadmap
+## Roadmap (veritas PIs — live status in [docs/ROADMAP.md](docs/ROADMAP.md))
 
-- **M0 (done):** 7-node pipeline, genai domain, conservative calibration,
-  offline tests.
-- **M1 (done):** persistent SQLite report store, outcome endpoints closing the
-  flywheel loop, API hardening (caps, auth, request IDs, generic 500s),
-  LLM retries, shared `SignalRule` + `data_eng` domain, Docker + CI.
-- **Next (M2):** more domains (cloud, backend), real embedding model for
-  retrieval, recorded LLM fixtures, per-claim LLM concurrency, flywheel export.
-  See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+- **Engine M0/M1 (done):** 7-node pipeline, conservative calibration, SQLite
+  report store + outcome loop, API hardening, two domains, Docker + CI.
+- **PI-1 Candidate data backbone (done):** extraction schema + extractor,
+  candidate store (SQLAlchemy/Alembic), API + engine wiring, India
+  normalization.
+- **PI-2 Fabrication defense (in progress):** S2.1 AI-text signals ✓ ·
+  S2.2 cross-field forensics ✓ · S2.3 resume-farm detection ✓ ·
+  S2.4 unified fabrication_risk (next).
+- **PI-3 Evaluation ledger** (cross-company, DPDP-consent-first) ·
+  **PI-4 ML feature store & ranking** — designed, not started.

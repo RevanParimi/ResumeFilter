@@ -3,6 +3,15 @@
 How a request actually moves through the system, what each node computes, and the
 exact math/decision rules. Source of truth is the code; file refs are clickable.
 
+> **veritas update (PI-1/PI-2).** This engine is now the *vetting subsystem* of
+> the veritas talent platform. Two peer docs cover what grew around it:
+> [CANDIDATES.md](CANDIDATES.md) — the candidate data backbone (extraction,
+> store, identity resolution, India normalization, POST /candidates) — and
+> [FABRICATION.md](FABRICATION.md) — the fabrication-defense signals
+> (`ai_signals` + `cross_field` nodes, resume-farm detection). The pipeline is
+> now **9 nodes**: two advisory fabrication nodes sit between `ingest` and
+> `claim_extraction`. Everything below about the original 7 stages is unchanged.
+
 ---
 
 ## Architecture (ASCII)
@@ -35,11 +44,14 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 │  LANGGRAPH PIPELINE  (app/graph/nodes/*)        each node returns a partial   │
 │                                                  dict merged into the state    │
 │                                                                                │
-│  ① ingest ──► ② claim_extraction ──► ③ provenance ──► ④ plausibility ──►       │
+│  ① ingest ──► ⑴ ai_signals ──► ⑵ cross_field ──► ② claim_extraction ──►        │
+│                            ③ provenance ──► ④ plausibility ──►                 │
 │                                                          ⑤ probe_generation ──►│
 │                                                          ⑥ scoring ──► ⑦ report│
 │                                                                                │
 │  ① parse PDF/text                              (LLM-free)                      │
+│  ⑴ AI-text signals (advisory) ──uses──► deterministic detectors ⊕ LLM(parsing) │
+│  ⑵ cross-field forensics (advisory)     pure date math — NO LLM  → FABRICATION.md│
 │  ② atomic typed claims        ──uses──► LLM(parsing) + DomainModel guidance    │
 │  ③ ground anchored claims     ──uses──► GitHub + VectorStore                   │
 │  ④ THE CORE: rules ⊕ LLM      ──uses──► DomainModel.rules + LLM(reasoning)     │
@@ -79,10 +91,12 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 └──────────────────────────────────────────────────────────────────────────────┘
 
 OUTPUT: Report {verdicts[], depth_band, depth_score, confidence,
-                flagged_ids, deferred_ids, advisory=True, human_review_required=True}
+                flagged_ids, deferred_ids, advisory=True, human_review_required=True,
+                candidate_id?,                      ← set by POST /candidates (S1.3)
+                ai_generation?, cross_field?, resume_farm?}   ← advisory (PI-2)
 ```
 
-Notes: the 7 nodes run in sequence and fan *out* to services/domains — nodes never
+Notes: the nodes run in sequence and fan *out* to services/domains — nodes never
 call each other, they communicate only through `EvaluationState`. The graph layer
 never imports `genai`; it resolves a `DomainModel` at runtime via `state.domain`.
 No LLM key → `NullLLM` and every node falls back to deterministic logic.
@@ -112,14 +126,26 @@ depth-eval-engine/
 │   ├── graph/                   ─────────────── ORCHESTRATION (domain-agnostic) ───────────
 │   │   ├── build.py             ← wires LangGraph; EvaluationEngine.evaluate()
 │   │   ├── state.py             ← EvaluationState (Pydantic) threaded through all nodes
-│   │   └── nodes/               ← the 7-stage pipeline (linear)
+│   │   └── nodes/               ← the 9-stage pipeline (linear)
 │   │       ├── ingest.py            ① parse PDF/text                    (LLM-free)
+│   │       ├── ai_signals.py        ⑴ AI-text signals (advisory, S2.1) → FABRICATION.md
+│   │       ├── cross_field.py       ⑵ timeline forensics (advisory, S2.2, LLM-free)
 │   │       ├── claim_extraction.py  ② atomic typed claims              → LLM(parsing) + domain
 │   │       ├── provenance.py        ③ ground anchored claims           → GitHub + VectorStore
 │   │       ├── plausibility.py      ④ THE CORE: rules ⊕ LLM coherence  → domain.rules + LLM(reasoning)
 │   │       ├── probe_generation.py  ⑤ probes for suspicious claims     → LLM(reasoning) + domain
 │   │       ├── scoring.py           ⑥ calibrate → status + depth band  → core/calibration
 │   │       └── report.py            ⑦ assemble Report + log flywheel
+│   │
+│   ├── candidates/              ─────────────── CANDIDATE BACKBONE (PI-1) → CANDIDATES.md ─
+│   │   ├── schema.py · extractor.py · hashing.py · dates.py · normalize/
+│   │   ├── models.py            ← ORM rows incl. resume_fingerprints (S2.3)
+│   │   └── store.py             ← CandidateStore: ingest, identity, fingerprints, DPDP
+│   │
+│   ├── fabrication/             ─────────────── FABRICATION DEFENSE (PI-2) → FABRICATION.md
+│   │   ├── ai_text.py           ← S2.1 deterministic AI-text detectors + fusion/banding
+│   │   ├── cross_field.py       ← S2.2 interval math + 4 timeline/coherence checks
+│   │   └── similarity.py        ← S2.3 MinHash fingerprints + farm banding
 │   │
 │   ├── domains/                 ─────────────── DOMAIN KNOWLEDGE (pluggable) ──────────────
 │   │   ├── base.py              ← DomainModel + Rule interfaces + registry (@register_domain)
@@ -174,6 +200,14 @@ INPUT  (POST /evaluate)
 ┌─ ① ingest ──────────────────────────────────────────────────────────────────┐
 │  in : raw_resume_text | resume_pdf_b64                                        │
 │  out: + resume_text  (normalized)   + errors[] (if PDF/empty)                │
+└──────────────────────────────────────────────────────────────────────────────┘
+   │ resume_text
+   ▼
+┌─ ⑴ ai_signals · ⑵ cross_field  (advisory, PI-2 → FABRICATION.md) ───────────┐
+│  in : resume_text (+ candidate_profile input when POST /candidates set it)   │
+│  out: + ai_generation (AIGenerationAssessment)                               │
+│       + cross_field   (CrossFieldAssessment)                                 │
+│  never touch claims / verdicts / depth — attached to the Report at ⑦         │
 └──────────────────────────────────────────────────────────────────────────────┘
    │ resume_text
    ▼
@@ -244,9 +278,18 @@ the conservative decision lives in exactly one place.
 The graph is a **linear chain** (no branches), wired in [build.py](app/graph/build.py#L34):
 
 ```
-START → ingest → claim_extraction → provenance → plausibility
-      → probe_generation → scoring → report → END
+START → ingest → ai_signals → cross_field → claim_extraction → provenance
+      → plausibility → probe_generation → scoring → report → END
 ```
+
+There is a second entry point since S1.3: `POST /candidates` extracts a
+`CandidateProfile`, ingests it into the candidate store, runs resume-farm
+detection against the stored corpus, and *then* calls the same
+`EvaluationEngine.evaluate(...)` — passing the extracted profile and the farm
+assessment in as inputs (`candidate_profile`, `resume_farm` on
+`EvaluationState`) and stamping `report.candidate_id` afterwards. The graph
+itself stays candidate-store-blind. Full flow in
+[CANDIDATES.md](CANDIDATES.md) and [FABRICATION.md](FABRICATION.md).
 
 Each node returns a *partial dict*; LangGraph merges it into the single
 `EvaluationState` threaded through the chain. Every field is written at most once,
@@ -267,6 +310,26 @@ deterministic path. This is why the test suite is fully offline.
 - Empty after strip → `errors:["empty_resume"]`.
 
 **Out:** `resume_text` (normalized). LLM-free, deterministic.
+
+---
+
+## 1a. ai_signals — [ai_signals.py](app/graph/nodes/ai_signals.py)  *(S2.1, advisory)*
+
+Stylometry over the raw resume text: four deterministic detectors (template
+phrases, uniform bullets, metric saturation, symmetric structure) fused with
+an optional confidence-capped LLM pass on the `parsing` tier. Produces
+`state.ai_generation` (`AIGenerationAssessment`), later attached to the
+Report. **Never touches claims, scores, or bands.** Full detector math,
+banding rules, and config knobs (`ai_*`): [FABRICATION.md](FABRICATION.md).
+
+## 1b. cross_field — [cross_field.py](app/graph/nodes/cross_field.py)  *(S2.2, advisory)*
+
+Deterministic timeline/coherence forensics over the extracted
+`CandidateProfile` — **no LLM**. Uses `state.candidate_profile` when POST
+/candidates supplied one; otherwise derives one via
+`normalize_profile(heuristic_profile(text))`. Produces `state.cross_field`
+(`CrossFieldAssessment`). Conservative interval math and the four checks
+(`xf_*` knobs): [FABRICATION.md](FABRICATION.md).
 
 ---
 
@@ -402,10 +465,21 @@ Assembles the advisory `Report` and feeds the flywheel.
 - `flagged_claim_ids` = verdicts with status INCOHERENT; `deferred_claim_ids` = DEFER.
 - **Always sets `advisory=True` and `human_review_required=True`** — never auto-rejects (hard constraint #3).
 - Human-readable `summary` with counts, depth band, and the advisory disclaimer.
+  Advisory fabrication notes are appended only when loud enough:
+  `ai_generation` at possible/likely, `cross_field` at major_issues,
+  `resume_farm` at near_duplicate — each with explicit "never a rejection
+  signal" copy.
+- Attaches the PI-2 advisory assessments verbatim:
+  `Report.ai_generation` / `Report.cross_field` (from state) and
+  `Report.resume_farm` (an API-layer input on POST /candidates; `null` on
+  POST /evaluate). See [FABRICATION.md](FABRICATION.md).
 - **Flywheel:** one JSONL record per claim →
   `{evaluation_id, report_id, claim_id, claim_text, claim_type, coherence_score,
   confidence, status, probes, evidence_count, outcome:null}`.
   `outcome` is left open, closed later by a human/hiring signal — the training loop (constraint #6).
+  Plus one record per present fabrication assessment
+  (`record_type: "ai_signals" | "cross_field" | "resume_farm"`), also with
+  `outcome: null`.
 
 **Out:** `report: Report` → persisted via `ReportStore` and returned by the API.
 
@@ -493,6 +567,11 @@ YAML key (env override = `DEE_<KEY>`):
 | `flag_coherence_threshold` | `0.35` | Below this = potentially incoherent |
 | `flag_min_confidence` | `0.70` | Need ≥ this confidence to flag at all |
 | `defer_confidence_threshold` | `0.50` | Below this = defer to human, never assert |
+| `contact_hash_salt` | `veritas-dedup-v1` | Candidate identity dedup salt — NOT a secret, must stay stable (see [CANDIDATES.md](CANDIDATES.md)) |
+| `candidates_db_url` | `sqlite:///./data/veritas.db` | Candidate store; Postgres = change string + `alembic upgrade head` |
+| `ai_*` (4 keys) | see [FABRICATION.md](FABRICATION.md) | S2.1 AI-signal thresholds |
+| `xf_*` (6 keys) | see [FABRICATION.md](FABRICATION.md) | S2.2 cross-field month thresholds |
+| `rf_*` (7 keys) | see [FABRICATION.md](FABRICATION.md) | S2.3 resume-farm MinHash/banding knobs |
 | `log_level` | `INFO` | Log verbosity |
 | `log_json` | `true` | `true`=JSON (prod), `false`=console (dev) |
 | `env` | `local` | `local` \| `staging` \| `prod` |

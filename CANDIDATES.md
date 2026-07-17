@@ -1,9 +1,10 @@
-# veritas — Candidate Data Backbone (PI-1: S1.1 + S1.2)
+# veritas — Candidate Data Backbone (PI-1 complete: S1.1–S1.4, + S2.3 fingerprints)
 
-How a resume becomes a durable, versioned, deduplicated candidate record.
-This documents the *candidates* subsystem built in PI-1 so far; the vetting
-pipeline it will plug into (S1.3) is documented in [FLOW.md](FLOW.md).
-Source of truth is the code; file refs are clickable.
+How a resume becomes a durable, versioned, deduplicated, India-normalized
+candidate record — and how that record is wired into the vetting pipeline
+([FLOW.md](FLOW.md)) via `POST /candidates`. The fabrication signals that
+read this data are in [FABRICATION.md](FABRICATION.md). Source of truth is
+the code; file refs are clickable.
 
 ---
 
@@ -25,18 +26,32 @@ app/
 │   ├── extractor.py       S1.1 — resume text → ExtractionResult
 │   │                        LLM (parsing tier) with deterministic
 │   │                        section-parser fallback (no key ⇒ still works)
+│   ├── normalize/         S1.4 — pure India normalization (no LLM, no tables):
+│   │                        text.py (norm_key aliasing) · skills.py (~85-skill
+│   │                        taxonomy) · degrees.py (degree families + canonical
+│   │                        CGPA/10) · orgs.py (institution/employer aliases,
+│   │                        IIT/IIM/NIT/IIIT campus patterns + tiers) ·
+│   │                        location.py (city gazetteer + notice-period parser)
+│   │                        → normalize_profile() orchestrator; offset-preserving
+│   │                        so SourceSpan provenance survives
 │   ├── models.py          ★ S1.2 — ORM rows (CandidateRow/ResumeRow/ExtractionRow)
+│   │                        + FingerprintRow (S2.3 — MinHash signatures)
 │   └── store.py           ★ S1.2 — CandidateStore: ingest, identity resolution,
 │                            reads, DPDP hard deletes, build_candidate_store()
+│                            + save_fingerprint()/similar_resumes() (S2.3)
 │
 alembic/                   ★ S1.2 — schema migrations (one head for the shared Base)
 ├── env.py                   URL: explicit config > Settings.candidates_db_url
 └── versions/
-    └── 0001_candidate_store.py   candidates + resumes + extractions
+    ├── 0001_candidate_store.py       candidates + resumes + extractions
+    └── 0002_resume_fingerprints.py   S2.3 — resume_fingerprints (CASCADE FKs)
 
 scripts/
 ├── smoke_s11.py           extractor end-to-end on fixture resumes
-└── smoke_s12.py           migrate scratch DB → ingest → dedup → delete
+├── smoke_s12.py           migrate scratch DB → ingest → dedup → delete
+├── smoke_s13.py           uvicorn: POST /candidates → auto depth-eval → DPDP deletes
+├── smoke_s14.py           normalization end-to-end on fixture resumes
+└── smoke_s23.py           farm detection over HTTP (see FABRICATION.md)
 ```
 
 ## End-to-end flow (S1.1 → S1.2)
@@ -54,6 +69,11 @@ scripts/
 │             date ranges, seniority hints) — no API key required   │
 │                                                                   │
 │   every field carries: confidence [0..1] + SourceSpan provenance  │
+│                                                                   │
+│   S1.4: BOTH paths end with normalize_profile() — canonical       │
+│   sibling fields (skills, degree families, CGPA/10, institution   │
+│   tiers, employers, cities, notice period), all Optional so       │
+│   legacy stored JSON still validates                              │
 └──────────────────────────────┬───────────────────────────────────┘
                                │ ExtractionResult
                                │   .profile : CandidateProfile
@@ -158,6 +178,19 @@ on same sha256(text) for that candidate:  reuse the ResumeRow (no new
 │ warnings     JSON          │
 │ created_at   DATETIME(tz)  │
 └────────────────────────────┘
+
+┌────────────────────────────┐
+│ resume_fingerprints (S2.3) │  one per resume per algo id
+│────────────────────────────│
+│ id           VARCHAR(36) PK│
+│ resume_id    FK → resumes ix│  ON DELETE CASCADE
+│ candidate_id FK → cand.  ix│  ON DELETE CASCADE (self-exclusion key)
+│ algo         VARCHAR(32) ix│  e.g. "minhash-v1:128x3" — rows only ever
+│ signature    JSON          │  join on an exact algo id
+│ shingle_count INTEGER      │
+│ created_at   DATETIME(tz)  │
+│ UNIQUE (resume_id, algo)   │
+└────────────────────────────┘
 ```
 
 Postgres-shaped on SQLite: UUID-string PKs, real FKs with `ondelete=CASCADE`,
@@ -169,11 +202,17 @@ JSON columns, timezone-aware timestamps. The PG migration is
 ```
 delete_candidate(id) ──► candidates row
                           └─ CASCADE ─► all resumes (raw_text erased)
-                                         └─ CASCADE ─► all extractions
+                                         ├─ CASCADE ─► all extractions
+                                         └─ CASCADE ─► all fingerprints (S2.3)
 
 delete_resume(id) ─────► one resume version (raw_text erased)
-                          └─ CASCADE ─► its extractions
+                          ├─ CASCADE ─► its extractions
+                          └─ CASCADE ─► its fingerprints (S2.3)
                           (candidate row + other versions stay)
+
+DELETE /candidates/{id} additionally deletes every Report linked to the
+candidate (report_store.delete_for_candidate) — derived data never outlives
+the erasure, including a report finishing mid-delete (post-save re-check).
 ```
 
 **Why raw_text is stored at all** (deliberate divergence from the report
@@ -183,7 +222,7 @@ provenance is unauditable and PI-2 fabrication forensics has nothing to
 re-examine. It is first-party submitted data, and both delete paths above
 erase it on request.
 
-## Public surface (what S1.3 wires into the API)
+## Public surface
 
 ```
 app/candidates/store.py
@@ -196,8 +235,28 @@ app/candidates/store.py
     │     (newest resume version; ties → newest extraction)
     ├── list_resumes(candidate_id)    → list[ResumeSummary]   (by version)
     ├── delete_candidate(candidate_id) → bool     # DPDP cascade
-    └── delete_resume(resume_id)       → bool     # DPDP single version
+    ├── delete_resume(resume_id)       → bool     # DPDP single version
+    ├── save_fingerprint(fp, resume_id, candidate_id) → bool   # S2.3,
+    │     idempotent per (resume, algo)
+    └── similar_resumes(fp, exclude_candidate_id, threshold, limit)
+          → (matches best-first, corpus_size)     # S2.3, other candidates
+                                                  # only, same algo only
 ```
+
+## HTTP surface (S1.3) — [app/api/routes.py](app/api/routes.py)
+
+| Endpoint | What it does |
+|---|---|
+| `POST /candidates` | upload (`resume_text` \| `resume_pdf_b64`) → extract → ingest → fingerprint + farm check (S2.3) → auto depth-eval (`evaluate: false` to skip for bulk import). Response: `IngestOutcome` fields + `extraction_method` + `resume_farm` + the `Report` (stamped with `candidate_id`) |
+| `GET /candidates/{id}` | store summary + newest extracted profile (hashes only — no raw PII) |
+| `GET /candidates/{id}/resumes` | resume versions (id, version, sha256, created_at) |
+| `GET /candidates/{id}/reports` | all reports linked to the candidate |
+| `DELETE /candidates/{id}` | DPDP erasure: candidate + resumes + extractions + fingerprints + linked reports |
+| `DELETE /candidates/{id}/resumes/{rid}` | DPDP erasure of one version (ownership-checked) |
+
+The engine and graph stay candidate-blind: the route passes the extracted
+profile + farm assessment *into* `evaluate(...)` and stamps
+`report.candidate_id` *after* — the graph never resolves identity.
 
 ## Config knobs
 

@@ -11,7 +11,8 @@ work continues across many chat sessions.
    says otherwise.
 2. Product design + decisions:
    `docs/superpowers/specs/2026-07-06-veritas-talent-platform-design.md`.
-   Architecture of the existing engine: `FLOW.md`.
+   Architecture: `FLOW.md` (pipeline) · `CANDIDATES.md` (PI-1 candidate
+   backbone) · `FABRICATION.md` (PI-2 fabrication defense).
 3. **End of session:** update `docs/ROADMAP.md` (status board, "Current state",
    session log) before finishing.
 
