@@ -137,6 +137,18 @@ class Settings(BaseSettings):
     ai_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
     ai_llm_excerpt_chars: int = 6000
 
+    # --- Fabrication defense (PI-2, S2.2): cross-field forensics ----------------
+    # Deterministic date/structure checks over the extracted profile. ADVISORY:
+    # findings are observations for a reviewer to probe, never a rejection
+    # signal. Month thresholds are lower bounds computed with conservative
+    # interval math (year-only dates shrink inward for overlaps).
+    xf_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+    xf_overlap_months_min: int = 3
+    xf_gap_months_min: int = 12
+    xf_edu_overlap_months_min: int = 12
+    xf_senior_min_months: int = 24
+    xf_lead_min_months: int = 48
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

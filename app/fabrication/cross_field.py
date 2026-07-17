@@ -18,8 +18,20 @@ import itertools
 import re
 from datetime import date
 
-from app.candidates.schema import DateRange, EducationEntry, EmploymentType, ExperienceEntry
-from app.schemas.fabrication import CrossFieldFinding, FindingSeverity
+from app.candidates.schema import (
+    CandidateProfile,
+    DateRange,
+    EducationEntry,
+    EmploymentType,
+    ExperienceEntry,
+)
+from app.core.config import Settings
+from app.schemas.fabrication import (
+    ConsistencyBand,
+    CrossFieldAssessment,
+    CrossFieldFinding,
+    FindingSeverity,
+)
 
 # Employment types that legitimately run concurrently with a primary role.
 _NON_PRIMARY = {
@@ -296,3 +308,85 @@ def check_seniority_vs_tenure(
             entry_ids=[entry.id],
         )
     ]
+
+
+def band_for_findings(
+    findings: list[CrossFieldFinding], confidence: float, settings: Settings
+) -> ConsistencyBand:
+    """Structural, conservative banding: never assert below the confidence
+    floor; MAJOR_ISSUES requires at least one major finding."""
+    if confidence < settings.xf_min_confidence:
+        return ConsistencyBand.INSUFFICIENT_DATA
+    if any(f.severity is FindingSeverity.MAJOR for f in findings):
+        return ConsistencyBand.MAJOR_ISSUES
+    if findings:
+        return ConsistencyBand.MINOR_ISSUES
+    return ConsistencyBand.CONSISTENT
+
+
+def assess_cross_field(
+    profile: CandidateProfile, settings: Settings, today: date | None = None
+) -> CrossFieldAssessment:
+    """Run every check that has enough data; a checked-and-clean check still
+    counts toward confidence (same shape as S2.1's assess_deterministic)."""
+    today = today or date.today()
+    findings: list[CrossFieldFinding] = []
+    scores: list[float] = []
+
+    def _run(check_findings: list[CrossFieldFinding]) -> None:
+        scores.append(max((f.score for f in check_findings), default=0.0))
+        findings.extend(check_findings)
+
+    prim_narrow = [
+        e for e in _primary(profile.experience)
+        if narrow_interval(e.dates, today) is not None
+    ]
+    prim_precise = [
+        e for e in _primary(profile.experience)
+        if month_precise_interval(e.dates, today) is not None
+    ]
+    bachelors = [
+        e for e in profile.education
+        if is_bachelor(e) and narrow_interval(e.dates, today) is not None
+    ]
+    dated_any = [
+        e for e in profile.experience if wide_interval(e.dates, today) is not None
+    ]
+
+    if len(prim_narrow) >= 2:
+        _run(check_timeline_overlaps(
+            profile.experience, today=today,
+            min_months=settings.xf_overlap_months_min,
+        ))
+    if len(prim_precise) >= 2:
+        _run(check_timeline_gaps(
+            profile.experience, today=today,
+            min_months=settings.xf_gap_months_min,
+        ))
+    if bachelors and prim_narrow:
+        _run(check_education_overlap(
+            profile.education, profile.experience, today=today,
+            min_months=settings.xf_edu_overlap_months_min,
+        ))
+    if len(dated_any) >= 2:
+        _run(check_seniority_vs_tenure(
+            profile.experience, today=today,
+            senior_min_months=settings.xf_senior_min_months,
+            lead_min_months=settings.xf_lead_min_months,
+        ))
+
+    evaluated = len(scores)
+    if not evaluated:
+        return CrossFieldAssessment()
+    confidence = min(0.9, 0.30 + 0.15 * evaluated)
+    reasoning = f"[deterministic] {len(findings)} finding(s) across {evaluated} evaluated checks"
+    if findings:
+        reasoning += ": " + ", ".join(sorted({f.id for f in findings}))
+    return CrossFieldAssessment(
+        score=sum(scores) / evaluated,
+        confidence=confidence,
+        band=band_for_findings(findings, confidence, settings),
+        findings=findings,
+        reasoning=reasoning,
+        advisory=True,
+    )

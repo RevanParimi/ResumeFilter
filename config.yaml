@@ -66,6 +66,16 @@ ai_possible_threshold: 0.40      # fused likelihood >= this -> band "possible"
 ai_min_confidence: 0.50          # below this we say "insufficient_text", never assert
 ai_llm_excerpt_chars: 6000       # resume prefix sent to the LLM stylometry pass
 
+# --- Fabrication defense (PI-2) — S2.2 cross-field forensics -------------------
+# Deterministic date/structure checks over the extracted profile. ADVISORY:
+# findings are observations for a reviewer to probe, never a rejection signal.
+xf_min_confidence: 0.50          # below this -> band "insufficient_data"
+xf_overlap_months_min: 3         # concurrent primary roles flagged at >= this many months
+xf_gap_months_min: 12            # gaps flagged at >= this (always minor/context)
+xf_edu_overlap_months_min: 12    # primary work inside a bachelor's flagged at >= this
+xf_senior_min_months: 24         # "senior" below this career span -> minor finding
+xf_lead_min_months: 48           # lead/principal/head+ below this span -> major finding
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
