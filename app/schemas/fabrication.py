@@ -5,6 +5,7 @@ stylistic context for a human reviewer, never a rejection signal. AI-assisted
 resume WRITING is common and legitimate; whether the claims survive depth
 evaluation is a separate question (S2.4 fuses these signals there).
 S2.2 — cross-field forensics: deterministic timeline/coherence findings.
+S2.3 — resume-farm detection: cross-candidate near-duplicate signals (MinHash).
 """
 
 from __future__ import annotations
@@ -82,5 +83,38 @@ class CrossFieldAssessment(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     band: ConsistencyBand = ConsistencyBand.INSUFFICIENT_DATA
     findings: list[CrossFieldFinding] = Field(default_factory=list)
+    reasoning: str = ""
+    advisory: bool = True  # mirrors Report: never a rejection signal
+
+
+class DuplicationBand(StrEnum):
+    """Conservative advisory bands. INSUFFICIENT_DATA when we can't say."""
+
+    INSUFFICIENT_DATA = "insufficient_data"
+    UNIQUE = "unique"            # nothing similar among stored resumes
+    SIMILAR = "similar"          # notable content overlap with another candidate
+    NEAR_DUPLICATE = "near_duplicate"  # near-identical content, or a farm-like cluster
+
+
+class ResumeMatch(BaseModel):
+    """One stored resume (another candidate's) with estimated content overlap."""
+
+    candidate_id: str
+    resume_id: str
+    similarity: float = Field(ge=0.0, le=1.0)  # estimated Jaccard over shingles
+
+
+class ResumeFarmAssessment(BaseModel):
+    """The farm-detection output: cross-candidate near-duplicate signals.
+
+    Computed in the API layer (needs the candidate store + the uploader's
+    identity for self-exclusion — the graph never sees either). Shared resume
+    templates are common and legitimate; ADVISORY, never a rejection signal."""
+
+    score: float = Field(default=0.0, ge=0.0, le=1.0)  # max match similarity
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    band: DuplicationBand = DuplicationBand.INSUFFICIENT_DATA
+    matches: list[ResumeMatch] = Field(default_factory=list)
+    corpus_size: int = 0  # fingerprinted resumes (other candidates) compared against
     reasoning: str = ""
     advisory: bool = True  # mirrors Report: never a rejection signal
