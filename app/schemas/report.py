@@ -19,7 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext
-from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, ResumeFarmAssessment
 
 
 class EvidenceSource(StrEnum):
@@ -115,3 +115,8 @@ class Report(BaseModel):
     # the reviewer, never a verdict; fusion into calibration is S2.4). None for
     # pre-S2.2 stored reports.
     cross_field: Optional[CrossFieldAssessment] = None
+
+    # S2.3: advisory resume-farm signals (cross-candidate near-duplicate
+    # context for the reviewer, never a verdict; fusion into calibration is
+    # S2.4). None for pre-S2.3 reports and ad-hoc POST /evaluate runs.
+    resume_farm: Optional[ResumeFarmAssessment] = None

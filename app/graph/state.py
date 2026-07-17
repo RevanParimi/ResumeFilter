@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
 from app.schemas.claims import CandidateContext, Claim
-from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, ResumeFarmAssessment
 from app.schemas.report import CoherenceVerdict, DepthBand, Report
 
 
@@ -38,6 +38,11 @@ class EvaluationState(BaseModel):
     # S2.2: the extracted profile, when the caller already has one
     # (POST /candidates). None => cross_field derives a heuristic profile.
     candidate_profile: Optional[CandidateProfile] = None
+    # S2.3: resume-farm assessment computed by the API layer. Detection needs
+    # the candidate store AND the uploader's candidate_id for self-exclusion —
+    # the graph deliberately sees neither, so this arrives as an input.
+    # None => not assessed (ad-hoc POST /evaluate runs).
+    resume_farm: Optional[ResumeFarmAssessment] = None
 
     # --- ingest ---------------------------------------------------------------
     resume_text: Optional[str] = None  # normalized, parsed text
