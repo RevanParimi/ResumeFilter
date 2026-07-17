@@ -225,7 +225,8 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   Smoke `scripts/smoke_s23.py` 11/11 OK key-less (NullLLM + heuristic
   extraction) AND live (LLM extraction): first upload of a farm template is
   unique, an identity-swapped copy from a different candidate lands
-  near_duplicate pointing back at the original, the uploader's own
+  near_duplicate at a measured estimated similarity of 0.9375 (near_duplicate
+  threshold 0.80) pointing back at the original, the uploader's own
   re-upload dedupes and self-excludes cleanly while still correctly
   matching the other farm member, a genuine resume stays unique, and
   POST /evaluate carries no farm assessment (no identity, no comparison).
