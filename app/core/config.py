@@ -149,6 +149,20 @@ class Settings(BaseSettings):
     xf_senior_min_months: int = 24
     xf_lead_min_months: int = 48
 
+    # --- Fabrication defense (PI-2, S2.3): resume-farm detection -----------------
+    # Deterministic MinHash over contact-masked word shingles, compared across
+    # candidates at ingest. ADVISORY: shared resume templates are common and
+    # legitimate; matches are reviewer context, never a rejection signal.
+    # Changing shingle_words/num_permutations changes the algo id — previously
+    # stored fingerprints simply stop participating until re-fingerprinted.
+    rf_shingle_words: int = 3
+    rf_num_permutations: int = 128
+    rf_min_shingles: int = 40
+    rf_similar_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    rf_near_dup_threshold: float = Field(default=0.80, ge=0.0, le=1.0)
+    rf_cluster_candidates_min: int = 3
+    rf_max_matches: int = 10
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

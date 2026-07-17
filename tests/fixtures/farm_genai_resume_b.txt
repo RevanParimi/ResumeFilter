@@ -1,0 +1,32 @@
+Kunal Deshpande — Senior GenAI Engineer
+Nagpur | kunal.deshpande@example.com | +91 99870 44556
+
+SUMMARY
+
+GenAI engineer with four years of experience building retrieval-augmented
+generation systems and LLM evaluation tooling for enterprise clients.
+
+EXPERIENCE
+
+Senior GenAI Engineer at CloudMinds Software, Mar 2023 - Aug 2025
+- Designed a retrieval-augmented assistant over 2M support documents using
+  hybrid BM25 and dense retrieval with a cross-encoder reranker
+- Reduced hallucination rate from 14% to 6% by adding grounded citation
+  checks and a retrieval sufficiency gate before generation
+- Built an offline evaluation harness with 1,200 curated question-answer
+  pairs scored nightly in CI
+
+ML Engineer at Brightpath Labs, Jun 2021 - Feb 2023
+- Fine-tuned domain adapters for customer-intent classification across
+  eleven regional languages
+- Shipped a feature store consumed by three ranking models and cut training
+  data preparation time from days to hours
+- Automated drift monitoring with weekly evaluation reports to product teams
+
+EDUCATION
+
+B.E. in Computer Science — Pune Institute of Computer Technology, 2013 - 2017, CGPA 8.2/10
+
+SKILLS
+
+Python, PyTorch, LangChain, FAISS, Postgres, Docker

@@ -121,3 +121,13 @@ def ai_resume() -> str:
 @pytest.fixture
 def inconsistent_resume() -> str:
     return (FIXTURES / "inconsistent_genai_resume.txt").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def farm_resume_a() -> str:
+    return (FIXTURES / "farm_genai_resume_a.txt").read_text(encoding="utf-8")
+
+
+@pytest.fixture
+def farm_resume_b() -> str:
+    return (FIXTURES / "farm_genai_resume_b.txt").read_text(encoding="utf-8")

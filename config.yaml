@@ -76,6 +76,17 @@ xf_edu_overlap_months_min: 12    # primary work inside a bachelor's flagged at >
 xf_senior_min_months: 24         # "senior" below this career span -> minor finding
 xf_lead_min_months: 48           # lead/principal/head+ below this span -> major finding
 
+# --- Fabrication defense (PI-2) — S2.3 resume-farm detection -------------------
+# Deterministic MinHash over contact-masked word shingles, compared across
+# candidates at ingest. ADVISORY: shared templates are common and legitimate.
+rf_shingle_words: 3              # words per shingle
+rf_num_permutations: 128         # signature size (stderr of estimate ~ 1/sqrt(n))
+rf_min_shingles: 40              # below this -> band "insufficient_data"
+rf_similar_threshold: 0.60       # estimated overlap to count as a match at all
+rf_near_dup_threshold: 0.80      # any match >= this -> band "near_duplicate"
+rf_cluster_candidates_min: 3     # matches from >= this many other candidates -> near_duplicate
+rf_max_matches: 10               # matches carried on the assessment (best first)
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
