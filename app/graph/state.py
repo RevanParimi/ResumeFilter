@@ -16,6 +16,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext, Claim
+from app.schemas.fabrication import AIGenerationAssessment
 from app.schemas.report import CoherenceVerdict, DepthBand, Report
 
 
@@ -36,6 +37,10 @@ class EvaluationState(BaseModel):
 
     # --- ingest ---------------------------------------------------------------
     resume_text: Optional[str] = None  # normalized, parsed text
+
+    # --- ai_signals (S2.1) ------------------------------------------------------
+    # Advisory AI-generation assessment; None when resume text never arrived.
+    ai_generation: Optional[AIGenerationAssessment] = None
 
     # --- claim_extraction -----------------------------------------------------
     candidate_context: CandidateContext = Field(default_factory=CandidateContext)

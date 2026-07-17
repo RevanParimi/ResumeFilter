@@ -9,16 +9,15 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S2.1 — AI-generated-resume signals
-- **Next action:** Write the S2.1 plan (new pipeline node; deterministic
-  signals first, LLM-assisted second; conservative gate stays).
-- **Last session (2026-07-16):** S1.4 done on branch `s14-india-normalization`:
-  `app/candidates/normalize/` package (skills taxonomy, degrees + CGPA/10,
-  institutions with tiers, employers, city gazetteer, notice-period parser,
-  `normalize_profile` orchestrator); schema grew Optional canonical sibling
-  fields; extractor lifts location + notice period and normalizes both paths.
-  190 tests green; smoke `scripts/smoke_s14.py` 8/8 OK key-less (heuristic)
-  AND live (llm, after refreshing the expired OpenRouter key).
+- **Current sprint:** S2.2 — Cross-field forensics
+- **Next action:** Write the S2.2 plan (timeline overlaps/gaps,
+  education↔experience coherence, seniority-vs-claims).
+- **Last session (2026-07-17):** S2.1 done on branch `s21-ai-signals`:
+  `app/fabrication/ai_text.py` (4 deterministic detectors + fusion +
+  conservative banding), `ai_signals` node after ingest (LLM stylometry
+  capped at 0.75 confidence; LIKELY needs ≥2 deterministic tells),
+  advisory `Report.ai_generation` + flywheel record, adversarial fixture.
+  225 tests green; smoke `scripts/smoke_s21.py` 6/6 OK key-less AND live.
 
 ## Status board
 
@@ -42,9 +41,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                institution + employer canonicalization, city/notice-period
 │
 ├── PI-2  FABRICATION DEFENSE 2.0
-│   ├── [~] S2.1  AI-generated-resume signals (new pipeline node; deterministic
-│   │            first, LLM-assisted second; conservative gate stays)
-│   ├── [ ] S2.2  Cross-field forensics — timeline overlaps/gaps,
+│   ├── [x] S2.1  AI-generated-resume signals — ai_signals node after ingest
+│   │            (deterministic stylometry ⊕ capped LLM), advisory band on Report
+│   ├── [~] S2.2  Cross-field forensics — timeline overlaps/gaps,
 │   │            education↔experience coherence, seniority-vs-claims
 │   ├── [ ] S2.3  Resume-farm detection — near-duplicates across candidates
 │   │            (minhash/embeddings)
@@ -149,3 +148,29 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   52 new tests (190 green). Smoke `scripts/smoke_s14.py` 8/8 OK key-less
   (heuristic floor) AND live (llm) after the user refreshed the expired
   OpenRouter key. PI-1 complete. Next: S2.1 plan.
+- **2026-07-17** — S2.1 implementation plan written:
+  `docs/superpowers/plans/2026-07-17-s21-ai-signals.md` (7 TDD tasks, branch
+  `s21-ai-signals`, 190→~223 tests). Scope: pure `app/fabrication/ai_text.py`
+  (4 deterministic detectors: template phrases, uniform bullets, metric
+  saturation, symmetric structure; fusion + conservative banding), new
+  `ai_signals` graph node after ingest (deterministic first, LLM stylometry
+  second with confidence capped at 0.75; LIKELY requires ≥2 deterministic
+  tells — LLM alone can never flag), `AIGenerationAssessment` surfaced as an
+  advisory `Report.ai_generation` field + flywheel record, adversarial
+  fixture, smoke `scripts/smoke_s21.py`. No migration; depth scoring
+  untouched (fusion into calibration is S2.4). Next: execute the plan.
+- **2026-07-17 (2)** — S2.1 done, TDD-offline on branch `s21-ai-signals`:
+  `app/schemas/fabrication.py` (AISignal / AILikelihoodBand /
+  AIGenerationAssessment, advisory always true), `app/fabrication/ai_text.py`
+  (template-phrase density, uniform-bullet shape, round-% metric saturation,
+  symmetric entry structure; detectors gated on word/bullet minimums,
+  confidence grows with evaluable detectors; fuse_pairs + band_for with the
+  LIKELY ⇒ ≥2 deterministic tells gate), `ai_signals` node wired
+  ingest → ai_signals → claim_extraction (LLM stylometry via the `parsing`
+  FAST tier — non-decisive by design, so no flagship spend; confidence
+  capped 0.75, degrades to deterministic on no key/garbage),
+  `Report.ai_generation` + summary advisory note + flywheel
+  `record_type: "ai_signals"`. Config knobs `ai_*` in config.yaml/Settings.
+  35 new tests (225 green). Smoke `scripts/smoke_s21.py` 6/6 OK key-less
+  (deterministic floor) AND live (llm; read timeout raised to 600s — the
+  12-bullet fixture pays one reasoning call per claim). Next: S2.2 plan.

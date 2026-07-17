@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     flag_min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
     defer_confidence_threshold: float = Field(default=0.50, ge=0.0, le=1.0)
 
+    # --- Fabrication defense (PI-2, S2.1): AI-generated-resume signals ---------
+    # ADVISORY bands over stylistic tells. AI-assisted resume writing is common
+    # and legitimate; these only pick the band shown to a human reviewer, and
+    # LIKELY additionally requires >= 2 independent deterministic tells.
+    ai_likely_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    ai_possible_threshold: float = Field(default=0.40, ge=0.0, le=1.0)
+    ai_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+    ai_llm_excerpt_chars: int = 6000
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

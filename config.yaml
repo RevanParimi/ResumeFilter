@@ -57,6 +57,15 @@ flag_coherence_threshold: 0.35      # below this = potentially incoherent
 flag_min_confidence: 0.70           # need this much confidence to flag at all
 defer_confidence_threshold: 0.50    # below this = defer to human, never assert
 
+# --- Fabrication defense (PI-2) — S2.1 AI-generated-resume signals ------------
+# ADVISORY bands over stylistic tells. AI-assisted resume writing is common and
+# legitimate; these thresholds only pick the band shown to a human reviewer.
+# "likely" additionally requires >=2 independent deterministic tells.
+ai_likely_threshold: 0.65        # fused likelihood >= this -> band "likely"
+ai_possible_threshold: 0.40      # fused likelihood >= this -> band "possible"
+ai_min_confidence: 0.50          # below this we say "insufficient_text", never assert
+ai_llm_excerpt_chars: 6000       # resume prefix sent to the LLM stylometry pass
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

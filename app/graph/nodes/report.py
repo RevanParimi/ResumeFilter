@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.graph.state import EvaluationState
+from app.schemas.fabrication import AILikelihoodBand
 from app.schemas.report import Report, VerdictStatus
 from app.services import Services
 
@@ -28,6 +29,14 @@ def make_report_node(services: Services):
             f"confidence {state.overall_confidence:.2f}). ADVISORY ONLY — a human "
             f"reviewer makes the decision; this system never auto-rejects."
         )
+        ai = state.ai_generation
+        if ai is not None and ai.band in (AILikelihoodBand.POSSIBLE, AILikelihoodBand.LIKELY):
+            summary += (
+                f" AI-generation signals: {ai.band.value} "
+                f"(likelihood {ai.likelihood:.2f}, confidence {ai.confidence:.2f}) — "
+                f"stylistic context only; AI-assisted writing is common and this "
+                f"is never a rejection signal."
+            )
 
         rep = Report(
             id=f"rep_{state.evaluation_id.split('_', 1)[-1]}",
@@ -42,6 +51,7 @@ def make_report_node(services: Services):
             summary=summary,
             flagged_claim_ids=flagged,
             deferred_claim_ids=deferred,
+            ai_generation=state.ai_generation,
         )
 
         # Flywheel: one record per claim, outcome left open for later feedback.
@@ -59,6 +69,21 @@ def make_report_node(services: Services):
                     "status": v.status.value,
                     "probes": v.probes,
                     "evidence_count": len(v.evidence),
+                    "outcome": None,  # closed later by human/hiring signal
+                }
+            )
+
+        if state.ai_generation is not None:
+            services.flywheel.log(
+                {
+                    "record_type": "ai_signals",
+                    "evaluation_id": state.evaluation_id,
+                    "report_id": rep.id,
+                    "domain": state.domain,
+                    "band": state.ai_generation.band.value,
+                    "likelihood": state.ai_generation.likelihood,
+                    "confidence": state.ai_generation.confidence,
+                    "signal_ids": [s.id for s in state.ai_generation.signals],
                     "outcome": None,  # closed later by human/hiring signal
                 }
             )
