@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.graph.state import EvaluationState
-from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, DuplicationBand, FindingSeverity
+from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, DuplicationBand, FabricationRiskBand, FindingSeverity
 from app.schemas.report import Report, VerdictStatus
 from app.services import Services
 
@@ -53,6 +53,18 @@ def make_report_node(services: Services):
                 f"overlap — shared templates are common and legitimate; reviewer "
                 f"context only, never a rejection signal."
             )
+        risk = state.fabrication_risk
+        if risk is not None and risk.band in (
+            FabricationRiskBand.MODERATE,
+            FabricationRiskBand.ELEVATED,
+        ):
+            summary += (
+                f" Unified fabrication risk: {risk.band.value} (score "
+                f"{risk.score:.2f}, confidence {risk.confidence:.2f}) across "
+                f"{len(risk.components)} signal(s) — fused advisory context for "
+                f"the reviewer; it never changes the depth evaluation and is "
+                f"never a rejection signal."
+            )
 
         rep = Report(
             id=f"rep_{state.evaluation_id.split('_', 1)[-1]}",
@@ -70,6 +82,7 @@ def make_report_node(services: Services):
             ai_generation=state.ai_generation,
             cross_field=state.cross_field,
             resume_farm=state.resume_farm,
+            fabrication_risk=state.fabrication_risk,
         )
 
         # Flywheel: one record per claim, outcome left open for later feedback.
@@ -133,6 +146,21 @@ def make_report_node(services: Services):
                     "confidence": state.resume_farm.confidence,
                     "match_count": len(state.resume_farm.matches),
                     "corpus_size": state.resume_farm.corpus_size,
+                    "outcome": None,  # closed later by human/hiring signal
+                }
+            )
+
+        if state.fabrication_risk is not None:
+            services.flywheel.log(
+                {
+                    "record_type": "fabrication_risk",
+                    "evaluation_id": state.evaluation_id,
+                    "report_id": rep.id,
+                    "domain": state.domain,
+                    "band": state.fabrication_risk.band.value,
+                    "score": state.fabrication_risk.score,
+                    "confidence": state.fabrication_risk.confidence,
+                    "components": {c.id: c.band for c in state.fabrication_risk.components},
                     "outcome": None,  # closed later by human/hiring signal
                 }
             )

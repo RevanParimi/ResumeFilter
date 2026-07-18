@@ -19,7 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext
-from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, ResumeFarmAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, FabricationRiskAssessment, ResumeFarmAssessment
 
 
 class EvidenceSource(StrEnum):
@@ -120,3 +120,9 @@ class Report(BaseModel):
     # context for the reviewer, never a verdict; fusion into calibration is
     # S2.4). None for pre-S2.3 reports and ad-hoc POST /evaluate runs.
     resume_farm: Optional[ResumeFarmAssessment] = None
+
+    # S2.4: unified advisory fabrication risk — the three signals above fused in
+    # the calibration stage. Reviewer context only, never a verdict and never a
+    # rejection signal. None for pre-S2.4 stored reports and runs where nothing
+    # was assessed.
+    fabrication_risk: Optional[FabricationRiskAssessment] = None
