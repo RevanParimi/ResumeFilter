@@ -107,19 +107,19 @@ def test_confidence_follows_coverage(settings):
 
 
 def test_band_never_asserts_below_min_confidence(settings):
-    assert band_for_risk(0.9, 0.45, 3, settings=settings) is FabricationRiskBand.INSUFFICIENT_DATA
+    assert band_for_risk(0.9, 0.45, 3, 3, settings=settings) is FabricationRiskBand.INSUFFICIENT_DATA
 
 
 def test_band_elevated_needs_two_flags(settings):
-    assert band_for_risk(0.70, 0.75, 2, settings=settings) is FabricationRiskBand.ELEVATED
+    assert band_for_risk(0.70, 0.75, 2, 2, settings=settings) is FabricationRiskBand.ELEVATED
     # structural cap: one flag alone can never be ELEVATED, however high the score
-    assert band_for_risk(0.78, 0.75, 1, settings=settings) is FabricationRiskBand.MODERATE
+    assert band_for_risk(0.78, 0.75, 1, 1, settings=settings) is FabricationRiskBand.MODERATE
 
 
 def test_band_thresholds(settings):
-    assert band_for_risk(0.10, 0.75, 0, settings=settings) is FabricationRiskBand.LOW
-    assert band_for_risk(0.30, 0.75, 0, settings=settings) is FabricationRiskBand.MODERATE
-    assert band_for_risk(0.29, 0.75, 0, settings=settings) is FabricationRiskBand.LOW
+    assert band_for_risk(0.10, 0.75, 0, 2, settings=settings) is FabricationRiskBand.LOW
+    assert band_for_risk(0.30, 0.75, 0, 2, settings=settings) is FabricationRiskBand.MODERATE
+    assert band_for_risk(0.29, 0.75, 0, 2, settings=settings) is FabricationRiskBand.LOW
 
 
 def test_assess_all_clean_is_low(settings):
@@ -186,3 +186,22 @@ def test_fuse_zero_total_weight_falls_back_to_plain_mean():
     mean = (0.75 + 0.10) / 2
     assert abs(score - (0.7 * mean + 0.3 * 0.75)) < 1e-9
     assert confidence == 0.60
+
+
+def test_band_moderate_needs_corroboration_or_a_flag(settings):
+    # One soft signal alone (nonclean=1, no flags) stays LOW even above the
+    # moderate threshold; a flag or a second signal opens the gate.
+    assert band_for_risk(0.32, 0.60, 0, 1, settings=settings) is FabricationRiskBand.LOW
+    assert band_for_risk(0.32, 0.60, 1, 1, settings=settings) is FabricationRiskBand.MODERATE
+    assert band_for_risk(0.32, 0.60, 0, 2, settings=settings) is FabricationRiskBand.MODERATE
+
+
+def test_assess_single_soft_signal_stays_low(settings):
+    # Live-smoke regression: ai=possible + rf=unique (cross_field dropped out)
+    # fused past 0.30 but must not band MODERATE off one soft signal.
+    a = assess_fabrication_risk(
+        _ai(AILikelihoodBand.POSSIBLE, conf=0.6), None,
+        _rf(DuplicationBand.UNIQUE, conf=0.7), settings=settings,
+    )
+    assert a.score >= settings.fr_moderate_threshold  # the gate, not the threshold, holds it down
+    assert a.band is FabricationRiskBand.LOW

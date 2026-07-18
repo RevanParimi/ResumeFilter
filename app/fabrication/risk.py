@@ -43,6 +43,10 @@ _RF_RISK = {
     DuplicationBand.NEAR_DUPLICATE: 0.80,
 }
 
+# Clean bands (unlikely/consistent/unique) all map to exactly this risk; a
+# component above it carries an actual signal ("non-clean").
+_CLEAN_RISK = 0.10
+
 # A pure weighted mean lets clean subsystems dilute one strong signal; a pure
 # max ignores corroboration. The 70/30 blend keeps a single strong signal
 # visible (MODERATE) while ELEVATED still needs corroborating components.
@@ -121,18 +125,22 @@ def band_for_risk(
     score: float,
     confidence: float,
     flagged_count: int,
+    nonclean_count: int,
     *,
     settings: Settings | None = None,
 ) -> FabricationRiskBand:
     """Conservative banding: never assert under the confidence floor; ELEVATED
     requires corroboration (>= 2 components at their top band), mirroring
-    S2.1's 'LIKELY needs >= 2 deterministic tells'."""
+    S2.1's 'LIKELY needs >= 2 deterministic tells'. MODERATE has its own,
+    weaker corroboration gate: one flagged component, or >= 2 components
+    carrying an actual signal — a single soft signal never lifts the unified
+    band above LOW."""
     s = settings or get_settings()
     if confidence < s.fr_min_confidence:
         return FabricationRiskBand.INSUFFICIENT_DATA
     if score >= s.fr_elevated_threshold and flagged_count >= 2:
         return FabricationRiskBand.ELEVATED
-    if score >= s.fr_moderate_threshold:
+    if score >= s.fr_moderate_threshold and (flagged_count >= 1 or nonclean_count >= 2):
         return FabricationRiskBand.MODERATE
     return FabricationRiskBand.LOW
 
@@ -158,7 +166,8 @@ def assess_fabrication_risk(
         )
     score, confidence = fuse_components(components)
     flagged = sum(1 for c in components if c.flagged)
-    band = band_for_risk(score, confidence, flagged, settings=s)
+    nonclean = sum(1 for c in components if c.risk > _CLEAN_RISK)
+    band = band_for_risk(score, confidence, flagged, nonclean, settings=s)
     parts = ", ".join(f"{c.id}={c.band}" for c in components)
     reasoning = (
         f"Fused {len(components)} fabrication signal(s): {parts}. Unified risk "

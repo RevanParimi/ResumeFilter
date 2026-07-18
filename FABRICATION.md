@@ -292,18 +292,23 @@ uniting more than one signal.
 **Banding** ([band_for_risk](app/fabrication/risk.py)):
 
 ```
-confidence < fr_min_confidence (0.50)                    → INSUFFICIENT_DATA
+confidence < fr_min_confidence (0.50)                     → INSUFFICIENT_DATA
 score ≥ fr_elevated_threshold (0.60) AND ≥ 2 components
-  flagged at their top band                               → ELEVATED
-score ≥ fr_moderate_threshold (0.30)                      → MODERATE
-else                                                       → LOW
+  flagged at their top band                                → ELEVATED
+score ≥ fr_moderate_threshold (0.30) AND (≥ 1 flagged
+  component OR ≥ 2 non-clean components)                   → MODERATE
+else                                                        → LOW
 ```
 
 The `≥ 2 flags` gate mirrors S2.1's "LIKELY needs ≥ 2 deterministic tells":
 one strong signal (e.g. a lone `near_duplicate` sitting inside the MinHash
 stderr's false-positive tail — see S2.3's residuals) can drive the score
 into MODERATE but is capped there; ELEVATED needs corroborating evidence
-from a second subsystem. Output: `FabricationRiskAssessment {score,
+from a second subsystem. MODERATE has its own weaker gate for the same
+reason: a single soft signal (one component just above its clean band, no
+flags) must never lift the unified band above LOW on its own — it needs
+either a flagged component or a second non-clean signal corroborating it.
+Output: `FabricationRiskAssessment {score,
 confidence, band, components[], reasoning, advisory=true}` →
 `Report.fabrication_risk`; summary note fires on **MODERATE and ELEVATED**
 (deliberately — three soft signals converging on MODERATE is exactly the
