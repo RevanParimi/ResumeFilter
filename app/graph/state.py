@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
 from app.schemas.claims import CandidateContext, Claim
-from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, ResumeFarmAssessment
+from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, FabricationRiskAssessment, ResumeFarmAssessment
 from app.schemas.report import CoherenceVerdict, DepthBand, Report
 
 
@@ -72,6 +72,10 @@ class EvaluationState(BaseModel):
     depth_score: float = 0.0
     overall_confidence: float = 0.0
     depth_band: DepthBand = DepthBand.INSUFFICIENT_SIGNAL
+    # S2.4: unified advisory fabrication risk, fused in the calibration stage
+    # (scoring node) from ai_generation + cross_field + resume_farm. None when
+    # none of the three was ever assessed. Never affects depth or verdicts.
+    fabrication_risk: Optional[FabricationRiskAssessment] = None
 
     # --- report ---------------------------------------------------------------
     report: Optional[Report] = None
