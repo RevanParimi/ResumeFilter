@@ -10,9 +10,9 @@
 ## ▶ Current state
 
 - **Current sprint:** S2.4 — Unified fabrication_risk
-- **Next action:** Write the S2.4 plan (fuse ai_generation + cross_field +
-  resume_farm into a unified advisory fabrication_risk on calibration +
-  Report).
+- **Next action:** Execute the S2.4 plan
+  (`docs/superpowers/plans/2026-07-18-s24-fabrication-risk.md`, branch
+  `s24-fabrication-risk`, 7 TDD tasks, 312→~345 tests).
 - **Last session (2026-07-17):** S2.3 done on branch `s23-resume-farm`:
   `app/fabrication/similarity.py` (contact-masked word shingles,
   deterministic MinHash 128 perms, algo id "minhash-v1:128x3",
@@ -234,3 +234,15 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   (expected `unique`, ignoring that a genuine near-duplicate was already in
   the corpus) and was corrected mid-session to assert self-exclusion
   directly — a script bug, not a product bug. Next: S2.4 plan.
+- **2026-07-18** — S2.4 implementation plan written:
+  `docs/superpowers/plans/2026-07-18-s24-fabrication-risk.md` (7 TDD tasks,
+  branch `s24-fabrication-risk`, 312→~345 tests). Scope: pure deterministic
+  `app/fabrication/risk.py` (band→risk mapping as code constants; fused score
+  = 0.7·confidence-weighted mean + 0.3·max component risk; coverage
+  confidence `min(0.9, 0.30 + 0.15·evaluated)` so single-subsystem fusion
+  never asserts; ELEVATED requires ≥2 components at their top band —
+  mirrors S2.1's ≥2-tells gate), computed in the scoring node (the
+  calibration stage) with depth/verdicts provably untouched,
+  `Report.fabrication_risk` + summary note on moderate/elevated + flywheel
+  `record_type: "fabrication_risk"`, config knobs `fr_*`, smoke
+  `scripts/smoke_s24.py`. No LLM, no migration. Next: execute the plan.
