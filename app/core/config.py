@@ -163,6 +163,18 @@ class Settings(BaseSettings):
     rf_cluster_candidates_min: int = 3
     rf_max_matches: int = 10
 
+    # --- Fabrication defense (PI-2, S2.4): unified fabrication risk -------------
+    # Deterministic fusion of ai_generation + cross_field + resume_farm bands,
+    # computed in the calibration stage. ADVISORY: never changes verdicts or
+    # depth, never a rejection signal. ELEVATED additionally requires >= 2
+    # components at their top band; fusion never asserts on a single subsystem.
+    fr_moderate_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
+    fr_elevated_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    fr_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+    fr_weight_ai: float = Field(default=1.0, ge=0.0)
+    fr_weight_cross_field: float = Field(default=1.0, ge=0.0)
+    fr_weight_farm: float = Field(default=1.0, ge=0.0)
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

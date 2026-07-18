@@ -6,6 +6,7 @@ resume WRITING is common and legitimate; whether the claims survive depth
 evaluation is a separate question (S2.4 fuses these signals there).
 S2.2 — cross-field forensics: deterministic timeline/coherence findings.
 S2.3 — resume-farm detection: cross-candidate near-duplicate signals (MinHash).
+S2.4 — unified fabrication risk: advisory fusion of the three signals above.
 """
 
 from __future__ import annotations
@@ -116,5 +117,39 @@ class ResumeFarmAssessment(BaseModel):
     band: DuplicationBand = DuplicationBand.INSUFFICIENT_DATA
     matches: list[ResumeMatch] = Field(default_factory=list)
     corpus_size: int = 0  # fingerprinted resumes (other candidates) compared against
+    reasoning: str = ""
+    advisory: bool = True  # mirrors Report: never a rejection signal
+
+
+class FabricationRiskBand(StrEnum):
+    """S2.4 — conservative advisory bands. INSUFFICIENT_DATA when we can't say."""
+
+    INSUFFICIENT_DATA = "insufficient_data"
+    LOW = "low"
+    MODERATE = "moderate"
+    ELEVATED = "elevated"
+
+
+class RiskComponent(BaseModel):
+    """One subsystem's contribution to the unified fabrication risk."""
+
+    id: str          # "ai_generation" | "cross_field" | "resume_farm"
+    band: str        # the component's own band value at fusion time
+    risk: float = Field(ge=0.0, le=1.0)        # band-mapped component risk
+    confidence: float = Field(ge=0.0, le=1.0)  # component's own confidence
+    weight: float = Field(ge=0.0)              # config weight x confidence
+    flagged: bool = False                      # component sits at its top band
+
+
+class FabricationRiskAssessment(BaseModel):
+    """S2.4 — unified advisory fusion of ai_generation + cross_field + resume_farm.
+
+    Computed in the calibration stage (scoring node). ADVISORY ONLY: never
+    changes verdicts, depth scores, or bands, and never a rejection signal."""
+
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    band: FabricationRiskBand = FabricationRiskBand.INSUFFICIENT_DATA
+    components: list[RiskComponent] = Field(default_factory=list)
     reasoning: str = ""
     advisory: bool = True  # mirrors Report: never a rejection signal
