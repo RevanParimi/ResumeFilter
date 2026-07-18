@@ -109,7 +109,7 @@ def main() -> int:
             check("POST /evaluate carries fabrication_risk", bool(risk_e), f"band={risk_e.get('band')}")
             check("POST /evaluate has no resume_farm component", "resume_farm" not in ids_e, str(ids_e))
             check(
-                "depth band untouched by fusion (still present)",
+                "report still carries a depth band",
                 (genuine.get("report") or {}).get("depth_band") is not None,
             )
     finally:

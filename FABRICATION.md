@@ -278,7 +278,9 @@ score = 0.7 · (Σ risk·weight / Σ weight) + 0.3 · max(risk)
 A pure mean would let clean subsystems dilute one strong signal; a pure max
 would ignore corroboration. The 70/30 blend keeps a single strong signal
 visible (it can still reach MODERATE) while ELEVATED separately requires
-corroboration — see the gate below.
+corroboration — see the gate below. Weights scale the weighted-mean term only;
+a zero weight does not fully mute a subsystem — its risk still feeds the 30%
+max term, coverage confidence, and the flag gate.
 
 **Confidence** follows coverage, the same shape as S2.1/S2.2:
 `min(0.9, 0.30 + 0.15 · evaluated)`. One assessed subsystem → confidence

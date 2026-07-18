@@ -8,6 +8,7 @@ from app.schemas.fabrication import (
     CrossFieldAssessment,
     DuplicationBand,
     ResumeFarmAssessment,
+    RiskComponent,
 )
 
 
@@ -172,3 +173,16 @@ def test_assess_single_subsystem_never_asserts(settings):
 def test_assess_is_deterministic(settings):
     args = (_ai(AILikelihoodBand.POSSIBLE), _xf(ConsistencyBand.MAJOR_ISSUES), _rf(DuplicationBand.SIMILAR))
     assert assess_fabrication_risk(*args, settings=settings) == assess_fabrication_risk(*args, settings=settings)
+
+
+def test_fuse_zero_total_weight_falls_back_to_plain_mean():
+    # Defensive branch: evaluable components with zero confidence carry zero
+    # weight; fusion then uses the unweighted mean instead of dividing by zero.
+    comps = [
+        RiskComponent(id="ai_generation", band="likely", risk=0.75, confidence=0.0, weight=0.0),
+        RiskComponent(id="cross_field", band="consistent", risk=0.10, confidence=0.0, weight=0.0),
+    ]
+    score, confidence = fuse_components(comps)
+    mean = (0.75 + 0.10) / 2
+    assert abs(score - (0.7 * mean + 0.3 * 0.75)) < 1e-9
+    assert confidence == 0.60

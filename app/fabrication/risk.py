@@ -110,6 +110,9 @@ def fuse_components(components: list[RiskComponent]) -> tuple[float, float]:
     else:  # defensive: evaluable components with zero confidence
         mean = sum(c.risk for c in components) / len(components)
     score = _MEAN_WEIGHT * mean + _MAX_WEIGHT * max(c.risk for c in components)
+    # Coverage-count confidence is safe only because every subsystem floors its
+    # own confidence before emitting an evaluable band (ai/xf >= 0.50, rf >= 0.60)
+    # — a component can never arrive here as evaluable-but-worthless.
     confidence = min(0.9, round(0.30 + 0.15 * len(components), 2))
     return score, confidence
 

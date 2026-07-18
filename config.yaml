@@ -94,9 +94,9 @@ rf_max_matches: 10               # matches carried on the assessment (best first
 fr_moderate_threshold: 0.30      # fused score >= this -> band "moderate"
 fr_elevated_threshold: 0.60      # fused score >= this (AND >=2 flags) -> "elevated"
 fr_min_confidence: 0.50          # below this -> "insufficient_data", never assert
-fr_weight_ai: 1.0                # per-subsystem fusion weights (x component confidence)
-fr_weight_cross_field: 1.0
-fr_weight_farm: 1.0
+fr_weight_ai: 1.0                # per-subsystem fusion weights (x component confidence).
+fr_weight_cross_field: 1.0       # NOTE: weights scale the mean term only — weight 0 does
+fr_weight_farm: 1.0              # NOT mute a subsystem (max term/coverage still count)
 
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
