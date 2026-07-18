@@ -95,3 +95,78 @@ def build_components(
             )
         )
     return out
+
+
+def fuse_components(components: list[RiskComponent]) -> tuple[float, float]:
+    """(score, confidence). Score blends the weighted mean with the max
+    component risk (70/30); confidence follows coverage, same shape as
+    S2.1/S2.2: min(0.9, 0.30 + 0.15 * evaluated). One component -> 0.45,
+    which sits below fr_min_confidence — single-subsystem fusion never asserts."""
+    if not components:
+        return 0.0, 0.0
+    total_weight = sum(c.weight for c in components)
+    if total_weight > 0:
+        mean = sum(c.risk * c.weight for c in components) / total_weight
+    else:  # defensive: evaluable components with zero confidence
+        mean = sum(c.risk for c in components) / len(components)
+    score = _MEAN_WEIGHT * mean + _MAX_WEIGHT * max(c.risk for c in components)
+    confidence = min(0.9, round(0.30 + 0.15 * len(components), 2))
+    return score, confidence
+
+
+def band_for_risk(
+    score: float,
+    confidence: float,
+    flagged_count: int,
+    *,
+    settings: Settings | None = None,
+) -> FabricationRiskBand:
+    """Conservative banding: never assert under the confidence floor; ELEVATED
+    requires corroboration (>= 2 components at their top band), mirroring
+    S2.1's 'LIKELY needs >= 2 deterministic tells'."""
+    s = settings or get_settings()
+    if confidence < s.fr_min_confidence:
+        return FabricationRiskBand.INSUFFICIENT_DATA
+    if score >= s.fr_elevated_threshold and flagged_count >= 2:
+        return FabricationRiskBand.ELEVATED
+    if score >= s.fr_moderate_threshold:
+        return FabricationRiskBand.MODERATE
+    return FabricationRiskBand.LOW
+
+
+def assess_fabrication_risk(
+    ai: AIGenerationAssessment | None,
+    cross_field: CrossFieldAssessment | None,
+    resume_farm: ResumeFarmAssessment | None,
+    *,
+    settings: Settings | None = None,
+) -> FabricationRiskAssessment:
+    """Fuse whatever subsystems produced an assessable signal into one advisory
+    band. Excluded subsystems (absent or insufficient) never count as risk."""
+    s = settings or get_settings()
+    components = build_components(ai, cross_field, resume_farm, settings=s)
+    if not components:
+        return FabricationRiskAssessment(
+            band=FabricationRiskBand.INSUFFICIENT_DATA,
+            reasoning=(
+                "No fabrication subsystem produced an assessable signal; nothing to "
+                "fuse. Advisory only — never a rejection signal."
+            ),
+        )
+    score, confidence = fuse_components(components)
+    flagged = sum(1 for c in components if c.flagged)
+    band = band_for_risk(score, confidence, flagged, settings=s)
+    parts = ", ".join(f"{c.id}={c.band}" for c in components)
+    reasoning = (
+        f"Fused {len(components)} fabrication signal(s): {parts}. Unified risk "
+        f"{score:.2f} (confidence {confidence:.2f}) -> {band.value}. Advisory "
+        f"context for a human reviewer — fabrication signals never change "
+        f"verdicts or depth scores, and are never a rejection signal."
+    )
+    return FabricationRiskAssessment(
+        score=score,
+        confidence=confidence,
+        band=band,
+        components=components,
+        reasoning=reasoning,
+    )

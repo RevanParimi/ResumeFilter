@@ -75,3 +75,100 @@ def test_weight_is_config_weight_times_confidence(settings):
     comps = build_components(_ai(AILikelihoodBand.UNLIKELY, conf=0.8), None, None, settings=settings)
     assert comps[0].weight == 0.8  # fr_weight_ai (1.0) x confidence
     assert comps[0].band == "unlikely"
+
+
+from app.fabrication.risk import assess_fabrication_risk, band_for_risk, fuse_components
+from app.schemas.fabrication import FabricationRiskBand
+
+
+def test_fuse_empty_is_zero():
+    assert fuse_components([]) == (0.0, 0.0)
+
+
+def test_fuse_blends_weighted_mean_and_max(settings):
+    comps = build_components(
+        _ai(AILikelihoodBand.LIKELY, conf=0.8), _xf(ConsistencyBand.MAJOR_ISSUES, conf=0.8),
+        _rf(DuplicationBand.NEAR_DUPLICATE, conf=0.8), settings=settings,
+    )
+    score, confidence = fuse_components(comps)
+    # equal weights: mean = (0.75+0.75+0.80)/3; score = 0.7*mean + 0.3*0.80
+    assert abs(score - (0.7 * (0.75 + 0.75 + 0.80) / 3 + 0.3 * 0.80)) < 1e-9
+    assert confidence == 0.75  # min(0.9, 0.30 + 0.15*3)
+
+
+def test_confidence_follows_coverage(settings):
+    two = build_components(
+        _ai(AILikelihoodBand.UNLIKELY), _xf(ConsistencyBand.CONSISTENT), None, settings=settings,
+    )
+    assert fuse_components(two)[1] == 0.60
+    one = build_components(_ai(AILikelihoodBand.UNLIKELY), None, None, settings=settings)
+    assert fuse_components(one)[1] == 0.45
+
+
+def test_band_never_asserts_below_min_confidence(settings):
+    assert band_for_risk(0.9, 0.45, 3, settings=settings) is FabricationRiskBand.INSUFFICIENT_DATA
+
+
+def test_band_elevated_needs_two_flags(settings):
+    assert band_for_risk(0.70, 0.75, 2, settings=settings) is FabricationRiskBand.ELEVATED
+    # structural cap: one flag alone can never be ELEVATED, however high the score
+    assert band_for_risk(0.78, 0.75, 1, settings=settings) is FabricationRiskBand.MODERATE
+
+
+def test_band_thresholds(settings):
+    assert band_for_risk(0.10, 0.75, 0, settings=settings) is FabricationRiskBand.LOW
+    assert band_for_risk(0.30, 0.75, 0, settings=settings) is FabricationRiskBand.MODERATE
+    assert band_for_risk(0.29, 0.75, 0, settings=settings) is FabricationRiskBand.LOW
+
+
+def test_assess_all_clean_is_low(settings):
+    a = assess_fabrication_risk(
+        _ai(AILikelihoodBand.UNLIKELY), _xf(ConsistencyBand.CONSISTENT),
+        _rf(DuplicationBand.UNIQUE), settings=settings,
+    )
+    assert a.band is FabricationRiskBand.LOW
+    assert a.advisory is True
+    assert len(a.components) == 3
+    assert "never" in a.reasoning  # advisory copy present
+
+
+def test_assess_single_near_duplicate_caps_at_moderate(settings):
+    a = assess_fabrication_risk(
+        _ai(AILikelihoodBand.UNLIKELY), _xf(ConsistencyBand.CONSISTENT),
+        _rf(DuplicationBand.NEAR_DUPLICATE, conf=0.9), settings=settings,
+    )
+    assert a.band is FabricationRiskBand.MODERATE
+
+
+def test_assess_corroborated_flags_reach_elevated(settings):
+    a = assess_fabrication_risk(
+        _ai(AILikelihoodBand.LIKELY, conf=0.8), _xf(ConsistencyBand.MAJOR_ISSUES, conf=0.8),
+        _rf(DuplicationBand.NEAR_DUPLICATE, conf=0.8), settings=settings,
+    )
+    assert a.band is FabricationRiskBand.ELEVATED
+    assert sum(1 for c in a.components if c.flagged) == 3
+
+
+def test_assess_soft_signals_accumulate(settings):
+    # No single subsystem flags loudly, but three soft signals together matter.
+    a = assess_fabrication_risk(
+        _ai(AILikelihoodBand.POSSIBLE), _xf(ConsistencyBand.MINOR_ISSUES),
+        _rf(DuplicationBand.SIMILAR), settings=settings,
+    )
+    assert a.band is FabricationRiskBand.MODERATE
+
+
+def test_assess_no_components_is_insufficient(settings):
+    a = assess_fabrication_risk(None, None, None, settings=settings)
+    assert a.band is FabricationRiskBand.INSUFFICIENT_DATA
+    assert a.components == [] and a.score == 0.0 and a.confidence == 0.0
+
+
+def test_assess_single_subsystem_never_asserts(settings):
+    a = assess_fabrication_risk(None, _xf(ConsistencyBand.MAJOR_ISSUES, conf=0.9), None, settings=settings)
+    assert a.band is FabricationRiskBand.INSUFFICIENT_DATA  # confidence 0.45 < 0.50
+
+
+def test_assess_is_deterministic(settings):
+    args = (_ai(AILikelihoodBand.POSSIBLE), _xf(ConsistencyBand.MAJOR_ISSUES), _rf(DuplicationBand.SIMILAR))
+    assert assess_fabrication_risk(*args, settings=settings) == assess_fabrication_risk(*args, settings=settings)
