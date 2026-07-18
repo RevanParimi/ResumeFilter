@@ -87,6 +87,17 @@ rf_near_dup_threshold: 0.80      # any match >= this -> band "near_duplicate"
 rf_cluster_candidates_min: 3     # matches from >= this many other candidates -> near_duplicate
 rf_max_matches: 10               # matches carried on the assessment (best first)
 
+# --- Fabrication defense (PI-2) — S2.4 unified fabrication risk ----------------
+# Deterministic fusion of the three fabrication signals into one advisory band,
+# computed in the calibration stage. Never changes verdicts or depth scores;
+# "elevated" additionally requires >=2 subsystems at their top band.
+fr_moderate_threshold: 0.30      # fused score >= this -> band "moderate"
+fr_elevated_threshold: 0.60      # fused score >= this (AND >=2 flags) -> "elevated"
+fr_min_confidence: 0.50          # below this -> "insufficient_data", never assert
+fr_weight_ai: 1.0                # per-subsystem fusion weights (x component confidence)
+fr_weight_cross_field: 1.0
+fr_weight_farm: 1.0
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
