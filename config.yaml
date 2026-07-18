@@ -90,8 +90,9 @@ rf_max_matches: 10               # matches carried on the assessment (best first
 # --- Fabrication defense (PI-2) — S2.4 unified fabrication risk ----------------
 # Deterministic fusion of the three fabrication signals into one advisory band,
 # computed in the calibration stage. Never changes verdicts or depth scores;
+# "moderate" additionally requires a flagged subsystem or >=2 non-clean ones,
 # "elevated" additionally requires >=2 subsystems at their top band.
-fr_moderate_threshold: 0.30      # fused score >= this -> band "moderate"
+fr_moderate_threshold: 0.30      # fused score >= this (AND gate above) -> "moderate"
 fr_elevated_threshold: 0.60      # fused score >= this (AND >=2 flags) -> "elevated"
 fr_min_confidence: 0.50          # below this -> "insufficient_data", never assert
 fr_weight_ai: 1.0                # per-subsystem fusion weights (x component confidence).
