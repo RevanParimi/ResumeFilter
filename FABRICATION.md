@@ -1,4 +1,4 @@
-# veritas — Fabrication Defense 2.0 (PI-2: S2.1 + S2.2 + S2.3)
+# veritas — Fabrication Defense 2.0 (PI-2: S2.1 + S2.2 + S2.3 + S2.4)
 
 How the platform detects signs of resume fabrication *around* the depth-eval
 pipeline: AI-generated text, internally contradictory timelines, and
@@ -240,6 +240,82 @@ legitimate.
 
 ---
 
+## S2.4 — Unified fabrication_risk (calibration stage)
+
+[app/fabrication/risk.py](app/fabrication/risk.py) ·
+[app/graph/nodes/scoring.py](app/graph/nodes/scoring.py) ·
+contracts in [app/schemas/fabrication.py](app/schemas/fabrication.py)
+
+Fuses `ai_generation ⊕ cross_field ⊕ resume_farm` into one advisory
+`fabrication_risk` — a single number and band for a reviewer who doesn't
+want to cross-reference three separate assessments. Still advisory, still
+never auto-reject: fusion happens **inside the scoring node**, because
+scoring is the calibration stage, but it only ever *adds* a field to the
+returned state — it never reads or rewrites `verdicts`, `depth_score`, or
+`depth_band`.
+
+Each subsystem's band maps to a component risk; INSUFFICIENT_* bands are
+excluded from fusion entirely (absence of signal is not evidence of risk):
+
+| Component | Low band → risk | Mid band → risk | High band → risk |
+|---|---|---|---|
+| `ai_generation` | unlikely → 0.10 | possible → 0.45 | likely → 0.75 |
+| `cross_field` | consistent → 0.10 | minor_issues → 0.40 | major_issues → 0.75 |
+| `resume_farm` | unique → 0.10 | similar → 0.45 | near_duplicate → 0.80 |
+
+Only assessed (non-insufficient) subsystems produce a `RiskComponent`, each
+carrying its own `weight = fr_weight_<subsystem> · confidence` and a
+`flagged` bit set at that subsystem's top band (LIKELY / MAJOR_ISSUES /
+NEAR_DUPLICATE).
+
+**Score** blends a confidence-weighted mean across components with the max
+component risk, 70/30:
+
+```
+score = 0.7 · (Σ risk·weight / Σ weight) + 0.3 · max(risk)
+```
+
+A pure mean would let clean subsystems dilute one strong signal; a pure max
+would ignore corroboration. The 70/30 blend keeps a single strong signal
+visible (it can still reach MODERATE) while ELEVATED separately requires
+corroboration — see the gate below.
+
+**Confidence** follows coverage, the same shape as S2.1/S2.2:
+`min(0.9, 0.30 + 0.15 · evaluated)`. One assessed subsystem → confidence
+0.45, which sits *below* `fr_min_confidence` (0.50) — **fusion over a
+single subsystem can never assert; it always lands INSUFFICIENT_DATA.**
+That is deliberate: a unified score is only meaningful once it is actually
+uniting more than one signal.
+
+**Banding** ([band_for_risk](app/fabrication/risk.py)):
+
+```
+confidence < fr_min_confidence (0.50)                    → INSUFFICIENT_DATA
+score ≥ fr_elevated_threshold (0.60) AND ≥ 2 components
+  flagged at their top band                               → ELEVATED
+score ≥ fr_moderate_threshold (0.30)                      → MODERATE
+else                                                       → LOW
+```
+
+The `≥ 2 flags` gate mirrors S2.1's "LIKELY needs ≥ 2 deterministic tells":
+one strong signal (e.g. a lone `near_duplicate` sitting inside the MinHash
+stderr's false-positive tail — see S2.3's residuals) can drive the score
+into MODERATE but is capped there; ELEVATED needs corroborating evidence
+from a second subsystem. Output: `FabricationRiskAssessment {score,
+confidence, band, components[], reasoning, advisory=true}` →
+`Report.fabrication_risk`; summary note fires on **MODERATE and ELEVATED**
+(deliberately — three soft signals converging on MODERATE is exactly the
+case where fusion adds information no single per-component note carries),
+and its copy reiterates: never changes the depth evaluation, never a
+rejection signal. Every assessment also logs a `fabrication_risk` flywheel
+record with the per-component bands, `outcome: null`.
+
+Config: `fr_moderate_threshold`, `fr_elevated_threshold`, `fr_min_confidence`,
+`fr_weight_ai`, `fr_weight_cross_field`, `fr_weight_farm`
+([config.yaml](config.yaml)).
+
+---
+
 ## What lands on the Report and in the flywheel
 
 | Sprint | Report field | Band values | Summary note fires on | Flywheel `record_type` |
@@ -247,8 +323,9 @@ legitimate.
 | S2.1 | `ai_generation` | insufficient_text / unlikely / possible / likely | possible, likely | `ai_signals` |
 | S2.2 | `cross_field` | insufficient_data / consistent / minor_issues / major_issues | major_issues | `cross_field` |
 | S2.3 | `resume_farm` | insufficient_data / unique / similar / near_duplicate | near_duplicate | `resume_farm` |
+| S2.4 | `fabrication_risk` | insufficient_data / low / moderate / elevated | moderate, elevated | `fabrication_risk` |
 
-All three fields are `Optional` — pre-existing stored reports (and, for
+All four fields are `Optional` — pre-existing stored reports (and, for
 `resume_farm`, all POST /evaluate reports) validate unchanged with `null`.
 Every flywheel record carries `outcome: null`, closed later by human
 judgment via `POST /report/{id}/outcome`.
@@ -263,6 +340,9 @@ S2.2  xf_min_confidence 0.50   · xf_overlap_months_min 3 · xf_gap_months_min 1
 S2.3  rf_shingle_words 3 · rf_num_permutations 128 · rf_min_shingles 40
       rf_similar_threshold 0.60 · rf_near_dup_threshold 0.80
       rf_cluster_candidates_min 3 · rf_max_matches 10
+S2.4  fr_moderate_threshold 0.30 · fr_elevated_threshold 0.60
+      fr_min_confidence 0.50 · fr_weight_ai 1.0 · fr_weight_cross_field 1.0
+      fr_weight_farm 1.0
 ```
 
 Severity-escalation constants (overlap major at 12 months, edu-overlap major
@@ -278,6 +358,9 @@ tests/
 │   test_report_cross_field.py, test_cross_field_integration.py  S2.2
 ├── test_resume_farm_{schema,assess,api}.py, test_similarity.py,
 │   test_fingerprint_store.py, test_report_resume_farm.py        S2.3
+├── test_fabrication_risk_schema.py, test_fabrication_risk.py,
+│   test_scoring_fabrication_risk.py, test_report_fabrication_risk.py,
+│   test_fabrication_risk_integration.py                         S2.4
 └── fixtures/  ai_generated · inconsistent · farm_a/farm_b (adversarial)
 ```
 
@@ -285,13 +368,5 @@ All offline (NullLLM ⇒ deterministic floors). Each sprint's end-to-end
 smoke boots uvicorn on a scratch Alembic-migrated DB and passes key-less
 AND live: [scripts/smoke_s21.py](scripts/smoke_s21.py) ·
 [scripts/smoke_s22.py](scripts/smoke_s22.py) ·
-[scripts/smoke_s23.py](scripts/smoke_s23.py).
-
-## Next (S2.4 — planned)
-
-Fuse `ai_generation ⊕ cross_field ⊕ resume_farm` into a unified advisory
-`fabrication_risk` surfaced through calibration and the Report — still
-advisory, still never auto-reject. Note for that work: at 128 permutations
-the similarity estimate's stderr (≈ 0.04) gives the near-duplicate
-threshold a false-positive tail that is harmless while purely advisory but
-must stay conservative once fused.
+[scripts/smoke_s23.py](scripts/smoke_s23.py) ·
+[scripts/smoke_s24.py](scripts/smoke_s24.py).
