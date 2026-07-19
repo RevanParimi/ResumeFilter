@@ -8,7 +8,8 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 > [CANDIDATES.md](CANDIDATES.md) — the candidate data backbone (extraction,
 > store, identity resolution, India normalization, POST /candidates) — and
 > [FABRICATION.md](FABRICATION.md) — the fabrication-defense signals
-> (`ai_signals` + `cross_field` nodes, resume-farm detection). The pipeline is
+> (`ai_signals` + `cross_field` nodes, resume-farm detection, and the unified
+> `fabrication_risk` fused in scoring, S2.4). The pipeline is
 > now **9 nodes**: two advisory fabrication nodes sit between `ingest` and
 > `claim_extraction`. Everything below about the original 7 stages is unchanged.
 
@@ -93,7 +94,8 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 OUTPUT: Report {verdicts[], depth_band, depth_score, confidence,
                 flagged_ids, deferred_ids, advisory=True, human_review_required=True,
                 candidate_id?,                      ← set by POST /candidates (S1.3)
-                ai_generation?, cross_field?, resume_farm?}   ← advisory (PI-2)
+                ai_generation?, cross_field?, resume_farm?,   ← advisory (PI-2)
+                fabrication_risk?}       ← unified advisory fusion (S2.4)
 ```
 
 Notes: the nodes run in sequence and fan *out* to services/domains — nodes never
@@ -135,6 +137,7 @@ depth-eval-engine/
 │   │       ├── plausibility.py      ④ THE CORE: rules ⊕ LLM coherence  → domain.rules + LLM(reasoning)
 │   │       ├── probe_generation.py  ⑤ probes for suspicious claims     → LLM(reasoning) + domain
 │   │       ├── scoring.py           ⑥ calibrate → status + depth band  → core/calibration
+│   │       │                          + fuse fabrication_risk (S2.4)   → fabrication/risk
 │   │       └── report.py            ⑦ assemble Report + log flywheel
 │   │
 │   ├── candidates/              ─────────────── CANDIDATE BACKBONE (PI-1) → CANDIDATES.md ─
@@ -145,7 +148,8 @@ depth-eval-engine/
 │   ├── fabrication/             ─────────────── FABRICATION DEFENSE (PI-2) → FABRICATION.md
 │   │   ├── ai_text.py           ← S2.1 deterministic AI-text detectors + fusion/banding
 │   │   ├── cross_field.py       ← S2.2 interval math + 4 timeline/coherence checks
-│   │   └── similarity.py        ← S2.3 MinHash fingerprints + farm banding
+│   │   ├── similarity.py        ← S2.3 MinHash fingerprints + farm banding
+│   │   └── risk.py              ← S2.4 unified fabrication_risk fusion + banding
 │   │
 │   ├── domains/                 ─────────────── DOMAIN KNOWLEDGE (pluggable) ──────────────
 │   │   ├── base.py              ← DomainModel + Rule interfaces + registry (@register_domain)
@@ -248,6 +252,8 @@ INPUT  (POST /evaluate)
 │  out: ~ verdicts[].status                                                    │
 │       + depth_score, overall_confidence, depth_band                          │
 │         (DEEP≥.80 SOLID≥.60 EMERGING≥.40 else SUPERFICIAL; conf<.50 → INSUFFICIENT)│
+│       + fabrication_risk (S2.4: fuses ai_generation ⊕ cross_field ⊕          │
+│         resume_farm → advisory band; never touches verdicts/depth)           │
 └──────────────────────────────────────────────────────────────────────────────┘
    │ verdicts[] (classified) + aggregates
    ▼
@@ -261,7 +267,8 @@ OUTPUT  (Report)
   { id, domain, verdicts[]{coherence_score, confidence, status, reasoning,
     evidence[], probes[]}, depth_score, depth_band, overall_confidence,
     flagged_claim_ids[] (INCOHERENT), deferred_claim_ids[] (DEFER),
-    advisory=true, human_review_required=true, summary }
+    advisory=true, human_review_required=true, summary,
+    ai_generation?, cross_field?, resume_farm?, fabrication_risk? }
 ```
 
 Status is assigned **only at ⑥** — plausibility produces scores without labels so
@@ -454,7 +461,16 @@ In order:
 - If `overall_confidence < 0.50` → band = **INSUFFICIENT_SIGNAL** (don't pretend to rate).
 - Else band by depth: ≥0.80 **DEEP**, ≥0.60 **SOLID**, ≥0.40 **EMERGING**, else **SUPERFICIAL**.
 
-**Out:** finalized `verdicts`, `depth_score`, `overall_confidence`, `depth_band`.
+### Unified fabrication risk (S2.4) — [risk.py](app/fabrication/risk.py)
+After the depth aggregate, scoring fuses whatever PI-2 assessments are on the
+state (`ai_generation`, `cross_field`, `resume_farm`) into one advisory
+`fabrication_risk` band — the fusion lives here because this *is* the
+calibration stage, but it never touches verdicts, `depth_score`, or
+`depth_band`. `None` when none of the three was ever assessed. Math and
+banding in [FABRICATION.md](FABRICATION.md).
+
+**Out:** finalized `verdicts`, `depth_score`, `overall_confidence`,
+`depth_band`, `fabrication_risk`.
 
 ---
 
@@ -467,19 +483,19 @@ Assembles the advisory `Report` and feeds the flywheel.
 - Human-readable `summary` with counts, depth band, and the advisory disclaimer.
   Advisory fabrication notes are appended only when loud enough:
   `ai_generation` at possible/likely, `cross_field` at major_issues,
-  `resume_farm` at near_duplicate — each with explicit "never a rejection
-  signal" copy.
+  `resume_farm` at near_duplicate, `fabrication_risk` at moderate/elevated —
+  each with explicit "never a rejection signal" copy.
 - Attaches the PI-2 advisory assessments verbatim:
-  `Report.ai_generation` / `Report.cross_field` (from state) and
-  `Report.resume_farm` (an API-layer input on POST /candidates; `null` on
-  POST /evaluate). See [FABRICATION.md](FABRICATION.md).
+  `Report.ai_generation` / `Report.cross_field` / `Report.fabrication_risk`
+  (from state) and `Report.resume_farm` (an API-layer input on POST
+  /candidates; `null` on POST /evaluate). See [FABRICATION.md](FABRICATION.md).
 - **Flywheel:** one JSONL record per claim →
   `{evaluation_id, report_id, claim_id, claim_text, claim_type, coherence_score,
   confidence, status, probes, evidence_count, outcome:null}`.
   `outcome` is left open, closed later by a human/hiring signal — the training loop (constraint #6).
   Plus one record per present fabrication assessment
-  (`record_type: "ai_signals" | "cross_field" | "resume_farm"`), also with
-  `outcome: null`.
+  (`record_type: "ai_signals" | "cross_field" | "resume_farm" |
+  "fabrication_risk"`), also with `outcome: null`.
 
 **Out:** `report: Report` → persisted via `ReportStore` and returned by the API.
 

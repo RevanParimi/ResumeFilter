@@ -2,7 +2,8 @@
 
 How the platform detects signs of resume fabrication *around* the depth-eval
 pipeline: AI-generated text, internally contradictory timelines, and
-resume-farm near-duplicates. This documents the *fabrication* subsystem;
+resume-farm near-duplicates — fused into one unified advisory
+`fabrication_risk` band (S2.4). This documents the *fabrication* subsystem;
 the depth-eval pipeline it decorates is in [FLOW.md](FLOW.md), the candidate
 store it reads in [CANDIDATES.md](CANDIDATES.md). Source of truth is the
 code; file refs are clickable.
