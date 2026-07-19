@@ -10,8 +10,9 @@
 ## ▶ Current state
 
 - **Current sprint:** S3.1 — Ledger schema + DPDP consent model (PI-3 start)
-- **Next action:** Write the S3.1 plan (organizations, interview_records,
-  evaluation_events, consent_grants — purpose-scoped, revocable, audited).
+- **Next action:** Execute the S3.1 plan
+  (`docs/superpowers/plans/2026-07-19-s31-ledger-schema-consent.md`,
+  branch `s31-ledger-consent`, 7 TDD tasks, 350→~395 tests).
 - **Last session (2026-07-18):** S2.4 done on branch `s24-fabrication-risk`
   — PI-2 COMPLETE. Unified advisory fabrication_risk: pure fusion in
   `app/fabrication/risk.py` (band→risk code constants; 0.7·weighted-mean +
@@ -274,3 +275,18 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   fully mute a subsystem (documented, not changed); smoke scratch-dir leak
   is a pre-existing pattern across all smoke scripts. 350 tests green.
   PI-2 complete. Next: S3.1 plan.
+- **2026-07-19** — S3.1 implementation plan written:
+  `docs/superpowers/plans/2026-07-19-s31-ledger-schema-consent.md` (7 TDD
+  tasks, branch `s31-ledger-consent`, 350→~395 tests). Scope: new
+  `app/ledger/` package — Pydantic contracts + StrEnum taxonomies
+  (stage screen/tech/coding/hm, outcome, purpose ledger_write/ledger_read),
+  pure clock-free consent logic (`consent.py`: purpose/org scope, always-
+  expiring, revocation as point-in-time boundary, naive-UTC coercion for
+  SQLite), ORM rows on the shared Base (organizations, consent_grants,
+  interview_records, evaluation_events, audit_log), migration
+  `0003_evaluation_ledger` (candidate-linked rows CASCADE ⇒ existing DPDP
+  erasure sweeps the ledger; orgs survive), `LedgerStore` with write-time
+  ConsentError gate on record submission + audit row in the same
+  transaction, config knob `ledger_consent_default_ttl_days: 365`,
+  direct-store smoke `scripts/smoke_s31.py` (key-less; S3.1 is LLM-free),
+  `LEDGER.md`. No HTTP APIs (S3.2), no LLM. Next: execute the plan.
