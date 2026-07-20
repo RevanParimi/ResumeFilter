@@ -10,10 +10,27 @@
 ## ▶ Current state
 
 - **Current sprint:** S3.1 — Ledger schema + DPDP consent model (PI-3 start)
-- **Next action:** Execute the S3.1 plan
-  (`docs/superpowers/plans/2026-07-19-s31-ledger-schema-consent.md`,
-  branch `s31-ledger-consent`, 7 TDD tasks, 350→~395 tests).
-- **Last session (2026-07-18):** S2.4 done on branch `s24-fabrication-risk`
+- **Next action:** final whole-branch review + merge (branch
+  `s31-ledger-consent`).
+- **Last session (2026-07-20):** S3.1 executed subagent-driven, 7 tasks,
+  branch `s31-ledger-consent`. Delivered: `app/ledger/` package (Pydantic
+  contracts + StrEnum taxonomies, pure clock-free consent logic in
+  `consent.py`, ORM rows on the shared Base, migration
+  `0003_evaluation_ledger` with CASCADE FKs), `LedgerStore` (organizations
+  CRUD; grant/revoke/status consent; `submit_interview_record` gated by
+  `ConsentError` and stamped with the authorizing grant; `append_event`;
+  `records_for_candidate`/`events_for_record`/`audit_for_candidate`; every
+  mutation audited in the same transaction), config knob
+  `ledger_consent_default_ttl_days` (365), DPDP erasure cascades ledger rows
+  via the migration's CASCADE FKs while organizations survive, `LEDGER.md`.
+  42 new tests (350→392). Two deviations from plan: (a) migration 0003
+  landed in Task 3 rather than later, because the metadata-wide drift guard
+  requires it once ledger models are imported; (b) store converters
+  normalize datetimes via `as_utc` because SQLite refetch returns naive
+  datetimes and pydantic equality broke — the plan's converter code was
+  fixed accordingly. Smoke `scripts/smoke_s31.py` 10/10 OK key-less
+  (heuristic extraction), exit 0. Next: final whole-branch review + merge.
+- **Prior session (2026-07-18):** S2.4 done on branch `s24-fabrication-risk`
   — PI-2 COMPLETE. Unified advisory fabrication_risk: pure fusion in
   `app/fabrication/risk.py` (band→risk code constants; 0.7·weighted-mean +
   0.3·max blend; coverage confidence so single-subsystem fusion never
@@ -24,16 +41,6 @@
   moderate/elevated summary note + flywheel `record_type:
   "fabrication_risk"`, config `fr_*`. 350 tests green; smoke
   `scripts/smoke_s24.py` 10/10 key-less AND live.
-- **Prior session (2026-07-17):** S2.3 done on branch `s23-resume-farm`:
-  `app/fabrication/similarity.py` (contact-masked word shingles,
-  deterministic MinHash 128 perms, algo id "minhash-v1:128x3",
-  `assess_resume_farm` with cluster escalation), migration
-  `0002_resume_fingerprints` (CASCADE FKs = DPDP deletes), store
-  `save_fingerprint`/`similar_resumes`, API-layer detection in POST
-  /candidates (self-exclusion by candidate_id — the graph never sees
-  identity, so no new node), `Report.resume_farm` + near_duplicate-only
-  summary note + flywheel `record_type: "resume_farm"`. Config knobs `rf_*`.
-  312 tests green; smoke `scripts/smoke_s23.py` 11/11 OK key-less AND live.
 
 ## Status board
 
@@ -69,7 +76,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                Report; still advisory, never auto-reject
 │
 ├── PI-3  EVALUATION LEDGER (cross-company)
-│   ├── [ ] S3.1  Ledger schema + DPDP consent model — organizations,
+│   ├── [~] S3.1  Ledger schema + DPDP consent model — organizations,
 │   │            interview_records, evaluation_events, consent_grants
 │   │            (purpose-scoped, revocable, audited)
 │   ├── [ ] S3.2  Ledger APIs — submit/query with consent enforced at query
@@ -290,3 +297,29 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   transaction, config knob `ledger_consent_default_ttl_days: 365`,
   direct-store smoke `scripts/smoke_s31.py` (key-less; S3.1 is LLM-free),
   `LEDGER.md`. No HTTP APIs (S3.2), no LLM. Next: execute the plan.
+- **2026-07-20** — S3.1 done, subagent-driven on branch `s31-ledger-consent`
+  (7 tasks). Delivered per plan: `app/ledger/` contracts + taxonomies, pure
+  consent logic (`consent.py`: purpose/org scope, always-expiring,
+  revocation as a point-in-time boundary, naive-UTC coercion), ORM rows +
+  migration `0003_evaluation_ledger` (candidate-linked rows CASCADE, orgs
+  survive), `LedgerStore` (organizations; grant/revoke/status consent;
+  `submit_interview_record` raises `ConsentError` without an active
+  `ledger_write` grant and stamps the authorizing consent_id;
+  `append_event`; audit row written in the same transaction as every
+  mutation), config `ledger_consent_default_ttl_days: 365`, direct-store
+  smoke `scripts/smoke_s31.py`, `LEDGER.md`. 42 new tests (350→392). TWO
+  DEVIATIONS FROM PLAN: (a) migration 0003 landed in Task 3 instead of
+  later — the metadata-wide drift guard fires as soon as ledger models are
+  imported, so the migration has to exist from that point on; (b) store
+  converters normalize datetimes through `as_utc` because SQLite refetch
+  returns naive datetimes and pydantic model equality broke on that — the
+  plan's converter code was fixed accordingly, tested explicitly. Smoke
+  `scripts/smoke_s31.py` run key-less: all 10 checks OK, extraction method
+  `heuristic`, exit 0, `SMOKE OK`. One smoke-script bug found and fixed
+  in-session (not a product bug): the "mutations audited in order" check
+  compared a stale `audit_actions` snapshot taken before `revoke_consent`
+  ran, so `consent.revoke` was never in it — fixed by re-fetching
+  `audit_for_candidate` after the revoke call, matching the plan's own note
+  that revoke is audited as the 4th action. Full suite: 392 passed
+  (`pytest -q`). Status board left at `[~]` — final whole-branch review +
+  merge is still pending. Next: final whole-branch review + merge.
