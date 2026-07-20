@@ -9,6 +9,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import inspect
 
 import app.candidates.models  # noqa: F401 — populate Base.metadata
+import app.ledger.models  # noqa: F401 — populate Base.metadata
 from app.core.db import Base, make_engine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,13 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     engine = _migrated_engine(tmp_path)
     names = set(inspect(engine).get_table_names())
     assert {"candidates", "resumes", "extractions", "resume_fingerprints"} <= names
+    assert {
+        "organizations",
+        "consent_grants",
+        "interview_records",
+        "evaluation_events",
+        "audit_log",
+    } <= names
 
 
 def test_migrated_schema_matches_orm_models(tmp_path):
