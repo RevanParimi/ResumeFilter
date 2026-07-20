@@ -9,9 +9,13 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S3.1 — Ledger schema + DPDP consent model (PI-3 start)
-- **Next action:** final whole-branch review + merge (branch
-  `s31-ledger-consent`).
+- **Current sprint:** S3.2 — Ledger APIs (consent enforced at query time)
+- **Next action:** Write the S3.2 plan (submit/query endpoints, org-scoped
+  API keys, query-time `ledger_read` enforcement, audit of reads). Carry-over
+  residuals from S3.1's final review (in `.superpowers/sdd/progress.md`):
+  drift guard blind to index/ondelete/nullability drift, deterministic
+  consent_id preference under overlapping grants, consent_status 404-vs-403
+  shape, org-create IntegrityError mapping.
 - **Last session (2026-07-20):** S3.1 executed subagent-driven, 7 tasks,
   branch `s31-ledger-consent`. Delivered: `app/ledger/` package (Pydantic
   contracts + StrEnum taxonomies, pure clock-free consent logic in
@@ -29,7 +33,13 @@
   normalize datetimes via `as_utc` because SQLite refetch returns naive
   datetimes and pydantic equality broke — the plan's converter code was
   fixed accordingly. Smoke `scripts/smoke_s31.py` 10/10 OK key-less
-  (heuristic extraction), exit 0. Next: final whole-branch review + merge.
+  (heuristic extraction), exit 0. Final whole-branch review: Ready to merge;
+  its one Important finding fixed in 4dd09d0 (caller-supplied non-UTC
+  datetimes now coerced via `as_utc` at write — SQLite drops tzinfo, so an
+  IST revocation would otherwise land 5.5h late = fail-open window once
+  S3.2 accepts API datetimes; + org-delete cascade documented, TTL knob
+  ge=1). 393 tests. Merged to main (fast-forward to 4dd09d0), branch
+  deleted. S3.1 COMPLETE. Next: S3.2 plan.
 - **Prior session (2026-07-18):** S2.4 done on branch `s24-fabrication-risk`
   — PI-2 COMPLETE. Unified advisory fabrication_risk: pure fusion in
   `app/fabrication/risk.py` (band→risk code constants; 0.7·weighted-mean +
@@ -76,7 +86,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                Report; still advisory, never auto-reject
 │
 ├── PI-3  EVALUATION LEDGER (cross-company)
-│   ├── [~] S3.1  Ledger schema + DPDP consent model — organizations,
+│   ├── [x] S3.1  Ledger schema + DPDP consent model — organizations,
 │   │            interview_records, evaluation_events, consent_grants
 │   │            (purpose-scoped, revocable, audited)
 │   ├── [ ] S3.2  Ledger APIs — submit/query with consent enforced at query
@@ -323,3 +333,21 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   that revoke is audited as the 4th action. Full suite: 392 passed
   (`pytest -q`). Status board left at `[~]` — final whole-branch review +
   merge is still pending. Next: final whole-branch review + merge.
+- **2026-07-20 (2)** — S3.1 closed out. Final whole-branch review (most
+  capable model): Ready to merge, one Important finding — caller-supplied
+  aware non-UTC datetimes were stored wall-clock by SQLite (tzinfo dropped),
+  so an IST-aware revocation would read back 5.5h late: a fail-open window
+  once S3.2 accepts API datetimes. Fixed in 4dd09d0: `grant_consent` /
+  `revoke_consent` / `submit_interview_record` route `now`/`expires_at`/
+  `interviewed_at` through `as_utc` at write; failing-first IST test added
+  (393 tests). Also documented `delete_organization`'s cascade semantics
+  (org's grants→records→events go; candidate-linked audit rows survive) in
+  LEDGER.md + docstring, and bounded `ledger_consent_default_ttl_days`
+  (ge=1). Re-review verdict: Ready to merge, unconditional. Accepted
+  residuals for S3.2 (logged in `.superpowers/sdd/progress.md`): drift
+  guard blind to index/ondelete/nullability drift (cascade on migrated
+  schema only proven by smoke), nondeterministic consent_id under
+  overlapping grants, consent_status generic denial vs LookupError
+  (404-vs-403 shape), org-create TOCTOU IntegrityError mapping, UUID
+  tie-break ordering. Merged to main (fast-forward dc822e3→4dd09d0), 393
+  green on main, branch deleted. S3.1 COMPLETE. Next: S3.2 plan.
