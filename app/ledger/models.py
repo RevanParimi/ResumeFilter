@@ -47,7 +47,9 @@ class ConsentGrantRow(Base):
     """One purpose-scoped, expiring, revocable consent from a candidate.
 
     ``org_id`` NULL = any member organization. Revocation sets ``revoked_at``;
-    the row is deleted only by DPDP erasure (candidate cascade)."""
+    the row is deleted by DPDP erasure (candidate cascade) or by
+    ``LedgerStore.delete_organization`` cascading grants scoped to that org
+    (and, transitively, their interview records and events)."""
 
     __tablename__ = "consent_grants"
 

@@ -119,6 +119,34 @@ def test_settings_knob_exists():
     assert Settings(_env_file=None).ledger_consent_default_ttl_days == 365
 
 
+def test_non_utc_caller_datetimes_are_coerced_to_utc(store, candidate_id):
+    """Caller-supplied aware non-UTC `now` must land at the right UTC instant.
+
+    SQLite drops tzinfo on write, so a naive IST wall-clock value written
+    without coercion would read back 5.5h off from true UTC — a revocation
+    would fail open for 5.5h, and a grant would appear not-yet-active.
+    """
+    ist = timezone(timedelta(hours=5, minutes=30))
+    # 2026-07-19 12:00 UTC == 2026-07-19 17:30 IST.
+    now_ist = NOW.astimezone(ist)
+
+    org = store.create_organization("IST Corp")
+    g = store.grant_consent(candidate_id=candidate_id, purpose="ledger_write",
+                            org_id=org.id, now=now_ist)
+    # A UTC instant one minute after the true UTC equivalent should see the
+    # grant as active — it wouldn't if the store had written shifted
+    # wall-clock time instead of the true UTC instant.
+    assert store.consent_status(candidate_id, org_id=org.id,
+                                purpose="ledger_write",
+                                at=NOW + timedelta(minutes=1)).allowed
+
+    revoke_now_ist = (NOW + timedelta(minutes=2)).astimezone(ist)
+    assert store.revoke_consent(g.id, now=revoke_now_ist) is True
+    assert not store.consent_status(candidate_id, org_id=org.id,
+                                    purpose="ledger_write",
+                                    at=NOW + timedelta(minutes=3)).allowed
+
+
 def test_build_ledger_store(tmp_path):
     from app.core.config import Settings
     from app.ledger.store import build_ledger_store

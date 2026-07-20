@@ -37,6 +37,13 @@ in the same transaction. Actor model pre-auth (S3.2 adds org API keys):
 consent actions → `candidate`, record/event writes → `org`, org management
 → `system`.
 
+**Org deletion is a hard cascade, deliberately.** `delete_organization`
+CASCADEs through that org's `consent_grants` → their `interview_records` →
+`evaluation_events`, hard-deleting all of it (unlike candidate erasure, this
+is not soft-revoke-then-audit). This is intentional org-offboarding
+semantics, not a DPDP requirement — candidate-linked `audit_log` rows are
+unaffected and survive the org's departure.
+
 **Not in S3.1:** HTTP APIs, query-time `ledger_read` enforcement, org API
 keys, audit of reads (all S3.2); coding-round ingest (S3.3); reputation
 aggregation (S3.4).

@@ -179,7 +179,7 @@ class Settings(BaseSettings):
     # The ledger shares candidates_db_url (one metadata root, one Alembic env).
     # Grants created without an explicit expiry get this TTL — DPDP forbids
     # perpetual consent by construction. Purposes/stages are code constants.
-    ledger_consent_default_ttl_days: int = 365
+    ledger_consent_default_ttl_days: int = Field(default=365, ge=1)
 
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).

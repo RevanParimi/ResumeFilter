@@ -230,7 +230,11 @@ class LedgerStore:
         now: Optional[datetime] = None,
     ) -> ConsentGrant:
         purpose = ConsentPurpose(purpose)
-        moment = now or _utcnow()
+        # SQLite drops tzinfo at write, storing wall-clock fields; coerce every
+        # caller-supplied datetime to real UTC first so a naive readback lands
+        # at the correct instant (store-internal `_utcnow()` is already UTC).
+        moment = consent_logic.as_utc(now) if now else _utcnow()
+        expires_at = consent_logic.as_utc(expires_at) if expires_at else None
         with self._session_factory() as session:
             if session.get(CandidateRow, candidate_id) is None:
                 raise LookupError(f"unknown candidate: {candidate_id}")
@@ -265,7 +269,7 @@ class LedgerStore:
 
     def revoke_consent(self, consent_id: str, *, now: Optional[datetime] = None) -> bool:
         """True only when this call newly revoked the grant."""
-        moment = now or _utcnow()
+        moment = consent_logic.as_utc(now) if now else _utcnow()
         with self._session_factory() as session:
             row = session.get(ConsentGrantRow, consent_id)
             if row is None or row.revoked_at is not None:
@@ -330,7 +334,8 @@ class LedgerStore:
         """Write-time DPDP gate: refuses without an active ledger_write grant."""
         stage = InterviewStage(stage)
         outcome = InterviewOutcome(outcome)
-        moment = now or _utcnow()
+        moment = consent_logic.as_utc(now) if now else _utcnow()
+        interviewed_at = consent_logic.as_utc(interviewed_at)
         with self._session_factory() as session:
             if session.get(OrganizationRow, org_id) is None:
                 raise LookupError(f"unknown organization: {org_id}")
