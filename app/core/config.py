@@ -175,6 +175,12 @@ class Settings(BaseSettings):
     fr_weight_cross_field: float = Field(default=1.0, ge=0.0)
     fr_weight_farm: float = Field(default=1.0, ge=0.0)
 
+    # --- Evaluation ledger (PI-3, S3.1): schema + DPDP consent model -----------
+    # The ledger shares candidates_db_url (one metadata root, one Alembic env).
+    # Grants created without an explicit expiry get this TTL — DPDP forbids
+    # perpetual consent by construction. Purposes/stages are code constants.
+    ledger_consent_default_ttl_days: int = 365
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
