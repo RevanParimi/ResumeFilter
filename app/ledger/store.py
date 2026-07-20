@@ -78,6 +78,31 @@ def _grant(row: ConsentGrantRow) -> ConsentGrant:
     )
 
 
+def _record(row: InterviewRecordRow) -> InterviewRecord:
+    return InterviewRecord(
+        id=row.id,
+        org_id=row.org_id,
+        candidate_id=row.candidate_id,
+        consent_id=row.consent_id,
+        stage=InterviewStage(row.stage),
+        outcome=InterviewOutcome(row.outcome),
+        interviewed_at=consent_logic.as_utc(row.interviewed_at),
+        summary=row.summary,
+        created_at=consent_logic.as_utc(row.created_at),
+    )
+
+
+def _event(row: EvaluationEventRow) -> EvaluationEvent:
+    return EvaluationEvent(
+        id=row.id,
+        record_id=row.record_id,
+        candidate_id=row.candidate_id,
+        event_type=row.event_type,
+        payload=dict(row.payload or {}),
+        created_at=consent_logic.as_utc(row.created_at),
+    )
+
+
 def _audit_entry(row: AuditLogRow) -> AuditEntry:
     return AuditEntry(
         id=row.id,
@@ -288,6 +313,121 @@ class LedgerStore:
         return consent_logic.check_consent(
             grants, org_id=org_id, purpose=purpose, at=moment
         )
+
+    # -- interview records + events (consent-gated writes) --------------------
+
+    def submit_interview_record(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        stage: InterviewStage | str,
+        outcome: InterviewOutcome | str,
+        interviewed_at: datetime,
+        summary: Optional[str] = None,
+        now: Optional[datetime] = None,
+    ) -> InterviewRecord:
+        """Write-time DPDP gate: refuses without an active ledger_write grant."""
+        stage = InterviewStage(stage)
+        outcome = InterviewOutcome(outcome)
+        moment = now or _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_WRITE)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_WRITE, at=moment
+            )
+            if not decision.allowed:
+                raise ConsentError(decision.reason)
+            row = InterviewRecordRow(
+                org_id=org_id,
+                candidate_id=candidate_id,
+                consent_id=decision.grant_id,
+                stage=stage.value,
+                outcome=outcome.value,
+                interviewed_at=interviewed_at,
+                summary=summary,
+            )
+            session.add(row)
+            session.flush()
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="record.submit",
+                entity_type="interview_record",
+                entity_id=row.id,
+                candidate_id=candidate_id,
+                details={
+                    "stage": stage.value,
+                    "outcome": outcome.value,
+                    "consent_id": decision.grant_id,
+                },
+            )
+            session.commit()
+            return _record(row)
+
+    def append_event(
+        self,
+        record_id: str,
+        *,
+        event_type: str,
+        payload: Optional[dict] = None,
+    ) -> EvaluationEvent:
+        with self._session_factory() as session:
+            record = session.get(InterviewRecordRow, record_id)
+            if record is None:
+                raise LookupError(f"unknown interview record: {record_id}")
+            row = EvaluationEventRow(
+                record_id=record.id,
+                candidate_id=record.candidate_id,
+                event_type=event_type,
+                payload=payload or {},
+            )
+            session.add(row)
+            session.flush()
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=record.org_id,
+                action="event.append",
+                entity_type="evaluation_event",
+                entity_id=row.id,
+                candidate_id=record.candidate_id,
+                details={"record_id": record.id, "event_type": event_type},
+            )
+            session.commit()
+            return _event(row)
+
+    def records_for_candidate(self, candidate_id: str) -> list[InterviewRecord]:
+        """Raw store read — query-time ledger_read enforcement is S3.2 (API)."""
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(InterviewRecordRow)
+                    .where(InterviewRecordRow.candidate_id == candidate_id)
+                    .order_by(InterviewRecordRow.created_at, InterviewRecordRow.id)
+                )
+                .scalars()
+                .all()
+            )
+            return [_record(r) for r in rows]
+
+    def events_for_record(self, record_id: str) -> list[EvaluationEvent]:
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(EvaluationEventRow)
+                    .where(EvaluationEventRow.record_id == record_id)
+                    .order_by(EvaluationEventRow.created_at, EvaluationEventRow.id)
+                )
+                .scalars()
+                .all()
+            )
+            return [_event(r) for r in rows]
 
 
 def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
