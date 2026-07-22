@@ -472,6 +472,70 @@ class LedgerStore:
             )
             return [_record(r) for r in rows]
 
+    def get_record(self, record_id: str) -> Optional[InterviewRecord]:
+        with self._session_factory() as session:
+            row = session.get(InterviewRecordRow, record_id)
+            return _record(row) if row else None
+
+    def query_records_for_org(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        at: Optional[datetime] = None,
+    ) -> list[InterviewRecord]:
+        """Query-time DPDP gate: an org may read a candidate's records only under
+        an active ledger_read grant. Every read attempt — allowed or denied — is
+        audited in the same transaction (surveillance is itself observable)."""
+        moment = consent_logic.as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_READ)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_READ, at=moment
+            )
+            if not decision.allowed:
+                self._audit(
+                    session,
+                    actor_type="org",
+                    actor_id=org_id,
+                    action="record.query",
+                    entity_type="candidate",
+                    entity_id=candidate_id,
+                    candidate_id=candidate_id,
+                    details={"allowed": False, "purpose": "ledger_read"},
+                )
+                session.commit()
+                raise ConsentError(decision.reason)
+            rows = (
+                session.execute(
+                    select(InterviewRecordRow)
+                    .where(InterviewRecordRow.candidate_id == candidate_id)
+                    .order_by(InterviewRecordRow.created_at, InterviewRecordRow.id)
+                )
+                .scalars()
+                .all()
+            )
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="record.query",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": True,
+                    "consent_id": decision.grant_id,
+                    "record_count": len(rows),
+                },
+            )
+            session.commit()
+            return [_record(r) for r in rows]
+
     def events_for_record(self, record_id: str) -> list[EvaluationEvent]:
         with self._session_factory() as session:
             rows = (

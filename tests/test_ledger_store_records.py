@@ -138,3 +138,48 @@ def test_dpdp_erasure_sweeps_ledger(store, session_factory, org, candidate_id):
                              purpose="ledger_write", at=NOW)
     # the org itself survives erasure
     assert store.get_organization(org.id) is not None
+
+
+def test_query_records_allowed_returns_records_and_audits_read(store, candidate_id):
+    org = store.create_organization("ReaderCo")
+    store.grant_consent(candidate_id=candidate_id, purpose="ledger_write", org_id=org.id)
+    store.grant_consent(candidate_id=candidate_id, purpose="ledger_read", org_id=org.id)
+    rec = store.submit_interview_record(
+        org_id=org.id, candidate_id=candidate_id, stage="tech",
+        outcome="advanced", interviewed_at=NOW,
+    )
+    got = store.query_records_for_org(org_id=org.id, candidate_id=candidate_id)
+    assert [r.id for r in got] == [rec.id]
+    reads = [a for a in store.audit_for_candidate(candidate_id) if a.action == "record.query"]
+    assert len(reads) == 1
+    assert reads[0].actor_type == "org" and reads[0].actor_id == org.id
+    assert reads[0].details["allowed"] is True and reads[0].details["record_count"] == 1
+
+
+def test_query_records_without_read_consent_denied_and_audited(store, candidate_id):
+    org = store.create_organization("NosyCo")
+    with pytest.raises(ConsentError):
+        store.query_records_for_org(org_id=org.id, candidate_id=candidate_id)
+    reads = [a for a in store.audit_for_candidate(candidate_id) if a.action == "record.query"]
+    assert len(reads) == 1 and reads[0].details["allowed"] is False
+
+
+def test_query_records_unknown_candidate_or_org_raises_and_writes_no_audit(store, candidate_id):
+    org = store.create_organization("EdgeCo")
+    with pytest.raises(LookupError):
+        store.query_records_for_org(org_id=org.id, candidate_id="no-such-candidate")
+    with pytest.raises(LookupError):
+        store.query_records_for_org(org_id="no-such-org", candidate_id=candidate_id)
+    assert [a for a in store.audit_for_candidate(candidate_id) if a.action == "record.query"] == []
+
+
+def test_query_records_denied_after_read_consent_revoked_point_in_time(store, candidate_id):
+    from datetime import timedelta
+    org = store.create_organization("RevokeReadCo")
+    grant = store.grant_consent(candidate_id=candidate_id, purpose="ledger_read",
+                                org_id=org.id, now=NOW)
+    store.revoke_consent(grant.id, now=NOW + timedelta(days=1))
+    # A query "at" a moment after revocation is denied.
+    with pytest.raises(ConsentError):
+        store.query_records_for_org(org_id=org.id, candidate_id=candidate_id,
+                                    at=NOW + timedelta(days=2))
