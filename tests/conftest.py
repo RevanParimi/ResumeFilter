@@ -12,9 +12,11 @@ from pathlib import Path
 
 import pytest
 
+import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
 from app.candidates.store import CandidateStore
 from app.core.config import Settings
 from app.core.db import Base, make_engine, make_session_factory
+from app.ledger.store import LedgerStore
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.llm import LLMClient, NullLLM
@@ -86,7 +88,13 @@ def make_services(
     github: FakeGitHub | None = None,
     flywheel: InMemoryFlywheel | None = None,
     candidates: CandidateStore | None = None,
+    ledger: LedgerStore | None = None,
 ) -> Services:
+    candidates = candidates or make_candidate_store()
+    ledger = ledger or LedgerStore(
+        candidates._session_factory,
+        default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
+    )
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
@@ -94,7 +102,8 @@ def make_services(
         github=github or FakeGitHub(),
         flywheel=flywheel or InMemoryFlywheel(),
         report_store=InMemoryReportStore(),
-        candidates=candidates or make_candidate_store(),
+        candidates=candidates,
+        ledger=ledger,
     )
 
 

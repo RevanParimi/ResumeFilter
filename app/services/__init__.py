@@ -11,6 +11,7 @@ from typing import Optional
 
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
+from app.ledger.store import LedgerStore, build_ledger_store
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
 from app.services.llm import LLMClient, build_llm
@@ -27,6 +28,7 @@ class Services:
     flywheel: Flywheel
     report_store: ReportStore
     candidates: CandidateStore
+    ledger: LedgerStore
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -39,6 +41,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         flywheel=build_flywheel(settings),
         report_store=build_report_store(settings),
         candidates=build_candidate_store(settings),
+        ledger=build_ledger_store(settings),
     )
 
 

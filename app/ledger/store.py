@@ -558,4 +558,5 @@ def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
     return LedgerStore(
         make_session_factory(engine),
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
+        api_key_bytes=getattr(settings, "ledger_api_key_bytes", 32),
     )
