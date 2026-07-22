@@ -190,3 +190,36 @@ def test_append_event_ownership_enforced(api):
                        json={"event_type": "score", "payload": {"value": 1}},
                        headers={"X-Org-Key": other})
     assert resp.status_code == 404
+
+
+def test_query_records_requires_read_consent_and_audits(api):
+    client, cid, org_id, key = _setup_org_candidate(api, read=True)
+    services = api[1]
+    client.post(
+        "/ledger/records",
+        json={"candidate_id": cid, "stage": "tech", "outcome": "advanced",
+              "interviewed_at": "2026-07-20T10:00:00+00:00"},
+        headers={"X-Org-Key": key},
+    )
+    resp = client.get(f"/ledger/candidates/{cid}/records", headers={"X-Org-Key": key})
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()) == 1 and resp.json()[0]["candidate_id"] == cid
+    reads = [a for a in services.ledger.audit_for_candidate(cid) if a.action == "record.query"]
+    assert reads and reads[-1].details["allowed"] is True
+
+
+def test_query_records_denied_without_read_consent(api):
+    # write consent only (read=False) → query is forbidden and audited denied.
+    client, cid, org_id, key = _setup_org_candidate(api, read=False)
+    services = api[1]
+    resp = client.get(f"/ledger/candidates/{cid}/records", headers={"X-Org-Key": key})
+    assert resp.status_code == 403
+    reads = [a for a in services.ledger.audit_for_candidate(cid) if a.action == "record.query"]
+    assert reads and reads[-1].details["allowed"] is False
+
+
+def test_query_records_bad_key_and_unknown_candidate(api):
+    client, cid, org_id, key = _setup_org_candidate(api, read=True)
+    assert client.get(f"/ledger/candidates/{cid}/records").status_code == 401
+    assert client.get("/ledger/candidates/nope/records",
+                      headers={"X-Org-Key": key}).status_code == 404

@@ -465,6 +465,22 @@ async def append_event(
     return ledger.append_event(record_id, event_type=req.event_type, payload=req.payload)
 
 
+@org_router.get(
+    "/ledger/candidates/{candidate_id}/records", response_model=list[InterviewRecord]
+)
+async def query_records(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> list[InterviewRecord]:
+    """Query-time ledger_read enforcement. The store audits every attempt."""
+    ledger = _services(request).ledger
+    try:
+        return ledger.query_records_for_org(org_id=org_id, candidate_id=candidate_id)
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/report/{report_id}", response_model=Report)
 async def get_report(report_id: str, request: Request) -> Report:
     report = _services(request).report_store.get(report_id)
