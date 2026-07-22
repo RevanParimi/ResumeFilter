@@ -20,7 +20,17 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.fabrication.similarity import assess_resume_farm, fingerprint_text
-from app.ledger.schema import ConsentDecision, ConsentGrant, ConsentPurpose, Organization
+from app.ledger.schema import (
+    ConsentDecision,
+    ConsentGrant,
+    ConsentPurpose,
+    EvaluationEvent,
+    InterviewOutcome,
+    InterviewRecord,
+    InterviewStage,
+    Organization,
+)
+from app.ledger.store import ConsentError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -41,9 +51,23 @@ async def require_api_key(
         raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
 
 
+async def require_org(
+    request: Request, x_org_key: Optional[str] = Header(default=None)
+) -> str:
+    """Resolve an org's own API key to its id (S3.2). Unlike the admin key,
+    this is always enforced — org data operations are never open."""
+    org_id = _services(request).ledger.authenticate_org(x_org_key or "")
+    if org_id is None:
+        raise HTTPException(status_code=401, detail="invalid or missing X-Org-Key")
+    return org_id
+
+
 # Everything except "/" and /healthz sits behind the (optional) API key.
 router = APIRouter(dependencies=[Depends(require_api_key)])
 public_router = APIRouter()
+# Org-authenticated data plane (X-Org-Key), separate from the admin router so an
+# org never needs the platform's shared secret to submit or query its own data.
+org_router = APIRouter()
 
 
 class EvaluateRequest(BaseModel):
@@ -392,6 +416,53 @@ async def consent_status(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class RecordSubmitRequest(BaseModel):
+    candidate_id: str
+    stage: InterviewStage
+    outcome: InterviewOutcome
+    interviewed_at: datetime
+    summary: Optional[str] = None
+
+
+@org_router.post("/ledger/records", response_model=InterviewRecord)
+async def submit_record(
+    req: RecordSubmitRequest, request: Request, org_id: str = Depends(require_org)
+) -> InterviewRecord:
+    ledger = _services(request).ledger
+    try:
+        return ledger.submit_interview_record(
+            org_id=org_id,
+            candidate_id=req.candidate_id,
+            stage=req.stage,
+            outcome=req.outcome,
+            interviewed_at=req.interviewed_at,
+            summary=req.summary,
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class EventAppendRequest(BaseModel):
+    event_type: str
+    payload: dict = Field(default_factory=dict)
+
+
+@org_router.post("/ledger/records/{record_id}/events", response_model=EvaluationEvent)
+async def append_event(
+    record_id: str,
+    req: EventAppendRequest,
+    request: Request,
+    org_id: str = Depends(require_org),
+) -> EvaluationEvent:
+    ledger = _services(request).ledger
+    record = ledger.get_record(record_id)
+    if record is None or record.org_id != org_id:
+        raise HTTPException(status_code=404, detail="record not found")
+    return ledger.append_event(record_id, event_type=req.event_type, payload=req.payload)
 
 
 @router.get("/report/{report_id}", response_model=Report)

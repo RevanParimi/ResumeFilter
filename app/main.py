@@ -19,7 +19,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import public_router, router
+from app.api.routes import org_router, public_router, router
 from app.core.logging import configure_logging, get_logger
 from app.graph.build import EvaluationEngine
 from app.services import Services, build_default_services
@@ -53,6 +53,7 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(router)
+    app.include_router(org_router)
     app.include_router(public_router)
 
     @app.middleware("http")

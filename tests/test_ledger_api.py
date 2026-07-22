@@ -121,3 +121,72 @@ def test_consent_endpoints_404_on_unknown_candidate(api):
         "/ledger/candidates/nope/consent",
         params={"org_id": org["id"], "purpose": "ledger_read"},
     ).status_code == 404
+
+
+def _org_with_key(client):
+    body = client.post("/ledger/orgs", json={"name": f"Org {id(client)}"}).json()
+    return body["org"]["id"], body["api_key"]
+
+
+def _setup_org_candidate(api, *, read=False):
+    client, services = api
+    cid = asyncio.run(_ingest_candidate(services))
+    body = client.post("/ledger/orgs", json={"name": "Data Co"}).json()
+    org_id, key = body["org"]["id"], body["api_key"]
+    client.post(f"/ledger/candidates/{cid}/consent",
+                json={"purpose": "ledger_write", "org_id": org_id})
+    if read:
+        client.post(f"/ledger/candidates/{cid}/consent",
+                    json={"purpose": "ledger_read", "org_id": org_id})
+    return client, cid, org_id, key
+
+
+def test_submit_record_requires_valid_org_key(api):
+    client, cid, org_id, key = _setup_org_candidate(api)
+    payload = {"candidate_id": cid, "stage": "tech", "outcome": "advanced",
+               "interviewed_at": "2026-07-20T10:00:00+00:00"}
+    assert client.post("/ledger/records", json=payload).status_code == 401
+    assert client.post("/ledger/records", json=payload,
+                       headers={"X-Org-Key": "wrong"}).status_code == 401
+    ok = client.post("/ledger/records", json=payload, headers={"X-Org-Key": key})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["candidate_id"] == cid and ok.json()["consent_id"]
+
+
+def test_submit_record_without_write_consent_is_403(api):
+    client, services = api
+    cid = asyncio.run(_ingest_candidate(services))
+    _, key = _org_with_key(client)  # org exists but no consent granted
+    payload = {"candidate_id": cid, "stage": "tech", "outcome": "advanced",
+               "interviewed_at": "2026-07-20T10:00:00+00:00"}
+    resp = client.post("/ledger/records", json=payload, headers={"X-Org-Key": key})
+    assert resp.status_code == 403
+
+
+def test_submit_record_unknown_candidate_is_404(api):
+    client = api[0]
+    _, key = _org_with_key(client)
+    payload = {"candidate_id": "no-such", "stage": "tech", "outcome": "advanced",
+               "interviewed_at": "2026-07-20T10:00:00+00:00"}
+    assert client.post("/ledger/records", json=payload,
+                       headers={"X-Org-Key": key}).status_code == 404
+
+
+def test_append_event_ownership_enforced(api):
+    client, cid, org_id, key = _setup_org_candidate(api)
+    rec = client.post(
+        "/ledger/records",
+        json={"candidate_id": cid, "stage": "tech", "outcome": "advanced",
+              "interviewed_at": "2026-07-20T10:00:00+00:00"},
+        headers={"X-Org-Key": key},
+    ).json()
+    ok = client.post(f"/ledger/records/{rec['id']}/events",
+                     json={"event_type": "score", "payload": {"value": 4}},
+                     headers={"X-Org-Key": key})
+    assert ok.status_code == 200 and ok.json()["record_id"] == rec["id"]
+    # A different org cannot append to this record.
+    other = client.post("/ledger/orgs", json={"name": "Other Co"}).json()["api_key"]
+    resp = client.post(f"/ledger/records/{rec['id']}/events",
+                       json={"event_type": "score", "payload": {"value": 1}},
+                       headers={"X-Org-Key": other})
+    assert resp.status_code == 404
