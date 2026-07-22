@@ -132,7 +132,9 @@ def test_dpdp_erasure_sweeps_ledger(store, session_factory, org, candidate_id):
     assert store.records_for_candidate(candidate_id) == []
     assert store.events_for_record(rec.id) == []
     assert store.audit_for_candidate(candidate_id) == []
-    assert not store.consent_status(candidate_id, org_id=org.id,
-                                    purpose="ledger_write", at=NOW).allowed
+    # after deletion, consent_status raises LookupError for unknown candidate
+    with pytest.raises(LookupError):
+        store.consent_status(candidate_id, org_id=org.id,
+                             purpose="ledger_write", at=NOW)
     # the org itself survives erasure
     assert store.get_organization(org.id) is not None

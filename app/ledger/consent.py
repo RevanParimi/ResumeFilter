@@ -40,17 +40,26 @@ def is_grant_active(
     return True
 
 
+def _selection_key(grant: ConsentGrant) -> tuple[bool, float, str]:
+    # Sort ascending: org-specific (False) before wildcard (True); most recent
+    # grant first (negated epoch); lowest id as the final deterministic tiebreak.
+    return (grant.org_id is None, -as_utc(grant.granted_at).timestamp(), grant.id)
+
+
 def check_consent(
     grants: Sequence[ConsentGrant], *, org_id: str, purpose: ConsentPurpose, at: datetime
 ) -> ConsentDecision:
-    for grant in grants:
-        if is_grant_active(grant, org_id=org_id, purpose=purpose, at=at):
-            return ConsentDecision(
-                allowed=True,
-                reason=f"active grant {grant.id} covers purpose '{purpose.value}'",
-                grant_id=grant.id,
-            )
+    active = [
+        g for g in grants if is_grant_active(g, org_id=org_id, purpose=purpose, at=at)
+    ]
+    if not active:
+        return ConsentDecision(
+            allowed=False,
+            reason=f"no active consent for purpose '{purpose.value}'",
+        )
+    best = min(active, key=_selection_key)
     return ConsentDecision(
-        allowed=False,
-        reason=f"no active consent for purpose '{purpose.value}'",
+        allowed=True,
+        reason=f"active grant {best.id} covers purpose '{purpose.value}'",
+        grant_id=best.id,
     )

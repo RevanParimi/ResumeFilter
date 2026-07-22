@@ -79,3 +79,24 @@ def test_check_consent_denies_with_reason():
     d = check_consent([], org_id="o1", purpose=ConsentPurpose.LEDGER_WRITE, at=NOW)
     assert not d.allowed and d.grant_id is None
     assert "ledger_write" in d.reason
+
+
+def test_check_consent_prefers_org_specific_then_latest_grant():
+    from datetime import datetime, timedelta, timezone
+    from app.ledger.consent import check_consent
+    from app.ledger.schema import ConsentGrant, ConsentPurpose
+
+    at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    common = dict(candidate_id="cand", purpose=ConsentPurpose.LEDGER_READ,
+                  expires_at=at + timedelta(days=10))
+    wildcard = ConsentGrant(id="w", org_id=None, granted_at=at - timedelta(days=1), **common)
+    specific_old = ConsentGrant(id="s-old", org_id="org1", granted_at=at - timedelta(days=5), **common)
+    specific_new = ConsentGrant(id="s-new", org_id="org1", granted_at=at - timedelta(days=2), **common)
+
+    grants = [wildcard, specific_old, specific_new]
+    decision = check_consent(grants, org_id="org1", purpose=ConsentPurpose.LEDGER_READ, at=at)
+    assert decision.allowed and decision.grant_id == "s-new"  # org-specific beats wildcard; newest wins ties
+    # Order-independent: shuffling the input must not change the authorizing grant.
+    reshuffled = check_consent(list(reversed(grants)), org_id="org1",
+                               purpose=ConsentPurpose.LEDGER_READ, at=at)
+    assert reshuffled.grant_id == "s-new"

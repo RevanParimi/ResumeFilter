@@ -72,13 +72,14 @@ def test_grant_unknown_candidate_or_org(store, candidate_id):
 
 def test_consent_status_and_revocation(store, candidate_id):
     org = store.create_organization("Acme Talent")
+    other_org = store.create_organization("Other Inc")
     g = store.grant_consent(candidate_id=candidate_id, purpose="ledger_write",
                             org_id=org.id, now=NOW)
     d = store.consent_status(candidate_id, org_id=org.id,
                              purpose="ledger_write", at=NOW)
     assert d.allowed and d.grant_id == g.id
     # other org is out of scope; other purpose is out of scope
-    assert not store.consent_status(candidate_id, org_id="other",
+    assert not store.consent_status(candidate_id, org_id=other_org.id,
                                     purpose="ledger_write", at=NOW).allowed
     assert not store.consent_status(candidate_id, org_id=org.id,
                                     purpose="ledger_read", at=NOW).allowed
@@ -93,9 +94,10 @@ def test_consent_status_and_revocation(store, candidate_id):
 
 
 def test_expired_grant_is_inactive(store, candidate_id):
+    org = store.create_organization("Test Org")
     store.grant_consent(candidate_id=candidate_id, purpose="ledger_write",
-                        expires_at=NOW + timedelta(days=1), now=NOW)
-    assert not store.consent_status(candidate_id, org_id="any",
+                        org_id=org.id, expires_at=NOW + timedelta(days=1), now=NOW)
+    assert not store.consent_status(candidate_id, org_id=org.id,
                                     purpose="ledger_write",
                                     at=NOW + timedelta(days=2)).allowed
 
@@ -145,6 +147,23 @@ def test_non_utc_caller_datetimes_are_coerced_to_utc(store, candidate_id):
     assert not store.consent_status(candidate_id, org_id=org.id,
                                     purpose="ledger_write",
                                     at=NOW + timedelta(minutes=3)).allowed
+
+
+def test_consent_status_unknown_candidate_or_org_raises_lookup(store, candidate_id):
+    org = store.create_organization("Probe Co")
+    with pytest.raises(LookupError):
+        store.consent_status("no-such-candidate", org_id=org.id,
+                             purpose=ConsentPurpose.LEDGER_READ)
+    with pytest.raises(LookupError):
+        store.consent_status(candidate_id, org_id="no-such-org",
+                             purpose=ConsentPurpose.LEDGER_READ)
+
+
+def test_consent_status_known_but_ungranted_is_denied_not_error(store, candidate_id):
+    org = store.create_organization("Known Co")
+    decision = store.consent_status(candidate_id, org_id=org.id,
+                                    purpose=ConsentPurpose.LEDGER_READ)
+    assert decision.allowed is False and decision.grant_id is None
 
 
 def test_build_ledger_store(tmp_path):

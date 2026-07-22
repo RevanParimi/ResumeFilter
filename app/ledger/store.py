@@ -313,6 +313,10 @@ class LedgerStore:
         purpose = ConsentPurpose(purpose)
         moment = at or _utcnow()
         with self._session_factory() as session:
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
             grants = self._grants_for(session, candidate_id, purpose)
         return consent_logic.check_consent(
             grants, org_id=org_id, purpose=purpose, at=moment
