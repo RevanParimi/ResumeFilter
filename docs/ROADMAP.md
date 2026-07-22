@@ -9,14 +9,43 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S3.2 — Ledger APIs (consent enforced at query time)
-- **Next action:** Write the S3.2 plan (submit/query endpoints, org-scoped
-  API keys, query-time `ledger_read` enforcement, audit of reads). Carry-over
-  residuals from S3.1's final review (in `.superpowers/sdd/progress.md`):
-  drift guard blind to index/ondelete/nullability drift, deterministic
-  consent_id preference under overlapping grants, consent_status 404-vs-403
-  shape, org-create IntegrityError mapping.
-- **Last session (2026-07-20):** S3.1 executed subagent-driven, 7 tasks,
+- **Current sprint:** S3.3 — Coding-round results (schema + ingest ONLY)
+- **Next action:** Write the S3.3 plan (`platform`, problem tags, score,
+  percentile — schema + ingest only, no reputation yet; that's S3.4). Deferred
+  residuals from S3.2's final review (all triaged DEFER, none merge-blocking;
+  see `.superpowers/sdd/progress.md`): `append_event` is ownership-only and
+  intentionally inherits the submit-time `ledger_write` grant (documented in
+  LEDGER.md — decide in a later sprint whether to re-gate on live consent);
+  `create_organization`'s broad `except IntegrityError` maps any violation to
+  "name exists" (only `name` is insert-reachable-unique today); `consent.py`/
+  `store.py` module docstrings still carry "(S3.1)" framing; `revoke_consent`
+  endpoint returns 200 `{revoked:false}` for an unknown consent_id (no 404);
+  0004 downgrade (SQLite batch recreate) is untested.
+- **Last session (2026-07-22):** S3.2 executed subagent-driven, 11 tasks +
+  whole-branch review, branch `s32-ledger-apis`. Delivered: two HTTP auth
+  planes over `LedgerStore` — ADMIN plane (`X-API-Key` on `router`: org
+  lifecycle + consent grant/revoke/status) and ORG plane (`X-Org-Key` → one
+  org via `authenticate_org` on a dependency-free `org_router`: record submit
+  [write-consent gated], event append [ownership-enforced], and
+  `GET /ledger/candidates/{id}/records` with **query-time `ledger_read`
+  enforcement + audit of every read attempt, allowed or denied, in-txn**).
+  Org API keys (sha256-hashed, rotatable; migration `0004_org_api_keys` +
+  unique index) with `ledger_api_key_bytes` knob (default 32, ge=16). All four
+  S3.1 residuals closed: deterministic authorizing-grant selection
+  (org-specific ▸ newest ▸ lowest id), `consent_status` 404-vs-403 shape,
+  `create_organization` IntegrityError→ValueError (no TOCTOU), drift guard
+  extended to indexes/FK-ondelete/nullability. `Services.ledger` injected
+  (shares the candidate DB). 29 new tests (393→422). Smoke
+  `scripts/smoke_s32.py` (uvicorn HTTP) 9/9 OK exit 0: admin gate → org+key →
+  submit-403-without-consent → grant → submit → event → query-403-without-read
+  → grant read → query 200 → revoke → query 403 → DPDP erase → query 404. Per
+  task: fresh implementer + spec/quality review; final whole-branch review
+  (opus) Ready-to-merge Yes, no Critical/Important code defects, all 13
+  accumulated Minors DEFER; two recommended doc notes added (event-append
+  grant inheritance, cross-org read blast radius). Merged to main
+  (fast-forward 7a9fdcf→a948401), 422 green on main, branch deleted. S3.2
+  COMPLETE. Next: S3.3 plan.
+- **Prior session (2026-07-20):** S3.1 executed subagent-driven, 7 tasks,
   branch `s31-ledger-consent`. Delivered: `app/ledger/` package (Pydantic
   contracts + StrEnum taxonomies, pure clock-free consent logic in
   `consent.py`, ORM rows on the shared Base, migration
@@ -89,7 +118,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S3.1  Ledger schema + DPDP consent model — organizations,
 │   │            interview_records, evaluation_events, consent_grants
 │   │            (purpose-scoped, revocable, audited)
-│   ├── [ ] S3.2  Ledger APIs — submit/query with consent enforced at query
+│   ├── [x] S3.2  Ledger APIs — submit/query with consent enforced at query
 │   │            time; org-scoped API keys; audit trail
 │   ├── [ ] S3.3  Coding-round results — schema + ingest ONLY (far point):
 │   │            platform, problem tags, score, percentile
@@ -351,3 +380,33 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   (404-vs-403 shape), org-create TOCTOU IntegrityError mapping, UUID
   tie-break ordering. Merged to main (fast-forward dc822e3→4dd09d0), 393
   green on main, branch deleted. S3.1 COMPLETE. Next: S3.2 plan.
+- **2026-07-22** — S3.2 done, subagent-driven on branch `s32-ledger-apis`
+  (11 tasks, each spec+quality reviewed; final whole-branch review opus).
+  Plan: `docs/superpowers/plans/2026-07-22-s32-ledger-apis.md`. Delivered:
+  two HTTP auth planes over `LedgerStore` — ADMIN (`X-API-Key` on `router`:
+  `POST/GET /ledger/orgs`, rotate `/api-key`, `DELETE`, consent
+  grant/revoke/status) and ORG (`X-Org-Key`→org via `authenticate_org` on a
+  dependency-free `org_router`, each handler `Depends(require_org)`;
+  `POST /ledger/records` write-consent gated → 403/404, `POST
+  /ledger/records/{id}/events` ownership-enforced → 404, `GET
+  /ledger/candidates/{id}/records` query-time `ledger_read` enforcement + audit
+  of every read attempt allowed/denied in the same txn). Org API keys
+  (`secrets.token_urlsafe`, sha256-hashed, rotatable; migration
+  `0004_org_api_keys` col + unique index; suspended orgs never authenticate),
+  `ledger_api_key_bytes` knob (32, ge=16). Four S3.1 residuals closed:
+  deterministic authorizing-grant selection (`consent.py` `_selection_key`:
+  org-specific ▸ newest ▸ lowest id), `consent_status` LookupError→404 vs
+  denied-200, `create_organization` insert-then-map IntegrityError→ValueError
+  (no TOCTOU), drift guard now checks indexes/FK-ondelete/nullability.
+  `Services.ledger` injected sharing the candidate DB (conftest builds both on
+  one session factory). 29 new tests (393→422). Smoke `scripts/smoke_s32.py`
+  (uvicorn HTTP) 9/9 OK exit 0, key-less-capable. One authorized deviation
+  across the HTTP test tasks: `asyncio.run(...)` replaced the brief's
+  deprecated `asyncio.get_event_loop().run_until_complete(...)`. Final
+  whole-branch review (opus): Ready to merge Yes, NO Critical/Important code
+  defects; all 13 accumulated Minors triaged DEFER; two recommended doc notes
+  added to LEDGER.md (event-append inherits submit-time grant + is swept on
+  erasure; a single `ledger_read` grant exposes the candidate's cross-org
+  history — reputation-network semantics). Merged to main (fast-forward
+  7a9fdcf→a948401), 422 green on main, branch deleted. PI-3 now S3.1+S3.2
+  complete. Next: S3.3 plan (coding-round results — schema + ingest only).
