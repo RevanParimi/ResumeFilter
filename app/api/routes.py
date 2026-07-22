@@ -20,6 +20,7 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.fabrication.similarity import assess_resume_farm, fingerprint_text
+from app.ledger.schema import Organization
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -305,6 +306,52 @@ async def delete_candidate_resume(
         raise HTTPException(status_code=404, detail="resume not found for candidate")
     services.candidates.delete_resume(resume_id)
     return {"resume_id": resume_id, "deleted": True}
+
+
+# ── Evaluation ledger (S3.2) ────────────────────────────────────────────────
+# Org lifecycle + consent are ADMIN operations (shared-secret X-API-Key gate).
+# Org data operations (records/events/query) authenticate with an org's own key
+# on `org_router` below.
+
+
+class OrgCreateRequest(BaseModel):
+    name: str
+
+
+class OrgCreateResponse(BaseModel):
+    org: Organization
+    api_key: str  # returned once; only its hash is stored
+
+
+@router.post("/ledger/orgs", response_model=OrgCreateResponse)
+async def create_org(req: OrgCreateRequest, request: Request) -> OrgCreateResponse:
+    ledger = _services(request).ledger
+    try:
+        org = ledger.create_organization(req.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return OrgCreateResponse(org=org, api_key=ledger.issue_api_key(org.id))
+
+
+@router.get("/ledger/orgs", response_model=list[Organization])
+async def list_orgs(request: Request) -> list[Organization]:
+    return _services(request).ledger.list_organizations()
+
+
+@router.post("/ledger/orgs/{org_id}/api-key")
+async def rotate_org_key(org_id: str, request: Request) -> dict:
+    try:
+        api_key = _services(request).ledger.issue_api_key(org_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"org_id": org_id, "api_key": api_key}
+
+
+@router.delete("/ledger/orgs/{org_id}")
+async def delete_org(org_id: str, request: Request) -> dict:
+    if not _services(request).ledger.delete_organization(org_id):
+        raise HTTPException(status_code=404, detail="organization not found")
+    return {"org_id": org_id, "deleted": True}
 
 
 @router.get("/report/{report_id}", response_model=Report)
