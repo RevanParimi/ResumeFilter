@@ -67,11 +67,16 @@ Two auth planes over `LedgerStore`:
   - `POST /ledger/records` — write-consent gated at the store (403 without an
     active `ledger_write` grant; 404 unknown candidate).
   - `POST /ledger/records/{id}/events` — ownership enforced (404 if the record
-    belongs to another org).
+    belongs to another org). Event append is gated on record ownership only and
+    intentionally inherits the record's submit-time `ledger_write` grant — it is
+    NOT re-checked against current consent, and these events are candidate-linked
+    so DPDP erasure sweeps them.
   - `GET /ledger/candidates/{id}/records` — **query-time `ledger_read`
     enforcement**: 403 without an active read grant. Every read attempt —
     allowed or denied — is written to `audit_log` (`record.query`, actor `org`)
-    in the same transaction, so probing is itself observable.
+    in the same transaction, so probing is itself observable. An org holding an
+    active `ledger_read` grant sees the candidate's interview records across ALL
+    member orgs (the reputation-network semantics), not only its own.
 
 **Org API keys:** `secrets.token_urlsafe(ledger_api_key_bytes)` (default 32),
 stored as sha256 hex in `organizations.api_key_hash` (migration
