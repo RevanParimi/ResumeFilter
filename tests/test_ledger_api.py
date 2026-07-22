@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,6 +21,11 @@ EXPERIENCE
 SKILLS
 Python, PyTorch
 """
+
+
+async def _ingest_candidate(services, text=RESUME):
+    result = await extract_profile(text, llm=services.llm, settings=services.settings)
+    return services.candidates.ingest(result, text).candidate_id
 
 
 def test_services_bundle_has_ledger_sharing_candidate_db(services):
@@ -72,3 +78,46 @@ def test_org_endpoints_behind_admin_key(settings, flywheel):
         assert client.post("/ledger/orgs", json={"name": "X"}).status_code == 401
         ok = client.post("/ledger/orgs", json={"name": "X"}, headers={"X-API-Key": "s3cret"})
         assert ok.status_code == 200
+
+
+def test_grant_revoke_and_status_consent(api):
+    client, services = api
+    cid = asyncio.run(_ingest_candidate(services))
+    org = client.post("/ledger/orgs", json={"name": "Consent Co"}).json()["org"]
+
+    granted = client.post(
+        f"/ledger/candidates/{cid}/consent",
+        json={"purpose": "ledger_read", "org_id": org["id"]},
+    )
+    assert granted.status_code == 200, granted.text
+    grant = granted.json()
+    assert grant["purpose"] == "ledger_read" and grant["org_id"] == org["id"]
+
+    status = client.get(
+        f"/ledger/candidates/{cid}/consent",
+        params={"org_id": org["id"], "purpose": "ledger_read"},
+    ).json()
+    assert status["allowed"] is True and status["grant_id"] == grant["id"]
+
+    revoked = client.post(f"/ledger/consent/{grant['id']}/revoke").json()
+    assert revoked["revoked"] is True
+    assert client.post(f"/ledger/consent/{grant['id']}/revoke").json()["revoked"] is False
+
+    after = client.get(
+        f"/ledger/candidates/{cid}/consent",
+        params={"org_id": org["id"], "purpose": "ledger_read"},
+    ).json()
+    assert after["allowed"] is False
+
+
+def test_consent_endpoints_404_on_unknown_candidate(api):
+    client, _ = api
+    org = client.post("/ledger/orgs", json={"name": "Ghost Co"}).json()["org"]
+    assert client.post(
+        "/ledger/candidates/nope/consent",
+        json={"purpose": "ledger_read", "org_id": org["id"]},
+    ).status_code == 404
+    assert client.get(
+        "/ledger/candidates/nope/consent",
+        params={"org_id": org["id"], "purpose": "ledger_read"},
+    ).status_code == 404

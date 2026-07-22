@@ -20,7 +20,7 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.fabrication.similarity import assess_resume_farm, fingerprint_text
-from app.ledger.schema import Organization
+from app.ledger.schema import ConsentDecision, ConsentGrant, ConsentPurpose, Organization
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -352,6 +352,46 @@ async def delete_org(org_id: str, request: Request) -> dict:
     if not _services(request).ledger.delete_organization(org_id):
         raise HTTPException(status_code=404, detail="organization not found")
     return {"org_id": org_id, "deleted": True}
+
+
+class ConsentGrantRequest(BaseModel):
+    purpose: ConsentPurpose
+    org_id: Optional[str] = None  # None = any member org
+    expires_at: Optional[datetime] = None  # None ⇒ default TTL
+
+
+@router.post("/ledger/candidates/{candidate_id}/consent", response_model=ConsentGrant)
+async def grant_consent(
+    candidate_id: str, req: ConsentGrantRequest, request: Request
+) -> ConsentGrant:
+    ledger = _services(request).ledger
+    try:
+        return ledger.grant_consent(
+            candidate_id=candidate_id,
+            purpose=req.purpose,
+            org_id=req.org_id,
+            expires_at=req.expires_at,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/ledger/consent/{consent_id}/revoke")
+async def revoke_consent(consent_id: str, request: Request) -> dict:
+    revoked = _services(request).ledger.revoke_consent(consent_id)
+    return {"consent_id": consent_id, "revoked": revoked}
+
+
+@router.get("/ledger/candidates/{candidate_id}/consent", response_model=ConsentDecision)
+async def consent_status(
+    candidate_id: str, request: Request, org_id: str, purpose: ConsentPurpose
+) -> ConsentDecision:
+    try:
+        return _services(request).ledger.consent_status(
+            candidate_id, org_id=org_id, purpose=purpose
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/report/{report_id}", response_model=Report)
