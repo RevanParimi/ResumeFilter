@@ -104,6 +104,7 @@ fr_weight_farm: 1.0              # NOT mute a subsystem (max term/coverage still
 # grants created without an explicit expiry get this TTL (days). No perpetual
 # consent. Purpose/stage/outcome taxonomies are code constants, not config.
 ledger_consent_default_ttl_days: 365
+ledger_api_key_bytes: 32
 
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional

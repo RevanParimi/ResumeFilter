@@ -47,3 +47,44 @@ unaffected and survive the org's departure.
 **Not in S3.1:** HTTP APIs, query-time `ledger_read` enforcement, org API
 keys, audit of reads (all S3.2); coding-round ingest (S3.3); reputation
 aggregation (S3.4).
+
+## S3.2 — ledger APIs (this sprint)
+
+Two auth planes over `LedgerStore`:
+
+- **Admin plane** (existing `X-API-Key` shared secret, `router`): org lifecycle
+  and consent recording — platform operations.
+  - `POST /ledger/orgs` → creates an org, returns a one-time `api_key`
+    (only its sha256 hash is stored); duplicate name → 409.
+  - `GET /ledger/orgs` · `POST /ledger/orgs/{id}/api-key` (rotate) ·
+    `DELETE /ledger/orgs/{id}` (hard cascade offboarding).
+  - `POST /ledger/candidates/{id}/consent` (grant) ·
+    `POST /ledger/consent/{id}/revoke` · `GET /ledger/candidates/{id}/consent`
+    (status; 404 for unknown candidate/org, 200 with `allowed:false` when known
+    but ungranted).
+- **Org plane** (`X-Org-Key` → one org via `authenticate_org`, `org_router` — an
+  org never needs the platform secret to touch its own data):
+  - `POST /ledger/records` — write-consent gated at the store (403 without an
+    active `ledger_write` grant; 404 unknown candidate).
+  - `POST /ledger/records/{id}/events` — ownership enforced (404 if the record
+    belongs to another org).
+  - `GET /ledger/candidates/{id}/records` — **query-time `ledger_read`
+    enforcement**: 403 without an active read grant. Every read attempt —
+    allowed or denied — is written to `audit_log` (`record.query`, actor `org`)
+    in the same transaction, so probing is itself observable.
+
+**Org API keys:** `secrets.token_urlsafe(ledger_api_key_bytes)` (default 32),
+stored as sha256 hex in `organizations.api_key_hash` (migration
+`0004_org_api_keys`, unique index). Suspended orgs never authenticate. Rotation
+overwrites the hash, invalidating the old key.
+
+**S3.1 residuals closed this sprint:** deterministic authorizing-grant selection
+(org-specific ▸ newest ▸ lowest id) so stamped `consent_id` and audited reads are
+reproducible; `consent_status` raises `LookupError` (→ 404) for unknown
+candidate/org vs a denied decision (→ 200) when known; `create_organization`
+maps the unique-name `IntegrityError` to `ValueError` (→ 409), no TOCTOU; the
+migration drift guard now also checks indexes, FK `ondelete`, and nullability.
+
+**Not in S3.2:** coding-round ingest (S3.3); reputation aggregation (S3.4);
+candidate-facing consent auth (platform records consent on the principal's
+behalf, audited as actor `candidate`).

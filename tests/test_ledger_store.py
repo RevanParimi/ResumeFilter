@@ -213,3 +213,11 @@ def test_duplicate_org_name_maps_integrity_error_to_value_error(store):
     store.create_organization("Acme Talent")
     with pytest.raises(ValueError):
         store.create_organization("Acme Talent")
+
+
+def test_ledger_api_key_bytes_default_and_floor():
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    assert Settings(_env_file=None).ledger_api_key_bytes == 32
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, ledger_api_key_bytes=8)

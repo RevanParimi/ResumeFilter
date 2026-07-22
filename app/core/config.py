@@ -180,6 +180,9 @@ class Settings(BaseSettings):
     # Grants created without an explicit expiry get this TTL — DPDP forbids
     # perpetual consent by construction. Purposes/stages are code constants.
     ledger_consent_default_ttl_days: int = Field(default=365, ge=1)
+    # Byte length of generated org API keys (secrets.token_urlsafe). Floor keeps
+    # keys high-entropy; the plaintext is returned once and only its hash stored.
+    ledger_api_key_bytes: int = Field(default=32, ge=16)
 
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).

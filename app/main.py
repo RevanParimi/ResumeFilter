@@ -110,6 +110,16 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
                 "GET /report/{id}/outcomes",
                 "GET /domains",
                 "GET /healthz",
+                "POST /ledger/orgs",
+                "GET /ledger/orgs",
+                "POST /ledger/orgs/{id}/api-key",
+                "DELETE /ledger/orgs/{id}",
+                "POST /ledger/candidates/{id}/consent",
+                "POST /ledger/consent/{id}/revoke",
+                "GET /ledger/candidates/{id}/consent",
+                "POST /ledger/records",
+                "POST /ledger/records/{id}/events",
+                "GET /ledger/candidates/{id}/records",
             ],
         }
 
