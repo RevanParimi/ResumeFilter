@@ -1,5 +1,6 @@
 """S3.1 LedgerStore: orgs, consent grant/revoke/status, audit-in-transaction."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -173,3 +174,42 @@ def test_build_ledger_store(tmp_path):
     url = "sqlite:///" + (tmp_path / "ledger.db").as_posix()
     store = build_ledger_store(Settings(_env_file=None, candidates_db_url=url))
     assert isinstance(store, LedgerStore)
+
+
+def test_issue_and_authenticate_api_key_roundtrip(store):
+    org = store.create_organization("KeyCo")
+    key = store.issue_api_key(org.id)
+    assert isinstance(key, str) and len(key) >= 20
+    assert store.authenticate_org(key) == org.id
+
+
+def test_rotating_api_key_invalidates_the_old_one(store):
+    org = store.create_organization("RotateCo")
+    old = store.issue_api_key(org.id)
+    new = store.issue_api_key(org.id)
+    assert new != old
+    assert store.authenticate_org(old) is None
+    assert store.authenticate_org(new) == org.id
+
+
+def test_authenticate_rejects_unknown_empty_and_suspended(store, session_factory):
+    from app.ledger.models import OrganizationRow
+    assert store.authenticate_org("not-a-key") is None
+    assert store.authenticate_org("") is None
+    org = store.create_organization("SuspendCo")
+    key = store.issue_api_key(org.id)
+    with session_factory() as s:
+        s.get(OrganizationRow, org.id).status = "suspended"
+        s.commit()
+    assert store.authenticate_org(key) is None
+
+
+def test_issue_api_key_unknown_org_raises_lookup(store):
+    with pytest.raises(LookupError):
+        store.issue_api_key("no-such-org")
+
+
+def test_duplicate_org_name_maps_integrity_error_to_value_error(store):
+    store.create_organization("Acme Talent")
+    with pytest.raises(ValueError):
+        store.create_organization("Acme Talent")

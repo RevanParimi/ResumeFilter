@@ -23,10 +23,13 @@ session produced them.
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.candidates.models import CandidateRow
@@ -59,6 +62,10 @@ class ConsentError(RuntimeError):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _hash_api_key(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _org(row: OrganizationRow) -> Organization:
@@ -119,10 +126,15 @@ def _audit_entry(row: AuditLogRow) -> AuditEntry:
 
 class LedgerStore:
     def __init__(
-        self, session_factory: sessionmaker, *, default_consent_ttl_days: int = 365
+        self,
+        session_factory: sessionmaker,
+        *,
+        default_consent_ttl_days: int = 365,
+        api_key_bytes: int = 32,
     ) -> None:
         self._session_factory = session_factory
         self._default_consent_ttl_days = default_consent_ttl_days
+        self._api_key_bytes = api_key_bytes
 
     # -- audit ----------------------------------------------------------------
 
@@ -167,14 +179,13 @@ class LedgerStore:
 
     def create_organization(self, name: str) -> Organization:
         with self._session_factory() as session:
-            dup = session.execute(
-                select(OrganizationRow.id).where(OrganizationRow.name == name)
-            ).first()
-            if dup:
-                raise ValueError(f"organization name already exists: {name!r}")
             row = OrganizationRow(name=name)
             session.add(row)
-            session.flush()
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                session.rollback()
+                raise ValueError(f"organization name already exists: {name!r}") from exc
             self._audit(
                 session,
                 actor_type="system",
@@ -217,6 +228,42 @@ class LedgerStore:
             )
             session.commit()
             return True
+
+    def issue_api_key(self, org_id: str) -> str:
+        """Generate + store (hashed) a fresh API key, returning the plaintext
+        ONCE. Overwrites any previous key — this is also key rotation."""
+        with self._session_factory() as session:
+            row = session.get(OrganizationRow, org_id)
+            if row is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            raw = secrets.token_urlsafe(self._api_key_bytes)
+            row.api_key_hash = _hash_api_key(raw)
+            self._audit(
+                session,
+                actor_type="system",
+                actor_id=None,
+                action="org.issue_key",
+                entity_type="organization",
+                entity_id=org_id,
+            )
+            session.commit()
+            return raw
+
+    def authenticate_org(self, api_key: str) -> Optional[str]:
+        """org_id for the active org holding this key, else None. Suspended
+        orgs never authenticate; empty/whitespace keys never match."""
+        api_key = (api_key or "").strip()
+        if not api_key:
+            return None
+        digest = _hash_api_key(api_key)
+        with self._session_factory() as session:
+            row = session.execute(
+                select(OrganizationRow).where(
+                    OrganizationRow.api_key_hash == digest,
+                    OrganizationRow.status == "active",
+                )
+            ).scalar_one_or_none()
+            return row.id if row else None
 
     # -- consent lifecycle ----------------------------------------------------
 

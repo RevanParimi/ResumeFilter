@@ -14,7 +14,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -32,11 +34,17 @@ class OrganizationRow(Base):
     """One member company of the ledger network."""
 
     __tablename__ = "organizations"
-    __table_args__ = (UniqueConstraint("name", name="uq_organizations_name"),)
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_organizations_name"),
+        Index("uq_organizations_api_key_hash", "api_key_hash", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | suspended
+    # sha256 hex of the org's API key; NULL until a key is issued. Only the hash
+    # is ever stored — the plaintext is returned once at issuance and discarded.
+    api_key_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
