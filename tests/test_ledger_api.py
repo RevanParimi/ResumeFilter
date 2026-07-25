@@ -223,3 +223,87 @@ def test_query_records_bad_key_and_unknown_candidate(api):
     assert client.get(f"/ledger/candidates/{cid}/records").status_code == 401
     assert client.get("/ledger/candidates/nope/records",
                       headers={"X-Org-Key": key}).status_code == 404
+
+
+# ── S3.3 coding-round endpoints ──────────────────────────────────────────────
+
+
+def _coding_payload(cid):
+    return {
+        "candidate_id": cid, "platform": "hackerrank", "score": 740.0,
+        "max_score": 850.0, "percentile": 88.0,
+        "problem_tags": ["arrays", "dynamic-programming"],
+        "taken_at": "2026-07-24T10:00:00+00:00", "assessment_name": "SDE Screen",
+        "raw": {"attempts": 1},
+    }
+
+
+def test_submit_coding_round_requires_valid_org_key(api):
+    client, cid, org_id, key = _setup_org_candidate(api)
+    payload = _coding_payload(cid)
+    assert client.post("/ledger/coding-rounds", json=payload).status_code == 401
+    assert client.post("/ledger/coding-rounds", json=payload,
+                       headers={"X-Org-Key": "wrong"}).status_code == 401
+    ok = client.post("/ledger/coding-rounds", json=payload, headers={"X-Org-Key": key})
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert body["candidate_id"] == cid and body["consent_id"]
+    assert body["platform"] == "hackerrank" and body["percentile"] == 88.0
+    assert body["problem_tags"] == ["arrays", "dynamic-programming"]
+
+
+def test_submit_coding_round_without_write_consent_is_403(api):
+    client, services = api
+    cid = asyncio.run(_ingest_candidate(services))
+    _, key = _org_with_key(client)  # org exists, no consent granted
+    resp = client.post("/ledger/coding-rounds", json=_coding_payload(cid),
+                       headers={"X-Org-Key": key})
+    assert resp.status_code == 403
+
+
+def test_submit_coding_round_unknown_candidate_is_404(api):
+    client = api[0]
+    _, key = _org_with_key(client)
+    payload = _coding_payload("no-such")
+    assert client.post("/ledger/coding-rounds", json=payload,
+                       headers={"X-Org-Key": key}).status_code == 404
+
+
+def test_submit_coding_round_rejects_bad_percentile(api):
+    client, cid, org_id, key = _setup_org_candidate(api)
+    payload = _coding_payload(cid)
+    payload["percentile"] = 150  # out of range → 422 validation error
+    assert client.post("/ledger/coding-rounds", json=payload,
+                       headers={"X-Org-Key": key}).status_code == 422
+
+
+def test_query_coding_rounds_requires_read_consent_and_audits(api):
+    client, cid, org_id, key = _setup_org_candidate(api, read=True)
+    services = api[1]
+    client.post("/ledger/coding-rounds", json=_coding_payload(cid),
+                headers={"X-Org-Key": key})
+    resp = client.get(f"/ledger/candidates/{cid}/coding-rounds",
+                      headers={"X-Org-Key": key})
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()) == 1 and resp.json()[0]["candidate_id"] == cid
+    reads = [a for a in services.ledger.audit_for_candidate(cid)
+             if a.action == "coding_round.query"]
+    assert reads and reads[-1].details["allowed"] is True
+
+
+def test_query_coding_rounds_denied_without_read_consent(api):
+    client, cid, org_id, key = _setup_org_candidate(api, read=False)  # write only
+    services = api[1]
+    resp = client.get(f"/ledger/candidates/{cid}/coding-rounds",
+                      headers={"X-Org-Key": key})
+    assert resp.status_code == 403
+    reads = [a for a in services.ledger.audit_for_candidate(cid)
+             if a.action == "coding_round.query"]
+    assert reads and reads[-1].details["allowed"] is False
+
+
+def test_query_coding_rounds_bad_key_and_unknown_candidate(api):
+    client, cid, org_id, key = _setup_org_candidate(api, read=True)
+    assert client.get(f"/ledger/candidates/{cid}/coding-rounds").status_code == 401
+    assert client.get("/ledger/candidates/nope/coding-rounds",
+                      headers={"X-Org-Key": key}).status_code == 404

@@ -21,6 +21,8 @@ from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 from app.ledger.schema import (
+    CodingPlatform,
+    CodingRoundResult,
     ConsentDecision,
     ConsentGrant,
     ConsentPurpose,
@@ -475,6 +477,63 @@ async def query_records(
     ledger = _services(request).ledger
     try:
         return ledger.query_records_for_org(org_id=org_id, candidate_id=candidate_id)
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class CodingRoundSubmitRequest(BaseModel):
+    candidate_id: str
+    platform: CodingPlatform
+    score: float = Field(ge=0)
+    taken_at: datetime
+    assessment_name: Optional[str] = None
+    platform_name: Optional[str] = None
+    max_score: Optional[float] = Field(default=None, ge=0)
+    percentile: Optional[float] = Field(default=None, ge=0, le=100)
+    problem_tags: list[str] = Field(default_factory=list)
+    raw: dict = Field(default_factory=dict)
+
+
+@org_router.post("/ledger/coding-rounds", response_model=CodingRoundResult)
+async def submit_coding_round(
+    req: CodingRoundSubmitRequest, request: Request, org_id: str = Depends(require_org)
+) -> CodingRoundResult:
+    ledger = _services(request).ledger
+    try:
+        return ledger.submit_coding_round(
+            org_id=org_id,
+            candidate_id=req.candidate_id,
+            platform=req.platform,
+            score=req.score,
+            taken_at=req.taken_at,
+            assessment_name=req.assessment_name,
+            platform_name=req.platform_name,
+            max_score=req.max_score,
+            percentile=req.percentile,
+            problem_tags=req.problem_tags,
+            raw=req.raw,
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@org_router.get(
+    "/ledger/candidates/{candidate_id}/coding-rounds",
+    response_model=list[CodingRoundResult],
+)
+async def query_coding_rounds(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> list[CodingRoundResult]:
+    """Query-time ledger_read enforcement. The store audits every attempt."""
+    ledger = _services(request).ledger
+    try:
+        return ledger.query_coding_rounds_for_org(
+            org_id=org_id, candidate_id=candidate_id
+        )
     except ConsentError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
