@@ -38,6 +38,7 @@ from app.core.db import make_engine, make_session_factory
 from app.ledger import consent as consent_logic
 from app.ledger.models import (
     AuditLogRow,
+    CodingRoundResultRow,
     ConsentGrantRow,
     EvaluationEventRow,
     InterviewRecordRow,
@@ -45,6 +46,8 @@ from app.ledger.models import (
 )
 from app.ledger.schema import (
     AuditEntry,
+    CodingPlatform,
+    CodingRoundResult,
     ConsentDecision,
     ConsentGrant,
     ConsentPurpose,
@@ -106,6 +109,25 @@ def _event(row: EvaluationEventRow) -> EvaluationEvent:
         candidate_id=row.candidate_id,
         event_type=row.event_type,
         payload=dict(row.payload or {}),
+        created_at=consent_logic.as_utc(row.created_at),
+    )
+
+
+def _coding_round(row: CodingRoundResultRow) -> CodingRoundResult:
+    return CodingRoundResult(
+        id=row.id,
+        org_id=row.org_id,
+        candidate_id=row.candidate_id,
+        consent_id=row.consent_id,
+        platform=CodingPlatform(row.platform),
+        platform_name=row.platform_name,
+        assessment_name=row.assessment_name,
+        score=row.score,
+        max_score=row.max_score,
+        percentile=row.percentile,
+        problem_tags=list(row.problem_tags or []),
+        taken_at=consent_logic.as_utc(row.taken_at),
+        raw=dict(row.raw or {}),
         created_at=consent_logic.as_utc(row.created_at),
     )
 
@@ -548,6 +570,145 @@ class LedgerStore:
                 .all()
             )
             return [_event(r) for r in rows]
+
+    # -- coding-round results (S3.3, consent-gated like interview records) -----
+
+    def submit_coding_round(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        platform: CodingPlatform | str,
+        score: float,
+        taken_at: datetime,
+        assessment_name: Optional[str] = None,
+        platform_name: Optional[str] = None,
+        max_score: Optional[float] = None,
+        percentile: Optional[float] = None,
+        problem_tags: Optional[list[str]] = None,
+        raw: Optional[dict] = None,
+        now: Optional[datetime] = None,
+    ) -> CodingRoundResult:
+        """Write-time DPDP gate: refuses without an active ledger_write grant."""
+        platform = CodingPlatform(platform)
+        moment = consent_logic.as_utc(now) if now else _utcnow()
+        taken_at = consent_logic.as_utc(taken_at)
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_WRITE)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_WRITE, at=moment
+            )
+            if not decision.allowed:
+                raise ConsentError(decision.reason)
+            row = CodingRoundResultRow(
+                org_id=org_id,
+                candidate_id=candidate_id,
+                consent_id=decision.grant_id,
+                platform=platform.value,
+                platform_name=platform_name,
+                assessment_name=assessment_name,
+                score=score,
+                max_score=max_score,
+                percentile=percentile,
+                problem_tags=list(problem_tags or []),
+                taken_at=taken_at,
+                raw=dict(raw or {}),
+            )
+            session.add(row)
+            session.flush()
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="coding_round.submit",
+                entity_type="coding_round_result",
+                entity_id=row.id,
+                candidate_id=candidate_id,
+                details={
+                    "platform": platform.value,
+                    "score": score,
+                    "consent_id": decision.grant_id,
+                },
+            )
+            session.commit()
+            return _coding_round(row)
+
+    def coding_rounds_for_candidate(self, candidate_id: str) -> list[CodingRoundResult]:
+        """Raw store read — query-time ledger_read enforcement is the API's job."""
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(CodingRoundResultRow)
+                    .where(CodingRoundResultRow.candidate_id == candidate_id)
+                    .order_by(CodingRoundResultRow.created_at, CodingRoundResultRow.id)
+                )
+                .scalars()
+                .all()
+            )
+            return [_coding_round(r) for r in rows]
+
+    def query_coding_rounds_for_org(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        at: Optional[datetime] = None,
+    ) -> list[CodingRoundResult]:
+        """Query-time DPDP gate mirroring records: an org may read a candidate's
+        coding rounds only under an active ledger_read grant. Every attempt —
+        allowed or denied — is audited in the same transaction."""
+        moment = consent_logic.as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_READ)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_READ, at=moment
+            )
+            if not decision.allowed:
+                self._audit(
+                    session,
+                    actor_type="org",
+                    actor_id=org_id,
+                    action="coding_round.query",
+                    entity_type="candidate",
+                    entity_id=candidate_id,
+                    candidate_id=candidate_id,
+                    details={"allowed": False, "purpose": "ledger_read"},
+                )
+                session.commit()
+                raise ConsentError(decision.reason)
+            rows = (
+                session.execute(
+                    select(CodingRoundResultRow)
+                    .where(CodingRoundResultRow.candidate_id == candidate_id)
+                    .order_by(CodingRoundResultRow.created_at, CodingRoundResultRow.id)
+                )
+                .scalars()
+                .all()
+            )
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="coding_round.query",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": True,
+                    "consent_id": decision.grant_id,
+                    "result_count": len(rows),
+                },
+            )
+            session.commit()
+            return [_coding_round(r) for r in rows]
 
 
 def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
