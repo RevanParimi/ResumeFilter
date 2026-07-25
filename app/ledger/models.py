@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint,
+    JSON, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -113,6 +113,37 @@ class EvaluationEventRow(Base):
     )
     event_type: Mapped[str] = mapped_column(String(32))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class CodingRoundResultRow(Base):
+    """One structured coding-assessment result one org submitted about one
+    candidate (S3.3). A peer of ``interview_records`` — same consent / audit /
+    DPDP machinery, but typed platform-assessment fields (platform, score,
+    percentile, tags) instead of a coarse pipeline-stage outcome. Append-only;
+    candidate-linked so DPDP erasure cascades it."""
+
+    __tablename__ = "coding_round_results"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
+    )
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
+    )
+    consent_id: Mapped[str] = mapped_column(
+        ForeignKey("consent_grants.id", ondelete="CASCADE"), index=True
+    )
+    platform: Mapped[str] = mapped_column(String(32))  # CodingPlatform value
+    platform_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    assessment_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    score: Mapped[float] = mapped_column(Float)
+    max_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    percentile: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    problem_tags: Mapped[list] = mapped_column(JSON, default=list)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    raw: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

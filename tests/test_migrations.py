@@ -34,6 +34,7 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
         "interview_records",
         "evaluation_events",
         "audit_log",
+        "coding_round_results",
     } <= names
 
 
@@ -53,7 +54,7 @@ def test_migrated_schema_matches_orm_models(tmp_path):
 
 LEDGER_TABLES = (
     "organizations", "consent_grants", "interview_records",
-    "evaluation_events", "audit_log",
+    "evaluation_events", "audit_log", "coding_round_results",
 )
 
 

@@ -104,3 +104,32 @@ def test_audit_row_defaults(session_factory):
         s.commit()
         assert a.actor_id is None and a.candidate_id is None
         assert a.details == {} and a.created_at is not None
+
+
+def test_coding_round_row_defaults_and_cascade(session_factory):
+    from app.ledger.models import CodingRoundResultRow
+    with session_factory() as s:
+        cand = CandidateRow()
+        org = OrganizationRow(name="Coding Corp")
+        s.add_all([cand, org])
+        s.flush()
+        g = ConsentGrantRow(candidate_id=cand.id, org_id=org.id,
+                            purpose="ledger_write", expires_at=_utcnow())
+        s.add(g)
+        s.flush()
+        row = CodingRoundResultRow(
+            org_id=org.id, candidate_id=cand.id, consent_id=g.id,
+            platform="hackerrank", score=740.0, taken_at=_utcnow(),
+        )
+        s.add(row)
+        s.commit()
+        assert len(row.id) == 36
+        assert row.problem_tags == [] and row.raw == {}
+        assert row.max_score is None and row.percentile is None
+        assert row.created_at is not None
+
+        s.delete(cand)   # DPDP erasure cascades the coding-round row
+        s.commit()
+        assert s.execute(select(CodingRoundResultRow)).scalars().all() == []
+        # the org survives erasure
+        assert s.execute(select(OrganizationRow)).scalars().all() != []
