@@ -93,3 +93,42 @@ migration drift guard now also checks indexes, FK `ondelete`, and nullability.
 **Not in S3.2:** coding-round ingest (S3.3); reputation aggregation (S3.4);
 candidate-facing consent auth (platform records consent on the principal's
 behalf, audited as actor `candidate`).
+
+## S3.3 — coding-round results (this sprint)
+
+A new **coding-round result** record type: structured automated-assessment
+results (HackerRank / Codility / LeetCode / CodeSignal / HackerEarth / internal),
+a standalone peer of `interview_records`. **Schema + ingest only — no scoring,
+no cross-platform normalization, no reputation** (S3.4).
+
+**Table** `coding_round_results` (migration `0005_coding_round_results`, same
+DB/metadata root; CASCADE FKs to `candidates`, `organizations`, `consent_grants`):
+`platform` (`CodingPlatform` enum; `other` + `platform_name` for the long tail),
+`assessment_name?`, `score`, `max_score?`, `percentile?` (0–100), `problem_tags[]`
+(JSON), `taken_at`, `raw{}` (JSON — platform extras, forward-compat), plus
+`org_id`/`candidate_id`/`consent_id`. Field bounds are data hygiene, not scoring:
+`score`/`max_score` are related only in S3.4.
+
+**Consent:** reuses `ledger_write` (submit) / `ledger_read` (query) — one consent
+object per candidate, no coding-specific purposes.
+
+**Store** (`app/ledger/store.py`), mirroring interview records:
+- `submit_coding_round` — write-consent gated (`ConsentError` → 403), stamps the
+  authorizing `consent_id`, audits `coding_round.submit` (actor `org`) in-txn.
+- `query_coding_rounds_for_org` — query-time `ledger_read` enforcement; audits
+  **every** attempt allowed/denied as `coding_round.query` in the same txn. A
+  reader with an active grant sees the candidate's coding rounds across ALL member
+  orgs (reputation-network semantics).
+- `coding_rounds_for_candidate` — raw ungated read for PI-4/internal use.
+
+**Endpoints** (org plane, `X-Org-Key`):
+- `POST /ledger/coding-rounds` — 403 without write consent, 404 unknown candidate.
+- `GET /ledger/candidates/{id}/coding-rounds` — 403 without read consent (audited).
+
+**DPDP:** `coding_round_results` + its audit rows CASCADE from `candidates.id`, so
+candidate erasure sweeps them; `delete_organization` cascades them via the org's
+grants and the `org_id` FK, identical to interview records.
+
+**Not in S3.3:** any interpretation of `score`/`percentile`; reputation
+aggregation, recency decay, per-org reliability weight (all S3.4); events on a
+coding-round result; correlating a coding round to a specific interview record.

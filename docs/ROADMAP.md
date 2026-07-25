@@ -9,19 +9,46 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S3.3 — Coding-round results (schema + ingest ONLY)
-- **Next action:** Write the S3.3 plan (`platform`, problem tags, score,
-  percentile — schema + ingest only, no reputation yet; that's S3.4). Deferred
-  residuals from S3.2's final review (all triaged DEFER, none merge-blocking;
-  see `.superpowers/sdd/progress.md`): `append_event` is ownership-only and
-  intentionally inherits the submit-time `ledger_write` grant (documented in
-  LEDGER.md — decide in a later sprint whether to re-gate on live consent);
-  `create_organization`'s broad `except IntegrityError` maps any violation to
-  "name exists" (only `name` is insert-reachable-unique today); `consent.py`/
-  `store.py` module docstrings still carry "(S3.1)" framing; `revoke_consent`
-  endpoint returns 200 `{revoked:false}` for an unknown consent_id (no 404);
-  0004 downgrade (SQLite batch recreate) is untested.
-- **Last session (2026-07-22):** S3.2 executed subagent-driven, 11 tasks +
+- **Current sprint:** S3.4 — Cross-company reputation (Bayesian aggregation
+  with recency decay + per-org reliability weight)
+- **Next action:** Write the S3.4 plan. S3.4 is the first PI-3 sprint with real
+  scoring: aggregate a candidate's `interview_records` + `coding_round_results`
+  (both now flowing) into an advisory cross-company reputation signal — Bayesian
+  shrinkage toward a prior, recency decay, per-org reliability weight. Advisory
+  only, `ledger_read`-gated + audited, never auto-reject; no new record types.
+- **Open residuals (carried, all DEFER — none merge-blocking; see
+  `.superpowers/sdd/progress.md`):** from S3.2 — `append_event` is ownership-only
+  and intentionally inherits the submit-time `ledger_write` grant (documented in
+  LEDGER.md — decide whether to re-gate on live consent); `create_organization`'s
+  broad `except IntegrityError` maps any violation to "name exists" (only `name`
+  is insert-reachable-unique today); `consent.py`/`store.py` module docstrings
+  still carry "(S3.1)" framing; `revoke_consent` endpoint returns 200
+  `{revoked:false}` for an unknown consent_id (no 404); 0004 downgrade (SQLite
+  batch recreate) is untested. **S3.3 adds no new residuals.**
+- **Last session (2026-07-25):** S3.3 executed inline TDD-offline on branch
+  `s33-coding-round-results` (6 tasks). Delivered per plan: a standalone
+  `coding_round_results` table (peer of `interview_records`, NOT an overload of
+  it) with CASCADE FKs to candidates/organizations/consent_grants; contracts
+  `CodingPlatform` StrEnum (hackerrank/codility/leetcode/codesignal/hackerearth/
+  internal/other) + `CodingRoundResult` (platform, platform_name?, assessment_name?,
+  score, max_score?, percentile? [0–100], problem_tags[], taken_at, raw{}) with
+  pydantic bounds as data hygiene only — NO scoring; migration
+  `0005_coding_round_results` (+ drift/index/FK-ondelete/nullability guards
+  extended to the new table); store methods mirroring interview records —
+  `submit_coding_round` (`ledger_write`-gated → ConsentError, stamps consent_id,
+  audits `coding_round.submit` in-txn), `query_coding_rounds_for_org` (query-time
+  `ledger_read` enforcement, audits every attempt allowed/denied as
+  `coding_round.query`), `coding_rounds_for_candidate` (raw ungated read for
+  PI-4); two org-plane endpoints (`POST /ledger/coding-rounds`,
+  `GET /ledger/candidates/{id}/coding-rounds`) → 403/404/401/422; LEDGER.md S3.3
+  section. **Consent reused** (`ledger_write`/`ledger_read`) — no new taxonomy.
+  No new config knob, no LLM, no scoring. 20 new tests (422→442, `pytest -q`
+  green). Smoke `scripts/smoke_s33.py` (uvicorn HTTP) 7/7 OK exit 0: submit-403
+  → grant-write → submit → query-403 → grant-read → query-200 → DPDP-erase →
+  query-404 (run happened to exercise the LIVE LLM extraction path too). Merged
+  to main (fast-forward from 4f63cdc), 442 green on main, branch deleted. S3.3
+  COMPLETE. Next: S3.4 plan (cross-company reputation).
+- **Prior session (2026-07-22):** S3.2 executed subagent-driven, 11 tasks +
   whole-branch review, branch `s32-ledger-apis`. Delivered: two HTTP auth
   planes over `LedgerStore` — ADMIN plane (`X-API-Key` on `router`: org
   lifecycle + consent grant/revoke/status) and ORG plane (`X-Org-Key` → one
@@ -120,7 +147,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            (purpose-scoped, revocable, audited)
 │   ├── [x] S3.2  Ledger APIs — submit/query with consent enforced at query
 │   │            time; org-scoped API keys; audit trail
-│   ├── [ ] S3.3  Coding-round results — schema + ingest ONLY (far point):
+│   ├── [x] S3.3  Coding-round results — schema + ingest ONLY (far point):
 │   │            platform, problem tags, score, percentile
 │   └── [ ] S3.4  Cross-company reputation — Bayesian aggregation with
 │                recency decay + per-org reliability weight
@@ -410,3 +437,32 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   history — reputation-network semantics). Merged to main (fast-forward
   7a9fdcf→a948401), 422 green on main, branch deleted. PI-3 now S3.1+S3.2
   complete. Next: S3.3 plan (coding-round results — schema + ingest only).
+- **2026-07-25** — S3.3 done, inline TDD-offline on branch
+  `s33-coding-round-results` (6 tasks; spec
+  `docs/superpowers/specs/2026-07-25-s33-coding-round-results-design.md`, plan
+  `docs/superpowers/plans/2026-07-25-s33-coding-round-results.md`). Design
+  decisions taken with user (all recommendations accepted): standalone
+  `coding_round_results` table (a peer of `interview_records`, NOT an overload —
+  the `stage=coding` interview_record is a coarse pipeline outcome; a coding
+  ROUND RESULT is a structured platform assessment); reuse `ledger_write`/
+  `ledger_read` consent (no coding-specific purposes); `platform` as a
+  `CodingPlatform` StrEnum + `OTHER`/`platform_name` escape; "considered" field
+  set (platform, platform_name?, assessment_name?, score, max_score?,
+  percentile?, problem_tags[], taken_at, raw{}) so S3.4/PI-4 need no follow-up
+  migration. Delivered: contracts + StrEnum, `CodingRoundResultRow` +
+  migration `0005_coding_round_results` (drift/index/FK-ondelete/nullability
+  guards extended to it), store methods mirroring interview records
+  (`submit_coding_round` write-gated + `consent_id`-stamped + `coding_round.submit`
+  audit in-txn; `query_coding_rounds_for_org` query-time `ledger_read` + audit of
+  every allowed/denied attempt as `coding_round.query`; `coding_rounds_for_candidate`
+  raw read), two org-plane endpoints (`POST /ledger/coding-rounds`,
+  `GET /ledger/candidates/{id}/coding-rounds`), LEDGER.md S3.3 section. Field
+  bounds are data hygiene only — NO scoring/normalization (that's S3.4). No new
+  config knob, no LLM. 20 new tests (422→442, `pytest -q` green). Smoke
+  `scripts/smoke_s33.py` 7/7 OK exit 0 (submit-403 → grant-write → submit →
+  query-403 → grant-read → query-200 [1 result] → DPDP-erase → query-404); the
+  run also exercised the live LLM extraction path. Whole-branch self-review
+  clean (no Critical/Important; migration↔ORM parity proven by the drift guard).
+  Merged to main (fast-forward from 4f63cdc), 442 green on main, branch deleted.
+  S3.3 COMPLETE — PI-3 now S3.1–S3.3 done. Next: S3.4 plan (cross-company
+  reputation).
