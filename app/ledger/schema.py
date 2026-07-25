@@ -42,6 +42,20 @@ class ConsentPurpose(StrEnum):
     LEDGER_READ = "ledger_read"
 
 
+class CodingPlatform(StrEnum):
+    """Where an automated coding assessment ran. A code-constant taxonomy like
+    InterviewStage/Outcome; OTHER + platform_name absorbs the long tail without
+    losing a controlled vocabulary for S3.4 grouping."""
+
+    HACKERRANK = "hackerrank"
+    CODILITY = "codility"
+    LEETCODE = "leetcode"
+    CODESIGNAL = "codesignal"
+    HACKEREARTH = "hackerearth"
+    INTERNAL = "internal"
+    OTHER = "other"
+
+
 class Organization(BaseModel):
     id: str
     name: str
@@ -83,6 +97,27 @@ class EvaluationEvent(BaseModel):
     candidate_id: str
     event_type: str
     payload: dict = Field(default_factory=dict)
+    created_at: datetime
+
+
+class CodingRoundResult(BaseModel):
+    """One structured coding-assessment result an org submitted about a candidate
+    (S3.3). A peer of InterviewRecord. Field bounds are data hygiene, NOT scoring:
+    relating score to max_score is normalization and belongs to S3.4."""
+
+    id: str
+    org_id: str
+    candidate_id: str
+    consent_id: str  # the ledger_write grant this was submitted under
+    platform: CodingPlatform
+    platform_name: Optional[str] = None  # free name when platform == OTHER
+    assessment_name: Optional[str] = None
+    score: float = Field(ge=0)
+    max_score: Optional[float] = Field(default=None, ge=0)
+    percentile: Optional[float] = Field(default=None, ge=0, le=100)
+    problem_tags: list[str] = Field(default_factory=list)
+    taken_at: datetime
+    raw: dict = Field(default_factory=dict)
     created_at: datetime
 
 

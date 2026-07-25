@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.ledger.schema import (
     AuditEntry,
+    CodingPlatform,
+    CodingRoundResult,
     ConsentDecision,
     ConsentGrant,
     ConsentPurpose,
@@ -75,3 +77,48 @@ def test_record_round_trips_json():
         summary="strong systems round", created_at=NOW,
     )
     assert InterviewRecord.model_validate_json(r.model_dump_json()) == r
+
+
+# ── S3.3 coding-round contracts ──────────────────────────────────────────────
+
+
+def test_coding_platform_taxonomy():
+    assert [p.value for p in CodingPlatform] == [
+        "hackerrank", "codility", "leetcode", "codesignal",
+        "hackerearth", "internal", "other",
+    ]
+
+
+def test_coding_round_result_defaults_and_coercion():
+    r = CodingRoundResult(
+        id="cr1", org_id="o1", candidate_id="c1", consent_id="g1",
+        platform="hackerrank", score=740.0, taken_at=NOW, created_at=NOW,
+    )
+    assert r.platform is CodingPlatform.HACKERRANK  # str coerces to enum
+    assert r.platform_name is None and r.assessment_name is None
+    assert r.max_score is None and r.percentile is None
+    assert r.problem_tags == [] and r.raw == {}
+
+
+def test_coding_round_result_rejects_out_of_range():
+    import pytest
+    from pydantic import ValidationError
+    common = dict(id="cr1", org_id="o1", candidate_id="c1", consent_id="g1",
+                  platform="other", taken_at=NOW, created_at=NOW)
+    with pytest.raises(ValidationError):  # percentile above 100
+        CodingRoundResult(score=10.0, percentile=101, **common)
+    with pytest.raises(ValidationError):  # negative score
+        CodingRoundResult(score=-1.0, **common)
+    with pytest.raises(ValidationError):  # negative max_score
+        CodingRoundResult(score=10.0, max_score=-5.0, **common)
+
+
+def test_coding_round_result_round_trips_json():
+    r = CodingRoundResult(
+        id="cr1", org_id="o1", candidate_id="c1", consent_id="g1",
+        platform="codility", platform_name=None, assessment_name="Backend Screen",
+        score=88.0, max_score=100.0, percentile=92.5,
+        problem_tags=["arrays", "dynamic-programming"],
+        taken_at=NOW, raw={"attempts": 1}, created_at=NOW,
+    )
+    assert CodingRoundResult.model_validate_json(r.model_dump_json()) == r
