@@ -132,3 +132,71 @@ grants and the `org_id` FK, identical to interview records.
 **Not in S3.3:** any interpretation of `score`/`percentile`; reputation
 aggregation, recency decay, per-org reliability weight (all S3.4); events on a
 coding-round result; correlating a coding round to a specific interview record.
+
+## S3.4 — cross-company reputation (this sprint) — PI-3 COMPLETE
+
+The payoff of the ledger: an **advisory** cross-company reputation band + score
+aggregating a candidate's `interview_records` **and** `coding_round_results`.
+A **derived read**, not a new record type — no graph node, no `Report` field,
+no LLM. Standing guarantee holds: it never changes a verdict/depth score and is
+**never a rejection signal**; nothing auto-rejects.
+
+**Model** (`app/ledger/reputation.py`, pure — the `app/fabrication/risk.py`
+pattern): each interview record and each *normalizable* coding round is one
+fractional-success observation in `[0,1]`.
+- Interview outcome → value (code constant, not config): `hired 1.0 · offer 0.9
+  · advanced 0.65 · rejected 0.15 · no_show 0.10`; **`withdrawn` excluded**
+  (candidate-initiated, not an evaluation of the candidate).
+- Coding round → value: `percentile/100`; else `score/max_score`; else
+  **excluded** (a bare score has no cross-platform meaning).
+- Observation weight `= type_weight · recency · reliability`, where `recency =
+  0.5 ** (age_days / rep_recency_halflife_days)` and `reliability` is the
+  contributing org's `reliability_weight`.
+- **Bayesian shrinkage** toward a neutral prior: `score = (α0 + Σ wᵢvᵢ) /
+  (rep_prior_strength + Σ wᵢ)`, `α0 = rep_prior_mean · rep_prior_strength`. No
+  evidence ⇒ score = prior (0.5). `confidence = min(cap, mass/(mass+k))`.
+
+**Bands** (`ReputationBand`, corroboration-gated): `INSUFFICIENT_DATA` (below
+the confidence floor) · `GUARDED` · `MIXED` · `FAVORABLE` · `STRONG`.
+`STRONG` and `GUARDED` (**the only negative-leaning band**) each require
+`≥ rep_corroboration_orgs` distinct orgs — **single-source high caps at
+FAVORABLE, single-source low at MIXED**, so one company can never brand a
+candidate (mirrors S2.4's "ELEVATED needs ≥2 flags"). The assessment carries no
+per-org identities.
+
+**Consent:** reuses `ledger_read` — a reputation query is a strictly-less-
+granular read of the same records.
+
+**Store** (`app/ledger/store.py`):
+- `reputation_for_org` — query-time `ledger_read` enforcement; reads the
+  candidate's interview records + coding rounds, builds the per-org reliability
+  map, aggregates, and audits **every** attempt allowed/denied as
+  `reputation.query` (actor `org`, band + counts in the allowed details) in the
+  same txn. A reader with an active grant sees the aggregate across ALL member
+  orgs.
+- `set_org_reliability` — admin sets an org's `reliability_weight` (≥0; 0 mutes
+  the org's evidence); audited `org.set_reliability` (actor `system`).
+
+**Column:** `organizations.reliability_weight` (nullable, neutral default 1.0;
+migration `0006_org_reliability_weight`). The mechanism ships now; calibrated
+values are a PI-8 concern.
+
+**Endpoints:**
+- `GET /ledger/candidates/{id}/reputation` (org plane, `X-Org-Key`) — 403
+  without read consent (audited), 404 unknown candidate / erased.
+- `POST /ledger/orgs/{id}/reliability` (admin plane, `X-API-Key`) — 404 unknown
+  org, 422 negative weight.
+
+**Config:** `rep_*` knobs (`config.yaml` / `Settings`) — prior mean/strength,
+recency half-life, confidence floor/k/cap, corroboration-orgs, strong/favorable/
+guarded thresholds, interview/coding type weights. Outcome→value map is a code
+constant.
+
+**DPDP:** reputation reads only candidate-linked rows that already CASCADE on
+erasure; an erased candidate ⇒ `LookupError` → 404. `reliability_weight` is
+org-level, not candidate data. No new candidate-linked table ⇒ no new erasure
+path.
+
+**Not in S3.4:** learning per-org reliability from outcomes (PI-8); stage-
+weighted or role-conditioned reputation (PI-4/PI-5); any use of reputation in
+ranking/search or in the depth `Report`.
