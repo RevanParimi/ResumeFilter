@@ -11,6 +11,8 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import app.candidates.models  # noqa: F401 — register tables on Base.metadata
+import app.ledger.models  # noqa: F401 — register ledger tables on Base.metadata
+import app.features.models  # noqa: F401 — register feature tables on Base.metadata
 from app.core.config import get_settings
 from app.core.db import Base
 
