@@ -9,13 +9,16 @@
 
 ## ▶ Current state
 
-- **Current sprint:** S3.4 — Cross-company reputation (Bayesian aggregation
-  with recency decay + per-org reliability weight)
-- **Next action:** Write the S3.4 plan. S3.4 is the first PI-3 sprint with real
-  scoring: aggregate a candidate's `interview_records` + `coding_round_results`
-  (both now flowing) into an advisory cross-company reputation signal — Bayesian
-  shrinkage toward a prior, recency decay, per-org reliability weight. Advisory
-  only, `ledger_read`-gated + audited, never auto-reject; no new record types.
+- **Current sprint:** PI-3 COMPLETE (S3.1–S3.4 all done). Next is **PI-4 —
+  ML feature store & ranking**, starting with S4.1 (feature registry).
+- **Next action:** Write the S4.1 plan (feature registry — versioned feature
+  definitions over candidate + eval + ledger data). Before shaping PI-4, consult
+  the vision gap analysis §6
+  (`docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md`) — it now
+  governs the post-PI-4 direction (demand side / candidate side / verification).
+  Reputation (S3.4) is now available to PI-4 ranking as an advisory feature via
+  `LedgerStore.reputation_for_org` (consent-gated) — but it must never become an
+  auto-reject gate; conservative/advisory stance stays.
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -147,7 +150,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   └── [x] S2.4  Unified fabrication_risk score fused into calibration +
 │                Report; still advisory, never auto-reject
 │
-├── PI-3  EVALUATION LEDGER (cross-company)
+├── PI-3  EVALUATION LEDGER (cross-company)                         [COMPLETE]
 │   ├── [x] S3.1  Ledger schema + DPDP consent model — organizations,
 │   │            interview_records, evaluation_events, consent_grants
 │   │            (purpose-scoped, revocable, audited)
@@ -155,7 +158,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            time; org-scoped API keys; audit trail
 │   ├── [x] S3.3  Coding-round results — schema + ingest ONLY (far point):
 │   │            platform, problem tags, score, percentile
-│   └── [ ] S3.4  Cross-company reputation — Bayesian aggregation with
+│   └── [x] S3.4  Cross-company reputation — Bayesian aggregation with
 │                recency decay + per-org reliability weight
 │
 ├── PI-4  ML FEATURE STORE & RANKING
@@ -531,3 +534,37 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   (depth solid, fabrication fusion clean). Decision record: `MODELS.md`. Windows
   gotcha logged: config.yaml comments must stay ASCII (cp1252 read). S3.4 still
   the next action.
+- **2026-07-26 (4)** — S3.4 done, inline TDD-offline on branch
+  `s34-cross-company-reputation` (6 tasks; spec
+  `docs/superpowers/specs/2026-07-26-s34-cross-company-reputation-design.md`,
+  plan `docs/superpowers/plans/2026-07-26-s34-cross-company-reputation.md`).
+  **PI-3 COMPLETE.** One design decision taken with user: negative-signal stance
+  = **one corroboration-gated band** (recommended); user delegated the rest.
+  Delivered: cross-company reputation as a **derived, `ledger_read`-gated read**
+  over `interview_records` + `coding_round_results` — NO new record type, NO
+  graph node, NO `Report` field, NO LLM. Pure `app/ledger/reputation.py`
+  (the `fabrication/risk.py` pattern): outcome→value code-constant map
+  (`withdrawn` excluded), coding normalization (percentile ▸ score/max_score ▸
+  excluded), per-obs weight = type·recency-halflife·per-org-reliability,
+  **Beta-Binomial posterior** shrunk toward a neutral 0.5 prior, saturating
+  confidence. Bands `INSUFFICIENT_DATA/GUARDED/MIXED/FAVORABLE/STRONG` —
+  `STRONG` and `GUARDED` (the only negative band) each need ≥2 distinct orgs, so
+  single-source high caps at FAVORABLE / single-source low at MIXED (mirrors
+  S2.4's ≥2-flags gate). Contracts (`ReputationBand`/`ReputationComponent`/
+  `ReputationAssessment`, `advisory=True`) + `Organization.reliability_weight`;
+  migration `0006_org_reliability_weight` (nullable col, neutral default 1.0;
+  drift guard extended). Store `reputation_for_org` (query-time `ledger_read`,
+  audits every attempt allowed/denied as `reputation.query` in-txn, band+counts
+  in details) + `set_org_reliability` (admin, `org.set_reliability` audit,
+  weight ≥0). Endpoints `GET /ledger/candidates/{id}/reputation` (org plane,
+  403/404) + `POST /ledger/orgs/{id}/reliability` (admin, 404/422). `rep_*`
+  config knobs (prior, halflife, thresholds, corroboration-orgs, type weights).
+  LEDGER.md S3.4 section. 26 new tests (442→468, `pytest -q` green). Smoke
+  `scripts/smoke_s34.py` 9/9 OK exit 0 (also exercised live LLM extraction):
+  2 orgs × 2 hired + 1 coding ⇒ `band=strong score=0.784 orgs=2 obs=6`;
+  reputation-403 → grant read → 200 → set reliability → coherent shift → DPDP
+  erase → 404. Whole-branch self-review clean (no Critical/Important; two DEFER
+  minors: all-orgs-reliability-0 yields component mean_value 0.0 under a safe
+  INSUFFICIENT_DATA band; `_settings()` helper duplicated per test file).
+  Reputation is now available to PI-4 ranking as a consent-gated advisory
+  feature (never an auto-reject gate). Next: S4.1 plan (feature registry).
