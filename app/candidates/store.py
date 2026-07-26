@@ -13,7 +13,7 @@ resumes and extractions, erasing raw resume text on request.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from pydantic import BaseModel
@@ -28,6 +28,14 @@ from app.fabrication.similarity import Fingerprint, estimate_similarity
 from app.schemas.fabrication import ResumeMatch
 
 MatchedOn = Literal["email_hash", "phone_hash"]
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Aware-UTC view of any datetime; naive values are assumed UTC (SQLite
+    drops tzinfo, so refetched timestamps come back naive)."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 class IngestOutcome(BaseModel):
@@ -189,6 +197,28 @@ class CandidateStore:
                 .first()
             )
             return CandidateProfile.model_validate(row.profile) if row else None
+
+    def profile_as_of(self, candidate_id: str, as_of: datetime) -> Optional[CandidateProfile]:
+        """Point-in-time profile: newest extraction with created_at <= as_of
+        (tie-break: newest resume version, then newest created_at). None if the
+        candidate had no extraction by as_of. Filtering happens in Python after
+        as_utc coercion because SQLite returns naive datetimes (see consent.py)."""
+        moment = _as_utc(as_of)
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(ExtractionRow, ResumeRow.version)
+                .join(ResumeRow, ExtractionRow.resume_id == ResumeRow.id)
+                .where(ExtractionRow.candidate_id == candidate_id)
+            ).all()
+        eligible = [
+            (version, _as_utc(ext.created_at), ext)
+            for ext, version in rows
+            if _as_utc(ext.created_at) <= moment
+        ]
+        if not eligible:
+            return None
+        eligible.sort(key=lambda t: (t[0], t[1]))  # ascending; last = newest
+        return CandidateProfile.model_validate(eligible[-1][2].profile)
 
     def list_resumes(self, candidate_id: str) -> list[ResumeSummary]:
         with self._session_factory() as session:

@@ -13,6 +13,9 @@ from pathlib import Path
 import pytest
 
 import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
+from sqlalchemy import select as _select
+
+from app.candidates.models import ExtractionRow as _ExtractionRow
 from app.candidates.store import CandidateStore
 from app.core.config import Settings
 from app.core.db import Base, make_engine, make_session_factory
@@ -79,6 +82,18 @@ def make_candidate_store() -> CandidateStore:
     engine = make_engine("sqlite://")
     Base.metadata.create_all(engine)
     return CandidateStore(make_session_factory(engine))
+
+
+def set_extraction_created_at(store, candidate_id, when):
+    """Test util: pin every extraction row's created_at so point-in-time tests
+    can control the profile axis (ingest itself stamps wall-clock now)."""
+    with store._session_factory() as s:
+        rows = s.execute(
+            _select(_ExtractionRow).where(_ExtractionRow.candidate_id == candidate_id)
+        ).scalars().all()
+        for r in rows:
+            r.created_at = when
+        s.commit()
 
 
 def make_services(
