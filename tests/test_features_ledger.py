@@ -8,19 +8,22 @@ from app.ledger.schema import (
 AS_OF = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
+_WHEN = datetime(2025, 12, 1, tzinfo=timezone.utc)
+
+
 def _rec(org):
     return InterviewRecord(
-        org_id=org, candidate_id="c1", consent_id="g1",
+        id=f"rec_{org}", org_id=org, candidate_id="c1", consent_id="g1",
         stage=InterviewStage.HM, outcome=InterviewOutcome.HIRED,
-        interviewed_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+        interviewed_at=_WHEN, created_at=_WHEN,
     )
 
 
 def _coding(org, pct):
     return CodingRoundResult(
-        org_id=org, candidate_id="c1", consent_id="g1",
+        id=f"cr_{org}", org_id=org, candidate_id="c1", consent_id="g1",
         platform=CodingPlatform.HACKERRANK, score=90.0, max_score=100.0, percentile=pct,
-        taken_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+        taken_at=_WHEN, created_at=_WHEN,
     )
 
 
@@ -47,7 +50,9 @@ def test_empty_ledger_defaults():
 
 
 def test_reputation_features_use_context_assessment():
-    ctx = _ctx([_rec("A"), _rec("B")], [_coding("A", 92.0), _coding("B", 88.0)])
+    # Enough evidence mass (6 obs across 2 orgs) to clear the confidence floor.
+    ctx = _ctx([_rec("A"), _rec("A"), _rec("B"), _rec("B")],
+               [_coding("A", 92.0), _coding("B", 88.0)])
     assert led.reputation_band(ctx) in {"favorable", "strong", "mixed"}
     assert led.reputation_score(ctx) > 0.5
 
