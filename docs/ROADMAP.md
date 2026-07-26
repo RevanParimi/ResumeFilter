@@ -16,6 +16,12 @@
   (both now flowing) into an advisory cross-company reputation signal — Bayesian
   shrinkage toward a prior, recency decay, per-org reliability weight. Advisory
   only, `ledger_read`-gated + audited, never auto-reject; no new record types.
+- **Long-range planning:** the full Mercor-for-India vision audit lives in
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
+  gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
+  candidate DPDP portal, comp intelligence) and the proposed PI-5..PI-8 shape
+  that supersedes the old flat PI-5 backlog. Consult it whenever a PI completes
+  and the next needs shaping; it never overrides the "Next action" above.
 - **Open residuals (carried, all DEFER — none merge-blocking; see
   `.superpowers/sdd/progress.md`):** from S3.2 — `append_event` is ownership-only
   and intentionally inherits the submit-time `ledger_write` grant (documented in
@@ -160,8 +166,19 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [ ] S4.3  Talent search/ranking API (filters + composite score)
 │   └── [ ] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
 │
-└── PI-5  BACKLOG (not designed) — AI interview delivery, matching engine,
-        company dashboard, Postgres migration, real embeddings
+├── PI-5  DEMAND SIDE (shaped, not yet spec'd) — job/requisition schema +
+│        role-conditioned matching · comp intelligence v0 · thin employer
+│        dashboard  (see 2026-07-26 vision gap analysis, §6)
+├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
+│        LinkedIn) · normalization curation + Hinglish intake · candidate auth
+│        + DPDP portal (my-data / who-accessed / revoke / retention TTLs)
+├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
+│        verification · document forensics + moonlighting advisory · AI
+│        interview delivery v0 (audio-first, advisory, proxy-detection hooks)
+└── PI-8  SCALE & LEARNING (shaped) — Postgres cutover + real embeddings ·
+        calibration harness (predicted vs ledger outcomes) · observability +
+        org self-serve.  STANDING NON-GOALS: payments/payroll/contracts,
+        sourcing/outreach, native coding assessments (revisit post-PI-7)
 ```
 
 ## Standing conventions (do not relitigate)
@@ -466,3 +483,20 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   Merged to main (fast-forward from 4f63cdc), 442 green on main, branch deleted.
   S3.3 COMPLETE — PI-3 now S3.1–S3.3 done. Next: S3.4 plan (cross-company
   reputation).
+- **2026-07-26** — Vision gap analysis written (docs only, no code):
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md`. Audited
+  the whole product against the Mercor-for-India reference anatomy
+  (ingest/verification/assessment/reputation/intelligence/flywheel/marketplace/
+  platform). Key findings: biggest strategic gap is AI interview delivery;
+  demand side (job schema, matching, comp bands) entirely absent; candidate-
+  facing DPDP surface (auth, my-data portal, first-party consent, retention
+  TTLs) needed before identity/KYC or AI interviews can land; identity
+  verification + document forensics (experience-letter mills, proxy interviews,
+  moonlighting) are the India-specific trust builds. Old flat PI-5 backlog
+  superseded by shaped PI-5 (demand side) / PI-6 (candidate side & intake) /
+  PI-7 (verification & assessment depth) / PI-8 (scale & learning); standing
+  non-goals: payments/payroll, sourcing, native coding assessments. §8 lists
+  research items to close at future spec time (DigiLocker/Consent Manager
+  terms, Hinglish speech models on the Qwen-tier cost stance, EPFO legality,
+  partner payload formats, license-clean comp data). Status board updated;
+  S3.4 remains the next action — the vision doc changes nothing about it.
