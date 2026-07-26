@@ -9,19 +9,20 @@
 
 ## ▶ Current state
 
-- **Current sprint:** PI-4 in progress — **S4.1 (feature registry) COMPLETE**.
-  Next is **S4.2 — materialization** (register-defined features → wide
-  `ml_features` table + CSV/parquet export; point-in-time-correct, no label
-  leakage).
-- **Next action:** Write the S4.2 plan. S4.1 shipped the definition layer
-  (`app/features/`): 31 pure, versioned features over candidate/depth/
-  fabrication/ledger snapshots via `@register_feature`, the `core_v1` view, and
-  `build_context`. S4.2 builds the materializer that turns a `FeatureView` +
-  point-in-time-sliced `FeatureContext`s into persisted rows — the historical
-  slicer S4.1 deliberately deferred (`build_context` only does a coarse
-  `created_at <= as_of` cutoff today) is S4.2's core job. Ledger/reputation
-  features are tagged `requires_consent`; S4.2 must enforce `ledger_read` before
-  materializing/serving them (advisory-only, never an auto-reject gate).
+- **Current sprint:** PI-4 in progress — **S4.2 (materialization) COMPLETE**.
+  Next is **S4.3 — talent search/ranking API** (filters + composite score over
+  the materialized `ml_feature_vectors`; advisory, never an auto-reject gate).
+- **Next action:** Write the S4.3 plan. S4.2 shipped the materialization layer:
+  `build_context` is now a true point-in-time slicer (`CandidateStore.profile_as_of`
+  + `as_of` on every axis), `LedgerStore.materialization_consent` (org-agnostic
+  `has_any_active` ledger_read gate, audited `feature.materialize`),
+  `app/features/materialize.py` (consent-masking materializer → `MaterializedVector`),
+  the `ml_feature_vectors` table (migration `0007`, compact JSON row-per-cut,
+  CASCADE erasure) + `FeatureStore` (idempotent upsert), and `app/features/export.py`
+  (wide CSV always, guarded optional parquet). S4.3 ranks/searches over these rows;
+  its seam is the JSON `feature_values` column (add a per-feature projection/index
+  when the query shape is known — no change to how S4.2 writes). S4.4 then joins
+  outcomes to the honest `as_of` cut for a leakage-free training set.
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -167,7 +168,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 ├── PI-4  ML FEATURE STORE & RANKING
 │   ├── [x] S4.1  Feature registry (versioned definitions over candidate +
 │   │            eval + ledger data)
-│   ├── [ ] S4.2  Materialization → wide ml_features table + CSV/parquet
+│   ├── [x] S4.2  Materialization → wide ml_features table + CSV/parquet
 │   │            export; point-in-time correct (no label leakage)
 │   ├── [ ] S4.3  Talent search/ranking API (filters + composite score)
 │   └── [ ] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
@@ -606,3 +607,42 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   CodingRoundResult require `id`+`created_at`; reputation unit test needed ≥6 obs
   to clear the confidence floor). No new residuals. Next: S4.2 plan
   (materialization → wide `ml_features` table + point-in-time slicer + export).
+- **2026-07-27** — S4.2 done, inline TDD-offline on branch `s42-materialization`
+  (9 tasks; spec `docs/superpowers/specs/2026-07-26-s42-materialization-design.md`,
+  plan `docs/superpowers/plans/2026-07-26-s42-materialization.md`). Three design
+  decisions taken with user (all recommendations accepted, user delegated the
+  rest): (D1) consent enforcement = **per-candidate gate, one global platform
+  table** — consent-tagged features materialize only under an active `ledger_read`
+  grant at `as_of` (org-agnostic: any org / org=NULL), else nulled + reason;
+  first-party features always materialize; every decision audited. (D2) storage =
+  **compact row-per-vector** with a JSON `feature_values` column (migration-free as
+  the catalog grows; wide shape is an export-time pivot). (D3) parquet =
+  **CSV always (stdlib) + guarded optional `pyarrow`** (not a core dep). Delivered:
+  point-in-time slicer — `CandidateStore.profile_as_of` (newest extraction ≤ as_of)
+  and `build_context` now honors `as_of` on profile/report/ledger/consent/reputation
+  (stays a raw assembler; consent policy lives in the materializer);
+  `consent.has_any_active` (org-agnostic active-grant check) +
+  `LedgerStore.materialization_consent` (audited `feature.materialize`, allowed &
+  withheld, never raises on withheld); `app/features/materialize.py`
+  (`MaterializedVector` + `materialize_candidate`/`materialize_all`, masks
+  `requires_consent` features to null when withheld); `ml_feature_vectors` table
+  (ORM `FeatureVectorRow` + migration `0007`, unique cut = idempotent upsert,
+  CASCADE FK ⇒ DPDP erasure sweeps it, drift/index/FK/nullability guards extended)
+  + `FeatureStore` (upsert/get/vectors_for_view, `as_of` keyed naive-UTC);
+  `app/features/export.py` (wide `export_view_csv` stdlib pivot in `view.members`
+  order; `export_view_parquet` typed per dtype, raises `ParquetUnavailable` when
+  pyarrow absent). Reused `feat_default_view` — no new numeric knob, no LLM, no HTTP
+  (materialization is a batch/script concern; serving = S4.3). `FEATURES.md` S4.2
+  section. 22 new tests (507→529, `pytest -q` green). Smoke `scripts/smoke_s42.py`
+  (uvicorn populate → direct materialize/persist/export) 11/11 OK exit 0 (also
+  exercised the live LLM extraction path): candidate A (consented, FUTURE-dated
+  ledger rows) → allowed, ledger count **0 at now** but **2 later** (point-in-time
+  proof: rows that exist now are invisible at the earlier cut), percentile 92 later;
+  candidate B (no consent) → consent features **null + masked**, first-party intact;
+  wide CSV header in view order; parquet guarded (skipped, pyarrow absent); DPDP
+  erase of A cascades its vector away. One smoke-script ordering bug fixed in-session
+  (the "two persisted vectors" count was read AFTER the erase — captured pre-erase;
+  a script bug, not a product bug). Whole-branch self-review clean (no
+  Critical/Important; migration↔ORM parity proven by the drift guard). Merged to
+  main (fast-forward), 529 green on main, branch deleted. S4.2 COMPLETE. Next: S4.3
+  plan (talent search/ranking API over `ml_feature_vectors`).
