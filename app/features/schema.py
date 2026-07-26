@@ -9,8 +9,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
-from typing import Optional, Union
+from functools import cached_property
+from typing import TYPE_CHECKING, Optional, Union
+
+from pydantic import BaseModel, Field
+
+from app.candidates.schema import CandidateProfile
+from app.ledger.reputation import assess_reputation
+from app.ledger.schema import CodingRoundResult, InterviewRecord, ReputationAssessment
+from app.schemas.report import Report
+
+if TYPE_CHECKING:  # avoid a schema<-registry import cycle
+    from app.features.registry import FeatureRegistry, RegisteredFeature
 
 FeatureValue = Union[float, int, bool, str, None]
 
@@ -97,3 +109,57 @@ class FeatureSpec:
             "categories": list(self.categories) if self.categories else None,
             "tags": list(self.tags),
         }
+
+
+# --- point-in-time snapshot + view + computed vector --------------------------
+
+
+@dataclass
+class FeatureContext:
+    """Read-only per-candidate snapshot (only data visible at ``as_of``).
+
+    Read-only by convention: extractors must treat it as immutable and read
+    nothing else — no store, no wall clock. Point-in-time slicing is S4.2's
+    job; S4.1 assembles at ``as_of = now``.
+    """
+
+    candidate_id: str
+    as_of: datetime
+    profile: Optional[CandidateProfile] = None
+    report: Optional[Report] = None
+    interview_records: tuple[InterviewRecord, ...] = ()
+    coding_rounds: tuple[CodingRoundResult, ...] = ()
+
+    @cached_property
+    def reputation(self) -> ReputationAssessment:
+        """Advisory reputation over this snapshot, dated to ``as_of`` (neutral
+        reliability in S4.1). Shared by all reputation.* features."""
+        return assess_reputation(
+            list(self.interview_records),
+            list(self.coding_rounds),
+            now=self.as_of,
+        )
+
+
+@dataclass(frozen=True)
+class FeatureView:
+    """A named, versioned bundle pinning exact ``(feature_name, version)`` pairs
+    so a materialization/training run is reproducible."""
+
+    name: str
+    version: int
+    members: tuple[tuple[str, int], ...]
+
+    def resolve(self, registry: "FeatureRegistry") -> list["RegisteredFeature"]:
+        return [registry.get(n, version=v) for n, v in self.members]
+
+
+class FeatureVector(BaseModel):
+    """Computed values for one context under one view (the row S4.2 persists)."""
+
+    candidate_id: str
+    as_of: datetime
+    view_name: str
+    view_version: int
+    values: dict[str, FeatureValue] = Field(default_factory=dict)
+    missing: tuple[str, ...] = ()
