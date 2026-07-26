@@ -221,6 +221,11 @@ class Settings(BaseSettings):
     rep_interview_weight: float = Field(default=1.0, ge=0.0)
     rep_coding_weight: float = Field(default=1.0, ge=0.0)
 
+    # --- ML feature store (PI-4, S4.1): feature registry -----------------------
+    # Default FeatureView the materializer/smoke resolve (all seed features at
+    # their latest version). Feature LOGIC is code-versioned, not config.
+    feat_default_view: str = "core_v1"
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
