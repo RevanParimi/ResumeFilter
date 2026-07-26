@@ -1,9 +1,12 @@
 """Assemble a FeatureContext from the live stores (PI-4 / S4.1).
 
-The only part of app/features that touches stores. Assembles the *current*
-snapshot (``as_of = now``) with a coarse ``created_at <= as_of`` cutoff on
-time-stamped rows. Full point-in-time correctness (versioned resumes/reports,
-consent-validity-at-as_of) is S4.2's materialization job — this is the seam.
+The only part of app/features that touches stores. Assembles a point-in-time
+snapshot: the profile is the newest extraction at/before ``as_of``
+(``profile_as_of``, S4.2), and reports/interview records/coding rounds are cut at
+their own ``created_at``/``interviewed_at``/``taken_at`` <= ``as_of``. Reputation
+decays relative to ``as_of``. Consent policy is NOT applied here — this stays a
+raw platform-internal assembler; the materializer (``materialize.py``) masks
+consent-tagged features.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ def build_context(
         return None
     moment = as_of or _utcnow()
 
-    profile = candidate_store.latest_profile(candidate_id)
+    profile = candidate_store.profile_as_of(candidate_id, moment)
 
     reports = [r for r in report_store.for_candidate(candidate_id) if r.created_at <= moment]
     report = max(reports, key=lambda r: r.created_at) if reports else None
