@@ -829,6 +829,41 @@ class LedgerStore:
             session.commit()
             return assessment
 
+    # -- feature materialization consent (S4.2, platform-internal gate) ---------
+
+    def materialization_consent(
+        self, candidate_id: str, *, at: Optional[datetime] = None
+    ) -> ConsentDecision:
+        """Platform-internal materialization gate (S4.2): may the platform include
+        this candidate's consent-tagged (ledger/reputation) features in the ML
+        feature table at `at`? Basis = any active ledger_read grant (org-agnostic).
+        Audits `feature.materialize` (allowed AND withheld) in the same
+        transaction. Returns the decision — withheld does NOT raise (the caller
+        still writes a valid row with those features nulled)."""
+        moment = consent_logic.as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_READ)
+            decision = consent_logic.has_any_active(
+                grants, purpose=ConsentPurpose.LEDGER_READ, at=moment
+            )
+            details = {"allowed": decision.allowed, "purpose": "ledger_read"}
+            if decision.allowed:
+                details["consent_id"] = decision.grant_id
+            self._audit(
+                session,
+                actor_type="system",
+                actor_id="platform",
+                action="feature.materialize",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details=details,
+            )
+            session.commit()
+            return decision
+
 
 def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
     """Store on the shared candidates DB URL (one metadata root, one Alembic
