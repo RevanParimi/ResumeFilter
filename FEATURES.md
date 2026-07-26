@@ -89,3 +89,80 @@ Fully offline. Contracts + registry validation + each seed feature (incl.
 Direct-module smoke `scripts/smoke_s41.py` (S3.1 style): ingest a fixture
 candidate → depth-eval → submit consented ledger rows → build context → compute
 `core_v1` → assert the vector is well-formed, plus a no-ledger candidate.
+
+## S4.2 — Materialization
+
+S4.2 turns the S4.1 *definitions* into persisted, point-in-time-correct rows +
+a wide export. Nothing here scores or ranks (S4.3) or joins labels (S4.4).
+
+### Point-in-time slicer (`context.py`)
+
+`build_context` is now a true `as_of` slicer, not a coarse cutoff:
+
+- **profile** — `CandidateStore.profile_as_of(candidate_id, as_of)`: the newest
+  extraction with `created_at <= as_of` (tie-break newest resume version, then
+  newest created_at); `None` if the candidate had no extraction by `as_of`.
+- **report / interview records / coding rounds** — cut at their own
+  `created_at` / `interviewed_at` / `taken_at` `<= as_of`.
+- **reputation** — decays relative to `as_of` (S4.1 cached accessor).
+
+`build_context` stays a **raw platform-internal assembler**: it reads the full
+ledger snapshot and applies **no consent policy** — that is the materializer's
+job. A vector at `as_of=T` reflects only data timestamped `<= T`, even when newer
+rows exist now (the no-leakage guarantee S4.4's label-join depends on).
+
+### Consent gate (`consent.has_any_active` + `LedgerStore.materialization_consent`)
+
+Materialization is a platform-internal batch use of cross-company data, so the
+basis is org-agnostic: **the candidate has opted into the reputation network** =
+any active `ledger_read` grant at `as_of` (org-specific or org=NULL).
+`has_any_active` is the pure org-agnostic check; `materialization_consent`
+resolves it against the candidate's grants and **audits `feature.materialize`**
+(actor `system`/`platform`, allowed *and* withheld) in the same transaction. It
+returns the decision — withheld does **not** raise.
+
+### Materializer (`materialize.py`)
+
+`materialize_candidate` slices the context, computes the view (`compute_view`
+validates every value against its spec), then applies the consent decision: if
+withheld, every `requires_consent` feature is set to `None` and added to
+`missing`; first-party features (`candidate` / `depth` / `fabrication`) are never
+touched. Result is a `MaterializedVector` (`vector`, `consent_state`,
+`materialized_at`). `materialize_all` maps it over candidate ids.
+
+### Storage (`ml_feature_vectors` + `FeatureStore`, migration `0007`)
+
+One **compact row per `(candidate_id, as_of, view_name, view_version)`**: JSON
+`feature_values` (post-masking) + `missing` + `consent_state` + `materialized_at`.
+The unique cut makes re-materialization an **idempotent upsert** — distinct
+`as_of` cuts coexist; the same cut updates in place. `as_of` is stored/queried as
+naive-UTC so the equality lookup round-trips on SQLite. The `candidate_id` FK is
+`ondelete=CASCADE`, so **DPDP erasure sweeps materialized rows with the
+candidate** — no new erasure path (proven by the cascade test + drift guard).
+
+### Export (`export.py`)
+
+The **wide** deliverable is an export-time pivot: header `candidate_id, as_of,
+view_name, view_version` then one column per feature **in `view.members` order**.
+`export_view_csv` (stdlib `csv`) is always available; null / consent-withheld →
+empty cell. `export_view_parquet` types each column from `spec.dtype` and raises
+`ParquetUnavailable` when `pyarrow` is not installed (an optional extra, **not**
+in core requirements). Exports never re-apply consent — values were masked at
+materialization, so a file can never leak a withheld value.
+
+### S4.3 seam
+
+The JSON `feature_values` column keeps S4.2 migration-free as the catalog grows.
+When S4.3 knows its query shape it can add a per-feature projection/index (or a
+materialized wide view) without changing how S4.2 writes.
+
+### Testing (S4.2)
+
+Slicer (`profile_as_of`, point-in-time `build_context`), `has_any_active`,
+`materialization_consent` (allowed/withheld + audit), materializer masking,
+`FeatureStore` (upsert idempotency + cascade-on-erase), export (wide CSV shape +
+guarded parquet), migration drift guard extended to `ml_feature_vectors`. Smoke
+`scripts/smoke_s42.py`: two candidates (A consented with future-dated ledger
+rows; B no consent) → materialize/persist/export → prove the point-in-time cut
+(A's future rows invisible at `now`, visible later), consent masking (B nulled),
+wide CSV header, guarded parquet, and DPDP cascade on erase.
