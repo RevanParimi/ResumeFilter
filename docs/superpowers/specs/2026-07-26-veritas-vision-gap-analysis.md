@@ -94,7 +94,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Each gap names its **landing zo
 | Only resume text/PDF intake; no LinkedIn/GitHub *profile* ingestion as first-class sources | Mercor ingests profiles, not just documents | Indian candidates under-maintain LinkedIn; GitHub + resume is the richer pair | **PI-6.1** |
 | GitHub used only as probe evidence, not as a structured skill signal | Repo analysis is a verifiable skill source | Strong OSS signal among tier-2/3 candidates who lack brand-name employers | **PI-6.1** |
 | Normalization tables are static | Taxonomies drift (new skills, new unicorns) | Indian startup employer churn is fast | **PI-6.2** (curation loop, still deterministic files — no auto-learning without review) |
-| No regional-language / Hinglish resume handling | Widens the funnel beyond English-polished resumes | Tier-2/3 talent discovery is the underserved market | **PI-6.2** (LLM path + deterministic transliteration fallback) |
+| No regional-language / Hinglish resume handling | Widens the funnel beyond English-polished resumes | Tier-2/3 talent discovery is the underserved market — **but the launch vertical is IT jobs, which are English-resume territory** | **DEFERRED (user decision 2026-07-26):** English-first until the IT vertical matures; revisit with media/entertainment verticals. Falls out of PI-6.2 scope |
 
 ### B. Verification — 🟡 text forensics done, identity/document forensics absent
 
@@ -109,7 +109,7 @@ Legend: ✅ have · 🟡 partial · ❌ missing. Each gap names its **landing zo
 
 | Gap | Why it matters | India angle | Landing zone |
 |---|---|---|---|
-| **No AI interview delivery** (voice/video, structured scoring) | This is Mercor's signature capability and primary signal source | Must handle Hindi-English code-switching; low-bandwidth (audio-first, not video-first); proxy-detection hooks (voice consistency vs later rounds) | **PI-7.3** (largest single build; text/audio first, video later; every score advisory + human-reviewed) |
+| **No AI interview delivery** (voice/video, structured scoring) | This is Mercor's signature capability and primary signal source | **English-first (Indian accents)** — IT-vertical interviews are English; Hindi/code-switching deferred to later verticals. Low-bandwidth (audio-first, not video-first); proxy-detection hooks (voice consistency vs later rounds) | **PI-7.3** (largest single build; text/audio first, video later; every score advisory + human-reviewed) |
 | No native coding assessment | We only *ingest* third-party results (S3.3, deliberate) | Third-party ingest is the right wedge — build native only if partners don't cover | **Non-goal for now** — revisit after PI-7 |
 | No work-sample / take-home evaluation | Secondary signal | — | Backlog (PI-9+) |
 
@@ -174,14 +174,16 @@ PI-5  DEMAND SIDE (NEW)
  └ S5.3 Thin employer dashboard (read-only over search/reports)
 PI-6  CANDIDATE SIDE & INTAKE (NEW)
  ├ S6.1 Profile-source ingestion (GitHub-as-signal; LinkedIn export parsing)
- ├ S6.2 Normalization curation loop + Hinglish/regional-language intake
+ ├ S6.2 Normalization curation loop  [multilingual/Hinglish intake DEFERRED —
+ │      English-first for the IT vertical, user decision 2026-07-26]
  └ S6.3 Candidate auth + DPDP portal (my-data, who-accessed, revoke, retention TTLs,
         first-party consent capture replacing admin-plane consent)
 PI-7  VERIFICATION & ASSESSMENT DEPTH (NEW — the Mercor-parity PI)
  ├ S7.1 Identity verification w/ consent-first design (outcomes stored, never docs)
  ├ S7.2 Document forensics (experience letters/payslips) + moonlighting advisory
- └ S7.3 AI interview delivery v0 (structured, audio-first, code-switch tolerant,
-        proxy-detection hooks; advisory scoring into ledger as a new record type)
+ └ S7.3 AI interview delivery v0 (structured, audio-first, English w/ Indian
+        accents [code-switch deferred], proxy-detection hooks; advisory scoring
+        into ledger as a new record type)
 PI-8  SCALE & LEARNING (NEW)
  ├ S8.1 Postgres cutover + real embeddings/vectorstore + ANN farm detection
  ├ S8.2 Calibration harness (predicted vs ledger outcomes) + model improvement loop
@@ -214,8 +216,10 @@ Unchanged from the 2026-07-06 spec, restated because PI-6/7 will test them:
 Flagged honestly so a future session budgets research time:
 
 - DPDP Consent Manager ecosystem maturity + DigiLocker API terms (S7.1 spec).
-- Speech models for Hinglish code-switching w/ economical inference (S7.3 spec);
-  must fit the OpenRouter/Qwen-tier cost stance.
+- Speech models for Indian-accented **English** w/ economical inference (S7.3
+  spec); must fit the OpenRouter/Qwen-tier cost stance. Shortlist researched
+  2026-07-26 → see `MODELS.md` (Qwen3-ASR / Kokoro / Sarvam hosted; Kimi K3
+  pricing re-check pending). Hinglish/code-switch models: deferred phase.
 - EPFO/UAN data-access legality for consent-gated moonlighting checks (S7.2) —
   if legally murky, first-party timeline forensics only.
 - Third-party assessment platforms' webhook/export formats (validates S3.3

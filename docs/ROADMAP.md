@@ -170,11 +170,13 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │        role-conditioned matching · comp intelligence v0 · thin employer
 │        dashboard  (see 2026-07-26 vision gap analysis, §6)
 ├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
-│        LinkedIn) · normalization curation + Hinglish intake · candidate auth
-│        + DPDP portal (my-data / who-accessed / revoke / retention TTLs)
+│        LinkedIn) · normalization curation loop · candidate auth + DPDP portal
+│        (my-data / who-accessed / revoke / retention TTLs)
+│        [multilingual/Hinglish intake DEFERRED — English-first, 2026-07-26]
 ├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
 │        verification · document forensics + moonlighting advisory · AI
-│        interview delivery v0 (audio-first, advisory, proxy-detection hooks)
+│        interview delivery v0 (audio-first English w/ Indian accents,
+│        advisory, proxy-detection hooks; model shortlist in MODELS.md)
 └── PI-8  SCALE & LEARNING (shaped) — Postgres cutover + real embeddings ·
         calibration harness (predicted vs ledger outcomes) · observability +
         org self-serve.  STANDING NON-GOALS: payments/payroll/contracts,
@@ -500,3 +502,17 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   terms, Hinglish speech models on the Qwen-tier cost stance, EPFO legality,
   partner payload formats, license-clean comp data). Status board updated;
   S3.4 remains the next action — the vision doc changes nothing about it.
+- **2026-07-26 (2)** — Model shortlist researched live (web) + two user
+  decisions recorded. (1) **English-first**: launch vertical is IT jobs, so
+  interviews/resumes are English (Indian-accented); Hinglish/regional intake
+  DEFERRED to later verticals (media/entertainment) — gap-analysis §5/§6 and
+  board updated accordingly. (2) `MODELS.md` created (root, beside FLOW/LEDGER
+  docs): P1 ASR → Qwen3-ASR 1.7B (Jan 2026, Apache 2.0; Srota Hinglish
+  fine-tune noted for the deferred phase), hosted alt Sarvam ASR ₹30/hr
+  (DPDP-friendly India hosting); P2 TTS → Kokoro-82M (Indian-English voice),
+  hosted alt Sarvam Bulbul; P3 text → Qwen tiers unchanged, Kimi K3
+  (2026-07-16, OpenRouter $3/$15) flagged decisive-tier candidate — re-check
+  pricing ~2 weeks after its 2026-07-27 open-weights drop; P4 embeddings →
+  Qwen3-Embedding (0.6B/8B, top open MTEB v2); P5 reranker → Qwen3-Reranker.
+  User actions: Sarvam account (free credits), bookmarks, no OpenRouter
+  changes through PI-4. Docs only, no code; S3.4 still next.
