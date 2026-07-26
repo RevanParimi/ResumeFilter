@@ -9,16 +9,19 @@
 
 ## ▶ Current state
 
-- **Current sprint:** PI-3 COMPLETE (S3.1–S3.4 all done). Next is **PI-4 —
-  ML feature store & ranking**, starting with S4.1 (feature registry).
-- **Next action:** Write the S4.1 plan (feature registry — versioned feature
-  definitions over candidate + eval + ledger data). Before shaping PI-4, consult
-  the vision gap analysis §6
-  (`docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md`) — it now
-  governs the post-PI-4 direction (demand side / candidate side / verification).
-  Reputation (S3.4) is now available to PI-4 ranking as an advisory feature via
-  `LedgerStore.reputation_for_org` (consent-gated) — but it must never become an
-  auto-reject gate; conservative/advisory stance stays.
+- **Current sprint:** PI-4 in progress — **S4.1 (feature registry) COMPLETE**.
+  Next is **S4.2 — materialization** (register-defined features → wide
+  `ml_features` table + CSV/parquet export; point-in-time-correct, no label
+  leakage).
+- **Next action:** Write the S4.2 plan. S4.1 shipped the definition layer
+  (`app/features/`): 31 pure, versioned features over candidate/depth/
+  fabrication/ledger snapshots via `@register_feature`, the `core_v1` view, and
+  `build_context`. S4.2 builds the materializer that turns a `FeatureView` +
+  point-in-time-sliced `FeatureContext`s into persisted rows — the historical
+  slicer S4.1 deliberately deferred (`build_context` only does a coarse
+  `created_at <= as_of` cutoff today) is S4.2's core job. Ledger/reputation
+  features are tagged `requires_consent`; S4.2 must enforce `ledger_read` before
+  materializing/serving them (advisory-only, never an auto-reject gate).
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -162,7 +165,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                recency decay + per-org reliability weight
 │
 ├── PI-4  ML FEATURE STORE & RANKING
-│   ├── [ ] S4.1  Feature registry (versioned definitions over candidate +
+│   ├── [x] S4.1  Feature registry (versioned definitions over candidate +
 │   │            eval + ledger data)
 │   ├── [ ] S4.2  Materialization → wide ml_features table + CSV/parquet
 │   │            export; point-in-time correct (no label leakage)
@@ -568,3 +571,38 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   INSUFFICIENT_DATA band; `_settings()` helper duplicated per test file).
   Reputation is now available to PI-4 ranking as a consent-gated advisory
   feature (never an auto-reject gate). Next: S4.1 plan (feature registry).
+- **2026-07-26 (5)** — S4.1 done, inline TDD-offline on branch
+  `s41-feature-registry` (10 tasks; spec
+  `docs/superpowers/specs/2026-07-26-s41-feature-registry-design.md`, plan
+  `docs/superpowers/plans/2026-07-26-s41-feature-registry.md`). **PI-4 started.**
+  Two design decisions taken with user (both recommendations accepted, user
+  delegated the rest): (1) registry shape = **code-first `@register_feature`
+  decorator** (mirrors `@register_domain`), not a DB table; (2) ledger/reputation
+  features are **in the seed catalog, tagged `requires_consent`** (enforcement
+  deferred to S4.2/S4.3). Delivered a new pure package `app/features/`:
+  `schema.py` (FeatureSpec metadata + dtype/source StrEnums + FeatureContext
+  point-in-time snapshot with cached `reputation` accessor + FeatureView +
+  FeatureVector), `registry.py` (FeatureRegistry with collision guard /
+  latest-version / `compute_one` output validation / `compute_view` / manifest,
+  `@register_feature` + module-global default registry + `latest_view`),
+  `context.py` (`build_context` store assembler — coarse `created_at <= as_of`
+  cutoff; full historical slicer is S4.2), and `definitions/` seed catalog: **31
+  features** across candidate (12), depth (7), fabrication (5), ledger (4,
+  consent-tagged), reputation (3, consent-tagged). `core_v1` default view + one
+  config knob `feat_default_view` (no numeric behavior knobs — feature logic is
+  code-versioned like domains + the reputation outcome map). NO migration, NO
+  HTTP, NO LLM, NO Report field, NO graph node (values/persistence = S4.2;
+  serving/ranking = S4.3; labels = S4.4). DPDP: no new candidate-linked table ⇒
+  no new erasure path; `build_context` returns None after erasure. `FEATURES.md`
+  written (peer of LEDGER.md/FABRICATION.md). 39 new tests (468→507, `pytest -q`
+  green). Smoke `scripts/smoke_s41.py` (uvicorn populate → direct feature
+  compute) 10/10 OK exit 0 (also exercised the LIVE LLM extraction path):
+  candidate → 31-feature vector (years_experience 8.08, depth_score 0.72,
+  fabrication low, consent-gated interview_records 2, best_coding_percentile 92,
+  reputation.score 0.70); a distinct no-ledger candidate → ledger counts 0,
+  percentile missing, reputation insufficient_data. Two pre-exec plan-review
+  fixes (report `created_at` cutoff; smoke 2nd candidate needs a distinct email
+  or identity-resolution merges it) and two in-flight test fixes (InterviewRecord/
+  CodingRoundResult require `id`+`created_at`; reputation unit test needed ≥6 obs
+  to clear the confidence floor). No new residuals. Next: S4.2 plan
+  (materialization → wide `ml_features` table + point-in-time slicer + export).
