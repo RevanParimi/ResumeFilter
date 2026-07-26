@@ -72,8 +72,15 @@ def _hash_api_key(raw: str) -> str:
 
 
 def _org(row: OrganizationRow) -> Organization:
-    return Organization(id=row.id, name=row.name, status=row.status,
-                        created_at=consent_logic.as_utc(row.created_at))
+    return Organization(
+        id=row.id,
+        name=row.name,
+        status=row.status,
+        reliability_weight=(
+            row.reliability_weight if row.reliability_weight is not None else 1.0
+        ),
+        created_at=consent_logic.as_utc(row.created_at),
+    )
 
 
 def _grant(row: ConsentGrantRow) -> ConsentGrant:

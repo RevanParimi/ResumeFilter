@@ -36,6 +36,8 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
         "audit_log",
         "coding_round_results",
     } <= names
+    org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
+    assert "reliability_weight" in org_cols  # S3.4 migration 0006
 
 
 def test_migrated_schema_matches_orm_models(tmp_path):

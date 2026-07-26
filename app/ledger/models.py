@@ -45,6 +45,12 @@ class OrganizationRow(Base):
     # sha256 hex of the org's API key; NULL until a key is issued. Only the hash
     # is ever stored — the plaintext is returned once at issuance and discarded.
     api_key_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # Per-org reliability multiplier for S3.4 reputation aggregation. Nullable +
+    # python-default 1.0 (neutral) so existing rows read as neutral; the
+    # calibrated values are a PI-8 concern.
+    reliability_weight: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True, default=1.0
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

@@ -44,6 +44,14 @@ def test_org_defaults_and_unique_name(session_factory):
             s.commit()
 
 
+def test_org_reliability_weight_defaults_to_one(session_factory):
+    with session_factory() as s:
+        org = OrganizationRow(name="Rel Corp")
+        s.add(org)
+        s.commit()
+        assert org.reliability_weight == 1.0
+
+
 def test_grant_requires_existing_candidate(session_factory):
     with session_factory() as s:
         s.add(ConsentGrantRow(candidate_id="nope", purpose="ledger_write",
