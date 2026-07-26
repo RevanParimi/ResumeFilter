@@ -63,3 +63,33 @@ def check_consent(
         reason=f"active grant {best.id} covers purpose '{purpose.value}'",
         grant_id=best.id,
     )
+
+
+def has_any_active(
+    grants: Sequence[ConsentGrant], *, purpose: ConsentPurpose, at: datetime
+) -> ConsentDecision:
+    """Org-agnostic active-grant check for platform-internal materialization.
+
+    Unlike ``check_consent`` this ignores grant.org_id: the candidate opting any
+    reader in (org-specific or wildcard) is a sufficient basis for the platform's
+    own feature materialization. Same active-window rules and deterministic
+    ``_selection_key`` tie-break."""
+    moment = as_utc(at)
+    active = [
+        g for g in grants
+        if g.purpose == purpose
+        and as_utc(g.granted_at) <= moment
+        and as_utc(g.expires_at) > moment
+        and (g.revoked_at is None or as_utc(g.revoked_at) > moment)
+    ]
+    if not active:
+        return ConsentDecision(
+            allowed=False,
+            reason=f"no active consent for purpose '{purpose.value}'",
+        )
+    best = min(active, key=_selection_key)
+    return ConsentDecision(
+        allowed=True,
+        reason=f"active grant {best.id} covers purpose '{purpose.value}' (any org)",
+        grant_id=best.id,
+    )
