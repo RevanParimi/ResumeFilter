@@ -94,6 +94,7 @@ def make_services(
     ledger = ledger or LedgerStore(
         candidates._session_factory,
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
+        settings=settings,
     )
     return Services(
         settings=settings,

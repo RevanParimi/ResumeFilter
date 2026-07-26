@@ -44,6 +44,7 @@ from app.ledger.models import (
     InterviewRecordRow,
     OrganizationRow,
 )
+from app.ledger.reputation import assess_reputation
 from app.ledger.schema import (
     AuditEntry,
     CodingPlatform,
@@ -56,6 +57,7 @@ from app.ledger.schema import (
     InterviewRecord,
     InterviewStage,
     Organization,
+    ReputationAssessment,
 )
 
 
@@ -160,10 +162,12 @@ class LedgerStore:
         *,
         default_consent_ttl_days: int = 365,
         api_key_bytes: int = 32,
+        settings: Optional[Settings] = None,
     ) -> None:
         self._session_factory = session_factory
         self._default_consent_ttl_days = default_consent_ttl_days
         self._api_key_bytes = api_key_bytes
+        self._settings = settings
 
     # -- audit ----------------------------------------------------------------
 
@@ -293,6 +297,28 @@ class LedgerStore:
                 )
             ).scalar_one_or_none()
             return row.id if row else None
+
+    def set_org_reliability(self, org_id: str, weight: float) -> Organization:
+        """Admin: set an org's reliability multiplier for S3.4 reputation.
+        weight >= 0 (0 mutes the org's evidence); audited as org.set_reliability."""
+        if weight < 0:
+            raise ValueError(f"reliability weight must be >= 0, got {weight}")
+        with self._session_factory() as session:
+            row = session.get(OrganizationRow, org_id)
+            if row is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            row.reliability_weight = float(weight)
+            self._audit(
+                session,
+                actor_type="system",
+                actor_id=None,
+                action="org.set_reliability",
+                entity_type="organization",
+                entity_id=org_id,
+                details={"reliability_weight": float(weight)},
+            )
+            session.commit()
+            return _org(row)
 
     # -- consent lifecycle ----------------------------------------------------
 
@@ -717,6 +743,92 @@ class LedgerStore:
             session.commit()
             return [_coding_round(r) for r in rows]
 
+    # -- cross-company reputation (S3.4, derived ledger_read-gated read) --------
+
+    def reputation_for_org(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        at: Optional[datetime] = None,
+    ) -> ReputationAssessment:
+        """Advisory cross-company reputation, ledger_read-gated. Reads the
+        candidate's interview records + coding rounds, aggregates them (Bayesian
+        shrinkage + recency decay + per-org reliability), and audits every
+        attempt — allowed or denied — as reputation.query in the same
+        transaction. Never a rejection signal."""
+        moment = consent_logic.as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_READ)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_READ, at=moment
+            )
+            if not decision.allowed:
+                self._audit(
+                    session,
+                    actor_type="org",
+                    actor_id=org_id,
+                    action="reputation.query",
+                    entity_type="candidate",
+                    entity_id=candidate_id,
+                    candidate_id=candidate_id,
+                    details={"allowed": False, "purpose": "ledger_read"},
+                )
+                session.commit()
+                raise ConsentError(decision.reason)
+
+            record_rows = (
+                session.execute(
+                    select(InterviewRecordRow)
+                    .where(InterviewRecordRow.candidate_id == candidate_id)
+                    .order_by(InterviewRecordRow.created_at, InterviewRecordRow.id)
+                ).scalars().all()
+            )
+            coding_rows = (
+                session.execute(
+                    select(CodingRoundResultRow)
+                    .where(CodingRoundResultRow.candidate_id == candidate_id)
+                    .order_by(CodingRoundResultRow.created_at, CodingRoundResultRow.id)
+                ).scalars().all()
+            )
+            records = [_record(r) for r in record_rows]
+            coding = [_coding_round(r) for r in coding_rows]
+
+            org_ids = {r.org_id for r in records} | {c.org_id for c in coding}
+            reliability_by_org: dict[str, float] = {}
+            for oid in org_ids:
+                o = session.get(OrganizationRow, oid)
+                reliability_by_org[oid] = (
+                    o.reliability_weight if o and o.reliability_weight is not None else 1.0
+                )
+
+            assessment = assess_reputation(
+                records, coding, now=moment,
+                reliability_by_org=reliability_by_org, settings=self._settings,
+            )
+            self._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="reputation.query",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": True,
+                    "consent_id": decision.grant_id,
+                    "band": assessment.band.value,
+                    "total_observations": assessment.total_observations,
+                    "distinct_orgs": assessment.distinct_orgs,
+                },
+            )
+            session.commit()
+            return assessment
+
 
 def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
     """Store on the shared candidates DB URL (one metadata root, one Alembic
@@ -727,4 +839,5 @@ def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
         make_session_factory(engine),
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
         api_key_bytes=getattr(settings, "ledger_api_key_bytes", 32),
+        settings=settings,
     )
