@@ -31,6 +31,7 @@ from app.ledger.schema import (
     InterviewRecord,
     InterviewStage,
     Organization,
+    ReputationAssessment,
 )
 from app.ledger.store import ConsentError
 from app.schemas.fabrication import ResumeFarmAssessment
@@ -380,6 +381,23 @@ async def delete_org(org_id: str, request: Request) -> dict:
     return {"org_id": org_id, "deleted": True}
 
 
+class ReliabilityRequest(BaseModel):
+    weight: float = Field(ge=0.0)
+
+
+@router.post("/ledger/orgs/{org_id}/reliability", response_model=Organization)
+async def set_org_reliability(
+    org_id: str, req: ReliabilityRequest, request: Request
+) -> Organization:
+    """Admin: set an org's per-org reliability multiplier for S3.4 reputation
+    aggregation (neutral default 1.0). A negative weight is a 422 at the
+    boundary."""
+    try:
+        return _services(request).ledger.set_org_reliability(org_id, req.weight)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 class ConsentGrantRequest(BaseModel):
     purpose: ConsentPurpose
     org_id: Optional[str] = None  # None = any member org
@@ -534,6 +552,24 @@ async def query_coding_rounds(
         return ledger.query_coding_rounds_for_org(
             org_id=org_id, candidate_id=candidate_id
         )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@org_router.get(
+    "/ledger/candidates/{candidate_id}/reputation",
+    response_model=ReputationAssessment,
+)
+async def candidate_reputation(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> ReputationAssessment:
+    """Advisory cross-company reputation. Query-time ledger_read enforcement;
+    the store audits every attempt. Never a rejection signal."""
+    ledger = _services(request).ledger
+    try:
+        return ledger.reputation_for_org(org_id=org_id, candidate_id=candidate_id)
     except ConsentError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:

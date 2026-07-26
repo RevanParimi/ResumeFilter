@@ -307,3 +307,45 @@ def test_query_coding_rounds_bad_key_and_unknown_candidate(api):
     assert client.get(f"/ledger/candidates/{cid}/coding-rounds").status_code == 401
     assert client.get("/ledger/candidates/nope/coding-rounds",
                       headers={"X-Org-Key": key}).status_code == 404
+
+
+# -- S3.4 reputation + reliability -------------------------------------------
+
+
+def test_reputation_requires_read_consent_then_returns_band(api):
+    client, cid, org_id, key = _setup_org_candidate(api)  # write consent only
+    for _ in range(4):
+        client.post("/ledger/records",
+                    json={"candidate_id": cid, "stage": "hm", "outcome": "hired",
+                          "interviewed_at": "2026-07-26T10:00:00+00:00"},
+                    headers={"X-Org-Key": key})
+    denied = client.get(f"/ledger/candidates/{cid}/reputation",
+                        headers={"X-Org-Key": key})
+    assert denied.status_code == 403
+    client.post(f"/ledger/candidates/{cid}/consent",
+                json={"purpose": "ledger_read", "org_id": org_id})
+    ok = client.get(f"/ledger/candidates/{cid}/reputation", headers={"X-Org-Key": key})
+    assert ok.status_code == 200, ok.text
+    body = ok.json()
+    assert body["advisory"] is True
+    assert body["band"] in {"insufficient_data", "mixed", "favorable", "strong", "guarded"}
+    assert 0.0 <= body["score"] <= 1.0
+
+
+def test_reputation_missing_key_401_and_unknown_candidate_404(api):
+    client = api[0]
+    _, key = _org_with_key(client)
+    assert client.get("/ledger/candidates/whatever/reputation").status_code == 401
+    assert client.get("/ledger/candidates/does-not-exist/reputation",
+                      headers={"X-Org-Key": key}).status_code == 404
+
+
+def test_set_org_reliability_admin_endpoint(api):
+    client = api[0]
+    org_id, _ = _org_with_key(client)
+    ok = client.post(f"/ledger/orgs/{org_id}/reliability", json={"weight": 1.5})
+    assert ok.status_code == 200 and ok.json()["reliability_weight"] == 1.5
+    assert client.post(f"/ledger/orgs/{org_id}/reliability",
+                       json={"weight": -1.0}).status_code == 422
+    assert client.post("/ledger/orgs/nope/reliability",
+                       json={"weight": 1.0}).status_code == 404
