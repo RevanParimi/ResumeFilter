@@ -14,6 +14,9 @@ from app.ledger.schema import (
     InterviewRecord,
     InterviewStage,
     Organization,
+    ReputationAssessment,
+    ReputationBand,
+    ReputationComponent,
 )
 
 NOW = datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc)
@@ -122,3 +125,33 @@ def test_coding_round_result_round_trips_json():
         taken_at=NOW, raw={"attempts": 1}, created_at=NOW,
     )
     assert CodingRoundResult.model_validate_json(r.model_dump_json()) == r
+
+
+def test_reputation_band_taxonomy():
+    assert [b.value for b in ReputationBand] == [
+        "insufficient_data", "guarded", "mixed", "favorable", "strong",
+    ]
+
+
+def test_reputation_assessment_defaults_are_neutral_and_advisory():
+    a = ReputationAssessment()
+    assert a.score == 0.5  # neutral prior
+    assert a.band is ReputationBand.INSUFFICIENT_DATA
+    assert a.advisory is True
+    assert a.components == [] and a.distinct_orgs == 0
+
+
+def test_reputation_component_bounds():
+    import pytest
+    from pydantic import ValidationError
+    ReputationComponent(id="interview_records", observations=3,
+                        effective_weight=2.5, mean_value=0.8)
+    with pytest.raises(ValidationError):
+        ReputationComponent(id="x", mean_value=1.5)   # > 1
+    with pytest.raises(ValidationError):
+        ReputationComponent(id="x", effective_weight=-0.1)
+
+
+def test_organization_reliability_weight_defaults_to_one():
+    o = Organization(id="o1", name="Acme", created_at=NOW)
+    assert o.reliability_weight == 1.0

@@ -60,6 +60,7 @@ class Organization(BaseModel):
     id: str
     name: str
     status: str = "active"  # active | suspended
+    reliability_weight: float = 1.0  # per-org multiplier for S3.4 reputation (neutral=1.0)
     created_at: datetime
 
 
@@ -119,6 +120,48 @@ class CodingRoundResult(BaseModel):
     taken_at: datetime
     raw: dict = Field(default_factory=dict)
     created_at: datetime
+
+
+class ReputationBand(StrEnum):
+    """S3.4 — conservative advisory bands over a candidate's cross-company
+    track record. INSUFFICIENT_DATA when we can't say. GUARDED is the only
+    negative-leaning band and is corroboration-gated (>= rep_corroboration_orgs
+    distinct orgs); a single org can never brand a candidate."""
+
+    INSUFFICIENT_DATA = "insufficient_data"
+    GUARDED = "guarded"
+    MIXED = "mixed"
+    FAVORABLE = "favorable"
+    STRONG = "strong"
+
+
+class ReputationComponent(BaseModel):
+    """One evidence type's contribution to the reputation aggregate."""
+
+    id: str  # "interview_records" | "coding_rounds"
+    observations: int = 0
+    effective_weight: float = Field(default=0.0, ge=0.0)   # sum of recency*reliability*type weights
+    mean_value: float = Field(default=0.0, ge=0.0, le=1.0)  # weight-weighted mean outcome value
+
+
+class ReputationAssessment(BaseModel):
+    """S3.4 — advisory cross-company reputation. Beta-Binomial posterior mean
+    shrunk toward a neutral prior, recency-decayed, per-org-reliability weighted.
+
+    ADVISORY ONLY: never changes verdicts/depth, never a rejection signal.
+    Carries no per-org identities (the raw-records endpoint exposes those under
+    the same grant; the aggregate deliberately does not re-leak them)."""
+
+    score: float = Field(default=0.5, ge=0.0, le=1.0)       # posterior mean
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)  # evidence-mass coverage
+    band: ReputationBand = ReputationBand.INSUFFICIENT_DATA
+    components: list[ReputationComponent] = Field(default_factory=list)
+    total_observations: int = 0     # included observations
+    distinct_orgs: int = 0          # distinct contributing orgs
+    evidence_mass: float = Field(default=0.0, ge=0.0)  # sum of observation weights
+    excluded_observations: int = 0  # withdrawn / un-normalizable coding rounds
+    reasoning: str = ""
+    advisory: bool = True  # mirrors Report: never a rejection signal
 
 
 class AuditEntry(BaseModel):
