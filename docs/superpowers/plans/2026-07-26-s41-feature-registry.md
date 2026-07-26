@@ -1745,7 +1745,10 @@ def test_build_context_assembles_profile_report_and_ledger():
     cs, ls, rs = _stores()
     result = extract_profile(RESUME)
     cid = cs.ingest(result, resume_text=RESUME).candidate_id
-    rs.save(Report(candidate_id=cid, depth_score=0.6, depth_band=DepthBand.SOLID))
+    # Pin created_at so the build_context `created_at <= as_of` cutoff includes it
+    # (a default real-time created_at would sort after a fixed 2026-06-01 as_of).
+    rs.save(Report(candidate_id=cid, depth_score=0.6, depth_band=DepthBand.SOLID,
+                   created_at=datetime(2026, 1, 1, tzinfo=timezone.utc)))
 
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     ls.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_WRITE, org_id=None, now=now)
@@ -1953,8 +1956,14 @@ def main() -> int:
             cand = c.post("/candidates", json={"resume_text": text}, headers=admin_h).json()
             cid = cand["candidate_id"]
             method = cand["extraction_method"]
-            # a second candidate with NO ledger data
-            cand2 = c.post("/candidates", json={"resume_text": text + "\n#alt"}, headers=admin_h).json()
+            # a second candidate with NO ledger data — must be a DISTINCT identity
+            # (a different email, else email-hash identity resolution merges it
+            # into the first candidate).
+            alt = ("Priya Nair\nBackend Engineer\n"
+                   "Email: priya.nair.noledger@example.com\n"
+                   "Skills: Python, PostgreSQL\n"
+                   "Experience: Backend Engineer at Acme, 2021-2024\n")
+            cand2 = c.post("/candidates", json={"resume_text": alt}, headers=admin_h).json()
             cid2 = cand2["candidate_id"]
 
             org = c.post("/ledger/orgs", json={"name": "Org A"}, headers=admin_h).json()
