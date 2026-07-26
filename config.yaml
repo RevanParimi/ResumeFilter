@@ -17,13 +17,38 @@ openrouter_app_title: "depth-eval-engine"
 #   reasoning      = plausibility + claim_extraction (override _HARD for hardest)
 #   fast (parsing) = cheap structural work
 #   bulk           = high-volume gen/classification (future flywheel; unused at M0)
-model_reasoning: "qwen/qwen3.7-max"
+# Live OpenRouter pricing checked 2026-07-26 (USD per 1M in/out):
+#   deepseek/deepseek-v3.2   $0.269/$0.400  <- value king, our default reasoning
+#   qwen/qwen3.7-max         $1.475/$4.425  <- kept only for reasoning_hard
+#   qwen/qwen3.6-flash       $0.188/$1.125  <- fast tier (unchanged)
+#   qwen/qwen3.6-35b-a3b     $0.140/$1.000  <- bulk tier (unchanged)
+#   moonshotai/kimi-k3       $3.000/$15.00  <- flagship; re-check post-weights drop
+model_reasoning: "deepseek/deepseek-v3.2"
 model_reasoning_hard: "qwen/qwen3.7-max"
 model_fast: "qwen/qwen3.6-flash"
 model_bulk: "qwen/qwen3.6-35b-a3b"
 llm_max_tokens: 4096
 llm_timeout_seconds: 60
 llm_max_retries: 2                  # SDK retries w/ backoff before degrading to rules
+
+# --- Future model slots (PI-7 interviews / PI-8 embeddings) --------------------
+# INERT today — no code reads these until their sprint lands. Declared now so
+# model choices are business-tunable config, not code. Direction + research:
+# MODELS.md (2026-07-26). Exact vendor ids re-verified at each sprint's spec.
+model_scoring: "deepseek/deepseek-v3.2"   # decisive interview-scoring (S7.3);
+                                          # advisory + human-reviewed, so value
+                                          # tier is right; kimi-k3 if quality demands
+speech_provider: "openrouter"         # openrouter (existing account, cheapest dev
+                                      # path) | sarvam (India-hosted, DPDP residency
+                                      # for prod) | local (self-host GPU, PI-8)
+asr_model: "mistralai/voxtral-small-24b-2507"  # $0.10/$0.30, open-weights ASR on
+                                      # OpenRouter; alt google/gemini-2.5-flash-lite
+                                      # (~$0.03-0.10/hr audio); local = qwen3-asr-1.7b;
+                                      # sarvam = "saarika" family
+tts_model: "kokoro-82m"               # local, free, Indian-English preset (OpenRouter
+                                      # has no TTS); hosted alt = sarvam "bulbul"
+embedding_model: "qwen/qwen3-embedding-0.6b"   # PI-8; 8B variant = quality bump
+reranker_model: "qwen/qwen3-reranker-0.6b"     # optional PI-5/8 search quality
 
 # --- GitHub (provenance; first-party URLs the candidate shares only) ----------
 # NOTE: the TOKEN is a secret and lives in .env, not here.

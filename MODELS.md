@@ -1,32 +1,55 @@
-# MODELS.md — model slots & shortlist (researched 2026-07-26)
+# MODELS.md — model slots, config knobs & live-verified pricing (2026-07-26)
 
-Decision record for the model slots future PIs need. Researched live (web) on
-2026-07-26 at the user's request; **re-verify pricing/latest versions at each
-slot's spec time** — this file records direction, not frozen versions.
-Standing stance: OpenRouter + Qwen tiers for text (fast tier for non-decisive
-passes); every LLM step keeps a deterministic fallback.
+Decision record for the model slots current and future PIs need. All slots are
+**config knobs** in `config.yaml` (env-overridable via `DEE_*`) so model choices
+flip with business needs, not code changes. Researched via web + the **live
+OpenRouter catalog/API** on 2026-07-26; re-verify pricing at each slot's spec
+time. Standing stance: cheapest model that holds quality; every LLM step keeps
+a deterministic fallback; all outputs advisory + human-reviewed.
 
-**Language scope (user decision 2026-07-26): English-first.** The launch
-vertical is IT jobs, where interviews and resumes are English (Indian-accented).
-Hinglish/code-switch and regional languages are a **deferred phase** — revisit
-when expanding to verticals like media/entertainment. Practical upside: accented
-English ASR is an easier, cheaper target than code-switching.
+**Language scope (user decision 2026-07-26): English-first.** Launch vertical is
+IT jobs (English resumes/interviews, Indian accents). Hinglish/code-switch and
+regional languages are a deferred phase — revisit with media/entertainment
+verticals. Accented-English ASR is an easier, cheaper target than code-switch.
 
-| Slot | Needed by | Primary | Runner-up / hosted alt | Notes |
+## Active text tiers (config keys: `model_*`) — LIVE-VERIFIED 2026-07-26
+
+| Tier (key) | Model | OpenRouter $/1M in/out | Rationale |
+|---|---|---|---|
+| `model_reasoning` | **deepseek/deepseek-v3.2** | $0.269 / $0.400 | 2026 value king; ~5x/11x cheaper than qwen3.7-max on the common decisive path. Swapped in + live-pinged OK 2026-07-26; full live pipeline smoke result in the verification log below |
+| `model_reasoning_hard` | qwen/qwen3.7-max | $1.475 / $4.425 | Retained as the hard-escalation hatch only |
+| `model_fast` (parsing) | qwen/qwen3.6-flash | $0.188 / $1.125 | Unchanged; non-decisive passes |
+| `model_bulk` | qwen/qwen3.6-35b-a3b | $0.140 / $1.000 | Unchanged; unused until flywheel re-scoring |
+| watch | moonshotai/kimi-k3 | $3.000 / $15.000 | Flagship; open weights 2026-07-27 — re-check for cheaper third-party hosting ~2 weeks after before considering for decisive calls |
+
+## Future slots (inert until their sprint; keys live in config.yaml today)
+
+| Slot (key) | Needed by | Default | Alternates | Notes |
 |---|---|---|---|---|
-| P1 ASR (speech→text, Indian-accented **English**) | S7.3 AI interviews | **Qwen3-ASR 1.7B** (Jan 2026, Apache 2.0; streaming+offline in one model, strong accent robustness, 52 langs) | AI4Bharat indic-conformer-600m; hosted: **Sarvam ASR ₹30/hr** (India-hosted, DPDP-friendly). *Deferred phase:* **Srota** — Hinglish fine-tune of Qwen3-ASR-0.6B (15.85% WER conversational Hinglish) when code-switch support lands | Self-host needs a small GPU (PI-7/8 infra); Sarvam hosted avoids that for v0. Evaluate on Indian-accented English samples, not just benchmarks |
-| P2 TTS (interviewer voice, Indian **English**) | S7.3 | **Kokoro-82M** — has an Indian-English voice, low latency, near-free self-host | Orpheus-3B (~200ms streaming, richer); hosted: **Sarvam Bulbul ₹15–30/10K chars** (also covers the deferred multilingual phase) | Audio-first interviews per vision doc |
-| P3 Text LLM (scoring/decisive) | S7.3 (+ general) | **Keep Qwen fast tier** for parsing/non-decisive (unchanged). **Kimi K3** (rel. 2026-07-16, 2.8T MoE, 1M ctx; OpenRouter `moonshotai/kimi-k3` @ $3/$15 per M, cached-in $0.30) is the decisive-call candidate | — | K3 open weights due 2026-07-27 → third-party hosting should cut price sharply; **re-check ~2 weeks after** before adopting |
-| P4 Embeddings | PI-8 (helps PI-4/5) | **Qwen3-Embedding** — 0.6B (cost) / 8B (quality); top open on MTEB v2, 100+ langs, Apache 2.0 | BGE-M3 (568M, 100+ langs) | Replaces the memory vectorstore fakes at S8.1 |
-| P5 Reranker (optional) | PI-5/PI-8 search | **Qwen3-Reranker** (pairs with P4) | — | Adopt only if ranking quality demands it |
+| `model_scoring` | S7.3 interview scoring | **deepseek/deepseek-v3.2** | kimi-k3 if quality demands | Long transcripts → value tier is right; advisory + human-reviewed |
+| `speech_provider` | S7.3 | **openrouter** | sarvam · local | **Key finding: OpenRouter serves audio models on the EXISTING account — no new signup for v0.** Sarvam (₹30/hr ASR) is the *India data-residency* option for production DPDP posture, not a dev necessity. `local` = self-host GPU at PI-8 scale |
+| `asr_model` | S7.3 | **mistralai/voxtral-small-24b-2507** ($0.10/$0.30 + audio; open-weights → same model self-hostable later; **live-pinged OK**) | google/gemini-2.5-flash-lite (≈$0.03–0.10/hr audio, cheapest hosted); nemotron-3-nano-omni **:free** for dev; local: Qwen3-ASR 1.7B (Apache 2.0); Sarvam "saarika"; deferred Hinglish: Srota fine-tune | Evaluate on Indian-accented English samples, not just benchmarks |
+| `tts_model` | S7.3 | **kokoro-82m** (local, near-free, Indian-English preset) | Orpheus-3B (richer, ~200ms); hosted: Sarvam "bulbul" ₹15–30/10K chars | OpenRouter has **no TTS** — TTS is local-first |
+| `embedding_model` | PI-8 (helps PI-4/5) | **qwen/qwen3-embedding-0.6b** | 8B variant (quality); BGE-M3 | Top open family on MTEB v2; NOT on OpenRouter — self-host or provider TBD at S8.1 |
+| `reranker_model` | PI-5/8 search | **qwen/qwen3-reranker-0.6b** | — | Adopt only if ranking quality demands |
 
-**User actions taken/planned (2026-07-26):** create Sarvam account (free
-credits) as the DPDP-friendly hosted speech fallback; bookmark Qwen3-ASR /
-Srota / Kokoro / Qwen3-Embedding; defer Kimi K3 adoption until post-weights
-pricing settles. No OpenRouter config changes through PI-4.
+## Verification log
 
-**Sources (retrieved 2026-07-26):** MarkTechPost open-ASR 2026 comparison;
-QwenLM/Qwen3-ASR (GitHub); HF forums Srota Hinglish fine-tune; BentoML +
-SiliconFlow open-TTS 2026 guides; BentoML/Milvus open-embedding 2026 guides;
-VentureBeat + Interconnects Kimi K3 coverage; OpenRouter kimi-k3 pricing page;
-Sarvam AI api-pricing.
+- 2026-07-26: OpenRouter `/models` catalog pulled live (345 models; 24
+  audio-capable). `deepseek/deepseek-v3.2` and `voxtral-small-24b-2507`
+  round-trip pinged through the project key: both LIVE. Offline suite 442 green
+  after the tier swap. Full live pipeline smoke (`scripts/smoke_s24.py`) on the
+  new reasoning model: **10/10 OK, exit 0** — claim extraction → plausibility
+  (4 verdicts) → scoring (depth 0.759/0.779, band solid) → fabrication fusion
+  all clean on deepseek-v3.2; genuine resume fused `low`; `/evaluate` intact.
+  Windows note: config.yaml comments must stay ASCII-safe — the YAML source
+  reads in cp1252 and bytes like 0x90 (in a left-arrow char) crash Settings load.
+
+**User actions still open:** none mandatory for v0 (OpenRouter covers speech).
+Optional: Sarvam account only when production data-residency becomes real;
+re-check kimi-k3 pricing ~2026-08-10.
+
+**Sources:** OpenRouter live API (2026-07-26) · MarkTechPost open-ASR 2026 ·
+QwenLM/Qwen3-ASR · HF Srota Hinglish fine-tune · BentoML open-TTS/embeddings
+2026 guides · Milvus embedding comparison · VentureBeat/Interconnects Kimi K3 ·
+OpenRouter kimi-k3 page · Sarvam api-pricing.

@@ -516,3 +516,18 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   Qwen3-Embedding (0.6B/8B, top open MTEB v2); P5 reranker → Qwen3-Reranker.
   User actions: Sarvam account (free credits), bookmarks, no OpenRouter
   changes through PI-4. Docs only, no code; S3.4 still next.
+- **2026-07-26 (3)** — Cost-first model config applied (config.yaml +
+  `app/core/config.py`, all `DEE_*`-overridable knobs). Live OpenRouter pricing
+  pulled from the API: swapped `model_reasoning` + `model_scoring` →
+  `deepseek/deepseek-v3.2` ($0.269/$0.400 vs qwen3.7-max $1.475/$4.425, ~5–11x
+  cheaper, equal quality for our decisive path); qwen3.7-max retained only as
+  `model_reasoning_hard`; fast/bulk unchanged. Added inert future-slot knobs
+  (`speech_provider`/`asr_model`/`tts_model`/`embedding_model`/`reranker_model`)
+  — key finding: **OpenRouter serves audio models on the existing account**
+  (voxtral-small-24b ASR $0.10/$0.30, live-pinged OK), so speech needs no new
+  signup for v0; Sarvam demoted to prod India-residency option. Verified:
+  deepseek-v3.2 + voxtral live-pinged through the project key; 442 offline green;
+  full live pipeline smoke `scripts/smoke_s24.py` 10/10 exit 0 on deepseek-v3.2
+  (depth solid, fabrication fusion clean). Decision record: `MODELS.md`. Windows
+  gotcha logged: config.yaml comments must stay ASCII (cp1252 read). S3.4 still
+  the next action.

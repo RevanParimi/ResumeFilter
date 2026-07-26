@@ -83,7 +83,10 @@ class Settings(BaseSettings):
     #   bulk           → high-volume text gen/classification (future flywheel
     #                    re-scoring/labeling). NOT embeddings — those use a
     #                    dedicated embedder, never a chat tier. Unused at M0.
-    model_reasoning: str = "qwen/qwen3.7-max"
+    # Defaults mirror config.yaml (live OpenRouter pricing checked 2026-07-26):
+    # deepseek-v3.2 ($0.269/$0.400 per M) is the default reasoning workhorse;
+    # qwen3.7-max ($1.475/$4.425) is retained only as the hard-escalation tier.
+    model_reasoning: str = "deepseek/deepseek-v3.2"
     model_reasoning_hard: str = "qwen/qwen3.7-max"
     model_fast: str = "qwen/qwen3.6-flash"
     model_bulk: str = "qwen/qwen3.6-35b-a3b"
@@ -91,6 +94,22 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 60.0
     # SDK-level retries with backoff; provider blips degrade to rules, not 500s.
     llm_max_retries: int = 2
+
+    # --- Future model slots (PI-7 interviews / PI-8 embeddings) ----------------
+    # INERT until their sprint lands — declared now so model choices are
+    # business-tunable config, not code (research + direction: MODELS.md).
+    #   scoring        → decisive interview-scoring calls (S7.3); advisory +
+    #                    human-reviewed, so the value tier is the right default
+    #   speech_provider→ openrouter (existing account, cheapest dev path) |
+    #                    sarvam (India-hosted DPDP residency, prod) | local (PI-8)
+    #   asr/tts        → Indian-accented English first (Hinglish deferred)
+    #   embedding/reranker → PI-8 semantic match + PI-5/8 search quality
+    model_scoring: str = "deepseek/deepseek-v3.2"
+    speech_provider: Literal["openrouter", "sarvam", "local"] = "openrouter"
+    asr_model: str = "mistralai/voxtral-small-24b-2507"
+    tts_model: str = "kokoro-82m"
+    embedding_model: str = "qwen/qwen3-embedding-0.6b"
+    reranker_model: str = "qwen/qwen3-reranker-0.6b"
 
     # --- GitHub (provenance) --------------------------------------------------
     github_token: SecretStr = Field(default=SecretStr(""))
