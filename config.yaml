@@ -131,6 +131,23 @@ fr_weight_farm: 1.0              # NOT mute a subsystem (max term/coverage still
 ledger_consent_default_ttl_days: 365
 ledger_api_key_bytes: 32
 
+# --- Cross-company reputation (PI-3, S3.4): advisory aggregation ---------------
+# Beta-Binomial posterior over interview + coding evidence, shrunk toward a
+# neutral prior, recency-decayed, per-org reliability weighted. Advisory only:
+# never auto-rejects. Outcome->value map is a code constant, not config.
+rep_prior_mean: 0.5              # Beta prior mean (neutral: no assumption)
+rep_prior_strength: 4.0          # prior pseudo-count; higher = more shrinkage
+rep_recency_halflife_days: 365   # age at which an outcome's weight halves
+rep_min_confidence: 0.50         # below this -> insufficient_data, never assert
+rep_confidence_k: 4.0            # evidence mass where confidence = 0.5
+rep_confidence_cap: 0.90         # confidence ceiling
+rep_corroboration_orgs: 2        # distinct orgs required for STRONG / GUARDED
+rep_strong_threshold: 0.75       # score >= this (AND corroborated) -> strong
+rep_favorable_threshold: 0.60    # score >= this -> favorable
+rep_guarded_threshold: 0.35      # score <= this (AND corroborated) -> guarded
+rep_interview_weight: 1.0        # interview-record evidence type weight
+rep_coding_weight: 1.0           # coding-round evidence type weight
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

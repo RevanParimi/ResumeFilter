@@ -203,6 +203,24 @@ class Settings(BaseSettings):
     # keys high-entropy; the plaintext is returned once and only its hash stored.
     ledger_api_key_bytes: int = Field(default=32, ge=16)
 
+    # --- Cross-company reputation (PI-3, S3.4) --------------------------------
+    # Advisory Beta-Binomial aggregation of interview_records + coding_round
+    # results, shrunk toward a neutral prior, recency-decayed, per-org
+    # reliability weighted. Never auto-rejects; GUARDED (the only negative band)
+    # and STRONG both require >= rep_corroboration_orgs distinct orgs.
+    rep_prior_mean: float = Field(default=0.5, ge=0.0, le=1.0)
+    rep_prior_strength: float = Field(default=4.0, gt=0.0)
+    rep_recency_halflife_days: float = Field(default=365.0, gt=0.0)
+    rep_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+    rep_confidence_k: float = Field(default=4.0, gt=0.0)
+    rep_confidence_cap: float = Field(default=0.90, ge=0.0, le=1.0)
+    rep_corroboration_orgs: int = Field(default=2, ge=1)
+    rep_strong_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    rep_favorable_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+    rep_guarded_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    rep_interview_weight: float = Field(default=1.0, ge=0.0)
+    rep_coding_weight: float = Field(default=1.0, ge=0.0)
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
