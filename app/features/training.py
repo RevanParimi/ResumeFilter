@@ -78,3 +78,47 @@ def build_label(
         observed=True,
         withheld=False,
     )
+
+
+def build_training_example(
+    mv: MaterializedVector,
+    *,
+    interview_records: Iterable[InterviewRecord],
+    coding_rounds: Iterable[CodingRoundResult],
+) -> TrainingExample:
+    """Combine one materialized vector with the candidate's ledger rows. Consent is
+    read from the vector's stored S4.2 decision; a withheld vector short-circuits
+    to a withheld label inside build_label regardless of the passed records."""
+    allowed = bool(mv.consent_state.get("allowed"))
+    label = build_label(
+        as_of=mv.vector.as_of,
+        interview_records=interview_records,
+        coding_rounds=coding_rounds,
+        consent_allowed=allowed,
+    )
+    return TrainingExample(vector=mv.vector, label=label)
+
+
+def build_training_set(
+    mvs: Iterable[MaterializedVector],
+    *,
+    ledger_store,
+    audit: bool = True,
+) -> list[TrainingExample]:
+    """Join each materialized vector to its leakage-free label. Reads the ledger
+    ONLY for a consented vector (a withheld candidate's outcomes are never
+    fetched); audits every join as `training.label` (allowed/withheld) unless
+    `audit=False`."""
+    out: list[TrainingExample] = []
+    for mv in mvs:
+        cid = mv.vector.candidate_id
+        allowed = bool(mv.consent_state.get("allowed"))
+        if allowed:
+            irs = ledger_store.records_for_candidate(cid)
+            crs = ledger_store.coding_rounds_for_candidate(cid)
+        else:
+            irs, crs = [], []
+        if audit:
+            ledger_store.audit_training_label(cid, allowed=allowed, as_of=mv.vector.as_of)
+        out.append(build_training_example(mv, interview_records=irs, coding_rounds=crs))
+    return out
