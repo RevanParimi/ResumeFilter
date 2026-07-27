@@ -34,12 +34,14 @@ from app.matching.schema import (
 def _canonicalize(skills: tuple[str, ...]) -> list[str]:
     """Map free-text skills to canonical taxonomy ids (unknown -> norm_key, so the
     ask is recorded verbatim-normalized even if no candidate can match it).
-    De-duplicates, preserving first-seen order."""
+    De-duplicates, preserving first-seen order. A skill whose norm_key is empty
+    (pure punctuation) falls back to its stripped/lowercased form so a non-blank
+    ask is never silently dropped; fully blank tokens drop."""
     out: list[str] = []
     seen: set[str] = set()
     for s in skills:
         m = normalize_skill(s)
-        key = m.canonical if m else norm_key(s)
+        key = m.canonical if m else (norm_key(s) or s.strip().lower())
         if key and key not in seen:
             seen.add(key)
             out.append(key)
@@ -68,10 +70,16 @@ def _to_contract(row: JobRequisitionRow) -> JobRequisition:
 
 
 def _apply_spec(row: JobRequisitionRow, spec: JobRequisitionInput) -> None:
+    must = _canonicalize(spec.must_have_skills)
+    nice = _canonicalize(spec.nice_to_have_skills)
+    if not must and not nice:
+        # The input validator guarantees >=1 skill, but all could be blank/pure
+        # punctuation; refuse rather than store empties that fail to reconstruct.
+        raise ValueError("requisition has no usable (canonicalizable) skills")
     row.title = spec.title
     row.status = spec.status.value
-    row.must_have_skills = _canonicalize(spec.must_have_skills)
-    row.nice_to_have_skills = _canonicalize(spec.nice_to_have_skills)
+    row.must_have_skills = must
+    row.nice_to_have_skills = nice
     row.min_years_experience = spec.min_years_experience
     row.min_degree_level = spec.min_degree_level
     row.max_notice_days = spec.max_notice_days

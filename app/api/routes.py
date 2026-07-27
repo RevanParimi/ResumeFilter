@@ -601,7 +601,10 @@ class JobMatchRequest(BaseModel):
 async def create_job(
     req: JobRequisitionInput, request: Request, org_id: str = Depends(require_org)
 ) -> JobRequisition:
-    return _services(request).jobs.create_requisition(org_id, req)
+    try:
+        return _services(request).jobs.create_requisition(org_id, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @org_router.get("/jobs", response_model=list[JobRequisition])
@@ -623,9 +626,12 @@ async def get_job(
 async def update_job(
     req_id: str, body: JobUpdateRequest, request: Request, org_id: str = Depends(require_org)
 ) -> JobRequisition:
-    r = _services(request).jobs.update_requisition(
-        org_id, req_id, status=body.status, spec=body.spec
-    )
+    try:
+        r = _services(request).jobs.update_requisition(
+            org_id, req_id, status=body.status, spec=body.spec
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if r is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     return r

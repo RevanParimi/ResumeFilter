@@ -65,6 +65,28 @@ def test_update_status_and_replace_spec():
     assert jobs.update_requisition("nope", req.id, status=RequisitionStatus.OPEN) is None
 
 
+def test_unknown_skill_kept_and_reconstructs():
+    # A non-taxonomy skill (norm_key non-empty) is recorded verbatim-normalized
+    # and the stored requisition reconstructs cleanly (no reconstruct-time 500).
+    _, ledger, jobs = _wire()
+    org = ledger.create_organization("A")
+    req = jobs.create_requisition(org.id, JobRequisitionInput(
+        title="BE", must_have_skills=("Blockchain",),
+    ))
+    assert req.must_have_skills == ("blockchain",)
+    assert jobs.get_requisition(org.id, req.id).must_have_skills == ("blockchain",)
+
+
+def test_all_blank_skills_rejected_not_500():
+    import pytest
+    _, ledger, jobs = _wire()
+    org = ledger.create_organization("A")
+    with pytest.raises(ValueError):
+        jobs.create_requisition(org.id, JobRequisitionInput(
+            title="BE", must_have_skills=("   ", "\t"),
+        ))
+
+
 def test_create_is_audited_and_survives_candidate_erasure():
     cands, ledger, jobs = _wire()
     org = ledger.create_organization("A")
