@@ -13,11 +13,12 @@ from typing import Optional
 
 from app.candidates.schema import CandidateProfile
 from app.core.config import Settings
+from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import (
     FeatureFilter, FilterOp, RankingSpec, RankingTerm, SortDirection,
 )
-from app.features.schema import FeatureDType, FeatureSource, FeatureSpec
-from app.matching.schema import JobRequisitionInput, SkillMatchDetail
+from app.features.schema import FeatureDType, FeatureSource, FeatureSpec, FeatureVector
+from app.matching.schema import JobRequisitionInput, MatchedCandidate, SkillMatchDetail
 
 SKILL_COVERAGE = "match.skill_coverage"
 LOCATION_FIT = "match.location_fit"
@@ -128,3 +129,47 @@ def compile_filters(req: JobRequisitionInput) -> list[FeatureFilter]:
             feature=SKILL_COVERAGE, op=FilterOp.GTE, value=req.min_skill_coverage,
         )]
     return []
+
+
+def match(
+    req: JobRequisitionInput,
+    vectors: list[FeatureVector],
+    profiles_by_candidate: dict[str, CandidateProfile],
+    specs_by_name: dict[str, FeatureSpec],
+    settings: Settings,
+) -> list[MatchedCandidate]:
+    """Compute job-relative synthetic values, inject them into a copy of each
+    vector, apply the opt-in filter, and rank with the S4.3 engine."""
+    specs = {**specs_by_name, **_SYNTHETIC_SPECS}
+    skill_by_cand: dict[str, SkillMatchDetail] = {}
+    augmented: list[FeatureVector] = []
+    for v in vectors:
+        profile = profiles_by_candidate.get(v.candidate_id)
+        if profile is not None:
+            detail = skill_coverage(req, canonical_skills(profile), settings)
+            cov_value: Optional[float] = detail.coverage
+            loc = location_fit(req, profile.contact.location_tier)
+        else:
+            # No point-in-time profile: skill/location unknown -> terms drop (no penalty).
+            detail = SkillMatchDetail(
+                coverage=0.0, missing_must_have=tuple(req.must_have_skills)
+            )
+            cov_value = None
+            loc = None
+        skill_by_cand[v.candidate_id] = detail
+        augmented.append(v.model_copy(update={"values": {
+            **v.values, SKILL_COVERAGE: cov_value, LOCATION_FIT: loc,
+        }}))
+    filtered = apply_filters(augmented, compile_filters(req), specs)
+    ranked = score(filtered, compile_ranking(req, settings), specs)
+    return [
+        MatchedCandidate(
+            candidate_id=rc.candidate_id,
+            score=rc.score,
+            coverage=rc.coverage,
+            skill=skill_by_cand[rc.candidate_id],
+            contributions=rc.contributions,
+            missing=rc.missing,
+        )
+        for rc in ranked
+    ]
