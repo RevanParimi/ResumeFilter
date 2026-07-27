@@ -636,7 +636,9 @@ async def talent_search(req: TalentSearchRequest, request: Request) -> SearchRes
     try:
         filtered = apply_filters(vectors, req.filters, specs_by_name)
         ranked = score(filtered, req.ranking, specs_by_name)
-    except (ValueError, KeyError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
+        # TypeError: a filter value whose type can't be compared to the feature
+        # (e.g. a numeric feature vs a string) — a client error, not a 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     limit = req.limit or services.settings.search_default_limit

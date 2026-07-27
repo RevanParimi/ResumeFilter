@@ -92,6 +92,18 @@ def test_empty_ranking_is_422(api):
     assert _search(client, ranking={"terms": []}).status_code == 422
 
 
+def test_malformed_filter_value_is_400_not_500(api):
+    client, services = api
+    asyncio.run(_seed(services, "aaa", {"candidate.years_experience": 8.0}))
+    # a numeric feature compared against a non-numeric string is a client error
+    resp = _search(
+        client,
+        filters=[{"feature": "candidate.years_experience", "op": "gt", "value": "five"}],
+        ranking={"terms": [{"feature": "candidate.years_experience", "weight": 1.0}]},
+    )
+    assert resp.status_code == 400
+
+
 def test_empty_pool_when_nothing_materialized_is_200_advisory(api):
     client, _ = api
     resp = _search(client, ranking={"terms": [{"feature": "candidate.years_experience", "weight": 1.0}]})

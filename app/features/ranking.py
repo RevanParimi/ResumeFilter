@@ -58,7 +58,6 @@ def normalize_value(
     return 1.0 - norm if direction is SortDirection.LOWER_BETTER else norm
 
 
-_ORDER_OPS = {FilterOp.GT, FilterOp.GTE, FilterOp.LT, FilterOp.LTE}
 _ORDERABLE = {FeatureDType.NUMERIC, FeatureDType.INTEGER, FeatureDType.ORDINAL}
 
 
