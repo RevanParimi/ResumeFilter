@@ -9,31 +9,42 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-4 COMPLETE** — S4.4 (training-set export) merged-ready
-  on branch `s44-training-set-export`. PI-4 (ML feature store & ranking) is now
-  S4.1–S4.4 done: registry → point-in-time materialization + export → ranking/serve
-  → leakage-free training-set export.
-- **Next action:** Whole-branch self-review + merge S4.4 to main, then **shape
-  PI-5** (demand side: job/requisition schema + role-conditioned matching · comp
-  intelligence v0 · thin employer dashboard) per
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S4.4
-  shipped the label-join / training-set export over `ml_feature_vectors`: contracts
-  `app/features/training_schema.py` (`TrainingLabel`/`TrainingExample`) + pure
-  `app/features/training.py` (`build_label` — post-cut-only (`interviewed_at`/
-  `taken_at` **strictly `> as_of`** = no leakage), terminal-best outcome
-  `hired>offer>advanced>rejected>no_show` with `withdrawn` excluded, hire-positive
-  `{hired,offer}`, `event_at`/`lag_days`, `coding_best_percentile`, censoring-aware
-  `observed`, consent `withheld`; + orchestrator `build_training_set` reusing the
-  S4.2 `consent_state` — reads the ledger only for a consented vector, audits every
-  join). New `LedgerStore.audit_training_label` (audits the reused decision as
-  `training.label`, allowed/withheld). `export.py` grew shared `feature_columns`/
-  `vector_cells` pivot helpers + `export_training_csv`/`export_training_parquet`
-  (wide feature pivot + 7 appended `label_*` columns). **Key design point:** the
-  flywheel `outcome` field is a permanent `None` placeholder today, so labels are
-  **ledger-only** (interview outcomes + coding results); flywheel report outcomes
-  need an outcome-feedback API first (future). No new table/migration/HTTP/LLM/knob;
-  DPDP path unchanged (labels recompute from CASCADE-swept ledger rows; new
-  `training.label` audit rows are candidate-linked + CASCADE).
+- **Current sprint:** **PI-5 STARTED — S5.1 (job requisition + role-conditioned
+  matching) built + smoke-green on branch `s51-job-requisition-matching`**, merge
+  pending final whole-branch review. PI-4 (ML feature store & ranking) complete
+  and on main (S4.1–S4.4). S5.1 opens the demand side: an org describes a role as
+  a **job requisition** and gets an advisory, explainable role-conditioned
+  shortlist over the S4.2 pool, reusing the S4.3 ranking engine + one job-relative
+  skill-coverage dimension.
+- **Next action:** Final whole-branch self-review + merge S5.1 to main, then plan
+  **S5.2** (comp intelligence v0 — static bands + ledger-observed offers, advisory)
+  per `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.1
+  delivered (spec `2026-07-27-s51-job-requisition-matching-design.md`, plan
+  `2026-07-27-s51-job-requisition-matching.md`, 10 TDD tasks): new `app/matching/`
+  package — pure contracts `schema.py` (`JobRequisitionInput`/`JobRequisition`/
+  `CompBand`/`MatchWeights`/`SkillMatchDetail`/`MatchedCandidate`/`MatchResult`),
+  pure engine `match.py` (`skill_coverage`, `location_fit`, `compile_ranking`/
+  `compile_filters`, and `match` — injects two synthetic values
+  `match.skill_coverage`/`match.location_fit` into a copy of each FeatureVector and
+  reuses `ranking.score()`), ORM `JobRequisitionRow` + migration `0008` (org-owned,
+  CASCADE on org, **NOT candidate-linked** → survives candidate erasure), `JobStore`
+  (org-scoped CRUD with canonical-skill normalization + audited
+  `requisition.create`/`update`; `run_match` reads the pool + point-in-time profiles
+  at one `as_of`, ranks, and audits every **returned** candidate as `match.surface`
+  in the shared `audit_log` — candidate-linked + CASCADE), `Services.jobs` wiring,
+  org-plane endpoints `POST/GET/PATCH /jobs` + `POST /jobs/{id}/match`
+  (`MatchResult{advisory=True}`; cross-org 404, empty pool 422). **Design decisions
+  (delegated to recommendation):** org plane · compile-to-ranking + skill-coverage ·
+  comp band **metadata-only** (not matched; S5.2 consumes it, no follow-up
+  migration) · **audit-every-match, no new consent gate** (pool already
+  consent-masked at S4.2). `min_years/degree/notice` are **soft** (select the
+  dimension, value is not a cutoff); the **only** hard gate is opt-in
+  `min_skill_coverage`. `match_*` config knobs (skill weight dominant). No LLM.
+  `MATCHING.md` written (peer of LEDGER/FEATURES). 40 new tests (584→624,
+  `pytest -q` green). Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit 0:
+  ranked strong→weak→other by skill coverage (advisory — zero-coverage still
+  appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
+  candidate from the pool AND sweeps its `match.surface` audit rows.
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -184,9 +195,13 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S4.3  Talent search/ranking API (filters + composite score)
 │   └── [x] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
 │
-├── PI-5  DEMAND SIDE (shaped, not yet spec'd) — job/requisition schema +
-│        role-conditioned matching · comp intelligence v0 · thin employer
-│        dashboard  (see 2026-07-26 vision gap analysis, §6)
+├── PI-5  DEMAND SIDE (STARTED)
+│   ├── [x] S5.1  Job/requisition schema + role-conditioned match-ranking
+│   │            (org-plane; compile-to-ranking + skill-coverage; comp band
+│   │            metadata-only; audit-every-match, no new consent gate)
+│   ├── [ ] S5.2  Comp intelligence v0 (static bands + ledger-observed offers,
+│   │            advisory) — consumes S5.1's stored comp_band
+│   └── [ ] S5.3  Thin employer dashboard (read-only over search/reports)
 ├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
 │        LinkedIn) · normalization curation loop · candidate auth + DPDP portal
 │        (my-data / who-accessed / revoke / retention TTLs)
@@ -214,6 +229,38 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-27 (4)** — **PI-5 shaped + S5.1 built** (inline TDD-offline on branch
+  `s51-job-requisition-matching`). Confirmed PI-4 already merged to main (S4.4
+  done); ROADMAP "Next action" prose was stale. Brainstormed PI-5 demand side →
+  scoped this sprint to **S5.1** (spec `2026-07-27-s51-job-requisition-matching-
+  design.md`, plan `…-matching.md`, 10 tasks). Four design decisions delegated to
+  recommendation: **org plane** (X-Org-Key), **compile-to-ranking + job-relative
+  skill-coverage**, **comp band metadata-only** (S5.2 consumes it, no follow-up
+  migration), **audit-every-match with no new consent gate** (pool already
+  consent-masked at S4.2). Delivered new `app/matching/` package: pure `schema.py`
+  contracts; pure `match.py` (`skill_coverage`/`location_fit`/`compile_ranking`/
+  `compile_filters`/`match` — injects synthetic `match.skill_coverage`/
+  `match.location_fit` into a FeatureVector copy and reuses S4.3 `ranking.score()`,
+  zero new scoring math); ORM `JobRequisitionRow` + migration `0008` (org-owned,
+  CASCADE on org, **not candidate-linked** → survives candidate erasure; drift/
+  index/FK/nullability guards extended); `JobStore` (org-scoped CRUD, canonical
+  skill normalization, audited `requisition.create`/`update`; `run_match` reads
+  pool + point-in-time profiles at one `as_of`, ranks, audits each returned
+  candidate as `match.surface` — candidate-linked + CASCADE); `Services.jobs`
+  wiring (TYPE_CHECKING + function-local build, the S4.3 cycle-safe pattern);
+  org-plane endpoints `POST/GET/PATCH /jobs` + `POST /jobs/{id}/match`
+  (`MatchResult{advisory=True}`; cross-org 404, empty/unmaterialized pool 422,
+  malformed 400). `min_years/degree/notice` are **soft** (select the dimension,
+  value is not a cutoff); the **only** hard gate is opt-in `min_skill_coverage`.
+  `match_*` config knobs (skill weight 3.0 dominant). No LLM, no new consent
+  purpose. `MATCHING.md` written. 40 new tests (584→624, `pytest -q` green). Two
+  in-flight fixes: `run_match` `filtered_size` = post-filter-pre-limit count (S4.3
+  parity); `smoke_s51`/API tests use `with TestClient(...)` so the lifespan sets
+  `app.state.services`. Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit
+  0: ranked strong→weak→other by skill coverage (advisory — zero-coverage still
+  appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
+  candidate + sweeps its `match.surface` audit rows. **PENDING:** final whole-branch
+  review + merge to main. Next: merge, then S5.2 plan (comp intelligence v0).
 - **2026-07-06** — Brainstormed + approved product design (Talent Intelligence
   Platform slice of a Mercor-style marketplace; SQLite-now/PG-shaped; modular
   monolith). Created spec, roadmap, CLAUDE.md, memory pointer. Next: S1.1 plan.
