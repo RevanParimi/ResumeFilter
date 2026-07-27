@@ -40,7 +40,7 @@
   consent-masked at S4.2). `min_years/degree/notice` are **soft** (select the
   dimension, value is not a cutoff); the **only** hard gate is opt-in
   `min_skill_coverage`. `match_*` config knobs (skill weight dominant). No LLM.
-  `MATCHING.md` written (peer of LEDGER/FEATURES). 40 new tests (584→624,
+  `MATCHING.md` written (peer of LEDGER/FEATURES). 37 new tests (584→621,
   `pytest -q` green). Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit 0:
   ranked strong→weak→other by skill coverage (advisory — zero-coverage still
   appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
@@ -253,7 +253,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   malformed 400). `min_years/degree/notice` are **soft** (select the dimension,
   value is not a cutoff); the **only** hard gate is opt-in `min_skill_coverage`.
   `match_*` config knobs (skill weight 3.0 dominant). No LLM, no new consent
-  purpose. `MATCHING.md` written. 40 new tests (584→624, `pytest -q` green). Two
+  purpose. `MATCHING.md` written. 37 new tests (584→621, `pytest -q` green). Two
   in-flight fixes: `run_match` `filtered_size` = post-filter-pre-limit count (S4.3
   parity); `smoke_s51`/API tests use `with TestClient(...)` so the lifespan sets
   `app.state.services`. Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit
