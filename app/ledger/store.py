@@ -864,6 +864,30 @@ class LedgerStore:
             session.commit()
             return decision
 
+    def audit_training_label(
+        self, candidate_id: str, *, allowed: bool, as_of: datetime
+    ) -> None:
+        """S4.4 training-set export: audit that the platform used (allowed) or
+        withheld (not allowed) this candidate's consent-gated outcomes as a
+        training label. Audit-only — it records the S4.2 materialization decision
+        reused at export time (single source of truth), does not recompute
+        consent, and never raises. The candidate-linked row CASCADEs on erasure."""
+        with self._session_factory() as session:
+            self._audit(
+                session,
+                actor_type="system",
+                actor_id="platform",
+                action="training.label",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": allowed,
+                    "as_of": consent_logic.as_utc(as_of).isoformat(),
+                },
+            )
+            session.commit()
+
 
 def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
     """Store on the shared candidates DB URL (one metadata root, one Alembic
