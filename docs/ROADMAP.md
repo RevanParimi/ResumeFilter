@@ -40,8 +40,11 @@
   consent-masked at S4.2). `min_years/degree/notice` are **soft** (select the
   dimension, value is not a cutoff); the **only** hard gate is opt-in
   `min_skill_coverage`. `match_*` config knobs (skill weight dominant). No LLM.
-  `MATCHING.md` written (peer of LEDGER/FEATURES). 37 new tests (584→621,
-  `pytest -q` green). Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit 0:
+  `MATCHING.md` written (peer of LEDGER/FEATURES). Whole-branch self-review: one
+  hardening fix (skill canonicalization keeps punctuation asks like "C#"/"C++",
+  and an all-blank skill set now raises → 400, never a reconstruct-time 500).
+  39 new tests (584→623, `pytest -q` green). Smoke `scripts/smoke_s51.py`
+  (uvicorn + HTTP) 11/11 OK exit 0:
   ranked strong→weak→other by skill coverage (advisory — zero-coverage still
   appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
   candidate from the pool AND sweeps its `match.surface` audit rows.
@@ -253,10 +256,12 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   malformed 400). `min_years/degree/notice` are **soft** (select the dimension,
   value is not a cutoff); the **only** hard gate is opt-in `min_skill_coverage`.
   `match_*` config knobs (skill weight 3.0 dominant). No LLM, no new consent
-  purpose. `MATCHING.md` written. 37 new tests (584→621, `pytest -q` green). Two
-  in-flight fixes: `run_match` `filtered_size` = post-filter-pre-limit count (S4.3
-  parity); `smoke_s51`/API tests use `with TestClient(...)` so the lifespan sets
-  `app.state.services`. Smoke `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit
+  purpose. `MATCHING.md` written. 39 new tests (584→623, `pytest -q` green). Three
+  in-flight/review fixes: `run_match` `filtered_size` = post-filter-pre-limit count
+  (S4.3 parity); `smoke_s51`/API tests use `with TestClient(...)` so the lifespan
+  sets `app.state.services`; whole-branch review hardened skill canonicalization
+  (keep punctuation asks; all-blank skills → 400 not a reconstruct 500). Smoke
+  `scripts/smoke_s51.py` (uvicorn + HTTP) 11/11 OK exit
   0: ranked strong→weak→other by skill coverage (advisory — zero-coverage still
   appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
   candidate + sweeps its `match.surface` audit rows. **PENDING:** final whole-branch
