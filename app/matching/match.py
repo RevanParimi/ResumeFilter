@@ -13,6 +13,9 @@ from typing import Optional
 
 from app.candidates.schema import CandidateProfile
 from app.core.config import Settings
+from app.features.ranking_schema import (
+    FeatureFilter, FilterOp, RankingSpec, RankingTerm, SortDirection,
+)
 from app.features.schema import FeatureDType, FeatureSource, FeatureSpec
 from app.matching.schema import JobRequisitionInput, SkillMatchDetail
 
@@ -73,3 +76,55 @@ def location_fit(req: JobRequisitionInput, location_tier: Optional[str]) -> Opti
     if not location_tier:
         return None
     return 1.0 if location_tier in req.location_tiers else 0.0
+
+
+def _weight(override: Optional[float], default: float) -> float:
+    return override if override is not None else default
+
+
+def compile_ranking(req: JobRequisitionInput, settings: Settings) -> RankingSpec:
+    """Requisition -> RankingSpec of SOFT terms. skill_coverage is always present;
+    each scalar term appears only when its requisition field is set. The threshold
+    VALUE is not a cutoff here — it selects the dimension; scoring is monotonic."""
+    w = req.weights
+    terms: list[RankingTerm] = [
+        RankingTerm(
+            feature=SKILL_COVERAGE,
+            weight=_weight(w.skill_coverage if w else None, settings.match_skill_weight),
+            direction=SortDirection.HIGHER_BETTER,
+        )
+    ]
+    if req.min_years_experience is not None:
+        terms.append(RankingTerm(
+            feature="candidate.years_experience",
+            weight=_weight(w.years if w else None, settings.match_years_weight),
+            direction=SortDirection.HIGHER_BETTER,
+        ))
+    if req.min_degree_level is not None:
+        terms.append(RankingTerm(
+            feature="candidate.highest_degree_level",
+            weight=_weight(w.degree if w else None, settings.match_degree_weight),
+            direction=SortDirection.HIGHER_BETTER,
+        ))
+    if req.max_notice_days is not None:
+        terms.append(RankingTerm(
+            feature="candidate.notice_period_days",
+            weight=_weight(w.notice if w else None, settings.match_notice_weight),
+            direction=SortDirection.LOWER_BETTER,
+        ))
+    if req.location_tiers and not req.remote:
+        terms.append(RankingTerm(
+            feature=LOCATION_FIT,
+            weight=_weight(w.location if w else None, settings.match_location_weight),
+            direction=SortDirection.HIGHER_BETTER,
+        ))
+    return RankingSpec(terms=tuple(terms))
+
+
+def compile_filters(req: JobRequisitionInput) -> list[FeatureFilter]:
+    """The only opt-in hard gate: a min_skill_coverage floor on the synthetic term."""
+    if req.min_skill_coverage is not None:
+        return [FeatureFilter(
+            feature=SKILL_COVERAGE, op=FilterOp.GTE, value=req.min_skill_coverage,
+        )]
+    return []
