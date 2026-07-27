@@ -230,6 +230,18 @@ class Settings(BaseSettings):
     # Default page size for POST /talent/search when the caller omits `limit`.
     search_default_limit: int = Field(default=50, ge=1)
 
+    # --- Demand side (PI-5, S5.1): job requisition + role-conditioned matching -
+    # Advisory role-match ranking over the S4.2 pool. Weights are the default
+    # RankingTerm weights; a requisition may override any of them. skill coverage
+    # is the dominant term. match never auto-rejects.
+    match_default_limit: int = Field(default=25, ge=1)
+    match_skill_weight: float = Field(default=3.0, gt=0.0)
+    match_years_weight: float = Field(default=1.0, gt=0.0)
+    match_degree_weight: float = Field(default=1.0, gt=0.0)
+    match_notice_weight: float = Field(default=1.0, gt=0.0)
+    match_location_weight: float = Field(default=1.0, gt=0.0)
+    match_nice_to_have_fraction: float = Field(default=0.3, ge=0.0, le=1.0)
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

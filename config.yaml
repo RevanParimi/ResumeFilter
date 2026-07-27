@@ -154,6 +154,15 @@ feat_default_view: core_v1      # default FeatureView name (all seed features)
 # --- ML feature store (PI-4) - S4.3 talent search / ranking -------------------
 search_default_limit: 50        # default page size for POST /talent/search
 
+# --- Demand side (PI-5) - S5.1 job requisition + role-conditioned matching -----
+match_default_limit: 25          # default shortlist size for POST /jobs/{id}/match
+match_skill_weight: 3.0          # dominant term: job-relative skill coverage
+match_years_weight: 1.0          # candidate.years_experience (higher better)
+match_degree_weight: 1.0         # candidate.highest_degree_level (higher better)
+match_notice_weight: 1.0         # candidate.notice_period_days (lower better)
+match_location_weight: 1.0       # match.location_fit (candidate city tier in target)
+match_nice_to_have_fraction: 0.3 # nice-to-have share of skill coverage
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
