@@ -226,6 +226,10 @@ class Settings(BaseSettings):
     # their latest version). Feature LOGIC is code-versioned, not config.
     feat_default_view: str = "core_v1"
 
+    # --- ML feature store (PI-4, S4.3): talent search / ranking ---------------
+    # Default page size for POST /talent/search when the caller omits `limit`.
+    search_default_limit: int = Field(default=50, ge=1)
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000

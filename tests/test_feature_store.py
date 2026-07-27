@@ -59,3 +59,24 @@ def test_delete_candidate_cascades_vectors():
     fs.upsert_vector(mv)
     cs.delete_candidate(cid)
     assert fs.get_vector(cid, view_name=view.name, view_version=view.version, as_of=T) is None
+
+
+def test_latest_as_of_returns_newest_cut_or_none():
+    from datetime import timedelta
+    from app.features.materialize import MaterializedVector
+    from app.features.schema import FeatureVector
+
+    cs = make_candidate_store()
+    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    fs = FeatureStore(cs._session_factory)
+    cid, view, _ = _make_mv(cs, ls, rs)  # persists a candidate row (FK satisfied)
+    assert fs.latest_as_of(view.name, view.version) is None
+
+    t1 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    t2 = t1 + timedelta(days=30)
+    for t in (t1, t2):
+        fs.upsert_vector(MaterializedVector(
+            vector=FeatureVector(candidate_id=cid, as_of=t, view_name=view.name,
+                                 view_version=view.version, values={}, missing=()),
+            consent_state={"allowed": True}, materialized_at=t))
+    assert fs.latest_as_of(view.name, view.version) == t2

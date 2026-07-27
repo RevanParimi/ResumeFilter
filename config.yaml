@@ -151,6 +151,9 @@ rep_coding_weight: 1.0           # coding-round evidence type weight
 # --- ML feature store (PI-4) - S4.1 feature registry --------------------------
 feat_default_view: core_v1      # default FeatureView name (all seed features)
 
+# --- ML feature store (PI-4) - S4.3 talent search / ranking -------------------
+search_default_limit: 50        # default page size for POST /talent/search
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

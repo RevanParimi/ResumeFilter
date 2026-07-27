@@ -101,6 +101,20 @@ class FeatureStore:
             q = q.order_by(FeatureVectorRow.candidate_id)
             return [_to_mv(r) for r in session.execute(q).scalars().all()]
 
+    def latest_as_of(self, view_name: str, view_version: int) -> Optional[datetime]:
+        """Newest materialized `as_of` for a view (aware UTC), or None if none."""
+        with self._session_factory() as session:
+            row = session.execute(
+                select(FeatureVectorRow.as_of)
+                .where(
+                    FeatureVectorRow.view_name == view_name,
+                    FeatureVectorRow.view_version == view_version,
+                )
+                .order_by(FeatureVectorRow.as_of.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            return as_utc(row) if row is not None else None
+
 
 def build_feature_store(settings: Optional[Settings] = None) -> FeatureStore:
     settings = settings or get_settings()
