@@ -7,7 +7,7 @@ so tests inject fakes (FakeLLM, InMemoryVectorStore, InMemoryFlywheel) trivially
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
@@ -17,6 +17,9 @@ from app.services.github import GitHubClient, GitHubService
 from app.services.llm import LLMClient, build_llm
 from app.services.report_store import ReportStore, build_report_store
 from app.services.vectorstore import VectorStore, build_vectorstore
+
+if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
+    from app.features.store import FeatureStore
 
 
 @dataclass
@@ -29,9 +32,14 @@ class Services:
     report_store: ReportStore
     candidates: CandidateStore
     ledger: LedgerStore
+    features: FeatureStore
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
+    # Function-local import: at call time every module is fully loaded, so this
+    # sidesteps the import cycle the top-level import would create.
+    from app.features.store import build_feature_store
+
     settings = settings or get_settings()
     return Services(
         settings=settings,
@@ -42,6 +50,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         report_store=build_report_store(settings),
         candidates=build_candidate_store(settings),
         ledger=build_ledger_store(settings),
+        features=build_feature_store(settings),
     )
 
 

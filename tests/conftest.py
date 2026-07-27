@@ -20,6 +20,7 @@ from app.candidates.models import ExtractionRow as _ExtractionRow
 from app.candidates.store import CandidateStore
 from app.core.config import Settings
 from app.core.db import Base, make_engine, make_session_factory
+from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
@@ -105,6 +106,7 @@ def make_services(
     flywheel: InMemoryFlywheel | None = None,
     candidates: CandidateStore | None = None,
     ledger: LedgerStore | None = None,
+    features: FeatureStore | None = None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     ledger = ledger or LedgerStore(
@@ -112,6 +114,7 @@ def make_services(
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
         settings=settings,
     )
+    features = features or FeatureStore(candidates._session_factory)
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
@@ -121,6 +124,7 @@ def make_services(
         report_store=InMemoryReportStore(),
         candidates=candidates,
         ledger=ledger,
+        features=features,
     )
 
 
