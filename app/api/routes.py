@@ -23,6 +23,9 @@ from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 from app.features import default_view, get_feature_registry
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
+from app.matching.schema import (
+    JobRequisition, JobRequisitionInput, MatchResult, RequisitionStatus,
+)
 from app.ledger.schema import (
     CodingPlatform,
     CodingRoundResult,
@@ -577,6 +580,71 @@ async def candidate_reputation(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ── Demand side: job requisitions + role-conditioned matching (S5.1) ─────────
+# Org plane (X-Org-Key). Requisitions are org-owned; match is advisory and
+# audits every surfaced candidate as a disclosure. Consent was masked at S4.2.
+
+
+class JobUpdateRequest(BaseModel):
+    status: Optional[RequisitionStatus] = None
+    spec: Optional[JobRequisitionInput] = None
+
+
+class JobMatchRequest(BaseModel):
+    as_of: Optional[datetime] = None
+    limit: Optional[int] = Field(default=None, ge=1)
+
+
+@org_router.post("/jobs", response_model=JobRequisition)
+async def create_job(
+    req: JobRequisitionInput, request: Request, org_id: str = Depends(require_org)
+) -> JobRequisition:
+    return _services(request).jobs.create_requisition(org_id, req)
+
+
+@org_router.get("/jobs", response_model=list[JobRequisition])
+async def list_jobs(request: Request, org_id: str = Depends(require_org)) -> list[JobRequisition]:
+    return _services(request).jobs.list_requisitions(org_id)
+
+
+@org_router.get("/jobs/{req_id}", response_model=JobRequisition)
+async def get_job(
+    req_id: str, request: Request, org_id: str = Depends(require_org)
+) -> JobRequisition:
+    r = _services(request).jobs.get_requisition(org_id, req_id)
+    if r is None:
+        raise HTTPException(status_code=404, detail="requisition not found")
+    return r
+
+
+@org_router.patch("/jobs/{req_id}", response_model=JobRequisition)
+async def update_job(
+    req_id: str, body: JobUpdateRequest, request: Request, org_id: str = Depends(require_org)
+) -> JobRequisition:
+    r = _services(request).jobs.update_requisition(
+        org_id, req_id, status=body.status, spec=body.spec
+    )
+    if r is None:
+        raise HTTPException(status_code=404, detail="requisition not found")
+    return r
+
+
+@org_router.post("/jobs/{req_id}/match", response_model=MatchResult)
+async def match_job(
+    req_id: str, body: JobMatchRequest, request: Request, org_id: str = Depends(require_org)
+) -> MatchResult:
+    jobs = _services(request).jobs
+    try:
+        result = jobs.run_match(org_id, req_id, as_of=body.as_of, limit=body.limit)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="requisition not found")
+    if result.pool_size == 0:
+        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+    return result
 
 
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
