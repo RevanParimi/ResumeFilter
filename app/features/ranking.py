@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.features.ranking_schema import SortDirection
-from app.features.schema import FeatureDType, FeatureSpec, FeatureValue
+from app.features.ranking_schema import FeatureFilter, FilterOp, SortDirection
+from app.features.schema import FeatureDType, FeatureSpec, FeatureValue, FeatureVector
 
 _NUMERIC = {FeatureDType.NUMERIC, FeatureDType.INTEGER}
 
@@ -54,3 +54,59 @@ def normalize_value(
         raise ValueError(f"categorical feature {spec.name!r} is not rankable")
 
     return 1.0 - norm if direction is SortDirection.LOWER_BETTER else norm
+
+
+_ORDER_OPS = {FilterOp.GT, FilterOp.GTE, FilterOp.LT, FilterOp.LTE}
+_ORDERABLE = {FeatureDType.NUMERIC, FeatureDType.INTEGER, FeatureDType.ORDINAL}
+
+
+def _order_key(spec: FeatureSpec, value):
+    """Comparable key for ordered ops: category index for ordinal, else the value."""
+    if spec.dtype is FeatureDType.ORDINAL:
+        cats = spec.categories or ()
+        if value not in cats:
+            raise ValueError(f"{value!r} not a category of {spec.name!r}")
+        return cats.index(value)
+    return value
+
+
+def _match(spec: FeatureSpec, value, op: FilterOp, target) -> bool:
+    if op is FilterOp.EXISTS:
+        return value is not None
+    if op is FilterOp.MISSING:
+        return value is None
+    if value is None:
+        return False
+    if op is FilterOp.EQ:
+        return value == target
+    if op is FilterOp.NE:
+        return value != target
+    if op is FilterOp.IN:
+        return value in target
+    if op is FilterOp.NOT_IN:
+        return value not in target
+    # ordered ops
+    if spec.dtype not in _ORDERABLE:
+        raise ValueError(f"{op.value} is not valid on dtype {spec.dtype.value} ({spec.name!r})")
+    lhs, rhs = _order_key(spec, value), _order_key(spec, target)
+    if op is FilterOp.GT:
+        return lhs > rhs
+    if op is FilterOp.GTE:
+        return lhs >= rhs
+    if op is FilterOp.LT:
+        return lhs < rhs
+    return lhs <= rhs  # FilterOp.LTE
+
+
+def apply_filters(
+    vectors: list[FeatureVector],
+    filters: list[FeatureFilter],
+    specs_by_name: dict[str, FeatureSpec],
+) -> list[FeatureVector]:
+    out = list(vectors)
+    for f in filters:
+        spec = specs_by_name.get(f.feature)
+        if spec is None:
+            raise KeyError(f"unknown feature in filter: {f.feature}")
+        out = [v for v in out if _match(spec, v.values.get(f.feature), f.op, f.value)]
+    return out
