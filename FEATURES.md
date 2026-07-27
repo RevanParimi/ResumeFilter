@@ -166,3 +166,92 @@ guarded parquet), migration drift guard extended to `ml_feature_vectors`. Smoke
 rows; B no consent) → materialize/persist/export → prove the point-in-time cut
 (A's future rows invisible at `now`, visible later), consent masking (B nulled),
 wide CSV header, guarded parquet, and DPDP cascade on erase.
+
+## S4.3 — Talent search / ranking
+
+S4.3 adds the **read/rank/serve** layer over the S4.2 rows: an advisory engine
+that filters and ranks the materialized candidate pool by a caller-supplied
+composite score, with per-feature explainability. It **narrows and orders** — it
+never auto-rejects, and a candidate is **never penalized for consent-withheld or
+absent data**. No new table, no migration, no LLM.
+
+### Pure engine (`ranking_schema.py` + `ranking.py`)
+
+Two pure modules (no I/O, no store, no clock — the `fabrication/risk.py` pattern):
+
+- **`ranking_schema.py`** — contracts: `FilterOp` / `SortDirection` StrEnums;
+  `FeatureFilter{feature, op, value}` (a value is required for every op except
+  `exists`/`missing`; list only for `in_`/`not_in`); `RankingTerm{feature,
+  weight>0, direction}`; `RankingSpec{terms}` (non-empty); `Contribution` (the
+  per-feature explanation); `RankedCandidate{candidate_id, score, coverage,
+  contributions, missing}`; `SearchResult{advisory=True, as_of, view_name/version,
+  pool_size, filtered_size, ranked}`.
+- **`ranking.py`** — `apply_filters` (dtype-aware predicate eval; null fails every
+  comparison, only `missing`/`exists` handle it; ordinal ordered ops use the
+  category index; unknown feature → `KeyError`, ordered op on a non-orderable
+  dtype → `ValueError`), `normalize_value` (see below), and `score` (weighted mean
+  of present terms, renormalized by present weight; `coverage = present /
+  total weight`; `missing` lists dropped terms; sort `score` desc then
+  `candidate_id` asc).
+
+### Normalization (pool-independent where possible)
+
+`normalize_value` maps a value to `[0,1]`: numerics by `FeatureSpec.valid_range`,
+ordinals by category index `/ (len-1)`, booleans 0/1; `lower_better` returns
+`1 - x`. Ranged features are **reproducible** — a candidate scores identically
+regardless of who else is in the pool. A **range-less** numeric/integer (the count
+features carry no natural bound) falls back to pool min-max and is pool-dependent
+by necessity; a degenerate pool (size < 2) yields a neutral `0.5`. A non-ordinal
+categorical is not rankable (`ValueError`).
+
+### Missing / consent-withheld handling
+
+A missing term (null value — absent data *or* a consent-withheld feature already
+nulled at S4.2) is **dropped**, the candidate's remaining weights are
+**renormalized**, and the result surfaces both a `missing` list and a `coverage`
+fraction (share of ranking weight that had data — the `reputation.py`/`risk.py`
+confidence pattern). Withholding consent can only lower `coverage`, never rank:
+a candidate scored on its present terms alone is never pushed below a candidate
+whose extra term merely scored low.
+
+### Serving (`POST /talent/search`, admin plane)
+
+One endpoint on the admin `router` (`X-API-Key`). Body: `ranking` (required,
+non-empty), `filters` (optional), `view_name`/`view_version` (default the
+materialized `core_v1`/v1), `as_of` (default the view's newest cut via
+`FeatureStore.latest_as_of`), `limit` (default `search_default_limit`, 50). The
+handler resolves specs **per referenced feature** from the registry (unknown name
+→ 400), loads the pool via `FeatureStore.vectors_for_view`, then filter → score →
+sort → limit. Errors: unknown feature / dtype-invalid op → 400; empty `ranking` →
+422; no admin key → 401. An unmaterialized view is not an error — it yields an
+empty pool (still 200, `advisory=True`).
+
+### Consent, point-in-time, DPDP
+
+- **Consent** is **not re-applied at query time**. S4.2 masked consent-tagged
+  features at materialization on the reputation-network opt-in basis, so a
+  withheld feature is already `null` in the row and simply drops out of scoring.
+  The admin plane keeps this consistent — S4.3 adds **no new disclosure surface**.
+  (Org-facing, per-org-consented search is PI-5 demand-side work.)
+- **Point-in-time**: `as_of` selects the materialized cut; ranking is pure over
+  whatever `vectors_for_view` returns — no leakage introduced.
+- **DPDP**: no new candidate-linked table ⇒ no new erasure path; search reads
+  `ml_feature_vectors`, which already CASCADE-deletes with the candidate.
+
+### Config
+
+One knob: **`search_default_limit`** (int, default 50, `ge=1`). No numeric scoring
+knobs — weights/directions are per-request; normalization is code + spec driven.
+
+### Testing (S4.3)
+
+Fully offline: filter ops per dtype (incl. null/exists/missing, ordinal-index
+comparisons, dtype-invalid op), normalization per dtype + `lower_better` +
+range-less fallback, scoring math (renormalization, coverage, tie-break, and the
+consent-withheld-not-penalized invariant asserted directly), `latest_as_of`,
+`Services.features` wiring, and endpoint 200/400/401/422 + `advisory=True` + limit
++ `as_of` selection + empty pool. Smoke `scripts/smoke_s43.py` (uvicorn + HTTP):
+three candidates (none consented) → materialize/persist → search proves a sensible
+ranking with contributions, a filter that narrows the pool, and that
+consent-withheld candidates are ranked with reduced `coverage` (reputation dropped)
+rather than pushed to the bottom.
