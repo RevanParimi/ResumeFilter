@@ -68,3 +68,15 @@ def test_parquet_guarded(tmp_path):
     else:
         export_view_parquet([mv], view=view, registry=reg, path=str(path))
         assert path.exists()
+
+
+def test_feature_columns_and_vector_cells_helpers():
+    from app.features.export import feature_columns, vector_cells
+
+    reg, view, mv, cid = _mv()
+    cols = feature_columns(view)
+    assert cols == [name for name, _ in view.members]
+    cells = vector_cells(mv.vector, view, "")
+    # fixed (4) + one cell per feature column
+    assert len(cells) == 4 + len(cols)
+    assert cells[0] == cid  # candidate_id first

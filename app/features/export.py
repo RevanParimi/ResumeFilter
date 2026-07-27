@@ -13,7 +13,7 @@ from typing import Iterable
 
 from app.features.materialize import MaterializedVector
 from app.features.registry import FeatureRegistry
-from app.features.schema import FeatureDType, FeatureView
+from app.features.schema import FeatureDType, FeatureVector, FeatureView
 from app.ledger.consent import as_utc
 
 _FIXED = ("candidate_id", "as_of", "view_name", "view_version")
@@ -23,24 +23,30 @@ class ParquetUnavailable(RuntimeError):
     """pyarrow is not installed; parquet export is unavailable."""
 
 
+def feature_columns(view: FeatureView) -> list[str]:
+    """The per-feature column names in view.members order (no fixed columns)."""
+    return [name for name, _ in view.members]
+
+
 def _columns(view: FeatureView) -> list[str]:
-    return list(_FIXED) + [name for name, _ in view.members]
+    return list(_FIXED) + feature_columns(view)
 
 
-def _row_cells(mv: MaterializedVector, view: FeatureView, null_token):
-    v = mv.vector
+def vector_cells(vector: FeatureVector, view: FeatureView, null_token) -> list:
+    """Fixed + feature cells for one FeatureVector, in _columns order. Shared by
+    the S4.2 feature export and the S4.4 training export."""
     fixed = {
-        "candidate_id": v.candidate_id,
-        "as_of": as_utc(v.as_of).isoformat(),
-        "view_name": v.view_name,
-        "view_version": v.view_version,
+        "candidate_id": vector.candidate_id,
+        "as_of": as_utc(vector.as_of).isoformat(),
+        "view_name": vector.view_name,
+        "view_version": vector.view_version,
     }
     cells = []
     for col in _columns(view):
         if col in fixed:
             cells.append(fixed[col])
         else:
-            val = v.values.get(col)
+            val = vector.values.get(col)
             cells.append(null_token if val is None else val)
     return cells
 
@@ -53,7 +59,7 @@ def export_view_csv(
         writer = csv.writer(f)
         writer.writerow(columns)
         for mv in rows:
-            writer.writerow(_row_cells(mv, view, null_token))
+            writer.writerow(vector_cells(mv.vector, view, null_token))
 
 
 def _pa_type(pa, dtype: FeatureDType):
@@ -82,7 +88,7 @@ def export_view_parquet(
     specs = {rf.spec.name: rf.spec for rf in view.resolve(registry)}
     data: dict[str, list] = {c: [] for c in columns}
     for mv in rows:
-        for col, cell in zip(columns, _row_cells(mv, view, None)):
+        for col, cell in zip(columns, vector_cells(mv.vector, view, None)):
             data[col].append(cell)
 
     arrays = {}
