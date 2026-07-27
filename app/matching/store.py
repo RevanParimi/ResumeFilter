@@ -19,12 +19,15 @@ from app.candidates.normalize.text import norm_key
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
+from app.features import default_view, get_feature_registry
 from app.features.store import FeatureStore, build_feature_store
 from app.ledger.consent import as_utc
 from app.ledger.models import AuditLogRow, OrganizationRow
+from app.matching.match import compile_ranking, match as _match_engine
 from app.matching.models import JobRequisitionRow
 from app.matching.schema import (
-    CompBand, JobRequisition, JobRequisitionInput, MatchWeights, RequisitionStatus,
+    CompBand, JobRequisition, JobRequisitionInput, MatchResult, MatchWeights,
+    RequisitionStatus,
 )
 
 
@@ -150,6 +153,69 @@ class JobStore:
             ))
             session.commit()
             return _to_contract(row)
+
+    def run_match(
+        self,
+        org_id: str,
+        req_id: str,
+        *,
+        as_of: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> Optional[MatchResult]:
+        """Role-conditioned match over the materialized pool. Returns None if the
+        requisition is not owned by org_id. Reads vectors + point-in-time profiles
+        at one as_of, ranks with the pure engine, and audits each RETURNED
+        candidate as a match.surface disclosure (candidate-linked, CASCADE)."""
+        req = self.get_requisition(org_id, req_id)
+        if req is None:
+            return None
+
+        registry = get_feature_registry()
+        view_name = self._settings.feat_default_view
+        view_version = default_view(registry, settings=self._settings).version
+        limit = limit or self._settings.match_default_limit
+
+        cut = as_of or self._features.latest_as_of(view_name, view_version)
+        pool = (
+            self._features.vectors_for_view(view_name, view_version, as_of=cut)
+            if cut is not None else []
+        )
+        vectors = [mv.vector for mv in pool]
+
+        # Scalar feature specs the compiled ranking references (synthetic specs are
+        # merged inside the engine); resolved from the registry.
+        ranking = compile_ranking(req, self._settings)
+        scalar = {t.feature for t in ranking.terms if not t.feature.startswith("match.")}
+        specs_by_name = {n: registry.get(n).spec for n in scalar}
+
+        profiles: dict = {}
+        if cut is not None and self._candidates is not None:
+            for v in vectors:
+                p = self._candidates.profile_as_of(v.candidate_id, cut)
+                if p is not None:
+                    profiles[v.candidate_id] = p
+
+        all_ranked = _match_engine(req, vectors, profiles, specs_by_name, self._settings)
+        filtered_size = len(all_ranked)  # after the opt-in filter, before the limit
+        ranked = all_ranked[:limit]
+
+        # Disclosure audit: one match.surface row per RETURNED candidate.
+        with self._session_factory() as session:
+            for rank, mc in enumerate(ranked, start=1):
+                session.add(AuditLogRow(
+                    actor_type="org", actor_id=org_id, action="match.surface",
+                    entity_type="requisition", entity_id=req_id,
+                    candidate_id=mc.candidate_id,
+                    details={"rank": rank, "score": mc.score},
+                ))
+            session.commit()
+
+        return MatchResult(
+            advisory=True, requisition_id=req_id, as_of=cut,
+            view_name=view_name, view_version=view_version,
+            pool_size=len(vectors), filtered_size=filtered_size,
+            ranked=tuple(ranked),
+        )
 
 
 def build_job_store(settings: Optional[Settings] = None) -> JobStore:
