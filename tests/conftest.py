@@ -14,6 +14,7 @@ import pytest
 
 import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
 import app.features.models  # noqa: F401 — populate Base.metadata with feature tables
+import app.matching.models  # noqa: F401 — populate Base.metadata with matching tables
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow
