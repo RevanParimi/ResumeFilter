@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.features.ranking_schema import FeatureFilter, FilterOp, SortDirection
+from app.features.ranking_schema import (
+    Contribution, FeatureFilter, FilterOp, RankedCandidate, RankingSpec, SortDirection,
+)
 from app.features.schema import FeatureDType, FeatureSpec, FeatureValue, FeatureVector
 
 _NUMERIC = {FeatureDType.NUMERIC, FeatureDType.INTEGER}
@@ -110,3 +112,50 @@ def apply_filters(
             raise KeyError(f"unknown feature in filter: {f.feature}")
         out = [v for v in out if _match(spec, v.values.get(f.feature), f.op, f.value)]
     return out
+
+
+def score(
+    vectors: list[FeatureVector],
+    spec: RankingSpec,
+    specs_by_name: dict[str, FeatureSpec],
+) -> list[RankedCandidate]:
+    # Per-feature pools (present values) feed the range-less-numeric fallback.
+    pools = {
+        term.feature: [
+            v.values.get(term.feature) for v in vectors
+            if v.values.get(term.feature) is not None
+        ]
+        for term in spec.terms
+    }
+    total_weight = sum(t.weight for t in spec.terms)
+
+    results: list[RankedCandidate] = []
+    for v in vectors:
+        contributions: list[Contribution] = []
+        missing: list[str] = []
+        present_weight = 0.0
+        acc = 0.0
+        for term in spec.terms:
+            fspec = specs_by_name.get(term.feature)
+            if fspec is None:
+                raise KeyError(f"unknown feature in ranking: {term.feature}")
+            raw = v.values.get(term.feature)
+            norm = normalize_value(fspec, raw, direction=term.direction, pool=pools[term.feature])
+            if norm is None:
+                missing.append(term.feature)
+                continue
+            weighted = norm * term.weight
+            acc += weighted
+            present_weight += term.weight
+            contributions.append(Contribution(
+                feature=term.feature, raw=raw, normalized=norm,
+                weight=term.weight, weighted=weighted,
+            ))
+        composite = acc / present_weight if present_weight > 0 else 0.0
+        coverage = present_weight / total_weight if total_weight > 0 else 0.0
+        results.append(RankedCandidate(
+            candidate_id=v.candidate_id, score=composite, coverage=coverage,
+            contributions=tuple(contributions), missing=tuple(missing),
+        ))
+    results.sort(key=lambda r: (-r.score, r.candidate_id))
+    return results
