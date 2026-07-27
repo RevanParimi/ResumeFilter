@@ -9,31 +9,31 @@
 
 ## ▶ Current state
 
-- **Current sprint:** PI-4 in progress — **S4.3 (talent search/ranking API)
-  COMPLETE**. Next is **S4.4 — training-set export** (features ⋈ outcomes from the
-  flywheel + ledger, joined at the honest `as_of` cut so the training set is
-  leakage-free; advisory labels only) — the final PI-4 sprint.
-- **Next action:** Write the S4.4 plan. S4.3 shipped the ranking/serve layer over
-  `ml_feature_vectors`: two pure modules — `app/features/ranking_schema.py`
-  (contracts: `FeatureFilter`/`FilterOp`, `RankingTerm`/`RankingSpec`,
-  `Contribution`/`RankedCandidate`/`SearchResult`) + `app/features/ranking.py`
-  (engine: `apply_filters` dtype-aware predicates [ordinal ordered ops via category
-  index; null fails comparisons; unknown feature → KeyError; ordered op on a
-  non-orderable dtype → ValueError], `normalize_value` pool-independent via
-  `valid_range`/category index with a pool-min-max fallback for range-less counts,
-  `score` = drop-term + renormalize + per-candidate `coverage`/`missing`, sort
-  score-desc then candidate_id) — one admin-plane endpoint `POST /talent/search`
-  (`SearchResult{advisory=True,...}`; unknown feature/malformed filter → 400,
-  empty ranking → 422, no admin key → 401, unmaterialized view → empty 200),
-  `FeatureStore.latest_as_of`, `Services.features` wiring (import-cycle-safe via
-  TYPE_CHECKING + a function-local `build_feature_store`), and the
-  `search_default_limit` knob. **Consent is not re-applied at query time** — S4.2
-  masked consent-tagged features at materialization on the network opt-in basis, so
-  a withheld feature is already null and just drops out of scoring (admin plane
-  keeps this consistent; org-facing per-org-consented search is PI-5 demand side).
-  No new table/migration/LLM. S4.4 reads the same `ml_feature_vectors` and joins
-  outcome labels (report outcomes via the flywheel; ledger hire/coding signals) at
-  each vector's `as_of`, requiring the label to post-date the cut (no leakage).
+- **Current sprint:** **PI-4 COMPLETE** — S4.4 (training-set export) merged-ready
+  on branch `s44-training-set-export`. PI-4 (ML feature store & ranking) is now
+  S4.1–S4.4 done: registry → point-in-time materialization + export → ranking/serve
+  → leakage-free training-set export.
+- **Next action:** Whole-branch self-review + merge S4.4 to main, then **shape
+  PI-5** (demand side: job/requisition schema + role-conditioned matching · comp
+  intelligence v0 · thin employer dashboard) per
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S4.4
+  shipped the label-join / training-set export over `ml_feature_vectors`: contracts
+  `app/features/training_schema.py` (`TrainingLabel`/`TrainingExample`) + pure
+  `app/features/training.py` (`build_label` — post-cut-only (`interviewed_at`/
+  `taken_at` **strictly `> as_of`** = no leakage), terminal-best outcome
+  `hired>offer>advanced>rejected>no_show` with `withdrawn` excluded, hire-positive
+  `{hired,offer}`, `event_at`/`lag_days`, `coding_best_percentile`, censoring-aware
+  `observed`, consent `withheld`; + orchestrator `build_training_set` reusing the
+  S4.2 `consent_state` — reads the ledger only for a consented vector, audits every
+  join). New `LedgerStore.audit_training_label` (audits the reused decision as
+  `training.label`, allowed/withheld). `export.py` grew shared `feature_columns`/
+  `vector_cells` pivot helpers + `export_training_csv`/`export_training_parquet`
+  (wide feature pivot + 7 appended `label_*` columns). **Key design point:** the
+  flywheel `outcome` field is a permanent `None` placeholder today, so labels are
+  **ledger-only** (interview outcomes + coding results); flywheel report outcomes
+  need an outcome-feedback API first (future). No new table/migration/HTTP/LLM/knob;
+  DPDP path unchanged (labels recompute from CASCADE-swept ledger rows; new
+  `training.label` audit rows are candidate-linked + CASCADE).
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -176,13 +176,13 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   └── [x] S3.4  Cross-company reputation — Bayesian aggregation with
 │                recency decay + per-org reliability weight
 │
-├── PI-4  ML FEATURE STORE & RANKING
+├── PI-4  ML FEATURE STORE & RANKING                               [COMPLETE]
 │   ├── [x] S4.1  Feature registry (versioned definitions over candidate +
 │   │            eval + ledger data)
 │   ├── [x] S4.2  Materialization → wide ml_features table + CSV/parquet
 │   │            export; point-in-time correct (no label leakage)
 │   ├── [x] S4.3  Talent search/ranking API (filters + composite score)
-│   └── [ ] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
+│   └── [x] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
 │
 ├── PI-5  DEMAND SIDE (shaped, not yet spec'd) — job/requisition schema +
 │        role-conditioned matching · comp intelligence v0 · thin employer
@@ -684,3 +684,40 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   boundary + test) and one Minor cleanup (dropped unused `_ORDER_OPS`); no other
   Critical/Important. S4.3 COMPLETE — PI-4 now S4.1–S4.3 done. Next: S4.4 plan
   (training-set export — features ⋈ outcomes, leakage-free at the `as_of` cut).
+- **2026-07-27 (3)** — S4.4 done, inline TDD-offline on branch
+  `s44-training-set-export` (9 tasks; spec
+  `docs/superpowers/specs/2026-07-27-s44-training-set-export-design.md`, plan
+  `docs/superpowers/plans/2026-07-27-s44-training-set-export.md`). **PI-4 COMPLETE.**
+  Four design decisions taken with user (all recommendations accepted, user
+  delegated the rest): (D1) **ledger-only labels** — the flywheel `outcome` field
+  is a permanent `None` placeholder (`report.py`), so interview outcomes + coding
+  results are the only real point-in-time label source (flywheel report outcomes
+  need a feedback API first — future); (D2) **compact censoring-aware label block**
+  (`hired`/`outcome`/`coding_best_percentile`/`event_at`/`lag_days`/`observed`/
+  `withheld`) — `observed=False` = right-censored, NOT a negative; (D3) **reuse the
+  S4.2 consent decision + audit the join** — a withheld vector's label is withheld
+  and its ledger is never read, consistent with masked `ledger.*` features; (D4)
+  **library + script deliverable** (no HTTP/table), mirroring S4.2. Delivered: pure
+  `app/features/training.py` `build_label` (post-cut-only via **strict `> as_of`** =
+  no leakage; terminal-best `hired>offer>advanced>rejected>no_show`, `withdrawn`
+  excluded; hire-positive `{hired,offer}`; `event_at`=earliest carrier, `lag_days`;
+  `coding_best_percentile`=max post-cut) + orchestrator `build_training_set`
+  (reads ledger only when consented, audits every join); contracts
+  `training_schema.py` (`TrainingLabel`/`TrainingExample`);
+  `LedgerStore.audit_training_label` (audits reused decision as `training.label`);
+  `export.py` shared `feature_columns`/`vector_cells` helpers +
+  `export_training_csv`/`export_training_parquet` (wide pivot + 7 `label_*` cols);
+  FEATURES.md S4.4 section. No new table/migration/HTTP/LLM/config knob; DPDP path
+  unchanged (labels recompute from CASCADE-swept ledger rows; `training.label`
+  audit rows candidate-linked + CASCADE). 20 new tests (564→584, `pytest -q` green).
+  Smoke `scripts/smoke_s44.py` (uvicorn + HTTP populate → direct materialize →
+  build+export) 10/10 OK exit 0 (also exercised the live LLM ingestion path): A
+  consented → post-cut HIRED label (`hired=True`, `lag~30d`) while its features stay
+  point-in-time (pre-cut interview count 0 — the post-cut record drives the label
+  but never leaks into features); B consented but only a PRE-cut hired → censored
+  (`observed=False`, `hired=None` — pre-cut positive does NOT leak); C unconsented →
+  `withheld=True` label + consent-masked features + `training.label` withheld audit;
+  labeled CSV header ends with the 7 label columns; parquet guarded. One correctness
+  fix over the plan draft (smoke `T=now` captured after ingest so the cut post-dates
+  the extraction `created_at`, else `profile_as_of` returns None and materialize
+  yields None). Next: whole-branch review + merge, then shape PI-5 (demand side).
