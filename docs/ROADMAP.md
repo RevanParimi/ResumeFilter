@@ -9,20 +9,31 @@
 
 ## ▶ Current state
 
-- **Current sprint:** PI-4 in progress — **S4.2 (materialization) COMPLETE**.
-  Next is **S4.3 — talent search/ranking API** (filters + composite score over
-  the materialized `ml_feature_vectors`; advisory, never an auto-reject gate).
-- **Next action:** Write the S4.3 plan. S4.2 shipped the materialization layer:
-  `build_context` is now a true point-in-time slicer (`CandidateStore.profile_as_of`
-  + `as_of` on every axis), `LedgerStore.materialization_consent` (org-agnostic
-  `has_any_active` ledger_read gate, audited `feature.materialize`),
-  `app/features/materialize.py` (consent-masking materializer → `MaterializedVector`),
-  the `ml_feature_vectors` table (migration `0007`, compact JSON row-per-cut,
-  CASCADE erasure) + `FeatureStore` (idempotent upsert), and `app/features/export.py`
-  (wide CSV always, guarded optional parquet). S4.3 ranks/searches over these rows;
-  its seam is the JSON `feature_values` column (add a per-feature projection/index
-  when the query shape is known — no change to how S4.2 writes). S4.4 then joins
-  outcomes to the honest `as_of` cut for a leakage-free training set.
+- **Current sprint:** PI-4 in progress — **S4.3 (talent search/ranking API)
+  COMPLETE**. Next is **S4.4 — training-set export** (features ⋈ outcomes from the
+  flywheel + ledger, joined at the honest `as_of` cut so the training set is
+  leakage-free; advisory labels only) — the final PI-4 sprint.
+- **Next action:** Write the S4.4 plan. S4.3 shipped the ranking/serve layer over
+  `ml_feature_vectors`: two pure modules — `app/features/ranking_schema.py`
+  (contracts: `FeatureFilter`/`FilterOp`, `RankingTerm`/`RankingSpec`,
+  `Contribution`/`RankedCandidate`/`SearchResult`) + `app/features/ranking.py`
+  (engine: `apply_filters` dtype-aware predicates [ordinal ordered ops via category
+  index; null fails comparisons; unknown feature → KeyError; ordered op on a
+  non-orderable dtype → ValueError], `normalize_value` pool-independent via
+  `valid_range`/category index with a pool-min-max fallback for range-less counts,
+  `score` = drop-term + renormalize + per-candidate `coverage`/`missing`, sort
+  score-desc then candidate_id) — one admin-plane endpoint `POST /talent/search`
+  (`SearchResult{advisory=True,...}`; unknown feature/malformed filter → 400,
+  empty ranking → 422, no admin key → 401, unmaterialized view → empty 200),
+  `FeatureStore.latest_as_of`, `Services.features` wiring (import-cycle-safe via
+  TYPE_CHECKING + a function-local `build_feature_store`), and the
+  `search_default_limit` knob. **Consent is not re-applied at query time** — S4.2
+  masked consent-tagged features at materialization on the network opt-in basis, so
+  a withheld feature is already null and just drops out of scoring (admin plane
+  keeps this consistent; org-facing per-org-consented search is PI-5 demand side).
+  No new table/migration/LLM. S4.4 reads the same `ml_feature_vectors` and joins
+  outcome labels (report outcomes via the flywheel; ledger hire/coding signals) at
+  each vector's `as_of`, requiring the label to post-date the cut (no leakage).
 - **Long-range planning:** the full Mercor-for-India vision audit lives in
   `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
   gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
@@ -170,7 +181,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            eval + ledger data)
 │   ├── [x] S4.2  Materialization → wide ml_features table + CSV/parquet
 │   │            export; point-in-time correct (no label leakage)
-│   ├── [ ] S4.3  Talent search/ranking API (filters + composite score)
+│   ├── [x] S4.3  Talent search/ranking API (filters + composite score)
 │   └── [ ] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
 │
 ├── PI-5  DEMAND SIDE (shaped, not yet spec'd) — job/requisition schema +
@@ -646,3 +657,30 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   Critical/Important; migration↔ORM parity proven by the drift guard). Merged to
   main (fast-forward), 529 green on main, branch deleted. S4.2 COMPLETE. Next: S4.3
   plan (talent search/ranking API over `ml_feature_vectors`).
+- **2026-07-27 (2)** — S4.3 done, inline TDD-offline on branch `s43-talent-search`
+  (8 tasks; spec `docs/superpowers/specs/2026-07-27-s43-talent-search-ranking-design.md`,
+  plan `docs/superpowers/plans/2026-07-27-s43-talent-search-ranking.md`). Three
+  design decisions taken with user (all delegated to the recommendation): (D1)
+  **admin plane only** (`X-API-Key`) — reading the S4.2-masked vectors as-is means
+  no new consent gate / no new disclosure surface; org-facing job-conditioned
+  matching stays PI-5. (D2) **pool-independent normalization** via
+  `FeatureSpec.valid_range`/category index (reproducible), pool-min-max fallback
+  only for range-less count features. (D3) **drop-term + renormalize + report
+  `coverage`** so consent-withheld/absent data never lowers rank. Delivered: pure
+  `app/features/ranking_schema.py` (contracts) + `app/features/ranking.py`
+  (`apply_filters`/`normalize_value`/`score`, the risk.py pattern — no I/O/clock),
+  `FeatureStore.latest_as_of`, `Services.features` wiring (import-cycle-safe:
+  TYPE_CHECKING annotation + function-local `build_feature_store`), admin endpoint
+  `POST /talent/search` → `SearchResult{advisory=True}` (400 unknown-feature/
+  malformed-filter, 422 empty-ranking, 401 no-key, empty-200 unmaterialized view),
+  `search_default_limit` knob, FEATURES.md S4.3 section. No new table/migration/LLM;
+  DPDP path unchanged (reads rows that already CASCADE on erasure). 35 new tests
+  (529→564, `pytest -q` green). Smoke `scripts/smoke_s43.py` (uvicorn + HTTP) 8/8 OK
+  exit 0 (also exercised the live LLM ingestion path): three unconsented candidates
+  → materialize/persist → ranked senior→mid→junior with contributions, a filter
+  narrowed the pool to 2, and consent-withheld candidates ranked with reduced
+  `coverage` (reputation dropped) NOT pushed to the bottom. Whole-branch self-review:
+  one Important fix (malformed filter value → 400 not 500; catch TypeError at the
+  boundary + test) and one Minor cleanup (dropped unused `_ORDER_OPS`); no other
+  Critical/Important. S4.3 COMPLETE — PI-4 now S4.1–S4.3 done. Next: S4.4 plan
+  (training-set export — features ⋈ outcomes, leakage-free at the `as_of` cut).
