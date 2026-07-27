@@ -20,6 +20,7 @@ from app.services.vectorstore import VectorStore, build_vectorstore
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
     from app.features.store import FeatureStore
+    from app.matching.store import JobStore
 
 
 @dataclass
@@ -33,12 +34,14 @@ class Services:
     candidates: CandidateStore
     ledger: LedgerStore
     features: FeatureStore
+    jobs: JobStore
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
     # Function-local import: at call time every module is fully loaded, so this
     # sidesteps the import cycle the top-level import would create.
     from app.features.store import build_feature_store
+    from app.matching.store import build_job_store
 
     settings = settings or get_settings()
     return Services(
@@ -51,6 +54,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         candidates=build_candidate_store(settings),
         ledger=build_ledger_store(settings),
         features=build_feature_store(settings),
+        jobs=build_job_store(settings),
     )
 
 

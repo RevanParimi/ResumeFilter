@@ -108,6 +108,7 @@ def make_services(
     candidates: CandidateStore | None = None,
     ledger: LedgerStore | None = None,
     features: FeatureStore | None = None,
+    jobs=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     ledger = ledger or LedgerStore(
@@ -116,6 +117,12 @@ def make_services(
         settings=settings,
     )
     features = features or FeatureStore(candidates._session_factory)
+    if jobs is None:
+        from app.matching.store import JobStore
+        jobs = JobStore(
+            candidates._session_factory,
+            candidate_store=candidates, feature_store=features, settings=settings,
+        )
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
@@ -126,6 +133,7 @@ def make_services(
         candidates=candidates,
         ledger=ledger,
         features=features,
+        jobs=jobs,
     )
 
 
