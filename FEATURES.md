@@ -255,3 +255,70 @@ three candidates (none consented) → materialize/persist → search proves a se
 ranking with contributions, a filter that narrows the pool, and that
 consent-withheld candidates are ranked with reduced `coverage` (reputation dropped)
 rather than pushed to the bottom.
+
+## S4.4 — Training-set export (features ⋈ outcomes)
+
+S4.4 adds the **label-join / training-set export** layer: each stored
+`ml_feature_vectors` row (features at `as_of=T`) joined to a **ground-truth label
+derived only from ledger outcomes strictly after T** — the point-in-time-correct,
+leakage-free training set. Read-side only: **no new table, no migration, no HTTP,
+no LLM, no config knob** (mirrors S4.3).
+
+### No-leakage seam
+
+Features come from data timestamped `≤ T`; the label from `interview_records`
+with `interviewed_at > T` and `coding_round_results` with `taken_at > T`. The
+**strict `>`** is the guarantee — a record at exactly `T` fed the features and can
+never be a label (asserted directly in tests + smoke).
+
+### Label (`training_schema.py` + `training.py`)
+
+`build_label` is pure (no store/clock — the `risk.py`/`reputation.py` pattern).
+Per vector it emits a `TrainingLabel`:
+
+- `outcome` — **terminal-best** post-cut interview outcome, ranked
+  `hired>offer>advanced>rejected>no_show`; **`withdrawn` excluded** (non-signal,
+  per S3.4). `hired` = terminal ∈ `{hired, offer}`.
+- `event_at` / `lag_days` — earliest `interviewed_at` carrying that outcome, and
+  its distance from `as_of` in days (lets a modeler window/censor).
+- `coding_best_percentile` — max post-cut coding percentile (independent of the
+  interview label).
+- `observed` — a post-cut non-withdrawn interview record exists. When False the
+  example is **right-censored** (`hired`/`outcome` null) — *not* a negative.
+- `withheld` — consent was not active at `as_of`; the label is unread and null.
+
+### Consent (reuse S4.2 decision + audit)
+
+The label is derived from the same consent-gated cross-company records S4.2 masks,
+so it **inherits the S4.2 decision** stored in `MaterializedVector.consent_state`.
+`build_training_set` reads the ledger only for a consented vector (a withheld
+candidate's outcomes are never fetched) and audits every join via
+`LedgerStore.audit_training_label` → `training.label` (allowed/withheld), keeping
+platform use of gated data observable without a new gate. A withheld vector's
+`ledger.*` features are already null *and* its label is withheld — consistent.
+
+### Export (`export.py`)
+
+`export_training_csv` / `export_training_parquet` = the S4.2 wide feature pivot
+(shared `feature_columns` / `vector_cells` helpers) **plus** appended
+`label_hired, label_outcome, label_coding_best_percentile, label_event_at,
+label_lag_days, label_observed, label_withheld`. Values are already
+masked/withheld, so a file can never leak. Parquet stays guarded
+(`ParquetUnavailable` without pyarrow).
+
+### DPDP
+
+No new candidate-linked table ⇒ no new erasure path; labels recompute from ledger
+rows that already CASCADE on erasure, and the `training.label` audit rows are
+candidate-linked and CASCADE too.
+
+### Testing (S4.4)
+
+Pure `build_label` (no-leakage boundary, terminal-best + withdrawn-excluded,
+event_at/lag, hire-positive set, censoring, coding-best, consent-withheld),
+`audit_training_label`, `build_training_set` over a mix (labeled / censored /
+withheld) proving no ledger read when withheld + every join audited, and labeled
+export shape (CSV header + values, guarded parquet). Smoke `scripts/smoke_s44.py`:
+A consented+labeled (post-cut hired, point-in-time features), B consented+censored
+(pre-cut hired does NOT leak), C withheld (features + label null, `training.label`
+withheld audit).
