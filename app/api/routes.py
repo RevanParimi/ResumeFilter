@@ -20,6 +20,9 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.fabrication.similarity import assess_resume_farm, fingerprint_text
+from app.features import default_view, get_feature_registry
+from app.features.ranking import apply_filters, score
+from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
 from app.ledger.schema import (
     CodingPlatform,
     CodingRoundResult,
@@ -574,6 +577,78 @@ async def candidate_reputation(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ── Talent search / ranking (S4.3) ──────────────────────────────────────────
+# Admin plane (X-API-Key): platform-internal search over materialized feature
+# vectors. Advisory — it narrows and orders, never auto-rejects.
+
+
+class TalentSearchRequest(BaseModel):
+    """Advisory talent search over materialized feature vectors (admin plane).
+
+    ``ranking`` is required and non-empty. ``view_name``/``view_version`` default
+    to the materialized default view; ``as_of`` defaults to its newest cut. Only
+    the features referenced in ``filters``/``ranking`` are validated against the
+    registry.
+    """
+
+    ranking: RankingSpec
+    filters: list[FeatureFilter] = Field(default_factory=list)
+    view_name: Optional[str] = None
+    view_version: Optional[int] = None
+    as_of: Optional[datetime] = None
+    limit: Optional[int] = Field(default=None, ge=1)
+
+
+@router.post("/talent/search", response_model=SearchResult)
+async def talent_search(req: TalentSearchRequest, request: Request) -> SearchResult:
+    """Filter + rank the materialized pool by a composite score. Advisory: it
+    narrows and orders, never auto-rejects. Consent was masked at materialization
+    (S4.2), so a withheld feature is already null and simply drops out of scoring."""
+    services = _services(request)
+    registry = get_feature_registry()
+
+    # Resolve specs per referenced feature; an unknown name is a 400.
+    referenced = {t.feature for t in req.ranking.terms} | {f.feature for f in req.filters}
+    specs_by_name = {}
+    for name in referenced:
+        try:
+            specs_by_name[name] = registry.get(name).spec
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    view_name = req.view_name or services.settings.feat_default_view
+    view_version = (
+        req.view_version
+        if req.view_version is not None
+        else default_view(registry, settings=services.settings).version
+    )
+    as_of = req.as_of or services.features.latest_as_of(view_name, view_version)
+
+    pool = (
+        services.features.vectors_for_view(view_name, view_version, as_of=as_of)
+        if as_of is not None
+        else []
+    )
+    vectors = [mv.vector for mv in pool]
+
+    try:
+        filtered = apply_filters(vectors, req.filters, specs_by_name)
+        ranked = score(filtered, req.ranking, specs_by_name)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    limit = req.limit or services.settings.search_default_limit
+    return SearchResult(
+        advisory=True,
+        as_of=as_of,
+        view_name=view_name,
+        view_version=view_version,
+        pool_size=len(vectors),
+        filtered_size=len(filtered),
+        ranked=tuple(ranked[:limit]),
+    )
 
 
 @router.get("/report/{report_id}", response_model=Report)

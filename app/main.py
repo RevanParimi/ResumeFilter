@@ -124,6 +124,7 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
                 "GET /ledger/candidates/{id}/coding-rounds",
                 "GET /ledger/candidates/{id}/reputation",
                 "POST /ledger/orgs/{id}/reliability",
+                "POST /talent/search",
             ],
         }
 
