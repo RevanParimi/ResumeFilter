@@ -62,6 +62,20 @@ def test_role_signal_from_requisition():
     assert sig.city_tier == "metro"
 
 
+def test_comp_bands_path_override_wins_then_falls_back(tmp_path):
+    import json
+    path = tmp_path / "bands.json"
+    path.write_text(json.dumps({
+        "backend_engineer|senior|metro": [1_000_000, 2_000_000, 3_000_000, 0.10],
+    }), encoding="utf-8")
+    s = Settings(comp_bands_path=str(path))
+    sig = RoleSignal(role_family="backend_engineer", seniority=SeniorityBand.SENIOR, city_tier="metro")
+    assert bands.lookup_cell(sig, s) == (1_000_000.0, 2_000_000.0, 3_000_000.0, 0.10)
+    # a signal absent from the override falls back to the computed seed
+    miss = RoleSignal(role_family="data_scientist", seniority=SeniorityBand.JUNIOR, city_tier="tier_2")
+    assert bands.lookup_cell(miss, s) == bands._computed_cell(miss)
+
+
 def test_role_signal_from_input_overrides_win():
     s = _s()
     sig = bands.role_signal_from_input(
