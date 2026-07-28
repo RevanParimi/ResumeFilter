@@ -153,3 +153,111 @@ def parse_linkedin_export(data: bytes, settings: Settings) -> LinkedInExportRaw:
 
     raw.warnings = warnings
     return raw
+
+
+# Tokens for whole-token corroboration: alnum plus the punctuation real skill
+# names carry (c++, c#, .net). Short names ("go", "c", "r") match only as a
+# standalone token, never as a substring.
+_TOKEN_RE = re.compile(r"[a-z0-9+#.]+")
+
+
+def _tokens(text: str) -> set[str]:
+    return set(_TOKEN_RE.findall(text.lower()))
+
+
+def _corroboration(skill: str, positions: list[LinkedInPositionRaw], headline: Optional[str]) -> int:
+    """How many positions (title+description) + the headline mention the skill as
+    a standalone token. A bounded evidence count, not a score."""
+    tok = skill.lower().strip()
+    if not tok:
+        return 0
+    count = 0
+    for p in positions:
+        if tok in _tokens(f"{p.title} {p.description}"):
+            count += 1
+    if headline and tok in _tokens(headline):
+        count += 1
+    return count
+
+
+def _dedup(values: list[Optional[str]]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for v in values:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
+def _build_skills(raw: LinkedInExportRaw, settings: Settings) -> list[SourceSkillSignal]:
+    best: dict[str, tuple[str, int]] = {}  # lower(name) -> (display, corroboration)
+    for name in raw.skills:
+        display = name.strip()
+        if not display:
+            continue
+        corr = _corroboration(display, raw.positions, raw.headline)
+        key = display.lower()
+        if key not in best or corr > best[key][1]:
+            best[key] = (display, corr)
+    out: list[SourceSkillSignal] = []
+    for display, corr in best.values():
+        match = normalize_skill(display)
+        conf = (
+            settings.ps_linkedin_skill_corroborated_confidence if corr >= 1
+            else settings.ps_linkedin_skill_base_confidence
+        )
+        out.append(SourceSkillSignal(
+            name=display,
+            canonical=match.canonical if match else None,
+            category=match.category if match else None,
+            weight=corr,
+            confidence=round(conf, 4),
+        ))
+    out.sort(key=lambda s: (-s.weight, s.name.lower()))
+    return out
+
+
+def _build_activity(raw: LinkedInExportRaw) -> LinkedInActivity:
+    employers = _dedup([canonicalize_employer(p.company) for p in raw.positions])
+    institutions = _dedup([
+        (m.canonical if (m := canonicalize_institution(e.school)) else None)
+        for e in raw.education
+    ])
+    current = sum(1 for p in raw.positions if not p.finished_on.strip())
+    return LinkedInActivity(
+        positions_count=len(raw.positions),
+        current_positions=current,
+        employers=employers,
+        education_count=len(raw.education),
+        institutions=institutions,
+        certifications_count=len(raw.certifications),
+        languages=list(raw.languages),
+        headline=raw.headline,
+        industry=raw.industry,
+        skills_listed=len(raw.skills),
+    )
+
+
+def to_signal(
+    raw: LinkedInExportRaw, settings: Settings, *, fetched_at: datetime
+) -> ProfileSourceSignal:
+    if not raw.available:
+        return ProfileSourceSignal(
+            source_type=ProfileSourceType.LINKEDIN_EXPORT,
+            identifier="linkedin_export",
+            skills=[],
+            activity=LinkedInActivity(),
+            method="unavailable",
+            fetched_at=fetched_at,
+            warnings=list(raw.warnings),
+        )
+    return ProfileSourceSignal(
+        source_type=ProfileSourceType.LINKEDIN_EXPORT,
+        identifier="linkedin_export",
+        skills=_build_skills(raw, settings),
+        activity=_build_activity(raw),
+        method="export",
+        fetched_at=fetched_at,
+        warnings=list(raw.warnings),
+    )
