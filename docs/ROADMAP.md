@@ -9,17 +9,21 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-5 STARTED — S5.1 (job requisition + role-conditioned
-  matching) built + smoke-green on branch `s51-job-requisition-matching`**, merge
-  pending final whole-branch review. PI-4 (ML feature store & ranking) complete
-  and on main (S4.1–S4.4). S5.1 opens the demand side: an org describes a role as
-  a **job requisition** and gets an advisory, explainable role-conditioned
-  shortlist over the S4.2 pool, reusing the S4.3 ranking engine + one job-relative
-  skill-coverage dimension.
-- **Next action:** Final whole-branch self-review + merge S5.1 to main, then plan
-  **S5.2** (comp intelligence v0 — static bands + ledger-observed offers, advisory)
-  per `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.1
-  delivered (spec `2026-07-27-s51-job-requisition-matching-design.md`, plan
+- **Current sprint:** **PI-5 — S5.1 (job requisition + role-conditioned matching)
+  COMPLETE and merged to main (fast-forward `2eb591c`, 623 green); next is S5.2
+  (comp intelligence v0).** PI-4 (ML feature store & ranking) complete and on main
+  (S4.1–S4.4). S5.1 opened the demand side: an org describes a role as a **job
+  requisition** and gets an advisory, explainable role-conditioned shortlist over
+  the S4.2 pool, reusing the S4.3 ranking engine + one job-relative skill-coverage
+  dimension.
+- **Next action:** Plan + build **S5.2** (comp intelligence v0 — static bands +
+  ledger-observed offers, advisory) per
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6; it consumes
+  S5.1's stored `comp_band` (already persisted as metadata). Sprint workflow:
+  brainstorm → spec → plan → TDD build → smoke. S5.1 is DONE (merged to main,
+  fast-forward `2eb591c`, 623 green; whole-branch review fix `ff2ecae` already
+  landed). S5.1 delivered (spec `2026-07-27-s51-job-requisition-matching-design.md`,
+  plan
   `2026-07-27-s51-job-requisition-matching.md`, 10 TDD tasks): new `app/matching/`
   package — pure contracts `schema.py` (`JobRequisitionInput`/`JobRequisition`/
   `CompBand`/`MatchWeights`/`SkillMatchDetail`/`MatchedCandidate`/`MatchResult`),
@@ -232,6 +236,14 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-27 (5)** — S5.1 closed out (bookkeeping only, no new code). Confirmed
+  via `git reflog` that branch `s51-job-requisition-matching` was **fast-forward
+  merged to main** (`2eb591c`) with the whole-branch review's hardening fix
+  (`ff2ecae`) already landed; branch deleted. `pytest -q` **623 green on main**.
+  The ROADMAP "Current state"/"Next action" prose was stale (still framed the merge
+  as "pending") — corrected here. **S5.1 COMPLETE.** Next: brainstorm → spec → plan
+  → build **S5.2** (comp intelligence v0 — static bands + ledger-observed offers,
+  advisory; consumes S5.1's stored `comp_band`), per gap-analysis §6.
 - **2026-07-27 (4)** — **PI-5 shaped + S5.1 built** (inline TDD-offline on branch
   `s51-job-requisition-matching`). Confirmed PI-4 already merged to main (S4.4
   done); ROADMAP "Next action" prose was stale. Brainstormed PI-5 demand side →
