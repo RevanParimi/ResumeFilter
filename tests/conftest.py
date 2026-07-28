@@ -110,6 +110,7 @@ def make_services(
     features: FeatureStore | None = None,
     jobs=None,
     comp=None,
+    dashboard=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     ledger = ledger or LedgerStore(
@@ -127,6 +128,9 @@ def make_services(
     if comp is None:
         from app.comp.service import CompService
         comp = CompService(ledger, settings=settings)
+    if dashboard is None:
+        from app.dashboard.service import DashboardService
+        dashboard = DashboardService(jobs, comp, ledger, settings=settings)
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
@@ -139,6 +143,7 @@ def make_services(
         features=features,
         jobs=jobs,
         comp=comp,
+        dashboard=dashboard,
     )
 
 
