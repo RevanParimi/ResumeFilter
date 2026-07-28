@@ -23,6 +23,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
     from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
     from app.matching.store import JobStore
+    from app.profile_sources.service import ProfileSourceService
 
 
 @dataclass
@@ -39,6 +40,7 @@ class Services:
     jobs: JobStore
     comp: CompService
     dashboard: DashboardService
+    profile_sources: ProfileSourceService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -48,21 +50,29 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
     from app.matching.store import build_job_store
+    from app.profile_sources.service import build_profile_source_service
 
     settings = settings or get_settings()
+    # Hoisted so the profile-source service shares the one GitHub client + the
+    # candidate store (handle derivation + existence checks) with the container.
+    github = GitHubClient(settings)
+    candidates = build_candidate_store(settings)
     return Services(
         settings=settings,
         llm=build_llm(settings),
         vectorstore=build_vectorstore(settings),
-        github=GitHubClient(settings),
+        github=github,
         flywheel=build_flywheel(settings),
         report_store=build_report_store(settings),
-        candidates=build_candidate_store(settings),
+        candidates=candidates,
         ledger=build_ledger_store(settings),
         features=build_feature_store(settings),
         jobs=build_job_store(settings),
         comp=build_comp_service(settings),
         dashboard=build_dashboard_service(settings),
+        profile_sources=build_profile_source_service(
+            settings, github=github, candidates=candidates
+        ),
     )
 
 

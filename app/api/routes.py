@@ -46,6 +46,7 @@ from app.ledger.schema import (
     ReputationAssessment,
 )
 from app.ledger.store import ConsentError
+from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -345,6 +346,48 @@ async def delete_candidate_resume(
         raise HTTPException(status_code=404, detail="resume not found for candidate")
     services.candidates.delete_resume(resume_id)
     return {"resume_id": resume_id, "deleted": True}
+
+
+class GitHubSourceRequest(BaseModel):
+    handle: Optional[str] = None
+
+
+class ProfileSourcesResponse(BaseModel):
+    candidate_id: str
+    sources: list[ProfileSourceSignal]
+
+
+@router.post(
+    "/candidates/{candidate_id}/sources/github", response_model=ProfileSourceSignal
+)
+async def ingest_github_source(
+    candidate_id: str, req: GitHubSourceRequest, request: Request
+) -> ProfileSourceSignal:
+    """Ingest a candidate's public GitHub handle as an advisory skill signal
+    (S6.1). A missing/unreachable handle returns 200 with method='unavailable';
+    a handle that can't be resolved at all is 400."""
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    try:
+        return await services.profile_sources.ingest_github(candidate_id, handle=req.handle)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/candidates/{candidate_id}/sources", response_model=ProfileSourcesResponse
+)
+async def list_candidate_sources(
+    candidate_id: str, request: Request, source_type: Optional[ProfileSourceType] = None
+) -> ProfileSourcesResponse:
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    return ProfileSourcesResponse(
+        candidate_id=candidate_id,
+        sources=services.profile_sources.list_sources(candidate_id, source_type),
+    )
 
 
 # ── Evaluation ledger (S3.2) ────────────────────────────────────────────────

@@ -105,6 +105,8 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
                 "GET /candidates/{id}/reports",
                 "DELETE /candidates/{id}",
                 "DELETE /candidates/{id}/resumes/{resume_id}",
+                "POST /candidates/{id}/sources/github",
+                "GET /candidates/{id}/sources",
                 "GET /report/{id}",
                 "POST /report/{id}/outcome",
                 "GET /report/{id}/outcomes",

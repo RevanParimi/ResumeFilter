@@ -131,8 +131,10 @@ def make_services(
     jobs=None,
     comp=None,
     dashboard=None,
+    profile_sources=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
+    github = github or FakeGitHub()
     ledger = ledger or LedgerStore(
         candidates._session_factory,
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
@@ -151,11 +153,19 @@ def make_services(
     if dashboard is None:
         from app.dashboard.service import DashboardService
         dashboard = DashboardService(jobs, comp, ledger, settings=settings)
+    if profile_sources is None:
+        from app.profile_sources.service import ProfileSourceService
+        from app.profile_sources.store import ProfileSourceStore
+        profile_sources = ProfileSourceService(
+            github=github,
+            store=ProfileSourceStore(candidates._session_factory),
+            candidates=candidates, settings=settings,
+        )
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
         vectorstore=InMemoryVectorStore(),
-        github=github or FakeGitHub(),
+        github=github,
         flywheel=flywheel or InMemoryFlywheel(),
         report_store=InMemoryReportStore(),
         candidates=candidates,
@@ -164,6 +174,7 @@ def make_services(
         jobs=jobs,
         comp=comp,
         dashboard=dashboard,
+        profile_sources=profile_sources,
     )
 
 
