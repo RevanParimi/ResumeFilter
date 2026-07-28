@@ -17,14 +17,26 @@ Around that engine, the platform currently ships:
 - **Candidate data backbone** (PI-1, done) — production extraction into a
   versioned, deduplicated, India-normalized candidate store with DPDP delete
   paths → [CANDIDATES.md](CANDIDATES.md)
-- **Fabrication defense 2.0** (PI-2, in progress) — advisory AI-generated-text
-  signals, cross-field timeline forensics, and resume-farm near-duplicate
-  detection → [FABRICATION.md](FABRICATION.md)
+- **Fabrication defense 2.0** (PI-2, done) — advisory AI-generated-text signals,
+  cross-field timeline forensics, resume-farm near-duplicate detection, and a
+  fused advisory `fabrication_risk` score → [FABRICATION.md](FABRICATION.md)
+- **Evaluation ledger** (PI-3, done) — consent-first cross-company interview and
+  coding-round records with purpose-scoped, revocable, audited DPDP consent, plus
+  advisory Bayesian cross-company reputation → [LEDGER.md](LEDGER.md)
+- **ML feature store & ranking** (PI-4, done) — a versioned feature registry,
+  point-in-time materialization + CSV/parquet export, an admin talent-search /
+  ranking API, and leakage-free training-set export → [FEATURES.md](FEATURES.md)
+- **Demand side** (PI-5, in progress) — job requisitions + advisory
+  role-conditioned match-ranking, and advisory comp intelligence (static bands
+  blended with consent-gated ledger-observed offers) →
+  [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md)
 
 Ships with two evaluation domains (**GenAI engineering**, **Data
 Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 (pipeline internals) · [CANDIDATES.md](CANDIDATES.md) ·
-[FABRICATION.md](FABRICATION.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
+[FABRICATION.md](FABRICATION.md) · [LEDGER.md](LEDGER.md) ·
+[FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) ·
+[MODELS.md](MODELS.md) (model choices) · [docs/ROADMAP.md](docs/ROADMAP.md)
 (live sprint status) · [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 (original engine requirements).
 
@@ -122,6 +134,19 @@ runs, and unhandled errors return a generic 500 (details stay in the logs). Set
 `DEE_API_AUTH_KEY` in `.env` to require an `X-API-Key` header on everything
 except `/` and `/healthz`.
 
+Beyond the core engine, three further planes ship (auth in parentheses; full
+detail in the linked docs):
+
+| Surface | Plane | Key endpoints | Doc |
+|---------|-------|---------------|-----|
+| Evaluation ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/records` · `/coding-rounds` · `/offers`; `GET …/records` · `…/coding-rounds` · `…/reputation` (query-time consent, every access audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
+| Talent search / feature store | admin `X-API-Key` | `POST /talent/search` — filter + composite-score ranking over materialized feature vectors (advisory) | [FEATURES.md](FEATURES.md) |
+| Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) |
+
+Every one of these is **advisory** and **consent-aware**: consent-gated writes,
+query-time consent enforcement on cross-company reads, de-identified comp
+aggregation, and DPDP erasure that cascades every candidate-linked row.
+
 ### Example request
 
 ```bash
@@ -134,10 +159,10 @@ curl -s localhost:8000/evaluate -H 'content-type: application/json' -d '{
 
 The response is a `Report`: per-claim `CoherenceVerdict`s (score, confidence,
 status, evidence, probes), an aggregate `depth_band`, the always-on
-`advisory` / `human_review_required` flags, and three optional **advisory**
-fabrication assessments — `ai_generation`, `cross_field`, `resume_farm`
-(bands + explained signals; never a rejection signal — see
-[FABRICATION.md](FABRICATION.md)).
+`advisory` / `human_review_required` flags, and four optional **advisory**
+fabrication assessments — `ai_generation`, `cross_field`, `resume_farm`, and the
+fused `fabrication_risk` (bands + explained signals; never a rejection signal —
+see [FABRICATION.md](FABRICATION.md)).
 
 ---
 
@@ -205,7 +230,12 @@ in [genai.py](app/domains/genai.py) (fine-tuning, RAG, multi-agent) and
 
 Only **first-party** data is used: the candidate-provided resume and any
 GitHub/portfolio URLs **they** share. The engine never scrapes third-party
-profiles.
+profiles. Cross-company signals in the ledger (interview outcomes, coding
+rounds, offers) are an organization's record of **its own** interaction with a
+candidate, ingested only under a purpose-scoped, revocable, audited consent
+grant — and every candidate-linked row cascades on DPDP erasure. Comp
+aggregation reads only de-identified, k-anonymized offer data
+([LEDGER.md](LEDGER.md) · [COMP.md](COMP.md)).
 
 ## Flywheel
 
@@ -239,18 +269,36 @@ app/
     ai_text.py           S2.1 AI-text detectors + fusion/banding
     cross_field.py       S2.2 interval math + timeline/coherence checks
     similarity.py        S2.3 MinHash fingerprints + farm banding
+    risk.py              S2.4 fused advisory fabrication_risk
+  ledger/                PI-3 evaluation ledger → LEDGER.md
+    schema.py, models.py contracts + ORM (orgs, consent, records, offers, audit)
+    consent.py           pure purpose-scoped/expiring/revocable consent logic
+    reputation.py        S3.4 Bayesian cross-company reputation (advisory)
+    store.py             LedgerStore (consent-gated writes, audited reads)
+  features/              PI-4 feature store & ranking → FEATURES.md
+    registry.py, definitions/  @register_feature catalog (code-versioned)
+    materialize.py, store.py   point-in-time vectors → ml_feature_vectors
+    ranking.py, export.py      composite-score ranking · CSV/parquet · training set
+  matching/              PI-5 demand side → MATCHING.md
+    match.py, store.py   compile-to-ranking + skill coverage; JobStore
+  comp/                  PI-5 comp intelligence → COMP.md
+    bands.py, estimate.py  static prior + observed-offer blend (advisory)
+    service.py           CompService (reads ledger-observed offers)
   domains/
     base.py              DomainModel interface + rule registry
     rules.py             shared SignalRule machinery (all domains build on it)
     genai.py             GenAI domain (fine-tuning · RAG · multi-agent)
     data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
   schemas/               claims.py, report.py, fabrication.py (Pydantic v2)
-  services/              llm (OpenRouter) · vectorstore (Chroma, bounded init)
-                         · github · flywheel · report_store (SQLite)
+  services/              Services container (candidates · ledger · features · jobs
+                         · comp; injected, never global) + llm (OpenRouter) ·
+                         vectorstore (Chroma) · github · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)
-alembic/                 candidate-store migrations (0001 store, 0002 fingerprints)
+alembic/                 shared migrations 0001-0009 (candidate store, fingerprints,
+                         ledger, consent/api-keys, coding rounds, reputation weight,
+                         feature vectors, job requisitions, observed offers)
 tests/                   per-node + API + integration + adversarial fixtures,
-                         fully offline (312 tests)
+                         fully offline (653 tests)
 docs/ROADMAP.md          live PI/sprint status (start here each session)
 Dockerfile               non-root image with /healthz healthcheck
 .github/workflows/ci.yml offline pytest on 3.11/3.12
@@ -263,8 +311,14 @@ Dockerfile               non-root image with /healthz healthcheck
 - **PI-1 Candidate data backbone (done):** extraction schema + extractor,
   candidate store (SQLAlchemy/Alembic), API + engine wiring, India
   normalization.
-- **PI-2 Fabrication defense (in progress):** S2.1 AI-text signals ✓ ·
-  S2.2 cross-field forensics ✓ · S2.3 resume-farm detection ✓ ·
-  S2.4 unified fabrication_risk (next).
-- **PI-3 Evaluation ledger** (cross-company, DPDP-consent-first) ·
-  **PI-4 ML feature store & ranking** — designed, not started.
+- **PI-2 Fabrication defense (done):** AI-text signals · cross-field forensics ·
+  resume-farm detection · fused advisory `fabrication_risk`.
+- **PI-3 Evaluation ledger (done):** schema + DPDP consent · ledger APIs ·
+  coding-round results · Bayesian cross-company reputation.
+- **PI-4 ML feature store & ranking (done):** feature registry ·
+  point-in-time materialization + export · talent search/ranking API ·
+  training-set export.
+- **PI-5 Demand side (in progress):** S5.1 job requisitions + role-conditioned
+  matching ✓ · S5.2 comp intelligence v0 ✓ · S5.3 thin employer dashboard (next).
+- **PI-6 candidate side & intake · PI-7 verification & assessment depth ·
+  PI-8 scale & learning** — shaped, not started.
