@@ -9,16 +9,19 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-5 — S5.2 (comp intelligence v0) COMPLETE and merged to
-  main (653 green); next is S5.3 (thin employer dashboard).** S5.1 (job requisition
-  + role-conditioned matching) complete and on main
-  (`2eb591c`, 623 green). PI-4 complete (S4.1–S4.4). S5.2 opens comp intelligence:
-  an advisory comp band (annual total CTC) from a deterministic **static prior**
-  blended with **consent-gated ledger-observed offers**, plus a **requisition
-  benchmark** (below/at/above market). Advisory, no LLM.
-- **Next action:** Plan **S5.3** (thin employer dashboard — read-only over
-  search/reports) per
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.2 is
+- **Current sprint:** **PI-5 — S5.3 (thin employer dashboard) COMPLETE and merged to
+  main (672 green, smoke 18/18). PI-5 (demand side) is now COMPLETE (S5.1–S5.3).**
+  S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
+  consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
+  `GET /jobs/{id}/board` (requisition + comp benchmark + top-N match), and
+  `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
+  status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
+  exposure. Advisory.
+- **Next action:** Shape **PI-6** (candidate side & intake — profile-source
+  ingestion, normalization curation, candidate auth + DPDP portal) per
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6: brainstorm
+  the PI, then scope S6.1. **PI-5 (demand side) is COMPLETE (S5.1–S5.3).** Historical
+  S5.2 detail follows. S5.2 is
   DONE (merged to main, 653 green; whole-branch self-review clean — no
   Critical/Important; one Minor closed: added a `comp_bands_path` override-loader
   test). S5.2 delivered (spec `2026-07-28-s52-comp-intelligence-design.md`, plan
@@ -226,13 +229,16 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S4.3  Talent search/ranking API (filters + composite score)
 │   └── [x] S4.4  Training-set export — features ⋈ outcomes (flywheel+ledger)
 │
-├── PI-5  DEMAND SIDE (STARTED)
+├── PI-5  DEMAND SIDE                                         [COMPLETE]
 │   ├── [x] S5.1  Job/requisition schema + role-conditioned match-ranking
 │   │            (org-plane; compile-to-ranking + skill-coverage; comp band
 │   │            metadata-only; audit-every-match, no new consent gate)
 │   ├── [x] S5.2  Comp intelligence v0 (static bands + ledger-observed offers,
 │   │            advisory) — consumes S5.1's stored comp_band
-│   └── [ ] S5.3  Thin employer dashboard (read-only over search/reports)
+│   └── [x] S5.3  Thin employer dashboard (read-only over search/reports)
+│            org-plane read-models: /dashboard/overview + /jobs/{id}/board +
+│            /candidates/{id}/card; lean board + consent-gated drill-in card;
+│            pure app/dashboard/ composition, no new state/consent/LLM
 ├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
 │        LinkedIn) · normalization curation loop · candidate auth + DPDP portal
 │        (my-data / who-accessed / revoke / retention TTLs)
@@ -260,6 +266,42 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-28 (2)** — **S5.3 (thin employer dashboard) built + merged**
+  (subagent-driven on branch `s53-employer-dashboard`, 7 TDD tasks; spec
+  `2026-07-28-s53-employer-dashboard-design.md`, plan
+  `2026-07-28-s53-employer-dashboard.md`). Two design decisions taken with user:
+  **JSON read-models only** (no HTML/UI — API-first stays primary) and **lean board +
+  drill-in card** (a board load fires no extra cross-org reads; consent-gated
+  composition lives in the per-candidate card). Delivered a new pure `app/dashboard/`
+  package (`schema.py` contracts + `SectionStatus`; `service.py` `DashboardService`
+  composing JobStore + CompService + LedgerStore, owns no tables/state) exposing three
+  org-plane read-models: `GET /dashboard/overview` (org's own reqs — counts by status +
+  per-req flags; no consent, no audit), `GET /jobs/{id}/board` (requisition +
+  `CompService.benchmark` + top-N `run_match`; 404 cross-org, 422 empty pool; reuses
+  `run_match`'s `match.surface` + comp's `comp.aggregate` audit rows, adds none),
+  `GET /candidates/{id}/card` (per-section consent-gated drill-in reusing
+  `reputation_for_org`/`query_coding_rounds_for_org`/`query_records_for_org`; **200 with
+  per-section `SectionStatus`** available/consent_required/no_data — never hard-403s;
+  404 only for an unknown candidate [`LookupError` propagates]; audit-by-reuse).
+  `Services.dashboard` wired cycle-safe (S4.3/S5.1/S5.2 pattern). `dash_board_top_n`
+  config knob. **No LLM, no new consent purpose, no migration, no candidate PII, no
+  depth-`Report` exposure.** `DASHBOARD.md` written. 29 new tests (653→672,
+  `pytest -q` green). Smoke `scripts/smoke_s53.py` (uvicorn + HTTP) 18/18 OK exit 0:
+  overview → board 422 (empty pool) → board 200 (materialized, comp advisory) → card
+  consent_required (no grant) → grant ledger_read → no_data → revoke → consent_required
+  (all 3 sections) → cross-org board 404 → unknown-candidate card 404. Executed
+  subagent-driven: fresh implementer + reviewer per task (Tasks 1–6 review-clean; Task 5
+  reviewer caught + fixed a wrong-enum bug the plan carried [`InterviewStage.TECHNICAL`/
+  `InterviewOutcome.PASS` → real `TECH`/`ADVANCED`]; Task 7 one Important doc-accuracy
+  finding [board audit inventory omitted the reused `comp.aggregate` row] fixed + a smoke
+  revoke-symmetry minor). **NOTE:** the account session limit was hit near the end, so
+  the Task-7 fix's scoped re-review and the independent whole-branch final review could
+  not run as subagents — the fix was applied in-controller and self-verified (smoke
+  18/18, suite 672), and a controller whole-branch self-review (pyflakes clean on all
+  new + modified files; `service.py` logic re-read; deferred minors resolved) stood in,
+  per the user's explicit decision to merge now rather than wait for the ~7pm reset.
+  Merged to main (fast-forward), branch deleted. **S5.3 COMPLETE — PI-5 (demand side)
+  COMPLETE.** Next: shape PI-6 (candidate side & intake).
 - **2026-07-28** — **S5.2 (comp intelligence v0) built** (inline TDD-offline on
   branch `s52-comp-intelligence`, 10 tasks; spec
   `2026-07-28-s52-comp-intelligence-design.md`, plan `2026-07-28-s52-comp-
