@@ -114,6 +114,10 @@ portal slides to **S6.4**. The curation loop stays explicitly in the PI.
   than bytes; `weight`'s docstring is generalized to "aggregated evidence volume
   (source-defined)". `canonical`/`category` come from `normalize_skill` exactly as
   GitHub; unknown skills are kept with `canonical=None`.
+- **`method` literal extended** to `Literal["api", "export", "unavailable"]`. A
+  successful LinkedIn parse reports `method="export"` (it is a parsed upload, not
+  an API call — honest transport labelling); GitHub keeps `"api"`. Both existing
+  values remain, so stored GitHub rows validate unchanged.
 - **New `LinkedInActivity(BaseModel)`** (evidence context, not a score):
   - `positions_count: int`, `current_positions: int` (rows with empty "Finished
     On"), `employers: list[str]` (canonical, deduped, order-stable),
@@ -177,6 +181,10 @@ portal slides to **S6.4**. The curation loop stays explicitly in the PI.
   drop `None`) + canonical institutions (`canonicalize_institution(...).canonical`,
   deduped) + certifications_count + languages + headline + industry +
   skills_listed. `current_positions` = positions with empty `finished_on`.
+- **Available raw ⇒ `method="export"`.** Corroboration matching is token-based
+  (a skill matches a position/headline only as a standalone token — so short
+  names like `"go"`/`"c"` don't false-match substrings; multi-word skills simply
+  don't corroborate, an accepted limitation).
 - **Pure — no network, no clock beyond the injected `fetched_at`.**
 
 ### 5.3 `service.py` — add `ingest_linkedin`
@@ -280,7 +288,7 @@ unreachable GitHub returns 200 `unavailable` rather than an error.
 
 **Smoke `scripts/smoke_s62.py`** (uvicorn + real HTTP): build a realistic LinkedIn
 export zip in-script (Skills/Positions/Education/Profile CSVs) → create a candidate
-→ `POST .../sources/linkedin` with the base64 zip → assert 200, `method="api"`,
+→ `POST .../sources/linkedin` with the base64 zip → assert 200, `method="export"`,
 canonical skills present, corroborated skill has the higher confidence, activity
 employers canonicalized → `GET .../sources?source_type=linkedin_export` shows the
 row → bad-base64 → 422 → DPDP `DELETE` candidate → `GET .../sources` 404. Key-less
