@@ -614,8 +614,8 @@ def test_card_sections_available_after_read_grant(services):
         candidate_id=cand_id, purpose=ConsentPurpose.LEDGER_WRITE, org_id=org_id,
         expires_at=NOW + timedelta(days=90))
     services.ledger.submit_interview_record(
-        org_id=org_id, candidate_id=cand_id, stage=InterviewStage.TECHNICAL,
-        outcome=InterviewOutcome.PASS, interviewed_at=NOW)
+        org_id=org_id, candidate_id=cand_id, stage=InterviewStage.TECH,
+        outcome=InterviewOutcome.ADVANCED, interviewed_at=NOW)
     services.ledger.grant_consent(
         candidate_id=cand_id, purpose=ConsentPurpose.LEDGER_READ, org_id=org_id,
         expires_at=NOW + timedelta(days=90))
