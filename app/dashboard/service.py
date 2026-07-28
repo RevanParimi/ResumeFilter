@@ -55,6 +55,18 @@ class DashboardService:
             requisitions=tuple(summaries),
         )
 
+    def board(self, org_id: str, req_id: str) -> Optional[RequisitionBoard]:
+        req = self._jobs.get_requisition(org_id, req_id)
+        if req is None:
+            return None
+        comp = self._comp.benchmark(req, org_id=org_id)
+        match = self._jobs.run_match(
+            org_id, req_id, as_of=None, limit=self._settings.dash_board_top_n
+        )
+        if match is None:  # req is owned, so run_match found it — defensive only
+            return None
+        return RequisitionBoard(requisition=req, comp=comp, match=match)
+
 
 def build_dashboard_service(settings: Optional[Settings] = None) -> DashboardService:
     settings = settings or get_settings()
