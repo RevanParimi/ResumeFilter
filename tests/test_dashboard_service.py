@@ -66,3 +66,64 @@ def test_board_composes_req_comp_and_empty_match(services):
     assert board.match.pool_size == 0                  # nothing materialized -> empty
     assert board.match.ranked == ()
     assert board.advisory is True
+
+
+from datetime import timedelta
+
+from app.ledger.schema import ConsentPurpose, InterviewOutcome, InterviewStage
+
+
+def _candidate(services, name="Ann", email="ann@x.io"):
+    saved = services.candidates.ingest(
+        ExtractionResult(
+            profile=CandidateProfile(
+                full_name=ExtractedStr(value=name),
+                contact=ContactInfo(email=ExtractedStr(value=email)),
+                skills=[SkillItem(name="python", canonical="python")],
+            ),
+            method="heuristic",
+        ),
+        resume_text=email,
+    )
+    return saved.candidate_id
+
+
+def test_card_all_sections_consent_required_without_grant(services):
+    org_id = _org(services)
+    cand_id = _candidate(services)
+    card = services.dashboard.card(org_id, cand_id)
+    assert card.candidate_id == cand_id
+    assert card.reputation.status == SectionStatus.CONSENT_REQUIRED
+    assert card.coding_rounds.status == SectionStatus.CONSENT_REQUIRED
+    assert card.records.status == SectionStatus.CONSENT_REQUIRED
+    assert card.reputation.data is None
+
+
+def test_card_sections_available_after_read_grant(services):
+    org_id = _org(services)
+    cand_id = _candidate(services)
+    # A submitted interview record needs a write grant; reading needs a read grant.
+    services.ledger.grant_consent(
+        candidate_id=cand_id, purpose=ConsentPurpose.LEDGER_WRITE, org_id=org_id,
+        expires_at=NOW + timedelta(days=90))
+    services.ledger.submit_interview_record(
+        org_id=org_id, candidate_id=cand_id, stage=InterviewStage.TECH,
+        outcome=InterviewOutcome.ADVANCED, interviewed_at=NOW)
+    services.ledger.grant_consent(
+        candidate_id=cand_id, purpose=ConsentPurpose.LEDGER_READ, org_id=org_id,
+        expires_at=NOW + timedelta(days=90))
+
+    card = services.dashboard.card(org_id, cand_id)
+    assert card.records.status == SectionStatus.AVAILABLE
+    assert len(card.records.data) == 1
+    # No coding rounds submitted -> granted but empty -> no_data.
+    assert card.coding_rounds.status == SectionStatus.NO_DATA
+    # Reputation reads the one record; with consent it is AVAILABLE (has observations).
+    assert card.reputation.status == SectionStatus.AVAILABLE
+
+
+def test_card_unknown_candidate_raises_lookuperror(services):
+    import pytest
+    org_id = _org(services)
+    with pytest.raises(LookupError):
+        services.dashboard.card(org_id, "no-such-candidate")

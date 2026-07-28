@@ -67,6 +67,47 @@ class DashboardService:
             return None
         return RequisitionBoard(requisition=req, comp=comp, match=match)
 
+    def card(self, org_id: str, candidate_id: str) -> CandidateCard:
+        # Section order matters only for the unknown-candidate case: the first
+        # reused read raises LookupError, which we let propagate (-> 404). For a
+        # known candidate each section is independently consent-gated + audited.
+        return CandidateCard(
+            candidate_id=candidate_id,
+            reputation=self._reputation_section(org_id, candidate_id),
+            coding_rounds=self._coding_rounds_section(org_id, candidate_id),
+            records=self._records_section(org_id, candidate_id),
+        )
+
+    def _reputation_section(self, org_id: str, candidate_id: str) -> ReputationSection:
+        try:
+            rep = self._ledger.reputation_for_org(org_id=org_id, candidate_id=candidate_id)
+        except ConsentError:
+            return ReputationSection(status=SectionStatus.CONSENT_REQUIRED, data=None)
+        status = (
+            SectionStatus.NO_DATA if rep.total_observations == 0 else SectionStatus.AVAILABLE
+        )
+        return ReputationSection(status=status, data=rep)
+
+    def _coding_rounds_section(self, org_id: str, candidate_id: str) -> CodingRoundsSection:
+        try:
+            rounds = self._ledger.query_coding_rounds_for_org(
+                org_id=org_id, candidate_id=candidate_id
+            )
+        except ConsentError:
+            return CodingRoundsSection(status=SectionStatus.CONSENT_REQUIRED, data=())
+        status = SectionStatus.AVAILABLE if rounds else SectionStatus.NO_DATA
+        return CodingRoundsSection(status=status, data=tuple(rounds))
+
+    def _records_section(self, org_id: str, candidate_id: str) -> RecordsSection:
+        try:
+            records = self._ledger.query_records_for_org(
+                org_id=org_id, candidate_id=candidate_id
+            )
+        except ConsentError:
+            return RecordsSection(status=SectionStatus.CONSENT_REQUIRED, data=())
+        status = SectionStatus.AVAILABLE if records else SectionStatus.NO_DATA
+        return RecordsSection(status=status, data=tuple(records))
+
 
 def build_dashboard_service(settings: Optional[Settings] = None) -> DashboardService:
     settings = settings or get_settings()
