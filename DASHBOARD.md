@@ -135,9 +135,13 @@ the one that raises.
 - **Audit rows, by endpoint:**
   - `overview` writes **no** audit rows — it's a read-only summary derived
     from data the requesting org already owns.
-  - `board` writes **`match.surface`** rows (one per *returned* candidate,
-    candidate-linked, CASCADE) as a side effect of the reused `run_match` call
-    — the S5.1 disclosure log, unchanged by the dashboard.
+  - `board` writes two kinds of reused (not new) audit rows: **`match.surface`**
+    rows (one per *returned* candidate, candidate-linked, CASCADE) as a side
+    effect of the reused `run_match` call — the S5.1 disclosure log — **and**
+    one **`comp.aggregate`** row (role-linked, `candidate_id=None`) from the
+    reused `comp.benchmark` → `observed_offers_for_comp` call, which audits
+    every aggregation (`COMP.md`). Both are inherited audit paths; the
+    dashboard adds no audit action of its own.
   - `card` writes each reused store method's **own** audit action
     (`reputation.query` / `record.query` / `coding_round.query`) — allowed
     and denied attempts alike, exactly as if the org had called those reads

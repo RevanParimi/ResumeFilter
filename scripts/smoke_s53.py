@@ -187,10 +187,17 @@ def main() -> int:
                 card1["records"]["status"] == "no_data"
             )
 
-            # 5. Revoke -> back to consent_required.
+            # 5. Revoke -> all sections back to consent_required (symmetric with
+            #    the post-grant check: revocation must gate every section).
             c.post(f"/ledger/consent/{grant_id}/revoke", headers=admin_h)
             card2 = c.get(f"/candidates/{cand_id}/card", headers=org_h).json()
-            checks["card back to consent_required after revoke"] = (
+            checks["card reputation consent_required after revoke"] = (
+                card2["reputation"]["status"] == "consent_required"
+            )
+            checks["card coding_rounds consent_required after revoke"] = (
+                card2["coding_rounds"]["status"] == "consent_required"
+            )
+            checks["card records consent_required after revoke"] = (
                 card2["records"]["status"] == "consent_required"
             )
 
