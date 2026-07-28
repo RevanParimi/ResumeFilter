@@ -97,3 +97,27 @@ def test_unavailable_raw_yields_unavailable_signal():
     assert sig.skills == []
     assert isinstance(sig.activity, LinkedInActivity)
     assert sig.warnings == ["not a valid zip archive"]
+
+
+def test_trailing_period_still_corroborates():
+    # "Worked in Python." has a trailing period that should not prevent corroboration.
+    raw = _raw(
+        skills=["Python"],
+        positions=[LinkedInPositionRaw(title="Developer", description="Worked in Python.")],
+    )
+    sig = to_signal(raw, _settings(), fetched_at=FETCHED)
+    py = [s for s in sig.skills if s.name == "Python"][0]
+    assert py.weight >= 1
+    assert py.confidence == 0.6
+
+
+def test_dotnet_at_sentence_end_corroborates():
+    # ".NET." at the end of a sentence should still corroborate a ".NET" skill.
+    raw = _raw(
+        skills=[".NET"],
+        positions=[LinkedInPositionRaw(title="Engineer", description="Built microservices in .NET.")],
+    )
+    sig = to_signal(raw, _settings(), fetched_at=FETCHED)
+    dotnet = [s for s in sig.skills if s.name == ".NET"][0]
+    assert dotnet.weight >= 1
+    assert dotnet.confidence == 0.6

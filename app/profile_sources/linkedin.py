@@ -162,13 +162,13 @@ _TOKEN_RE = re.compile(r"[a-z0-9+#.]+")
 
 
 def _tokens(text: str) -> set[str]:
-    return set(_TOKEN_RE.findall(text.lower()))
+    return {t.rstrip(".") for t in _TOKEN_RE.findall(text.lower()) if t.rstrip(".")}
 
 
 def _corroboration(skill: str, positions: list[LinkedInPositionRaw], headline: Optional[str]) -> int:
     """How many positions (title+description) + the headline mention the skill as
     a standalone token. A bounded evidence count, not a score."""
-    tok = skill.lower().strip()
+    tok = skill.lower().strip().rstrip(".")
     if not tok:
         return 0
     count = 0
