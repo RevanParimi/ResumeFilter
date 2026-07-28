@@ -808,6 +808,57 @@ class LedgerStore:
             session.commit()
             return _observed_offer(row)
 
+    def observed_offers_for_comp(
+        self,
+        *,
+        requesting_org_id: str,
+        role_family: str,
+        seniority: str,
+        city_tier: str,
+        at: Optional[datetime] = None,
+    ) -> list[ObservedOfferPoint]:
+        """Cross-candidate comp aggregation read (S5.2). Returns DE-IDENTIFIED
+        points (total_ctc + offered_at only) for offers matching the role signal
+        whose stamped ledger_write grant is still active at `at` -- so a
+        candidate's revocation/expiry removes their offer. Audits comp.aggregate
+        (candidate_id=None: the aggregate is about a role, not a person). The
+        k-anonymity floor is applied by the comp engine, not here."""
+        moment = consent_logic.as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(ObservedOfferRow).where(
+                        ObservedOfferRow.role_family == role_family,
+                        ObservedOfferRow.seniority == seniority,
+                        ObservedOfferRow.city_tier == city_tier,
+                    )
+                ).scalars().all()
+            )
+            points: list[ObservedOfferPoint] = []
+            for r in rows:
+                grant_row = session.get(ConsentGrantRow, r.consent_id)
+                if grant_row is None:
+                    continue
+                if consent_logic.is_grant_active(
+                    _grant(grant_row), org_id=r.org_id,
+                    purpose=ConsentPurpose.LEDGER_WRITE, at=moment,
+                ):
+                    points.append(ObservedOfferPoint(
+                        total_ctc=r.ctc_fixed + (r.ctc_variable or 0.0),
+                        offered_at=consent_logic.as_utc(r.offered_at),
+                    ))
+            self._audit(
+                session, actor_type="org", actor_id=requesting_org_id,
+                action="comp.aggregate", entity_type="role_signal",
+                entity_id=f"{role_family}:{seniority}:{city_tier}", candidate_id=None,
+                details={
+                    "matched": len(rows), "active": len(points),
+                    "excluded": len(rows) - len(points),
+                },
+            )
+            session.commit()
+            return points
+
     # -- cross-company reputation (S3.4, derived ledger_read-gated read) --------
 
     def reputation_for_org(

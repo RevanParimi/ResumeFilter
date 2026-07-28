@@ -86,3 +86,43 @@ def test_offer_cascades_on_candidate_erasure(store, session_factory):
         s.delete(s.get(CandidateRow, cand))
         s.commit()
         assert s.query(ObservedOfferRow).count() == 0
+
+
+def test_aggregate_returns_deidentified_active_only(store, session_factory):
+    org = store.create_organization("Acme")
+    cand = _new_candidate(session_factory)
+    g = _grant_write(store, cand, org.id)
+    _submit(store, org.id, cand)  # backend/senior/metro, fixed 25L + var 3L
+    pts = store.observed_offers_for_comp(
+        requesting_org_id=org.id, role_family="backend_engineer",
+        seniority="senior", city_tier="metro", at=NOW,
+    )
+    assert len(pts) == 1
+    assert pts[0].total_ctc == 2_500_000.0 + 300_000.0
+    assert not hasattr(pts[0], "candidate_id")
+    # role-signal filter excludes non-matching cells
+    assert store.observed_offers_for_comp(
+        requesting_org_id=org.id, role_family="frontend_engineer",
+        seniority="senior", city_tier="metro", at=NOW,
+    ) == []
+    # revocation drops the offer from the aggregate
+    store.revoke_consent(g.id, now=NOW + timedelta(days=1))
+    later = NOW + timedelta(days=2)
+    assert store.observed_offers_for_comp(
+        requesting_org_id=org.id, role_family="backend_engineer",
+        seniority="senior", city_tier="metro", at=later,
+    ) == []
+
+
+def test_aggregate_audits_with_null_candidate(store, session_factory):
+    org = store.create_organization("Acme")
+    cand = _new_candidate(session_factory)
+    _grant_write(store, cand, org.id)
+    _submit(store, org.id, cand)
+    store.observed_offers_for_comp(requesting_org_id=org.id, role_family="backend_engineer",
+                                   seniority="senior", city_tier="metro", at=NOW)
+    with session_factory() as s:
+        agg = s.query(AuditLogRow).filter(AuditLogRow.action == "comp.aggregate").all()
+    assert len(agg) == 1
+    assert agg[0].candidate_id is None            # aggregate is not about one candidate
+    assert agg[0].details["active"] == 1
