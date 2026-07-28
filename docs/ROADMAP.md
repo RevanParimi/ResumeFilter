@@ -9,21 +9,43 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-5 — S5.1 (job requisition + role-conditioned matching)
-  COMPLETE and merged to main (fast-forward `2eb591c`, 623 green); next is S5.2
-  (comp intelligence v0).** PI-4 (ML feature store & ranking) complete and on main
-  (S4.1–S4.4). S5.1 opened the demand side: an org describes a role as a **job
-  requisition** and gets an advisory, explainable role-conditioned shortlist over
-  the S4.2 pool, reusing the S4.3 ranking engine + one job-relative skill-coverage
-  dimension.
-- **Next action:** Plan + build **S5.2** (comp intelligence v0 — static bands +
-  ledger-observed offers, advisory) per
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6; it consumes
-  S5.1's stored `comp_band` (already persisted as metadata). Sprint workflow:
-  brainstorm → spec → plan → TDD build → smoke. S5.1 is DONE (merged to main,
-  fast-forward `2eb591c`, 623 green; whole-branch review fix `ff2ecae` already
-  landed). S5.1 delivered (spec `2026-07-27-s51-job-requisition-matching-design.md`,
-  plan
+- **Current sprint:** **PI-5 — S5.2 (comp intelligence v0) BUILT + smoke-green on
+  branch `s52-comp-intelligence` (652 green); merge pending final whole-branch
+  review.** S5.1 (job requisition + role-conditioned matching) complete and on main
+  (`2eb591c`, 623 green). PI-4 complete (S4.1–S4.4). S5.2 opens comp intelligence:
+  an advisory comp band (annual total CTC) from a deterministic **static prior**
+  blended with **consent-gated ledger-observed offers**, plus a **requisition
+  benchmark** (below/at/above market). Advisory, no LLM.
+- **Next action:** Final whole-branch self-review + merge **S5.2** to main, then
+  plan **S5.3** (thin employer dashboard — read-only over search/reports) per
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.2
+  delivered (spec `2026-07-28-s52-comp-intelligence-design.md`, plan
+  `2026-07-28-s52-comp-intelligence.md`, 10 TDD tasks): new pure `app/comp/` package
+  (`schema.py` contracts + `SeniorityBand`/role-family vocab; `bands.py` illustrative
+  license-clean static seed table + config-path override + deterministic
+  role/seniority/tier resolvers; `estimate.py` reputation.py-style shrinkage blend on
+  a **total-CTC basis** with k-anonymity floor + saturating confidence + benchmark;
+  `service.py` `CompService` reading offers via `LedgerStore`), consent-gated
+  `observed_offers` ledger table (peer of coding_round_results; `ObservedOffer`/
+  `ObservedOfferPoint` contracts, `ObservedOfferRow`, migration `0009`
+  candidate+org+consent CASCADE, drift/index/FK/nullability guards extended),
+  `LedgerStore.submit_observed_offer` (`ledger_write`-gated, audited `offer.submit`)
+  + `observed_offers_for_comp` (**de-identified**, revocation-respecting, audited
+  `comp.aggregate` with `candidate_id=None`), `Services.comp` wiring (cycle-safe),
+  org-plane endpoints `POST /ledger/offers` + `POST /comp/estimate` +
+  `GET /jobs/{id}/comp` (403/404/400/401). **Design decisions (delegated to
+  recommendation):** capture+blend (offers get a first-class CTC field) · estimate +
+  requisition benchmark surface (no comp-fit match term — no candidate expected-CTC
+  yet) · observed_offers lives in the ledger (layering: ledger never imports comp) ·
+  cross-candidate aggregation consent basis = revocation-respecting stamped grant +
+  k-anonymity floor + de-identified aggregate, **no new consent purpose** (documented
+  DPDP residual). `comp_*` config knobs. No LLM. `COMP.md` written. 29 new tests
+  (623→652, `pytest -q` green). Smoke `scripts/smoke_s52.py` (uvicorn + HTTP) 13/13
+  OK exit 0: static-only floor → 6 offers → observed blend (p50 up, confidence up) →
+  benchmark below/at → different role < k stays static → revoke drops one (6→5) →
+  DPDP erase tips below k (static-only) → cross-org 404. **PENDING:** final
+  whole-branch review + merge. S5.1 delivered (spec
+  `2026-07-27-s51-job-requisition-matching-design.md`, plan
   `2026-07-27-s51-job-requisition-matching.md`, 10 TDD tasks): new `app/matching/`
   package — pure contracts `schema.py` (`JobRequisitionInput`/`JobRequisition`/
   `CompBand`/`MatchWeights`/`SkillMatchDetail`/`MatchedCandidate`/`MatchResult`),
@@ -206,7 +228,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   ├── [x] S5.1  Job/requisition schema + role-conditioned match-ranking
 │   │            (org-plane; compile-to-ranking + skill-coverage; comp band
 │   │            metadata-only; audit-every-match, no new consent gate)
-│   ├── [ ] S5.2  Comp intelligence v0 (static bands + ledger-observed offers,
+│   ├── [x] S5.2  Comp intelligence v0 (static bands + ledger-observed offers,
 │   │            advisory) — consumes S5.1's stored comp_band
 │   └── [ ] S5.3  Thin employer dashboard (read-only over search/reports)
 ├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
@@ -236,6 +258,43 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-28** — **S5.2 (comp intelligence v0) built** (inline TDD-offline on
+  branch `s52-comp-intelligence`, 10 tasks; spec
+  `2026-07-28-s52-comp-intelligence-design.md`, plan `2026-07-28-s52-comp-
+  intelligence.md`). Also closed out S5.1 bookkeeping first (reflog confirmed S5.1
+  fast-forward merged to main at `2eb591c`; ROADMAP "merge pending" prose was stale).
+  Two design decisions taken with user (both recommendations accepted, rest
+  delegated): **(1) capture + blend** — observed offers get a first-class,
+  consent-gated CTC field (not event-payload/defer); **(2) estimate + requisition
+  benchmark** surface (no comp-fit match term — no candidate expected-CTC exists
+  yet). Delivered a new pure `app/comp/` package (`schema.py` contracts +
+  `SeniorityBand`/role-family vocab; `bands.py` illustrative license-clean static
+  seed table [role x seniority x city-tier] + `comp_bands_path` override + title/
+  skill/years/tier resolvers; `estimate.py` reputation.py-style shrinkage toward the
+  static prior on a **total-CTC basis** + k-anonymity floor + saturating confidence
+  + benchmark; `service.py` `CompService` reading offers via `LedgerStore`),
+  consent-gated `observed_offers` ledger table (peer of coding_round_results;
+  `ObservedOffer`/`ObservedOfferPoint` [de-identified projection], `ObservedOfferRow`,
+  migration `0009` candidate+org+consent CASCADE, drift/index/FK/nullability guards
+  extended), `LedgerStore.submit_observed_offer` (`ledger_write`-gated, `consent_id`-
+  stamped, audited `offer.submit`) + `observed_offers_for_comp` (**de-identified**,
+  revocation-respecting stamped-grant check, audited `comp.aggregate` with
+  `candidate_id=None`), `Services.comp` wiring (TYPE_CHECKING + function-local build,
+  the S4.3/S5.1 cycle-safe pattern; ledger never imports comp — comp vocab validated
+  at the API boundary), org-plane endpoints `POST /ledger/offers` +
+  `POST /comp/estimate` + `GET /jobs/{id}/comp` (403/404/400/401). `comp_*` config
+  knobs (k-floor, halflife, prior strength, confidence, seniority thresholds,
+  benchmark tolerance, bands-path). **No LLM, no new consent purpose.** DPDP posture:
+  cross-candidate aggregation basis = revocation-respecting inclusion + k-anonymity +
+  de-identified output + audit; **documented residual** — reusing `ledger_write` data
+  for aggregation (vs a dedicated purpose that would stay empty) revisited later.
+  `COMP.md` written. 29 new tests (623→652, `pytest -q` green). Smoke
+  `scripts/smoke_s52.py` (uvicorn + HTTP) 13/13 OK exit 0: static-only floor → 6
+  consented offers → observed blend (p50 above prior, confidence above floor) →
+  benchmark 'at' (band brackets p50) + 'below' (low band) → different role < k stays
+  static → revoke drops one offer (n_observed 6->5) → DPDP erase tips below k
+  (static-only) → cross-org benchmark 404. **PENDING:** final whole-branch review +
+  merge to main. Next: merge, then S5.3 plan (thin employer dashboard).
 - **2026-07-27 (5)** — S5.1 closed out (bookkeeping only, no new code). Confirmed
   via `git reflog` that branch `s51-job-requisition-matching` was **fast-forward
   merged to main** (`2eb591c`) with the whole-branch review's hardening fix
