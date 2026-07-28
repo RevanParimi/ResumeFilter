@@ -180,6 +180,11 @@ comp_benchmark_tolerance: 0.10   # +/- band around p50 counted as "at market"
 # --- Employer dashboard (PI-5) - S5.3 read-only composition over jobs/comp/ledger --
 dash_board_top_n: 20             # max ranked candidates returned per GET /jobs/{id}/board
 
+# --- Profile sources (PI-6) - S6.1 GitHub-as-signal ----------------------------
+ps_github_repo_limit: 100        # max repos pulled for a user
+ps_github_language_repos: 30     # top-N recent repos that get a byte-accurate /languages fetch
+ps_github_include_forks: false   # forks excluded from the signal by default
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

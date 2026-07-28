@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(default=SecretStr(""))
     github_api_base: str = "https://api.github.com"
 
+    # --- Profile sources (PI-6, S6.1): GitHub-as-signal ------------------------
+    # A candidate-supplied GitHub handle is fetched (public data only) and turned
+    # into an ADVISORY structured skill/activity signal. Limits bound rate-limit
+    # exposure; forks are not authored signal.
+    ps_github_repo_limit: int = Field(default=100, ge=1)
+    ps_github_language_repos: int = Field(default=30, ge=0)
+    ps_github_include_forks: bool = False
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is
