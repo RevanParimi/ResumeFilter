@@ -185,6 +185,12 @@ ps_github_repo_limit: 100        # max repos pulled for a user
 ps_github_language_repos: 30     # top-N recent repos that get a byte-accurate /languages fetch
 ps_github_include_forks: false   # forks excluded from the signal by default
 
+# --- Profile sources (PI-6) - S6.2 LinkedIn export parsing ---------------------
+max_linkedin_b64_chars: 8000000
+ps_linkedin_skill_base_confidence: 0.4
+ps_linkedin_skill_corroborated_confidence: 0.6
+ps_linkedin_max_rows: 5000
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

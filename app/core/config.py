@@ -123,6 +123,15 @@ class Settings(BaseSettings):
     ps_github_language_repos: int = Field(default=30, ge=0)
     ps_github_include_forks: bool = False
 
+    # --- Profile sources (PI-6, S6.2): LinkedIn export parsing ------------------
+    # The candidate uploads their own LinkedIn "Get a copy of your data" ZIP.
+    # Pure parse (no network, no LLM). Self-reported Skills.csv entries are
+    # low-confidence CLAIMS, bumped only when a position/headline corroborates.
+    max_linkedin_b64_chars: int = 8_000_000  # reject oversize uploads (≈6 MB zip)
+    ps_linkedin_skill_base_confidence: float = Field(default=0.4, ge=0.0, le=1.0)
+    ps_linkedin_skill_corroborated_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
+    ps_linkedin_max_rows: int = Field(default=5_000, ge=1)  # per-CSV row cap
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is

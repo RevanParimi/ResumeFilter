@@ -18,3 +18,12 @@ def test_comp_defaults_present():
 def test_comp_env_override(monkeypatch):
     monkeypatch.setenv("DEE_COMP_MIN_OBSERVATIONS", "3")
     assert Settings().comp_min_observations == 3
+
+
+def test_linkedin_source_defaults():
+    from app.core.config import Settings
+    s = Settings(_env_file=None, openrouter_api_key="")
+    assert s.max_linkedin_b64_chars == 8_000_000
+    assert s.ps_linkedin_skill_base_confidence == 0.4
+    assert s.ps_linkedin_skill_corroborated_confidence == 0.6
+    assert s.ps_linkedin_max_rows == 5_000
