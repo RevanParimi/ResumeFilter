@@ -27,6 +27,7 @@ from app.comp import bands
 from app.comp.schema import (
     CITY_TIERS, ROLE_FAMILIES, CompBandEstimate, CompBenchmark, SeniorityBand,
 )
+from app.dashboard.schema import CandidateCard, DashboardOverview, RequisitionBoard
 from app.matching.schema import (
     JobRequisition, JobRequisitionInput, MatchResult, RequisitionStatus,
 )
@@ -729,6 +730,41 @@ async def job_comp(
     if req is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     return services.comp.benchmark(req, org_id=org_id)
+
+
+# ── Employer dashboard (S5.3) ────────────────────────────────────────────────
+# Org plane (X-Org-Key). Read-only composition over jobs/comp/ledger. Advisory;
+# no new state, no new consent purpose, no new audit path (the card reuses the
+# ledger's already-audited reads and degrades per section on missing consent).
+
+
+@org_router.get("/dashboard/overview", response_model=DashboardOverview)
+async def dashboard_overview(
+    request: Request, org_id: str = Depends(require_org)
+) -> DashboardOverview:
+    return _services(request).dashboard.overview(org_id)
+
+
+@org_router.get("/jobs/{req_id}/board", response_model=RequisitionBoard)
+async def job_board(
+    req_id: str, request: Request, org_id: str = Depends(require_org)
+) -> RequisitionBoard:
+    board = _services(request).dashboard.board(org_id, req_id)
+    if board is None:
+        raise HTTPException(status_code=404, detail="requisition not found")
+    if board.match.pool_size == 0:
+        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+    return board
+
+
+@org_router.get("/candidates/{candidate_id}/card", response_model=CandidateCard)
+async def candidate_card(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> CandidateCard:
+    try:
+        return _services(request).dashboard.card(org_id, candidate_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
