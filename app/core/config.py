@@ -258,6 +258,10 @@ class Settings(BaseSettings):
     comp_benchmark_tolerance: float = Field(default=0.10, ge=0.0)
     comp_bands_path: str | None = None   # optional operator-supplied static table
 
+    # --- Employer dashboard (PI-5, S5.3): read-only composition over jobs/comp/ledger.
+    # Max ranked candidates returned per GET /jobs/{id}/board (passed as run_match limit).
+    dash_board_top_n: int = Field(default=20, ge=1)
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
