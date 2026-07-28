@@ -9,17 +9,19 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-5 — S5.2 (comp intelligence v0) BUILT + smoke-green on
-  branch `s52-comp-intelligence` (652 green); merge pending final whole-branch
-  review.** S5.1 (job requisition + role-conditioned matching) complete and on main
+- **Current sprint:** **PI-5 — S5.2 (comp intelligence v0) COMPLETE and merged to
+  main (653 green); next is S5.3 (thin employer dashboard).** S5.1 (job requisition
+  + role-conditioned matching) complete and on main
   (`2eb591c`, 623 green). PI-4 complete (S4.1–S4.4). S5.2 opens comp intelligence:
   an advisory comp band (annual total CTC) from a deterministic **static prior**
   blended with **consent-gated ledger-observed offers**, plus a **requisition
   benchmark** (below/at/above market). Advisory, no LLM.
-- **Next action:** Final whole-branch self-review + merge **S5.2** to main, then
-  plan **S5.3** (thin employer dashboard — read-only over search/reports) per
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.2
-  delivered (spec `2026-07-28-s52-comp-intelligence-design.md`, plan
+- **Next action:** Plan **S5.3** (thin employer dashboard — read-only over
+  search/reports) per
+  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6. S5.2 is
+  DONE (merged to main, 653 green; whole-branch self-review clean — no
+  Critical/Important; one Minor closed: added a `comp_bands_path` override-loader
+  test). S5.2 delivered (spec `2026-07-28-s52-comp-intelligence-design.md`, plan
   `2026-07-28-s52-comp-intelligence.md`, 10 TDD tasks): new pure `app/comp/` package
   (`schema.py` contracts + `SeniorityBand`/role-family vocab; `bands.py` illustrative
   license-clean static seed table + config-path override + deterministic
@@ -293,8 +295,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   consented offers → observed blend (p50 above prior, confidence above floor) →
   benchmark 'at' (band brackets p50) + 'below' (low band) → different role < k stays
   static → revoke drops one offer (n_observed 6->5) → DPDP erase tips below k
-  (static-only) → cross-org benchmark 404. **PENDING:** final whole-branch review +
-  merge to main. Next: merge, then S5.3 plan (thin employer dashboard).
+  (static-only) → cross-org benchmark 404. Whole-branch self-review clean (no
+  Critical/Important; one Minor closed — `comp_bands_path` override loader now
+  tested, 652->653). Merged to main, branch deleted. **S5.2 COMPLETE.** Next: S5.3
+  plan (thin employer dashboard).
 - **2026-07-27 (5)** — S5.1 closed out (bookkeeping only, no new code). Confirmed
   via `git reflog` that branch `s51-job-requisition-matching` was **fast-forward
   merged to main** (`2eb591c`) with the whole-branch review's hardening fix
