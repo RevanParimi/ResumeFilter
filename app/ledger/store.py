@@ -42,6 +42,7 @@ from app.ledger.models import (
     ConsentGrantRow,
     EvaluationEventRow,
     InterviewRecordRow,
+    ObservedOfferRow,
     OrganizationRow,
 )
 from app.ledger.reputation import assess_reputation
@@ -56,6 +57,8 @@ from app.ledger.schema import (
     InterviewOutcome,
     InterviewRecord,
     InterviewStage,
+    ObservedOffer,
+    ObservedOfferPoint,
     Organization,
     ReputationAssessment,
 )
@@ -137,6 +140,17 @@ def _coding_round(row: CodingRoundResultRow) -> CodingRoundResult:
         problem_tags=list(row.problem_tags or []),
         taken_at=consent_logic.as_utc(row.taken_at),
         raw=dict(row.raw or {}),
+        created_at=consent_logic.as_utc(row.created_at),
+    )
+
+
+def _observed_offer(row: ObservedOfferRow) -> ObservedOffer:
+    return ObservedOffer(
+        id=row.id, org_id=row.org_id, candidate_id=row.candidate_id,
+        consent_id=row.consent_id, role_family=row.role_family,
+        seniority=row.seniority, city_tier=row.city_tier,
+        ctc_fixed=row.ctc_fixed, ctc_variable=row.ctc_variable, currency=row.currency,
+        offered_at=consent_logic.as_utc(row.offered_at),
         created_at=consent_logic.as_utc(row.created_at),
     )
 
@@ -742,6 +756,57 @@ class LedgerStore:
             )
             session.commit()
             return [_coding_round(r) for r in rows]
+
+    # -- observed offers (S5.2, consent-gated like interview records) -----------
+
+    def submit_observed_offer(
+        self,
+        *,
+        org_id: str,
+        candidate_id: str,
+        role_family: str,
+        seniority: str,
+        city_tier: str,
+        ctc_fixed: float,
+        ctc_variable: Optional[float] = None,
+        currency: str = "INR",
+        offered_at: datetime,
+        now: Optional[datetime] = None,
+    ) -> ObservedOffer:
+        """Write-time DPDP gate: refuses without an active ledger_write grant.
+        role_family/seniority/city_tier are validated at the API boundary."""
+        moment = consent_logic.as_utc(now) if now else _utcnow()
+        offered_at = consent_logic.as_utc(offered_at)
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_WRITE)
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_WRITE, at=moment
+            )
+            if not decision.allowed:
+                raise ConsentError(decision.reason)
+            row = ObservedOfferRow(
+                org_id=org_id, candidate_id=candidate_id, consent_id=decision.grant_id,
+                role_family=role_family, seniority=seniority, city_tier=city_tier,
+                ctc_fixed=ctc_fixed, ctc_variable=ctc_variable, currency=currency,
+                offered_at=offered_at,
+            )
+            session.add(row)
+            session.flush()
+            self._audit(
+                session, actor_type="org", actor_id=org_id, action="offer.submit",
+                entity_type="observed_offer", entity_id=row.id, candidate_id=candidate_id,
+                details={
+                    "role_family": role_family, "seniority": seniority,
+                    "city_tier": city_tier, "ctc_fixed": ctc_fixed,
+                    "consent_id": decision.grant_id,
+                },
+            )
+            session.commit()
+            return _observed_offer(row)
 
     # -- cross-company reputation (S3.4, derived ledger_read-gated read) --------
 
