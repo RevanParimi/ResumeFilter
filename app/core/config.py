@@ -242,6 +242,22 @@ class Settings(BaseSettings):
     match_location_weight: float = Field(default=1.0, gt=0.0)
     match_nice_to_have_fraction: float = Field(default=0.3, ge=0.0, le=1.0)
 
+    # --- Comp intelligence (PI-5, S5.2): advisory static bands + observed offers -
+    # A curated static prior (bands.py) blended with consent-gated ledger-observed
+    # offers (reputation.py-style shrinkage). Advisory only; no LLM.
+    comp_currency_default: str = "INR"
+    comp_min_observations: int = Field(default=5, ge=1)   # k-anonymity floor
+    comp_recency_halflife_days: float = Field(default=365.0, gt=0.0)
+    comp_prior_strength: float = Field(default=8.0, gt=0.0)   # static-prior pseudo-count
+    comp_confidence_floor: float = Field(default=0.30, ge=0.0, le=1.0)
+    comp_confidence_cap: float = Field(default=0.90, ge=0.0, le=1.0)
+    comp_confidence_k: float = Field(default=4.0, gt=0.0)
+    comp_mid_years: float = Field(default=2.0, ge=0.0)
+    comp_senior_years: float = Field(default=5.0, ge=0.0)
+    comp_lead_years: float = Field(default=9.0, ge=0.0)
+    comp_benchmark_tolerance: float = Field(default=0.10, ge=0.0)
+    comp_bands_path: str | None = None   # optional operator-supplied static table
+
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
