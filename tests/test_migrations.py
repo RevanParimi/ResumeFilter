@@ -12,6 +12,7 @@ import app.candidates.models  # noqa: F401 — populate Base.metadata
 import app.ledger.models  # noqa: F401 — populate Base.metadata
 import app.features.models  # noqa: F401 — populate Base.metadata
 import app.matching.models  # noqa: F401 — populate Base.metadata
+import app.profile_sources.models  # noqa: F401 — populate Base.metadata
 from app.core.db import Base, make_engine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,7 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     assert "ml_feature_vectors" in names  # S4.2 migration 0007
     assert "job_requisitions" in names  # S5.1 migration 0008
     assert "observed_offers" in names  # S5.2 migration 0009
+    assert "profile_sources" in names  # S6.1 migration 0010
     org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
     assert "reliability_weight" in org_cols  # S3.4 migration 0006
 
@@ -69,13 +71,15 @@ FEATURE_TABLES = ("ml_feature_vectors",)  # S4.2
 
 MATCHING_TABLES = ("job_requisitions",)  # S5.1
 
+PROFILE_SOURCE_TABLES = ("profile_sources",)  # S6.1
+
 
 def test_migrated_indexes_match_orm(tmp_path):
     """Every index the ORM declares on a ledger table exists in the migrated
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -94,7 +98,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():
