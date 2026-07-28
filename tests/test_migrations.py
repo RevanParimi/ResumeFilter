@@ -37,9 +37,11 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
         "evaluation_events",
         "audit_log",
         "coding_round_results",
+        "observed_offers",
     } <= names
     assert "ml_feature_vectors" in names  # S4.2 migration 0007
     assert "job_requisitions" in names  # S5.1 migration 0008
+    assert "observed_offers" in names  # S5.2 migration 0009
     org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
     assert "reliability_weight" in org_cols  # S3.4 migration 0006
 
@@ -60,7 +62,7 @@ def test_migrated_schema_matches_orm_models(tmp_path):
 
 LEDGER_TABLES = (
     "organizations", "consent_grants", "interview_records",
-    "evaluation_events", "audit_log", "coding_round_results",
+    "evaluation_events", "audit_log", "coding_round_results", "observed_offers",
 )
 
 FEATURE_TABLES = ("ml_feature_vectors",)  # S4.2

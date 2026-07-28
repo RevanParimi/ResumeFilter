@@ -153,6 +153,37 @@ class CodingRoundResultRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ObservedOfferRow(Base):
+    """One compensation offer one org extended to one candidate (S5.2). Peer of
+    coding_round_results: same consent/audit/DPDP machinery. Candidate-linked so
+    erasure cascades it; org-linked so org deletion cascades it. The composite
+    index serves the comp aggregation query (role_family, seniority, city_tier)."""
+
+    __tablename__ = "observed_offers"
+    __table_args__ = (
+        Index("ix_observed_offers_role_signal", "role_family", "seniority", "city_tier"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), index=False
+    )
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
+    )
+    consent_id: Mapped[str] = mapped_column(
+        ForeignKey("consent_grants.id", ondelete="CASCADE"), index=False
+    )
+    role_family: Mapped[str] = mapped_column(String(32))
+    seniority: Mapped[str] = mapped_column(String(16))
+    city_tier: Mapped[str] = mapped_column(String(16))
+    ctc_fixed: Mapped[float] = mapped_column(Float)
+    ctc_variable: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    offered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AuditLogRow(Base):
     """Append-only audit of every ledger mutation.
 

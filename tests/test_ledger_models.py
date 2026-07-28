@@ -141,3 +141,19 @@ def test_coding_round_row_defaults_and_cascade(session_factory):
         assert s.execute(select(CodingRoundResultRow)).scalars().all() == []
         # the org survives erasure
         assert s.execute(select(OrganizationRow)).scalars().all() != []
+
+
+def test_observed_offer_contract_roundtrips():
+    from datetime import datetime, timezone
+    from app.ledger.schema import ObservedOffer, ObservedOfferPoint
+    o = ObservedOffer(
+        id="x", org_id="o1", candidate_id="c1", consent_id="g1",
+        role_family="backend_engineer", seniority="senior", city_tier="metro",
+        ctc_fixed=2_500_000.0, ctc_variable=300_000.0, currency="INR",
+        offered_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    assert o.ctc_fixed == 2_500_000.0
+    p = ObservedOfferPoint(total_ctc=2_800_000.0, offered_at=o.offered_at)
+    assert p.total_ctc == 2_800_000.0
+    assert not hasattr(p, "candidate_id")  # de-identified by construction

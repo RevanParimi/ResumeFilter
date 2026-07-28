@@ -122,6 +122,36 @@ class CodingRoundResult(BaseModel):
     created_at: datetime
 
 
+class ObservedOffer(BaseModel):
+    """One compensation offer an org extended to a candidate (S5.2). A peer of
+    CodingRoundResult: consent-gated, candidate-linked, DPDP-swept. Carries its
+    own role signal (role_family/seniority/city_tier as strings -- the comp
+    vocabulary is validated at the API boundary, keeping this module comp-free).
+    Field bounds are data hygiene, NOT scoring."""
+
+    id: str
+    org_id: str
+    candidate_id: str
+    consent_id: str  # the ledger_write grant this was submitted under
+    role_family: str
+    seniority: str
+    city_tier: str
+    ctc_fixed: float = Field(ge=0)
+    ctc_variable: Optional[float] = Field(default=None, ge=0)
+    currency: str = "INR"
+    offered_at: datetime
+    created_at: datetime
+
+
+class ObservedOfferPoint(BaseModel):
+    """De-identified projection for cross-candidate comp aggregation. Carries NO
+    candidate/org identity -- only the total CTC and when it was offered, so the
+    comp engine can never re-leak who was offered what."""
+
+    total_ctc: float
+    offered_at: datetime
+
+
 class ReputationBand(StrEnum):
     """S3.4 — conservative advisory bands over a candidate's cross-company
     track record. INSUFFICIENT_DATA when we can't say. GUARDED is the only
