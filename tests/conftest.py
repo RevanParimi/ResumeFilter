@@ -109,6 +109,7 @@ def make_services(
     ledger: LedgerStore | None = None,
     features: FeatureStore | None = None,
     jobs=None,
+    comp=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     ledger = ledger or LedgerStore(
@@ -123,6 +124,9 @@ def make_services(
             candidates._session_factory,
             candidate_store=candidates, feature_store=features, settings=settings,
         )
+    if comp is None:
+        from app.comp.service import CompService
+        comp = CompService(ledger, settings=settings)
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
@@ -134,6 +138,7 @@ def make_services(
         ledger=ledger,
         features=features,
         jobs=jobs,
+        comp=comp,
     )
 
 

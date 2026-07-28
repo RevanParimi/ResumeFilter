@@ -19,6 +19,7 @@ from app.services.report_store import ReportStore, build_report_store
 from app.services.vectorstore import VectorStore, build_vectorstore
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
+    from app.comp.service import CompService
     from app.features.store import FeatureStore
     from app.matching.store import JobStore
 
@@ -35,11 +36,13 @@ class Services:
     ledger: LedgerStore
     features: FeatureStore
     jobs: JobStore
+    comp: CompService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
     # Function-local import: at call time every module is fully loaded, so this
     # sidesteps the import cycle the top-level import would create.
+    from app.comp.service import build_comp_service
     from app.features.store import build_feature_store
     from app.matching.store import build_job_store
 
@@ -55,6 +58,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         ledger=build_ledger_store(settings),
         features=build_feature_store(settings),
         jobs=build_job_store(settings),
+        comp=build_comp_service(settings),
     )
 
 
