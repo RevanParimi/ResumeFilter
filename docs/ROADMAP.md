@@ -30,21 +30,23 @@
   (200/400/404; a missing/unreachable handle → **200** `method="unavailable"` +
   warnings, not an error). `ps_github_*` config knobs. **No LLM, no new consent
   purpose, no candidate PII beyond the public handle; advisory only; depth scoring
-  untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697). **PENDING:**
-  whole-branch self-review + merge. PI-5 (demand side) remains COMPLETE (S5.1–S5.3);
-  historical S5.3 detail follows.
+  untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697). Whole-branch
+  self-review clean (no Critical/Important; only two `Services(...)` constructions,
+  both updated; both GitHubService implementers carry `gather_user_signal`).
+  **Merged to main (fast-forward), branch deleted, 697 green on main. S6.1 COMPLETE.**
+  PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
   `GET /jobs/{id}/board` (requisition + comp benchmark + top-N match), and
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Finish S6.1 — whole-branch self-review + merge to main — then
-  shape/plan **S6.2** (LinkedIn export parsing as the 2nd `profile_sources` adapter
-  + normalization curation loop) per gap-analysis §5.A/§6. Deferred S6.1
-  follow-ups to fold in later: resume-claimed-vs-source corroboration, feature-store
-  consumption of the signal, flywheel wiring (all documented in `PROFILE_SOURCES.md`).
-  **PI-5 (demand side) is COMPLETE (S5.1–S5.3).** Historical
+- **Next action:** Shape/plan **S6.2** (LinkedIn export parsing as the 2nd
+  `profile_sources` adapter + normalization curation loop) per gap-analysis
+  §5.A/§6. Deferred S6.1 follow-ups to fold in later: resume-claimed-vs-source
+  corroboration, feature-store consumption of the signal, flywheel wiring (all
+  documented in `PROFILE_SOURCES.md`). **PI-5 (demand side) is COMPLETE
+  (S5.1–S5.3).** Historical
   S5.2 detail follows. S5.2 is
   DONE (merged to main, 653 green; whole-branch self-review clean — no
   Critical/Important; one Minor closed: added a `comp_bands_path` override-loader
@@ -325,8 +327,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   depth scoring untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697,
   `pytest -q` green). Smoke `scripts/smoke_s61.py` (uvicorn + LIVE GitHub) 7/7 OK
   exit 0: create candidate → POST github source (method=api, activity present) →
-  GET sources (1 row) → no-handle 400 → DPDP erase → sources 404. **PENDING:**
-  whole-branch self-review + merge to main. Next: merge, then S6.2 plan.
+  GET sources (1 row) → no-handle 400 → DPDP erase → sources 404. Whole-branch
+  self-review clean (no Critical/Important). Merged to main (fast-forward), branch
+  deleted, 697 green on main. **S6.1 COMPLETE.** Next: S6.2 plan.
 - **2026-07-28 (2)** — **S5.3 (thin employer dashboard) built + merged**
   (subagent-driven on branch `s53-employer-dashboard`, 7 TDD tasks; spec
   `2026-07-28-s53-employer-dashboard-design.md`, plan
