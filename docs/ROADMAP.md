@@ -9,18 +9,42 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-5 — S5.3 (thin employer dashboard) COMPLETE and merged to
-  main (672 green, smoke 18/18). PI-5 (demand side) is now COMPLETE (S5.1–S5.3).**
+- **Current sprint:** **PI-6 — S6.1 (GitHub-as-signal / profile-source ingestion)
+  COMPLETE on branch `s61-github-profile-source` (697 green, smoke_s61 7/7 OK, live
+  GitHub path exercised).** New pure `app/profile_sources/` package: `schema.py`
+  contracts (`ProfileSourceType`/`SourceSkillSignal`/`GitHubActivity`/
+  `ProfileSourceSignal`, advisory always True); pure `github.py::to_signal`
+  aggregating a user's non-fork repo languages → S1.4 `normalize_skill` canonical
+  skills (unknown languages kept, `canonical=None`) + bounded evidence-monotone
+  confidence (`0.3+0.6·share`, cap 0.9) + `PRIMARY_LANGUAGE_NOMINAL_BYTES` tail;
+  `store.py::ProfileSourceStore` append-only on the candidates DB (history,
+  newest-first, `latest_for_source`); `service.py::ProfileSourceService`
+  (handle resolution: explicit → profile GitHub link → 400; unknown candidate →
+  404; fetch→transform→persist). Live fetch = `GitHubClient.gather_user_signal`
+  (+ `GitHubUserRaw`/`GitHubRepoRaw`, Protocol extended) with graceful
+  degradation (404/rate-limit/network → `available=False`, never raises).
+  Migration `0010_profile_sources` (candidate CASCADE; drift/index/FK/nullability
+  guards extended). `Services.profile_sources` wired cycle-safe (shares the one
+  GitHub client + candidate store). Admin-plane endpoints
+  `POST /candidates/{id}/sources/github` + `GET /candidates/{id}/sources`
+  (200/400/404; a missing/unreachable handle → **200** `method="unavailable"` +
+  warnings, not an error). `ps_github_*` config knobs. **No LLM, no new consent
+  purpose, no candidate PII beyond the public handle; advisory only; depth scoring
+  untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697). **PENDING:**
+  whole-branch self-review + merge. PI-5 (demand side) remains COMPLETE (S5.1–S5.3);
+  historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
   `GET /jobs/{id}/board` (requisition + comp benchmark + top-N match), and
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Shape **PI-6** (candidate side & intake — profile-source
-  ingestion, normalization curation, candidate auth + DPDP portal) per
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` §6: brainstorm
-  the PI, then scope S6.1. **PI-5 (demand side) is COMPLETE (S5.1–S5.3).** Historical
+- **Next action:** Finish S6.1 — whole-branch self-review + merge to main — then
+  shape/plan **S6.2** (LinkedIn export parsing as the 2nd `profile_sources` adapter
+  + normalization curation loop) per gap-analysis §5.A/§6. Deferred S6.1
+  follow-ups to fold in later: resume-claimed-vs-source corroboration, feature-store
+  consumption of the signal, flywheel wiring (all documented in `PROFILE_SOURCES.md`).
+  **PI-5 (demand side) is COMPLETE (S5.1–S5.3).** Historical
   S5.2 detail follows. S5.2 is
   DONE (merged to main, 653 green; whole-branch self-review clean — no
   Critical/Important; one Minor closed: added a `comp_bands_path` override-loader
@@ -239,10 +263,17 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │            org-plane read-models: /dashboard/overview + /jobs/{id}/board +
 │            /candidates/{id}/card; lean board + consent-gated drill-in card;
 │            pure app/dashboard/ composition, no new state/consent/LLM
-├── PI-6  CANDIDATE SIDE & INTAKE (shaped) — profile-source ingestion (GitHub/
-│        LinkedIn) · normalization curation loop · candidate auth + DPDP portal
-│        (my-data / who-accessed / revoke / retention TTLs)
-│        [multilingual/Hinglish intake DEFERRED — English-first, 2026-07-26]
+├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1 done; reshaped 2026-07-28)
+│   ├── [x] S6.1  GitHub-as-signal — pure app/profile_sources/ spine + GitHub
+│   │            adapter (fetch → pure to_signal transform w/ S1.4 taxonomy
+│   │            mapping + bounded confidence → append-only store, candidate
+│   │            CASCADE); admin-plane POST/GET endpoints; advisory, no LLM,
+│   │            no new consent purpose
+│   ├── [ ] S6.2  LinkedIn export parsing (2nd profile_sources adapter) +
+│   │            normalization curation loop
+│   │            [multilingual/Hinglish intake DEFERRED — English-first, 2026-07-26]
+│   └── [ ] S6.3  Candidate auth + DPDP portal (my-data / who-accessed / revoke /
+│                retention TTLs; first-party consent capture replacing admin-plane)
 ├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
 │        verification · document forensics + moonlighting advisory · AI
 │        interview delivery v0 (audio-first English w/ Indian accents,
@@ -266,6 +297,36 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-28 (3)** — **S6.1 (GitHub-as-signal / profile-source ingestion) built**
+  (inline TDD-offline on branch `s61-github-profile-source`, 9 tasks; spec
+  `2026-07-28-s61-github-profile-source-design.md`, plan
+  `2026-07-28-s61-github-profile-source.md`). Brainstormed PI-6; two design
+  decisions taken with user (both recommendations accepted): **(1) scope S6.1 to
+  GitHub-as-signal only** — build the reusable `profile_sources` spine with GitHub
+  as the first adapter (LinkedIn export reshapes into S6.2); **(2) ingest + store
+  only** — resume-vs-source corroboration deferred. PI-6 reshaped: S6.1 GitHub ·
+  S6.2 LinkedIn export + curation loop · S6.3 candidate auth + DPDP portal.
+  Delivered a new pure `app/profile_sources/` package (`schema.py` contracts +
+  `ProfileSourceType`; pure `github.py::to_signal` — non-fork language byte
+  aggregation → S1.4 `normalize_skill` canonical skills [unknown kept,
+  `canonical=None`] + bounded evidence-monotone confidence + primary-language
+  nominal tail; `store.py::ProfileSourceStore` append-only on the candidates DB;
+  `service.py::ProfileSourceService` handle resolution [explicit → profile GitHub
+  link → 400; unknown candidate → 404] + fetch→transform→persist), extended
+  `app/services/github.py` with `GitHubUserRaw`/`GitHubRepoRaw` +
+  `gather_user_signal` (graceful degradation, `ps_github_*` limits), migration
+  `0010_profile_sources` (candidate CASCADE; drift/index/FK/nullability guards
+  extended), `Services.profile_sources` wired cycle-safe (shares the one GitHub
+  client + candidate store; `build_default_services` hoists both), admin-plane
+  endpoints `POST /candidates/{id}/sources/github` + `GET /candidates/{id}/sources`
+  (200/400/404; degraded fetch → 200 `method="unavailable"`). `ps_github_repo_limit`
+  /`ps_github_language_repos`/`ps_github_include_forks` config knobs. **No LLM, no
+  new consent purpose, no candidate PII beyond the public handle, advisory only,
+  depth scoring untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697,
+  `pytest -q` green). Smoke `scripts/smoke_s61.py` (uvicorn + LIVE GitHub) 7/7 OK
+  exit 0: create candidate → POST github source (method=api, activity present) →
+  GET sources (1 row) → no-handle 400 → DPDP erase → sources 404. **PENDING:**
+  whole-branch self-review + merge to main. Next: merge, then S6.2 plan.
 - **2026-07-28 (2)** — **S5.3 (thin employer dashboard) built + merged**
   (subagent-driven on branch `s53-employer-dashboard`, 7 TDD tasks; spec
   `2026-07-28-s53-employer-dashboard-design.md`, plan
