@@ -26,6 +26,7 @@ from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
+from app.services.github import GitHubRepoRaw, GitHubUserRaw
 from app.services.llm import LLMClient, NullLLM
 from app.services.report_store import InMemoryReportStore
 from app.services.vectorstore import InMemoryVectorStore
@@ -34,17 +35,35 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeGitHub:
-    """Canned GitHub provenance; no network."""
+    """Canned GitHub provenance + user signals; no network."""
 
-    def __init__(self, evidence: dict[tuple[str, str], list[str]] | None = None) -> None:
+    def __init__(
+        self,
+        evidence: dict[tuple[str, str], list[str]] | None = None,
+        user_signals: dict[str, GitHubUserRaw] | None = None,
+    ) -> None:
         self._evidence = evidence or {}
+        self._user_signals = user_signals or {}
         self.calls: list[tuple[str, str]] = []
+        self.user_calls: list[str] = []
 
     async def gather_repo_evidence(self, owner: str, repo: str) -> list[str]:
         self.calls.append((owner, repo))
         return self._evidence.get(
             (owner, repo),
             [f"Repo {owner}/{repo} exists: primary_language=Python, recent commits found."],
+        )
+
+    async def gather_user_signal(self, login: str) -> GitHubUserRaw:
+        self.user_calls.append(login)
+        return self._user_signals.get(
+            login,
+            GitHubUserRaw(
+                login=login, available=True, public_repos=1, followers=0,
+                repos=[GitHubRepoRaw(name="demo", language="Python",
+                                     languages={"Python": 10000}, stargazers_count=3,
+                                     pushed_at="2025-01-01T00:00:00Z")],
+            ),
         )
 
 
