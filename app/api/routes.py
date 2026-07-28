@@ -23,6 +23,10 @@ from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 from app.features import default_view, get_feature_registry
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
+from app.comp import bands
+from app.comp.schema import (
+    CITY_TIERS, ROLE_FAMILIES, CompBandEstimate, CompBenchmark, SeniorityBand,
+)
 from app.matching.schema import (
     JobRequisition, JobRequisitionInput, MatchResult, RequisitionStatus,
 )
@@ -36,6 +40,7 @@ from app.ledger.schema import (
     InterviewOutcome,
     InterviewRecord,
     InterviewStage,
+    ObservedOffer,
     Organization,
     ReputationAssessment,
 )
@@ -651,6 +656,79 @@ async def match_job(
     if result.pool_size == 0:
         raise HTTPException(status_code=422, detail="no materialized candidates to match")
     return result
+
+
+# ── Comp intelligence (S5.2) ─────────────────────────────────────────────────
+# Org plane (X-Org-Key). Advisory static bands blended with consent-gated
+# ledger-observed offers. Submit an offer, estimate a role, benchmark a req.
+
+
+class OfferSubmitRequest(BaseModel):
+    candidate_id: str
+    role_family: str
+    seniority: SeniorityBand
+    city_tier: str
+    ctc_fixed: float = Field(ge=0)
+    ctc_variable: Optional[float] = Field(default=None, ge=0)
+    currency: str = "INR"
+    offered_at: datetime
+
+
+@org_router.post("/ledger/offers", response_model=ObservedOffer)
+async def submit_offer(
+    req: OfferSubmitRequest, request: Request, org_id: str = Depends(require_org)
+) -> ObservedOffer:
+    if req.role_family not in ROLE_FAMILIES or req.city_tier not in CITY_TIERS:
+        raise HTTPException(status_code=400, detail="invalid role_family or city_tier")
+    ledger = _services(request).ledger
+    try:
+        return ledger.submit_observed_offer(
+            org_id=org_id, candidate_id=req.candidate_id, role_family=req.role_family,
+            seniority=req.seniority.value, city_tier=req.city_tier,
+            ctc_fixed=req.ctc_fixed, ctc_variable=req.ctc_variable,
+            currency=req.currency, offered_at=req.offered_at,
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+class CompEstimateRequest(BaseModel):
+    skills: tuple[str, ...] = ()
+    title: Optional[str] = None
+    years_experience: Optional[float] = Field(default=None, ge=0)
+    location_tiers: Optional[tuple[str, ...]] = None
+    remote: bool = False
+    role_family: Optional[str] = None
+    seniority: Optional[SeniorityBand] = None
+
+
+@org_router.post("/comp/estimate", response_model=CompBandEstimate)
+async def comp_estimate(
+    body: CompEstimateRequest, request: Request, org_id: str = Depends(require_org)
+) -> CompBandEstimate:
+    services = _services(request)
+    try:
+        signal = bands.role_signal_from_input(
+            skills=body.skills, title=body.title, years=body.years_experience,
+            location_tiers=body.location_tiers, remote=body.remote,
+            role_family=body.role_family, seniority=body.seniority, settings=services.settings,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return services.comp.estimate(signal, org_id=org_id)
+
+
+@org_router.get("/jobs/{req_id}/comp", response_model=CompBenchmark)
+async def job_comp(
+    req_id: str, request: Request, org_id: str = Depends(require_org)
+) -> CompBenchmark:
+    services = _services(request)
+    req = services.jobs.get_requisition(org_id, req_id)
+    if req is None:
+        raise HTTPException(status_code=404, detail="requisition not found")
+    return services.comp.benchmark(req, org_id=org_id)
 
 
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
