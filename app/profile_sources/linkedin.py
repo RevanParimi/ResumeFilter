@@ -75,7 +75,16 @@ def _read_rows(zf: zipfile.ZipFile, member: str, settings: Settings, warnings: l
             for i, row in enumerate(reader):
                 if i >= settings.ps_linkedin_max_rows:
                     break
-                rows.append({(k or "").strip(): (v or "").strip() for k, v in row.items()})
+                # Handle ragged rows: skip None key (csv restkey for extra unheadered columns)
+                # and join any list values (defensive against csv restkey = list).
+                cleaned = {}
+                for k, v in row.items():
+                    if k is None:            # extra unheadered columns (csv restkey)
+                        continue
+                    if isinstance(v, list):  # defensive: extras can arrive as a list
+                        v = " ".join(x for x in v if x)
+                    cleaned[k.strip() if k else ""] = (v or "").strip()
+                rows.append(cleaned)
             return rows
     except Exception as exc:  # a corrupt member is a warning, never a crash
         warnings.append(f"could not read {member}: {exc}")

@@ -80,3 +80,11 @@ def test_row_cap_enforced():
     many = "Name\n" + "".join(f"skill{i}\n" for i in range(50))
     raw = parse_linkedin_export(_zip({"Skills.csv": many}), _settings(ps_linkedin_max_rows=10))
     assert len(raw.skills) == 10
+
+
+def test_ragged_row_does_not_drop_valid_rows():
+    # A ragged CSV row with extra unheadered columns should not drop valid rows.
+    skills_with_ragged = "Name\nPython\nDjango,Extra,More\nLeadership\n"
+    raw = parse_linkedin_export(_zip({"Skills.csv": skills_with_ragged}), _settings())
+    # The well-formed rows should survive; ragged row is skipped gracefully.
+    assert raw.skills == ["Python", "Django", "Leadership"]
