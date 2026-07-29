@@ -15,7 +15,9 @@ from typing import Optional
 from app.candidates.schema import LinkType
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
-from app.profile_sources.github import to_signal
+from app.profile_sources.github import to_signal as github_to_signal
+from app.profile_sources.linkedin import parse_linkedin_export
+from app.profile_sources.linkedin import to_signal as linkedin_to_signal
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.profile_sources.store import ProfileSourceStore, build_profile_source_store
 from app.services.github import GitHubClient, GitHubService, parse_github_url
@@ -44,7 +46,19 @@ class ProfileSourceService:
             raise LookupError(f"candidate {candidate_id} not found")
         login = self._resolve_handle(candidate_id, handle)
         raw = await self._github.gather_user_signal(login)
-        signal = to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
+        signal = github_to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
+        self._store.save_signal(candidate_id, signal)
+        return signal
+
+    async def ingest_linkedin(
+        self, candidate_id: str, data: bytes
+    ) -> ProfileSourceSignal:
+        if self._candidates.get_candidate(candidate_id) is None:
+            raise LookupError(f"candidate {candidate_id} not found")
+        raw = parse_linkedin_export(data, self._settings)
+        signal = linkedin_to_signal(
+            raw, self._settings, fetched_at=datetime.now(timezone.utc)
+        )
         self._store.save_signal(candidate_id, signal)
         return signal
 

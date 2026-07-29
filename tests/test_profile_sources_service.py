@@ -1,3 +1,6 @@
+import io
+import zipfile
+
 import pytest
 
 from app.candidates.models import CandidateRow
@@ -5,6 +8,7 @@ from app.candidates.schema import (
     CandidateProfile, ExtractionResult, LinkItem, LinkType,
 )
 from app.core.config import Settings
+from app.profile_sources.schema import ProfileSourceType
 from app.profile_sources.service import ProfileSourceService
 from app.profile_sources.store import ProfileSourceStore
 from app.services.github import GitHubUserRaw
@@ -81,3 +85,54 @@ async def test_unavailable_fetch_still_persists_unavailable_signal():
     sig = await svc.ingest_github(cid, handle="ghost")
     assert sig.method == "unavailable"
     assert svc.list_sources(cid)[0].method == "unavailable"
+
+
+def _linkedin_zip() -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("Skills.csv", "Name\nPython\n")
+        zf.writestr("Positions.csv", "Company Name,Title,Finished On\nInfosys,Python Dev,\n")
+    return buf.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_ingest_linkedin_persists_export_signal():
+    cs = make_candidate_store()
+    svc = _service(cs)
+    cid = _bare_candidate(cs)
+    sig = await svc.ingest_linkedin(cid, _linkedin_zip())
+    assert sig.method == "export"
+    assert sig.source_type == ProfileSourceType.LINKEDIN_EXPORT
+    stored = svc.list_sources(cid, ProfileSourceType.LINKEDIN_EXPORT)
+    assert len(stored) == 1
+    assert stored[0].method == "export"
+
+
+@pytest.mark.asyncio
+async def test_ingest_linkedin_unknown_candidate_raises():
+    cs = make_candidate_store()
+    with pytest.raises(LookupError):
+        await _service(cs).ingest_linkedin("nope", _linkedin_zip())
+
+
+@pytest.mark.asyncio
+async def test_ingest_linkedin_garbage_persists_unavailable():
+    cs = make_candidate_store()
+    svc = _service(cs)
+    cid = _bare_candidate(cs)
+    sig = await svc.ingest_linkedin(cid, b"not a zip")
+    assert sig.method == "unavailable"
+    assert svc.list_sources(cid)[0].method == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_erasure_sweeps_linkedin_rows():
+    cs = make_candidate_store()
+    svc = _service(cs)
+    cid = _bare_candidate(cs)
+    await svc.ingest_linkedin(cid, _linkedin_zip())
+    store = ProfileSourceStore(cs._session_factory)
+    assert len(store.signals_for_candidate(cid)) == 1      # row present before erasure
+    cs.delete_candidate(cid)
+    assert cs.get_candidate(cid) is None
+    assert store.signals_for_candidate(cid) == []          # CASCADE swept the row
