@@ -7,6 +7,8 @@ outcomes close the flywheel loop (claim → probe → verdict → OUTCOME).
 
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import datetime
 from typing import Optional
 
@@ -352,6 +354,10 @@ class GitHubSourceRequest(BaseModel):
     handle: Optional[str] = None
 
 
+class LinkedInSourceRequest(BaseModel):
+    export_b64: str
+
+
 class ProfileSourcesResponse(BaseModel):
     candidate_id: str
     sources: list[ProfileSourceSignal]
@@ -373,6 +379,31 @@ async def ingest_github_source(
         return await services.profile_sources.ingest_github(candidate_id, handle=req.handle)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post(
+    "/candidates/{candidate_id}/sources/linkedin", response_model=ProfileSourceSignal
+)
+async def ingest_linkedin_source(
+    candidate_id: str, req: LinkedInSourceRequest, request: Request
+) -> ProfileSourceSignal:
+    """Ingest a candidate's uploaded LinkedIn data export (base64 ZIP) as an
+    advisory skill signal (S6.2). Malformed transport (bad base64 / oversize) is
+    422; a valid file with no recognizable LinkedIn CSVs returns 200 with
+    method='unavailable'."""
+    services = _services(request)
+    if services.candidates.get_candidate(candidate_id) is None:
+        raise HTTPException(status_code=404, detail="candidate not found")
+    if len(req.export_b64) > services.settings.max_linkedin_b64_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"export_b64 exceeds max_linkedin_b64_chars={services.settings.max_linkedin_b64_chars}",
+        )
+    try:
+        data = base64.b64decode(req.export_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="invalid_base64") from exc
+    return await services.profile_sources.ingest_linkedin(candidate_id, data)
 
 
 @router.get(
