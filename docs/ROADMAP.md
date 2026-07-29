@@ -9,31 +9,58 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-6 — S6.1 (GitHub-as-signal / profile-source ingestion)
-  COMPLETE on branch `s61-github-profile-source` (697 green, smoke_s61 7/7 OK, live
-  GitHub path exercised).** New pure `app/profile_sources/` package: `schema.py`
-  contracts (`ProfileSourceType`/`SourceSkillSignal`/`GitHubActivity`/
-  `ProfileSourceSignal`, advisory always True); pure `github.py::to_signal`
-  aggregating a user's non-fork repo languages → S1.4 `normalize_skill` canonical
-  skills (unknown languages kept, `canonical=None`) + bounded evidence-monotone
-  confidence (`0.3+0.6·share`, cap 0.9) + `PRIMARY_LANGUAGE_NOMINAL_BYTES` tail;
-  `store.py::ProfileSourceStore` append-only on the candidates DB (history,
-  newest-first, `latest_for_source`); `service.py::ProfileSourceService`
-  (handle resolution: explicit → profile GitHub link → 400; unknown candidate →
-  404; fetch→transform→persist). Live fetch = `GitHubClient.gather_user_signal`
-  (+ `GitHubUserRaw`/`GitHubRepoRaw`, Protocol extended) with graceful
-  degradation (404/rate-limit/network → `available=False`, never raises).
-  Migration `0010_profile_sources` (candidate CASCADE; drift/index/FK/nullability
-  guards extended). `Services.profile_sources` wired cycle-safe (shares the one
-  GitHub client + candidate store). Admin-plane endpoints
-  `POST /candidates/{id}/sources/github` + `GET /candidates/{id}/sources`
-  (200/400/404; a missing/unreachable handle → **200** `method="unavailable"` +
-  warnings, not an error). `ps_github_*` config knobs. **No LLM, no new consent
-  purpose, no candidate PII beyond the public handle; advisory only; depth scoring
-  untouched.** `PROFILE_SOURCES.md` written. 25 new tests (672→697). Whole-branch
-  self-review clean (no Critical/Important; only two `Services(...)` constructions,
-  both updated; both GitHubService implementers carry `gather_user_signal`).
-  **Merged to main (fast-forward), branch deleted, 697 green on main. S6.1 COMPLETE.**
+- **Current sprint:** **PI-6 — S6.2 (LinkedIn export parsing / 2nd profile_sources
+  adapter) COMPLETE on branch `s62-linkedin-export` (725 green, smoke_s62 12/12 OK,
+  key-less — no network, no LLM anywhere in this adapter).** Second adapter on the
+  S6.1 spine: `ProfileSourceType.LINKEDIN_EXPORT`; new `LinkedInActivity`
+  (de-identified: canonical employers/institutions + counts only, no raw contact
+  PII, no summary text); `ProfileSourceSignal.activity` generalized to a
+  discriminated union `GitHubActivity | LinkedInActivity` (discriminator `kind`)
+  with a `source_type`-derived back-compat validator so pre-S6.2 GitHub rows still
+  validate with **no migration**; `method` gained `"export"`. Pure
+  `app/profile_sources/linkedin.py`: `parse_linkedin_export(bytes, settings)`
+  (tolerant ZIP/CSV reader — case-insensitive basenames, nested export dirs,
+  column-name variants, per-row graceful degradation so one ragged row never
+  drops a whole section, `ps_linkedin_max_rows` cap) and `to_signal` (S1.4
+  taxonomy mapping; self-reported skills are **claims** at a conservative base
+  confidence `ps_linkedin_skill_base_confidence` [0.4], bumped to
+  `ps_linkedin_skill_corroborated_confidence` [0.6] via whole-token matching
+  against that export's own position titles/descriptions/headline; `method=
+  "export"`/`"unavailable"`). `ProfileSourceService.ingest_linkedin(candidate_id,
+  data: bytes)` reuses the S6.1 `ProfileSourceStore` (append-only, CASCADE);
+  persisted `identifier` is the fixed `"linkedin_export"` (no per-account handle).
+  Admin-plane `POST /candidates/{id}/sources/linkedin` (body `{"export_b64":
+  ...}`): **200** `method="export"`; a valid-but-unrecognized zip still **200**
+  `method="unavailable"`; **404** unknown candidate; **422** malformed base64 or
+  oversize (`max_linkedin_b64_chars`, 8,000,000). **No LLM, no network, no new
+  consent purpose** — the export is the candidate's own first-party data;
+  CASCADE erasure proven by test. `PROFILE_SOURCES.md` rewritten to cover both
+  adapters. 28 new tests (697→725, `pytest -q` green). Smoke `scripts/smoke_s62.py`
+  (uvicorn, key-less) 12/12 OK exit 0: create candidate → POST linkedin export
+  (method=export; Python canonical + corroborated 0.6 off "Python Developer";
+  Leadership base 0.4, uncorroborated; employers `["Infosys","TCS"]` + institution
+  `["IIT Madras"]` canonicalized; `current_positions==1`) → GET sources filtered by
+  `source_type=linkedin_export` (1 row) → bad base64 → 422 → DPDP erase → sources
+  404. Six deferred minors carried from the sprint ledger (all DEFER, none
+  merge-blocking — see `.superpowers/sdd/2026-07-28-s62-linkedin-export/
+  progress.md`): `_backfill_activity_kind` mutates the stored/legacy activity
+  dict in place (idempotent, harmless, no copy); the enum-branch of the
+  discriminator backfill has no direct test (only the str path is exercised);
+  the "keep max corroboration" dedup branch in `_build_skills` is dead code
+  (corroboration depends only on the lowercased skill, so case-variant dupes
+  always tie, keep-first in practice); hyphenated skills (e.g. "Front-End")
+  never corroborate (`-` isn't in the token charset); `to_signal` repeats
+  `ProfileSourceSignal` kwargs across its two branches (cosmetic); the 422
+  oversize error detail echoes `max_linkedin_b64_chars` (consistent with the
+  existing `max_pdf_b64_chars`/`max_resume_chars` messages — a documented public
+  limit, not a secret). **PI-6 reshaped:** S6.1 GitHub [done] · S6.2 LinkedIn
+  export [done, this sprint] · **S6.3 Normalization curation loop** (new —
+  reviewing/correcting unmapped taxonomy terms surfaced by either adapter; the
+  deferred thread from S6.1/S6.2, kept explicit on the board, not required until
+  its own sprint) · S6.4 Candidate auth + DPDP portal (moved down from S6.3).
+  **PENDING:** final whole-branch review + merge to main (S6.2 code-complete on
+  the branch, not yet merged). S6.1 (GitHub-as-signal) and PI-5 (demand side)
+  remain COMPLETE — historical detail below and in the session log.
   PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
@@ -41,10 +68,12 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Shape/plan **S6.2** (LinkedIn export parsing as the 2nd
-  `profile_sources` adapter + normalization curation loop) per gap-analysis
-  §5.A/§6. Deferred S6.1 follow-ups to fold in later: resume-claimed-vs-source
-  corroboration, feature-store consumption of the signal, flywheel wiring (all
+- **Next action:** Shape/plan **S6.3** (normalization curation loop — reviewing
+  and correcting unmapped taxonomy terms surfaced by the GitHub + LinkedIn
+  adapters; S6.4 candidate auth + DPDP portal follows it). Deferred S6.1/S6.2
+  follow-ups to fold in later: resume-claimed-vs-source corroboration (cross-
+  adapter, both directions — narrower than LinkedIn's own within-export
+  corroboration), feature-store consumption of the signal, flywheel wiring (all
   documented in `PROFILE_SOURCES.md`). **PI-5 (demand side) is COMPLETE
   (S5.1–S5.3).** Historical
   S5.2 detail follows. S5.2 is
@@ -265,16 +294,22 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │            org-plane read-models: /dashboard/overview + /jobs/{id}/board +
 │            /candidates/{id}/card; lean board + consent-gated drill-in card;
 │            pure app/dashboard/ composition, no new state/consent/LLM
-├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1 done; reshaped 2026-07-28)
+├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1–S6.2 done; reshaped 2026-07-29)
 │   ├── [x] S6.1  GitHub-as-signal — pure app/profile_sources/ spine + GitHub
 │   │            adapter (fetch → pure to_signal transform w/ S1.4 taxonomy
 │   │            mapping + bounded confidence → append-only store, candidate
 │   │            CASCADE); admin-plane POST/GET endpoints; advisory, no LLM,
 │   │            no new consent purpose
-│   ├── [ ] S6.2  LinkedIn export parsing (2nd profile_sources adapter) +
-│   │            normalization curation loop
+│   ├── [x] S6.2  LinkedIn export parsing (2nd profile_sources adapter) — base64-
+│   │            ZIP upload → pure parse_linkedin_export/to_signal, conservative
+│   │            0.4/0.6 self-report-vs-corroborated confidence, de-identified
+│   │            LinkedInActivity, discriminated activity union w/ back-compat
+│   │            validator (no migration); admin-plane POST endpoint; advisory,
+│   │            no LLM, no network, no new consent purpose
 │   │            [multilingual/Hinglish intake DEFERRED — English-first, 2026-07-26]
-│   └── [ ] S6.3  Candidate auth + DPDP portal (my-data / who-accessed / revoke /
+│   ├── [ ] S6.3  Normalization curation loop (reviewing/correcting unmapped
+│   │            taxonomy terms surfaced by the GitHub + LinkedIn adapters)
+│   └── [ ] S6.4  Candidate auth + DPDP portal (my-data / who-accessed / revoke /
 │                retention TTLs; first-party consent capture replacing admin-plane)
 ├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
 │        verification · document forensics + moonlighting advisory · AI
@@ -299,6 +334,44 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-29** — **S6.2 (LinkedIn export parsing / 2nd profile_sources
+  adapter) built** (TDD-offline on branch `s62-linkedin-export`, 7 tasks; plan
+  `docs/superpowers/plans/2026-07-28-s62-linkedin-export.md`). Second adapter on
+  the S6.1 spine, no LLM, no network: config knobs
+  `max_linkedin_b64_chars`/`ps_linkedin_skill_base_confidence`/
+  `ps_linkedin_skill_corroborated_confidence`/`ps_linkedin_max_rows`;
+  `ProfileSourceType.LINKEDIN_EXPORT` + `LinkedInActivity` (de-identified —
+  canonical employers/institutions + counts only); `ProfileSourceSignal.activity`
+  generalized to a discriminated union `GitHubActivity | LinkedInActivity`
+  (discriminator `kind`) with a `source_type`-derived back-compat validator so
+  pre-S6.2 GitHub rows keep validating — **no migration**; `method` gained
+  `"export"`. `app/profile_sources/linkedin.py`: pure `parse_linkedin_export`
+  (ZIP/CSV, per-row graceful degradation, column-name variants, nested export
+  dirs, row cap) + pure `to_signal` (S1.4 taxonomy map; self-reported skills are
+  claims at base confidence 0.4, bumped to 0.6 once whole-token-matched against
+  that export's own positions/headline; de-identified `LinkedInActivity`;
+  `method="export"`/`"unavailable"`). `ProfileSourceService.ingest_linkedin`
+  (existence check → parse → transform → persist via the S6.1
+  `ProfileSourceStore`; identifier fixed to `"linkedin_export"`). Admin-plane
+  `POST /candidates/{id}/sources/linkedin` (200 export / 200 unavailable / 404 /
+  422 bad-base64 / 422 oversize); `GET /candidates/{id}/sources?source_type=...`
+  already worked unchanged. **No LLM, no network, no new consent purpose** — the
+  export is the candidate's own first-party data; CASCADE erasure. 28 new tests
+  (697→725, `pytest -q` green). `PROFILE_SOURCES.md` rewritten to cover both
+  adapters (transport, pure parse→to_signal seams, confidence model, DPDP
+  posture, endpoint contract, config knobs). Smoke `scripts/smoke_s62.py`
+  (uvicorn, key-less) 12/12 OK exit 0: create candidate → POST linkedin export
+  (canonical + corroborated Python 0.6, uncorroborated Leadership 0.4, canonical
+  employers/institutions, current_positions) → GET filtered sources (1 row) →
+  bad base64 422 → DPDP erase → sources 404. Six deferred minors carried from
+  the sprint ledger (`.superpowers/sdd/2026-07-28-s62-linkedin-export/
+  progress.md`), all DEFER / none merge-blocking (see "Current sprint" above for
+  the list). **PI-6 reshaped:** S6.1 GitHub [done] · S6.2 LinkedIn export
+  [done] · new **S6.3 Normalization curation loop** (the deferred curation
+  thread, kept explicit on the board, its own sprint, not required now) · S6.4
+  Candidate auth + DPDP portal (moved down from S6.3). **S6.2 COMPLETE pending
+  final whole-branch review + merge.** Next: merge, then S6.3 plan (normalization
+  curation loop).
 - **2026-07-28 (3)** — **S6.1 (GitHub-as-signal / profile-source ingestion) built**
   (inline TDD-offline on branch `s61-github-profile-source`, 9 tasks; spec
   `2026-07-28-s61-github-profile-source-design.md`, plan
