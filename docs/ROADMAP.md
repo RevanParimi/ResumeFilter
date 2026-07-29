@@ -10,11 +10,14 @@
 ## ▶ Current state
 
 - **Current sprint:** **PI-6 — S6.2 (LinkedIn export parsing / 2nd profile_sources
-  adapter) COMPLETE on branch `s62-linkedin-export` (725 green, smoke_s62 12/12 OK,
-  key-less — no network, no LLM anywhere in this adapter).** Second adapter on the
+  adapter) COMPLETE — merged to main (fast-forward `23972d7`→`497eedb`), branch
+  deleted, 725 green on main, smoke_s62 12/12 OK, key-less — no network, no LLM
+  anywhere in this adapter.** Second adapter on the
   S6.1 spine: `ProfileSourceType.LINKEDIN_EXPORT`; new `LinkedInActivity`
-  (de-identified: canonical employers/institutions + counts only, no raw contact
-  PII, no summary text); `ProfileSourceSignal.activity` generalized to a
+  (de-identified: canonical employers/institutions + counts, plus the candidate's
+  own headline/industry/languages retained verbatim as low-sensitivity first-party
+  self-description; no raw contact PII, no position descriptions, no summary text,
+  no connections); `ProfileSourceSignal.activity` generalized to a
   discriminated union `GitHubActivity | LinkedInActivity` (discriminator `kind`)
   with a `source_type`-derived back-compat validator so pre-S6.2 GitHub rows still
   validate with **no migration**; `method` gained `"export"`. Pure
@@ -42,8 +45,8 @@
   `["IIT Madras"]` canonicalized; `current_positions==1`) → GET sources filtered by
   `source_type=linkedin_export` (1 row) → bad base64 → 422 → DPDP erase → sources
   404. Six deferred minors carried from the sprint ledger (all DEFER, none
-  merge-blocking — see `.superpowers/sdd/2026-07-28-s62-linkedin-export/
-  progress.md`): `_backfill_activity_kind` mutates the stored/legacy activity
+  merge-blocking — enumerated here, revisit in S6.3):
+  `_backfill_activity_kind` mutates the stored/legacy activity
   dict in place (idempotent, harmless, no copy); the enum-branch of the
   discriminator backfill has no direct test (only the str path is exercised);
   the "keep max corroboration" dedup branch in `_build_skills` is dead code
@@ -58,9 +61,10 @@
   reviewing/correcting unmapped taxonomy terms surfaced by either adapter; the
   deferred thread from S6.1/S6.2, kept explicit on the board, not required until
   its own sprint) · S6.4 Candidate auth + DPDP portal (moved down from S6.3).
-  **PENDING:** final whole-branch review + merge to main (S6.2 code-complete on
-  the branch, not yet merged). S6.1 (GitHub-as-signal) remains COMPLETE —
-  historical detail below and in the session log.
+  Whole-branch final review (opus) = **Ready to merge: Yes**, no Critical/Important;
+  all six minors triaged non-blocking. **Merged to main (fast-forward), branch
+  deleted, 725 green on main. S6.2 COMPLETE.** S6.1 (GitHub-as-signal) remains
+  COMPLETE — historical detail below and in the session log.
   PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
@@ -364,14 +368,19 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
   (canonical + corroborated Python 0.6, uncorroborated Leadership 0.4, canonical
   employers/institutions, current_positions) → GET filtered sources (1 row) →
   bad base64 422 → DPDP erase → sources 404. Six deferred minors carried from
-  the sprint ledger (`.superpowers/sdd/2026-07-28-s62-linkedin-export/
-  progress.md`), all DEFER / none merge-blocking (see "Current sprint" above for
-  the list). **PI-6 reshaped:** S6.1 GitHub [done] · S6.2 LinkedIn export
-  [done] · new **S6.3 Normalization curation loop** (the deferred curation
+  the sprint ledger, all DEFER / none merge-blocking (see "Current sprint" above
+  for the list). Executed subagent-driven (fresh implementer + two-stage review
+  per task; fix loops on Tasks 3/4/7 — ragged-CSV per-row degradation, trailing-dot
+  corroboration, DPDP-retention doc accuracy). Task 5 was interrupted by a session
+  limit mid-edit and resumed from its transcript; its erasure test was corrected
+  from a broken brief assertion (`list_sources` after delete raises by design) to a
+  store-level CASCADE check. **PI-6 reshaped:** S6.1 GitHub [done] · S6.2 LinkedIn
+  export [done] · new **S6.3 Normalization curation loop** (the deferred curation
   thread, kept explicit on the board, its own sprint, not required now) · S6.4
-  Candidate auth + DPDP portal (moved down from S6.3). **S6.2 COMPLETE pending
-  final whole-branch review + merge.** Next: merge, then S6.3 plan (normalization
-  curation loop).
+  Candidate auth + DPDP portal (moved down from S6.3). Whole-branch final review
+  (opus) = Ready to merge Yes, no Critical/Important. **Merged to main
+  (fast-forward `23972d7`→`497eedb`), branch deleted, 725 green on main. S6.2
+  COMPLETE.** Next: S6.3 plan (normalization curation loop).
 - **2026-07-28 (3)** — **S6.1 (GitHub-as-signal / profile-source ingestion) built**
   (inline TDD-offline on branch `s61-github-profile-source`, 9 tasks; spec
   `2026-07-28-s61-github-profile-source-design.md`, plan
