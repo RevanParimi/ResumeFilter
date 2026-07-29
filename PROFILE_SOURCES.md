@@ -120,8 +120,8 @@ ProfileSourceStore.save_signal(...)      → profile_sources row    (CASCADE)
 
 ## API (admin/candidate plane)
 
-Candidate-facing auth is **S6.3's successor, S6.4**; until then these ride the
-existing `X-API-Key` router, which will move them under candidate auth.
+Candidate-facing auth is **S6.4**; until then these ride the existing
+`X-API-Key` router, which will move them under candidate auth.
 
 - `POST /candidates/{id}/sources/github` — body `{"handle": "octocat"}`
   (optional). **200** `ProfileSourceSignal`. A handle that 404s / is
@@ -146,11 +146,15 @@ existing `X-API-Key` router, which will move them under candidate auth.
   candidate's own first-party data, uploaded by the candidate — the same
   posture as PI-1 resume ingest.
 - **Store the derived signal only.** GitHub: canonical skills + activity
-  aggregates + the public handle, no raw repo dumps. LinkedIn: canonical
-  skills + de-identified counts/canonical employer & institution names only —
-  **no raw contact PII, no position/summary text, no connections list** are
-  ever persisted; the uploaded ZIP itself is never stored, only its derived
-  signal.
+  aggregates + the public handle, no raw repo dumps. LinkedIn: S1.4-mapped
+  skills + activity aggregates — counts, canonical employers & institutions
+  (via `canonicalize_employer`/`canonicalize_institution`), and the
+  candidate's own **headline, industry, and languages** verbatim (low-
+  sensitivity first-party self-description, the same posture as storing a
+  candidate's name from their own resume). **NOT stored:** raw contact PII
+  (email/phone/address), position descriptions, the profile summary
+  free-text, connections, or the vanity URL — and the uploaded ZIP itself is
+  never persisted, only its derived signal.
 - **Erasure:** `profile_sources.candidate_id` is `ON DELETE CASCADE` for both
   adapters, so `DELETE /candidates/{id}` sweeps every stored source of every
   type (proven by test).

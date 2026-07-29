@@ -47,8 +47,13 @@ class GitHubActivity(BaseModel):
 class LinkedInActivity(BaseModel):
     """Aggregate activity from a LinkedIn export (evidence context, not a score).
 
-    De-identified: canonical employers/institutions + counts only. No raw contact
-    PII, no summary text, no connections.
+    De-identified in the sense of no contact PII and no free-text position
+    descriptions: positions/education collapse to counts + canonical employer/
+    institution names, never raw company or school text. The candidate's own
+    ``headline``/``industry``/``languages`` are retained verbatim as low-
+    sensitivity first-party context (same posture as storing a candidate's name
+    from their resume) — not stripped, not a contact-PII field. No connections,
+    no profile summary free-text, no vanity URL.
     """
 
     kind: Literal["linkedin_export"] = "linkedin_export"

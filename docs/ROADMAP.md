@@ -59,8 +59,8 @@
   deferred thread from S6.1/S6.2, kept explicit on the board, not required until
   its own sprint) · S6.4 Candidate auth + DPDP portal (moved down from S6.3).
   **PENDING:** final whole-branch review + merge to main (S6.2 code-complete on
-  the branch, not yet merged). S6.1 (GitHub-as-signal) and PI-5 (demand side)
-  remain COMPLETE — historical detail below and in the session log.
+  the branch, not yet merged). S6.1 (GitHub-as-signal) remains COMPLETE —
+  historical detail below and in the session log.
   PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
