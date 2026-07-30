@@ -13,6 +13,7 @@ resumes and extractions, erasing raw resume text on request.
 from __future__ import annotations
 
 import hashlib
+import secrets
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
@@ -20,7 +21,14 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.candidates.models import CandidateRow, ExtractionRow, FingerprintRow, ResumeRow, _utcnow
+from app.candidates.models import (
+    CandidateCredentialRow,
+    CandidateRow,
+    ExtractionRow,
+    FingerprintRow,
+    ResumeRow,
+    _utcnow,
+)
 from app.candidates.schema import CandidateProfile, ExtractionResult
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
@@ -36,6 +44,10 @@ def _as_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _hash_access_key(raw: str) -> str:
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class IngestOutcome(BaseModel):
@@ -68,8 +80,9 @@ class CandidateSummary(BaseModel):
 
 
 class CandidateStore:
-    def __init__(self, session_factory: sessionmaker) -> None:
+    def __init__(self, session_factory: sessionmaker, *, access_key_bytes: int = 32) -> None:
         self._session_factory = session_factory
+        self._access_key_bytes = access_key_bytes
 
     def ingest(self, result: ExtractionResult, resume_text: str) -> IngestOutcome:
         sha = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()
@@ -261,6 +274,52 @@ class CandidateStore:
             session.commit()
             return True
 
+    # -- candidate auth (S6.4): minted access key, mirrors org API keys ---------
+
+    def issue_access_key(self, candidate_id: str) -> str:
+        """Mint (or rotate) this candidate's access key; return the plaintext
+        ONCE, storing only its hash. Overwriting an existing credential is
+        rotation. LookupError if the candidate is unknown."""
+        with self._session_factory() as session:
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            raw = secrets.token_urlsafe(self._access_key_bytes)
+            cred = (
+                session.execute(
+                    select(CandidateCredentialRow).where(
+                        CandidateCredentialRow.candidate_id == candidate_id
+                    )
+                ).scalars().first()
+            )
+            if cred is None:
+                session.add(
+                    CandidateCredentialRow(
+                        candidate_id=candidate_id, access_key_hash=_hash_access_key(raw)
+                    )
+                )
+            else:
+                cred.access_key_hash = _hash_access_key(raw)
+                cred.rotated_at = _utcnow()
+            session.commit()
+            return raw
+
+    def authenticate_candidate(self, access_key: str) -> Optional[str]:
+        """candidate_id for the credential holding this key, else None.
+        Empty/whitespace keys never match."""
+        access_key = (access_key or "").strip()
+        if not access_key:
+            return None
+        digest = _hash_access_key(access_key)
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    select(CandidateCredentialRow).where(
+                        CandidateCredentialRow.access_key_hash == digest
+                    )
+                ).scalars().first()
+            )
+            return row.candidate_id if row else None
+
     def save_fingerprint(
         self, fp: Fingerprint, *, resume_id: str, candidate_id: str
     ) -> bool:
@@ -329,4 +388,7 @@ def build_candidate_store(settings: Optional[Settings] = None) -> CandidateStore
     head`), NOT the builder's — no create_all here by design."""
     settings = settings or get_settings()
     engine = make_engine(settings.candidates_db_url)
-    return CandidateStore(make_session_factory(engine))
+    return CandidateStore(
+        make_session_factory(engine),
+        access_key_bytes=settings.candidate_access_key_bytes,
+    )
