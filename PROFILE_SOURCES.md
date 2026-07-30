@@ -11,8 +11,8 @@ S6.1 shipped the reusable `app/profile_sources/` spine plus its first adapter,
 own "Get a copy of your data" ZIP, uploaded base64 over the API (no network, no
 LLM, no scraping). Both adapters share the same pure `parse → to_signal →
 persist` shape and the same `ProfileSourceSignal` envelope. The **normalization
-curation loop** (reviewing/correcting unmapped taxonomy terms) is deferred to
-**S6.3**.
+curation loop** (reviewing/correcting unmapped taxonomy terms) shipped in
+**S6.3** — see `CURATION.md`.
 
 ## GitHub pipeline
 
@@ -180,8 +180,8 @@ API is enough (~60 req/hr/IP); a token only raises the limit.
   skills, both directions, across *all* profile sources) — still deferred;
   LinkedIn's within-export corroboration (skill vs. that same export's
   positions/headline) is not this — it's a narrower, single-source signal.
-- **Normalization curation loop** (reviewing/correcting unmapped taxonomy
-  terms surfaced by either adapter) — **S6.3**.
+- **Normalization curation loop** (reviewing/correcting unmapped skill terms
+  surfaced by either adapter) — **shipped in S6.3, see `CURATION.md`.**
 - **Feature-store consumption** of the signal — a small PI-4 feature-definition
   addition later; S6.1/S6.2 land the data + API only.
 - **Flywheel wiring** — the signal is not part of the eval graph.
