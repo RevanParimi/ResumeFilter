@@ -50,6 +50,7 @@ from app.ledger.schema import (
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
+from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -81,12 +82,26 @@ async def require_org(
     return org_id
 
 
+async def require_candidate(
+    request: Request, x_candidate_key: Optional[str] = Header(default=None)
+) -> str:
+    """Resolve a candidate's own access key to their id (S6.4). Always enforced —
+    the portal is the data principal's private surface."""
+    candidate_id = _services(request).candidates.authenticate_candidate(x_candidate_key or "")
+    if candidate_id is None:
+        raise HTTPException(status_code=401, detail="invalid or missing X-Candidate-Key")
+    return candidate_id
+
+
 # Everything except "/" and /healthz sits behind the (optional) API key.
 router = APIRouter(dependencies=[Depends(require_api_key)])
 public_router = APIRouter()
 # Org-authenticated data plane (X-Org-Key), separate from the admin router so an
 # org never needs the platform's shared secret to submit or query its own data.
 org_router = APIRouter()
+# Candidate-authenticated DPDP portal plane (X-Candidate-Key). Every route acts
+# on the candidate resolved from the key — never a path/body param.
+candidate_router = APIRouter()
 
 
 class EvaluateRequest(BaseModel):
@@ -349,6 +364,19 @@ async def delete_candidate_resume(
         raise HTTPException(status_code=404, detail="resume not found for candidate")
     services.candidates.delete_resume(resume_id)
     return {"resume_id": resume_id, "deleted": True}
+
+
+@router.post("/candidates/{candidate_id}/auth-key")
+async def issue_candidate_key(candidate_id: str, request: Request) -> dict:
+    """Admin/system mints (or rotates) a candidate's portal access key, returned
+    ONCE. First-party self-serve registration is a productionization concern
+    (PI-8); this is the offline-deterministic issuance path."""
+    services = _services(request)
+    try:
+        access_key = services.candidates.issue_access_key(candidate_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="candidate not found") from exc
+    return {"candidate_id": candidate_id, "access_key": access_key}
 
 
 class GitHubSourceRequest(BaseModel):
