@@ -90,6 +90,14 @@ def settings(monkeypatch) -> Settings:
     return Settings(_env_file=None, openrouter_api_key="")
 
 
+@pytest.fixture(autouse=True)
+def _reset_curation_overlay():
+    from app.candidates.normalize.skills import clear_curated_overlay
+    clear_curated_overlay()
+    yield
+    clear_curated_overlay()
+
+
 @pytest.fixture
 def flywheel() -> InMemoryFlywheel:
     return InMemoryFlywheel()
@@ -133,6 +141,7 @@ def make_services(
     comp=None,
     dashboard=None,
     profile_sources=None,
+    curation=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -154,13 +163,19 @@ def make_services(
     if dashboard is None:
         from app.dashboard.service import DashboardService
         dashboard = DashboardService(jobs, comp, ledger, settings=settings)
+    if curation is None:
+        from app.curation.service import CurationService
+        from app.curation.store import CurationStore
+        curation = CurationService(
+            store=CurationStore(candidates._session_factory), settings=settings
+        )
     if profile_sources is None:
         from app.profile_sources.service import ProfileSourceService
         from app.profile_sources.store import ProfileSourceStore
         profile_sources = ProfileSourceService(
             github=github,
             store=ProfileSourceStore(candidates._session_factory),
-            candidates=candidates, settings=settings,
+            candidates=candidates, settings=settings, curation=curation,
         )
     return Services(
         settings=settings,
@@ -176,6 +191,7 @@ def make_services(
         comp=comp,
         dashboard=dashboard,
         profile_sources=profile_sources,
+        curation=curation,
     )
 
 

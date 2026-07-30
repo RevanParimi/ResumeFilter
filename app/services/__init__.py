@@ -20,6 +20,7 @@ from app.services.vectorstore import VectorStore, build_vectorstore
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
     from app.comp.service import CompService
+    from app.curation.service import CurationService
     from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
     from app.matching.store import JobStore
@@ -41,12 +42,14 @@ class Services:
     comp: CompService
     dashboard: DashboardService
     profile_sources: ProfileSourceService
+    curation: CurationService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
     # Function-local import: at call time every module is fully loaded, so this
     # sidesteps the import cycle the top-level import would create.
     from app.comp.service import build_comp_service
+    from app.curation.service import build_curation_service
     from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
     from app.matching.store import build_job_store
@@ -57,6 +60,8 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     # candidate store (handle derivation + existence checks) with the container.
     github = GitHubClient(settings)
     candidates = build_candidate_store(settings)
+    curation = build_curation_service(settings)
+    curation.refresh_overlay()  # load prior curation into the normalize_skill overlay
     return Services(
         settings=settings,
         llm=build_llm(settings),
@@ -71,8 +76,9 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         comp=build_comp_service(settings),
         dashboard=build_dashboard_service(settings),
         profile_sources=build_profile_source_service(
-            settings, github=github, candidates=candidates
+            settings, github=github, candidates=candidates, curation=curation
         ),
+        curation=curation,
     )
 
 

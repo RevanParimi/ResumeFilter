@@ -15,6 +15,7 @@ from typing import Optional
 from app.candidates.schema import LinkType
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
+from app.curation.service import CurationService
 from app.profile_sources.github import to_signal as github_to_signal
 from app.profile_sources.linkedin import parse_linkedin_export
 from app.profile_sources.linkedin import to_signal as linkedin_to_signal
@@ -33,11 +34,13 @@ class ProfileSourceService:
         store: ProfileSourceStore,
         candidates: CandidateStore,
         settings: Settings,
+        curation: Optional[CurationService] = None,
     ) -> None:
         self._github = github
         self._store = store
         self._candidates = candidates
         self._settings = settings
+        self._curation = curation
 
     async def ingest_github(
         self, candidate_id: str, handle: Optional[str] = None
@@ -47,6 +50,7 @@ class ProfileSourceService:
         login = self._resolve_handle(candidate_id, handle)
         raw = await self._github.gather_user_signal(login)
         signal = github_to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
+        self._capture_unmapped(signal)
         self._store.save_signal(candidate_id, signal)
         return signal
 
@@ -59,6 +63,7 @@ class ProfileSourceService:
         signal = linkedin_to_signal(
             raw, self._settings, fetched_at=datetime.now(timezone.utc)
         )
+        self._capture_unmapped(signal)
         self._store.save_signal(candidate_id, signal)
         return signal
 
@@ -92,17 +97,33 @@ class ProfileSourceService:
             return raw
         raise ValueError(f"invalid GitHub handle: {raw}")
 
+    def _capture_unmapped(self, signal: ProfileSourceSignal) -> None:
+        """Queue every skill the taxonomy couldn't map (canonical is None) for
+        curation review. Best-effort — capture must never break ingestion."""
+        if self._curation is None:
+            return
+        for skill in signal.skills:
+            if skill.canonical is None:
+                try:
+                    self._curation.record_unmapped(
+                        skill.name, source_type=signal.source_type.value
+                    )
+                except Exception:  # noqa: BLE001 — advisory capture, never fatal
+                    pass
+
 
 def build_profile_source_service(
     settings: Optional[Settings] = None,
     *,
     github: Optional[GitHubService] = None,
     candidates: Optional[CandidateStore] = None,
+    curation: Optional["CurationService"] = None,
 ) -> ProfileSourceService:
     settings = settings or get_settings()
     candidates = candidates or build_candidate_store(settings)
     github = github or GitHubClient(settings)
     store = build_profile_source_store(settings)
     return ProfileSourceService(
-        github=github, store=store, candidates=candidates, settings=settings
+        github=github, store=store, candidates=candidates, settings=settings,
+        curation=curation,
     )
