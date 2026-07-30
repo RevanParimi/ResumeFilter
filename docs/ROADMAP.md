@@ -9,68 +9,75 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-6 — S6.3 (Normalization curation loop) BUILT on
-  branch `s63-normalization-curation` — 725→752 green, smoke_s63 16/16 OK,
-  key-less — no LLM, no network, no new consent purpose anywhere in this
-  sprint; PENDING final whole-branch review + merge (not yet on main).**
-  New pure `app/curation/` package: `schema.py` (`CurationStatus`/
-  `CurationAction`/`UnmappedTerm`), `models.py` (`UnmappedTermRow`),
-  `store.py` (`CurationStore` — upsert-into-queue, `resolve`, `load_overlay`),
-  `service.py` (`CurationService` — capture guards, resolve validation
-  matrix, overlay refresh). Overlay hook added to
-  `app/candidates/normalize/skills.py`: `_CURATED_OVERLAY` +
-  `set_curated_overlay`/`clear_curated_overlay` + `canonical_ids` +
-  `category_for_canonical`; `normalize_skill` becomes `_INDEX.get(key) or
-  _CURATED_OVERLAY.get(key)` — **the static taxonomy always wins**, the
-  overlay only fills gaps. Capture wired into `ProfileSourceService`
-  (best-effort, both GitHub and LinkedIn ingest paths, only for skills with
-  `canonical is None`). `Services.curation` wired cycle-safe; the overlay is
-  loaded once at startup. Migration `0011_skill_curation` adds a
-  **candidate-agnostic** `unmapped_terms` table — no candidate FK, no
-  consent, no CASCADE (it's taxonomy-gap metadata, not candidate data; DPDP
-  erasure deliberately leaves queued terms in place). Two new admin-plane
-  endpoints: `GET /curation/skills/unmapped` (queue, filter by status) +
-  `POST /curation/skills/resolve` (create/map/ignore; 200/404/422). Config
-  knobs `cur_queue_default_limit` (200) / `cur_min_term_len` (2) /
-  `cur_max_term_len` (64). **Design decisions (all taken with the user on
-  recommendation):** skills-only scope (employers/institutions curation
-  deferred); a system-wide overlay on `normalize_skill` rather than a
-  per-call parameter; capture from profile sources only (not resume
-  extraction, yet); no decision-history table (re-resolving a term
-  overwrites its prior resolution); forward-only (resolving a term does not
-  retroactively re-normalize already-stored signals). `CURATION.md`
-  written; `PROFILE_SOURCES.md`'s S6.3 note flipped from planned to
-  shipped. 27 new tests (725→752: schema 3, overlay 5, store 5, service 7,
-  capture 3, api 4; migration drift/index/FK/nullability guards extended),
-  `pytest -q` green. Smoke `scripts/smoke_s63.py` (uvicorn, key-less) 16/16
-  OK exit 0: create candidate → POST LinkedIn export with novel skills
-  (COBOL, PyTorch Lightning, "Team Player") → queue shows them pending →
-  resolve: create `cobol`/language, map "pytorch lightning"→`pytorch`
-  (category `ml` derived), ignore "team player" → re-POST the same export →
-  COBOL now normalizes to `cobol`, PyTorch Lightning to `pytorch` (live
-  overlay), "Team Player" stays unmapped and is not re-queued → bad resolve
-  payload 422, unknown term 404 → DPDP-erase the candidate → the queued
-  term **survives** (candidate-agnostic by design). Executed
-  subagent-driven (fresh implementer + review per task; one fix round on
-  Task 5). Commits `078eab5..949daad` (9 commits; spec `6e9f514`, plan
-  `3c9680b` precede). Nine deferred minors carried (all DEFER, none
-  merge-blocking — see the sprint ledger): no `tests/test_config.py`
-  assertion for the `cur_*` defaults; unused `SKILL_CATEGORIES` import in
-  `tests/test_curation_overlay.py`; `set_curated_overlay` lacks a docstring
-  note that keys must be `norm_key`; `category_for_canonical` is an O(n)
-  overlay scan; `unmapped_terms` string column sizes are
-  arbitrary-but-safe; the resolve endpoint's param is named
-  `norm_key_value`; `_validate` uses truthiness rather than an explicit
-  is-not-None check; a quoted forward-ref in
-  `build_profile_source_service`; `CURATION.md:48`'s "omitted" wording.
-  Also **pre-existing** (not from this sprint): `alembic/env.py` doesn't
-  import the matching/profile_sources models for autogenerate. **PI-6
-  reshaped status:** S6.1 GitHub [done] · S6.2 LinkedIn export [done] ·
-  **S6.3 normalization curation loop [done, this sprint — pending final
-  review + merge]** · S6.4 candidate auth + DPDP portal (next). S6.2
-  (LinkedIn export parsing) remains COMPLETE — historical detail below and
-  in the session log. S6.1 (GitHub-as-signal) remains COMPLETE —
-  historical detail below and in the session log.
+- **Current sprint:** **PI-6 COMPLETE — S6.4 (Candidate auth + DPDP portal)
+  BUILT on branch `s64-candidate-auth-dpdp-portal` — 752→784 green, smoke_s64
+  10/10 OK, key-less — no LLM, no network, no new `ConsentPurpose`; PENDING
+  final whole-branch review + merge (not yet on main).** Delivered: migration
+  `0012_candidate_credentials` (candidate CASCADE FK, unique on
+  `candidate_id`; drift/index/FK/nullability guards extended);
+  `CandidateStore.issue_access_key`/`authenticate_candidate` (mint/rotate a
+  sha256-hashed opaque key, mirrors org API keys); `require_candidate`
+  dependency + a new dependency-free `candidate_router` (peer of `router`/
+  `org_router`); admin-plane `POST /candidates/{id}/auth-key` (mint, returned
+  once, 200/404/401); a new pure package `app/portal/` (`schema.py` —
+  `MyData`/`AccessLogEntry`/`ConsentView`/`ReportRef`/`RetentionWindow`+
+  `RetentionPolicy`; `retention.py` — pure `retained_until` +
+  `build_retention_policy`; `service.py` — `PortalService` composing
+  `CandidateStore`+`LedgerStore`+`ProfileSourceService`+`ReportStore`, owns no
+  tables); `Services.portal` wired cycle-safe; `LedgerStore.consents_for_candidate`
+  + `get_grant` (small raw-read additions); config knobs
+  `candidate_access_key_bytes` (32) + six `ret_*_days` (resumes 1095,
+  interview records/coding rounds/observed offers 1825, profile sources 1095,
+  audit log 2555). Six candidate-plane endpoints (`X-Candidate-Key`):
+  `GET /portal/me` (access), `GET /portal/access-log` (transparency,
+  newest-first, includes platform-internal actions),
+  `GET /portal/consents` + `POST /portal/consents` +
+  `POST /portal/consents/{id}/revoke` (consent control, ownership-enforced —
+  unknown-or-not-owned both 404, no probing), `DELETE /portal/me` (erasure,
+  reuses the existing hard-delete path; key 401s after). **Design invariant:
+  no new `ConsentPurpose`** — self-access is the data-principal right itself,
+  not an org-consent-gated disclosure, so `require_candidate` alone gates
+  every route; cross-candidate isolation is structural (every handler
+  resolves `candidate_id` from the key, never a path/body param). **Two
+  deferred decisions (confirmed with user):** (a) `/portal/me` lists reports
+  by existence + timestamp only (`ReportRef`) — depth `Report` internals
+  (fabrication_risk, verdicts) are not disclosed to the subject in v0; (b)
+  the access-log includes platform-internal actions (e.g.
+  `feature.materialize`), not just org disclosures. Retention posture is
+  surfaced (`RetentionPolicy.sweep_active=False` always) — the mechanical
+  purge job is deferred to PI-8 (no scheduler exists yet). `PORTAL.md`
+  written (peer of `LEDGER.md`/`DASHBOARD.md`). 32 new tests (752→784,
+  `pytest -q` green). Smoke `scripts/smoke_s64.py` (uvicorn, key-less) 10/10
+  OK exit 0 (the smoke commit's subject stales-reads "(12/12)" — the correct,
+  verified count is **10/10**): create candidate → admin mints a key →
+  `GET /portal/me` shows profile/resumes/retention → org submits + queries an
+  interview record (consented) → `GET /portal/access-log` shows it with the
+  org's name resolved → first-party `POST /portal/consents` grant →
+  `GET /portal/consents` active → revoke → state `revoked` → wrong/absent key
+  401 → a second candidate's key cannot see or revoke candidate 1's data
+  (404, untouched) → `DELETE /portal/me` erases; key then 401s; admin
+  `GET /candidates/{id}` 404. Executed subagent-driven (fresh implementer +
+  review per task across 10 build tasks + this closeout); two plan-text
+  inaccuracies self-corrected during the build (Task-8 route-existence test
+  ordering; Task-9 a shared-email test helper collapsing two candidates via
+  the S1.1 dedup path). Commits `f3646ca..4bdbdb6` (Tasks 1–10; spec
+  `a0450d5`, plan `d2737f6` precede). Deferred minors carried (all DEFER,
+  none merge-blocking): unused `datetime` imports in
+  `tests/test_ledger_consents_for_candidate.py` (F401); two API test helpers
+  use `client.__enter__()` without `__exit__()` (thread-leak, no correctness
+  impact); the smoke commit subject's stale "(12/12)"; the `no_key_401` smoke
+  check exercises absent-key only (wrong-key is covered by a unit test).
+  **PI-8 follow-ups (spec §9):** mechanical retention sweep; real candidate
+  registration (password/OTP/session); exposing depth-`Report` internals to
+  the candidate; DPDP correction/rectification right; grievance/DPO contact
+  endpoint; multi-credential/device sessions. **PI-6 status: COMPLETE** — S6.1
+  GitHub [done] · S6.2 LinkedIn export [done] · S6.3 normalization curation
+  loop [done] · **S6.4 candidate auth + DPDP portal [done, this sprint —
+  pending final review + merge]**. S6.3 (normalization curation loop) remains
+  COMPLETE — historical detail below and in the session log. S6.2 (LinkedIn
+  export parsing) remains COMPLETE — historical detail below and in the
+  session log. S6.1 (GitHub-as-signal) remains COMPLETE — historical detail
+  below and in the session log.
   PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
@@ -78,13 +85,19 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Merge S6.3 after its final whole-branch review, then shape/plan
-  **S6.4** (candidate auth + DPDP portal — my-data / who-accessed / revoke /
-  retention TTLs; first-party consent capture replacing the admin plane). S6.3
-  follow-ups to fold in later: employers/institutions curation (needs an unmapped
+- **Next action:** Merge S6.4 after its final whole-branch review — **this closes
+  PI-6 (candidate side & intake) entirely.** After that, shape/plan **PI-7
+  (verification & assessment depth)** per the vision gap-analysis §6
+  (consent-first identity verification · document forensics + moonlighting
+  advisory · AI interview delivery v0), when its turn comes. S6.3 follow-ups
+  to fold in later: employers/institutions curation (needs an unmapped
   marker on `canonicalize_*`), resume-extraction capture (same `canonical=None`
   marker on `SkillClaim`), retroactive re-normalization of already-stored signals,
-  a decision-history/audit table. Deferred S6.1/S6.2 follow-ups still open:
+  a decision-history/audit table. S6.4 follow-ups (PI-8, spec §9): mechanical
+  retention sweep; real candidate registration; exposing depth-`Report`
+  internals to the candidate; DPDP correction/rectification right;
+  grievance/DPO contact endpoint; multi-credential/device sessions. Deferred
+  S6.1/S6.2 follow-ups still open:
   resume-claimed-vs-source corroboration (cross-adapter, both directions —
   narrower than LinkedIn's own within-export corroboration), feature-store
   consumption of the signal, flywheel wiring (all documented in
@@ -308,7 +321,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │            org-plane read-models: /dashboard/overview + /jobs/{id}/board +
 │            /candidates/{id}/card; lean board + consent-gated drill-in card;
 │            pure app/dashboard/ composition, no new state/consent/LLM
-├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1–S6.3 done; reshaped 2026-07-29)
+├── PI-6  CANDIDATE SIDE & INTAKE                                  [COMPLETE]
 │   ├── [x] S6.1  GitHub-as-signal — pure app/profile_sources/ spine + GitHub
 │   │            adapter (fetch → pure to_signal transform w/ S1.4 taxonomy
 │   │            mapping + bounded confidence → append-only store, candidate
@@ -326,8 +339,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            adapters queue for admin review; map/create/ignore feeds a
 │   │            deterministic normalize_skill overlay (static wins); candidate-
 │   │            agnostic queue (no FK, survives erasure); no LLM, forward-only
-│   └── [ ] S6.4  Candidate auth + DPDP portal (my-data / who-accessed / revoke /
-│                retention TTLs; first-party consent capture replacing admin-plane)
+│   └── [x] S6.4  Candidate auth + DPDP portal — candidate access-key auth
+│                (X-Candidate-Key, mirrors org keys) + pure app/portal/
+│                exposing access/transparency/consent-control/erasure; no new
+│                consent purpose (self-access == identity of the subject)
 ├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
 │        verification · document forensics + moonlighting advisory · AI
 │        interview delivery v0 (audio-first English w/ Indian accents,
@@ -351,6 +366,69 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-30 (2)** — **S6.4 (candidate auth + DPDP portal) built — PI-6
+  COMPLETE** (subagent-driven on branch `s64-candidate-auth-dpdp-portal`, 10
+  build tasks + this closeout; spec
+  `2026-07-30-s64-candidate-auth-dpdp-portal-design.md`, plan
+  `2026-07-30-s64-candidate-auth-dpdp-portal.md`). Three load-bearing scope
+  decisions taken with user (all on recommendation): **retention TTLs surface
+  posture now, sweep deferred to PI-8** (no scheduler exists yet; a sweep built
+  now would strand an un-triggered function); **first-party consent is
+  additive, not a hard replace** (the admin-plane consent endpoint stays — it
+  seeds tests and supports org-initiated consent-request flows); **candidate
+  auth = a minted, sha256-hashed, rotatable access key** (mirrors the org key —
+  offline-deterministic, zero external deps; real password/OTP/session
+  registration is a PI-8 productionization concern). Two smaller calls
+  confirmed with user: (a) `/portal/me` lists reports by existence + timestamp
+  only, not advisory internals; (b) the access-log includes platform-internal
+  actions, not just org disclosures. Delivered: migration
+  `0012_candidate_credentials` (candidate CASCADE, unique on `candidate_id`;
+  drift/index/FK/nullability guards extended); `CandidateStore.issue_access_key`/
+  `authenticate_candidate`; `require_candidate` dependency + new dependency-free
+  `candidate_router`; admin-plane `POST /candidates/{id}/auth-key` (mint, once,
+  200/404/401); new pure package `app/portal/` (`schema.py`/`retention.py`/
+  `service.py` — `PortalService` composing `CandidateStore`+`LedgerStore`+
+  `ProfileSourceService`+`ReportStore`, owns no tables); `Services.portal` wired
+  cycle-safe; `LedgerStore.consents_for_candidate`/`get_grant` (small raw-read
+  additions, nothing existing changed); config knobs
+  `candidate_access_key_bytes` (32) + six `ret_*_days`; six candidate-plane
+  endpoints (`GET /portal/me`, `GET /portal/access-log`,
+  `GET/POST /portal/consents`, `POST /portal/consents/{id}/revoke`,
+  `DELETE /portal/me`). **No new `ConsentPurpose`** — self-access is gated
+  purely by identity (`require_candidate`), never a consent object;
+  cross-candidate isolation is structural (every handler resolves
+  `candidate_id` from the key, never a param) with ownership-enforced revoke
+  (identical 404 whether a `consent_id` is unknown or belongs to someone else —
+  no probing). `PORTAL.md` written (peer of `LEDGER.md`/`DASHBOARD.md`). 32 new
+  tests (**752→784**, `pytest -q` green — verified this session). Smoke
+  `scripts/smoke_s64.py` (uvicorn, key-less) **10/10 OK** exit 0 (the smoke
+  commit's subject stale-reads "(12/12)" — the correct, verified count is
+  10/10): create candidate → admin mints a key → `/portal/me` shows
+  profile/resumes/retention → org submits + queries a consented interview
+  record → `/portal/access-log` shows it with the org's name resolved →
+  first-party grant via `/portal/consents` → `GET /portal/consents` active →
+  revoke → state `revoked` → wrong/absent key 401 → a second candidate's key
+  cannot see or revoke candidate 1's data (404, untouched) →
+  `DELETE /portal/me` erases; key then 401s; admin `GET /candidates/{id}` 404.
+  Executed subagent-driven: fresh implementer + review per task across the 10
+  build tasks plus this closeout; per-task review came back clean; two
+  plan-text inaccuracies were self-corrected during the build (Task-8's
+  route-existence test ordering; Task-9's shared-email test helper
+  unexpectedly collapsing two candidates via the S1.1 email/phone-hash dedup
+  path). Deferred minors carried (all DEFER, none merge-blocking): unused
+  `datetime` imports in `tests/test_ledger_consents_for_candidate.py` (F401);
+  two API test helpers use `client.__enter__()` without `__exit__()`
+  (thread-leak, no correctness impact); the smoke commit's stale "(12/12)"
+  subject; the `no_key_401` smoke check exercises absent-key only (wrong-key is
+  covered by a unit test). **PI-8 follow-ups (spec §9):** mechanical retention
+  sweep; real candidate registration (password/OTP/session); exposing depth
+  `Report` internals to the candidate; DPDP correction/rectification right;
+  grievance/DPO contact endpoint; multi-credential/device sessions. Commits
+  `f3646ca..4bdbdb6` (Tasks 1–10; spec `a0450d5`, plan `d2737f6` precede), this
+  closeout on top. **PENDING:** final whole-branch review + merge. **PI-6
+  (candidate side & intake) COMPLETE (S6.1–S6.4).** Next: merge, then shape/plan
+  **PI-7** (verification & assessment depth) per the gap-analysis §6, when its
+  turn comes.
 - **2026-07-30** — **S6.3 (normalization curation loop) built** (subagent-driven
   on branch `s63-normalization-curation`, 9 tasks; spec
   `2026-07-30-s63-normalization-curation-loop-design.md`, plan
