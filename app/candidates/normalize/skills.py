@@ -143,7 +143,41 @@ def _build_index() -> dict[str, SkillMatch]:
 
 _INDEX = _build_index()
 
+# Curation overlay (S6.3): human-reviewed alias -> SkillMatch, loaded from the
+# curation store at startup and refreshed on each resolve. Static _INDEX always
+# wins; the overlay only fills genuine gaps. No per-call I/O — normalize_skill
+# stays a pure dict lookup.
+_CURATED_OVERLAY: dict[str, SkillMatch] = {}
+
+
+def set_curated_overlay(mapping: dict[str, SkillMatch]) -> None:
+    """Replace the curation overlay (a copy is stored)."""
+    global _CURATED_OVERLAY
+    _CURATED_OVERLAY = dict(mapping)
+
+
+def clear_curated_overlay() -> None:
+    _CURATED_OVERLAY.clear()
+
+
+def canonical_ids() -> frozenset[str]:
+    """Every known canonical skill id — static plus curated — for validation."""
+    return frozenset(_TAXONOMY.keys()) | {m.canonical for m in _CURATED_OVERLAY.values()}
+
+
+def category_for_canonical(canonical: str) -> Optional[str]:
+    """Category of a known canonical id (static first, then curated); None if unknown."""
+    entry = _TAXONOMY.get(canonical)
+    if entry is not None:
+        return entry[0]
+    for m in _CURATED_OVERLAY.values():
+        if m.canonical == canonical:
+            return m.category
+    return None
+
 
 def normalize_skill(name: str) -> Optional[SkillMatch]:
     key = norm_key(name or "")
-    return _INDEX.get(key) if key else None
+    if not key:
+        return None
+    return _INDEX.get(key) or _CURATED_OVERLAY.get(key)
