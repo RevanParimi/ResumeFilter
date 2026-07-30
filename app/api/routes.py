@@ -49,6 +49,7 @@ from app.ledger.schema import (
 )
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
+from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -419,6 +420,46 @@ async def list_candidate_sources(
         candidate_id=candidate_id,
         sources=services.profile_sources.list_sources(candidate_id, source_type),
     )
+
+
+# ── Normalization curation loop (S6.3) ───────────────────────────────────────
+# Admin-plane review of unmapped skill terms surfaced by the profile-source
+# adapters. Resolving a term feeds the deterministic normalize_skill overlay.
+# (Candidate/org auth is S6.4; until then this rides the shared X-API-Key.)
+
+
+class CurationResolveRequest(BaseModel):
+    norm_key: str
+    action: CurationAction
+    canonical: Optional[str] = None
+    category: Optional[str] = None
+    note: Optional[str] = None
+    decided_by: Optional[str] = None
+
+
+@router.get("/curation/skills/unmapped", response_model=list[UnmappedTerm])
+async def list_unmapped_terms(
+    request: Request,
+    status: Optional[CurationStatus] = None,
+    limit: Optional[int] = None,
+) -> list[UnmappedTerm]:
+    return _services(request).curation.list_unmapped(status, limit)
+
+
+@router.post("/curation/skills/resolve", response_model=UnmappedTerm)
+async def resolve_unmapped_term(
+    req: CurationResolveRequest, request: Request
+) -> UnmappedTerm:
+    services = _services(request)
+    try:
+        return services.curation.resolve(
+            req.norm_key, req.action, canonical=req.canonical, category=req.category,
+            note=req.note, decided_by=req.decided_by,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 # ── Evaluation ledger (S3.2) ────────────────────────────────────────────────
