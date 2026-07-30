@@ -28,7 +28,8 @@ is ever persisted.
 
 ## API (admin plane, X-API-Key)
 - `GET /curation/skills/unmapped?status=pending&limit=N` → 200 `list[UnmappedTerm]`
-  (occurrence-ranked; `status` ∈ pending|resolved|ignored|omitted).
+  (occurrence-ranked; `status` optional — one of pending|resolved|ignored; omit it
+  to return all statuses).
 - `POST /curation/skills/resolve` — body `{norm_key, action, canonical?, category?,
   note?, decided_by?}` → 200 updated term · 404 unknown term · 422 invalid
   (map without/to unknown canonical; create bad id/category or an existing
