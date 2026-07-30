@@ -141,6 +141,19 @@ class Settings(BaseSettings):
     cur_min_term_len: int = Field(default=2, ge=1)            # skip single-char noise
     cur_max_term_len: int = Field(default=64, ge=1)           # drop overlong junk
 
+    # --- Candidate auth + DPDP portal (PI-6, S6.4) ----------------------------
+    # First-party candidate auth (minted access key, mirrors ledger_api_key_bytes)
+    # + retention POSTURE surfaced by the portal. These day-counts parametrize the
+    # `retained_until` the portal shows; they do NOT enforce deletion — the
+    # mechanical retention sweep is PI-8. Illustrative windows.
+    candidate_access_key_bytes: int = Field(default=32, ge=16)
+    ret_resume_days: int = Field(default=1095, ge=1)            # 3y
+    ret_interview_record_days: int = Field(default=1825, ge=1)  # 5y
+    ret_coding_round_days: int = Field(default=1825, ge=1)      # 5y
+    ret_observed_offer_days: int = Field(default=1825, ge=1)    # 5y
+    ret_profile_source_days: int = Field(default=1095, ge=1)    # 3y
+    ret_audit_log_days: int = Field(default=2555, ge=1)         # 7y — longest
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is
