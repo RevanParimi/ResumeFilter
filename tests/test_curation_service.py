@@ -27,11 +27,14 @@ def test_record_applies_length_guards(settings):
 
 
 def test_list_limit_clamped_to_config(settings):
-    svc = _svc(settings)
+    # use a small cap to prove the limit is actually enforced
+    small = settings.model_copy(update={"cur_queue_default_limit": 3})
+    svc = CurationService(store=CurationStore(make_candidate_store()._session_factory), settings=small)
     for i in range(5):
         svc.record_unmapped(f"term{i}", source_type="github")
-    assert len(svc.list_unmapped(limit=2)) == 2
-    assert len(svc.list_unmapped(limit=10_000)) == 5  # clamped to cur_queue_default_limit
+    assert len(svc.list_unmapped(limit=10_000)) == 3   # clamped to cap (3), not 5
+    assert len(svc.list_unmapped(limit=2)) == 2         # explicit smaller limit honored
+    assert len(svc.list_unmapped()) == 3                # default is the cap
 
 
 def test_resolve_create_makes_normalize_skill_resolve(settings):
@@ -67,10 +70,12 @@ def test_resolve_validation_matrix(settings):
         svc.resolve("t5", CurationAction.IGNORE, canonical="python")
 
 
-def test_resolve_unknown_term_raises_lookup(settings):
+def test_resolve_checks_existence_before_validation(settings):
     svc = _svc(settings)
+    # unknown term AND invalid decision (map with no canonical): correct order
+    # raises LookupError (404), a validation-first regression would raise ValueError (422)
     with pytest.raises(LookupError):
-        svc.resolve("ghost", CurationAction.IGNORE)
+        svc.resolve("ghost", CurationAction.MAP)
 
 
 def test_create_bad_id_shape_rejected(settings):
