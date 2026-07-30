@@ -438,6 +438,27 @@ class LedgerStore:
             grants, org_id=org_id, purpose=purpose, at=moment
         )
 
+    def consents_for_candidate(self, candidate_id: str) -> list[ConsentGrant]:
+        """All grants for a candidate — active, revoked, and expired — ordered by
+        grant time. A raw candidate-own read (the candidate's own consent ledger);
+        no consent gate. Powers the S6.4 portal `/portal/consents` view."""
+        with self._session_factory() as session:
+            rows = (
+                session.execute(
+                    select(ConsentGrantRow)
+                    .where(ConsentGrantRow.candidate_id == candidate_id)
+                    .order_by(ConsentGrantRow.granted_at, ConsentGrantRow.id)
+                ).scalars().all()
+            )
+            return [_grant(r) for r in rows]
+
+    def get_grant(self, consent_id: str) -> Optional[ConsentGrant]:
+        """One grant by id, or None. Used by the S6.4 portal to enforce ownership
+        before a first-party revoke."""
+        with self._session_factory() as session:
+            row = session.get(ConsentGrantRow, consent_id)
+            return _grant(row) if row else None
+
     # -- interview records + events (consent-gated writes) --------------------
 
     def submit_interview_record(
