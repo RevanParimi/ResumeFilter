@@ -120,3 +120,22 @@ class FingerprintRow(Base):
     signature: Mapped[list] = mapped_column(JSON)
     shingle_count: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class CandidateCredentialRow(Base):
+    """One candidate access credential (S6.4). Mirrors org API keys but as a
+    peer table so auth material stays out of the PI-1 identity row. One per
+    candidate (unique candidate_id); minting again rotates it. CASCADE erases
+    it with the candidate."""
+
+    __tablename__ = "candidate_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    access_key_hash: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    rotated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

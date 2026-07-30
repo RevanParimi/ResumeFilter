@@ -46,6 +46,7 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     assert "observed_offers" in names  # S5.2 migration 0009
     assert "profile_sources" in names  # S6.1 migration 0010
     assert "unmapped_terms" in names  # S6.3 migration 0011
+    assert "candidate_credentials" in names  # S6.4 migration 0012
     org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
     assert "reliability_weight" in org_cols  # S3.4 migration 0006
 
@@ -77,13 +78,15 @@ PROFILE_SOURCE_TABLES = ("profile_sources",)  # S6.1
 
 CURATION_TABLES = ("unmapped_terms",)  # S6.3 — candidate-agnostic (no FK)
 
+CANDIDATE_AUTH_TABLES = ("candidate_credentials",)  # S6.4 — candidate CASCADE
+
 
 def test_migrated_indexes_match_orm(tmp_path):
     """Every index the ORM declares on a ledger table exists in the migrated
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -102,7 +105,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():
