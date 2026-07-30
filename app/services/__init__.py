@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
     from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
     from app.matching.store import JobStore
+    from app.portal.service import PortalService
     from app.profile_sources.service import ProfileSourceService
 
 
@@ -43,6 +44,7 @@ class Services:
     dashboard: DashboardService
     profile_sources: ProfileSourceService
     curation: CurationService
+    portal: PortalService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -53,6 +55,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
     from app.matching.store import build_job_store
+    from app.portal.service import build_portal_service
     from app.profile_sources.service import build_profile_source_service
 
     settings = settings or get_settings()
@@ -62,23 +65,30 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     candidates = build_candidate_store(settings)
     curation = build_curation_service(settings)
     curation.refresh_overlay()  # load prior curation into the normalize_skill overlay
+    ledger = build_ledger_store(settings)
+    report_store = build_report_store(settings)
+    profile_sources = build_profile_source_service(
+        settings, github=github, candidates=candidates, curation=curation
+    )
     return Services(
         settings=settings,
         llm=build_llm(settings),
         vectorstore=build_vectorstore(settings),
         github=github,
         flywheel=build_flywheel(settings),
-        report_store=build_report_store(settings),
+        report_store=report_store,
         candidates=candidates,
-        ledger=build_ledger_store(settings),
+        ledger=ledger,
         features=build_feature_store(settings),
         jobs=build_job_store(settings),
         comp=build_comp_service(settings),
         dashboard=build_dashboard_service(settings),
-        profile_sources=build_profile_source_service(
-            settings, github=github, candidates=candidates, curation=curation
-        ),
+        profile_sources=profile_sources,
         curation=curation,
+        portal=build_portal_service(
+            settings, candidates=candidates, ledger=ledger,
+            report_store=report_store, profile_sources=profile_sources,
+        ),
     )
 
 

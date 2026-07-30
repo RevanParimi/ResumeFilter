@@ -142,6 +142,7 @@ def make_services(
     dashboard=None,
     profile_sources=None,
     curation=None,
+    portal=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -177,13 +178,17 @@ def make_services(
             store=ProfileSourceStore(candidates._session_factory),
             candidates=candidates, settings=settings, curation=curation,
         )
+    report_store = InMemoryReportStore()
+    if portal is None:
+        from app.portal.service import PortalService
+        portal = PortalService(candidates, ledger, report_store, profile_sources, settings=settings)
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),
         vectorstore=InMemoryVectorStore(),
         github=github,
         flywheel=flywheel or InMemoryFlywheel(),
-        report_store=InMemoryReportStore(),
+        report_store=report_store,
         candidates=candidates,
         ledger=ledger,
         features=features,
@@ -192,6 +197,7 @@ def make_services(
         dashboard=dashboard,
         profile_sources=profile_sources,
         curation=curation,
+        portal=portal,
     )
 
 
