@@ -910,6 +910,75 @@ async def candidate_card(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+# ── Candidate DPDP portal (S6.4) ─────────────────────────────────────────────
+# Candidate plane (X-Candidate-Key). First-party access / transparency / consent
+# control / erasure over the candidate's own data. No new ConsentPurpose — auth
+# == identity of the data subject. Every route acts on the resolved candidate_id.
+
+
+@candidate_router.get("/portal/me", response_model=MyData)
+async def portal_me(request: Request, candidate_id: str = Depends(require_candidate)) -> MyData:
+    return _services(request).portal.my_data(candidate_id)
+
+
+@candidate_router.get("/portal/access-log", response_model=list[AccessLogEntry])
+async def portal_access_log(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> list[AccessLogEntry]:
+    return _services(request).portal.access_log(candidate_id)
+
+
+@candidate_router.get("/portal/consents", response_model=list[ConsentView])
+async def portal_list_consents(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> list[ConsentView]:
+    return _services(request).portal.consents(candidate_id)
+
+
+class PortalConsentGrantRequest(BaseModel):
+    purpose: ConsentPurpose
+    org_id: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+
+@candidate_router.post("/portal/consents", response_model=ConsentGrant)
+async def portal_grant_consent(
+    req: PortalConsentGrantRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> ConsentGrant:
+    try:
+        return _services(request).portal.grant(
+            candidate_id, purpose=req.purpose, org_id=req.org_id, expires_at=req.expires_at
+        )
+    except LookupError as exc:  # unknown org_id
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@candidate_router.post("/portal/consents/{consent_id}/revoke")
+async def portal_revoke_consent(
+    consent_id: str, request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    try:
+        revoked = _services(request).portal.revoke(candidate_id, consent_id)
+    except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
+        raise HTTPException(status_code=404, detail="consent grant not found") from exc
+    return {"consent_id": consent_id, "revoked": revoked}
+
+
+@candidate_router.delete("/portal/me")
+async def portal_erase(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    """DPDP erasure, self-service. Reuses the candidate erasure path (candidate +
+    resumes + extractions + reports + cascaded ledger rows + the credential). The
+    key stops authenticating afterward (credential CASCADEs)."""
+    services = _services(request)
+    reports_deleted = services.report_store.delete_for_candidate(candidate_id)
+    services.candidates.delete_candidate(candidate_id)
+    return {"candidate_id": candidate_id, "deleted": True, "reports_deleted": reports_deleted}
+
+
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
 # Admin plane (X-API-Key): platform-internal search over materialized feature
 # vectors. Advisory — it narrows and orders, never auto-rejects.
