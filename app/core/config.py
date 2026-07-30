@@ -132,6 +132,15 @@ class Settings(BaseSettings):
     ps_linkedin_skill_corroborated_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
     ps_linkedin_max_rows: int = Field(default=5_000, ge=1)  # per-CSV row cap
 
+    # --- Normalization curation loop (PI-6, S6.3) ------------------------------
+    # Human-in-the-loop taxonomy repair: unmapped skill terms surfaced by the
+    # profile-source adapters queue for admin review; a resolution feeds a
+    # deterministic normalize_skill overlay. No LLM. The queue is
+    # candidate-agnostic (taxonomy-gap metadata — no candidate_id, no consent).
+    cur_queue_default_limit: int = Field(default=200, ge=1)   # default + max rows returned
+    cur_min_term_len: int = Field(default=2, ge=1)            # skip single-char noise
+    cur_max_term_len: int = Field(default=64, ge=1)           # drop overlong junk
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is

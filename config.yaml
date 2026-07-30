@@ -191,6 +191,11 @@ ps_linkedin_skill_base_confidence: 0.4
 ps_linkedin_skill_corroborated_confidence: 0.6
 ps_linkedin_max_rows: 5000
 
+# --- Normalization curation loop (PI-6) - S6.3 review queue + overlay ----------
+cur_queue_default_limit: 200     # default + max rows returned by the queue endpoint
+cur_min_term_len: 2              # skip single-char noise before queueing
+cur_max_term_len: 64             # drop overlong junk (also caps what we persist)
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
