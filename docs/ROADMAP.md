@@ -9,62 +9,68 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-6 — S6.2 (LinkedIn export parsing / 2nd profile_sources
-  adapter) COMPLETE — merged to main (fast-forward `23972d7`→`497eedb`), branch
-  deleted, 725 green on main, smoke_s62 12/12 OK, key-less — no network, no LLM
-  anywhere in this adapter.** Second adapter on the
-  S6.1 spine: `ProfileSourceType.LINKEDIN_EXPORT`; new `LinkedInActivity`
-  (de-identified: canonical employers/institutions + counts, plus the candidate's
-  own headline/industry/languages retained verbatim as low-sensitivity first-party
-  self-description; no raw contact PII, no position descriptions, no summary text,
-  no connections); `ProfileSourceSignal.activity` generalized to a
-  discriminated union `GitHubActivity | LinkedInActivity` (discriminator `kind`)
-  with a `source_type`-derived back-compat validator so pre-S6.2 GitHub rows still
-  validate with **no migration**; `method` gained `"export"`. Pure
-  `app/profile_sources/linkedin.py`: `parse_linkedin_export(bytes, settings)`
-  (tolerant ZIP/CSV reader — case-insensitive basenames, nested export dirs,
-  column-name variants, per-row graceful degradation so one ragged row never
-  drops a whole section, `ps_linkedin_max_rows` cap) and `to_signal` (S1.4
-  taxonomy mapping; self-reported skills are **claims** at a conservative base
-  confidence `ps_linkedin_skill_base_confidence` [0.4], bumped to
-  `ps_linkedin_skill_corroborated_confidence` [0.6] via whole-token matching
-  against that export's own position titles/descriptions/headline; `method=
-  "export"`/`"unavailable"`). `ProfileSourceService.ingest_linkedin(candidate_id,
-  data: bytes)` reuses the S6.1 `ProfileSourceStore` (append-only, CASCADE);
-  persisted `identifier` is the fixed `"linkedin_export"` (no per-account handle).
-  Admin-plane `POST /candidates/{id}/sources/linkedin` (body `{"export_b64":
-  ...}`): **200** `method="export"`; a valid-but-unrecognized zip still **200**
-  `method="unavailable"`; **404** unknown candidate; **422** malformed base64 or
-  oversize (`max_linkedin_b64_chars`, 8,000,000). **No LLM, no network, no new
-  consent purpose** — the export is the candidate's own first-party data;
-  CASCADE erasure proven by test. `PROFILE_SOURCES.md` rewritten to cover both
-  adapters. 28 new tests (697→725, `pytest -q` green). Smoke `scripts/smoke_s62.py`
-  (uvicorn, key-less) 12/12 OK exit 0: create candidate → POST linkedin export
-  (method=export; Python canonical + corroborated 0.6 off "Python Developer";
-  Leadership base 0.4, uncorroborated; employers `["Infosys","TCS"]` + institution
-  `["IIT Madras"]` canonicalized; `current_positions==1`) → GET sources filtered by
-  `source_type=linkedin_export` (1 row) → bad base64 → 422 → DPDP erase → sources
-  404. Six deferred minors carried from the sprint ledger (all DEFER, none
-  merge-blocking — enumerated here, revisit in S6.3):
-  `_backfill_activity_kind` mutates the stored/legacy activity
-  dict in place (idempotent, harmless, no copy); the enum-branch of the
-  discriminator backfill has no direct test (only the str path is exercised);
-  the "keep max corroboration" dedup branch in `_build_skills` is dead code
-  (corroboration depends only on the lowercased skill, so case-variant dupes
-  always tie, keep-first in practice); hyphenated skills (e.g. "Front-End")
-  never corroborate (`-` isn't in the token charset); `to_signal` repeats
-  `ProfileSourceSignal` kwargs across its two branches (cosmetic); the 422
-  oversize error detail echoes `max_linkedin_b64_chars` (consistent with the
-  existing `max_pdf_b64_chars`/`max_resume_chars` messages — a documented public
-  limit, not a secret). **PI-6 reshaped:** S6.1 GitHub [done] · S6.2 LinkedIn
-  export [done, this sprint] · **S6.3 Normalization curation loop** (new —
-  reviewing/correcting unmapped taxonomy terms surfaced by either adapter; the
-  deferred thread from S6.1/S6.2, kept explicit on the board, not required until
-  its own sprint) · S6.4 Candidate auth + DPDP portal (moved down from S6.3).
-  Whole-branch final review (opus) = **Ready to merge: Yes**, no Critical/Important;
-  all six minors triaged non-blocking. **Merged to main (fast-forward), branch
-  deleted, 725 green on main. S6.2 COMPLETE.** S6.1 (GitHub-as-signal) remains
-  COMPLETE — historical detail below and in the session log.
+- **Current sprint:** **PI-6 — S6.3 (Normalization curation loop) BUILT on
+  branch `s63-normalization-curation` — 725→752 green, smoke_s63 16/16 OK,
+  key-less — no LLM, no network, no new consent purpose anywhere in this
+  sprint; PENDING final whole-branch review + merge (not yet on main).**
+  New pure `app/curation/` package: `schema.py` (`CurationStatus`/
+  `CurationAction`/`UnmappedTerm`), `models.py` (`UnmappedTermRow`),
+  `store.py` (`CurationStore` — upsert-into-queue, `resolve`, `load_overlay`),
+  `service.py` (`CurationService` — capture guards, resolve validation
+  matrix, overlay refresh). Overlay hook added to
+  `app/candidates/normalize/skills.py`: `_CURATED_OVERLAY` +
+  `set_curated_overlay`/`clear_curated_overlay` + `canonical_ids` +
+  `category_for_canonical`; `normalize_skill` becomes `_INDEX.get(key) or
+  _CURATED_OVERLAY.get(key)` — **the static taxonomy always wins**, the
+  overlay only fills gaps. Capture wired into `ProfileSourceService`
+  (best-effort, both GitHub and LinkedIn ingest paths, only for skills with
+  `canonical is None`). `Services.curation` wired cycle-safe; the overlay is
+  loaded once at startup. Migration `0011_skill_curation` adds a
+  **candidate-agnostic** `unmapped_terms` table — no candidate FK, no
+  consent, no CASCADE (it's taxonomy-gap metadata, not candidate data; DPDP
+  erasure deliberately leaves queued terms in place). Two new admin-plane
+  endpoints: `GET /curation/skills/unmapped` (queue, filter by status) +
+  `POST /curation/skills/resolve` (create/map/ignore; 200/404/422). Config
+  knobs `cur_queue_default_limit` (200) / `cur_min_term_len` (2) /
+  `cur_max_term_len` (64). **Design decisions (all taken with the user on
+  recommendation):** skills-only scope (employers/institutions curation
+  deferred); a system-wide overlay on `normalize_skill` rather than a
+  per-call parameter; capture from profile sources only (not resume
+  extraction, yet); no decision-history table (re-resolving a term
+  overwrites its prior resolution); forward-only (resolving a term does not
+  retroactively re-normalize already-stored signals). `CURATION.md`
+  written; `PROFILE_SOURCES.md`'s S6.3 note flipped from planned to
+  shipped. 27 new tests (725→752: schema 3, overlay 5, store 5, service 7,
+  capture 3, api 4; migration drift/index/FK/nullability guards extended),
+  `pytest -q` green. Smoke `scripts/smoke_s63.py` (uvicorn, key-less) 16/16
+  OK exit 0: create candidate → POST LinkedIn export with novel skills
+  (COBOL, PyTorch Lightning, "Team Player") → queue shows them pending →
+  resolve: create `cobol`/language, map "pytorch lightning"→`pytorch`
+  (category `ml` derived), ignore "team player" → re-POST the same export →
+  COBOL now normalizes to `cobol`, PyTorch Lightning to `pytorch` (live
+  overlay), "Team Player" stays unmapped and is not re-queued → bad resolve
+  payload 422, unknown term 404 → DPDP-erase the candidate → the queued
+  term **survives** (candidate-agnostic by design). Executed
+  subagent-driven (fresh implementer + review per task; one fix round on
+  Task 5). Commits `078eab5..949daad` (9 commits; spec `6e9f514`, plan
+  `3c9680b` precede). Nine deferred minors carried (all DEFER, none
+  merge-blocking — see the sprint ledger): no `tests/test_config.py`
+  assertion for the `cur_*` defaults; unused `SKILL_CATEGORIES` import in
+  `tests/test_curation_overlay.py`; `set_curated_overlay` lacks a docstring
+  note that keys must be `norm_key`; `category_for_canonical` is an O(n)
+  overlay scan; `unmapped_terms` string column sizes are
+  arbitrary-but-safe; the resolve endpoint's param is named
+  `norm_key_value`; `_validate` uses truthiness rather than an explicit
+  is-not-None check; a quoted forward-ref in
+  `build_profile_source_service`; `CURATION.md:48`'s "omitted" wording.
+  Also **pre-existing** (not from this sprint): `alembic/env.py` doesn't
+  import the matching/profile_sources models for autogenerate. **PI-6
+  reshaped status:** S6.1 GitHub [done] · S6.2 LinkedIn export [done] ·
+  **S6.3 normalization curation loop [done, this sprint — pending final
+  review + merge]** · S6.4 candidate auth + DPDP portal (next). S6.2
+  (LinkedIn export parsing) remains COMPLETE — historical detail below and
+  in the session log. S6.1 (GitHub-as-signal) remains COMPLETE —
+  historical detail below and in the session log.
   PI-5 (demand side) remains COMPLETE (S5.1–S5.3); historical S5.3 detail follows.
   S5.3 added a pure `app/dashboard/` composition layer (no tables/migration/LLM/new
   consent purpose) exposing three org-plane read-models: `GET /dashboard/overview`,
@@ -72,13 +78,17 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Shape/plan **S6.3** (normalization curation loop — reviewing
-  and correcting unmapped taxonomy terms surfaced by the GitHub + LinkedIn
-  adapters; S6.4 candidate auth + DPDP portal follows it). Deferred S6.1/S6.2
-  follow-ups to fold in later: resume-claimed-vs-source corroboration (cross-
-  adapter, both directions — narrower than LinkedIn's own within-export
-  corroboration), feature-store consumption of the signal, flywheel wiring (all
-  documented in `PROFILE_SOURCES.md`). **PI-5 (demand side) is COMPLETE
+- **Next action:** Merge S6.3 after its final whole-branch review, then shape/plan
+  **S6.4** (candidate auth + DPDP portal — my-data / who-accessed / revoke /
+  retention TTLs; first-party consent capture replacing the admin plane). S6.3
+  follow-ups to fold in later: employers/institutions curation (needs an unmapped
+  marker on `canonicalize_*`), resume-extraction capture (same `canonical=None`
+  marker on `SkillClaim`), retroactive re-normalization of already-stored signals,
+  a decision-history/audit table. Deferred S6.1/S6.2 follow-ups still open:
+  resume-claimed-vs-source corroboration (cross-adapter, both directions —
+  narrower than LinkedIn's own within-export corroboration), feature-store
+  consumption of the signal, flywheel wiring (all documented in
+  `PROFILE_SOURCES.md`). **PI-5 (demand side) is COMPLETE
   (S5.1–S5.3).** Historical
   S5.2 detail follows. S5.2 is
   DONE (merged to main, 653 green; whole-branch self-review clean — no
@@ -298,7 +308,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │            org-plane read-models: /dashboard/overview + /jobs/{id}/board +
 │            /candidates/{id}/card; lean board + consent-gated drill-in card;
 │            pure app/dashboard/ composition, no new state/consent/LLM
-├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1–S6.2 done; reshaped 2026-07-29)
+├── PI-6  CANDIDATE SIDE & INTAKE  (S6.1–S6.3 done; reshaped 2026-07-29)
 │   ├── [x] S6.1  GitHub-as-signal — pure app/profile_sources/ spine + GitHub
 │   │            adapter (fetch → pure to_signal transform w/ S1.4 taxonomy
 │   │            mapping + bounded confidence → append-only store, candidate
@@ -311,8 +321,11 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            validator (no migration); admin-plane POST endpoint; advisory,
 │   │            no LLM, no network, no new consent purpose
 │   │            [multilingual/Hinglish intake DEFERRED — English-first, 2026-07-26]
-│   ├── [ ] S6.3  Normalization curation loop (reviewing/correcting unmapped
-│   │            taxonomy terms surfaced by the GitHub + LinkedIn adapters)
+│   ├── [x] S6.3  Normalization curation loop — human-in-the-loop taxonomy repair:
+│   │            unmapped skill terms (canonical=None) from the GitHub + LinkedIn
+│   │            adapters queue for admin review; map/create/ignore feeds a
+│   │            deterministic normalize_skill overlay (static wins); candidate-
+│   │            agnostic queue (no FK, survives erasure); no LLM, forward-only
 │   └── [ ] S6.4  Candidate auth + DPDP portal (my-data / who-accessed / revoke /
 │                retention TTLs; first-party consent capture replacing admin-plane)
 ├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
@@ -338,6 +351,50 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-30** — **S6.3 (normalization curation loop) built** (subagent-driven
+  on branch `s63-normalization-curation`, 9 tasks; spec
+  `2026-07-30-s63-normalization-curation-loop-design.md`, plan
+  `2026-07-30-s63-normalization-curation-loop.md`). Brainstormed → three design
+  decisions taken with user (all on recommendation): **skills-only scope**
+  (employers/institutions curation deferred — they lack a clean `canonical=None`
+  unmapped marker); **system-wide overlay on `normalize_skill`** (curated aliases
+  load into an in-memory `_CURATED_OVERLAY` merged with the static index — every
+  consumer benefits, `normalize_skill` stays a pure dict lookup, **static taxonomy
+  always wins**); **capture from profile sources only** (resume-extraction capture
+  deferred). Two smaller calls: no decision-history table (re-resolve overwrites)
+  and forward-only (resolving does not re-normalize already-stored signals).
+  Delivered a new pure `app/curation/` package (`schema.py` — `CurationStatus`/
+  `CurationAction`/`UnmappedTerm`; `models.py` — `UnmappedTermRow`; `store.py` —
+  `CurationStore` upsert-queue/`resolve`/`load_overlay`; `service.py` —
+  `CurationService` capture guards + resolve validation matrix + overlay refresh),
+  the overlay hook + `set_/clear_curated_overlay`/`canonical_ids`/
+  `category_for_canonical` on `app/candidates/normalize/skills.py`, best-effort
+  capture wired into `ProfileSourceService` (both ingest paths, only
+  `canonical is None`), `Services.curation` wired cycle-safe with the overlay
+  loaded once at startup, migration `0011_skill_curation` (**candidate-agnostic**
+  `unmapped_terms` — no candidate FK / no consent / no CASCADE; DPDP erasure
+  deliberately leaves queued terms; drift/index/nullability guards extended), two
+  admin-plane endpoints (`GET /curation/skills/unmapped` + `POST
+  /curation/skills/resolve`, 200/404/422), and `cur_*` config knobs (200/2/64).
+  **No LLM, no network, no new consent purpose.** `CURATION.md` written;
+  `PROFILE_SOURCES.md` S6.3 note flipped to shipped. 27 new tests (725→752,
+  `pytest -q` green). Smoke `scripts/smoke_s63.py` (uvicorn, key-less) 16/16 OK
+  exit 0: create candidate → POST LinkedIn export with novel skills (COBOL,
+  PyTorch Lightning, "Team Player") → queue pending → resolve create
+  `cobol`/language + map "pytorch lightning"→`pytorch` (category `ml` derived) +
+  ignore "team player" → re-POST → COBOL→`cobol`, PyTorch Lightning→`pytorch`
+  (live per-process overlay), "Team Player" stays unmapped & not re-queued → bad
+  resolve 422, unknown 404 → DPDP-erase candidate → queued term **survives**
+  (candidate-agnostic). Executed subagent-driven: fresh implementer + two-stage
+  spec/quality review per task (Tasks 1–4, 6–8 review-clean; Task 5 one fix round —
+  two tests strengthened to genuinely discriminate existence-before-validation
+  ordering and limit-cap enforcement). Task 9 (ROADMAP closeout) was finished
+  in-controller after the account session limit terminated its subagent mid-edit —
+  docs-only bookkeeping, matching the S5.3 precedent. Nine deferred minors carried
+  (all DEFER, none merge-blocking — in the sprint ledger). Commits
+  `078eab5..` this closeout (spec `6e9f514`, plan `3c9680b` precede). **PENDING:**
+  final whole-branch review + merge. Next: merge, then shape/plan S6.4 (candidate
+  auth + DPDP portal).
 - **2026-07-29** — **S6.2 (LinkedIn export parsing / 2nd profile_sources
   adapter) built** (TDD-offline on branch `s62-linkedin-export`, 7 tasks; plan
   `docs/superpowers/plans/2026-07-28-s62-linkedin-export.md`). Second adapter on
