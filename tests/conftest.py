@@ -144,6 +144,7 @@ def make_services(
     profile_sources=None,
     curation=None,
     portal=None,
+    verification=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -180,6 +181,13 @@ def make_services(
             candidates=candidates, settings=settings, curation=curation,
         )
     report_store = InMemoryReportStore()
+    if verification is None:
+        from app.verification.service import VerificationService
+        from app.verification.store import VerificationStore
+        verification = VerificationService(
+            VerificationStore(candidates._session_factory, ledger=ledger, settings=settings),
+            candidates, ledger, settings=settings,
+        )
     if portal is None:
         from app.portal.service import PortalService
         portal = PortalService(candidates, ledger, report_store, profile_sources, settings=settings)
@@ -199,6 +207,7 @@ def make_services(
         profile_sources=profile_sources,
         curation=curation,
         portal=portal,
+        verification=verification,
     )
 
 

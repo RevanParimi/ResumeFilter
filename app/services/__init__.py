@@ -26,6 +26,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
     from app.matching.store import JobStore
     from app.portal.service import PortalService
     from app.profile_sources.service import ProfileSourceService
+    from app.verification.service import VerificationService
 
 
 @dataclass
@@ -45,6 +46,7 @@ class Services:
     profile_sources: ProfileSourceService
     curation: CurationService
     portal: PortalService
+    verification: VerificationService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -57,6 +59,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.matching.store import build_job_store
     from app.portal.service import build_portal_service
     from app.profile_sources.service import build_profile_source_service
+    from app.verification.service import build_verification_service
 
     settings = settings or get_settings()
     # Hoisted so the profile-source service shares the one GitHub client + the
@@ -69,6 +72,10 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     report_store = build_report_store(settings)
     profile_sources = build_profile_source_service(
         settings, github=github, candidates=candidates, curation=curation
+    )
+    # Built before the portal: the portal's my_data view reads identity assurance.
+    verification = build_verification_service(
+        settings, candidates=candidates, ledger=ledger
     )
     return Services(
         settings=settings,
@@ -89,6 +96,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
             settings, candidates=candidates, ledger=ledger,
             report_store=report_store, profile_sources=profile_sources,
         ),
+        verification=verification,
     )
 
 
