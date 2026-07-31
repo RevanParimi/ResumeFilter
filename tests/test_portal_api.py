@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -7,15 +8,17 @@ from app.ledger.schema import InterviewOutcome, InterviewStage
 from tests.conftest import make_services
 
 
+@pytest.fixture
 def _setup(settings):
     # NOTE (mirrors tests/test_candidate_auth_api.py `_client`): a plain
     # TestClient does not run the app lifespan, so app.state.services is never
-    # set and every request 500s. Enter the context manually so every route
-    # here resolves `_services(request)` correctly.
+    # set and every request 500s. Enter via a pytest fixture wrapping a `with`
+    # block so every route here resolves `_services(request)` correctly, AND
+    # the lifespan shutdown (closing the background portal thread) runs on
+    # fixture teardown even if the test body raises.
     services = make_services(settings)
-    client = TestClient(create_app(services), raise_server_exceptions=False)
-    client.__enter__()
-    return client, services
+    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+        yield client, services
 
 
 def _candidate_with_key(client, email="d@e.com"):
@@ -31,8 +34,8 @@ def _candidate_with_key(client, email="d@e.com"):
     return cid, {"X-Candidate-Key": key}
 
 
-def test_portal_me_returns_access_view(settings):
-    client, _ = _setup(settings)
+def test_portal_me_returns_access_view(_setup):
+    client, _ = _setup
     cid, h = _candidate_with_key(client)
     r = client.get("/portal/me", headers=h)
     assert r.status_code == 200
@@ -43,8 +46,8 @@ def test_portal_me_returns_access_view(settings):
     assert body["retention"]["windows"]  # posture present
 
 
-def test_portal_access_log_shows_org_disclosure(settings):
-    client, services = _setup(settings)
+def test_portal_access_log_shows_org_disclosure(_setup):
+    client, services = _setup
     cid, h = _candidate_with_key(client)
     org = services.ledger.create_organization("Acme")
     services.ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=org.id)
@@ -62,8 +65,8 @@ def test_portal_access_log_shows_org_disclosure(settings):
     assert q["actor_name"] == "Acme" and q["allowed"] is True
 
 
-def test_portal_first_party_grant_then_revoke(settings):
-    client, _ = _setup(settings)
+def test_portal_first_party_grant_then_revoke(_setup):
+    client, _ = _setup
     cid, h = _candidate_with_key(client)
     g = client.post("/portal/consents", headers=h, json={"purpose": "ledger_read"})
     assert g.status_code == 200
@@ -76,15 +79,15 @@ def test_portal_first_party_grant_then_revoke(settings):
     assert states[gid] == "revoked"
 
 
-def test_grant_unknown_org_404(settings):
-    client, _ = _setup(settings)
+def test_grant_unknown_org_404(_setup):
+    client, _ = _setup
     _, h = _candidate_with_key(client)
     r = client.post("/portal/consents", headers=h, json={"purpose": "ledger_read", "org_id": "ghost"})
     assert r.status_code == 404
 
 
-def test_cross_candidate_isolation(settings):
-    client, services = _setup(settings)
+def test_cross_candidate_isolation(_setup):
+    client, services = _setup
     a, ha = _candidate_with_key(client, email="a@e.com")
     b, hb = _candidate_with_key(client, email="b@e.com")
     assert a != b
@@ -96,8 +99,8 @@ def test_cross_candidate_isolation(settings):
     assert client.get("/portal/me", headers=ha).json()["candidate_id"] == a
 
 
-def test_self_erase_kills_the_key(settings):
-    client, _ = _setup(settings)
+def test_self_erase_kills_the_key(_setup):
+    client, _ = _setup
     cid, h = _candidate_with_key(client)
     d = client.delete("/portal/me", headers=h)
     assert d.status_code == 200 and d.json()["deleted"] is True

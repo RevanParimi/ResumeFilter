@@ -1,20 +1,24 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from tests.conftest import make_services
 
 
+@pytest.fixture
 def _client(settings):
     # NOTE: this repo's installed Starlette/FastAPI only runs the app's
     # lifespan (which sets app.state.services) when the TestClient is used as
     # a context manager (see every other tests/test_*_api.py `with _client(...)
-    # as client:` fixture). We keep the brief's tuple-return shape but enter
-    # the context manually so every route in this file — including the ones
-    # Task 9 still owes — resolves `_services(request)` correctly.
+    # as client:` fixture). We keep the brief's tuple-return shape but do the
+    # entering via a pytest fixture wrapping a `with` block, so every route in
+    # this file — including the ones Task 9 still owes — resolves
+    # `_services(request)` correctly, AND the lifespan shutdown (closing the
+    # background portal thread) runs on fixture teardown even if the test
+    # body raises.
     services = make_services(settings)
-    client = TestClient(create_app(services), raise_server_exceptions=False)
-    client.__enter__()
-    return client, services
+    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+        yield client, services
 
 
 def _make_candidate(client) -> str:
@@ -24,8 +28,8 @@ def _make_candidate(client) -> str:
     return r.json()["candidate_id"]
 
 
-def test_admin_mints_candidate_key_and_it_authenticates(settings):
-    client, _ = _client(settings)
+def test_admin_mints_candidate_key_and_it_authenticates(_client):
+    client, _ = _client
     cid = _make_candidate(client)
     r = client.post(f"/candidates/{cid}/auth-key")
     assert r.status_code == 200
@@ -36,8 +40,8 @@ def test_admin_mints_candidate_key_and_it_authenticates(settings):
     assert ok.status_code == 200
 
 
-def test_mint_unknown_candidate_404(settings):
-    client, _ = _client(settings)
+def test_mint_unknown_candidate_404(_client):
+    client, _ = _client
     r = client.post("/candidates/nope/auth-key")
     assert r.status_code == 404
 
@@ -49,7 +53,7 @@ def test_mint_unknown_candidate_404(settings):
 # both assertions below currently see 404, not 401. This mirrors (does not add
 # to) the single documented gap: once Task 9 adds the route, this test and
 # `test_admin_mints_candidate_key_and_it_authenticates` go green together.
-def test_portal_route_without_key_is_401(settings):
-    client, _ = _client(settings)
+def test_portal_route_without_key_is_401(_client):
+    client, _ = _client
     assert client.get("/portal/me").status_code == 401
     assert client.get("/portal/me", headers={"X-Candidate-Key": "bad"}).status_code == 401

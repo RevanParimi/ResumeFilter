@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta, timezone
-
 from app.candidates.models import CandidateRow
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import LedgerStore
