@@ -167,6 +167,16 @@ class Settings(BaseSettings):
     verif_otp_debug_echo: bool = False
     ret_verification_days: int = Field(default=1095, ge=1)  # 3y, posture only
 
+    # --- Document forensics (PI-7, S7.2) --------------------------------------
+    # Deterministic and offline. The document itself is never stored; these
+    # bound what will be parsed before anything is decoded.
+    doc_max_b64_chars: int = Field(default=8_000_000, ge=1024)   # ~6MB decoded
+    doc_max_pages: int = Field(default=20, ge=1)
+    doc_metadata_skew_days: int = Field(default=1, ge=0)
+    # Higher than xf_overlap_months_min on purpose: a three-month overlap is a
+    # notice period, not a second job.
+    moonlight_min_overlap_months: int = Field(default=12, ge=1)
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is

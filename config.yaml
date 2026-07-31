@@ -207,6 +207,15 @@ verif_outcome_ttl_days: 365            # a verified outcome reads as expired aft
 verif_otp_debug_echo: false            # local-only echo of the code; see config.py note
 ret_verification_days: 1095            # retention window surfaced in the portal
 
+# --- Document forensics (PI-7) - S7.2 employment-claim evidence ----------------
+# Deterministic and offline: no LLM, no network, no vendor. The document is
+# NEVER stored - parsed in memory, sha256 kept, bytes discarded. Finding
+# severities are code constants, not knobs (see documents.py).
+doc_max_b64_chars: 8000000        # ~6MB decoded; refused before any decode
+doc_max_pages: 20                 # parse cap
+doc_metadata_skew_days: 1         # creation-vs-modification skew worth noting
+moonlight_min_overlap_months: 12  # higher than xf_overlap_months_min on purpose
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
