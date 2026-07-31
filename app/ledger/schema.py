@@ -36,10 +36,15 @@ class InterviewOutcome(StrEnum):
 class ConsentPurpose(StrEnum):
     """What a grant authorizes. ledger_write = an org may submit interview
     records about the candidate; ledger_read = an org may query the
-    candidate's ledger history (enforced at query time in S3.2)."""
+    candidate's ledger history (enforced at query time in S3.2);
+    identity_verify = the platform may verify the candidate's identity via an
+    EXTERNAL source (S7.1 -- first-party self-service methods need no grant);
+    verification_read = an org may see the candidate's identity assurance."""
 
     LEDGER_WRITE = "ledger_write"
     LEDGER_READ = "ledger_read"
+    IDENTITY_VERIFY = "identity_verify"
+    VERIFICATION_READ = "verification_read"
 
 
 class CodingPlatform(StrEnum):

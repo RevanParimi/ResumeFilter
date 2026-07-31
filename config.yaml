@@ -196,6 +196,17 @@ cur_queue_default_limit: 200     # default + max rows returned by the queue endp
 cur_min_term_len: 2              # skip single-char noise before queueing
 cur_max_term_len: 64             # drop overlong junk (also caps what we persist)
 
+# --- Identity verification (PI-7) - S7.1 spine + consent-first identity -------
+# Deterministic and offline: no vendor, no network, no LLM. Assurance is
+# ADVISORY - it never gates matching, ranking, or scoring.
+verif_otp_length: 6                    # digits in an OTP challenge
+verif_otp_ttl_minutes: 10              # challenge lifetime
+verif_otp_max_attempts: 5              # wrong codes before the verification fails
+verif_otp_resend_cooldown_seconds: 60  # min gap between challenges on one verification
+verif_outcome_ttl_days: 365            # a verified outcome reads as expired after this
+verif_otp_debug_echo: false            # local-only echo of the code; see config.py note
+ret_verification_days: 1095            # retention window surfaced in the portal
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

@@ -154,6 +154,19 @@ class Settings(BaseSettings):
     ret_profile_source_days: int = Field(default=1095, ge=1)    # 3y
     ret_audit_log_days: int = Field(default=2555, ge=1)         # 7y — longest
 
+    # --- Identity verification (PI-7, S7.1) -----------------------------------
+    # Deterministic, offline: OTP mechanics + how long an outcome stays fresh.
+    # verif_otp_debug_echo is DOUBLE-GUARDED at the route: the code is echoed
+    # only when env == "local" AND this is true. It exists so the sprint smoke
+    # can drive the two-step flow over plain HTTP; production cannot echo.
+    verif_otp_length: int = Field(default=6, ge=4, le=10)
+    verif_otp_ttl_minutes: int = Field(default=10, ge=1)
+    verif_otp_max_attempts: int = Field(default=5, ge=1)
+    verif_otp_resend_cooldown_seconds: int = Field(default=60, ge=0)
+    verif_outcome_ttl_days: int = Field(default=365, ge=1)
+    verif_otp_debug_echo: bool = False
+    ret_verification_days: int = Field(default=1095, ge=1)  # 3y, posture only
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is
