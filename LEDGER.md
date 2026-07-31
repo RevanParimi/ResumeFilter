@@ -214,10 +214,32 @@ parallel mechanism. The full current vocabulary:
 |---|---|---|
 | `ledger_write` | S3.1 | an org may submit records about the candidate |
 | `ledger_read` | S3.1 | an org may query the candidate's ledger history |
-| `identity_verify` | S7.1 | the platform may verify the candidate's identity via an **external** source |
-| `verification_read` | S7.1 | an org may see the candidate's identity assurance |
+| `identity_verify` | S7.1 | the platform may verify the candidate's identity or employment via an **external** source |
+| `verification_read` | S7.1 | an org may see the candidate's verification disclosure — identity assurance **and** employment-claim evidence (**redefined 2026-07-31, S7.2** — see below) |
 
 The S3.1 wire values are unchanged — stored grants reference them.
+
+### ⚠ `verification_read` was REDEFINED on 2026-07-31 (S7.2)
+
+**As of 2026-07-31 this purpose covers verification disclosure generally:**
+identity assurance (S7.1, `GET /verification/candidates/{id}/assurance`) *and*
+employment-claim evidence (S7.2, `GET /verification/candidates/{id}/claims`).
+As originally written in S7.1 it named identity assurance only.
+
+**Why the widening was permissible, and why the window is now shut.** S7.2
+landed four days after S7.1, while the purpose held **zero real grants** — no
+candidate had consented to anything under it, so no one's understanding of what
+they had signed was changed retroactively. That is exactly the test S7.1 itself
+applied when it *refused* to widen `ledger_read`: candidates had already signed
+that one. **Once real grants exist, this argument is unavailable.** Any further
+widening of `verification_read` — a third verification subject, an outcome
+detail beyond the advisory roll-up — requires a **new** `ConsentPurpose`, not
+another redefinition.
+
+`identity_verify` was widened in the same breath and on the same basis: it now
+gates any third-party verification pull, whether about identity
+(`government_id`) or employment (`epfo_employment`). Both remain declared and
+inert (`implemented = False`).
 
 **Nothing in `app/ledger/` reads the two new purposes.** They are enforced in
 `app/verification/store.py` and `app/verification/service.py`, which import the
@@ -225,11 +247,15 @@ ledger for consent checking and audit; the ledger never imports verification
 (the same layering rule S5.2 established for comp). `VerificationStore` reuses
 `LedgerStore._grants_for` / `_audit` and `consent.check_consent` /
 `has_any_active` unchanged, and its audit rows (`verification.start`,
-`verification.complete`, `verification.query`) land in the shared `audit_log`.
+`verification.complete`, `verification.query`, and S7.2's `claim.query`) land in
+the shared `audit_log`. Both org reads audit **every** attempt, allowed *and*
+denied — the denied audit row is committed before the `ConsentError` is raised.
 
 **`verification_read` is deliberately not a reuse of `ledger_read`.** Widening
 `ledger_read` to also disclose identity assurance would retroactively change
-the scope of grants candidates have *already* signed.
+the scope of grants candidates have *already* signed. (The S7.2 redefinition
+above is the same test applied to `verification_read` itself, and it passed only
+because that purpose had no grants yet.)
 
 **`identity_verify` gates only third-party verification.** First-party methods
 a candidate runs on themselves (self-attestation, an OTP to their own contact)

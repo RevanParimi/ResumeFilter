@@ -77,11 +77,12 @@ for why.
 
 | Right | Endpoint | Notes |
 |---|---|---|
-| **Access** | `GET /portal/me` → `MyData` | profile, resumes, profile-source signals, interview records, coding rounds, reports (as refs), consents, identity assurance (S7.1), retention posture |
+| **Access** | `GET /portal/me` → `MyData` | profile, resumes, profile-source signals, interview records, coding rounds, reports (as refs), consents, identity assurance (S7.1), employment-claim evidence (S7.2), retention posture |
 | **Transparency** | `GET /portal/access-log` → `list[AccessLogEntry]` | who accessed the candidate's data, newest-first, including platform-internal actions |
 | **Consent control** | `GET /portal/consents` / `POST /portal/consents` / `POST /portal/consents/{id}/revoke` | first-party grant + revoke over the same `consent_grants` rows the admin plane and orgs already use |
 | **Erasure** | `DELETE /portal/me` | hard delete, self-service, reuses the existing erasure path |
 | **Identity verification** (S7.1) | `POST /portal/verifications` / `POST /portal/verifications/{id}/confirm` / `GET /portal/verifications` | candidate-initiated self-verification; see "Identity verification" below |
+| **Employment evidence** (S7.2) | `POST /portal/documents` | first-party submission of an experience letter or payslip; the document is parsed and discarded, never stored. See "Employment-claim documents" below |
 
 ### Why no new `ConsentPurpose`
 
@@ -173,6 +174,45 @@ Three properties matter for this document:
 
 Assurance is **advisory** and affects no verdict, depth, score, ranking, or
 match — the same posture as everything else in this document.
+
+## Employment-claim documents (added by S7.2)
+
+S7.2 makes this plane the **only** intake for employment evidence. A candidate
+submits their own experience letter or payslip; the platform parses it in
+memory, records finding codes and a sha256 digest, and discards the bytes.
+
+- `POST /portal/documents` — body `{doc_type, content_b64, claim_ref?}` →
+  `{verification, findings, claims}`.
+- `GET /portal/verifications` grew a **`claims`** key beside `assurance`.
+- `MyData.claims` carries the same advisory `ClaimEvidence`, `Optional` for the
+  same reason `identity` is.
+
+Four properties matter for this document:
+
+- **First-party only, deliberately.** An org-supplied document *about* a
+  candidate is third-party data under DPDP and needs its own lawful basis, so
+  there is no admin- or org-plane submit route at all. Acting on your own data
+  is a data-principal right, not a disclosure — the same principle that gives
+  the rest of this plane its shape.
+- **`claim_ref` is a label, not a selector.** It is free text (employer +
+  interval) so two letters for two employers do not collapse. The candidate is
+  still resolved from the key alone; a `claim_ref` naming another candidate
+  changes nothing, which is asserted by a test.
+- **The document is never stored, anywhere.** Not in a column, not in `details`,
+  not echoed in the response. `details` carries finding **codes** — never
+  document text, never a salary amount, never a UAN/PF/PAN number (presence is
+  a boolean). Salary in particular: comp intelligence is consented and
+  k-anonymised (`COMP.md`), and a payslip must not be a back door into it.
+- **No new `ConsentPurpose`, and no new erasure path.** Claim rows *are*
+  `verifications` rows, so the 0013 candidate CASCADE already sweeps them and
+  the org read 404s afterward. The org-plane read reuses `verification_read`,
+  which S7.2 **redefined on 2026-07-31** to cover verification disclosure
+  generally — permissible only because the purpose then held zero real grants.
+  See the dated note in `LEDGER.md`; that window is now closed.
+
+`ClaimEvidence` is **advisory** and, critically, is a **separate number from
+`identity`** — a payslip says a job was real, not who the person is. The two are
+never merged. `VERIFICATION.md` §11 explains why that is load-bearing.
 
 ## Retention posture
 
@@ -271,7 +311,20 @@ Added by S7.1 (contracts in `VERIFICATION.md`):
 - `POST /portal/verifications/{verification_id}/confirm` — body `{code}` →
   **200** `Verification` · **400** wrong or expired code · **404** unknown
   **or not owned by the caller** (identical either way — no probing).
-- `GET /portal/verifications` → **200** `{verifications, assurance}`.
+- `GET /portal/verifications` → **200** `{verifications, assurance, claims}`
+  (`claims` added by S7.2).
+
+Added by S7.2 (contracts in `VERIFICATION.md`):
+
+- `POST /portal/documents` — body `{doc_type, content_b64, claim_ref?}` →
+  **200** `{verification, findings, claims}` · **400** bad base64, an empty
+  body, or a PDF that cannot be read · **403** a method a candidate may not
+  initiate, or a third-party method without an `identity_verify` grant ·
+  **404** unknown candidate · **422** body over `doc_max_b64_chars` (refused
+  *before* decoding), a PDF over `doc_max_pages`, or an unknown `doc_type`.
+  A document with a HARD finding still returns **200** — with
+  `verification.status == "failed"` and the findings that explain why. It is
+  not an error, and it never lowers the strength already held.
 
 ## Architecture (for reference)
 
@@ -292,7 +345,8 @@ owns no tables/state, composing `CandidateStore` + `LedgerStore` +
   `report_store`, and `profile_sources` instances — no new DB connections.
   Since S7.1 it also receives the `verification` service (built **before** the
   portal in `build_default_services` for that reason) as an **optional**
-  collaborator, used only to populate `MyData.identity`.
+  collaborator, used only to populate `MyData.identity` and (since S7.2)
+  `MyData.claims`.
 
 Small store additions this sprint (`app/ledger/store.py`, nothing existing
 changed): `consents_for_candidate(candidate_id)` — all grants for a candidate
