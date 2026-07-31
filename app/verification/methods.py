@@ -23,6 +23,9 @@ class VerificationMethodAdapter(Protocol):
     level: AssuranceLevel
     third_party: bool      # True => spine requires an IDENTITY_VERIFY grant
     challenge_based: bool  # True => two-step start/confirm
+    self_service: bool     # True => a candidate may initiate it themselves
+    implemented: bool      # False => the spine refuses; there is no adapter behind it
+    instant: bool          # True => assertion IS the evidence; completes on start
 
 
 class _Base:
@@ -32,6 +35,12 @@ class _Base:
     challenge_based: bool = False
     channel: Optional[str] = None
     contact_hash_field: Optional[str] = None
+    # Defaults are the SAFE answers: a new adapter is refused by the spine
+    # until it says out loud that a candidate may start it, that something
+    # actually stands behind it, and how it reaches an outcome.
+    self_service: bool = False
+    implemented: bool = False
+    instant: bool = False
 
 
 class SelfAttestedAdapter(_Base):
@@ -40,6 +49,9 @@ class SelfAttestedAdapter(_Base):
 
     method = VerificationMethod.SELF_ATTESTED
     level = AssuranceLevel.SELF_ATTESTED
+    self_service = True
+    implemented = True
+    instant = True
 
 
 class OtpEmailAdapter(_Base):
@@ -48,6 +60,8 @@ class OtpEmailAdapter(_Base):
     challenge_based = True
     channel = "email"
     contact_hash_field = "email_hash"
+    self_service = True
+    implemented = True
 
 
 class OtpPhoneAdapter(_Base):
@@ -56,22 +70,40 @@ class OtpPhoneAdapter(_Base):
     challenge_based = True
     channel = "phone"
     contact_hash_field = "phone_hash"
+    self_service = True
+    implemented = True
 
 
 class ManualReviewAdapter(_Base):
-    """An operator checked something out of band and recorded the outcome."""
+    """An operator checked something out of band and recorded the outcome.
+
+    NOT self-service: this level asserts that a human at the platform looked.
+    Reachable only through the admin plane's record_manual_review -- a
+    candidate who could start it would simply award themselves L3.
+    """
 
     method = VerificationMethod.MANUAL_REVIEW
     level = AssuranceLevel.REVIEWED
+    implemented = True
 
 
 class GovernmentIdAdapter(_Base):
     """DECLARED, NOT IMPLEMENTED. Needs a vendor and a legal review of
-    DigiLocker API terms (gap-analysis section 8). No route reaches it."""
+    DigiLocker API terms (gap-analysis section 8).
+
+    `implemented = False` is what actually keeps it inert. The raise below is a
+    backstop for a caller that reaches past the spine: the spine performs
+    verifications itself and never calls into the adapter, so an adapter-side
+    raise alone would let a consented start sail through to a VERIFIED L4.
+    Candidate-initiated (`self_service`) is correct and stays true -- the
+    consent flow is the point; there is simply nothing behind it yet.
+    """
 
     method = VerificationMethod.GOVERNMENT_ID
     level = AssuranceLevel.GOVERNMENT_ID
     third_party = True
+    self_service = True
+    implemented = False
 
     def start(self, *args, **kwargs):
         raise NotImplementedError(

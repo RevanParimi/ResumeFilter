@@ -123,6 +123,35 @@ def test_government_id_is_not_reachable_from_the_candidate_plane(client):
     assert r.status_code in (400, 403, 422)
 
 
+def test_government_id_stays_unreachable_after_a_self_granted_consent(client):
+    """The consent gate alone does NOT make an unimplemented method safe: a
+    candidate can grant IDENTITY_VERIFY to themselves from this very plane
+    (S6.4 first-party consent), so the spine must refuse on its own."""
+    c, services = client
+    _, key = _candidate(services)
+    h = {"X-Candidate-Key": key}
+    assert c.post(
+        "/portal/consents", json={"purpose": "identity_verify"}, headers=h
+    ).status_code == 200
+
+    r = c.post("/portal/verifications", json={"method": "government_id"}, headers=h)
+    assert r.status_code == 422
+    assert c.get("/portal/verifications", headers=h).json()["assurance"]["level"] == 0
+
+
+def test_a_candidate_cannot_self_award_an_operator_review(client):
+    """L3 REVIEWED asserts a human checked this person. It is admin-plane only."""
+    c, services = client
+    _, key = _candidate(services)
+    h = {"X-Candidate-Key": key}
+    r = c.post("/portal/verifications", json={"method": "manual_review"}, headers=h)
+    assert r.status_code == 403
+
+    listed = c.get("/portal/verifications", headers=h).json()
+    assert listed["verifications"] == []
+    assert listed["assurance"]["level"] == 0
+
+
 def test_one_candidate_cannot_confirm_anothers_verification(client):
     c, services = client
     _, key_a = _candidate(services)

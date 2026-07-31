@@ -12,6 +12,7 @@ on paths that already run, so no scheduler is needed.
 
 from __future__ import annotations
 
+import hmac
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -81,8 +82,13 @@ class VerificationStore:
         candidate_id: str,
         method: VerificationMethod,
         consent_id: Optional[str] = None,
+        actor_type: str = "candidate",
         at: Optional[datetime] = None,
     ) -> Verification:
+        """`actor_type` is who is starting this, and it lands in the candidate's
+        own DPDP access log. An operator-recorded review is "system", not
+        "candidate" — the log must not tell a candidate they did something an
+        operator did."""
         moment = as_utc(at) if at else _utcnow()
         with self._session_factory() as session:
             if session.get(CandidateRow, candidate_id) is None:
@@ -101,8 +107,8 @@ class VerificationStore:
             session.flush()
             self._ledger._audit(
                 session,
-                actor_type="candidate",
-                actor_id=candidate_id,
+                actor_type=actor_type,
+                actor_id=candidate_id if actor_type == "candidate" else None,
                 action="verification.start",
                 entity_type="verification",
                 entity_id=row.id,
@@ -177,8 +183,15 @@ class VerificationStore:
         at: Optional[datetime] = None,
     ) -> str:
         """Issue a code and return the PLAINTEXT once, for immediate delivery.
-        Only its salted digest is stored. A prior challenge on the same
-        verification is deleted, so exactly one code is ever live."""
+        Only its salted digest is stored.
+
+        Cooldown and supersession are scoped to the CANDIDATE and channel, not
+        to one verification row. The candidate plane mints a fresh verification
+        on every start, so a per-row cooldown would be no rate limit at all --
+        an attacker holding a stolen key would just ask again for another code
+        and another full set of guesses. Per candidate+channel, exactly one code
+        is live and a restart still has to wait out the cooldown.
+        """
         moment = as_utc(at) if at else _utcnow()
         rng = rng or random.SystemRandom()
         s = self._settings
@@ -188,8 +201,14 @@ class VerificationStore:
                 raise LookupError(f"unknown verification: {verification_id}")
             existing = (
                 session.execute(
-                    select(VerificationChallengeRow).where(
-                        VerificationChallengeRow.verification_id == verification_id
+                    select(VerificationChallengeRow)
+                    .join(
+                        VerificationRow,
+                        VerificationRow.id == VerificationChallengeRow.verification_id,
+                    )
+                    .where(
+                        VerificationRow.candidate_id == row.candidate_id,
+                        VerificationChallengeRow.channel == channel,
                     )
                 ).scalars().all()
             )
@@ -241,7 +260,8 @@ class VerificationStore:
                 session.commit()
                 raise ChallengeError("challenge expired")
 
-            if otp_logic.hash_code(code or "", s.contact_hash_salt) != challenge.code_hash:
+            supplied = otp_logic.hash_code(code or "", s.contact_hash_salt)
+            if not hmac.compare_digest(supplied, challenge.code_hash):
                 challenge.attempts += 1
                 exhausted = otp_logic.attempts_exhausted(
                     challenge.attempts, challenge.max_attempts

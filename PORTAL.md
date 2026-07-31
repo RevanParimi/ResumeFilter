@@ -259,9 +259,13 @@ Added by S7.1 (contracts in `VERIFICATION.md`):
 
 - `POST /portal/verifications` — body `{method, destination?}` → **200**
   `{verification, debug_code?}` · **400** destination missing / malformed /
-  not matching the contact hash on file · **403** third-party method without
-  an `identity_verify` grant · **422** unknown method · **429** resend inside
-  the cooldown. (`debug_code` appears only when `env == "local"` **and**
+  not matching the contact hash on file · **403** a method the candidate may
+  not initiate (`manual_review` — operator-recorded, admin plane only) or a
+  third-party method without an `identity_verify` grant · **422** unknown
+  method, or a declared-but-unimplemented one (`government_id`) · **429**
+  resend inside the cooldown (scoped per candidate + channel, so restarting a
+  verification does not reset it). (`debug_code` appears only when
+  `env == "local"` **and**
   `verif_otp_debug_echo` is true — it exists so the sprint smoke can drive the
   two-step flow over plain HTTP.)
 - `POST /portal/verifications/{verification_id}/confirm` — body `{code}` →

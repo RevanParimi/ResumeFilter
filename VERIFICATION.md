@@ -63,8 +63,8 @@ changing it is a reviewed schema decision, same stance as `InterviewStage` and
 | 0 `NONE` | — | no verification held |
 | 1 `SELF_ATTESTED` | `self_attested` | ships — the candidate asserts their own identity |
 | 2 `CONTACT_CONTROL` | `otp_email`, `otp_phone` | ships — proves control of the contact on file |
-| 3 `REVIEWED` | `manual_review` | ships — an operator checked out of band |
-| 4 `GOVERNMENT_ID` | `government_id` | **declared, not implemented** — raises `NotImplementedError` |
+| 3 `REVIEWED` | `manual_review` | ships — an operator checked out of band; **admin plane only** |
+| 4 `GOVERNMENT_ID` | `government_id` | **declared, not implemented** — the spine refuses it (422) |
 
 `AssuranceLevel` is an `IntEnum` because ordering is genuinely semantic here:
 "the highest level a candidate currently holds" is an ordinary `max()`.
@@ -84,18 +84,36 @@ class VerificationMethodAdapter(Protocol):
     level: AssuranceLevel
     third_party: bool      # True => spine requires an IDENTITY_VERIFY grant
     challenge_based: bool  # True => two-step start/confirm
+    self_service: bool     # True => a candidate may initiate it themselves
+    implemented: bool      # False => the spine refuses; nothing stands behind it
+    instant: bool          # True => assertion IS the evidence; completes on start
 ```
 
-An adapter declares **what a method is**, not how the spine treats it. The
-consent gate lives in `VerificationService.start`, keyed off
-`adapter.third_party` — never inside an adapter. *A gate an adapter could
-forget to apply is not a gate.* A future vendor adapter is therefore gated
-whether or not its author remembers.
+An adapter declares **what a method is**, not how the spine treats it. Every
+gate lives in `VerificationService.start`, keyed off these flags — never inside
+an adapter. *A gate an adapter could forget to apply is not a gate.* All three
+booleans default to the **refusing** answer on `_Base`, so a new adapter is
+inert until it says out loud what it is.
+
+`VerificationService.start` is the **candidate-initiated** entry point and
+applies them in order: `self_service` (may a candidate award themselves this at
+all?), `implemented` (is there anything behind it?), the `third_party` consent
+gate, then destination binding. Operator outcomes never pass through it — they
+come in via `record_manual_review` on the admin plane.
 
 `GovernmentIdAdapter` ships declared and inert, carrying its level, its
-`third_party=True` flag, and therefore its consent requirement. Tests prove it
-is unreachable; a `_FakeThirdPartyAdapter` proves the spine's gate actually
-fires, without shipping any external integration.
+`third_party=True` flag, and therefore its consent requirement. **Its inertness
+is `implemented = False`, enforced by the spine** — not the `NotImplementedError`
+in the adapter, which is only a backstop: the spine performs verifications
+itself and never calls an adapter to do the work, so an adapter-side raise
+alone would never fire. A `_FakeThirdPartyAdapter` proves the spine's consent
+gate fires, without shipping any external integration.
+
+**Consent is necessary, never sufficient.** A candidate can grant themselves
+`IDENTITY_VERIFY` from the portal (S6.4 first-party consent, by design), so the
+`implemented` gate stands in front of the consent gate. Likewise
+`manual_review` is `self_service = False`: it asserts a human at the platform
+looked, and a candidate able to request it would simply award themselves L3.
 
 ## 5. Consent model
 
@@ -106,7 +124,7 @@ Two new `ConsentPurpose` members — the first taxonomy addition since S3.1.
 | Candidate self-attests, or OTPs their **own** contact | **No grant.** Identity of the subject *is* the authorization — the S6.4 principle: acting on your own data is a data-principal right, not a disclosure. |
 | Platform verifies via an **external** source | Active **`IDENTITY_VERIFY`** grant. Enforced by the spine on any `third_party` adapter; the authorizing grant id is stamped on the row. |
 | Org **reads** a candidate's assurance | Active **`VERIFICATION_READ`** grant. Query-time enforcement + audit of every attempt, allowed **or** denied. Mirrors `query_records_for_org`. |
-| Operator records a manual review | Admin plane (`X-API-Key`). Platform-internal, audited. |
+| Operator records a manual review | Admin plane (`X-API-Key`) **only** — `manual_review` is not self-service, so the candidate plane refuses it with 403. Platform-internal, audited. |
 
 `VERIFICATION_READ` is deliberately its own purpose rather than a reuse of
 `ledger_read`: reusing it would silently widen what grants candidates have
@@ -139,7 +157,7 @@ hash of that type on file is a 400 with a distinct reason.
 
 | Route | Behaviour |
 |---|---|
-| `POST /portal/verifications` | Body `{method, destination?}`. Self-attest completes immediately → `verified` at L1. OTP methods bind the destination (§6), create a pending verification + challenge, and "send" via the notifier. 400 on destination problems · 403 without `IDENTITY_VERIFY` for a third-party adapter · 422 unknown method · 429 resend inside the cooldown. |
+| `POST /portal/verifications` | Body `{method, destination?}`. Self-attest completes immediately → `verified` at L1. OTP methods bind the destination (§6), create a pending verification + challenge, and "send" via the notifier. 400 on destination problems · 403 for a method a candidate may not initiate (`manual_review`) or without `IDENTITY_VERIFY` for a third-party adapter · 422 unknown method **or a declared-but-unimplemented one (`government_id`)** · 429 resend inside the cooldown. |
 | `POST /portal/verifications/{id}/confirm` | Body `{code}`. Correct + unexpired → `verified`. Wrong → 400, attempts incremented; at `verif_otp_max_attempts` the verification flips to `failed`. Expired challenge → 400. |
 | `GET /portal/verifications` | The candidate's own verifications + current `IdentityAssurance`. |
 | `GET /portal/me` | Carries `identity: IdentityAssurance`. |
@@ -168,10 +186,18 @@ retention sweep stays deferred to PI-8 — posture is surfaced, not enforced.
 
 **One deliberate exception:** expired or consumed `verification_challenges`
 rows **are** actually deleted — at the point of consumption, and
-opportunistically when a new challenge is issued on the same verification. This
-is not a retention policy; it is short-TTL secret material. Leaving live OTP
-code hashes lying around would be the defect, and no scheduler is needed
-because the deletion happens on paths that already run.
+opportunistically when a new challenge is issued for the same candidate and
+channel. This is not a retention policy; it is short-TTL secret material.
+Leaving live OTP code hashes lying around would be the defect, and no scheduler
+is needed because the deletion happens on paths that already run.
+
+Supersession and the resend cooldown are scoped to **candidate + channel**, not
+to a single verification row. The candidate plane mints a fresh verification on
+every start, so a per-row cooldown would rate-limit nothing: an attacker holding
+a stolen candidate key could ask again for another code and another full set of
+`verif_otp_max_attempts` guesses, and walk a 6-digit code down at will. Per
+candidate+channel, exactly one code is ever live and a restart still waits out
+the cooldown.
 
 Both tables CASCADE from `candidates`: a DPDP delete removes every verification
 and challenge, and the org-plane read then 404s.
@@ -182,7 +208,7 @@ and challenge, and the org-plane read then 404s.
 verif_otp_length: 6                    # digits in an OTP challenge
 verif_otp_ttl_minutes: 10              # challenge lifetime
 verif_otp_max_attempts: 5              # wrong codes before the verification fails
-verif_otp_resend_cooldown_seconds: 60  # min gap between challenges on one verification
+verif_otp_resend_cooldown_seconds: 60  # min gap between challenges per candidate+channel
 verif_outcome_ttl_days: 365            # a verified outcome reads as expired after this
 verif_otp_debug_echo: false            # local-only echo of the code
 ret_verification_days: 1095            # retention window surfaced in the portal
@@ -196,7 +222,8 @@ if the knob is flipped by accident.
 ## 10. Non-goals (S7.1)
 
 - No DigiLocker / Aadhaar / PAN / any KYC vendor integration. The seam and its
-  consent gate exist; the adapter raises.
+  consent gate exist; the method is declared `implemented = False` and the spine
+  refuses it (422).
 - No liveness, face match, or any biometric capture.
 - No feature-store consumption — assurance is not a ranking feature.
 - No effect on matching, ranking, depth scoring, or `fabrication_risk`.

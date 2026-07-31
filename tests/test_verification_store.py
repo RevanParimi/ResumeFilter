@@ -30,9 +30,9 @@ def store_bundle(settings):
     return candidates, ledger, store
 
 
-def _candidate(candidates):
+def _candidate(candidates, email_hash="e" * 64):
     with candidates._session_factory() as s:
-        row = CandidateRow(full_name="A Candidate", email_hash="e" * 64)
+        row = CandidateRow(full_name="A Candidate", email_hash=email_hash)
         s.add(row)
         s.commit()
         return row.id
@@ -185,6 +185,49 @@ def test_a_resend_after_the_cooldown_replaces_the_old_challenge(store_bundle, se
         rows = s.execute(select(VerificationChallengeRow)).scalars().all()
         assert len(rows) == 1
     assert store.confirm_challenge(v.id, code2, at=later).status is VerificationStatus.VERIFIED
+
+
+def test_the_cooldown_survives_starting_a_brand_new_verification(store_bundle):
+    """Per-verification scoping would be no rate limit at all: the candidate
+    plane mints a fresh verification on every start, so a cooldown keyed to one
+    row is trivially side-stepped by asking again."""
+    candidates, _, store = store_bundle
+    cid = _candidate(candidates)
+    first = store.create_verification(
+        candidate_id=cid, method=VerificationMethod.OTP_EMAIL, at=NOW
+    )
+    store.create_challenge(
+        verification_id=first.id, channel="email", destination_hash="e" * 64,
+        rng=random.Random(7), at=NOW,
+    )
+    second = store.create_verification(
+        candidate_id=cid, method=VerificationMethod.OTP_EMAIL, at=NOW
+    )
+    with pytest.raises(ChallengeError):
+        store.create_challenge(
+            verification_id=second.id, channel="email", destination_hash="e" * 64,
+            rng=random.Random(8), at=NOW + timedelta(seconds=5),
+        )
+
+
+def test_one_candidates_cooldown_does_not_block_another(store_bundle):
+    candidates, _, store = store_bundle
+    cid = _candidate(candidates)
+    other = _candidate(candidates, email_hash="f" * 64)
+    mine = store.create_verification(
+        candidate_id=cid, method=VerificationMethod.OTP_EMAIL, at=NOW
+    )
+    store.create_challenge(
+        verification_id=mine.id, channel="email", destination_hash="e" * 64,
+        rng=random.Random(7), at=NOW,
+    )
+    theirs = store.create_verification(
+        candidate_id=other, method=VerificationMethod.OTP_EMAIL, at=NOW
+    )
+    assert store.create_challenge(
+        verification_id=theirs.id, channel="email", destination_hash="f" * 64,
+        rng=random.Random(8), at=NOW + timedelta(seconds=5),
+    )
 
 
 def test_the_raw_code_is_never_persisted(store_bundle):

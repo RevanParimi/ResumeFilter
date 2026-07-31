@@ -1,12 +1,25 @@
 """Verification orchestration (S7.1).
 
-Two gates live here, in the spine, deliberately not in the adapters:
+`start` is the CANDIDATE-INITIATED entry point; operator-recorded outcomes come
+in through `record_manual_review` on the admin plane instead. Four gates live
+here, in the spine, deliberately not in the adapters:
 
-1. THIRD-PARTY CONSENT. Any adapter declaring `third_party` requires an active
+1. SELF-SERVICE. A candidate may only start a method whose adapter says a
+   candidate may start it. `manual_review` asserts that a human at the platform
+   looked; a candidate who could request it would just award themselves L3.
+
+2. IMPLEMENTED. A method with nothing behind it is refused here, not inside the
+   adapter. The spine performs verifications itself and never calls into an
+   adapter to do the work, so an adapter-side `NotImplementedError` would never
+   fire -- `government_id` would complete VERIFIED at L4 on request.
+
+3. THIRD-PARTY CONSENT. Any adapter declaring `third_party` requires an active
    IDENTITY_VERIFY grant before anything happens. Putting this in the spine
    means a future vendor adapter is gated whether or not its author remembers.
+   Necessary, never sufficient: a candidate can grant IDENTITY_VERIFY to
+   themselves from the portal, so gate 2 stands in front of it.
 
-2. DESTINATION BINDING. The candidates table stores only salted contact
+4. DESTINATION BINDING. The candidates table stores only salted contact
    HASHES, so there is no address to look up. The candidate supplies the
    destination, we normalize + hash it with S1.1's helpers, and require it to
    equal the hash already on their row. This proves they know the contact on
@@ -39,6 +52,11 @@ class DestinationError(Exception):
     the contact hash on the candidate's record."""
 
 
+class MethodNotPermittedError(Exception):
+    """The candidate may not initiate this method themselves (it is recorded by
+    an operator, not requested). Distinct from "not implemented"."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -68,7 +86,8 @@ class VerificationService:
         rng: Optional[random.Random] = None,
         at: Optional[datetime] = None,
     ) -> tuple[Verification, Optional[str]]:
-        """Begin a verification. Returns (verification, plaintext_code | None).
+        """Begin a CANDIDATE-INITIATED verification. Returns
+        (verification, plaintext_code | None).
 
         The plaintext code is returned ONLY so the route can honour the
         double-guarded debug echo; it is never persisted and never logged.
@@ -79,6 +98,16 @@ class VerificationService:
             raise LookupError(f"unknown candidate: {candidate_id}")
 
         adapter = get_adapter(method)
+
+        # This is the candidate's own entry point, so the first question is
+        # whether a candidate may award themselves this level at all. Only then
+        # does it matter whether anything stands behind the method.
+        if not adapter.self_service:
+            raise MethodNotPermittedError(
+                f"{method.value} is recorded by an operator, not requested"
+            )
+        if not adapter.implemented:
+            raise NotImplementedError(f"{method.value} verification is not implemented")
 
         consent_id: Optional[str] = None
         if adapter.third_party:
@@ -104,6 +133,14 @@ class VerificationService:
             )
             self._notifier.send(destination or "", code, channel=adapter.channel or "")
             return verification, code
+
+        # Everything below marks an outcome VERIFIED on the strength of the
+        # request alone, so it is reserved for methods where the assertion IS
+        # the evidence. "Not challenge-based" must never imply "believe it".
+        if not adapter.instant:
+            raise NotImplementedError(
+                f"{method.value} declares no way to reach an outcome"
+            )
 
         verification = self._store.create_verification(
             candidate_id=candidate_id, method=method, consent_id=consent_id, at=moment
@@ -172,6 +209,7 @@ class VerificationService:
         verification = self._store.create_verification(
             candidate_id=candidate_id,
             method=VerificationMethod.MANUAL_REVIEW,
+            actor_type="system",  # an operator did this, not the candidate
             at=moment,
         )
         return self._store.complete_verification(

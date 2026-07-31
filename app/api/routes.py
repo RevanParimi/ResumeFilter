@@ -52,7 +52,7 @@ from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.verification.schema import VerificationMethod, VerificationStatus
-from app.verification.service import DestinationError
+from app.verification.service import DestinationError, MethodNotPermittedError
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
@@ -1021,6 +1021,8 @@ async def start_verification(
         )
     except DestinationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MethodNotPermittedError as exc:  # e.g. self-awarding a manual review
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ConsentError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ChallengeError as exc:

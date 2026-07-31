@@ -114,7 +114,23 @@ def main() -> int:
                 c.get("/portal/verifications", headers=ch).json()["assurance"]["level"] == 2
             )
 
-            # 6. org disclosure is consent-gated on the NEW purpose
+            # 6. the ladder cannot be climbed by asking. manual_review means an
+            # operator looked; government_id has no adapter behind it. Note the
+            # self-granted consent: a candidate CAN grant themselves
+            # identity_verify from this plane, so consent alone must not open it.
+            self_award = c.post("/portal/verifications", headers=ch,
+                                json={"method": "manual_review"})
+            checks["candidate_cannot_self_award_review"] = self_award.status_code == 403
+
+            c.post("/portal/consents", headers=ch, json={"purpose": "identity_verify"})
+            gov = c.post("/portal/verifications", headers=ch,
+                         json={"method": "government_id"})
+            checks["government_id_inert_even_with_consent"] = gov.status_code == 422
+            checks["level_still_contact_control"] = (
+                c.get("/portal/verifications", headers=ch).json()["assurance"]["level"] == 2
+            )
+
+            # 7. org disclosure is consent-gated on the NEW purpose
             org = c.post("/ledger/orgs", headers=admin_h, json={"name": "Acme"}).json()
             org_id, org_key = org["org"]["id"], org["api_key"]
             org_h = {"X-Org-Key": org_key}
@@ -135,7 +151,7 @@ def main() -> int:
             c.post(f"/ledger/consent/{gid}/revoke", headers=admin_h)
             checks["org_read_403_after_revoke"] = c.get(path, headers=org_h).status_code == 403
 
-            # 7. operator manual review -> L3
+            # 8. operator manual review on the ADMIN plane -> L3
             mr = c.post(f"/candidates/{cid}/verifications/manual-review", headers=admin_h,
                         json={"outcome": "verified", "note": "passport seen in person"})
             checks["manual_review_recorded"] = mr.status_code == 200
@@ -143,7 +159,7 @@ def main() -> int:
                 c.get("/portal/verifications", headers=ch).json()["assurance"]["level"] == 3
             )
 
-            # 8. DPDP erasure sweeps it; the org read can no longer disclose
+            # 9. DPDP erasure sweeps it; the org read can no longer disclose
             c.delete("/portal/me", headers=ch)
             checks["org_read_404_after_erase"] = c.get(path, headers=org_h).status_code == 404
     finally:

@@ -38,6 +38,33 @@ def test_government_id_is_declared_but_unimplemented():
         get_adapter(VerificationMethod.GOVERNMENT_ID).start()
 
 
+def test_government_id_declares_itself_unimplemented_to_the_spine():
+    """The spine reads this flag; a raise inside the adapter is not enough,
+    because the spine never calls the adapter to perform the work."""
+    assert get_adapter(VerificationMethod.GOVERNMENT_ID).implemented is False
+    for method in (
+        VerificationMethod.SELF_ATTESTED,
+        VerificationMethod.OTP_EMAIL,
+        VerificationMethod.OTP_PHONE,
+        VerificationMethod.MANUAL_REVIEW,
+    ):
+        assert get_adapter(method).implemented is True
+
+
+def test_manual_review_is_the_only_method_a_candidate_may_not_initiate():
+    """An operator-attested level cannot be self-service, or the candidate
+    simply awards it to themselves."""
+    not_self_service = {m for m, a in ADAPTERS.items() if not a.self_service}
+    assert not_self_service == {VerificationMethod.MANUAL_REVIEW}
+
+
+def test_only_self_attestation_completes_instantly():
+    """Anything else needs evidence. The spine refuses to mark a method
+    verified on request unless the adapter says assertion IS the evidence."""
+    instant = {m for m, a in ADAPTERS.items() if a.instant}
+    assert instant == {VerificationMethod.SELF_ATTESTED}
+
+
 def test_only_otp_methods_are_challenge_based():
     challenge = {m for m, a in ADAPTERS.items() if a.challenge_based}
     assert challenge == {VerificationMethod.OTP_EMAIL, VerificationMethod.OTP_PHONE}

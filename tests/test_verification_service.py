@@ -12,7 +12,9 @@ from app.ledger.store import ConsentError, LedgerStore
 from app.verification.schema import (
     AssuranceLevel, VerificationMethod, VerificationStatus,
 )
-from app.verification.service import DestinationError, VerificationService
+from app.verification.service import (
+    DestinationError, MethodNotPermittedError, VerificationService,
+)
 from app.verification.store import VerificationStore
 from tests.conftest import make_candidate_store
 
@@ -51,6 +53,11 @@ class _FakeThirdPartyAdapter:
     challenge_based = False
     channel = None
     contact_hash_field = None
+    # A real vendor adapter declares these too: it is candidate-initiated, it
+    # is built, and it resolves in one step once the vendor answers.
+    self_service = True
+    implemented = True
+    instant = True
 
 
 def test_self_attest_completes_immediately(svc):
@@ -170,6 +177,41 @@ def test_record_manual_review_records_a_reviewed_outcome(svc):
     assert v.status is VerificationStatus.VERIFIED
     _, assurance = service.list_for_candidate(cid, at=NOW)
     assert assurance.level is AssuranceLevel.REVIEWED
+
+
+def test_an_operator_review_is_not_logged_as_the_candidates_own_action(svc):
+    """The access log is a DPDP transparency surface: it must not tell the
+    candidate they started something an operator started."""
+    service, ledger, cid = svc
+    service.record_manual_review(cid, outcome=VerificationStatus.VERIFIED, at=NOW)
+    starts = [
+        e for e in ledger.audit_for_candidate(cid) if e.action == "verification.start"
+    ]
+    assert starts and all(e.actor_type == "system" for e in starts)
+    assert all(e.actor_id is None for e in starts)
+
+
+def test_a_candidate_cannot_start_a_manual_review_for_themselves(svc):
+    """`start` is the candidate-initiated entry point. manual_review means an
+    OPERATOR checked something; letting a candidate call it hands them L3."""
+    service, _, cid = svc
+    with pytest.raises(MethodNotPermittedError):
+        service.start(cid, VerificationMethod.MANUAL_REVIEW, at=NOW)
+    _, assurance = service.list_for_candidate(cid, at=NOW)
+    assert assurance.level is AssuranceLevel.NONE
+
+
+def test_government_id_stays_inert_in_the_spine_even_with_consent(svc):
+    """Consent is necessary, never sufficient: there is no adapter behind
+    government_id, so the spine must refuse rather than record an outcome."""
+    service, ledger, cid = svc
+    ledger.grant_consent(
+        candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY, org_id=None
+    )
+    with pytest.raises(NotImplementedError):
+        service.start(cid, VerificationMethod.GOVERNMENT_ID, at=NOW)
+    _, assurance = service.list_for_candidate(cid, at=NOW)
+    assert assurance.level is AssuranceLevel.NONE
 
 
 def test_start_rejects_an_unknown_candidate(svc):
