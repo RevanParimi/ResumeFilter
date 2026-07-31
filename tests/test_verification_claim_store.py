@@ -92,7 +92,7 @@ def test_the_org_read_succeeds_under_a_grant(bundle):
     store, ledger, cid, org_id = bundle
     _claim_row(store, cid)
     ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ,
-                         org_id=org_id)
+                         org_id=org_id, now=NOW)
     ev = store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
     assert ev.strength is ClaimStrength.DOCUMENTED
 
@@ -101,9 +101,9 @@ def test_a_revoked_grant_closes_the_org_read_again(bundle):
     store, ledger, cid, org_id = bundle
     _claim_row(store, cid)
     grant = ledger.grant_consent(candidate_id=cid,
-                                 purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id)
+                                 purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id, now=NOW)
     store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
-    ledger.revoke_consent(grant.id)
+    ledger.revoke_consent(grant.id, now=NOW)
     with pytest.raises(ConsentError):
         store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
@@ -114,7 +114,7 @@ def test_an_identity_verify_grant_does_not_unlock_the_claim_read(bundle):
     store, ledger, cid, org_id = bundle
     _claim_row(store, cid)
     ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY,
-                         org_id=org_id)
+                         org_id=org_id, now=NOW)
     with pytest.raises(ConsentError):
         store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
@@ -125,7 +125,7 @@ def test_every_org_attempt_is_audited_allowed_or_denied(bundle):
     with pytest.raises(ConsentError):
         store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
     ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ,
-                         org_id=org_id)
+                         org_id=org_id, now=NOW)
     store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
     queries = [e for e in ledger.audit_for_candidate(cid) if e.action == "claim.query"]
@@ -148,11 +148,28 @@ def test_the_org_read_never_returns_evidence_internals(bundle):
     store, ledger, cid, org_id = bundle
     _claim_row(store, cid)
     ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ,
-                         org_id=org_id)
+                         org_id=org_id, now=NOW)
     dumped = str(store.claims_for_org(org_id=org_id, candidate_id=cid, at=NOW)
                  .model_dump())
     assert "a" * 64 not in dumped              # the evidence digest
     assert "claim_ref" not in dumped
+
+
+def test_a_method_subject_mismatch_is_unrepresentable(bundle):
+    """REVIEW. The route gate stops a claim method reaching the identity start
+    path; this makes the bad row impossible to write at all, from any caller.
+    METHOD_SUBJECT is the single source of truth for which ladder a method
+    feeds, so the store refuses to contradict it."""
+    store, _, cid, _ = bundle
+    with pytest.raises(ValueError):
+        store.create_verification(
+            candidate_id=cid, method=VerificationMethod.EXPERIENCE_LETTER,
+            subject=VerificationSubject.IDENTITY, at=NOW)
+    with pytest.raises(ValueError):
+        store.create_verification(
+            candidate_id=cid, method=VerificationMethod.SELF_ATTESTED,
+            subject=VerificationSubject.EMPLOYMENT_CLAIM, at=NOW)
+    assert store.verifications_for_candidate(cid) == []
 
 
 def test_an_unknown_candidate_or_org_is_a_lookup_error(bundle):

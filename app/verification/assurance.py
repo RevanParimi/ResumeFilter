@@ -53,11 +53,18 @@ def compute_assurance(
         # never raise a number an org reads as identity confidence.
         if v.subject is not VerificationSubject.IDENTITY:
             continue
+        # A method with no identity level cannot contribute one. Belt and
+        # braces behind the spine's subject gate: a stored row that should not
+        # exist must degrade to "contributes nothing", never to a KeyError that
+        # 500s the candidate's own DPDP access for good.
+        method_level = METHOD_LEVEL.get(v.method)
+        if method_level is None:
+            continue
         status = effective_status(v, at=at)
         if status is VerificationStatus.VERIFIED:
             if v.method not in methods:
                 methods.append(v.method)
-            level = max(level, METHOD_LEVEL[v.method])
+            level = max(level, method_level)
             if v.completed_at is not None:
                 moment = as_utc(v.completed_at)
                 if verified_at is None or moment > verified_at:

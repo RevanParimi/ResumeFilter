@@ -113,6 +113,24 @@ def test_empty_is_none_and_advisory():
     assert ev.strength is ClaimStrength.NONE and ev.advisory is True
 
 
+def test_a_rogue_identity_row_for_a_claim_method_contributes_nothing_not_a_crash():
+    """REVIEW. Belt and braces behind the spine's subject gate and the store's
+    mismatch refusal. `compute_assurance` used to index METHOD_LEVEL directly,
+    so one such row 500'd the candidate's own portal on EVERY subsequent read —
+    permanently. It must degrade to "contributes nothing" instead."""
+    rogue = Verification(
+        id="v-rogue", candidate_id="c1",
+        method=VerificationMethod.EXPERIENCE_LETTER,
+        assurance_level=AssuranceLevel.NONE,
+        subject=VerificationSubject.IDENTITY,      # the incoherent combination
+        status=VerificationStatus.VERIFIED,
+        requested_at=NOW, completed_at=NOW,
+    )
+    a = compute_assurance("c1", [rogue, _identity()], at=NOW)
+    assert a.level is AssuranceLevel.SELF_ATTESTED     # the real row still counts
+    assert a.methods == [VerificationMethod.SELF_ATTESTED]
+
+
 def test_an_epfo_row_could_not_reach_strength_four_without_the_spine_writing_one():
     """Belt and braces on the inert adapter: if some future path DID write a
     verified epfo row, the ladder would honour it -- which is exactly why the

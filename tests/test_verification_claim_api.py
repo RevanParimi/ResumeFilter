@@ -179,6 +179,81 @@ def test_a_claim_ref_in_the_body_cannot_redirect_the_row_to_another_candidate(cl
                  headers={"X-Candidate-Key": key_b}).json()["verifications"] == []
 
 
+# ── Review regressions (whole-branch review, 2026-07-31) ────────────────────
+# Both were reproduced over HTTP with nothing but a candidate's own key.
+
+
+@pytest.mark.parametrize("method", ["experience_letter", "payslip"])
+def test_a_claim_method_cannot_be_started_through_the_identity_route(client, method):
+    """REVIEW / CRITICAL. `POST /portal/verifications` accepts any
+    VerificationMethod, and S7.2's claim adapters declare `instant=True`
+    ("assessment IS the evidence") — true of submit_document, false here where
+    no document exists. As first built this returned 200 `verified` with
+    `subject: identity`, and every later read of the candidate's own portal
+    then 500'd on a KeyError, permanently. Same failure class as the S7.1
+    escalation: a gate applied at one entry point and not the other."""
+    c, services = client
+    _, key = _candidate(services)
+    h = {"X-Candidate-Key": key}
+
+    assert c.post("/portal/verifications", json={"method": method},
+                  headers=h).status_code == 403
+
+    listed = c.get("/portal/verifications", headers=h)
+    assert listed.status_code == 200            # not a 500, and not bricked
+    assert listed.json()["assurance"]["level"] == 0
+    assert listed.json()["claims"]["strength"] == 0
+    assert listed.json()["verifications"] == []
+
+
+def test_epfo_still_answers_422_and_not_the_subject_gate(client):
+    """The subject gate sits AFTER `implemented`, so a declared-but-inert
+    method answers the same way at every door: `epfo_employment` stays
+    indistinguishable from `government_id` (spec section 3)."""
+    c, services = client
+    _, key = _candidate(services)
+    h = {"X-Candidate-Key": key}
+    c.post("/portal/consents", json={"purpose": "identity_verify"}, headers=h)
+    assert c.post("/portal/verifications", json={"method": "epfo_employment"},
+                  headers=h).status_code == 422
+    assert c.post("/portal/verifications", json={"method": "government_id"},
+                  headers=h).status_code == 422
+
+
+def test_an_oversize_claim_ref_is_refused_and_nothing_is_stored(client):
+    """REVIEW / CRITICAL. SQLite does not enforce VARCHAR(128), so `claim_ref`
+    — the ONE column the models test excepts from its 64-char cap — was an
+    unbounded text field. 5031 chars of document text, a salary and a UAN went
+    straight into a verifications row, defeating the structural guarantee that
+    no column can hold an artifact."""
+    from app.verification.models import VerificationRow
+
+    c, services = client
+    _, key = _candidate(services)
+    r = c.post("/portal/documents",
+               json={"doc_type": "experience_letter", "content_b64": _b64(),
+                     "claim_ref": "SALARY 100000 UAN 100234567890 " + "X" * 5000},
+               headers={"X-Candidate-Key": key})
+    assert r.status_code == 422
+
+    with services.candidates._session_factory() as s:
+        rows = s.query(VerificationRow).all()
+    assert rows == []                            # refused before any write
+
+
+def test_a_claim_ref_at_the_limit_is_accepted(client):
+    """The cap is the column width, not a smaller number invented at the edge."""
+    from app.verification.schema import CLAIM_REF_MAX_CHARS
+
+    c, services = client
+    _, key = _candidate(services)
+    r = c.post("/portal/documents",
+               json={"doc_type": "experience_letter", "content_b64": _b64(),
+                     "claim_ref": "A" * CLAIM_REF_MAX_CHARS},
+               headers={"X-Candidate-Key": key})
+    assert r.status_code == 200
+
+
 def _org(services):
     """Same helper tests/test_verification_org_api.py uses."""
     org = services.ledger.create_organization("Acme Corp")

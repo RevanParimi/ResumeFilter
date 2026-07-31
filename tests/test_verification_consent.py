@@ -49,8 +49,7 @@ def test_a_ledger_read_grant_does_not_unlock_verification(bundle):
     # widen to cover identity assurance.
     _, ledger, store, cid, org_id = bundle
     ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ, org_id=org_id
-    )
+        candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ, org_id=org_id, now=NOW)
     with pytest.raises(ConsentError):
         store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
@@ -58,8 +57,7 @@ def test_a_ledger_read_grant_does_not_unlock_verification(bundle):
 def test_with_a_verification_read_grant_the_assurance_is_disclosed(bundle):
     _, ledger, store, cid, org_id = bundle
     ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id
-    )
+        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id, now=NOW)
     a = store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
     assert a.level is AssuranceLevel.SELF_ATTESTED
     assert a.advisory is True
@@ -68,10 +66,9 @@ def test_with_a_verification_read_grant_the_assurance_is_disclosed(bundle):
 def test_revocation_closes_the_disclosure_again(bundle):
     _, ledger, store, cid, org_id = bundle
     grant = ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id
-    )
+        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id, now=NOW)
     store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
-    ledger.revoke_consent(grant.id)
+    ledger.revoke_consent(grant.id, now=NOW)
     with pytest.raises(ConsentError):
         store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
@@ -81,8 +78,7 @@ def test_both_allowed_and_denied_attempts_are_audited(bundle):
     with pytest.raises(ConsentError):
         store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
     ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id
-    )
+        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org_id, now=NOW)
     store.assurance_for_org(org_id=org_id, candidate_id=cid, at=NOW)
 
     queries = [e for e in ledger.audit_for_candidate(cid) if e.action == "verification.query"]
@@ -102,8 +98,7 @@ def test_unknown_org_and_unknown_candidate_raise_lookup_error(bundle):
 def test_a_wildcard_grant_covers_any_org(bundle):
     _, ledger, store, cid, org_id = bundle
     ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=None
-    )
+        candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=None, now=NOW)
     assert store.assurance_for_org(
         org_id=org_id, candidate_id=cid, at=NOW
     ).level is AssuranceLevel.SELF_ATTESTED

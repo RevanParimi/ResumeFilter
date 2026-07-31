@@ -145,6 +145,12 @@ METHOD_CLAIM_STRENGTH: dict[VerificationMethod, ClaimStrength] = {
 
 _SEVERITIES = ("info", "soft", "hard")
 
+# Must equal VerificationRow.claim_ref's String(n). SQLite does not enforce
+# VARCHAR width, so this constant is the ONLY thing standing between a 128-char
+# label and an unbounded text column on a table whose whole design claim is that
+# no column can hold an artifact. Enforced at the route AND in the service.
+CLAIM_REF_MAX_CHARS = 128
+
 
 class DocumentFinding(BaseModel):
     """One forensic observation. Advisory, and NON-PII by contract: `message`

@@ -206,6 +206,29 @@ def main() -> int:
                         headers=ch).json()["claims"]["strength"] == 2
             )
 
+            # 7b. REVIEW REGRESSION. The identity start route accepts any
+            #     VerificationMethod, and the claim adapters declare
+            #     instant=True. As first built, POSTing a claim method here
+            #     returned 200 `verified` stamped subject=identity, and every
+            #     later read of the candidate's own portal 500'd forever.
+            letter_via_identity = post("/portal/verifications", headers=ch,
+                                       json={"method": "experience_letter"})
+            after = get("/portal/verifications", headers=ch)
+            checks["claim_method_refused_on_the_identity_route"] = (
+                letter_via_identity.status_code == 403
+                and after.status_code == 200                 # portal not bricked
+                and after.json()["assurance"]["level"] == 0
+            )
+
+            # 7c. REVIEW REGRESSION. SQLite does not enforce VARCHAR(128), so an
+            #     unbounded claim_ref turned the row into a text column — the
+            #     one field exempted from the "nothing wider than 64" guard.
+            oversize = post("/portal/documents", headers=ch,
+                            json={"doc_type": "experience_letter",
+                                  "content_b64": _b64(CLEAN_LETTER),
+                                  "claim_ref": "UAN 100234567890 " + "X" * 5000})
+            checks["oversize_claim_ref_refused"] = oversize.status_code == 422
+
             # 8. concurrent employment, derived read-time from a second
             #    candidate's own overlapping resume intervals
             mid = post("/candidates", headers=admin_h,

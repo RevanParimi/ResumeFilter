@@ -148,8 +148,7 @@ def test_a_third_party_method_with_consent_proceeds_and_stamps_the_grant(svc, mo
         methods_mod.ADAPTERS, VerificationMethod.SELF_ATTESTED, _FakeThirdPartyAdapter()
     )
     grant = ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY, org_id=None
-    )
+        candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY, org_id=None, now=NOW)
     v, _ = service.start(cid, VerificationMethod.SELF_ATTESTED, at=NOW)
     assert v.consent_id == grant.id
 
@@ -206,8 +205,7 @@ def test_government_id_stays_inert_in_the_spine_even_with_consent(svc):
     government_id, so the spine must refuse rather than record an outcome."""
     service, ledger, cid = svc
     ledger.grant_consent(
-        candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY, org_id=None
-    )
+        candidate_id=cid, purpose=ConsentPurpose.IDENTITY_VERIFY, org_id=None, now=NOW)
     with pytest.raises(NotImplementedError):
         service.start(cid, VerificationMethod.GOVERNMENT_ID, at=NOW)
     _, assurance = service.list_for_candidate(cid, at=NOW)

@@ -154,6 +154,32 @@ def test_a_single_role_produces_no_concurrent_advisory(svc):
     assert service.claims_for_candidate(cid, at=NOW).concurrent_employment is None
 
 
+def test_start_refuses_a_claim_method_outright(svc):
+    """REVIEW. `start` is the IDENTITY entry point. Enforced in the service so a
+    non-HTTP caller is refused too, not only the route."""
+    from app.verification.service import MethodNotPermittedError
+
+    service, _, cid = svc
+    for method in (VerificationMethod.EXPERIENCE_LETTER, VerificationMethod.PAYSLIP):
+        with pytest.raises(MethodNotPermittedError):
+            service.start(cid, method, at=NOW)
+    assert service._store.verifications_for_candidate(cid) == []
+
+
+def test_an_oversize_claim_ref_is_refused_by_the_service_too(svc):
+    """REVIEW. SQLite does not enforce VARCHAR(128); the route bounds it and so
+    does this, because a direct service caller must not be able to paste a
+    document into the one column the models test excepts."""
+    from app.verification.schema import CLAIM_REF_MAX_CHARS
+
+    service, _, cid = svc
+    with pytest.raises(DocumentTooLargeError):
+        service.submit_document(
+            cid, DocumentType.EXPERIENCE_LETTER, _b64(),
+            claim_ref="X" * (CLAIM_REF_MAX_CHARS + 1), at=NOW)
+    assert service._store.verifications_for_candidate(cid) == []
+
+
 def test_the_claim_roll_up_carries_the_concurrent_advisory(settings):
     """Derived read-time from the resume: it appears with no document ever
     submitted, and it is not evidence FOR anything -- strength stays NONE."""

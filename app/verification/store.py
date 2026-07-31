@@ -33,9 +33,9 @@ from app.verification.assurance import compute_assurance
 from app.verification.claims import compute_claim_evidence
 from app.verification.models import VerificationChallengeRow, VerificationRow
 from app.verification.schema import (
-    METHOD_LEVEL, AssuranceLevel, ClaimEvidence, ConcurrentEmployment,
-    IdentityAssurance, Verification, VerificationMethod, VerificationStatus,
-    VerificationSubject,
+    METHOD_LEVEL, METHOD_SUBJECT, AssuranceLevel, ClaimEvidence,
+    ConcurrentEmployment, IdentityAssurance, Verification, VerificationMethod,
+    VerificationStatus, VerificationSubject,
 )
 
 
@@ -94,7 +94,19 @@ class VerificationStore:
         """`actor_type` is who is starting this, and it lands in the candidate's
         own DPDP access log. An operator-recorded review is "system", not
         "candidate" — the log must not tell a candidate they did something an
-        operator did."""
+        operator did.
+
+        A method/subject mismatch is refused outright: `METHOD_SUBJECT` is the
+        single source of truth for which ladder a method feeds, so an
+        `experience_letter` row stamped `identity` cannot be written by any
+        caller, however it got here. The spine's route gate stops it earlier;
+        this makes the bad row unrepresentable rather than merely unreachable.
+        """
+        if METHOD_SUBJECT[method] is not subject:
+            raise ValueError(
+                f"{method.value} is a {METHOD_SUBJECT[method].value} method; "
+                f"it cannot be recorded under subject {subject.value}"
+            )
         moment = as_utc(at) if at else _utcnow()
         with self._session_factory() as session:
             if session.get(CandidateRow, candidate_id) is None:

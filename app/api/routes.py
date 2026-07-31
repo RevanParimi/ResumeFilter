@@ -53,7 +53,7 @@ from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.verification.documents import DocumentParseError
 from app.verification.schema import (
-    DocumentType, VerificationMethod, VerificationStatus,
+    CLAIM_REF_MAX_CHARS, DocumentType, VerificationMethod, VerificationStatus,
 )
 from app.verification.service import (
     DestinationError, DocumentTooLargeError, MethodNotPermittedError,
@@ -1117,7 +1117,11 @@ class SubmitDocumentRequest(BaseModel):
 
     doc_type: DocumentType
     content_b64: str
-    claim_ref: str | None = None
+    # Bounded to the column width: SQLite would happily store a whole document
+    # in an unbounded VARCHAR(128), and this table's design claim is that no
+    # column can hold one. The service enforces the same cap for non-HTTP
+    # callers.
+    claim_ref: str | None = Field(default=None, max_length=CLAIM_REF_MAX_CHARS)
 
 
 @candidate_router.post("/portal/documents")

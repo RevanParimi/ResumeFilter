@@ -44,8 +44,9 @@ from app.verification.methods import get_adapter
 from app.verification.moonlighting import assess_concurrent_employment
 from app.verification.otp import Notifier, NullNotifier
 from app.verification.schema import (
-    ClaimEvidence, DocumentFinding, DocumentType, IdentityAssurance,
-    Verification, VerificationMethod, VerificationStatus, VerificationSubject,
+    CLAIM_REF_MAX_CHARS, METHOD_SUBJECT, ClaimEvidence, DocumentFinding,
+    DocumentType, IdentityAssurance, Verification, VerificationMethod,
+    VerificationStatus, VerificationSubject,
 )
 from app.verification.store import VerificationStore
 
@@ -61,8 +62,9 @@ class MethodNotPermittedError(Exception):
 
 
 class DocumentTooLargeError(Exception):
-    """The submitted body exceeds `doc_max_b64_chars`. Raised BEFORE decoding,
-    so an oversize payload is never expanded in memory."""
+    """The submitted body exceeds `doc_max_b64_chars`, or `claim_ref` exceeds
+    its column width. The body check runs BEFORE decoding, so an oversize
+    payload is never expanded in memory."""
 
 
 def _utcnow() -> datetime:
@@ -116,6 +118,26 @@ class VerificationService:
             )
         if not adapter.implemented:
             raise NotImplementedError(f"{method.value} verification is not implemented")
+
+        # SUBJECT (S7.2). This route mints IDENTITY rows and nothing else.
+        # S7.2's claim methods declare `instant = True` meaning "assessment IS
+        # the evidence" -- true in submit_document, which has actually run the
+        # forensics, and false here, where no document exists. Without this gate
+        # a candidate POSTs {"method": "experience_letter"} and gets a VERIFIED
+        # row stamped subject=identity, which compute_assurance then folds. The
+        # gate lives in the spine because "a check only one of two entry points
+        # applies" is exactly the shape of the S7.1 escalation.
+        #
+        # Deliberately placed AFTER `implemented`, so a declared-but-inert
+        # method answers 422 at every door regardless of its subject --
+        # `epfo_employment` stays indistinguishable from `government_id`, which
+        # is what makes inertness legible (spec section 3). Every S7.1 answer is
+        # unchanged by this gate's presence.
+        if METHOD_SUBJECT[method] is not VerificationSubject.IDENTITY:
+            raise MethodNotPermittedError(
+                f"{method.value} is not an identity method; "
+                "employment-claim evidence is submitted with its document"
+            )
 
         consent_id: Optional[str] = None
         if adapter.third_party:
@@ -265,6 +287,17 @@ class VerificationService:
         if len(content_b64 or "") > self._settings.doc_max_b64_chars:
             raise DocumentTooLargeError(
                 f"document exceeds doc_max_b64_chars={self._settings.doc_max_b64_chars}"
+            )
+        # SQLite does not enforce VARCHAR(n). Without this, `claim_ref` -- the
+        # ONE column the "nothing wider than 64 chars" models test excepts --
+        # is an unbounded text field a caller can paste a whole document,
+        # salary or UAN into, which is precisely the guarantee this subsystem
+        # claims to make structurally. Enforced here as well as at the route so
+        # a direct service caller cannot bypass it either.
+        if len(claim_ref or "") > CLAIM_REF_MAX_CHARS:
+            raise DocumentTooLargeError(
+                f"claim_ref exceeds {CLAIM_REF_MAX_CHARS} characters; it is a "
+                "label, not a place to put document content"
             )
 
         method = (VerificationMethod.PAYSLIP if doc_type is DocumentType.PAYSLIP

@@ -412,3 +412,53 @@ vendor is contracted the work is one adapter and flipping one flag.
   fusion is a follow-up, not this sprint.
 - Nothing emits `CORROBORATED` (3) yet — the rung is defined so that
   cross-source corroboration lands as a value, not a schema change.
+
+## 16. What the S7.2 branch review found
+
+Two Criticals, both reproduced over HTTP with nothing but a candidate's own key,
+both fixed, both re-run to prove closure and kept as regression tests + smoke
+checks. Recorded here because the *shape* of each recurs.
+
+**(1) A claim method could be started through the IDENTITY route.**
+`POST /portal/verifications {"method": "experience_letter"}` returned **200
+`verified`** with `subject: identity` and no document anywhere. Two consequences:
+a claim row landed inside `compute_assurance`'s fold, and — because
+`compute_assurance` indexed `METHOD_LEVEL` directly — **every later read of that
+candidate's own portal 500'd on a `KeyError`, permanently**. One request and a
+candidate could destroy their own DPDP access rights.
+
+The root cause is the S7.1 pattern exactly: *a gate applied at one entry point
+and not the other*. `submit_document` checked `document_based`; `start` never
+asked what subject a method belonged to. `_ClaimBase.instant = True` honestly
+means "assessment IS the evidence" — true where forensics have run, false in
+`start`, which read it as the older fail-open "complete it now, VERIFIED".
+
+Fixed in three layers: the spine's `start` refuses a non-identity method
+(**after** `implemented`, so `epfo_employment` still answers 422 like
+`government_id`); `create_verification` refuses any method/subject disagreement
+with `METHOD_SUBJECT`, making the bad row *unrepresentable* rather than merely
+unreachable; and `compute_assurance` now uses `METHOD_LEVEL.get`, so a rogue row
+contributes nothing instead of bricking a portal.
+
+**(2) `claim_ref` was an unbounded text column.** SQLite does not enforce
+`VARCHAR(128)`. 5031 characters — including a salary figure and a UAN — were
+written straight into a `verifications` row. This defeated the subsystem's
+central structural claim through the *one* field
+`test_still_no_column_can_hold_a_document` excepts from its 64-char cap: the
+exception was the hole. Now bounded by `CLAIM_REF_MAX_CHARS` at the route
+(pydantic `max_length` → 422) **and** in the service, so a direct caller cannot
+bypass it either.
+
+**Also fixed: the suite was not time-independent.** Several S7.1 tests
+(unchanged on `main`) granted consent at wall-clock time and then asserted at a
+pinned `NOW` of 12:00 UTC on 2026-07-31 — so the grant did not yet exist at the
+instant being checked, and the tests began failing the moment the clock passed
+noon. S7.2 copied the pattern into its own store tests. Every `grant_consent` /
+`revoke_consent` in these files now passes `now=NOW`, which is what the
+clock-injection in `LedgerStore` was for.
+
+**Clean:** `claim.query` is audited on the denied path as well as the allowed
+one (the denied row is committed before the `ConsentError` is raised, and shows
+up in the candidate's own access log with the org's name resolved); every
+adapter that is startable declares how it reaches an outcome; the payslip path
+stores no amount, no UAN and no document text at any layer.
