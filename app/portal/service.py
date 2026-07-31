@@ -31,12 +31,16 @@ class PortalService:
         report_store,
         profile_sources,
         *,
+        verification=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._candidates = candidates
         self._ledger = ledger
         self._report_store = report_store
         self._profile_sources = profile_sources
+        # Optional so the portal stays constructible without the S7.1 spine;
+        # when absent, `identity` is simply omitted from MyData.
+        self._verification = verification
         self._settings = settings or get_settings()
 
     def my_data(self, candidate_id: str) -> MyData:
@@ -57,6 +61,11 @@ class PortalService:
             "interview_records": min((r.created_at for r in records), default=None),
             "coding_rounds": min((c.created_at for c in coding), default=None),
         }
+        identity = (
+            self._verification.assurance_for_candidate(candidate_id)
+            if self._verification is not None
+            else None
+        )
         return MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -66,6 +75,7 @@ class PortalService:
             coding_rounds=coding,
             reports=reports,
             consents=self._ledger.consents_for_candidate(candidate_id),
+            identity=identity,
             retention=build_retention_policy(oldest, self._settings),
         )
 
@@ -136,8 +146,10 @@ def build_portal_service(
     ledger: LedgerStore,
     report_store,
     profile_sources,
+    verification=None,
 ) -> PortalService:
     return PortalService(
         candidates, ledger, report_store, profile_sources,
+        verification=verification,
         settings=settings or get_settings(),
     )

@@ -17,6 +17,7 @@ from app.candidates.schema import CandidateProfile
 from app.candidates.store import ResumeSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
 from app.profile_sources.schema import ProfileSourceSignal
+from app.verification.schema import IdentityAssurance
 
 
 class ConsentState(StrEnum):
@@ -77,4 +78,5 @@ class MyData(BaseModel):
     coding_rounds: list[CodingRoundResult] = Field(default_factory=list)
     reports: list[ReportRef] = Field(default_factory=list)
     consents: list[ConsentGrant] = Field(default_factory=list)
+    identity: Optional[IdentityAssurance] = None  # S7.1 advisory assurance
     retention: RetentionPolicy

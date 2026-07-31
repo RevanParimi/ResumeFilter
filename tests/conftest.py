@@ -190,7 +190,10 @@ def make_services(
         )
     if portal is None:
         from app.portal.service import PortalService
-        portal = PortalService(candidates, ledger, report_store, profile_sources, settings=settings)
+        portal = PortalService(
+            candidates, ledger, report_store, profile_sources,
+            verification=verification, settings=settings,
+        )
     return Services(
         settings=settings,
         llm=llm or NullLLM(settings),

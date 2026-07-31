@@ -51,6 +51,9 @@ from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
+from app.verification.schema import VerificationMethod
+from app.verification.service import DestinationError
+from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
@@ -977,6 +980,89 @@ async def portal_erase(
     reports_deleted = services.report_store.delete_for_candidate(candidate_id)
     services.candidates.delete_candidate(candidate_id)
     return {"candidate_id": candidate_id, "deleted": True, "reports_deleted": reports_deleted}
+
+
+# ── Identity verification, candidate plane (S7.1) ───────────────────────────
+# Candidate-initiated by design. Every handler resolves candidate_id from the
+# key — never a path/body param — so cross-candidate isolation is structural.
+
+
+class StartVerificationRequest(BaseModel):
+    """`destination` is required for OTP methods and must match the contact
+    hash already on the candidate's record."""
+
+    method: VerificationMethod
+    destination: str | None = None
+
+
+class ConfirmVerificationRequest(BaseModel):
+    code: str
+
+
+@candidate_router.post("/portal/verifications")
+async def start_verification(
+    req: StartVerificationRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> dict:
+    services = _services(request)
+    try:
+        verification, code = services.verification.start(
+            candidate_id, req.method, destination=req.destination
+        )
+    except DestinationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ChallengeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    body: dict = {"verification": verification.model_dump(mode="json")}
+    # Double-guarded: local env AND the knob. Exists so the sprint smoke can
+    # drive the two-step flow over plain HTTP; production can never echo.
+    if (
+        code is not None
+        and services.settings.env == "local"
+        and services.settings.verif_otp_debug_echo
+    ):
+        body["debug_code"] = code
+    return body
+
+
+@candidate_router.post("/portal/verifications/{verification_id}/confirm")
+async def confirm_verification(
+    verification_id: str,
+    req: ConfirmVerificationRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> dict:
+    services = _services(request)
+    try:
+        verification = services.verification.confirm(
+            candidate_id, verification_id, req.code
+        )
+    except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
+        raise HTTPException(status_code=404, detail="verification not found") from exc
+    except ChallengeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return verification.model_dump(mode="json")
+
+
+@candidate_router.get("/portal/verifications")
+async def list_verifications(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    verifications, assurance = _services(request).verification.list_for_candidate(
+        candidate_id
+    )
+    return {
+        "verifications": [v.model_dump(mode="json") for v in verifications],
+        "assurance": assurance.model_dump(mode="json"),
+    }
 
 
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
