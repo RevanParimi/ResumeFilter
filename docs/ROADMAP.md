@@ -290,10 +290,16 @@
   sprints where it was satisfied by having no LLM at all.
   **S7.2 follow-ups (deferred, none merge-blocking):** an optional capped LLM
   pass over letter phrasing; certificate/degree forensics (a different issuer
-  model); **`CORROBORATED` (3) is defined but nothing emits it** — cross-source
-  corroboration against a ledger interview record or a profile-source signal
-  for the same employer is the natural next increment and needs no schema
-  change; wiring document findings into the `fabrication_risk` fusion (today
+  model); **cross-source corroboration SHIPPED 2026-07-31 as an advisory
+  finding** (`employer_corroborated_by_profile_source` /
+  `employer_absent_from_profile_source`, both `info`) — but **`CORROBORATED` (3)
+  stays deliberately empty**, and `VERIFICATION.md` §11 now records why: that
+  rung means an *independent* source agrees, every reachable source is
+  candidate-controlled, and the spec's own suggestion (`InterviewRecord`) has
+  **no employer field** — it carries `org_id`, the org that *interviewed* them,
+  so it would corroborate the wrong proposition. Do not fill that rung until
+  EPFO or an org-confirmed employment record lands; wiring document findings
+  into the `fabrication_risk` fusion (today
   they stand beside it); org-submitted documents (third-party data — needs its
   own DPDP basis); claim strength as a feature-store feature. **The EPFO/UAN
   research item, open since the 2026-07-26 gap analysis, is CLOSED** (spec §3,
