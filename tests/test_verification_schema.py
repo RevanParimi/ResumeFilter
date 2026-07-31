@@ -17,7 +17,16 @@ def test_assurance_levels_are_ordered_so_highest_held_is_a_max():
 
 
 def test_every_method_maps_to_a_level():
-    assert set(METHOD_LEVEL) == set(VerificationMethod)
+    """Every IDENTITY method, that is. S7.2 added employment-claim methods that
+    deliberately hold no AssuranceLevel -- their absence from METHOD_LEVEL is
+    what keeps a payslip out of the identity number. Derived from METHOD_SUBJECT
+    rather than hard-coded, so a new identity method still has to declare one."""
+    from app.verification.schema import METHOD_SUBJECT, VerificationSubject
+
+    identity = {
+        m for m, s in METHOD_SUBJECT.items() if s is VerificationSubject.IDENTITY
+    }
+    assert set(METHOD_LEVEL) == identity
     assert METHOD_LEVEL[VerificationMethod.SELF_ATTESTED] is AssuranceLevel.SELF_ATTESTED
     assert METHOD_LEVEL[VerificationMethod.OTP_EMAIL] is AssuranceLevel.CONTACT_CONTROL
     assert METHOD_LEVEL[VerificationMethod.OTP_PHONE] is AssuranceLevel.CONTACT_CONTROL

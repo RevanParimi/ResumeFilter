@@ -18,7 +18,7 @@ from datetime import datetime
 from enum import IntEnum, StrEnum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AssuranceLevel(IntEnum):
@@ -38,6 +38,10 @@ class VerificationMethod(StrEnum):
     OTP_PHONE = "otp_phone"
     MANUAL_REVIEW = "manual_review"
     GOVERNMENT_ID = "government_id"  # declared; no v0 implementation
+    # --- S7.2 employment-claim methods ---
+    EXPERIENCE_LETTER = "experience_letter"
+    PAYSLIP = "payslip"
+    EPFO_EMPLOYMENT = "epfo_employment"  # declared; needs a BGV vendor
 
 
 class VerificationStatus(StrEnum):
@@ -81,4 +85,94 @@ class IdentityAssurance(BaseModel):
     methods: list[VerificationMethod] = Field(default_factory=list)
     verified_at: Optional[datetime] = None       # most recent contributing outcome
     expired_methods: list[VerificationMethod] = Field(default_factory=list)
+    advisory: bool = True
+
+
+# ── S7.2: employment-claim contracts ────────────────────────────────────────
+
+
+class VerificationSubject(StrEnum):
+    """WHAT a verification is about. The discriminator that keeps two ladders
+    apart: identity answers "is this who they say they are", employment_claim
+    answers "is this job history real". Conflating them would let a payslip
+    raise a number orgs read as identity confidence."""
+
+    IDENTITY = "identity"
+    EMPLOYMENT_CLAIM = "employment_claim"
+
+
+class ClaimStrength(IntEnum):
+    """Ordered ladder for employment claims. IntEnum for the same reason
+    AssuranceLevel is one: "the strongest evidence currently held" is a max()."""
+
+    NONE = 0
+    SELF_REPORTED = 1          # the resume says so, nothing backs it
+    DOCUMENTED = 2             # a document backs it and forensics are clean
+    CORROBORATED = 3           # document + an independent source agrees
+    THIRD_PARTY_VERIFIED = 4   # EPFO et al -- declared, inert (needs a vendor)
+
+
+class DocumentType(StrEnum):
+    EXPERIENCE_LETTER = "experience_letter"
+    PAYSLIP = "payslip"
+
+
+METHOD_SUBJECT: dict[VerificationMethod, VerificationSubject] = {
+    VerificationMethod.SELF_ATTESTED: VerificationSubject.IDENTITY,
+    VerificationMethod.OTP_EMAIL: VerificationSubject.IDENTITY,
+    VerificationMethod.OTP_PHONE: VerificationSubject.IDENTITY,
+    VerificationMethod.MANUAL_REVIEW: VerificationSubject.IDENTITY,
+    VerificationMethod.GOVERNMENT_ID: VerificationSubject.IDENTITY,
+    VerificationMethod.EXPERIENCE_LETTER: VerificationSubject.EMPLOYMENT_CLAIM,
+    VerificationMethod.PAYSLIP: VerificationSubject.EMPLOYMENT_CLAIM,
+    VerificationMethod.EPFO_EMPLOYMENT: VerificationSubject.EMPLOYMENT_CLAIM,
+}
+
+METHOD_CLAIM_STRENGTH: dict[VerificationMethod, ClaimStrength] = {
+    VerificationMethod.EXPERIENCE_LETTER: ClaimStrength.DOCUMENTED,
+    VerificationMethod.PAYSLIP: ClaimStrength.DOCUMENTED,
+    VerificationMethod.EPFO_EMPLOYMENT: ClaimStrength.THIRD_PARTY_VERIFIED,
+}
+
+_SEVERITIES = ("info", "soft", "hard")
+
+
+class DocumentFinding(BaseModel):
+    """One forensic observation. Advisory, and NON-PII by contract: `message`
+    describes the check, never the document's content, and `detail` carries
+    coarse buckets only -- never text, salary amounts, or an identifier."""
+
+    id: str                                       # stable code
+    severity: str = "soft"                        # info | soft | hard
+    message: str
+    detail: dict = Field(default_factory=dict)
+
+    @field_validator("severity")
+    @classmethod
+    def _known_severity(cls, v: str) -> str:
+        if v not in _SEVERITIES:
+            raise ValueError(f"severity must be one of {_SEVERITIES}")
+        return v
+
+
+class ConcurrentEmployment(BaseModel):
+    """Advisory dual-employment signal derived from the candidate's OWN resume
+    intervals. Never an accusation: overlapping periods are consulting, notice
+    periods and year-only imprecision at least as often as moonlighting."""
+
+    periods: list[str] = Field(default_factory=list)   # "2023-04..2024-02"
+    max_overlap_months: int = 0
+    severity: str = "info"
+    advisory: bool = True
+
+
+class ClaimEvidence(BaseModel):
+    """Advisory roll-up of a candidate's employment-claim verifications.
+    Computed at read time, never stored -- same reasoning as IdentityAssurance."""
+
+    candidate_id: str
+    strength: ClaimStrength = ClaimStrength.NONE
+    documents: list[DocumentType] = Field(default_factory=list)
+    findings: list[DocumentFinding] = Field(default_factory=list)
+    concurrent_employment: Optional[ConcurrentEmployment] = None
     advisory: bool = True
