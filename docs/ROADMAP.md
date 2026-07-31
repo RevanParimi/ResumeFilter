@@ -183,7 +183,25 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S7.1 is reviewed, fixed, and merged — start S7.2.**
+- **Next action:** **S7.1 merged; S7.2 SPEC WRITTEN** (`docs/superpowers/specs/
+  2026-07-31-s72-document-forensics-design.md`, branch `s72-document-forensics`,
+  commit `7465e4d`) — **next is the implementation plan, then the TDD build.**
+  Four scope decisions taken with user, all on recommendation: (1) spine
+  producer with a **separate `ClaimEvidence` roll-up** — a payslip must never
+  lift `IdentityAssurance` (same failure class as the S7.1 escalation);
+  (2) moonlighting = declare the inert `epfo_employment` adapter + **promote the
+  concurrent-employment overlap `check_timeline_overlaps` has computed since
+  S2.2** (it was already built — S7.2 surfaces it, and the advisory is derived
+  read-time, never stored); (3) candidate-plane first-party intake;
+  (4) reuse `VERIFICATION_READ`, **explicitly redefined and dated** while it
+  still has zero real grants — a window that closes once orgs hold grants.
+  **The EPFO/UAN research item, open since the 2026-07-26 gap analysis, is
+  ANSWERED in spec §3:** the checks are lawful in India but run only through
+  **authorized BGV aggregators** with approved EPFO channels — no direct
+  third-party API exists — so the blocker is the vendor relationship, not the
+  law, which puts an EPFO pull in exactly the `government_id` category
+  (declared, consent-gated, `implemented=False`). No LLM in S7.2. The original
+  S7.2 framing follows.
   Shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
   **second producer on the S7.1 spine** — the S6.1→S6.2 pattern: it writes
   `Verification` outcomes through `VerificationStore`, reusing the adapter seam,
@@ -469,8 +487,11 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            [MERGED 2026-07-31; branch review caught + closed two
 │   │             candidate-side ladder escalations — seam now refuses by
 │   │             default: self_service/implemented/instant]
-│   ├── [ ] S7.2  Document forensics (experience letters/payslips) +
+│   ├── [~] S7.2  Document forensics (experience letters/payslips) +
 │   │            moonlighting advisory — SECOND PRODUCER on the S7.1 spine
+│   │            [spec written 2026-07-31; separate ClaimEvidence roll-up,
+│   │             candidate-plane intake, EPFO declared-inert (vendor, not
+│   │             legality, is the blocker); plan next]
 │   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
 │                accents, advisory, proxy-detection hooks reading
 │                IdentityAssurance; model shortlist in MODELS.md)
