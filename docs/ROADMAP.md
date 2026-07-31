@@ -183,9 +183,13 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S7.1 merged; S7.2 SPEC WRITTEN** (`docs/superpowers/specs/
-  2026-07-31-s72-document-forensics-design.md`, branch `s72-document-forensics`,
-  commit `7465e4d`) — **next is the implementation plan, then the TDD build.**
+- **Next action:** **S7.1 merged; S7.2 SPEC + PLAN WRITTEN** (spec
+  `docs/superpowers/specs/2026-07-31-s72-document-forensics-design.md` `7465e4d`,
+  plan `docs/superpowers/plans/2026-07-31-s72-document-forensics.md` `47737a4`,
+  branch `s72-document-forensics`) — **next is the TDD build, Task 1 of 12.**
+  Task order puts the isolation invariant first: contracts + subject
+  discriminator (1–3), forensics (4–7), storage + migration `0014` (8–9),
+  orchestration + routes (10–11), erasure/smoke/docs (12).
   Four scope decisions taken with user, all on recommendation: (1) spine
   producer with a **separate `ClaimEvidence` roll-up** — a payslip must never
   lift `IdentityAssurance` (same failure class as the S7.1 escalation);
@@ -491,7 +495,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            moonlighting advisory — SECOND PRODUCER on the S7.1 spine
 │   │            [spec written 2026-07-31; separate ClaimEvidence roll-up,
 │   │             candidate-plane intake, EPFO declared-inert (vendor, not
-│   │             legality, is the blocker); plan next]
+│   │             legality, is the blocker); plan `47737a4` = 12 TDD tasks, build next]
 │   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
 │                accents, advisory, proxy-detection hooks reading
 │                IdentityAssurance; model shortlist in MODELS.md)
