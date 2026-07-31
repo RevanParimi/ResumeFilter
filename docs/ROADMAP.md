@@ -9,7 +9,104 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-7 OPEN — S7.1 (Verification spine + consent-first
+- **Current sprint:** **PI-7 OPEN — S7.2 (Document forensics +
+  concurrent-employment advisory) COMPLETE and MERGED to main — 887→1011 green,
+  smoke_s72 15/15 OK exit 0, key-less — no LLM, no network.** Built as the
+  **second producer on the S7.1 spine** (the S6.1→S6.2 relationship): a
+  `subject` discriminator on `verifications` lets identity rows and
+  employment-claim rows share one table, one audit trail, one consent gate and
+  one CASCADE while folding into **two separate numbers**. **No new table, no
+  new `ConsentPurpose`, no new erasure path.** Delivered: `schema.py` additions
+  (`VerificationSubject`; `ClaimStrength` **IntEnum** 0–4; `DocumentType`;
+  `DocumentFinding` with a validated severity vocabulary; `ConcurrentEmployment`;
+  `ClaimEvidence`; `METHOD_SUBJECT` — one table so a method cannot be ambiguous
+  about which ladder it feeds — and `METHOD_CLAIM_STRENGTH`, **disjoint from
+  `METHOD_LEVEL` by test**); `documents.py` (pure `parse_document` → text +
+  page count + PDF metadata + sha256, with **no field able to hold the bytes**;
+  `assess_experience_letter` / `assess_payslip` / `assess` dispatcher);
+  `claims.py` (`compute_claim_evidence`, pure + clock-injected + read-time,
+  mirroring `assurance.py`); `moonlighting.py` (`assess_concurrent_employment`,
+  reusing S2.2's overlap machinery and importing its `_NON_PRIMARY` set so the
+  two modules cannot drift). Migration `0014_verification_subject`
+  (`subject` String(24) NOT NULL indexed, backfilled to `identity` via a
+  server_default that is then dropped — the 0004 precedent; `claim_ref`
+  String(128) nullable; drift/index/FK/nullability guards extended plus two
+  explicit 0014 tests). Three endpoints: candidate `POST /portal/documents`,
+  `GET /portal/verifications` grew a `claims` key, org
+  `GET /verification/candidates/{id}/claims` (query-time `VERIFICATION_READ`,
+  **every attempt audited allowed *and* denied**, action `claim.query`);
+  `MyData.claims`. Four `doc_*`/`moonlight_*` config knobs. **Design
+  invariants:** (a) **a payslip can never lift `IdentityAssurance`** — the same
+  failure class as the S7.1 escalation, so tested at the same weight, and now
+  enforced in three layers after the review (see below); (b) **the document is
+  never stored** — parsed in memory, sha256 kept, bytes discarded, and
+  `details` carries finding **codes** only: never document text, never a salary
+  amount (comp has its own consented k-anonymised path — a payslip must not be
+  a back door into it), never a UAN/PF/PAN (presence is a boolean);
+  (c) **a FAILED document contributes nothing and takes nothing away** —
+  strength is a `max()` over what *is* held, so a bad submission leaves the
+  candidate exactly where they were, and its findings are still returned
+  because the candidate is entitled to know why; (d) **only two checks are
+  HARD** (employer absent from the resume, dates that cannot be reconciled) —
+  everything else is soft or info, because a false "fake" costs far more than a
+  missed one; (e) **first-party intake only** — an org-supplied document *about*
+  a candidate is third-party data under DPDP and needs its own basis;
+  (f) **the concurrent-employment advisory is derived read-time and stored
+  nowhere**, tops out at `soft`, names intervals not employers, and uses a
+  threshold 4× S2.2's because a three-month overlap is a notice period.
+  **The EPFO/UAN question is ANSWERED** (spec §3, `VERIFICATION.md` §14):
+  lawful in India but reachable only through authorized BGV aggregators, so the
+  blocker is the **vendor relationship, not the law** — `epfo_employment` ships
+  `third_party=True, implemented=False`, refused **422** even after the
+  candidate self-grants `IDENTITY_VERIFY`. `VERIFICATION_READ` was **redefined
+  and dated (2026-07-31)** in `LEDGER.md` to cover verification disclosure
+  generally; permissible **only** because it held zero real grants — the same
+  test S7.1 applied when it refused to widen `ledger_read` — and **that window
+  is now closed**: any further widening needs a new purpose.
+  **The whole-branch review (inline) found TWO more Criticals, both reproduced
+  over HTTP with nothing but a candidate's own key, both fixed and re-run to
+  prove closure, both now regression tests + smoke checks:**
+  **(1)** `POST /portal/verifications {"method":"experience_letter"}` returned
+  **200 `verified`** stamped `subject=identity` with no document — the row then
+  entered `compute_assurance`'s fold, and because that indexed `METHOD_LEVEL`
+  directly, **every later read of the candidate's own portal 500'd on a
+  `KeyError`, permanently**: one request and a candidate could destroy their own
+  DPDP access. Root cause was the S7.1 pattern exactly — *a gate applied at one
+  entry point and not the other*: `submit_document` checked `document_based`,
+  `start` never asked what subject a method belonged to, and `_ClaimBase`'s
+  honest `instant=True` ("assessment IS the evidence") was read by `start` as
+  the old fail-open "complete it now". Fixed in three layers: `start` refuses a
+  non-identity method (**after** `implemented`, so `epfo_employment` still
+  answers 422 exactly like `government_id` — inertness must read the same at
+  every door); `create_verification` refuses any method/subject disagreement,
+  making the bad row **unrepresentable** rather than merely unreachable; and
+  `compute_assurance` uses `METHOD_LEVEL.get` so a rogue row contributes nothing
+  instead of bricking a portal. **(2)** `claim_ref` was an **unbounded text
+  column** — SQLite does not enforce `VARCHAR(128)`, so 5031 chars including a
+  salary figure and a UAN persisted into a `verifications` row, defeating the
+  subsystem's central structural claim through the *one* column the "no column
+  can hold a document" test excepts. Now bounded by `CLAIM_REF_MAX_CHARS` at the
+  route (pydantic → 422) **and** in the service, so a direct caller cannot
+  bypass it. **Also fixed: the suite was not time-independent** — several S7.1
+  tests (unchanged on `main`) granted consent at wall-clock and asserted at a
+  pinned `NOW` of 12:00 UTC 2026-07-31, so they began failing the moment the
+  clock passed noon; S7.2 had copied the pattern. Every `grant_consent` /
+  `revoke_consent` in those files now passes `now=NOW`, which is what
+  `LedgerStore`'s clock injection was for. **Clean on the other review
+  questions:** `claim.query` is audited on the denied path (committed before the
+  `ConsentError`, visible in the candidate's own access log with the org name
+  resolved); every startable adapter declares how it reaches an outcome; no
+  stored row holds document text, an amount or an identifier.
+  **Smoke `scripts/smoke_s72.py` (uvicorn, key-less) 15/15 OK** exit 0: claims
+  empty → clean letter → `DOCUMENTED` → **identity level still 0** →
+  mismatched-employer letter → `failed`, strength unchanged → payslip
+  arithmetic mismatch → hard finding → no document content in any response →
+  `epfo_employment` after self-granted `identity_verify` → 422 → **claim method
+  refused on the identity route (403, portal not bricked)** → **oversize
+  `claim_ref` refused (422)** → concurrent-employment advisory on overlapping
+  intervals → org read 403 → grant → 200 (no evidence internals) → revoke → 403
+  → `DELETE /portal/me` → 404.
+- **Prior sprint detail:** **S7.1 (Verification spine + consent-first
   identity) COMPLETE and MERGED to main — 784→887 green, smoke_s71 19/19 OK
   exit 0, key-less — no LLM, no network.** The whole-branch review (inline; the
   harness in these sessions forbids spawning agents unless asked) found **two
@@ -183,29 +280,29 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S7.1 merged; S7.2 SPEC + PLAN WRITTEN** (spec
-  `docs/superpowers/specs/2026-07-31-s72-document-forensics-design.md` `7465e4d`,
-  plan `docs/superpowers/plans/2026-07-31-s72-document-forensics.md` `47737a4`,
-  branch `s72-document-forensics`) — **next is the TDD build, Task 1 of 12.**
-  Task order puts the isolation invariant first: contracts + subject
-  discriminator (1–3), forensics (4–7), storage + migration `0014` (8–9),
-  orchestration + routes (10–11), erasure/smoke/docs (12).
-  Four scope decisions taken with user, all on recommendation: (1) spine
-  producer with a **separate `ClaimEvidence` roll-up** — a payslip must never
-  lift `IdentityAssurance` (same failure class as the S7.1 escalation);
-  (2) moonlighting = declare the inert `epfo_employment` adapter + **promote the
-  concurrent-employment overlap `check_timeline_overlaps` has computed since
-  S2.2** (it was already built — S7.2 surfaces it, and the advisory is derived
-  read-time, never stored); (3) candidate-plane first-party intake;
-  (4) reuse `VERIFICATION_READ`, **explicitly redefined and dated** while it
-  still has zero real grants — a window that closes once orgs hold grants.
-  **The EPFO/UAN research item, open since the 2026-07-26 gap analysis, is
-  ANSWERED in spec §3:** the checks are lawful in India but run only through
-  **authorized BGV aggregators** with approved EPFO channels — no direct
-  third-party API exists — so the blocker is the vendor relationship, not the
-  law, which puts an EPFO pull in exactly the `government_id` category
-  (declared, consent-gated, `implemented=False`). No LLM in S7.2. The original
-  S7.2 framing follows.
+- **Next action:** **S7.2 merged; next is S7.3 — AI interview delivery v0.**
+  Shape/plan it per gap-analysis §6 and the model shortlist in `MODELS.md`:
+  audio-first English with Indian accents, advisory, with **proxy-detection
+  hooks reading `IdentityAssurance`** (the number S7.2 was careful to keep
+  document evidence out of — read `VERIFICATION.md` §11 before wiring it).
+  S7.3 is the largest build in PI-7 and the first to need a live model, so
+  the deterministic-fallback convention becomes load-bearing again after two
+  sprints where it was satisfied by having no LLM at all.
+  **S7.2 follow-ups (deferred, none merge-blocking):** an optional capped LLM
+  pass over letter phrasing; certificate/degree forensics (a different issuer
+  model); **`CORROBORATED` (3) is defined but nothing emits it** — cross-source
+  corroboration against a ledger interview record or a profile-source signal
+  for the same employer is the natural next increment and needs no schema
+  change; wiring document findings into the `fabrication_risk` fusion (today
+  they stand beside it); org-submitted documents (third-party data — needs its
+  own DPDP basis); claim strength as a feature-store feature. **The EPFO/UAN
+  research item, open since the 2026-07-26 gap analysis, is CLOSED** (spec §3,
+  `VERIFICATION.md` §14): lawful in India but only via authorized BGV
+  aggregators, so the blocker is the vendor relationship, not the law — when a
+  vendor is contracted the work is one adapter and flipping `implemented`.
+  **Watch item:** `VERIFICATION_READ`'s dated redefinition window is **closed**
+  — once orgs hold real grants, any further widening needs a new
+  `ConsentPurpose`, not another redefinition (`LEDGER.md`).
   Shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
   **second producer on the S7.1 spine** — the S6.1→S6.2 pattern: it writes
   `Verification` outcomes through `VerificationStore`, reusing the adapter seam,
@@ -491,11 +588,20 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            [MERGED 2026-07-31; branch review caught + closed two
 │   │             candidate-side ladder escalations — seam now refuses by
 │   │             default: self_service/implemented/instant]
-│   ├── [~] S7.2  Document forensics (experience letters/payslips) +
-│   │            moonlighting advisory — SECOND PRODUCER on the S7.1 spine
-│   │            [spec written 2026-07-31; separate ClaimEvidence roll-up,
-│   │             candidate-plane intake, EPFO declared-inert (vendor, not
-│   │             legality, is the blocker); plan `47737a4` = 12 TDD tasks, build next]
+│   ├── [x] S7.2  Document forensics (experience letters/payslips) +
+│   │            concurrent-employment advisory — SECOND PRODUCER on the S7.1
+│   │            spine: `subject` discriminator + separate ClaimEvidence
+│   │            roll-up (a payslip can never lift IdentityAssurance),
+│   │            deterministic letter/payslip forensics (no LLM, no network),
+│   │            candidate-plane first-party intake, EPFO declared-inert
+│   │            (vendor, not legality, is the blocker). No new table, no new
+│   │            ConsentPurpose, no new erasure path.
+│   │            [MERGED 2026-07-31; 887→1011 green, smoke_s72 15/15. Branch
+│   │             review caught + closed TWO more Criticals: a claim method
+│   │             startable on the identity route (200 verified, then a
+│   │             permanent 500 on the candidate's own portal) and an
+│   │             unbounded `claim_ref` that stored 5031 chars incl. a salary
+│   │             and a UAN. Also fixed a pre-existing test time-bomb.]
 │   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
 │                accents, advisory, proxy-detection hooks reading
 │                IdentityAssurance; model shortlist in MODELS.md)
@@ -518,6 +624,75 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-31 (3)** — **S7.2 (document forensics + concurrent-employment
+  advisory) BUILT, REVIEWED, MERGED. PI-7 now S7.1 + S7.2 done; S7.3 remains.**
+  Executed the 12-task plan end to end **inline** on branch
+  `s72-document-forensics` (I hold the full 2 800-line plan in context, so a
+  fresh implementer per task would re-read ~44k tokens to arrive at the same
+  code; the review that matters I did myself, reading the code). **887 → 1011
+  green**, pyflakes clean on every new/modified file, `scripts/smoke_s72.py`
+  **15/15 OK** exit 0. Delivered exactly the spec's shape: a `subject`
+  discriminator + a **separate `ClaimEvidence` roll-up**, three pure modules
+  (`documents.py`, `claims.py`, `moonlighting.py`), migration `0014`, three
+  endpoints, four config knobs, **no new table / no new `ConsentPurpose` / no
+  new erasure path**. Full detail in "Current state" above.
+  **Four plan corrections made during the build, all self-caught by tests:**
+  (a) S7.1's `test_every_method_maps_to_a_level` asserted
+  `set(METHOD_LEVEL) == set(VerificationMethod)`, which S7.2 deliberately
+  breaks — narrowed to the identity subset **derived from `METHOD_SUBJECT`**,
+  which is strictly stronger against drift than the hard-coded list it
+  replaced; (b) `test_adapter_levels_agree_with_the_method_level_map` would
+  `KeyError` on claim adapters — now asserts they pin `level = NONE`;
+  (c) the plan's moonlighting test expected 3 overlap windows from three roles
+  that in fact yield 2 distinct ones — the dedup in the plan's own
+  implementation is correct, so the test data was fixed and an explicit dedup
+  test added; (d) two plan tests assumed a resume on file where the fixture
+  created a bare `CandidateRow`, so nothing could ever produce a hard finding —
+  fixtures now `ingest` a real profile. Also implemented `strip_legal_suffix`
+  in S1.4's `orgs.py` so "Acme Technologies Pvt Ltd" on a resume matches
+  "ACME TECHNOLOGIES PRIVATE LIMITED" on letterhead — `employer_not_claimed` is
+  one of only two HARD findings and a false one is this module's most expensive
+  mistake. Spec §8's `doc_unknown_issuer_severity` knob was **deliberately not
+  built** (the plan's own stated deviation): severity is a code constant,
+  because a deploy-time switch that silently reclassifies `soft` → `hard` is
+  what the "taxonomies are code constants" stance exists to prevent.
+  **The whole-branch review found TWO more Criticals — same house pattern as
+  S7.1, and one of them is the same bug shape.** Both were **reproduced over
+  HTTP first** (throwaway pytest module against `create_app(make_services(...))`,
+  deleted after; its attacks kept as permanent regression tests), then fixed,
+  then re-run to prove closure. **(1) A claim method was startable on the
+  IDENTITY route** — `POST /portal/verifications {"method":"experience_letter"}`
+  → **200 `verified`, `subject: identity`**, no document — and because
+  `compute_assurance` indexed `METHOD_LEVEL` directly, **every subsequent read
+  of that candidate's own portal 500'd forever**: a candidate could destroy
+  their own DPDP access with one request. Root cause identical to S7.1's: *a
+  gate applied at one entry point and not the other* (`submit_document` checked
+  `document_based`; `start` never asked about subject), plus `instant=True`
+  being read as the old fail-open "complete it now". Fixed in three layers —
+  route gate, store-level `METHOD_SUBJECT` refusal (the bad row is now
+  **unrepresentable**, not merely unreachable), and `METHOD_LEVEL.get` so a
+  rogue row degrades instead of bricking. **Ordering mattered and I got it
+  wrong first:** placing the subject gate before `implemented` changed
+  `epfo_employment` from 422 to 403, contradicting spec §3 — moved it after, so
+  a declared-but-inert method answers the same at every door and every S7.1
+  answer is untouched. **(2) `claim_ref` was unbounded** — SQLite does not
+  enforce `VARCHAR(128)`, so 5031 chars including a salary and a UAN were
+  stored, defeating the "no column can hold a document" guarantee through the
+  *one* column the models test excepts. Bounded at the route and in the service.
+  **Third finding, pre-existing on `main`: the suite was not time-independent.**
+  S7.1 tests granted consent at wall-clock but asserted at a pinned `NOW` of
+  12:00 UTC 2026-07-31, so they started failing the moment the real clock passed
+  noon (which it did, mid-session, at 14:24 — that is how it surfaced). S7.2 had
+  copied the pattern. All `grant_consent`/`revoke_consent` calls in those files
+  now pass `now=NOW`. **Clean on the other three review questions:**
+  `claim.query` is audited on the denied path (committed before the raise,
+  visible in the candidate's access log with the org name resolved); every
+  startable adapter declares its route to an outcome; no stored row holds
+  document text, a salary or an identifier. Docs: `VERIFICATION.md` §11–§16
+  (incl. a written record of both escalations), `LEDGER.md` dated
+  `VERIFICATION_READ` redefinition, `PORTAL.md`, `README.md`. Merged to main,
+  branch deleted. **Next: shape/plan S7.3** (AI interview delivery v0) — read
+  `VERIFICATION.md` §11 before wiring proxy-detection to `IdentityAssurance`.
 - **2026-07-31 (2)** — **S7.1 whole-branch review → two Critical fixes →
   MERGED. S7.1 COMPLETE.** Review ran **inline** (the harness in these sessions
   forbids spawning agents unless the user asks), reading the full 14-commit
