@@ -64,6 +64,13 @@ def _ym(idx: int) -> str:
     return f"{idx // 12}-{idx % 12 + 1:02d}"
 
 
+def ym_label(idx: int) -> str:
+    """Public form of the month-index formatter. S7.2's concurrent-employment
+    advisory renders the same interval arithmetic, and one formatter avoids two
+    notions of "when"."""
+    return _ym(idx)
+
+
 def _interval(
     dates: DateRange, today: date, *, start_fill: int, end_fill: int
 ) -> tuple[int, int] | None:
