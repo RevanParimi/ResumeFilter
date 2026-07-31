@@ -51,6 +51,20 @@ class VerificationStatus(StrEnum):
     EXPIRED = "expired"
 
 
+class VerificationSubject(StrEnum):
+    """WHAT a verification is about (S7.2). The discriminator that keeps two
+    ladders apart: identity answers "is this who they say they are",
+    employment_claim answers "is this job history real". Conflating them would
+    let a payslip raise a number orgs read as identity confidence.
+
+    It lives up here with the core taxonomies, not in the S7.2 block below,
+    because `Verification` itself carries it -- every row has a subject.
+    """
+
+    IDENTITY = "identity"
+    EMPLOYMENT_CLAIM = "employment_claim"
+
+
 METHOD_LEVEL: dict[VerificationMethod, AssuranceLevel] = {
     VerificationMethod.SELF_ATTESTED: AssuranceLevel.SELF_ATTESTED,
     VerificationMethod.OTP_EMAIL: AssuranceLevel.CONTACT_CONTROL,
@@ -68,6 +82,10 @@ class Verification(BaseModel):
     method: VerificationMethod
     assurance_level: AssuranceLevel
     status: VerificationStatus
+    # S7.2: which ladder this row feeds. Defaults to IDENTITY because every row
+    # that predates S7.2 is an identity verification by definition.
+    subject: VerificationSubject = VerificationSubject.IDENTITY
+    claim_ref: Optional[str] = None        # which employment claim a document backs
     consent_id: Optional[str] = None       # set only for third-party adapters
     evidence_digest: Optional[str] = None  # sha256 hex; NEVER an artifact
     details: dict = Field(default_factory=dict)  # non-PII
@@ -89,16 +107,7 @@ class IdentityAssurance(BaseModel):
 
 
 # ── S7.2: employment-claim contracts ────────────────────────────────────────
-
-
-class VerificationSubject(StrEnum):
-    """WHAT a verification is about. The discriminator that keeps two ladders
-    apart: identity answers "is this who they say they are", employment_claim
-    answers "is this job history real". Conflating them would let a payslip
-    raise a number orgs read as identity confidence."""
-
-    IDENTITY = "identity"
-    EMPLOYMENT_CLAIM = "employment_claim"
+# (VerificationSubject sits above, with Verification, which carries it.)
 
 
 class ClaimStrength(IntEnum):

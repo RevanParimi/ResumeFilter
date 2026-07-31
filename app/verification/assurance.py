@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 from app.ledger.consent import as_utc
 from app.verification.schema import (
     METHOD_LEVEL, AssuranceLevel, IdentityAssurance, Verification,
-    VerificationMethod, VerificationStatus,
+    VerificationMethod, VerificationStatus, VerificationSubject,
 )
 
 
@@ -48,6 +48,11 @@ def compute_assurance(
     verified_at: Optional[datetime] = None
 
     for v in verifications:
+        # S7.2: two subjects share this table. A document-backed employment
+        # claim is evidence about a JOB, not about who the person is, and must
+        # never raise a number an org reads as identity confidence.
+        if v.subject is not VerificationSubject.IDENTITY:
+            continue
         status = effective_status(v, at=at)
         if status is VerificationStatus.VERIFIED:
             if v.method not in methods:
