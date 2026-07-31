@@ -186,7 +186,7 @@ def make_services(
         from app.verification.store import VerificationStore
         verification = VerificationService(
             VerificationStore(candidates._session_factory, ledger=ledger, settings=settings),
-            candidates, ledger, settings=settings,
+            candidates, ledger, profile_sources=profile_sources, settings=settings,
         )
     if portal is None:
         from app.portal.service import PortalService

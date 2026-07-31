@@ -302,8 +302,40 @@ it — `create_verification` resolves the level with
 | 0 `NONE` | nothing held |
 | 1 `SELF_REPORTED` | the resume says so, nothing backs it |
 | 2 `DOCUMENTED` | a document backs it and forensics are clean |
-| 3 `CORROBORATED` | document + an independent source agrees *(reserved; nothing emits it yet)* |
+| 3 `CORROBORATED` | document + an **independent** source agrees — *reserved; nothing emits it, deliberately (see below)* |
 | 4 `THIRD_PARTY_VERIFIED` | EPFO et al — declared, inert |
+
+### Why `CORROBORATED` is empty, and what must NOT fill it
+
+The rung exists so that real corroboration lands as a *value*, not a schema
+change. It is empty because **no independent source is available yet**, and the
+word doing the work is *independent* — meaning a source the **candidate does not
+control**. Every currently reachable source fails that test:
+
+| Candidate source | Why it does not qualify |
+|---|---|
+| A LinkedIn export (S6.2) | The candidate's own artifact, which they uploaded. Resume + LinkedIn + letter is one principal asserting the same thing three times. |
+| A GitHub profile's company field (S6.1) | Same — candidate-controlled. |
+| **`InterviewRecord` (S3.1)** | **Has no employer field at all.** It carries `org_id` — the org that *interviewed* the candidate. Using it would corroborate a different proposition entirely: "Acme interviewed me" would upgrade "I worked at Acme". |
+| An issuer domain on the letter | Inside the document being assessed; not a second source. |
+| EPFO / a BGV aggregator | Genuinely independent — and vendor-blocked (§14). |
+| An org-confirmed employment record | Genuinely independent — and an explicit S7.2 non-goal: third-party data needing its own DPDP basis. |
+
+So the honest state is: **the two sources that would qualify do not exist yet,
+and the ones that exist do not qualify.** Filling the rung with
+candidate-controlled data would inflate a number orgs read as trust, which is
+the exact failure class §11 and §16 exist to prevent.
+
+**What we do instead.** Cross-source agreement is surfaced as an *advisory
+finding* and moves no number: `employer_corroborated_by_profile_source` (`info`)
+when a submitted document's employer also appears in the candidate's profile
+sources, and `employer_absent_from_profile_source` (`info`) when it does not.
+Absence is `info` and never higher, because candidates routinely leave short
+stints, contract roles and stealth startups off LinkedIn. A reviewer gets the
+signal — the export was written at a different time for a different purpose, so
+agreeing with a letter is harder to fabricate in one sitting — without the
+ladder pretending to a confidence it does not have. `documents.py` stays pure:
+the caller reads profile sources and passes `corroborating_employers` in.
 
 Strength is a `max()` over rows that are `VERIFIED` and unexpired. **A `FAILED`
 document contributes nothing and takes nothing away** — its findings are still
@@ -338,6 +370,8 @@ resume*, not *the document looks unusual*:
 | `designation_mismatch` | soft | titles drift legitimately |
 | `payslip_amounts_unreadable` | soft | amounts could not be read for the check |
 | `metadata_modified_after_creation` | soft | PDF mtime ≫ ctime (`doc_metadata_skew_days`) |
+| `employer_corroborated_by_profile_source` | info | the employer also appears in a profile source on file |
+| `employer_absent_from_profile_source` | info | it does not — coverage is routinely incomplete, so never higher than info |
 | `metadata_producer_present` / `uan_present` / `no_profile_to_compare` | info | context only |
 
 Conservative by construction: a small Indian employer legitimately has no mail

@@ -73,9 +73,12 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     profile_sources = build_profile_source_service(
         settings, github=github, candidates=candidates, curation=curation
     )
-    # Built before the portal: the portal's my_data view reads identity assurance.
+    # Built AFTER profile_sources (whose canonical employers corroborate a
+    # submitted document) and BEFORE the portal (whose my_data view reads
+    # identity assurance and claim evidence).
     verification = build_verification_service(
-        settings, candidates=candidates, ledger=ledger
+        settings, candidates=candidates, ledger=ledger,
+        profile_sources=profile_sources,
     )
     return Services(
         settings=settings,

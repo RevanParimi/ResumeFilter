@@ -79,12 +79,17 @@ class VerificationService:
         ledger: LedgerStore,
         *,
         notifier: Optional[Notifier] = None,
+        profile_sources=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._store = store
         self._candidates = candidates
         self._ledger = ledger
         self._notifier = notifier or NullNotifier()
+        # Optional collaborator (the S6.4 pattern the portal uses for this
+        # service): when absent, document assessment simply emits no
+        # cross-source corroboration finding. Nothing else changes.
+        self._profile_sources = profile_sources
         self._settings = settings or get_settings()
 
     def start(
@@ -331,6 +336,7 @@ class VerificationService:
         assessment = assess(
             parsed, profile, doc_type, at=moment,
             metadata_skew_days=self._settings.doc_metadata_skew_days,
+            corroborating_employers=self._corroborating_employers(candidate_id),
         )
 
         verification = self._store.create_verification(
@@ -366,6 +372,24 @@ class VerificationService:
             concurrent=self._concurrent(candidate_id, moment),
         )
 
+    def _corroborating_employers(self, candidate_id: str) -> list[str]:
+        """Canonical employer names already on file from the candidate's own
+        profile sources (S6.1/S6.2). Read-only, best effort: a profile-source
+        failure must never block a candidate submitting their own document, so
+        an empty list simply means "no corroboration finding either way".
+        """
+        if self._profile_sources is None:
+            return []
+        try:
+            signals = self._profile_sources.list_sources(candidate_id)
+        except LookupError:
+            return []
+        return [
+            employer
+            for signal in signals
+            for employer in getattr(signal.activity, "employers", []) or []
+        ]
+
     def _concurrent(self, candidate_id: str, moment: datetime):
         """Derived read-time from the candidate's own resume intervals -- never
         stored, because a stored overlap would go stale the moment the resume
@@ -382,9 +406,12 @@ def build_verification_service(
     *,
     candidates: CandidateStore,
     ledger: LedgerStore,
+    profile_sources=None,
 ) -> VerificationService:
     settings = settings or get_settings()
     store = VerificationStore(
         candidates._session_factory, ledger=ledger, settings=settings
     )
-    return VerificationService(store, candidates, ledger, settings=settings)
+    return VerificationService(
+        store, candidates, ledger, profile_sources=profile_sources, settings=settings
+    )

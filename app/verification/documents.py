@@ -17,7 +17,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Optional
+from typing import Collection, Optional
 
 from app.candidates.normalize.orgs import canonicalize_employer, strip_legal_suffix
 from app.candidates.normalize.text import norm_key
@@ -145,6 +145,41 @@ def _metadata_findings(parsed: ParsedDocument, skew_days: int) -> list[DocumentF
     return out
 
 
+def _employer_keys(name: str) -> set[str]:
+    """Every spelling of one employer worth comparing on: normalized, and with
+    a trailing legal suffix stripped. One notion of "same employer" wherever
+    two sources have to agree."""
+    return {k for k in (norm_key(name or ""), strip_legal_suffix(name or "")) if k}
+
+
+def _corroboration_findings(
+    matched_employer: str, corroborating_employers: Collection[str]
+) -> list[DocumentFinding]:
+    """Cross-source agreement, as an ADVISORY FINDING and nothing more.
+
+    A profile source is the candidate's OWN artifact (their LinkedIn export),
+    so agreement is the same principal asserting the same thing twice. That is
+    genuinely useful to a reviewer -- the export was written at a different time
+    for a different purpose, so agreeing with a letter is harder to fabricate in
+    one sitting -- but it is NOT `ClaimStrength.CORROBORATED`, which means an
+    INDEPENDENT source agrees. Nothing here moves a number.
+
+    Absence is `info`, never `soft`: candidates leave short stints, contract
+    roles and stealth startups off LinkedIn constantly.
+    """
+    if not corroborating_employers:
+        return []                      # no source on file -- say nothing at all
+    known: set[str] = set()
+    for name in corroborating_employers:
+        known |= _employer_keys(name)
+    if _employer_keys(matched_employer) & known:
+        return [_f("employer_corroborated_by_profile_source", _INFO,
+                   "the employer also appears in a profile source on file")]
+    return [_f("employer_absent_from_profile_source", _INFO,
+               "the employer does not appear in the profile sources on file; "
+               "profile-source coverage is routinely incomplete")]
+
+
 def _match_employer(profile: Optional[CandidateProfile], text: str):
     """The resume entry this document appears to be about, or None.
 
@@ -175,6 +210,7 @@ def assess_experience_letter(
     *,
     at: datetime,
     metadata_skew_days: int,
+    corroborating_employers: Collection[str] = (),
 ) -> DocumentAssessment:
     """Deterministic forensics over a letter offered as proof of a role.
 
@@ -228,6 +264,9 @@ def assess_experience_letter(
         findings.append(_f("designation_mismatch", _SOFT,
                            "the letter's designation differs from the resume"))
 
+    findings.extend(
+        _corroboration_findings(matched.employer or "", corroborating_employers))
+
     return DocumentAssessment(VerificationStatus.VERIFIED, ClaimStrength.DOCUMENTED,
                               findings)
 
@@ -261,6 +300,7 @@ def assess_payslip(
     *,
     at: datetime,
     metadata_skew_days: int,
+    corroborating_employers: Collection[str] = (),
 ) -> DocumentAssessment:
     """Deterministic forensics over a payslip.
 
@@ -310,6 +350,9 @@ def assess_payslip(
         return DocumentAssessment(VerificationStatus.FAILED, ClaimStrength.NONE,
                                   findings)
 
+    findings.extend(
+        _corroboration_findings(matched.employer or "", corroborating_employers))
+
     return DocumentAssessment(VerificationStatus.VERIFIED, ClaimStrength.DOCUMENTED,
                               findings)
 
@@ -321,10 +364,17 @@ def assess(
     *,
     at: datetime,
     metadata_skew_days: int,
+    corroborating_employers: Collection[str] = (),
 ) -> DocumentAssessment:
-    """Dispatch to the right forensics. The spine calls only this."""
+    """Dispatch to the right forensics. The spine calls only this.
+
+    `corroborating_employers` keeps this module pure: the caller does the I/O of
+    reading profile sources, this layer only compares names.
+    """
     if doc_type is DocumentType.PAYSLIP:
         return assess_payslip(parsed, profile, at=at,
-                              metadata_skew_days=metadata_skew_days)
+                              metadata_skew_days=metadata_skew_days,
+                              corroborating_employers=corroborating_employers)
     return assess_experience_letter(parsed, profile, at=at,
-                                    metadata_skew_days=metadata_skew_days)
+                                    metadata_skew_days=metadata_skew_days,
+                                    corroborating_employers=corroborating_employers)
