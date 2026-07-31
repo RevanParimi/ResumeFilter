@@ -20,7 +20,10 @@ candidates — `candidates_db_url`):
 
 **Consent model** (`app/ledger/consent.py`, pure):
 - Purpose-scoped: one purpose per grant — `ledger_write` (org may submit
-  records) or `ledger_read` (org may query history; enforced in S3.2).
+  records) or `ledger_read` (org may query history; enforced in S3.2). Two
+  further purposes were added later by the verification spine — see
+  "S7.1 — two purposes added by the verification spine" at the end of this
+  file.
 - Org-scoped: a specific org, or `org_id=NULL` = any member org.
 - Always expires: grants without explicit expiry get
   `ledger_consent_default_ttl_days` (config, default 365). No perpetual consent.
@@ -200,3 +203,38 @@ path.
 **Not in S3.4:** learning per-org reliability from outcomes (PI-8); stage-
 weighted or role-conditioned reputation (PI-4/PI-5); any use of reputation in
 ranking/search or in the depth `Report`.
+
+## S7.1 — two purposes added by the verification spine
+
+`ConsentPurpose` (`app/ledger/schema.py`) is the platform-wide consent
+taxonomy, so PI-7's verification spine extends it here rather than inventing a
+parallel mechanism. The full current vocabulary:
+
+| Purpose | Added | Authorizes |
+|---|---|---|
+| `ledger_write` | S3.1 | an org may submit records about the candidate |
+| `ledger_read` | S3.1 | an org may query the candidate's ledger history |
+| `identity_verify` | S7.1 | the platform may verify the candidate's identity via an **external** source |
+| `verification_read` | S7.1 | an org may see the candidate's identity assurance |
+
+The S3.1 wire values are unchanged — stored grants reference them.
+
+**Nothing in `app/ledger/` reads the two new purposes.** They are enforced in
+`app/verification/store.py` and `app/verification/service.py`, which import the
+ledger for consent checking and audit; the ledger never imports verification
+(the same layering rule S5.2 established for comp). `VerificationStore` reuses
+`LedgerStore._grants_for` / `_audit` and `consent.check_consent` /
+`has_any_active` unchanged, and its audit rows (`verification.start`,
+`verification.complete`, `verification.query`) land in the shared `audit_log`.
+
+**`verification_read` is deliberately not a reuse of `ledger_read`.** Widening
+`ledger_read` to also disclose identity assurance would retroactively change
+the scope of grants candidates have *already* signed.
+
+**`identity_verify` gates only third-party verification.** First-party methods
+a candidate runs on themselves (self-attestation, an OTP to their own contact)
+need no grant at all — the S6.4 principle in `PORTAL.md`: acting on your own
+data is a data-principal right, not a disclosure. Today no shipped adapter is
+third-party (`government_id` is declared but raises `NotImplementedError`), so
+`identity_verify` gates a seam rather than live traffic; the gate is exercised
+in tests via a fake third-party adapter. Full detail: `VERIFICATION.md`.

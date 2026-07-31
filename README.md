@@ -26,16 +26,31 @@ Around that engine, the platform currently ships:
 - **ML feature store & ranking** (PI-4, done) — a versioned feature registry,
   point-in-time materialization + CSV/parquet export, an admin talent-search /
   ranking API, and leakage-free training-set export → [FEATURES.md](FEATURES.md)
-- **Demand side** (PI-5, in progress) — job requisitions + advisory
-  role-conditioned match-ranking, and advisory comp intelligence (static bands
-  blended with consent-gated ledger-observed offers) →
-  [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md)
+- **Demand side** (PI-5, done) — job requisitions + advisory role-conditioned
+  match-ranking, advisory comp intelligence (static bands blended with
+  consent-gated ledger-observed offers), and a read-only employer dashboard →
+  [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md)
+- **Candidate side & intake** (PI-6, done) — GitHub and LinkedIn-export profile
+  sources as advisory skill signals, a human-in-the-loop skill-taxonomy curation
+  loop, and a candidate auth plane + DPDP portal (access, transparency, consent
+  control, erasure) → [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
+  [CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md)
+- **Verification & assessment depth** (PI-7, in progress) — a verification
+  spine with consent-first identity: an assurance ladder behind a
+  method-adapter seam, storing outcomes only (never documents or biometrics).
+  Ships self-attestation, contact-control OTP, and operator manual review;
+  government-ID is a declared, unimplemented adapter. Document forensics
+  (S7.2) and AI interview delivery (S7.3) are **not built yet** →
+  [VERIFICATION.md](VERIFICATION.md)
 
 Ships with two evaluation domains (**GenAI engineering**, **Data
 Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 (pipeline internals) · [CANDIDATES.md](CANDIDATES.md) ·
 [FABRICATION.md](FABRICATION.md) · [LEDGER.md](LEDGER.md) ·
 [FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) ·
+[DASHBOARD.md](DASHBOARD.md) · [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
+[CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md) ·
+[VERIFICATION.md](VERIFICATION.md) ·
 [MODELS.md](MODELS.md) (model choices) · [docs/ROADMAP.md](docs/ROADMAP.md)
 (live sprint status) · [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 (original engine requirements).
@@ -134,18 +149,25 @@ runs, and unhandled errors return a generic 500 (details stay in the logs). Set
 `DEE_API_AUTH_KEY` in `.env` to require an `X-API-Key` header on everything
 except `/` and `/healthz`.
 
-Beyond the core engine, three further planes ship (auth in parentheses; full
-detail in the linked docs):
+Beyond the core engine, further surfaces ship across three auth planes — admin
+(`X-API-Key`), org (`X-Org-Key`) and candidate (`X-Candidate-Key`). Full detail
+in the linked docs:
 
 | Surface | Plane | Key endpoints | Doc |
 |---------|-------|---------------|-----|
 | Evaluation ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/records` · `/coding-rounds` · `/offers`; `GET …/records` · `…/coding-rounds` · `…/reputation` (query-time consent, every access audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
 | Talent search / feature store | admin `X-API-Key` | `POST /talent/search` — filter + composite-score ranking over materialized feature vectors (advisory) | [FEATURES.md](FEATURES.md) |
-| Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) |
+| Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) · `GET /dashboard/overview` · `GET /jobs/{id}/board` · `GET /candidates/{id}/card` | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md) |
+| Profile sources & curation | admin `X-API-Key` | `POST /candidates/{id}/sources/github` · `…/sources/linkedin` · `GET /candidates/{id}/sources`; `GET /curation/skills/unmapped` · `POST /curation/skills/resolve` | [PROFILE_SOURCES.md](PROFILE_SOURCES.md) · [CURATION.md](CURATION.md) |
+| Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
+| Identity verification | candidate `X-Candidate-Key` + org `X-Org-Key` + admin `X-API-Key` | `POST /portal/verifications` · `…/{id}/confirm` · `GET /portal/verifications`; `GET /verification/candidates/{id}/assurance` (consent-gated, every attempt audited); `POST /candidates/{id}/verifications/manual-review` | [VERIFICATION.md](VERIFICATION.md) |
 
 Every one of these is **advisory** and **consent-aware**: consent-gated writes,
 query-time consent enforcement on cross-company reads, de-identified comp
-aggregation, and DPDP erasure that cascades every candidate-linked row.
+aggregation, and DPDP erasure that cascades every candidate-linked row. The
+candidate plane is the exception that proves the rule — a data principal
+reading or erasing their **own** data is gated by identity alone, never by a
+consent object ([PORTAL.md](PORTAL.md)).
 
 ### Example request
 
@@ -237,6 +259,18 @@ grant — and every candidate-linked row cascades on DPDP erasure. Comp
 aggregation reads only de-identified, k-anonymized offer data
 ([LEDGER.md](LEDGER.md) · [COMP.md](COMP.md)).
 
+Identity verification stores **outcomes only** — never a document, image, or
+biometric. That posture is structural rather than procedural: no column on
+either verification table can hold an artifact, and the sole evidence field is
+a sha256 digest, so a future KYC adapter cannot persist one without a migration
+a reviewer would see ([VERIFICATION.md](VERIFICATION.md)).
+
+Candidates exercise their own DPDP rights first-party through the candidate
+plane — access, an access log of who touched their data, consent grant/revoke,
+and self-service erasure — gated by identity alone, never by a consent object
+([PORTAL.md](PORTAL.md)). Retention windows are **surfaced** per data class;
+the mechanical purge job is not built yet.
+
 ## Flywheel
 
 Every `(claim → probe → verdict → outcome?)` record is appended to a pluggable
@@ -284,6 +318,22 @@ app/
   comp/                  PI-5 comp intelligence → COMP.md
     bands.py, estimate.py  static prior + observed-offer blend (advisory)
     service.py           CompService (reads ledger-observed offers)
+  dashboard/             PI-5 employer read-models → DASHBOARD.md
+    schema.py, service.py  pure composition over jobs/comp/ledger (owns no tables)
+  profile_sources/       PI-6 GitHub + LinkedIn signals → PROFILE_SOURCES.md
+    github.py, linkedin.py  pure fetch/parse → to_signal transforms
+    models.py, store.py, service.py  append-only signal rows + ingestion
+  curation/              PI-6 skill-taxonomy curation loop → CURATION.md
+    store.py, service.py   unmapped-term queue + normalize_skill overlay
+  portal/                PI-6 candidate DPDP portal → PORTAL.md
+    schema.py, retention.py  read-shapes + pure retention posture
+    service.py           PortalService (composition; owns no tables)
+  verification/          PI-7 verification spine → VERIFICATION.md
+    schema.py            assurance ladder + Verification/IdentityAssurance
+    assurance.py, otp.py pure folding w/ read-time expiry · pure OTP mechanics
+    methods.py           method-adapter seam (govt-ID declared, unimplemented)
+    models.py, store.py  outcomes + short-lived challenges; consent-gated reads
+    service.py           VerificationService (third-party gate, destination binding)
   domains/
     base.py              DomainModel interface + rule registry
     rules.py             shared SignalRule machinery (all domains build on it)
@@ -291,7 +341,8 @@ app/
     data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
   schemas/               claims.py, report.py, fabrication.py (Pydantic v2)
   services/              Services container (candidates · ledger · features · jobs
-                         · comp; injected, never global) + llm (OpenRouter) ·
+                         · comp · dashboard · profile_sources · curation · portal
+                         · verification; injected, never global) + llm (OpenRouter) ·
                          vectorstore (Chroma) · github · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)
 alembic/                 shared migrations 0001-0009 (candidate store, fingerprints,

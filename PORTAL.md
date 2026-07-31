@@ -77,10 +77,11 @@ for why.
 
 | Right | Endpoint | Notes |
 |---|---|---|
-| **Access** | `GET /portal/me` → `MyData` | profile, resumes, profile-source signals, interview records, coding rounds, reports (as refs), consents, retention posture |
+| **Access** | `GET /portal/me` → `MyData` | profile, resumes, profile-source signals, interview records, coding rounds, reports (as refs), consents, identity assurance (S7.1), retention posture |
 | **Transparency** | `GET /portal/access-log` → `list[AccessLogEntry]` | who accessed the candidate's data, newest-first, including platform-internal actions |
 | **Consent control** | `GET /portal/consents` / `POST /portal/consents` / `POST /portal/consents/{id}/revoke` | first-party grant + revoke over the same `consent_grants` rows the admin plane and orgs already use |
 | **Erasure** | `DELETE /portal/me` | hard delete, self-service, reuses the existing erasure path |
+| **Identity verification** (S7.1) | `POST /portal/verifications` / `POST /portal/verifications/{id}/confirm` / `GET /portal/verifications` | candidate-initiated self-verification; see "Identity verification" below |
 
 ### Why no new `ConsentPurpose`
 
@@ -136,6 +137,43 @@ internals (and any correction right over them) is a deferred policy call
 records about them* are the v0 access surface, not the platform's own
 assessment of that data.
 
+## Identity verification (added by S7.1)
+
+PI-7's verification spine is candidate-initiated, so its start/confirm surface
+lives on this plane. Three routes were added to `candidate_router`; the
+subsystem itself is documented in `VERIFICATION.md`.
+
+- `POST /portal/verifications` — body `{method, destination?}`. Starts a
+  verification. `self_attested` completes immediately; the OTP methods create a
+  challenge.
+- `POST /portal/verifications/{verification_id}/confirm` — body `{code}`.
+- `GET /portal/verifications` — the candidate's own verifications plus their
+  current `IdentityAssurance`.
+
+Three properties matter for this document:
+
+- **They follow the plane's rules exactly.** Each handler takes only
+  `candidate_id: str = Depends(require_candidate)`; no route names another
+  candidate. `confirm` is the one place a foreign id *could* be presented on
+  the wire, and it is ownership-enforced the same way the consent revoke is:
+  `VerificationService.confirm` requires the verification to belong to the
+  calling candidate, else raises `LookupError` → **404**, identical whether the
+  id is unknown or someone else's.
+- **No `ConsentPurpose` gates them.** Self-verification is first-party, so the
+  "Why no new `ConsentPurpose`" reasoning below applies unchanged. S7.1 *did*
+  add two purposes to the taxonomy (`identity_verify`, `verification_read`) —
+  but neither gates any portal route: `verification_read` gates the **org**
+  plane's read of assurance, and `identity_verify` gates verification via an
+  external source (no shipped adapter is third-party today). See `LEDGER.md`.
+- **`MyData.identity`** carries the same advisory `IdentityAssurance`
+  (`level`, contributing `methods`, `verified_at`, `expired_methods`) that
+  `GET /portal/verifications` returns. It is `Optional` — `PortalService` takes
+  the verification service as an optional collaborator, so the portal stays
+  constructible without the spine, in which case `identity` is simply omitted.
+
+Assurance is **advisory** and affects no verdict, depth, score, ranking, or
+match — the same posture as everything else in this document.
+
 ## Retention posture
 
 `GET /portal/me` surfaces `MyData.retention: RetentionPolicy`
@@ -147,11 +185,13 @@ assessment of that data.
 - `oldest_item_at` / `retained_until` (`= oldest + ttl_days`) are populated
   only for the classes `my_data` already materializes in full this sprint —
   `resumes`, `profile_sources`, `interview_records`, `coding_rounds` (the
-  oldest timestamp is free from those reads). `observed_offers` and
-  `audit_log` are **policy-only** rows (`retained_until=None`) — the portal
-  does not materialize per-candidate reads for those classes in v0, and this
+  oldest timestamp is free from those reads). `observed_offers`, `audit_log`
+  and `verifications` are **policy-only** rows (`retained_until=None`) — the
+  portal does not materialize per-candidate reads for those classes, and this
   keeps the retention view honest rather than fabricating a timestamp it
-  didn't compute.
+  didn't compute. (`verifications` joined the policy in S7.1; `my_data` reads
+  assurance, not the underlying rows' timestamps, so it has no oldest-item
+  timestamp to report.)
 - **`RetentionPolicy.sweep_active = False`, always.** The portal *shows* the
   policy; it does not enforce it. There is no scheduler in this platform yet,
   and cron/observability is explicitly **PI-8**'s remit — a deterministic
@@ -171,6 +211,7 @@ parametrize the surfaced `retained_until` only):
 | `ret_coding_round_days` | 1825 (5y) | coding rounds |
 | `ret_observed_offer_days` | 1825 (5y) | observed offers (policy-only) |
 | `ret_audit_log_days` | 2555 (7y) | audit trail — deliberately longest; accountability outlives content |
+| `ret_verification_days` | 1095 (3y) | identity verifications (policy-only; added S7.1) |
 
 ## DPDP erasure completeness
 
@@ -179,7 +220,9 @@ parametrize the surfaced `retained_until` only):
 (`report_store.delete_for_candidate`) then hard-deletes the candidate
 (`CandidateStore.delete_candidate`), which cascades resumes, extractions, and
 every candidate-linked ledger row via the migration's CASCADE FKs — including
-the new `candidate_credentials` row. After erasure the same key **401s** on
+the new `candidate_credentials` row, and (since S7.1) the candidate's
+`verifications` rows and their `verification_challenges`. After erasure the
+same key **401s** on
 any subsequent call: the credential is gone, so `authenticate_candidate` finds
 nothing to match. Response: **200** `{candidate_id, deleted: true,
 reports_deleted: N}`.
@@ -212,6 +255,20 @@ missing/invalid/empty key, always.
 - `DELETE /portal/me` → **200** `{candidate_id, deleted: true,
   reports_deleted: N}`. Subsequent calls with the same key → **401**.
 
+Added by S7.1 (contracts in `VERIFICATION.md`):
+
+- `POST /portal/verifications` — body `{method, destination?}` → **200**
+  `{verification, debug_code?}` · **400** destination missing / malformed /
+  not matching the contact hash on file · **403** third-party method without
+  an `identity_verify` grant · **422** unknown method · **429** resend inside
+  the cooldown. (`debug_code` appears only when `env == "local"` **and**
+  `verif_otp_debug_echo` is true — it exists so the sprint smoke can drive the
+  two-step flow over plain HTTP.)
+- `POST /portal/verifications/{verification_id}/confirm` — body `{code}` →
+  **200** `Verification` · **400** wrong or expired code · **404** unknown
+  **or not owned by the caller** (identical either way — no probing).
+- `GET /portal/verifications` → **200** `{verifications, assurance}`.
+
 ## Architecture (for reference)
 
 Mirrors `app/dashboard/` (`DASHBOARD.md`): a pure `app/portal/` package that
@@ -229,6 +286,9 @@ owns no tables/state, composing `CandidateStore` + `LedgerStore` +
 - **`Services.portal`** wired in `app/services/…` (function-local build +
   `TYPE_CHECKING` import), sharing the already-built `candidates`, `ledger`,
   `report_store`, and `profile_sources` instances — no new DB connections.
+  Since S7.1 it also receives the `verification` service (built **before** the
+  portal in `build_default_services` for that reason) as an **optional**
+  collaborator, used only to populate `MyData.identity`.
 
 Small store additions this sprint (`app/ledger/store.py`, nothing existing
 changed): `consents_for_candidate(candidate_id)` — all grants for a candidate
