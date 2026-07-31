@@ -66,6 +66,11 @@ class PortalService:
             if self._verification is not None
             else None
         )
+        claims = (
+            self._verification.claims_for_candidate(candidate_id)
+            if self._verification is not None
+            else None
+        )
         return MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -76,6 +81,7 @@ class PortalService:
             reports=reports,
             consents=self._ledger.consents_for_candidate(candidate_id),
             identity=identity,
+            claims=claims,
             retention=build_retention_policy(oldest, self._settings),
         )
 

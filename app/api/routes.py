@@ -51,8 +51,13 @@ from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
-from app.verification.schema import VerificationMethod, VerificationStatus
-from app.verification.service import DestinationError, MethodNotPermittedError
+from app.verification.documents import DocumentParseError
+from app.verification.schema import (
+    DocumentType, VerificationMethod, VerificationStatus,
+)
+from app.verification.service import (
+    DestinationError, DocumentTooLargeError, MethodNotPermittedError,
+)
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
@@ -1067,12 +1072,15 @@ async def confirm_verification(
 async def list_verifications(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> dict:
-    verifications, assurance = _services(request).verification.list_for_candidate(
-        candidate_id
-    )
+    services = _services(request)
+    verifications, assurance = services.verification.list_for_candidate(candidate_id)
     return {
         "verifications": [v.model_dump(mode="json") for v in verifications],
         "assurance": assurance.model_dump(mode="json"),
+        # S7.2: a SECOND number beside the first, never folded into it.
+        "claims": services.verification.claims_for_candidate(
+            candidate_id
+        ).model_dump(mode="json"),
     }
 
 
@@ -1092,6 +1100,72 @@ async def org_candidate_assurance(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return assurance.model_dump(mode="json")
+
+
+# ── Employment-claim documents, candidate plane (S7.2) ──────────────────────
+# First-party intake: the candidate submits their OWN letter or payslip. The
+# document is parsed in memory and discarded — only a sha256 digest and finding
+# CODES survive the request. Org-supplied documents ABOUT a candidate are
+# third-party data under DPDP and are deliberately out of scope.
+
+
+class SubmitDocumentRequest(BaseModel):
+    """`content_b64` is a base64 PDF or plain-text body. It is parsed in memory
+    and discarded -- only a sha256 digest and finding CODES are stored.
+    `claim_ref` is a free-text LABEL (employer + interval), never a selector:
+    the candidate is always resolved from the key."""
+
+    doc_type: DocumentType
+    content_b64: str
+    claim_ref: str | None = None
+
+
+@candidate_router.post("/portal/documents")
+async def submit_document(
+    req: SubmitDocumentRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> dict:
+    services = _services(request)
+    try:
+        verification, findings, claims = services.verification.submit_document(
+            candidate_id, req.doc_type, req.content_b64, claim_ref=req.claim_ref
+        )
+    except DocumentTooLargeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except DocumentParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MethodNotPermittedError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "verification": verification.model_dump(mode="json"),
+        "findings": [f.model_dump(mode="json") for f in findings],
+        "claims": claims.model_dump(mode="json"),
+    }
+
+
+@org_router.get("/verification/candidates/{candidate_id}/claims")
+async def org_candidate_claims(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> dict:
+    """Consent-gated employment-claim evidence. Every attempt — allowed or
+    denied — is audited by the store. Returns the advisory roll-up only: never
+    an evidence digest, never a claim_ref, never a document."""
+    try:
+        claims = _services(request).verification.claims_for_org(
+            org_id=org_id, candidate_id=candidate_id
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return claims.model_dump(mode="json")
 
 
 @router.post("/candidates/{candidate_id}/verifications/manual-review")

@@ -17,7 +17,7 @@ from app.candidates.schema import CandidateProfile
 from app.candidates.store import ResumeSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
 from app.profile_sources.schema import ProfileSourceSignal
-from app.verification.schema import IdentityAssurance
+from app.verification.schema import ClaimEvidence, IdentityAssurance
 
 
 class ConsentState(StrEnum):
@@ -79,4 +79,7 @@ class MyData(BaseModel):
     reports: list[ReportRef] = Field(default_factory=list)
     consents: list[ConsentGrant] = Field(default_factory=list)
     identity: Optional[IdentityAssurance] = None  # S7.1 advisory assurance
+    # S7.2 advisory employment-claim evidence. A SEPARATE field, never folded
+    # into `identity`: a payslip says a job was real, not who the person is.
+    claims: Optional[ClaimEvidence] = None
     retention: RetentionPolicy
