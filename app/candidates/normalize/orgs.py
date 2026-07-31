@@ -186,6 +186,19 @@ def _build_emp_index() -> dict[str, str]:
 _EMP_INDEX = _build_emp_index()
 
 
+def strip_legal_suffix(name: str) -> str:
+    """norm_key'd employer with trailing legal tokens removed: "Acme
+    Technologies Pvt. Ltd." -> "acme technologies". Public because S7.2's
+    document forensics match a letter's employer against the resume's, and the
+    two rarely spell the legal suffix the same way. Never returns empty — a
+    company named only "Corp" keeps its name rather than matching everything.
+    """
+    words = norm_key(name or "").split()
+    while len(words) > 1 and words[-1] in _LEGAL_TOKENS:
+        words.pop()
+    return " ".join(words)
+
+
 def canonicalize_employer(name: str) -> Optional[str]:
     words = norm_key(name or "").split()
     while words:
