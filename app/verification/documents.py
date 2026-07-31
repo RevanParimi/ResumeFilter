@@ -230,3 +230,101 @@ def assess_experience_letter(
 
     return DocumentAssessment(VerificationStatus.VERIFIED, ClaimStrength.DOCUMENTED,
                               findings)
+
+
+_AMOUNT_RE = re.compile(
+    r"(gross|total deductions|deductions|net pay|net salary)\s*(?:salary)?\s*[:\-]?\s*"
+    r"(?:rs\.?|inr|₹)?\s*([\d,]+(?:\.\d{1,2})?)", re.IGNORECASE)
+_UAN_RE = re.compile(r"\b(uan|pf\s*(no|number|account))\b", re.IGNORECASE)
+_TOLERANCE = 1.0   # rupees; absorbs rounding, not a discrepancy
+
+
+def _amounts(text: str) -> dict[str, float]:
+    """Label -> figure. The figures live only inside this call: they are used
+    for one subtraction and never reach a finding (spec section 5)."""
+    out: dict[str, float] = {}
+    for label, amount in _AMOUNT_RE.findall(text):
+        key = label.lower()
+        key = ("gross" if key.startswith("gross")
+               else "net" if key.startswith("net")
+               else "deductions")
+        try:
+            out.setdefault(key, float(amount.replace(",", "")))
+        except ValueError:
+            continue
+    return out
+
+
+def assess_payslip(
+    parsed: ParsedDocument,
+    profile: Optional[CandidateProfile],
+    *,
+    at: datetime,
+    metadata_skew_days: int,
+) -> DocumentAssessment:
+    """Deterministic forensics over a payslip.
+
+    Amounts are read to check that gross - deductions == net and are then
+    DISCARDED. No finding may carry a figure: comp intelligence is consented
+    and k-anonymised (S5.2), and a payslip must not become a back door into it.
+    """
+    text = parsed.text
+    findings: list[DocumentFinding] = []
+
+    if _UAN_RE.search(text):
+        findings.append(_f("uan_present", _INFO,
+                           "the payslip references a UAN/PF account (number not stored)"))
+
+    findings.extend(_metadata_findings(parsed, metadata_skew_days))
+
+    amounts = _amounts(text)
+    if {"gross", "deductions", "net"} <= set(amounts):
+        if abs(amounts["gross"] - amounts["deductions"] - amounts["net"]) > _TOLERANCE:
+            findings.append(_f("payslip_arithmetic_mismatch", _HARD,
+                               "gross minus deductions does not equal net pay"))
+            return DocumentAssessment(VerificationStatus.FAILED, ClaimStrength.NONE,
+                                      findings)
+    else:
+        findings.append(_f("payslip_amounts_unreadable", _SOFT,
+                           "the payslip's amounts could not be read for a "
+                           "consistency check"))
+
+    if profile is None or not profile.experience:
+        findings.append(_f("no_profile_to_compare", _INFO,
+                           "no resume on file to corroborate the payslip against"))
+        return DocumentAssessment(VerificationStatus.VERIFIED,
+                                  ClaimStrength.DOCUMENTED, findings)
+
+    matched = _match_employer(profile, text)
+    if matched is None:
+        findings.append(_f("employer_not_claimed", _HARD,
+                           "the payslip's employer does not appear in the resume"))
+        return DocumentAssessment(VerificationStatus.FAILED, ClaimStrength.NONE,
+                                  findings)
+
+    months = _text_months(text)
+    interval = narrow_interval(matched.dates, at.date())
+    if months and interval and overlap_months((months[0], months[-1]), interval) == 0:
+        findings.append(_f("payslip_period_outside_role", _HARD,
+                           "the pay period falls outside the claimed role"))
+        return DocumentAssessment(VerificationStatus.FAILED, ClaimStrength.NONE,
+                                  findings)
+
+    return DocumentAssessment(VerificationStatus.VERIFIED, ClaimStrength.DOCUMENTED,
+                              findings)
+
+
+def assess(
+    parsed: ParsedDocument,
+    profile: Optional[CandidateProfile],
+    doc_type: DocumentType,
+    *,
+    at: datetime,
+    metadata_skew_days: int,
+) -> DocumentAssessment:
+    """Dispatch to the right forensics. The spine calls only this."""
+    if doc_type is DocumentType.PAYSLIP:
+        return assess_payslip(parsed, profile, at=at,
+                              metadata_skew_days=metadata_skew_days)
+    return assess_experience_letter(parsed, profile, at=at,
+                                    metadata_skew_days=metadata_skew_days)
