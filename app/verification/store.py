@@ -22,8 +22,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
+from app.ledger import consent as consent_logic
 from app.ledger.consent import as_utc
-from app.ledger.store import LedgerStore
+from app.ledger.models import OrganizationRow
+from app.ledger.schema import ConsentPurpose
+from app.ledger.store import ConsentError, LedgerStore
 from app.verification import otp as otp_logic
 from app.verification.assurance import compute_assurance
 from app.verification.models import VerificationChallengeRow, VerificationRow
@@ -289,3 +292,67 @@ class VerificationStore:
         return compute_assurance(
             candidate_id, self.verifications_for_candidate(candidate_id), at=moment
         )
+
+    def assurance_for_org(
+        self, *, org_id: str, candidate_id: str, at: Optional[datetime] = None
+    ) -> IdentityAssurance:
+        """Query-time DPDP gate, mirroring LedgerStore.query_records_for_org: an
+        org sees assurance only under an active VERIFICATION_READ grant, and
+        EVERY attempt -- allowed or denied -- is audited in the same
+        transaction, because surveillance must itself be observable.
+
+        Returns the advisory roll-up only. Never the evidence digests, the
+        destination hashes, or the individual attempt rows.
+        """
+        moment = as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+            grants = self._ledger._grants_for(
+                session, candidate_id, ConsentPurpose.VERIFICATION_READ
+            )
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.VERIFICATION_READ, at=moment
+            )
+            if not decision.allowed:
+                self._ledger._audit(
+                    session,
+                    actor_type="org",
+                    actor_id=org_id,
+                    action="verification.query",
+                    entity_type="candidate",
+                    entity_id=candidate_id,
+                    candidate_id=candidate_id,
+                    details={"allowed": False, "purpose": "verification_read"},
+                )
+                session.commit()
+                raise ConsentError(decision.reason)
+
+            rows = (
+                session.execute(
+                    select(VerificationRow)
+                    .where(VerificationRow.candidate_id == candidate_id)
+                    .order_by(VerificationRow.requested_at, VerificationRow.id)
+                ).scalars().all()
+            )
+            assurance = compute_assurance(
+                candidate_id, [_verification(r) for r in rows], at=moment
+            )
+            self._ledger._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="verification.query",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": True,
+                    "consent_id": decision.grant_id,
+                    "level": int(assurance.level),
+                },
+            )
+            session.commit()
+            return assurance
