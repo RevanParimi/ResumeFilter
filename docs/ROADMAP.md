@@ -9,7 +9,67 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-6 COMPLETE — S6.4 (Candidate auth + DPDP portal)
+- **Current sprint:** **PI-7 OPEN — S7.1 (Verification spine + consent-first
+  identity) BUILT on branch `s71-identity-verification` — 784→877 green,
+  smoke_s71 16/16 OK exit 0, key-less — no LLM, no network; PENDING final
+  whole-branch review + merge (not yet on main).** Delivered a new pure package
+  `app/verification/` (peer of `app/portal/`/`app/profile_sources/`): `schema.py`
+  (`AssuranceLevel` **IntEnum** 0–4 so "highest level held" is a `max()`;
+  `VerificationMethod`/`VerificationStatus`; `METHOD_LEVEL`; `Verification`;
+  `IdentityAssurance`), `assurance.py` (pure clock-injected `is_expired`/
+  `effective_status`/`compute_assurance` — **expiry is computed at read time**,
+  never written by a job, because no scheduler exists and a stored `expired`
+  would be a lie nobody corrects; lapsed methods are reported separately so the
+  portal can prompt a re-verify instead of showing an unexplained downgrade),
+  `otp.py` (pure code-gen/hash/TTL/attempt/cooldown arithmetic under an injected
+  RNG + `Notifier` protocol with a `NullNotifier` that logs **neither** the code
+  nor the destination), `methods.py` (adapter seam + registry), `models.py`,
+  `store.py`, `service.py`. Migration `0013_identity_verification` — two tables,
+  both candidate CASCADE: `verifications` (durable outcome) and
+  `verification_challenges` (short-lived secret material, deliberately separate);
+  drift/index/FK/nullability guards extended (the nullability guard **caught a
+  real drift** during the build — `details` was `nullable=True` in the migration
+  vs `Mapped[dict]` NOT NULL in the ORM; migration corrected). **Ladder shipped:**
+  L1 `self_attested` · L2 `otp_email`/`otp_phone` (contact-control) · L3
+  `manual_review` · L4 `government_id` **declared but inert** (raises
+  `NotImplementedError`, unreachable from any route). **Two new `ConsentPurpose`
+  members** (first taxonomy addition since S3.1): `IDENTITY_VERIFY` (gates any
+  `third_party` adapter — enforced in the SPINE, not in adapters, and proven by a
+  `_FakeThirdPartyAdapter` in tests) and `VERIFICATION_READ` (org disclosure,
+  query-time enforced + **every attempt audited allowed or denied**, mirroring
+  `query_records_for_org`). Six endpoints across three planes: candidate
+  (`POST /portal/verifications`, `POST /portal/verifications/{id}/confirm`,
+  `GET /portal/verifications`; `MyData` gained `identity`), org
+  (`GET /verification/candidates/{id}/assurance`), admin
+  (`POST /candidates/{id}/verifications/manual-review`). `verif_*` config knobs +
+  `ret_verification_days`. `VERIFICATION.md` written. **Design invariants:**
+  (a) **the "never store a document" rule is STRUCTURAL** — neither table has any
+  column able to hold an artifact, the sole evidence field is a sha256
+  `evidence_digest`, so a future govt-ID adapter cannot persist one without a
+  migration a reviewer would see (asserted by tests in both schema and models);
+  (b) **first-party self-service needs no grant** — the S6.4 principle holds,
+  acting on your own data is a data-principal right, not a disclosure;
+  (c) **destination binding** — the `candidates` table stores only
+  `email_hash`/`phone_hash`, so the candidate supplies the OTP destination and
+  the spine normalizes+hashes it and requires a match against the hash on file
+  (proves they know the contact, works regardless of what extraction retained,
+  and the raw value stays transient — only the hash is written);
+  (d) **cross-candidate isolation is structural** — every candidate-plane handler
+  resolves `candidate_id` from the key, never a path/body param; another
+  candidate's verification is an indistinguishable 404. **Challenge hygiene is a
+  deliberate exception to the deferred PI-8 sweep:** consumed/superseded OTP rows
+  are actually DELETED on paths that already run — that is short-TTL secret
+  material, not a retention policy. 93 new tests (**784→877**, `pytest -q` green).
+  Smoke `scripts/smoke_s71.py` (uvicorn, key-less) **16/16 OK** exit 0: candidate
+  starts at level 0 → self-attest → L1 → OTP to a contact NOT on file 400 →
+  OTP to the real contact → wrong code 400 → correct code → L2 → org read 403 →
+  grant `verification_read` → 200 (and no evidence internals in the payload) →
+  revoke → 403 → admin manual review → L3 → `DELETE /portal/me` → org read 404.
+  **PI-6 (candidate side & intake) remains COMPLETE and is merged to main**
+  (`814e845`, 784 green) — S6.1 GitHub · S6.2 LinkedIn export · S6.3
+  normalization curation loop · S6.4 candidate auth + DPDP portal. Historical
+  PI-6/PI-5 detail follows below.
+- **Prior sprint detail:** **S6.4 (Candidate auth + DPDP portal)
   BUILT on branch `s64-candidate-auth-dpdp-portal` — 752→784 green, smoke_s64
   10/10 OK, key-less — no LLM, no network, no new `ConsentPurpose`; PENDING
   final whole-branch review + merge (not yet on main).** Delivered: migration
@@ -85,11 +145,22 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Merge S6.4 after its final whole-branch review — **this closes
-  PI-6 (candidate side & intake) entirely.** After that, shape/plan **PI-7
-  (verification & assessment depth)** per the vision gap-analysis §6
-  (consent-first identity verification · document forensics + moonlighting
-  advisory · AI interview delivery v0), when its turn comes. S6.3 follow-ups
+- **Next action:** Merge S7.1 after its final whole-branch review. Then
+  shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
+  **second producer on the S7.1 spine** — the S6.1→S6.2 pattern: it writes
+  `Verification` outcomes through `VerificationStore`, reusing the adapter seam,
+  the audit trail, and the CASCADE, adding no new consent purpose unless a
+  third-party pull (e.g. EPFO) is in scope. Per gap-analysis §5B, moonlighting
+  must be advisory and derived from **first-party timeline evidence only**
+  unless a candidate-consented pull is legally cleared (EPFO/UAN legality is an
+  open §8 research item — resolve it in the S7.2 spec, and if murky, first-party
+  forensics only). S7.3 (AI interview delivery v0) follows and reads
+  `IdentityAssurance` for proxy-detection hooks. **S7.1 follow-ups (deferred, not
+  merge-blocking):** real OTP delivery (no email/SMS provider in this repo —
+  `NullNotifier` discards); the mechanical retention sweep (PI-8, unchanged);
+  assurance as a feature-store feature once its predictive value is measurable;
+  a real govt-ID adapter needs vendor selection **and** a legal review of
+  DigiLocker API terms. S6.3 follow-ups
   to fold in later: employers/institutions curation (needs an unmapped
   marker on `canonicalize_*`), resume-extraction capture (same `canonical=None`
   marker on `SkillClaim`), retroactive re-normalization of already-stored signals,
@@ -343,10 +414,19 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                (X-Candidate-Key, mirrors org keys) + pure app/portal/
 │                exposing access/transparency/consent-control/erasure; no new
 │                consent purpose (self-access == identity of the subject)
-├── PI-7  VERIFICATION & ASSESSMENT DEPTH (shaped) — consent-first identity
-│        verification · document forensics + moonlighting advisory · AI
-│        interview delivery v0 (audio-first English w/ Indian accents,
-│        advisory, proxy-detection hooks; model shortlist in MODELS.md)
+├── PI-7  VERIFICATION & ASSESSMENT DEPTH                          [in progress]
+│   ├── [x] S7.1  Verification spine + consent-first identity — pure
+│   │            app/verification/ (assurance ladder behind a method-adapter
+│   │            seam; outcomes stored, documents/biometrics structurally
+│   │            impossible); ships self-attest / contact-control OTP /
+│   │            operator manual review, government_id declared-but-inert;
+│   │            two new ConsentPurpose (IDENTITY_VERIFY, VERIFICATION_READ);
+│   │            three planes; no LLM, no network, advisory only
+│   ├── [ ] S7.2  Document forensics (experience letters/payslips) +
+│   │            moonlighting advisory — SECOND PRODUCER on the S7.1 spine
+│   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
+│                accents, advisory, proxy-detection hooks reading
+│                IdentityAssurance; model shortlist in MODELS.md)
 └── PI-8  SCALE & LEARNING (shaped) — Postgres cutover + real embeddings ·
         calibration harness (predicted vs ledger outcomes) · observability +
         org self-serve.  STANDING NON-GOALS: payments/payroll/contracts,
@@ -366,6 +446,45 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-31** — **PI-7 opened; S7.1 (verification spine + consent-first
+  identity) built** (inline TDD-offline on branch `s71-identity-verification`,
+  11 tasks; spec `2026-07-31-s71-identity-verification-design.md`, plan
+  `2026-07-31-s71-identity-verification.md`). Confirmed S6.4 had already merged
+  to main (`814e845`, 784 green) — PI-6 COMPLETE. Brainstormed PI-7 → **three
+  scope decisions taken with user, all on recommendation:** **(1) S7.1 first** —
+  build `app/verification/` as a reusable spine with identity as its first
+  producer, so S7.2 lands as a second producer exactly as S6.2 did on S6.1's
+  `profile_sources` spine (rejected: leading with S7.3, the largest build, which
+  would strand identity hooks as stubs; and merging S7.1+S7.2 into one sprint).
+  **(2) v0 = an assurance ladder behind an adapter seam** shipping only what is
+  buildable with no vendor and no network — self-attest, contact-control OTP,
+  operator manual review — with `government_id` **declared but unimplemented**,
+  its consent gate and data posture designed now (rejected: OTP-only, which
+  would force S7.2 to retrofit the spine; and an outcome-recording API, which
+  skips the candidate-initiated consent flow that is the whole point of
+  gap-analysis §5B). **(3) two new `ConsentPurpose` members** —
+  `IDENTITY_VERIFY` + `VERIFICATION_READ` (rejected: one purpose, leaving a real
+  govt-ID adapter with no grant to attach to; and reusing `LEDGER_READ`, which
+  would silently widen what grants candidates have *already signed* disclose).
+  Delivered `app/verification/` (`schema.py`/`assurance.py`/`otp.py`/
+  `methods.py`/`models.py`/`store.py`/`service.py`), migration `0013` (two
+  candidate-CASCADE tables), `Services.verification` wired cycle-safe (built
+  **before** the portal, which now surfaces `identity` on `MyData`), six
+  endpoints across the admin/org/candidate planes, `verif_*` + `ret_verification_days`
+  config, and `VERIFICATION.md`. **No LLM, no network** — fully deterministic, so
+  the deterministic-fallback convention is satisfied trivially. 93 new tests
+  (**784→877**, `pytest -q` green — verified this session); pyflakes clean on
+  every new + modified file. Smoke `scripts/smoke_s71.py` (uvicorn, key-less)
+  **16/16 OK** exit 0. **Notable during the build:** the migration nullability
+  guard caught a genuine drift (`details` `nullable=True` in the migration vs
+  `Mapped[dict]` NOT NULL in the ORM) — migration corrected, models kept as the
+  source of truth; and the first API-test fixture used the module-level `app`
+  (whose lifespan builds real services against the dev DB) and was corrected to
+  this repo's `create_app(services)` pattern. Executed **inline** rather than
+  subagent-driven: the harness in this session forbids spawning agents unless the
+  user asks. **PENDING:** final whole-branch review + merge. Next: merge, then
+  shape/plan S7.2 (document forensics + moonlighting advisory) as the second
+  producer on this spine.
 - **2026-07-30 (2)** — **S6.4 (candidate auth + DPDP portal) built — PI-6
   COMPLETE** (subagent-driven on branch `s64-candidate-auth-dpdp-portal`, 10
   build tasks + this closeout; spec
