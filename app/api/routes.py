@@ -51,7 +51,7 @@ from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
-from app.verification.schema import VerificationMethod
+from app.verification.schema import VerificationMethod, VerificationStatus
 from app.verification.service import DestinationError
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
@@ -999,6 +999,15 @@ class ConfirmVerificationRequest(BaseModel):
     code: str
 
 
+class ManualReviewRequest(BaseModel):
+    """Operator-recorded verification outcome. `evidence_digest` is a hash of
+    whatever was checked out of band -- never the artifact itself."""
+
+    outcome: VerificationStatus
+    note: str | None = None
+    evidence_digest: str | None = None
+
+
 @candidate_router.post("/portal/verifications")
 async def start_verification(
     req: StartVerificationRequest,
@@ -1063,6 +1072,42 @@ async def list_verifications(
         "verifications": [v.model_dump(mode="json") for v in verifications],
         "assurance": assurance.model_dump(mode="json"),
     }
+
+
+@org_router.get("/verification/candidates/{candidate_id}/assurance")
+async def org_candidate_assurance(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> dict:
+    """Consent-gated identity assurance. Every attempt — allowed or denied — is
+    audited by the store. Returns the advisory roll-up only: never the evidence
+    digests, the destination hashes, or the individual attempt rows."""
+    try:
+        assurance = _services(request).verification.assurance_for_org(
+            org_id=org_id, candidate_id=candidate_id
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return assurance.model_dump(mode="json")
+
+
+@router.post("/candidates/{candidate_id}/verifications/manual-review")
+async def record_manual_review(
+    candidate_id: str, req: ManualReviewRequest, request: Request
+) -> dict:
+    """Admin plane: an operator checked something out of band (L3 REVIEWED).
+    Only a digest of what was checked is stored, never the artifact."""
+    try:
+        verification = _services(request).verification.record_manual_review(
+            candidate_id,
+            outcome=req.outcome,
+            note=req.note,
+            evidence_digest=req.evidence_digest,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return verification.model_dump(mode="json")
 
 
 # ── Talent search / ranking (S4.3) ──────────────────────────────────────────
