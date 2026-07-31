@@ -10,9 +10,41 @@
 ## ▶ Current state
 
 - **Current sprint:** **PI-7 OPEN — S7.1 (Verification spine + consent-first
-  identity) BUILT on branch `s71-identity-verification` — 784→877 green,
-  smoke_s71 16/16 OK exit 0, key-less — no LLM, no network; PENDING final
-  whole-branch review + merge (not yet on main).** Delivered a new pure package
+  identity) COMPLETE and MERGED to main — 784→887 green, smoke_s71 19/19 OK
+  exit 0, key-less — no LLM, no network.** The whole-branch review (inline; the
+  harness in these sessions forbids spawning agents unless asked) found **two
+  Critical privilege escalations, both reproduced over HTTP with nothing but a
+  candidate's own key, both now closed and covered by tests + smoke checks**:
+  (1) `POST /portal/verifications` accepted **any** `VerificationMethod`, so a
+  candidate could POST `manual_review` and self-award **L3 REVIEWED** — a level
+  whose entire meaning is "an operator looked"; (2) worse, `government_id` was
+  reachable for **L4**: the candidate self-grants `IDENTITY_VERIFY` from the
+  portal (S6.4 first-party consent, working as designed), the spine's
+  third-party gate passes, and because **the spine performs verifications itself
+  and never calls into an adapter**, `GovernmentIdAdapter.start`'s
+  `NotImplementedError` could never fire — the route's
+  `except NotImplementedError → 422` was dead code and "declared but inert" was
+  false as shipped. The root cause was shared and structural: `start()` treated
+  **"not challenge_based" as "complete it now, VERIFIED"** — a fail-open default
+  — and the tests proved the third-party gate only against a
+  `_FakeThirdPartyAdapter` while the real, routable method went untested
+  end-to-end. **Fix (in the spine, where the other gates live):** the adapter
+  seam gained `self_service`/`implemented`/`instant`, **all defaulting to the
+  REFUSING answer on `_Base`** so a new adapter is inert until it declares what
+  it is; `start()` is now explicitly the candidate-initiated entry point and
+  checks `self_service` → `implemented` → third-party consent → destination
+  binding (**consent is necessary, never sufficient** — the candidate can grant
+  it to themselves), and refuses to mark anything VERIFIED on request unless the
+  adapter declares `instant` (only `self_attested` does). `manual_review` is
+  `self_service=False` → **403**; `government_id` is `implemented=False` →
+  **422**. Two further review fixes: the **OTP resend cooldown and challenge
+  supersession were scoped to one verification row, which rate-limited nothing**
+  (the plane mints a fresh verification per start, so a stolen key bought
+  unlimited codes and unlimited guess-batches against a 6-digit code) — now
+  scoped to **candidate + channel**, plus `hmac.compare_digest`; and an
+  operator-recorded manual review audited as `actor_type="candidate"`, i.e. the
+  candidate's own DPDP access log told them **they** did what an operator did —
+  now `"system"`. 10 review tests added (877→887). Delivered a new pure package
   `app/verification/` (peer of `app/portal/`/`app/profile_sources/`): `schema.py`
   (`AssuranceLevel` **IntEnum** 0–4 so "highest level held" is a `max()`;
   `VerificationMethod`/`VerificationStatus`; `METHOD_LEVEL`; `Verification`;
@@ -31,8 +63,11 @@
   real drift** during the build — `details` was `nullable=True` in the migration
   vs `Mapped[dict]` NOT NULL in the ORM; migration corrected). **Ladder shipped:**
   L1 `self_attested` · L2 `otp_email`/`otp_phone` (contact-control) · L3
-  `manual_review` · L4 `government_id` **declared but inert** (raises
-  `NotImplementedError`, unreachable from any route). **Two new `ConsentPurpose`
+  `manual_review` (**admin plane only** — `self_service=False`) · L4
+  `government_id` **declared but inert** — inertness is `implemented=False`
+  **enforced by the spine**; the adapter's `NotImplementedError` is only a
+  backstop, since the spine never calls an adapter to do the work (precisely how
+  the escalation above got in). **Two new `ConsentPurpose`
   members** (first taxonomy addition since S3.1): `IDENTITY_VERIFY` (gates any
   `third_party` adapter — enforced in the SPINE, not in adapters, and proven by a
   `_FakeThirdPartyAdapter` in tests) and `VERIFICATION_READ` (org disclosure,
@@ -59,10 +94,13 @@
   candidate's verification is an indistinguishable 404. **Challenge hygiene is a
   deliberate exception to the deferred PI-8 sweep:** consumed/superseded OTP rows
   are actually DELETED on paths that already run — that is short-TTL secret
-  material, not a retention policy. 93 new tests (**784→877**, `pytest -q` green).
-  Smoke `scripts/smoke_s71.py` (uvicorn, key-less) **16/16 OK** exit 0: candidate
-  starts at level 0 → self-attest → L1 → OTP to a contact NOT on file 400 →
-  OTP to the real contact → wrong code 400 → correct code → L2 → org read 403 →
+  material, not a retention policy (supersession + cooldown scoped **per
+  candidate+channel**, post-review). 103 new tests (**784→887**, `pytest -q`
+  green). Smoke `scripts/smoke_s71.py` (uvicorn, key-less) **19/19 OK** exit 0:
+  candidate starts at level 0 → self-attest → L1 → OTP to a contact NOT on file
+  400 → OTP to the real contact → wrong code 400 → correct code → L2 →
+  **candidate self-awarding `manual_review` 403 → candidate self-grants
+  `identity_verify` then `government_id` 422 → level still 2** → org read 403 →
   grant `verification_read` → 200 (and no evidence internals in the payload) →
   revoke → 403 → admin manual review → L3 → `DELETE /portal/me` → org read 404.
   **PI-6 (candidate side & intake) remains COMPLETE and is merged to main**
@@ -145,8 +183,8 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** Merge S7.1 after its final whole-branch review. Then
-  shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
+- **Next action:** **S7.1 is reviewed, fixed, and merged — start S7.2.**
+  Shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
   **second producer on the S7.1 spine** — the S6.1→S6.2 pattern: it writes
   `Verification` outcomes through `VerificationStore`, reusing the adapter seam,
   the audit trail, and the CASCADE, adding no new consent purpose unless a
@@ -160,7 +198,13 @@
   `NullNotifier` discards); the mechanical retention sweep (PI-8, unchanged);
   assurance as a feature-store feature once its predictive value is measurable;
   a real govt-ID adapter needs vendor selection **and** a legal review of
-  DigiLocker API terms. S6.3 follow-ups
+  DigiLocker API terms (when it lands, flip `implemented=True` — the seam's
+  refusing defaults are what keep it inert until then). **Review minors carried
+  (DEFER, none merge-blocking):** an abandoned OTP start leaves a `pending`
+  verification row behind when its challenge is superseded (never contributes to
+  assurance — folds into the PI-8 retention sweep); OTP codes are salted with
+  `contact_hash_salt` rather than a dedicated secret; `Notifier.send` takes the
+  raw destination (unused by `NullNotifier`, needed by any real provider). S6.3 follow-ups
   to fold in later: employers/institutions curation (needs an unmapped
   marker on `canonicalize_*`), resume-extraction capture (same `canonical=None`
   marker on `SkillClaim`), retroactive re-normalization of already-stored signals,
@@ -422,6 +466,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │            operator manual review, government_id declared-but-inert;
 │   │            two new ConsentPurpose (IDENTITY_VERIFY, VERIFICATION_READ);
 │   │            three planes; no LLM, no network, advisory only
+│   │            [MERGED 2026-07-31; branch review caught + closed two
+│   │             candidate-side ladder escalations — seam now refuses by
+│   │             default: self_service/implemented/instant]
 │   ├── [ ] S7.2  Document forensics (experience letters/payslips) +
 │   │            moonlighting advisory — SECOND PRODUCER on the S7.1 spine
 │   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
@@ -446,6 +493,52 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-07-31 (2)** — **S7.1 whole-branch review → two Critical fixes →
+  MERGED. S7.1 COMPLETE.** Review ran **inline** (the harness in these sessions
+  forbids spawning agents unless the user asks), reading the full 14-commit
+  branch surface rather than trusting the build's own account of it — which
+  mattered, because the build's docs asserted a property the code did not have.
+  **Both findings were reproduced over HTTP first** (throwaway pytest module
+  against `create_app(make_services(...))`, deleted after), then fixed, then
+  re-run to prove closure:
+  **(1) `manual_review` self-award → L3.** The candidate-plane route accepted
+  any `VerificationMethod`, and L3 asserts *an operator looked*.
+  **(2) `government_id` self-award → L4.** The candidate grants themselves
+  `IDENTITY_VERIFY` via S6.4 first-party consent (by design), the third-party
+  gate passes, and the spine **never calls the adapter** — so the
+  `NotImplementedError` inside `GovernmentIdAdapter.start` could not fire and
+  the route's `except NotImplementedError → 422` was dead code. "Declared but
+  inert / unreachable from any route" was false as shipped, in code *and* in
+  `VERIFICATION.md`. The **shared root cause** was a fail-open default —
+  `start()` read "not `challenge_based`" as "complete it now, VERIFIED" — and
+  the **test blind spot** was `_FakeThirdPartyAdapter`: the gate was proven
+  against a fake while the real, routable method was never driven end-to-end
+  (`test_government_id_is_not_reachable_from_the_candidate_plane` asserted
+  `status in (400, 403, 422)` and passed only because that test happened to have
+  no grant — false comfort, now strengthened to grant-then-assert-422).
+  **Fixes, all in the spine where the other gates live:** seam gains
+  `self_service`/`implemented`/`instant`, **defaulting to REFUSE on `_Base`**
+  (a new adapter is inert until it declares itself); `start()` documented as the
+  candidate-initiated entry point, ordering `self_service` → `implemented` →
+  third-party consent → destination binding (**consent necessary, never
+  sufficient**); nothing is marked VERIFIED on request unless `instant`.
+  `manual_review` → 403, `government_id` → 422. **Two more review fixes:** the
+  OTP cooldown/supersession was scoped to one verification row and therefore
+  rate-limited **nothing** (the plane mints a fresh verification per start, so a
+  stolen key bought unlimited codes and unlimited 5-guess batches against a
+  6-digit code) — rescoped to **candidate+channel**, plus `hmac.compare_digest`;
+  and an operator manual review was audited `actor_type="candidate"`, so the
+  candidate's own DPDP access log claimed **they** did it — now `"system"`.
+  10 review tests added (**877→887** green, pyflakes clean); smoke_s71 extended
+  with both escalations as checks — **19/19 OK exit 0**. Docs corrected
+  (`VERIFICATION.md` §4/§5/§7/§8/§10, `PORTAL.md` route contract). Merged to
+  main fast-forward; branch `s71-identity-verification` deleted. **Deferred
+  minors (DEFER):** abandoned `pending` verification rows from superseded
+  challenges (PI-8 sweep); OTP salt reuses `contact_hash_salt`; `Notifier.send`
+  takes the raw destination. Next: shape/plan **S7.2** (document forensics +
+  moonlighting advisory) as the second producer on this spine — resolve the
+  EPFO/UAN legality question in its spec, and if murky, first-party timeline
+  forensics only.
 - **2026-07-31** — **PI-7 opened; S7.1 (verification spine + consent-first
   identity) built** (inline TDD-offline on branch `s71-identity-verification`,
   11 tasks; spec `2026-07-31-s71-identity-verification-design.md`, plan
