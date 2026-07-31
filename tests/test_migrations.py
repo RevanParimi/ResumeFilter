@@ -20,11 +20,18 @@ from app.core.db import Base, make_engine
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _migrated_engine(tmp_path):
-    url = "sqlite:///" + (tmp_path / "mig.db").as_posix()
+def _scratch_config(tmp_path, name="mig.db"):
+    """A throwaway DB URL plus the alembic Config pointed at it. Separate from
+    _migrated_engine so a test can stop at an intermediate revision."""
+    url = "sqlite:///" + (tmp_path / name).as_posix()
     cfg = Config(str(ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url)
+    return url, cfg
+
+
+def _migrated_engine(tmp_path):
+    url, cfg = _scratch_config(tmp_path)
     command.upgrade(cfg, "head")
     return make_engine(url)
 
@@ -103,6 +110,44 @@ def test_migrated_indexes_match_orm(tmp_path):
         for name, spec in orm.items():
             assert name in migrated, f"{table}: migration missing index {name}"
             assert migrated[name] == spec, f"{table}.{name} index mismatch: {migrated[name]} != {spec}"
+
+
+def test_0014_backfills_existing_verifications_to_identity(tmp_path):
+    """A pre-S7.2 row is an identity verification by definition -- it predates
+    the existence of any other subject, so the backfill is not a guess."""
+    import sqlalchemy as sa
+
+    url, cfg = _scratch_config(tmp_path, "backfill.db")
+    command.upgrade(cfg, "0013_identity_verification")
+    engine = make_engine(url)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "INSERT INTO candidates (id, full_name, created_at, updated_at) "
+            "VALUES ('c1', 'A', '2026-01-01', '2026-01-01')"))
+        conn.execute(sa.text(
+            "INSERT INTO verifications (id, candidate_id, method, assurance_level,"
+            " status, details, requested_at, created_at) VALUES "
+            "('v1', 'c1', 'self_attested', 1, 'verified', '{}', "
+            "'2026-01-01', '2026-01-01')"))
+
+    command.upgrade(cfg, "head")
+
+    with engine.begin() as conn:
+        row = conn.execute(sa.text(
+            "SELECT subject, claim_ref FROM verifications")).one()
+    assert row.subject == "identity"
+    assert row.claim_ref is None
+
+
+def test_0014_leaves_no_server_default_behind_on_subject(tmp_path):
+    """The default exists for the backfill only; the application stays the
+    source of truth for new rows (the 0004 precedent)."""
+    from sqlalchemy import inspect as sa_inspect
+
+    engine = _migrated_engine(tmp_path)
+    col = {c["name"]: c for c in sa_inspect(engine).get_columns("verifications")}["subject"]
+    assert col["default"] is None
+    assert col["nullable"] is False
 
 
 def test_migrated_fks_and_nullability_match_orm(tmp_path):

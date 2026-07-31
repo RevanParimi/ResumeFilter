@@ -40,6 +40,14 @@ class VerificationRow(Base):
     method: Mapped[str] = mapped_column(String(32), index=True)
     assurance_level: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), index=True)
+    # S7.2: which ladder this row feeds. Pre-S7.2 rows are identity by
+    # definition -- they predate the existence of any other subject.
+    subject: Mapped[str] = mapped_column(String(24), index=True, default="identity")
+    # Which employment claim a document backs (employer label + interval), so
+    # two letters for two employers do not collapse into one. A LABEL, never
+    # document content -- the length cap is the only thing here above 64 chars
+    # and the models test calls that out by name.
+    claim_ref: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     # Set only for third-party adapters -- the IDENTITY_VERIFY grant that
     # authorized the pull. NOT a FK: consent rows are erased on DPDP delete
     # while an audit-bearing verification row may outlive that cascade order.

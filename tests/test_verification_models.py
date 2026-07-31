@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+import sqlalchemy as sa
 from sqlalchemy import select
 
 from app.candidates.models import CandidateRow
@@ -59,6 +60,27 @@ def test_erasing_the_candidate_cascades_verifications_and_challenges():
 
         assert s.execute(select(VerificationRow)).scalars().all() == []
         assert s.execute(select(VerificationChallengeRow)).scalars().all() == []
+
+
+def test_a_verification_row_records_its_subject_and_claim_ref():
+    cols = VerificationRow.__table__.columns
+    assert cols["subject"].nullable is False
+    assert cols["claim_ref"].nullable is True
+    assert cols["subject"].index is True
+
+
+def test_the_subject_column_defaults_to_identity_for_pre_s72_rows():
+    assert VerificationRow.__table__.columns["subject"].default.arg == "identity"
+
+
+def test_still_no_column_can_hold_a_document():
+    """S7.2 is where the S7.1 structural rule earns its keep: a real document
+    is now on the wire and there is still nowhere to put it."""
+    for table in (VerificationRow.__table__, VerificationChallengeRow.__table__):
+        for col in table.columns:
+            assert not isinstance(col.type, (sa.LargeBinary, sa.Text)), col.name
+            if isinstance(col.type, sa.String) and col.name != "claim_ref":
+                assert (col.type.length or 0) <= 64, col.name
 
 
 def test_deleting_a_verification_cascades_its_challenges():
