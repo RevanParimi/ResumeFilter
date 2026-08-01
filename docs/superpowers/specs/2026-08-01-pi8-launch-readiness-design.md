@@ -79,11 +79,13 @@ but wide.
    is exactly how this survived eight PIs and four branch reviews. The new tests
    must assert the **refusal**, not just the success path.
 
-## 2. Six gaps the technical audit did not have
+## 2. Seven gaps the technical audit did not have
 
 Gap-analysis v2 §9 audited the API **as an API**. Nothing had yet audited it as
-a *backend for a browser client*, which is what decision 0.1 makes it. All six
-were measured against the tree at `2f0d616`.
+a *backend for a browser client*, which is what decision 0.1 makes it. The six
+in the table below were measured against the tree at `2f0d616`; the seventh
+(§2.1) is different in kind — a latent DPDP fragility rather than a UI-backend
+gap — and it decided the fold question §12 had left open.
 
 | # | Gap | Evidence | Consequence |
 |---|---|---|---|
@@ -99,6 +101,64 @@ assurance ships, is tested, and **has never delivered an OTP to a human being**,
 because `NullNotifier` deliberately logs neither the code nor the destination.
 The ladder's second rung has been theoretical since 2026-07-31. S8.2's email
 sender closes that at the same time as it enables login.
+
+### 2.1 Cross-database erasure is a convention, not a guarantee — and it decides §12's fold question
+
+Measured at `cd4e660`. **DPDP erasure is currently complete, and nothing
+structural makes it so.**
+
+`ReportStore.delete_for_candidate` has exactly **two callers**, both in the route
+layer — `app/api/routes.py:354-355` (admin plane) and
+`app/api/routes.py:988-989` (candidate portal). Each calls the report store and
+*then* `candidates.delete_candidate`. Both remember. Nothing enforces it.
+
+That is verbatim the shape v2 §6 instructs every sprint to hunt: **a rule
+enforced at the route rather than the service, duplicated across entry points.**
+It shipped as a real defect in S7.1, S7.2 and S7.3. Here the consequence of a
+third entry point forgetting one line is that reports — holding the full depth
+evaluation, claim verdicts and fabrication analysis of an **erased person** —
+are orphaned permanently, with no FK to catch it, no cascade to sweep it, and no
+error to notice it.
+
+Two further consequences of the split, both structural:
+
+- **Erasure is non-atomic.** No transaction spans two databases. A failure
+  between lines 354 and 355 destroys the reports while keeping the candidate.
+- **`report_store.py:76` runs `ALTER TABLE ... ADD COLUMN` inside a `try/except`
+  at construction** — a migration system reimplemented badly, three directories
+  away from fifteen real Alembic migrations.
+
+**Decision: FOLD `reports` + `outcomes` into the main database.** Five reasons,
+in order of weight:
+
+1. **It converts the convention into a structural guarantee.**
+   `reports.candidate_id → candidates.id ON DELETE CASCADE` makes an orphaned
+   report *unrepresentable* rather than merely unlikely — the same move S7.1
+   made for "no column can hold a document" and S7.2 for `METHOD_SUBJECT`. This
+   is the last place in the repo not following the house pattern.
+2. **Porting keeps every defect and does the work anyway.** `INSERT OR REPLACE`
+   is invalid on Postgres, so the SQL is rewritten either way. Porting buys a
+   second hand-written raw-SQL store, a second connection pool and a second
+   migration path — and still no FK, no cascade, no atomicity.
+3. **PI-9 needs a join that cannot exist in SQL across two databases.**
+   `outcomes` is the human ground truth; S4.4's features and leakage-free labels
+   live in the main DB. v2 §3.3 calls the calibration harness the cheapest
+   high-value sprint — which holds only if its central query is an ordinary
+   join. **PI-9 is next.**
+4. **The timing will never be better.** Folding needs a data migration; today
+   that is one local dev database. PI-8 exists specifically to put real data
+   behind it, so this gets monotonically more expensive from here.
+5. **It is already de-risked.** A 7-method Protocol, `InMemoryReportStore`
+   backing every test, 6 consuming modules.
+
+**Honest cost:** roughly half a day more than porting, and `body` remains a
+serialized-JSON column either way — which is fine, the main DB uses JSON columns
+throughout. In exchange, a 212-line subsystem and a bespoke self-migrating schema
+are deleted.
+
+**Consequence for the route layer:** once the cascade is real, the two call sites
+collapse to a single `delete_candidate`, and `delete_for_candidate` survives on
+the Protocol only for as long as something still needs it explicitly.
 
 ## 3. Inherited non-negotiables (do not relitigate)
 
@@ -246,11 +306,17 @@ so explicitly.
   later sprint is deployed with it.
 - Postgres cutover for the main DB — connection string, CI matrix, the six
   `batch_alter_table` migrations verified on PG (blocker 2).
-- `app/services/report_store.py` rewritten behind the **existing `ReportStore`
-  Protocol** (blocker 3, v2 §3.1). Bounded: `InMemoryReportStore` already backs
-  every test, 6 modules consume it. **Decide in the sprint spec whether to fold
-  `reports`/`outcomes` into the main DB rather than port them** — v2 §3.1
-  predicted this question would arise here.
+- **`reports` + `outcomes` are FOLDED into the main database** — decided
+  2026-08-01, see §2.1. Not ported. Two ORM models, one Alembic migration, the
+  seven `ReportStore` Protocol methods reimplemented against SQLAlchemy, and a
+  data migration for existing rows. `app/services/report_store.py` and its
+  bespoke self-migrating schema are **deleted**.
+  Bounded and already de-risked: `InMemoryReportStore` backs every test and only
+  6 modules consume the Protocol.
+  **Task ordering inside the rewrite:** the cascade regression test (§2.1) is
+  written *first* and must pass with **no route-layer orchestration at all** —
+  it is the whole point of folding, and writing it last would let the old
+  convention quietly survive the migration.
 - Railway deploy; secrets via environment.
 
 ### S8.2 — Identity & access
@@ -307,14 +373,22 @@ implementation follows.
 
 ## 6. Data model summary
 
-Four new tables, all in the main DB, all Alembic, all Postgres-shaped:
+Four new tables plus two folded in from the second database — all in the main
+DB, all Alembic, all Postgres-shaped:
 
-| Table | FKs | Erasure |
-|---|---|---|
-| `org_users` | `organization_id` CASCADE | dies with the org |
-| `admin_users` | none | operators are not data principals in the DPDP sense |
-| `auth_sessions` | `candidate_id` / `org_user_id` / `admin_user_id`, **all CASCADE**, CHECK exactly-one | dies with any of its three possible principals |
-| `login_challenges` | none (§4.4) | **deleted on consume**, not swept |
+| Table | Sprint | FKs | Erasure |
+|---|---|---|---|
+| `reports` | S8.1 | `candidate_id` → `candidates` **CASCADE** (§2.1) | dies with the candidate, **structurally** |
+| `outcomes` | S8.1 | `report_id` → `reports` **CASCADE** | dies with its report, so with the candidate |
+| `org_users` | S8.2 | `organization_id` CASCADE | dies with the org |
+| `admin_users` | S8.2 | none | operators are not data principals in the DPDP sense |
+| `auth_sessions` | S8.2 | `candidate_id` / `org_user_id` / `admin_user_id`, **all CASCADE**, CHECK exactly-one | dies with any of its three possible principals |
+| `login_challenges` | S8.2 | none (§4.4) | **deleted on consume**, not swept |
+
+`reports.candidate_id` is **nullable** — `POST /evaluate` produces a report with
+no candidate attached, and that path predates the candidate backbone. Nullable
+plus CASCADE is correct here: an attached report dies with its subject, an
+unattached one was never personal data.
 
 The metadata-wide drift / index / FK-ondelete / nullability guards extend to all
 four. That guard caught a real migration-vs-ORM drift during S7.1 and is
@@ -408,8 +482,9 @@ Postgres URL). **No knob restores fail-open admin auth** (§0.5).
 
 ## 12. Open questions — for the sprint specs, not for this document
 
-- **Fold `reports`/`outcomes` into the main DB, or port the raw-`sqlite3` store
-  as-is?** Decide in S8.1's spec (v2 §3.1 predicted this).
+- ~~Fold `reports`/`outcomes` into the main DB, or port the raw-`sqlite3` store
+  as-is?~~ **CLOSED 2026-08-01 — FOLD. See §2.1**, which also records the
+  cross-database erasure finding that decided it.
 - **Hosting posture — shared instance vs per-customer.** Interacts with the
   deferred multi-tenancy call. GTM §11.
 - **Session TTL and idle timeout defaults** — the values in §8 are placeholders

@@ -316,11 +316,37 @@
   logs neither code nor destination — the ladder's second rung has been
   theoretical since 2026-07-31, and S8.2's sender closes it.
   **Sprint split:** S8.1 deployable spine (migrate-on-boot · fail-closed admin ·
-  Postgres · report_store rewrite · Railway) → S8.2 identity & access (4 new
+  Postgres · **fold** the report store · Railway) → S8.2 identity & access (4 new
   tables · email seam · OTP signup/login · org + candidate self-serve · CORS +
   CSRF) → S8.3 operating safely (dual-scoped rate limits · metrics · retention
   sweep · DPDP correction + grievance) → S8.4 UI integration surface (batch
   upload · cursor pagination · fraud-screen read-model · OpenAPI).
+  **v2 §3.1's open fork is CLOSED — FOLD `reports`+`outcomes` into the main DB,
+  do not port the raw-`sqlite3` store** (spec §2.1). What decided it was a
+  finding, not a preference: **DPDP erasure across the two databases is a
+  CONVENTION, not a guarantee.** `delete_for_candidate` has exactly two callers,
+  both route-layer (`routes.py:354-355` admin, `routes.py:988-989` portal); each
+  remembers to delete reports *then* the candidate, and **nothing enforces it**.
+  That is v2 §6's hunt-the-one-entry-point shape exactly — the one that shipped
+  as a real defect in S7.1, S7.2 and S7.3 — and a third entry point forgetting
+  one line orphans the full depth evaluation, verdicts and fabrication analysis
+  of an **erased person**, with no FK to catch it and no error to notice it.
+  The split also makes erasure **non-atomic** (no transaction spans two DBs:
+  fail between 354 and 355 and the reports are gone while the candidate stays),
+  and `report_store.py:76` runs `ALTER TABLE ADD COLUMN` in a `try/except` at
+  construction — a migration system reimplemented badly beside 15 real Alembic
+  ones. **Folding makes the orphan unrepresentable** (`reports.candidate_id →
+  candidates.id ON DELETE CASCADE`, nullable because `/evaluate` produces
+  candidate-less reports), which is the S7.1 "no column can hold a document"
+  move applied to the last place in the repo that ignored it. **Porting would
+  keep every defect and do the work anyway** — `INSERT OR REPLACE` is invalid on
+  PG, so the SQL gets rewritten regardless, buying a second raw-SQL store, a
+  second pool and a second migration path. **And PI-9 needs a join that cannot
+  exist across two databases** — `outcomes` is the human ground truth, S4.4's
+  features and leakage-free labels are in the main DB, and v2 §3.3's "cheapest
+  high-value sprint" only holds if that query is an ordinary join. **Do it now:**
+  the data migration is one local dev DB today and gets monotonically more
+  expensive from here, which is the whole point of PI-8.
   **The sequencing subtlety that is easy to lose (spec §5.5): S8.2 PINS S8.4's
   request/response contracts** — committed Pydantic schemas + published OpenAPI,
   handlers returning 501 until S8.4 fills them — because the UI is being designed
