@@ -276,9 +276,61 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **PI-7 is COMPLETE. Next is PI-8 — and it is LAUNCH
-  READINESS, not the "scale & learning" the old backlog assumed. Plan it in a
-  fresh session: it is a big PI and deserves its own context window.**
+- **Next action:** **PI-8 DESIGN IS WRITTEN —
+  `docs/superpowers/specs/2026-08-01-pi8-launch-readiness-design.md`. Next step
+  is the S8.1 sprint spec + implementation plan.** The PI-level design fixes the
+  cross-sprint decisions; each S8.x still gets its own spec before it is built.
+  **⚠ FOUND WHILE DESIGNING, AND IT IS LIVE ON MAIN:
+  `require_api_key` (`app/api/routes.py:76-82`) FAILS OPEN** — with
+  `DEE_API_AUTH_KEY` unset, **all 27 admin endpoints are public**, including
+  `POST /candidates/{id}/auth-key` (mints any candidate's key = full
+  impersonation of a data principal) and `POST /ledger/orgs`. Correct for local
+  dev, catastrophic on deploy, and triggered by a forgotten env var rather than
+  an attack. **It is the house fail-open shape for the FOURTH time** (S7.1
+  `start()`, S7.2 identity route, S7.3 audio path). S8.1 makes the app **refuse
+  to boot** without an admin credential; **no config knob restores the old
+  behaviour.**
+  **Five design decisions (spec §0), all with rejected alternatives recorded:**
+  (0.1) **the UI is built externally via claude.ai/design and integrated later —
+  this repo ships NO HTML, templates or JS toolchain**, which keeps CI
+  Python-only and makes the API a *browser-client backend*, the lens under which
+  §2's six gaps were found; (0.2) **sessions are opaque server-side tokens, NOT
+  JWT** — a JWT stays valid after a candidate revokes consent or erases their
+  account, which is a DPDP correctness bug, not a preference; (0.3) **login is
+  email OTP, no passwords anywhere** — the biggest scope cut in the PI, reusing
+  `app/verification/otp.py` (already pure + tested) and killing password storage,
+  reset flows and breach liability outright; (0.4) **two auth modes per plane,
+  permanently — browsers get cookie sessions, machines keep header keys**,
+  because `X-Org-Key` is not legacy, it IS the API product (GTM option 3);
+  (0.5) **admin fails closed and gains real operator accounts** (a shared secret
+  cannot attribute an action to a person — S7.1's review already caught one
+  audit misattribution).
+  **SIX gaps the technical audit never had** (spec §2) — v2 §9 audited the API
+  *as an API*, and nothing had audited it as a *backend for a browser*: admin
+  fails open; **no CORS at all**, so a separately-hosted UI literally cannot call
+  this API; no batch resume upload (the wedge demo is "upload 500 resumes"); no
+  real pagination (`limit` only, 3 sites, no cursor); **no email infrastructure**;
+  no password hashing (moot under 0.3). **The email gap has a second
+  consequence worth knowing: S7.1's L2 contact-control assurance ships, is
+  tested, and has NEVER delivered an OTP to a human**, because `NullNotifier`
+  logs neither code nor destination — the ladder's second rung has been
+  theoretical since 2026-07-31, and S8.2's sender closes it.
+  **Sprint split:** S8.1 deployable spine (migrate-on-boot · fail-closed admin ·
+  Postgres · report_store rewrite · Railway) → S8.2 identity & access (4 new
+  tables · email seam · OTP signup/login · org + candidate self-serve · CORS +
+  CSRF) → S8.3 operating safely (dual-scoped rate limits · metrics · retention
+  sweep · DPDP correction + grievance) → S8.4 UI integration surface (batch
+  upload · cursor pagination · fraud-screen read-model · OpenAPI).
+  **The sequencing subtlety that is easy to lose (spec §5.5): S8.2 PINS S8.4's
+  request/response contracts** — committed Pydantic schemas + published OpenAPI,
+  handlers returning 501 until S8.4 fills them — because the UI is being designed
+  externally *in parallel*, and an unpinned contract makes integration a rewrite.
+  **The PI's single highest regression risk (spec §3, §4.7): this adds a SECOND
+  entry point to every plane.** Sessions change how a principal is *established*
+  and nothing about what it may do — so every existing authorization test needs a
+  session-mode twin, or v2 §6's one-entry-point bug ships a fifth time.
+  **Prior framing, still true:** PI-8 is LAUNCH READINESS, not the "scale &
+  learning" the old backlog assumed.
   **GTM POSITION SETTLED 2026-08-01 — read
   `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md` BEFORE planning
   PI-8.** It answers "how does this become revenue" and it constrains PI-8's
