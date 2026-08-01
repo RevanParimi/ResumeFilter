@@ -15,6 +15,7 @@ import app.matching.models  # noqa: F401 — populate Base.metadata
 import app.profile_sources.models  # noqa: F401 — populate Base.metadata
 import app.curation.models  # noqa: F401 — populate Base.metadata
 import app.verification.models  # noqa: F401 — populate Base.metadata
+import app.interview.models  # noqa: F401 — populate Base.metadata
 from app.core.db import Base, make_engine
 
 ROOT = Path(__file__).resolve().parents[1]

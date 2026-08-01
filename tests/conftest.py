@@ -18,6 +18,7 @@ import app.matching.models  # noqa: F401 — populate Base.metadata with matchin
 import app.profile_sources.models  # noqa: F401 — populate Base.metadata with profile-source table
 import app.curation.models  # noqa: F401 — populate Base.metadata with the curation table
 import app.verification.models  # noqa: F401 — populate Base.metadata with verification tables
+import app.interview.models  # noqa: F401 — populate Base.metadata with interview tables
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow
