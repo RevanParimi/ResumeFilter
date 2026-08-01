@@ -109,7 +109,17 @@ looks merely broken. Layer (b) makes it loud at the only moment an operator is
 watching. Layer (b) alone would be bypassable by anything that builds an app
 without the lifespan.
 
-**No knob, no `env` check, no bypass** (decision 0.1).
+**No knob, no `env` exemption, no bypass** (decision 0.1).
+
+**A second launch check, added while planning:** `env == "prod"` **with a SQLite
+`candidates_db_url` also refuses to boot.** This sprint is the one that makes
+deployment possible, and it therefore creates the hazard: a Railway container's
+disk is ephemeral, so a prod boot on SQLite loses every row on the next
+redeploy — silently, and only discovered by the person whose data is gone. It is
+also blocker 2 (single-process write locks) shipped to production by accident.
+The check costs four lines and is the same fail-closed reflex as the first, so
+it belongs here rather than in a follow-up. Note this is a check on `env`, not
+an *exemption* keyed on it — decision 0.1 stands.
 
 ### 3.3 What changes in the suite
 
