@@ -18,6 +18,9 @@ RUN pip install -r requirements.txt
 
 COPY app ./app
 COPY config.yaml .
+# Alembic ships in the image: the app migrates itself on boot (PI-8 blocker 1).
+COPY alembic ./alembic
+COPY alembic.ini .
 
 # Non-root; /srv/app/data holds sqlite + flywheel (mount a volume in prod).
 RUN useradd --create-home appuser \

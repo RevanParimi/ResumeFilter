@@ -364,6 +364,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = True
     env: Literal["local", "staging", "prod"] = "local"
+    # Run `alembic upgrade head` at startup (PI-8 blocker 1). This exists for the
+    # operator who migrates as a separate deploy step -- NOT as a bypass: a False
+    # boot against an empty DB fails loudly at the first query.
+    db_migrate_on_boot: bool = True
 
     @field_validator("log_level")
     @classmethod

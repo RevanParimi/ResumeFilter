@@ -23,6 +23,7 @@ from app.api.routes import candidate_router, org_router, public_router, router
 from app.core.boot import verify_launch_config
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
+from app.core.migrate import upgrade_to_head
 from app.graph.build import EvaluationEngine
 from app.services import Services, build_default_services
 
@@ -40,6 +41,11 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         # without a credential is exactly the blind spot this closes.
         boot_settings = services.settings if services is not None else get_settings()
         verify_launch_config(boot_settings)
+        # Injected services (tests) already own a schema; only a real boot
+        # migrates. Blocker 1: this ran nowhere, so a fresh container started
+        # against no schema at all.
+        if services is None and boot_settings.db_migrate_on_boot:
+            upgrade_to_head(boot_settings)
         svc = services or build_default_services()
         app.state.services = svc
         app.state.engine = EvaluationEngine(svc)
