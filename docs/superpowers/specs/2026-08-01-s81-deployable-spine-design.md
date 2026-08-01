@@ -352,24 +352,43 @@ service container:
 
 The existing offline matrix job is unchanged and remains the merge gate.
 
-## 7. Railway
+## 7. Railway — DEFERRED mid-sprint, and why
 
-Provisioned at the start of the sprint (decision 0.2), used as the Postgres that
-§6 is developed against, over its public proxy URL.
+**Decision 0.2 was overtaken by the user on 2026-08-01, during execution: the
+public deploy waits until the PI-8 planning is complete and the UI exists and is
+integrated.** The reasoning is sequencing, not doubt about the spine — a
+deployed API with no UI in front of it serves nobody, while costing money and
+carrying a public attack surface. GTM §7 already says the demo path is what
+Phase 1 is blocked on, and the demo path is the UI.
 
-- Project + Postgres service first.
-- API service from the repo's Dockerfile at the **end** of the sprint, after §3
-  has closed the admin plane — the deploy is what makes the fail-open defect
-  reachable from the internet, so the order matters.
-- Environment: `DEE_API_AUTH_KEY` (generated, not reused from anywhere),
-  `DEE_CANDIDATES_DB_URL` (Railway's reference variable), `DEE_ENV=prod`,
-  `DEE_LOG_JSON=true`. No OpenRouter key — extraction falls back to heuristics,
-  and this sprint deliberately proves the key-less path in production too.
-- `railway.json` + a Deploy section in `README.md`.
+**What was provisioned and used before the stop, because §6 depended on it:**
+a Railway project with a Postgres 18.4 service, reached over a TCP proxy. It is
+what the migration up/down/up and the 29-test subset in §6 actually ran against.
+The user is deleting the project; nothing in the repository depends on it
+(`DEE_TEST_DB_URL` is opt-in and unset by default, and CI brings its own
+Postgres).
 
-**Not in this sprint:** custom domain, HTTPS-only enforcement for the cookie
-posture (PI-8 §4.3 — S8.2 needs it, S8.1 has no cookies), and any public
-announcement of the URL.
+**What the one boot proved before it was stopped** — worth recording, because it
+is the definition-of-done item that is otherwise hard to evidence:
+
+```
+event="migrations_applied"  backend="postgresql+psycopg"
+event="startup_complete"    db="postgresql+psycopg"  env="prod"  llm="NullLLM"
+GET /healthz  status=200
+```
+
+A container built from this repository's `Dockerfile`, against an **empty**
+Postgres, migrated itself and served — with no OpenRouter key, so the key-less
+path holds in a production configuration too. No domain was ever generated, so
+it was never publicly reachable.
+
+**What ships instead:** `railway.json` and a `## Deploy` section in `README.md`
+— the repository is **deploy-ready**, and the deploy is one command whenever the
+UI is ready for it.
+
+**Still not in scope when that day comes:** custom domain, HTTPS-only
+enforcement for the cookie posture (PI-8 §4.3 — S8.2 needs it, S8.1 has no
+cookies).
 
 ## 8. Config changes
 
@@ -437,17 +456,26 @@ Railway Postgres via `DEE_CANDIDATES_DB_URL`.
 
 ## 11. Definition of done
 
-1. `pytest -q` green on SQLite; the new refusal, cascade and parity tests present.
-2. The suite green on Postgres via `DEE_TEST_DB_URL`, with every skip explained.
-3. `upgrade head → downgrade base → upgrade head` clean on Postgres in CI.
-4. A fresh empty database boots, migrates itself, and serves.
-5. No admin credential ⇒ **the process refuses to start**, and the smoke proves
-   it by exit code.
-6. `app/services/report_store.py` and `InMemoryReportStore` are gone; no route
+1. ✅ `pytest -q` green on SQLite (**1200**); the new refusal, cascade and parity
+   tests present.
+2. ✅ *(scope corrected, see §6)* The SQL-shaped subset — 29 tests: report store,
+   cascade, data migration, every migration guard — green on a real Postgres
+   18.4, no skips. **The full suite on Postgres runs in CI, not locally:**
+   measured, 29 tests took 11m29s against a remote database, because every store
+   creation is a `CREATE SCHEMA` plus ~20 tables of DDL across the internet. CI's
+   Postgres is on localhost, where that cost disappears.
+3. ✅ `upgrade head → downgrade base → upgrade head`, all 16 migrations, clean on
+   Postgres — run for real, and wired into CI. This also retires the S3.1
+   residual "0004 downgrade untested".
+4. ✅ A fresh empty database boots, migrates itself, and serves — on SQLite via
+   `smoke_s81`, and on Postgres in the container (§7).
+5. ✅ No admin credential ⇒ **the process refuses to start**, proven by exit code
+   in the smoke.
+6. ✅ `app/services/report_store.py` and `InMemoryReportStore` are gone; no route
    orchestrates report erasure.
-7. `scripts/smoke_s81.py` green on SQLite and on Railway Postgres, exit 0.
-8. The API is deployed on Railway, booting against Railway Postgres with its
-   admin plane closed.
+7. ✅ `scripts/smoke_s81.py` 10/10 OK on SQLite, exit 0.
+8. ⏸ **DEFERRED** — the API is deploy-ready (`railway.json`, README `## Deploy`)
+   but deliberately not deployed until the UI is integrated (§7).
 
 ## 12. Follow-ups this sprint deliberately leaves open
 

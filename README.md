@@ -128,12 +128,63 @@ uvicorn app.main:app --reload
 > Without an API key the engine still runs: it falls back to the deterministic
 > rule registry (`NullLLM`), which is exactly how the test suite stays offline.
 
+### Two ways this refuses to start (S8.1)
+
+Both are deliberate, and neither has a config knob:
+
+| Refusal | Why |
+|---|---|
+| `DEE_API_AUTH_KEY` unset or blank | The admin plane is 27 endpoints including `POST /candidates/{id}/auth-key`, which mints any candidate's access key. An unset credential used to mean "auth disabled"; it now means "do not start". There is **no local-development exemption** — `env` defaults to `local`, so exempting it would make a safe deploy depend on remembering two variables instead of one. |
+| `DEE_ENV=prod` with a SQLite `DEE_CANDIDATES_DB_URL` | Container disks are ephemeral: every row would be lost on the next redeploy, silently. SQLite also serializes writes across workers. |
+
+Set the key once for local work:
+
+```bash
+echo "DEE_API_AUTH_KEY=$(openssl rand -hex 32)" >> .env
+```
+
+The app also runs `alembic upgrade head` **on boot** (`db_migrate_on_boot`, default
+true), so a fresh container against an empty database migrates itself. On
+Postgres it takes an advisory lock first, so concurrent workers cannot race the
+same migration.
+
 Or with Docker:
 
 ```bash
 docker build -t depth-eval-engine .
 docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-engine
 ```
+
+## Deploy
+
+The image is **deploy-ready and not yet deployed** — the public deploy waits
+until the UI exists and is integrated (PI-8 sequencing, decided 2026-08-01).
+`railway.json` is committed so the deploy itself is one command when that time
+comes.
+
+Required environment (secrets never go in `config.yaml`):
+
+| Variable | Value |
+|---|---|
+| `DEE_API_AUTH_KEY` | generated per environment, e.g. `openssl rand -hex 32`. **Never reuse a smoke or test key.** |
+| `DEE_CANDIDATES_DB_URL` | `postgresql+psycopg://…` — Postgres, not SQLite (the app refuses `prod` on SQLite) |
+| `DEE_ENV` | `prod` |
+| `DEE_LOG_JSON` | `true` |
+| `DEE_VECTORSTORE_BACKEND` | `memory` unless a Chroma volume is mounted — its `PersistentClient` can hang on some hosts, and grounding is best-effort |
+
+The container migrates itself on boot; no separate migration step is needed.
+
+**One-time, only for a deployment that predates S8.1** and still has a
+`data/reports.db`:
+
+```bash
+python scripts/migrate_reports_into_main_db.py --old-db ./data/reports.db
+```
+
+It imports reports and outcomes into the main database, and reports-and-drops
+any report whose candidate was already erased — those are orphans the old
+two-database split could not prevent, and the new foreign key rejects them.
+An absent file is a clean no-op, so it is safe to run anywhere.
 
 ### Endpoints
 
@@ -143,7 +194,7 @@ docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-eng
 | `POST /candidates` | Upload → extract profile → store (identity dedup, versioning) → resume-farm check → auto depth-eval (`evaluate: false` for bulk import). Returns ingest outcome + `resume_farm` + `Report`. |
 | `GET /candidates/{id}` · `/resumes` · `/reports` | Candidate summary + newest profile (hashes only), resume versions, linked reports. |
 | `DELETE /candidates/{id}` (and `/resumes/{rid}`) | DPDP hard erasure: resumes (raw text), extractions, fingerprints, linked reports. |
-| `GET /report/{id}` | Fetch a persisted report (survives restarts — SQLite store). |
+| `GET /report/{id}` | Fetch a persisted report (survives restarts; since S8.1 it lives in the main database beside its candidate). |
 | `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`. Also appended to the flywheel — this closes the training loop. |
 | `GET /report/{id}/outcomes` | List recorded outcomes for a report. |
 | `GET /domains` | Registered domains + claim taxonomies. |
