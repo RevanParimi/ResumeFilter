@@ -9,7 +9,75 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-7 COMPLETE — S7.3 (AI interview delivery v0) BUILT,
+- **Current sprint:** **S8.1 (Deployable spine) BUILT and GREEN on branch
+  `s81-deployable-spine` — 1175→1200, `smoke_s81` 10/10 exit 0, and the four
+  regression smokes (s13, s41, s53, s64, s73) all still green.** Four changes
+  plus a deploy that was deliberately stopped.
+  **(1) The admin plane fails CLOSED.** `require_api_key` treated an unset
+  `DEE_API_AUTH_KEY` as "auth disabled", so all 27 admin endpoints were public —
+  including `POST /candidates/{id}/auth-key`, which mints *any* candidate's
+  access key. Two layers now, because they fail differently: the gate refuses
+  when no key is configured (**an unset credential is the most refusing state,
+  not the least**), and a new `app/core/boot.py::verify_launch_config` stops the
+  process before it can serve in that state. **No knob and no `env` exemption
+  restores the old behaviour** — decision 0.1 dropped PI-8 §1's "unless env is
+  local" escape, because `env` DEFAULTS to `local`, which would have made a safe
+  deploy depend on remembering two variables instead of one. A **second** boot
+  refusal was added while planning: `env=prod` on a SQLite URL, because container
+  disks are ephemeral and every row would vanish on the next redeploy. The fix
+  was wide as predicted and wider than measured — 11 test files, not 7 — and
+  `test_auth_open_by_default` was **inverted**: it was the test pinning the
+  defect in place.
+  **(2) Migrate-on-boot** (blocker 1): `alembic upgrade head` ran nowhere in the
+  boot path. Now in the lifespan, taking a **`pg_advisory_lock`** on Postgres so
+  concurrent workers cannot race the same migration. The Dockerfile copied
+  `app/` and `config.yaml` only, so this would have failed *in the container and
+  nowhere else* — `alembic/` and `alembic.ini` now ship in the image.
+  **(3) THE FOLD.** `reports` + `outcomes` moved out of a private raw-`sqlite3`
+  database into the main Alembic one as a new `app/reports/` package (migration
+  `0016`, `reports.candidate_id → candidates.id ON DELETE CASCADE`, nullable
+  because `/evaluate` makes candidate-less reports). **The cascade test was
+  written before the store existed and passes with no route orchestration at
+  all** — that ordering was the point. `app/services/report_store.py` is deleted
+  (212 lines of raw SQL, an `INSERT OR REPLACE` Postgres does not have, and an
+  `ALTER TABLE ADD COLUMN` in a try/except standing in for a migration system).
+  **`InMemoryReportStore` is deleted too, and that is not cleanup:** it is a
+  dict, it cannot cascade, and leaving it in `make_services` would have let every
+  erasure test in the suite pass *without* the guarantee the fold exists to
+  create. `delete_for_candidate` is off the Protocol entirely; both erasure
+  handlers call `delete_candidate` alone, with `reports_deleted` surviving as a
+  pre-count READ — a number in a response, not a person's data.
+  **One behaviour genuinely changed, and the FK is why:** `POST /candidates`
+  used to race erasure by saving the report and then deleting it if the candidate
+  had vanished mid-eval. The orphan can no longer be written, so `save()` raises
+  `SubjectErasedError` and the handler returns `report=None`. Both halves of that
+  race are the database's job now.
+  **(4) Postgres**, verified against a real PG **18.4**, not a mock: all 16
+  migrations **up → down to base → up** clean (which proves the three
+  `batch_alter_table` migrations on a dialect where batch mode is a plain ALTER,
+  **and** proves the downgrades — retiring the S3.1 residual "0004 downgrade
+  untested"), plus 29 SQL-shaped tests (report store, cascade, data migration,
+  every migration guard) with no dialect failures and no skips. **Measured limit
+  worth not rediscovering: the full suite against a REMOTE Postgres is not
+  viable — 29 tests took 11m29s**, because each store creation is a
+  `CREATE SCHEMA` plus ~20 tables of DDL across the internet. The full-suite PG
+  run therefore lives in the new CI job, where the database is on localhost.
+  SQLite stays the default and the local test backend.
+  **(5) The deploy was stopped by the user mid-sprint** — see "Next action". It
+  had booted once first, and that is the definition-of-done item hardest to
+  evidence otherwise: a container from this repo's Dockerfile, against an
+  **empty** Postgres, logged `migrations_applied backend=postgresql+psycopg` then
+  `startup_complete env=prod llm=NullLLM` and served `/healthz` 200 — the
+  key-less path holding in a production configuration. No domain was ever
+  generated, so it was never publicly reachable.
+  **Also fixed: a pre-existing pinned-NOW time bomb that detonated mid-session.**
+  `test_interview_org::test_revocation_closes_it_again` revoked at the wall clock
+  and asserted at `NOW = 2026-08-01 12:00 UTC`; it passed at one point in this
+  session and failed an hour later with nothing touching consent in between. The
+  file's own `_grant` helper carries a comment warning about exactly this shape —
+  the S7.2 review fixed the *grant* side and missed the *revoke* side. The other
+  four `revoke_consent` call sites were checked; none pin NOW.
+- **Prior sprint detail (PI-7):** **PI-7 COMPLETE — S7.3 (AI interview delivery v0) BUILT,
   REVIEWED and MERGED to main — 1024→1175 green, smoke_s73 18/18 OK exit 0,
   key-less.** The last sprint in PI-7, and the first to need a live model.
   **The framing that makes it veritas-shaped rather than a generic interview
@@ -276,9 +344,29 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **PI-8 DESIGN IS WRITTEN —
-  `docs/superpowers/specs/2026-08-01-pi8-launch-readiness-design.md`. Next step
-  is the S8.1 sprint spec + implementation plan.** The PI-level design fixes the
+- **Next action:** **S8.1 is done and merged. The user re-sequenced the rest of
+  PI-8 on 2026-08-01: finish the PI planning, BUILD THE UI, integrate it — and
+  only then deploy.** So the next step is **not** S8.2 code. It is:
+  (a) decide where the UI build lands (its own sprint after S8.4, or pulled
+  earlier — GTM §7 says Phase 1 is blocked on the demo path, and the demo path
+  IS the UI); (b) spec S8.2 (identity & access), remembering that **S8.2 pins
+  S8.4's request/response contracts** (PI-8 §5.5) precisely because the UI is
+  designed in parallel and externally (decision 0.1); (c) then build.
+  **The Railway project was deleted by the user** — nothing in the repo depends
+  on it (`DEE_TEST_DB_URL` is opt-in and unset by default; CI brings its own
+  Postgres via a `postgres:18` service container). The repo stays
+  **deploy-ready**: `railway.json` + a README `## Deploy` section, one command
+  whenever the UI is ready.
+  **Carry into S8.2, from the S8.1 build:** the boot guard
+  (`app/core/boot.py::verify_launch_config`) is the natural home for any further
+  launch-time refusal — CORS misconfiguration is the obvious next candidate; and
+  **PI-8's highest regression risk is still ahead** (§3, §4.7): sessions add a
+  SECOND entry point to every plane, so every existing authorization test needs a
+  session-mode twin or v2 §6's one-entry-point bug ships a fifth time.
+  **PI-8 design:** `docs/superpowers/specs/2026-08-01-pi8-launch-readiness-design.md`.
+  **S8.1 spec + plan:** `docs/superpowers/specs/2026-08-01-s81-deployable-spine-design.md`
+  · `docs/superpowers/plans/2026-08-01-s81-deployable-spine.md`.
+  The PI-level design fixes the
   cross-sprint decisions; each S8.x still gets its own spec before it is built.
   **⚠ FOUND WHILE DESIGNING, AND IT IS LIVE ON MAIN:
   `require_api_key` (`app/api/routes.py:76-82`) FAILS OPEN** — with
@@ -700,8 +788,29 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                 not the audio one — S7.2's claim_ref) and an unreadable
 │                 stored assessment that bricked /portal/me forever (S7.2's
 │                 METHOD_LEVEL KeyError).]
-└── PI-8  LAUNCH READINESS (shaped, not yet planned) — "what stops a real
-        company onboarding without the operator hand-holding the database?"
+└── PI-8  LAUNCH READINESS (in progress) — "what stops a real
+    │   company onboarding without the operator hand-holding the database?"
+    ├── [x] S8.1  Deployable spine — fail-CLOSED admin auth + boot refusal ·
+    │            alembic upgrade head on boot (PG advisory lock) · reports +
+    │            outcomes FOLDED into the main DB behind a real CASCADE ·
+    │            Postgres (driver, pre-ping, DEE_TEST_DB_URL, CI job) ·
+    │            deploy-ready (railway.json), deploy DEFERRED until the UI
+    │            [1175→1200 green, smoke_s81 10/10; PG 18.4 verified for real:
+    │             16 migrations up/down/up + 29 SQL-shaped tests; a container
+    │             booted, migrated an empty PG and served /healthz before the
+    │             deploy was stopped]
+    ├── [ ] S8.2  Identity & access — org_users/admin_users/auth_sessions/
+    │            login_challenges · email seam · OTP signup+login · org and
+    │            candidate self-serve · CORS + CSRF · PINS the S8.4 contract
+    ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
+    │            retention sweep · DPDP correction + grievance officer
+    ├── [ ] S8.4  UI integration surface — batch upload · cursor pagination ·
+    │            fraud-screen read-model · OpenAPI for a typed client
+    └── [ ] S8.5? UI BUILD + INTEGRATION (new, 2026-08-01) — the user's
+                 sequencing: finish PI-8 planning, build the UI, integrate,
+                 THEN deploy. Slot/shape still to be decided.
+        WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
+        UI.
         WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
         UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot (2) Postgres
         (3) report-store rewrite (4) candidate self-register (5) org
@@ -728,6 +837,53 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-01 (4)** — **S8.1 (Deployable spine) specced, planned, built inline
+  TDD, and merged. 1175→1200 green; `smoke_s81` 10/10; s13/s41/s53/s64/s73 all
+  still green.** Two decisions taken with the user before any code, both
+  recorded with rejected alternatives in the spec §0: **(0.1) the admin
+  credential is required in EVERY environment** — this *tightened* the approved
+  PI-8 design, which had allowed an `env == "local"` escape; the argument that
+  moved it is that `env` **defaults** to `"local"`, so the escape would make a
+  safe deploy depend on remembering `DEE_ENV` *and* `DEE_API_AUTH_KEY`, i.e. the
+  same fail-open shape one indirection deeper. **(0.2) provision Railway Postgres
+  first, deploy the API last** — because there is no docker and no psql on this
+  machine, so a hosted PG was the only way to observe the cutover outside CI.
+  **Three measurements shaped the plan, none of them remembered:** the fail-open
+  blast radius was wider than PI-8 §1.1 recorded (11 test files, not 7; 6 HTTP
+  smokes needing keys, while s11/s12/s31 never speak HTTP at all); the Dockerfile
+  copied `app/` and `config.yaml` only, so migrate-on-boot would have failed *in
+  the container and nowhere else*; and **`InMemoryReportStore` had to be deleted,
+  which the PI design does not say** — it is a dict, it cannot cascade, and
+  keeping it would have let every erasure test pass without the guarantee the
+  fold exists to create.
+  **The sprint found two bugs of its own.** (a) A **pre-existing pinned-NOW time
+  bomb detonated mid-session**: `test_interview_org::test_revocation_closes_it_again`
+  passed at one point and failed an hour later, because it revoked at the wall
+  clock and asserted at `NOW = 12:00 UTC` today. The S7.2 review had fixed the
+  *grant* side of that file and missed the *revoke* side — the warning comment
+  was right there. (b) The new FK exposed a real race: `POST /candidates` saved a
+  report and *then* deleted it if the candidate had been erased mid-eval; the
+  orphan is now unwritable, so `save()` raises `SubjectErasedError` and the
+  handler returns `report=None`. Both halves of that race are the database's job
+  now.
+  **Postgres was verified for real (18.4, not a container fake):** 16 migrations
+  up → down to base → up clean, which proves the three `batch_alter_table`
+  migrations on a plain-ALTER dialect **and** the downgrades — retiring the S3.1
+  residual "0004 downgrade untested" — plus 29 SQL-shaped tests, no skips.
+  **Measured limit worth keeping:** the full suite against a *remote* PG is not
+  viable (29 tests / 11m29s, because each store creation is a `CREATE SCHEMA`
+  plus ~20 tables of DDL over the internet), so the full-suite PG run lives in
+  the new CI job on localhost.
+  **The deploy was stopped by the user mid-sprint** — *"lets not deploy in
+  railways yet, we need to complete all the PI plannings, make UI and integrate
+  with UI"*. It had booted once first, and that run is the DoD item hardest to
+  evidence otherwise: an empty Postgres, `migrations_applied
+  backend=postgresql+psycopg`, `startup_complete env=prod llm=NullLLM`,
+  `/healthz` 200 — the key-less path holding in a production configuration. No
+  domain was ever generated, so it was never publicly reachable; the user deleted
+  the Railway project. The repo ships **deploy-ready** instead (`railway.json` +
+  README `## Deploy`), and PI-8's sequencing now reads: finish planning → build
+  the UI → integrate → deploy.
 - **2026-08-01 (2)** — **GTM positioning settled. No code.** The user asked the
   question the repo had never asked: *how does this become revenue?* — offering
   three options (build a UI + advertise + investors · sell to LinkedIn/Naukri/
