@@ -73,9 +73,16 @@ the right posture and is *not* a substitute for knowing whether any of them
 correlates with a hire. The product's entire value proposition is that these
 numbers are worth reading.
 
-**This is why the ROADMAP now recommends opening PI-8 on the calibration
-harness rather than the Postgres cutover.** §5 argues it is also the *cheapest*
-of the three, which was not obvious before this audit.
+This finding originally argued for opening PI-8 on the calibration harness (§5),
+and §3.3 shows it would also be the *cheapest* sprint — which was not obvious
+before this audit.
+
+**That argument lost, on 2026-08-01, to a fact the audit could not supply.**
+There is no pilot org and none close, so there are no real outcomes to measure;
+the harness would compute metrics over test fixtures. The seven unvalidated
+numbers remain the product's central risk — but the way to retire that risk is
+to get real orgs submitting outcomes, which is **PI-8 = launch readiness (§9)**.
+Calibration becomes **PI-9**, and §3.3 will still be true when it arrives.
 
 ## 3. Three corrections to v1's PI-8 assumptions
 
@@ -186,6 +193,27 @@ come first. **Resolving this is the first question of PI-8's brainstorm**, and i
 turns on a fact this audit cannot supply: whether a real pilot org exists or is
 close.
 
+### ⚠ RESOLVED 2026-08-01 — the counter-argument won; §5's order is SUPERSEDED
+
+**Asked and answered by the user on 2026-08-01:** there is **no pilot org today
+and none close**, and the goal for veritas is **"real companies, eventually — I
+want it launchable."**
+
+That settles it against the reorder proposed above. A calibration harness cannot
+measure anything until orgs are live submitting outcomes, and getting orgs live
+is precisely what "launchable" means. So:
+
+- **PI-8 becomes LAUNCH READINESS**, not scale-and-learning. Its question is
+  *"what stops a real company onboarding without the operator hand-holding the
+  database?"* — see §9 for the measured blocker list.
+- **The calibration harness moves to PI-9**, gated on PI-8 succeeding. It stays
+  cheap (§3.3 is unchanged and still true) and it becomes valuable the moment
+  real outcomes exist. Nothing is lost by waiting; a harness measuring test
+  fixtures would have been actively misleading.
+
+§5's sprint list above is kept as the dated record of the pre-answer reasoning.
+**Do not plan from it** — plan from §9.
+
 ## 6. Non-negotiables — unchanged, and now tested three times over
 
 v1 §7 stands verbatim. PI-7 stress-tested all five and none bent: advisory-only
@@ -218,6 +246,30 @@ offline + smoke-per-sprint (1175 tests, 26 smokes), erasure-cascades-everything
 
 ## 8. Immediate next action
 
-**Brainstorm PI-8's shape**, starting from §5's proposed reorder and resolving
-§5's counter-argument first. Nothing in this document overrides the ROADMAP's
+**Brainstorm PI-8's shape** from §9's blocker list (NOT from §5, which the
+2026-08-01 answer superseded). Nothing in this document overrides the ROADMAP's
 "Next action"; when they disagree, the ROADMAP wins.
+
+## 9. PI-8 = LAUNCH READINESS — the measured blocker list
+
+Every row verified against the tree at `cd5e5c9`, not assumed. The question each
+answers: *what stops a real company onboarding without the operator hand-holding
+the database?*
+
+| # | Blocker | Evidence in the tree | Rough shape |
+|---|---|---|---|
+| 1 | **Migrations never run automatically** | `alembic upgrade head` appears in neither `Dockerfile` nor `app/main.py`; a fresh container boots against no schema | small — a boot step or entrypoint |
+| 2 | **SQLite is single-process** | `candidates_db_url: sqlite:///./data/veritas.db`; concurrent uvicorn workers contend on write locks | the Postgres cutover |
+| 3 | **Report store blocks Postgres** | `app/services/report_store.py` — 212 lines of raw `sqlite3`, self-creating schema, outside Alembic, and it holds the human `outcomes` | rewrite behind the existing `ReportStore` Protocol (§3.1) |
+| 4 | **Candidates cannot self-register** | `POST /candidates/{id}/auth-key` is admin-plane only; every candidate key is minted by hand | real registration: signup, session, recovery |
+| 5 | **Orgs cannot self-onboard** | `POST /ledger/orgs` requires the shared `X-API-Key` | org signup + key self-service |
+| 6 | **Retention declared, not enforced** | `RetentionPolicy.sweep_active=False` everywhere; deferred since S6.4 | the sweep job — now a real DPDP gap, not a nicety |
+| 7 | **No rate limiting anywhere** | 63 endpoints, no limiter; the S7.3 review flagged unbounded ASR spend from a stolen candidate key | a limiter, paired with #8 |
+| 8 | **No metrics, tracing or alerting** | `app/core/logging.py` is structlog only | you cannot operate for customers blind |
+
+**The biggest open scope question, deliberately NOT decided here:** *is API-only
+launchable?* The stance since M1 has been API-first, and PI-5's "thin employer
+dashboard" (S5.3) shipped as **JSON read-models, not a UI**. Indian employers
+will expect a screen. Whether PI-8 includes a real front end — and if so how
+thin — is the largest call in the PI and deserves its own conversation at the
+top of the brainstorm, because it could double the PI's size.

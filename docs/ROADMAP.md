@@ -276,153 +276,62 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **PI-7 is COMPLETE (S7.1 + S7.2 + S7.3 all merged). Next is
-  PI-8 — shape it from gap-analysis §6**, which proposes S8.1 Postgres cutover +
-  real embeddings/vectorstore + ANN farm detection · S8.2 calibration harness
-  (predicted vs ledger outcomes) + the model-improvement loop · S8.3
-  observability + org self-serve onboarding. Two things now argue for **S8.2
-  first** rather than the listed order: PI-3..PI-7 have produced five advisory
-  numbers (depth, fabrication risk, reputation, comp, assurance/claims, and now
-  interview band) and **not one of them has ever been measured against an
-  outcome** — the flywheel has been writing records since PI-2 and nothing
-  consumes them; and PI-8's own backlog keeps accumulating deferred work
-  (the retention sweep, PI-6/7 follow-ups) that a calibration harness would help
-  prioritise by showing which signals actually predict. Recommend opening PI-8
-  with a brainstorm on that ordering rather than defaulting to the §6 sequence.
+- **Next action:** **PI-7 is COMPLETE. Next is PI-8 — and it is LAUNCH
+  READINESS, not the "scale & learning" the old backlog assumed. Plan it in a
+  fresh session: it is a big PI and deserves its own context window.**
+  **The question that decided it was asked and answered on 2026-08-01.** There
+  is **no pilot org and none close**, and the user's goal for veritas is
+  **"real companies, eventually — I want it launchable."** That overturned the
+  recommendation I had been carrying here (calibration harness first): a harness
+  cannot measure anything until orgs are live submitting outcomes, and getting
+  orgs live is exactly what launchable means. **The calibration harness moves to
+  PI-9, gated on PI-8 succeeding** — it stays cheap (gap-analysis v2 §3.3: S4.2
+  features × S4.4 leakage-free labels already exist, only the metrics are
+  missing) and it becomes genuinely valuable the moment real outcomes arrive.
+  Nothing is lost by waiting; a harness measuring test fixtures would have been
+  actively misleading.
+  **PI-8's brief:** *what stops a real company onboarding without the operator
+  hand-holding the database?* The measured blocker list is
+  **gap-analysis v2 §9** — every row verified against the tree, not assumed:
+  (1) `alembic upgrade head` runs **nowhere** in the boot path, so a fresh
+  container starts against no schema; (2) SQLite is single-process, so
+  concurrent uvicorn workers contend on write locks; (3) `report_store.py` is
+  raw `sqlite3` outside Alembic and **blocks the Postgres cutover** (v2 §3.1);
+  (4) candidates cannot self-register — every key is minted by hand through the
+  admin plane; (5) orgs cannot self-onboard — `POST /ledger/orgs` needs the
+  shared admin secret; (6) retention is **declared but not enforced**
+  (`sweep_active=False` since S6.4 — now a real DPDP gap, not a nicety, once
+  real candidate data lands); (7) no rate limiting on 63 endpoints (the S7.3
+  review found unbounded ASR spend from a stolen candidate key); (8) no metrics,
+  tracing or alerting — structlog only.
+  **Already sound, do not rebuild:** the `Dockerfile` is production-shaped
+  (non-root, healthcheck, env-var config, volume for data) and CI runs the fully
+  offline suite on py3.11 + 3.12.
+  **The biggest scope call, deliberately left open for the brainstorm: is
+  API-only launchable?** The stance has been API-first since M1, and S5.3's
+  "employer dashboard" shipped as JSON read-models, **not a UI**. Indian
+  employers will expect a screen. Whether PI-8 includes a front end — and how
+  thin — could double the PI, so decide it at the top rather than discovering it
+  midway.
   **S7.3 follow-ups (deferred, none merge-blocking):** voice-consistency proxy
   detection (needs a new `ConsentPurpose`, a stored voice embedding, and legal
   review — the honest path to a *real* proxy signal); **a no-speech/energy guard
   on the ASR adapter** (voxtral returns confident prose for audio containing no
   speech — verified live 2026-08-01, see `MODELS.md`); TTS question delivery
   once a hosted Indian-English voice is on the account; org-invited,
-  requisition-targeted interviews (the Mercor flow — needs an invite/acceptance
-  basis for third-party-initiated data); interview scores as feature-store
-  features once S8.2 can measure their predictive value; disclosing transcripts
-  to orgs under a separate explicit consent (deliberately not v0); Sarvam ASR
-  for India data residency when production DPDP posture makes it real.
-  **Two review minors carried (DEFER):** a stolen candidate key can drive
-  unlimited ASR spend — there is no rate limiter anywhere in this repo, so
-  adding one only here would be inconsistent, and a stolen key already grants
-  full portal access including erasure; and `add_turn`'s
-  `sequence = count + 1` is a TOCTOU under exact concurrency (SQLite serializes
-  writes, and the current-question 409 gate stands in front of it).
-  **Transcription QUALITY on Indian-accented English is still UNVERIFIED** —
-  there is no audio sample in the repo and TTS is deferred, so the live check
-  proves the seam works, not that the model hears well. That is the first thing
-  to test if interviews go in front of real candidates.
-  **S7.2 follow-ups (deferred, none merge-blocking):** an optional capped LLM
-  pass over letter phrasing; certificate/degree forensics (a different issuer
-  model); **cross-source corroboration SHIPPED 2026-07-31 as an advisory
-  finding** (`employer_corroborated_by_profile_source` /
-  `employer_absent_from_profile_source`, both `info`) — but **`CORROBORATED` (3)
-  stays deliberately empty**, and `VERIFICATION.md` §11 now records why: that
-  rung means an *independent* source agrees, every reachable source is
-  candidate-controlled, and the spec's own suggestion (`InterviewRecord`) has
-  **no employer field** — it carries `org_id`, the org that *interviewed* them,
-  so it would corroborate the wrong proposition. Do not fill that rung until
-  EPFO or an org-confirmed employment record lands; wiring document findings
-  into the `fabrication_risk` fusion (today
-  they stand beside it); org-submitted documents (third-party data — needs its
-  own DPDP basis); claim strength as a feature-store feature. **The EPFO/UAN
-  research item, open since the 2026-07-26 gap analysis, is CLOSED** (spec §3,
-  `VERIFICATION.md` §14): lawful in India but only via authorized BGV
-  aggregators, so the blocker is the vendor relationship, not the law — when a
-  vendor is contracted the work is one adapter and flipping `implemented`.
-  **Watch item:** `VERIFICATION_READ`'s dated redefinition window is **closed**
-  — once orgs hold real grants, any further widening needs a new
-  `ConsentPurpose`, not another redefinition (`LEDGER.md`).
-  Shape/plan **S7.2 (document forensics + moonlighting advisory)** as the
-  **second producer on the S7.1 spine** — the S6.1→S6.2 pattern: it writes
-  `Verification` outcomes through `VerificationStore`, reusing the adapter seam,
-  the audit trail, and the CASCADE, adding no new consent purpose unless a
-  third-party pull (e.g. EPFO) is in scope. Per gap-analysis §5B, moonlighting
-  must be advisory and derived from **first-party timeline evidence only**
-  unless a candidate-consented pull is legally cleared (EPFO/UAN legality is an
-  open §8 research item — resolve it in the S7.2 spec, and if murky, first-party
-  forensics only). S7.3 (AI interview delivery v0) follows and reads
-  `IdentityAssurance` for proxy-detection hooks. **S7.1 follow-ups (deferred, not
-  merge-blocking):** real OTP delivery (no email/SMS provider in this repo —
-  `NullNotifier` discards); the mechanical retention sweep (PI-8, unchanged);
-  assurance as a feature-store feature once its predictive value is measurable;
-  a real govt-ID adapter needs vendor selection **and** a legal review of
-  DigiLocker API terms (when it lands, flip `implemented=True` — the seam's
-  refusing defaults are what keep it inert until then). **Review minors carried
-  (DEFER, none merge-blocking):** an abandoned OTP start leaves a `pending`
-  verification row behind when its challenge is superseded (never contributes to
-  assurance — folds into the PI-8 retention sweep); OTP codes are salted with
-  `contact_hash_salt` rather than a dedicated secret; `Notifier.send` takes the
-  raw destination (unused by `NullNotifier`, needed by any real provider). S6.3 follow-ups
-  to fold in later: employers/institutions curation (needs an unmapped
-  marker on `canonicalize_*`), resume-extraction capture (same `canonical=None`
-  marker on `SkillClaim`), retroactive re-normalization of already-stored signals,
-  a decision-history/audit table. S6.4 follow-ups (PI-8, spec §9): mechanical
-  retention sweep; real candidate registration; exposing depth-`Report`
-  internals to the candidate; DPDP correction/rectification right;
-  grievance/DPO contact endpoint; multi-credential/device sessions. Deferred
-  S6.1/S6.2 follow-ups still open:
-  resume-claimed-vs-source corroboration (cross-adapter, both directions —
-  narrower than LinkedIn's own within-export corroboration), feature-store
-  consumption of the signal, flywheel wiring (all documented in
-  `PROFILE_SOURCES.md`). **PI-5 (demand side) is COMPLETE
-  (S5.1–S5.3).** Historical
-  S5.2 detail follows. S5.2 is
-  DONE (merged to main, 653 green; whole-branch self-review clean — no
-  Critical/Important; one Minor closed: added a `comp_bands_path` override-loader
-  test). S5.2 delivered (spec `2026-07-28-s52-comp-intelligence-design.md`, plan
-  `2026-07-28-s52-comp-intelligence.md`, 10 TDD tasks): new pure `app/comp/` package
-  (`schema.py` contracts + `SeniorityBand`/role-family vocab; `bands.py` illustrative
-  license-clean static seed table + config-path override + deterministic
-  role/seniority/tier resolvers; `estimate.py` reputation.py-style shrinkage blend on
-  a **total-CTC basis** with k-anonymity floor + saturating confidence + benchmark;
-  `service.py` `CompService` reading offers via `LedgerStore`), consent-gated
-  `observed_offers` ledger table (peer of coding_round_results; `ObservedOffer`/
-  `ObservedOfferPoint` contracts, `ObservedOfferRow`, migration `0009`
-  candidate+org+consent CASCADE, drift/index/FK/nullability guards extended),
-  `LedgerStore.submit_observed_offer` (`ledger_write`-gated, audited `offer.submit`)
-  + `observed_offers_for_comp` (**de-identified**, revocation-respecting, audited
-  `comp.aggregate` with `candidate_id=None`), `Services.comp` wiring (cycle-safe),
-  org-plane endpoints `POST /ledger/offers` + `POST /comp/estimate` +
-  `GET /jobs/{id}/comp` (403/404/400/401). **Design decisions (delegated to
-  recommendation):** capture+blend (offers get a first-class CTC field) · estimate +
-  requisition benchmark surface (no comp-fit match term — no candidate expected-CTC
-  yet) · observed_offers lives in the ledger (layering: ledger never imports comp) ·
-  cross-candidate aggregation consent basis = revocation-respecting stamped grant +
-  k-anonymity floor + de-identified aggregate, **no new consent purpose** (documented
-  DPDP residual). `comp_*` config knobs. No LLM. `COMP.md` written. 29 new tests
-  (623→652, `pytest -q` green). Smoke `scripts/smoke_s52.py` (uvicorn + HTTP) 13/13
-  OK exit 0: static-only floor → 6 offers → observed blend (p50 up, confidence up) →
-  benchmark below/at → different role < k stays static → revoke drops one (6→5) →
-  DPDP erase tips below k (static-only) → cross-org 404. **PENDING:** final
-  whole-branch review + merge. S5.1 delivered (spec
-  `2026-07-27-s51-job-requisition-matching-design.md`, plan
-  `2026-07-27-s51-job-requisition-matching.md`, 10 TDD tasks): new `app/matching/`
-  package — pure contracts `schema.py` (`JobRequisitionInput`/`JobRequisition`/
-  `CompBand`/`MatchWeights`/`SkillMatchDetail`/`MatchedCandidate`/`MatchResult`),
-  pure engine `match.py` (`skill_coverage`, `location_fit`, `compile_ranking`/
-  `compile_filters`, and `match` — injects two synthetic values
-  `match.skill_coverage`/`match.location_fit` into a copy of each FeatureVector and
-  reuses `ranking.score()`), ORM `JobRequisitionRow` + migration `0008` (org-owned,
-  CASCADE on org, **NOT candidate-linked** → survives candidate erasure), `JobStore`
-  (org-scoped CRUD with canonical-skill normalization + audited
-  `requisition.create`/`update`; `run_match` reads the pool + point-in-time profiles
-  at one `as_of`, ranks, and audits every **returned** candidate as `match.surface`
-  in the shared `audit_log` — candidate-linked + CASCADE), `Services.jobs` wiring,
-  org-plane endpoints `POST/GET/PATCH /jobs` + `POST /jobs/{id}/match`
-  (`MatchResult{advisory=True}`; cross-org 404, empty pool 422). **Design decisions
-  (delegated to recommendation):** org plane · compile-to-ranking + skill-coverage ·
-  comp band **metadata-only** (not matched; S5.2 consumes it, no follow-up
-  migration) · **audit-every-match, no new consent gate** (pool already
-  consent-masked at S4.2). `min_years/degree/notice` are **soft** (select the
-  dimension, value is not a cutoff); the **only** hard gate is opt-in
-  `min_skill_coverage`. `match_*` config knobs (skill weight dominant). No LLM.
-  `MATCHING.md` written (peer of LEDGER/FEATURES). Whole-branch self-review: one
-  hardening fix (skill canonicalization keeps punctuation asks like "C#"/"C++",
-  and an all-blank skill set now raises → 400, never a reconstruct-time 500).
-  39 new tests (584→623, `pytest -q` green). Smoke `scripts/smoke_s51.py`
-  (uvicorn + HTTP) 11/11 OK exit 0:
-  ranked strong→weak→other by skill coverage (advisory — zero-coverage still
-  appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
-  candidate from the pool AND sweeps its `match.surface` audit rows.
+  requisition-targeted interviews; interview scores as feature-store features
+  once PI-9 can measure them; disclosing transcripts to orgs under a separate
+  explicit consent (deliberately not v0); Sarvam ASR for India data residency.
+  **Two S7.3 review minors carried (DEFER):** a stolen candidate key can drive
+  unlimited ASR spend — **now folded into PI-8 blocker (7)**, since there is no
+  rate limiter anywhere in the repo; and `add_turn`'s `sequence = count + 1` is
+  a TOCTOU under exact concurrency (SQLite serializes writes and the
+  current-question 409 gate stands in front of it) — **revisit under blocker (2)
+  when Postgres removes that serialization**.
+  **Still UNVERIFIED and worth stating plainly:** transcription quality on
+  Indian-accented English. No audio sample exists in the repo and TTS is
+  deferred, so the live check proved the seam works, not that the model hears
+  well. Test it before interviews go in front of real candidates.
 - **Long-range planning:** the current audit is
   **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
   re-audit, measured not remembered). It **supersedes** the 2026-07-26 vision
