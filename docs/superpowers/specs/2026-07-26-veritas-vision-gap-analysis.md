@@ -1,5 +1,18 @@
 # Veritas — Vision Gap Analysis & Forward Design (Mercor-for-India)
 
+> ## ⚠ SUPERSEDED 2026-08-01 — read `2026-08-01-veritas-gap-analysis-v2.md` instead
+>
+> This document was written when **S3.4 was the next sprint**. PI-4, PI-5, PI-6
+> and PI-7 have all landed since, so **§3 (asset inventory) and §5's "landing
+> zone" columns are four PIs stale**, and three of its PI-8 assumptions turned
+> out to be wrong (the Postgres cutover is not uniformly low-risk; the flywheel
+> is redundant rather than merely unconsumed; the calibration harness is far
+> smaller than assumed — v2 §3).
+>
+> **Still accurate and carried forward unchanged:** §2 (the vision), §4 (the
+> capability map), §7 (the non-negotiables), and the PI-5→PI-6→PI-7 sequencing,
+> which was executed as designed. Kept intact as the dated record of that call.
+
 **Date:** 2026-07-26
 **Status:** Planning reference — approved direction, no sprint commitment implied.
 **Audience:** Any future session (human or agent). Read `docs/ROADMAP.md` first;

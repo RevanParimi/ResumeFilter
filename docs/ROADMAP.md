@@ -423,12 +423,20 @@
   ranked strong→weak→other by skill coverage (advisory — zero-coverage still
   appears), `min_skill_coverage=0.75` gates to strong only, DPDP erase drops the
   candidate from the pool AND sweeps its `match.surface` audit rows.
-- **Long-range planning:** the full Mercor-for-India vision audit lives in
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md` — capability
-  gap map (identity/KYC, document forensics, AI interviews, job/matching schema,
-  candidate DPDP portal, comp intelligence) and the proposed PI-5..PI-8 shape
-  that supersedes the old flat PI-5 backlog. Consult it whenever a PI completes
-  and the next needs shaping; it never overrides the "Next action" above.
+- **Long-range planning:** the current audit is
+  **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
+  re-audit, measured not remembered). It **supersedes** the 2026-07-26 vision
+  gap analysis, which is kept as the dated record of the PI-5→PI-6→PI-7 call but
+  is four PIs stale in its asset inventory. **v2's three corrections matter for
+  PI-8:** the Postgres cutover is only half low-risk (`report_store.py` is raw
+  `sqlite3` outside Alembic and holds the human `outcomes` — a rewrite, not a
+  connection string); the flywheel is **redundant**, not merely unconsumed (S4.4
+  derives labels from the ledger instead, so the question is delete-or-repurpose);
+  and the calibration harness is **much smaller than assumed** — S4.2 features ×
+  S4.4 leakage-free labels already exist, only the metrics are missing. v2 §5
+  proposes reordering PI-8 to put calibration first **and states the honest
+  counter-argument** (a harness needs real outcome data, which needs a pilot org).
+  Consult it whenever a PI completes; it never overrides the "Next action" above.
 - **Open residuals (carried, all DEFER — none merge-blocking; see
   `.superpowers/sdd/progress.md`):** from S3.2 — `append_event` is ownership-only
   and intentionally inherits the submit-time `ledger_write` grant (documented in
