@@ -235,3 +235,13 @@ class GenAIDomain(DomainModel):
             "orchestration, failure modes). Avoid yes/no questions and avoid anything "
             "answerable by restating the resume."
         )
+
+    def interview_seed_questions(self) -> list[str]:
+        """S7.3 openers. Used only to top up a plan the report's probes and the
+        candidate's own profile could not fill -- hence the broad framing."""
+        return [
+            "Describe the GenAI system you are proudest of: what it does, who "
+            "uses it, and what you personally built.",
+            "Tell me about a time a model behaved worse in production than in "
+            "evaluation. How did you find out, and what did you change?",
+        ]

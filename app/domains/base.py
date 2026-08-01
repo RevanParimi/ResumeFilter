@@ -113,6 +113,13 @@ class DomainModel(ABC):
     def probe_guidance(self) -> str:
         """How to write follow-up questions a fake can't survive in this domain."""
 
+    # --- interview seeds (S7.3) -----------------------------------------------
+    def interview_seed_questions(self) -> list[str]:
+        """Opening questions for an AI interview in this domain. Optional: the
+        planner prefers the depth report's own probes and the candidate's
+        profile, so a domain that returns nothing costs nothing."""
+        return []
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Registry.
