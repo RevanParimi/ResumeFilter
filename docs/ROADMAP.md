@@ -9,104 +9,100 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **PI-7 OPEN — S7.2 (Document forensics +
-  concurrent-employment advisory) COMPLETE and MERGED to main — 887→1011 green,
-  smoke_s72 15/15 OK exit 0, key-less — no LLM, no network.** Built as the
-  **second producer on the S7.1 spine** (the S6.1→S6.2 relationship): a
-  `subject` discriminator on `verifications` lets identity rows and
-  employment-claim rows share one table, one audit trail, one consent gate and
-  one CASCADE while folding into **two separate numbers**. **No new table, no
-  new `ConsentPurpose`, no new erasure path.** Delivered: `schema.py` additions
-  (`VerificationSubject`; `ClaimStrength` **IntEnum** 0–4; `DocumentType`;
-  `DocumentFinding` with a validated severity vocabulary; `ConcurrentEmployment`;
-  `ClaimEvidence`; `METHOD_SUBJECT` — one table so a method cannot be ambiguous
-  about which ladder it feeds — and `METHOD_CLAIM_STRENGTH`, **disjoint from
-  `METHOD_LEVEL` by test**); `documents.py` (pure `parse_document` → text +
-  page count + PDF metadata + sha256, with **no field able to hold the bytes**;
-  `assess_experience_letter` / `assess_payslip` / `assess` dispatcher);
-  `claims.py` (`compute_claim_evidence`, pure + clock-injected + read-time,
-  mirroring `assurance.py`); `moonlighting.py` (`assess_concurrent_employment`,
-  reusing S2.2's overlap machinery and importing its `_NON_PRIMARY` set so the
-  two modules cannot drift). Migration `0014_verification_subject`
-  (`subject` String(24) NOT NULL indexed, backfilled to `identity` via a
-  server_default that is then dropped — the 0004 precedent; `claim_ref`
-  String(128) nullable; drift/index/FK/nullability guards extended plus two
-  explicit 0014 tests). Three endpoints: candidate `POST /portal/documents`,
-  `GET /portal/verifications` grew a `claims` key, org
-  `GET /verification/candidates/{id}/claims` (query-time `VERIFICATION_READ`,
-  **every attempt audited allowed *and* denied**, action `claim.query`);
-  `MyData.claims`. Four `doc_*`/`moonlight_*` config knobs. **Design
-  invariants:** (a) **a payslip can never lift `IdentityAssurance`** — the same
-  failure class as the S7.1 escalation, so tested at the same weight, and now
-  enforced in three layers after the review (see below); (b) **the document is
-  never stored** — parsed in memory, sha256 kept, bytes discarded, and
-  `details` carries finding **codes** only: never document text, never a salary
-  amount (comp has its own consented k-anonymised path — a payslip must not be
-  a back door into it), never a UAN/PF/PAN (presence is a boolean);
-  (c) **a FAILED document contributes nothing and takes nothing away** —
-  strength is a `max()` over what *is* held, so a bad submission leaves the
-  candidate exactly where they were, and its findings are still returned
-  because the candidate is entitled to know why; (d) **only two checks are
-  HARD** (employer absent from the resume, dates that cannot be reconciled) —
-  everything else is soft or info, because a false "fake" costs far more than a
-  missed one; (e) **first-party intake only** — an org-supplied document *about*
-  a candidate is third-party data under DPDP and needs its own basis;
-  (f) **the concurrent-employment advisory is derived read-time and stored
-  nowhere**, tops out at `soft`, names intervals not employers, and uses a
-  threshold 4× S2.2's because a three-month overlap is a notice period.
-  **The EPFO/UAN question is ANSWERED** (spec §3, `VERIFICATION.md` §14):
-  lawful in India but reachable only through authorized BGV aggregators, so the
-  blocker is the **vendor relationship, not the law** — `epfo_employment` ships
-  `third_party=True, implemented=False`, refused **422** even after the
-  candidate self-grants `IDENTITY_VERIFY`. `VERIFICATION_READ` was **redefined
-  and dated (2026-07-31)** in `LEDGER.md` to cover verification disclosure
-  generally; permissible **only** because it held zero real grants — the same
-  test S7.1 applied when it refused to widen `ledger_read` — and **that window
-  is now closed**: any further widening needs a new purpose.
-  **The whole-branch review (inline) found TWO more Criticals, both reproduced
-  over HTTP with nothing but a candidate's own key, both fixed and re-run to
-  prove closure, both now regression tests + smoke checks:**
-  **(1)** `POST /portal/verifications {"method":"experience_letter"}` returned
-  **200 `verified`** stamped `subject=identity` with no document — the row then
-  entered `compute_assurance`'s fold, and because that indexed `METHOD_LEVEL`
-  directly, **every later read of the candidate's own portal 500'd on a
-  `KeyError`, permanently**: one request and a candidate could destroy their own
-  DPDP access. Root cause was the S7.1 pattern exactly — *a gate applied at one
-  entry point and not the other*: `submit_document` checked `document_based`,
-  `start` never asked what subject a method belonged to, and `_ClaimBase`'s
-  honest `instant=True` ("assessment IS the evidence") was read by `start` as
-  the old fail-open "complete it now". Fixed in three layers: `start` refuses a
-  non-identity method (**after** `implemented`, so `epfo_employment` still
-  answers 422 exactly like `government_id` — inertness must read the same at
-  every door); `create_verification` refuses any method/subject disagreement,
-  making the bad row **unrepresentable** rather than merely unreachable; and
-  `compute_assurance` uses `METHOD_LEVEL.get` so a rogue row contributes nothing
-  instead of bricking a portal. **(2)** `claim_ref` was an **unbounded text
-  column** — SQLite does not enforce `VARCHAR(128)`, so 5031 chars including a
-  salary figure and a UAN persisted into a `verifications` row, defeating the
-  subsystem's central structural claim through the *one* column the "no column
-  can hold a document" test excepts. Now bounded by `CLAIM_REF_MAX_CHARS` at the
-  route (pydantic → 422) **and** in the service, so a direct caller cannot
-  bypass it. **Also fixed: the suite was not time-independent** — several S7.1
-  tests (unchanged on `main`) granted consent at wall-clock and asserted at a
-  pinned `NOW` of 12:00 UTC 2026-07-31, so they began failing the moment the
-  clock passed noon; S7.2 had copied the pattern. Every `grant_consent` /
-  `revoke_consent` in those files now passes `now=NOW`, which is what
-  `LedgerStore`'s clock injection was for. **Clean on the other review
-  questions:** `claim.query` is audited on the denied path (committed before the
-  `ConsentError`, visible in the candidate's own access log with the org name
-  resolved); every startable adapter declares how it reaches an outcome; no
-  stored row holds document text, an amount or an identifier.
-  **Smoke `scripts/smoke_s72.py` (uvicorn, key-less) 15/15 OK** exit 0: claims
-  empty → clean letter → `DOCUMENTED` → **identity level still 0** →
-  mismatched-employer letter → `failed`, strength unchanged → payslip
-  arithmetic mismatch → hard finding → no document content in any response →
-  `epfo_employment` after self-granted `identity_verify` → 422 → **claim method
-  refused on the identity route (403, portal not bricked)** → **oversize
-  `claim_ref` refused (422)** → concurrent-employment advisory on overlapping
-  intervals → org read 403 → grant → 200 (no evidence internals) → revoke → 403
-  → `DELETE /portal/me` → 404.
-- **Prior sprint detail:** **S7.1 (Verification spine + consent-first
+- **Current sprint:** **PI-7 COMPLETE — S7.3 (AI interview delivery v0) BUILT,
+  REVIEWED and MERGED to main — 1024→1175 green, smoke_s73 18/18 OK exit 0,
+  key-less.** The last sprint in PI-7, and the first to need a live model.
+  **The framing that makes it veritas-shaped rather than a generic interview
+  product: it asks the depth report's OWN probes.** `probe_generation` has been
+  writing `CoherenceVerdict.probes` — "questions a fake can't survive" — for
+  exactly the claims the pipeline could not settle, and until now nobody ever
+  asked them. Delivered a new package `app/interview/` (peer of
+  `app/verification/`): `schema.py` (`InterviewStatus`/`QuestionSource`/
+  `AnswerChannel`/`InterviewBand`/`ProxyBand`; `InterviewQuestion`, `TurnScore`,
+  `InterviewTurn`, `ProxyFinding`/`ProxyRisk`, `InterviewAssessment`,
+  `InterviewSession`, **`InterviewSummary` — the org-facing projection, with no
+  transcript or turns AS FIELDS**), `questions.py` (probes ▸ profile templates ▸
+  domain seeds, deduped and capped; refuses below `interview_min_questions`
+  rather than conducting an empty interview), `scoring.py` (4-axis rubric +
+  aggregation + banding + the capped LLM adjustment), `proxy.py`, `session.py`
+  (read-time `effective_status` + the shared `summarize`), `models.py`,
+  `store.py`, `service.py`. Plus a new seam `app/services/speech.py` shaped like
+  `llm.py`: `SpeechClient` / `OpenRouterSpeech` / `NullSpeech` / `build_speech`.
+  Migration `0015_ai_interviews` — two tables, both CASCADE (sessions from
+  candidates, turns from sessions), so **erasure needed no new path at all** and
+  the metadata-wide drift/index/FK/nullability guards covered them for free.
+  Five candidate-plane routes + one org-plane route; `MyData.interviews` +
+  an `interviews` retention window; 20 `interview_*` knobs plus
+  `ret_interview_session_days` and two `speech_*`; `INTERVIEWS.md` written.
+  **The three decisions taken with the user before any code** (spec §0):
+  (a) **the transcript is stored, the audio never is** — audio is transcribed in
+  memory, its sha256 kept, the bytes discarded, because voice is
+  biometric-adjacent; the transcript IS kept on the resume precedent, since an
+  advisory score whose basis nobody can read is worse for the candidate than the
+  PII cost; (b) **candidate-initiated with a consent-gated org read** under a
+  **new `ConsentPurpose.INTERVIEW_READ`** — a new purpose, NOT a third widening
+  of `VERIFICATION_READ`, whose dated window S7.2 declared shut (a test pins it:
+  an org holding `verification_read` is still refused the interview endpoint);
+  (c) **real ASR, deferred TTS** — candidates answer by audio, questions arrive
+  as text, because OpenRouter serves no TTS and `kokoro` is a GPU dependency
+  neither the offline suite nor the key-less smoke could exercise.
+  **Design invariants:** the scorer is **neutral when unknown (0.5, never 0)** on
+  every axis — a scorer that confuses "no yardstick" with "shallow answer"
+  punishes candidates for gaps in the question bank; an answer under
+  `interview_min_answer_words` scores **nothing**, which is not the same as
+  scoring zero; **the LLM is a nudge, never the grader** (capped at
+  `interview_llm_max_delta`, cannot introduce a dimension, rescue an
+  insufficient answer, or produce a band — the S2.1 pattern), and `NullLLM`,
+  bad JSON and exceptions all leave the deterministic score standing;
+  **`InterviewBand` is deliberately NOT `DepthBand`** though the members match,
+  because a resume-depth band and a live-interview band must never be silently
+  fused (S7.2's two-ladders lesson applied to two scores) — nothing feeds
+  `depth_score` or `fabrication_risk`, it stands beside them; **no voice
+  biometrics, as a decision** (a voiceprint is biometric data needing a stored
+  embedding — the artifact class S7.1 made impossible — plus its own consent
+  purpose and legal review), so the proxy signal is the assurance level
+  **stamped at session start and never recomputed**, plus timing and stylometry,
+  banded `low|moderate|elevated` with `elevated` requiring two soft findings and
+  **no finding permitted to be `hard`**; **the assessment IS stored** — the one
+  deliberate departure from the read-time roll-up rule, argued explicitly in the
+  spec (assurance and claim evidence depend on the clock and on later rows, so
+  storing them would store a lie; an assessment is a closed fact about a
+  finished session, and recomputing would re-hit a paid model), stamped with
+  `scorer_version`. **The whole-branch review (inline) found TWO Importants,
+  both reproduced before being fixed, and both are the house bug shapes for the
+  THIRD sprint running:** **(1)** the ASR transcript was **unbounded** — the text
+  channel refuses past `interview_max_answer_chars` but the audio channel stored
+  whatever the provider returned (a berserk client wrote 2 MB into the one Text
+  column on the table). That is S7.2's `claim_ref` finding exactly: *a bound that
+  holds on one path and not the other is no bound.* Now truncated rather than
+  refused (the candidate did nothing wrong) and **disclosed** on the turn as
+  `transcript_truncated`. **(2)** a stored `assessment` this code cannot parse
+  raised `ValidationError` on **every later read**, so one bad write would brick
+  a candidate's own `/portal/me` **forever** — the same permanent-DPDP-denial
+  shape S7.2 closed with `METHOD_LEVEL.get`. Now degrades to "no assessment" and
+  logs; not candidate-reachable today, but `scorer_version` exists precisely so
+  the shape CAN change. **Live model verification (2026-08-01):**
+  `mistralai/voxtral-small-24b-2507` reached LIVE through `OpenRouterSpeech` —
+  request path, mime→format mapping and response parsing all verified. **It also
+  exposed a hazard worth recording: voxtral hallucinates on non-speech audio**
+  (handed a 440 Hz tone, it returned fluent confident prose). Bounded here
+  (the candidate reads their own transcript, scores are advisory) but any future
+  ASR adapter wants a no-speech guard — logged in `MODELS.md` and
+  `INTERVIEWS.md` §12. The smoke now pins `DEE_OPENROUTER_API_KEY=""` because it
+  claims to prove the no-key path and a developer with a real key in `.env` was
+  silently shipping junk audio to a live vendor.
+  **Smoke `scripts/smoke_s73.py` (uvicorn, key-less) 18/18 OK** exit 0: no
+  interviews → start (plan from the candidate's own profile) → second start 409
+  → **audio 422 `speech_unavailable`** → and no turn recorded → text answer
+  scored → wrong `question_id` 409 → oversize 422 → completion with an advisory
+  assessment → proxy shows `identity_assurance_none`, nothing `hard` →
+  **self-attest then a NEW session stamps assurance 1 while the finished one
+  still reads 0** → org 403 → grant `interview_read` → 200 (`attempts` = the
+  completed session only) → **the transcript is absent from the org body and
+  present in the candidate's own** → revoke → 403 → `/portal/me` lists
+  interviews + the retention window → access log shows `interview.query` with
+  the org name → `DELETE /portal/me` → org read 404.
+- **Prior sprint detail (S7.2):** **S7.1 (Verification spine + consent-first
   identity) COMPLETE and MERGED to main — 784→887 green, smoke_s71 19/19 OK
   exit 0, key-less — no LLM, no network.** The whole-branch review (inline; the
   harness in these sessions forbids spawning agents unless asked) found **two
@@ -280,14 +276,40 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S7.2 merged; next is S7.3 — AI interview delivery v0.**
-  Shape/plan it per gap-analysis §6 and the model shortlist in `MODELS.md`:
-  audio-first English with Indian accents, advisory, with **proxy-detection
-  hooks reading `IdentityAssurance`** (the number S7.2 was careful to keep
-  document evidence out of — read `VERIFICATION.md` §11 before wiring it).
-  S7.3 is the largest build in PI-7 and the first to need a live model, so
-  the deterministic-fallback convention becomes load-bearing again after two
-  sprints where it was satisfied by having no LLM at all.
+- **Next action:** **PI-7 is COMPLETE (S7.1 + S7.2 + S7.3 all merged). Next is
+  PI-8 — shape it from gap-analysis §6**, which proposes S8.1 Postgres cutover +
+  real embeddings/vectorstore + ANN farm detection · S8.2 calibration harness
+  (predicted vs ledger outcomes) + the model-improvement loop · S8.3
+  observability + org self-serve onboarding. Two things now argue for **S8.2
+  first** rather than the listed order: PI-3..PI-7 have produced five advisory
+  numbers (depth, fabrication risk, reputation, comp, assurance/claims, and now
+  interview band) and **not one of them has ever been measured against an
+  outcome** — the flywheel has been writing records since PI-2 and nothing
+  consumes them; and PI-8's own backlog keeps accumulating deferred work
+  (the retention sweep, PI-6/7 follow-ups) that a calibration harness would help
+  prioritise by showing which signals actually predict. Recommend opening PI-8
+  with a brainstorm on that ordering rather than defaulting to the §6 sequence.
+  **S7.3 follow-ups (deferred, none merge-blocking):** voice-consistency proxy
+  detection (needs a new `ConsentPurpose`, a stored voice embedding, and legal
+  review — the honest path to a *real* proxy signal); **a no-speech/energy guard
+  on the ASR adapter** (voxtral returns confident prose for audio containing no
+  speech — verified live 2026-08-01, see `MODELS.md`); TTS question delivery
+  once a hosted Indian-English voice is on the account; org-invited,
+  requisition-targeted interviews (the Mercor flow — needs an invite/acceptance
+  basis for third-party-initiated data); interview scores as feature-store
+  features once S8.2 can measure their predictive value; disclosing transcripts
+  to orgs under a separate explicit consent (deliberately not v0); Sarvam ASR
+  for India data residency when production DPDP posture makes it real.
+  **Two review minors carried (DEFER):** a stolen candidate key can drive
+  unlimited ASR spend — there is no rate limiter anywhere in this repo, so
+  adding one only here would be inconsistent, and a stolen key already grants
+  full portal access including erasure; and `add_turn`'s
+  `sequence = count + 1` is a TOCTOU under exact concurrency (SQLite serializes
+  writes, and the current-question 409 gate stands in front of it).
+  **Transcription QUALITY on Indian-accented English is still UNVERIFIED** —
+  there is no audio sample in the repo and TTS is deferred, so the live check
+  proves the seam works, not that the model hears well. That is the first thing
+  to test if interviews go in front of real candidates.
   **S7.2 follow-ups (deferred, none merge-blocking):** an optional capped LLM
   pass over letter phrasing; certificate/degree forensics (a different issuer
   model); **cross-source corroboration SHIPPED 2026-07-31 as an advisory
@@ -583,7 +605,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                (X-Candidate-Key, mirrors org keys) + pure app/portal/
 │                exposing access/transparency/consent-control/erasure; no new
 │                consent purpose (self-access == identity of the subject)
-├── PI-7  VERIFICATION & ASSESSMENT DEPTH                          [in progress]
+├── PI-7  VERIFICATION & ASSESSMENT DEPTH                            [COMPLETE]
 │   ├── [x] S7.1  Verification spine + consent-first identity — pure
 │   │            app/verification/ (assurance ladder behind a method-adapter
 │   │            seam; outcomes stored, documents/biometrics structurally
@@ -608,9 +630,21 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │   │             permanent 500 on the candidate's own portal) and an
 │   │             unbounded `claim_ref` that stored 5031 chars incl. a salary
 │   │             and a UAN. Also fixed a pre-existing test time-bomb.]
-│   └── [ ] S7.3  AI interview delivery v0 (audio-first English w/ Indian
-│                accents, advisory, proxy-detection hooks reading
-│                IdentityAssurance; model shortlist in MODELS.md)
+│   └── [x] S7.3  AI interview delivery v0 — the interview asks the depth
+│                report's OWN probes (probe_generation's output, finally
+│                asked); deterministic 4-axis rubric with an LLM allowed only
+│                a capped +/-0.2 nudge; new app/services/speech.py ASR seam
+│                (OpenRouter/voxtral live, NullSpeech refuses => text
+│                interview); proxy risk from IdentityAssurance + behaviour,
+│                NO voice biometrics; audio structurally unstorable, the
+│                transcript stored and candidate-only; one new ConsentPurpose
+│                (INTERVIEW_READ).
+│                [MERGED 2026-08-01; 1024→1175 green, smoke_s73 18/18. Branch
+│                 review caught + closed TWO Importants, both the house shapes
+│                 again: an unbounded ASR transcript (bounded on the text path,
+│                 not the audio one — S7.2's claim_ref) and an unreadable
+│                 stored assessment that bricked /portal/me forever (S7.2's
+│                 METHOD_LEVEL KeyError).]
 └── PI-8  SCALE & LEARNING (shaped) — Postgres cutover + real embeddings ·
         calibration harness (predicted vs ledger outcomes) · observability +
         org self-serve.  STANDING NON-GOALS: payments/payroll/contracts,
@@ -629,6 +663,48 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 - LLM provider: OpenRouter + Qwen tiers (see `config.yaml`).
 
 ## Session log
+
+- **2026-08-01** — **S7.3 (AI interview delivery v0) BUILT, REVIEWED, MERGED.
+  PI-7 COMPLETE.** Full sprint cycle in one session: brainstorm → spec
+  (`2026-07-31-s73-ai-interview-delivery-design.md`, commit `d79c8c7`) → 14-task
+  plan (`2026-08-01-s73-ai-interview-delivery.md`, `7e4bab1`) → TDD build on
+  branch `s73-ai-interview-delivery` → whole-branch review → merge
+  (fast-forward to `6e6d7fd`). **1024 → 1175 green**, pyflakes clean,
+  `scripts/smoke_s73.py` **18/18 OK** exit 0. Executed **inline** for the same
+  reason S7.2 was: I held the whole plan in context, so a fresh implementer per
+  task would re-read it to arrive at the same code, and the review that matters
+  is the one done by reading the code.
+  **Three decisions were put to the user before any code was written** — they
+  were the ones a wrong guess would have made expensive to unwind: where the
+  "never store the artifact" line falls now that there is a transcript; whether
+  orgs can read at all in v0 and under what consent; and how live the first
+  model-dependent sprint should go. All three came back as recommended
+  (transcript stored / audio never · candidate-initiated + new `INTERVIEW_READ` ·
+  real ASR, TTS deferred) and the spec records the rejected alternatives.
+  **The design idea worth remembering:** the interview asks the depth report's
+  OWN probes. That asset (`probe_generation` → `CoherenceVerdict.probes`) has
+  existed since PI-1 and was never consumed; using it makes the interview about
+  *this* candidate's unsettled claims instead of a generic bank, and it hands the
+  deterministic scorer a per-question yardstick (`missing_signals` →
+  `expected_signals`) so the rubric needs no LLM to know what a real answer must
+  contain.
+  **Two plan corrections during the build, both caught by tests:** the org read
+  needed `summarize()` but it was a `staticmethod` on the service, which the
+  store cannot import (cycle) — moved to `session.py` so both callers share ONE
+  transcript-free projection, which is stronger than the original design; and a
+  test called `grant_consent(at=...)` when the kwarg is `now=` — the same
+  clock-injection trap S7.2's review recorded, caught immediately this time.
+  **The whole-branch review found TWO Importants, both reproduced first, both
+  the house shapes for the third sprint running** — an unbounded ASR transcript
+  (S7.2's `claim_ref`: a bound on one path and not the other) and an unreadable
+  stored assessment bricking `/portal/me` permanently (S7.2's `METHOD_LEVEL`
+  KeyError). Full detail in "Current state" above.
+  **The live-model check earned its keep beyond a green tick:** voxtral is
+  reachable and the seam works, *and* it hallucinates fluent prose on non-speech
+  audio — a hazard now recorded in `MODELS.md` and `INTERVIEWS.md` §12. It also
+  exposed that the smoke was not actually key-less (a real key in `.env` sent
+  junk audio to a live vendor and changed which error the smoke asserted); the
+  smoke now pins the key empty, so it tests what it claims.
 
 - **2026-07-31 (3)** — **S7.2 (document forensics + concurrent-employment
   advisory) BUILT, REVIEWED, MERGED. PI-7 now S7.1 + S7.2 done; S7.3 remains.**
