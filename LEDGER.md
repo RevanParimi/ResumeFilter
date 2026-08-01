@@ -216,6 +216,7 @@ parallel mechanism. The full current vocabulary:
 | `ledger_read` | S3.1 | an org may query the candidate's ledger history |
 | `identity_verify` | S7.1 | the platform may verify the candidate's identity or employment via an **external** source |
 | `verification_read` | S7.1 | an org may see the candidate's verification disclosure — identity assurance **and** employment-claim evidence (**redefined 2026-07-31, S7.2** — see below) |
+| `interview_read` | S7.3 | an org may see the candidate's AI-interview assessments (bands, dimensions, proxy band — **never a transcript**) |
 
 The S3.1 wire values are unchanged — stored grants reference them.
 
@@ -241,15 +242,26 @@ gates any third-party verification pull, whether about identity
 (`government_id`) or employment (`epfo_employment`). Both remain declared and
 inert (`implemented = False`).
 
-**Nothing in `app/ledger/` reads the two new purposes.** They are enforced in
-`app/verification/store.py` and `app/verification/service.py`, which import the
-ledger for consent checking and audit; the ledger never imports verification
-(the same layering rule S5.2 established for comp). `VerificationStore` reuses
+**S7.3 honoured that closure.** AI-interview disclosure is a *third* thing an org
+might read about a candidate, and the tempting move was one more redefinition.
+Instead it got its own purpose, `interview_read` — the window shut on 2026-07-31
+and it stays shut. A test pins the distinction: an org holding
+`verification_read` and nothing else is still refused the interview endpoint
+(`test_a_verification_read_grant_does_not_unlock_interviews`).
+
+**Nothing in `app/ledger/` reads the three purposes added by PI-7.** They are
+enforced in `app/verification/` and (for `interview_read`)
+`app/interview/store.py`, which import the ledger for consent checking and
+audit; the ledger never imports either (the same layering rule S5.2 established
+for comp). `VerificationStore` reuses
 `LedgerStore._grants_for` / `_audit` and `consent.check_consent` /
 `has_any_active` unchanged, and its audit rows (`verification.start`,
 `verification.complete`, `verification.query`, and S7.2's `claim.query`) land in
 the shared `audit_log`. Both org reads audit **every** attempt, allowed *and*
 denied — the denied audit row is committed before the `ConsentError` is raised.
+S7.3's `InterviewStore.assessments_for_org` follows the identical shape, auditing
+`interview.query` allowed *and* denied; its `interview.start` /
+`interview.complete` rows land in the same log.
 
 **`verification_read` is deliberately not a reuse of `ledger_read`.** Widening
 `ledger_read` to also disclose identity assurance would retroactively change

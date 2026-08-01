@@ -35,13 +35,20 @@ Around that engine, the platform currently ships:
   loop, and a candidate auth plane + DPDP portal (access, transparency, consent
   control, erasure) → [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
   [CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md)
-- **Verification & assessment depth** (PI-7, in progress) — a verification
-  spine with consent-first identity: an assurance ladder behind a
-  method-adapter seam, storing outcomes only (never documents or biometrics).
-  Ships self-attestation, contact-control OTP, and operator manual review;
-  government-ID is a declared, unimplemented adapter. Document forensics
-  (S7.2) and AI interview delivery (S7.3) are **not built yet** →
+- **Verification & assessment depth** (PI-7) — a verification spine with
+  consent-first identity: an assurance ladder behind a method-adapter seam,
+  storing outcomes only (never documents or biometrics). Ships self-attestation,
+  contact-control OTP, and operator manual review; government-ID is a declared,
+  unimplemented adapter. On the same spine, **document forensics** for
+  experience letters and payslips with a separate employment-claim ladder (a
+  payslip can never lift identity assurance) →
   [VERIFICATION.md](VERIFICATION.md)
+- **AI interviews** (S7.3) — audio-first, advisory interviews that ask the depth
+  report's *own* probes and score the answers deterministically (an optional LLM
+  pass may only nudge, never grade). Audio is transcribed and discarded; the
+  transcript is the candidate's to read and is never disclosed to an org.
+  Proxy-risk signals read the identity assurance held when the session started —
+  no voice biometrics → [INTERVIEWS.md](INTERVIEWS.md)
 
 Ships with two evaluation domains (**GenAI engineering**, **Data
 Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
@@ -50,7 +57,7 @@ Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 [FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) ·
 [DASHBOARD.md](DASHBOARD.md) · [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
 [CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md) ·
-[VERIFICATION.md](VERIFICATION.md) ·
+[VERIFICATION.md](VERIFICATION.md) · [INTERVIEWS.md](INTERVIEWS.md) ·
 [MODELS.md](MODELS.md) (model choices) · [docs/ROADMAP.md](docs/ROADMAP.md)
 (live sprint status) · [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 (original engine requirements).

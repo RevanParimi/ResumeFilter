@@ -20,20 +20,34 @@ verticals. Accented-English ASR is an easier, cheaper target than code-switch.
 | `model_reasoning_hard` | qwen/qwen3.7-max | $1.475 / $4.425 | Retained as the hard-escalation hatch only |
 | `model_fast` (parsing) | qwen/qwen3.6-flash | $0.188 / $1.125 | Unchanged; non-decisive passes |
 | `model_bulk` | qwen/qwen3.6-35b-a3b | $0.140 / $1.000 | Unchanged; unused until flywheel re-scoring |
+| `model_scoring` | **deepseek/deepseek-v3.2** | $0.269 / $0.400 | **ACTIVE since S7.3.** Interview scoring — but only as a CAPPED adjustment (+/- `interview_llm_max_delta`) over a deterministic rubric, so the value tier is right and a bad response cannot move a band |
+| `asr_model` | **mistralai/voxtral-small-24b-2507** | $0.10 / $0.30 + audio | **ACTIVE since S7.3** via `speech_provider: openrouter`. Live-verified 2026-08-01 (see log) |
 | watch | moonshotai/kimi-k3 | $3.000 / $15.000 | Flagship; open weights 2026-07-27 — re-check for cheaper third-party hosting ~2 weeks after before considering for decisive calls |
 
 ## Future slots (inert until their sprint; keys live in config.yaml today)
 
 | Slot (key) | Needed by | Default | Alternates | Notes |
 |---|---|---|---|---|
-| `model_scoring` | S7.3 interview scoring | **deepseek/deepseek-v3.2** | kimi-k3 if quality demands | Long transcripts → value tier is right; advisory + human-reviewed |
-| `speech_provider` | S7.3 | **openrouter** | sarvam · local | **Key finding: OpenRouter serves audio models on the EXISTING account — no new signup for v0.** Sarvam (₹30/hr ASR) is the *India data-residency* option for production DPDP posture, not a dev necessity. `local` = self-host GPU at PI-8 scale |
-| `asr_model` | S7.3 | **mistralai/voxtral-small-24b-2507** ($0.10/$0.30 + audio; open-weights → same model self-hostable later; **live-pinged OK**) | google/gemini-2.5-flash-lite (≈$0.03–0.10/hr audio, cheapest hosted); nemotron-3-nano-omni **:free** for dev; local: Qwen3-ASR 1.7B (Apache 2.0); Sarvam "saarika"; deferred Hinglish: Srota fine-tune | Evaluate on Indian-accented English samples, not just benchmarks |
-| `tts_model` | S7.3 | **kokoro-82m** (local, near-free, Indian-English preset) | Orpheus-3B (richer, ~200ms); hosted: Sarvam "bulbul" ₹15–30/10K chars | OpenRouter has **no TTS** — TTS is local-first |
+| ~~`speech_provider`~~ (now active) | S7.3 | **openrouter** | sarvam · local | **Key finding: OpenRouter serves audio models on the EXISTING account — no new signup for v0.** Sarvam (₹30/hr ASR) is the *India data-residency* option for production DPDP posture, not a dev necessity. `local` = self-host GPU at PI-8 scale |
+| ~~`asr_model`~~ (now active) | S7.3 | **mistralai/voxtral-small-24b-2507** ($0.10/$0.30 + audio; open-weights → same model self-hostable later; **live-pinged OK**) | google/gemini-2.5-flash-lite (≈$0.03–0.10/hr audio, cheapest hosted); nemotron-3-nano-omni **:free** for dev; local: Qwen3-ASR 1.7B (Apache 2.0); Sarvam "saarika"; deferred Hinglish: Srota fine-tune | Evaluate on Indian-accented English samples, not just benchmarks |
+| `tts_model` | **still inert** (S7.3 deferred TTS: OpenRouter has none and local is a GPU dependency the offline suite cannot exercise) | **kokoro-82m** (local, near-free, Indian-English preset) | Orpheus-3B (richer, ~200ms); hosted: Sarvam "bulbul" ₹15–30/10K chars | OpenRouter has **no TTS** — TTS is local-first |
 | `embedding_model` | PI-8 (helps PI-4/5) | **qwen/qwen3-embedding-0.6b** | 8B variant (quality); BGE-M3 | Top open family on MTEB v2; NOT on OpenRouter — self-host or provider TBD at S8.1 |
 | `reranker_model` | PI-5/8 search | **qwen/qwen3-reranker-0.6b** | — | Adopt only if ranking quality demands |
 
 ## Verification log
+
+- **2026-08-01 (S7.3):** `mistralai/voxtral-small-24b-2507` reached LIVE through
+  `OpenRouterSpeech` on the project key — request path, mime→format mapping and
+  response parsing all verified end to end. **Hazard found: it hallucinates on
+  non-speech audio.** Handed a 440 Hz tone containing no speech, it returned
+  fluent, confident prose. Consequences in S7.3 are bounded (the candidate reads
+  their own transcript, scores are advisory, and a hallucinated answer still has
+  to cover the question's expected signals) but **any future ASR adapter wants a
+  no-speech/energy guard** — logged as a follow-up in `INTERVIEWS.md` §12.
+  Transcription QUALITY on Indian-accented English remains **unverified**: there
+  is no audio sample in the repo and TTS is deferred, so this check proves the
+  seam works, not that the model hears well. `scripts/smoke_s73.py` deliberately
+  pins `DEE_OPENROUTER_API_KEY=""` so the key-less path is what it actually tests.
 
 - 2026-07-26: OpenRouter `/models` catalog pulled live (345 models; 24
   audio-capable). `deepseek/deepseek-v3.2` and `voxtral-small-24b-2507`
