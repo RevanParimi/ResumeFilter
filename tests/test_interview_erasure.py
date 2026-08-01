@@ -13,7 +13,7 @@ from app.candidates.schema import (
 from app.interview.models import InterviewSessionRow, InterviewTurnRow
 from app.ledger.schema import ConsentPurpose
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 ANSWER = (
     "I rebuilt the ingestion path at Acme myself: the nightly PyTorch job kept "
@@ -61,7 +61,7 @@ def _complete_an_interview(client, key) -> None:
 @pytest.fixture
 def wiring(settings):
     services = make_services(settings)
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as client:
         cid, key = _candidate(services)
         org = services.ledger.create_organization("Globex Talent")
         org_key = services.ledger.issue_api_key(org.id)

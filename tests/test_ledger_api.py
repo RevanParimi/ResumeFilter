@@ -10,7 +10,7 @@ from app.candidates.extractor import extract_profile
 from app.candidates.store import CandidateStore
 from app.ledger.store import LedgerStore
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 RESUME = """Asha Rao
 Email: asha.rao@example.com | Phone: +91 98765 43210
@@ -37,7 +37,7 @@ def test_services_bundle_has_ledger_sharing_candidate_db(services):
 def api(settings, flywheel):
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
 
 

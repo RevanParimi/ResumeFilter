@@ -7,13 +7,13 @@ from app.candidates.models import CandidateRow
 from app.ledger.schema import ConsentPurpose
 from app.main import create_app
 from app.verification.schema import VerificationMethod
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 
 @pytest.fixture
 def client(settings):
     services = make_services(settings)
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c, services
 
 

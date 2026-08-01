@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.candidates.store import CandidateStore
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 RESUME = """Asha Rao
 Email: asha.rao@example.com | Phone: +91 98765 43210
@@ -27,7 +27,7 @@ def api(settings, flywheel):
     """TestClient wired to fully offline services (NullLLM, in-memory stores)."""
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
 
 

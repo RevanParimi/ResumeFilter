@@ -12,7 +12,7 @@ from app.candidates.schema import (
     ExtractionResult,
 )
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 EMAIL = "dev@example.com"
 LETTER = (b"ACME TECHNOLOGIES PRIVATE LIMITED\nhr@acme.com\n"
@@ -51,7 +51,7 @@ def _candidate(services, email=EMAIL, name="A Candidate", experience=None):
 @pytest.fixture
 def client(settings):
     services = make_services(settings)
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c, services
 
 

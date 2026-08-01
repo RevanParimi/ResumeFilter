@@ -20,6 +20,8 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.routes import candidate_router, org_router, public_router, router
+from app.core.boot import verify_launch_config
+from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.graph.build import EvaluationEngine
 from app.services import Services, build_default_services
@@ -33,6 +35,11 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         configure_logging()
+        # Refuse to serve a misconfigured deployment rather than serve an open
+        # admin plane (S8.1). Runs for injected services too: a test that boots
+        # without a credential is exactly the blind spot this closes.
+        boot_settings = services.settings if services is not None else get_settings()
+        verify_launch_config(boot_settings)
         svc = services or build_default_services()
         app.state.services = svc
         app.state.engine = EvaluationEngine(svc)

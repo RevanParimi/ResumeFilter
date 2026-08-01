@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 RESUME = (
     "- Fine-tuned GPT-4 to improve accuracy.\n"
@@ -19,7 +19,7 @@ def api(settings, flywheel):
     """TestClient wired to fully offline services (NullLLM, in-memory stores)."""
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
 
 
@@ -176,9 +176,14 @@ def test_auth_enforced_when_key_configured(settings, flywheel):
         assert ok.status_code == 200
 
 
-def test_auth_open_by_default(api):
-    client, _ = api  # no api_auth_key in fixture settings
-    assert client.post("/evaluate", json={"resume_text": RESUME}).status_code == 200
+def test_auth_refuses_when_no_key_is_sent(api):
+    """S8.1: this was `test_auth_open_by_default`, and it was the test PINNING
+    the fail-open defect in place. The suite now runs with a configured admin
+    key, and a client that sends none is refused."""
+    client, _ = api
+    bare = TestClient(client.app, raise_server_exceptions=False)
+    with bare:
+        assert bare.post("/evaluate", json={"resume_text": RESUME}).status_code == 401
 
 
 def test_unhandled_error_returns_generic_500(api):

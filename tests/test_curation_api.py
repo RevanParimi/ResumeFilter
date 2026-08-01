@@ -5,11 +5,11 @@ import zipfile
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 
 def _client(services):
-    return TestClient(create_app(services), raise_server_exceptions=False)
+    return TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS)
 
 
 def _candidate(client) -> str:

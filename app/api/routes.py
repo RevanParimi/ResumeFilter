@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hmac
 from datetime import datetime
 from typing import Optional
 
@@ -76,9 +77,17 @@ def _services(request: Request) -> Services:
 async def require_api_key(
     request: Request, x_api_key: Optional[str] = Header(default=None)
 ) -> None:
-    """Shared-secret gate (FR-15). No key configured → open (local/dev)."""
+    """Admin-plane gate (FR-15), fail-CLOSED since S8.1.
+
+    An unset credential is the MOST refusing state, not the least: before this,
+    a forgotten ``DEE_API_AUTH_KEY`` made all 27 admin endpoints public —
+    including the one that mints any candidate's access key.
+    ``verify_launch_config`` stops the process before it can serve in that
+    state; this is the second layer, so an app built without the lifespan is
+    still guarded.
+    """
     expected = _services(request).settings.api_auth_key.get_secret_value()
-    if expected and x_api_key != expected:
+    if not expected or not hmac.compare_digest(x_api_key or "", expected):
         raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
 
 

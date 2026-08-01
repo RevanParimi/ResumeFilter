@@ -22,6 +22,7 @@ from alembic.config import Config
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8013
 BASE = f"http://127.0.0.1:{PORT}"
+ADMIN = "smoke-admin-key"   # S8.1: the admin plane fails closed
 
 
 def main() -> int:
@@ -35,6 +36,7 @@ def main() -> int:
     env = os.environ.copy()
     env.update(
         {
+            "DEE_API_AUTH_KEY": ADMIN,
             "DEE_CANDIDATES_DB_URL": url,
             "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),
             "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -47,7 +49,7 @@ def main() -> int:
         env=env,
     )
     try:
-        with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
+        with httpx.Client(base_url=BASE, headers={"X-API-Key": ADMIN}, timeout=httpx.Timeout(180, connect=5)) as c:
             for _ in range(60):
                 try:
                     if c.get("/healthz").status_code == 200:

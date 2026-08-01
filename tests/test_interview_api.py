@@ -12,7 +12,7 @@ from app.candidates.schema import (
     SkillItem,
 )
 from app.main import create_app
-from tests.conftest import FakeSpeech, make_services
+from tests.conftest import ADMIN_HEADERS, FakeSpeech, make_services
 
 ANSWER = (
     "I rebuilt the ingestion path at Acme myself: the nightly PyTorch job kept "
@@ -40,7 +40,7 @@ def _candidate(services, name="A Candidate"):
 @pytest.fixture
 def app_client(settings):
     services = make_services(settings)
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as client:
         yield client, services
 
 
@@ -152,7 +152,7 @@ def test_audio_with_no_provider_is_422_speech_unavailable(app_client):
 def test_audio_is_transcribed_when_a_provider_exists(settings):
     services = make_services(settings, speech=FakeSpeech(text=ANSWER,
                                                          settings=settings))
-    with TestClient(create_app(services)) as client:
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as client:
         _, key = _candidate(services)
         body = _start(client, key)
         resp = _answer(client, key, body["session"]["id"],

@@ -25,6 +25,7 @@ AI_FIXTURE = Path("tests/fixtures/ai_generated_genai_resume.txt")
 GENUINE_FIXTURE = Path("tests/fixtures/genuine_genai_resume.txt")
 PORT = 8021
 BASE = f"http://127.0.0.1:{PORT}"
+ADMIN = "smoke-admin-key"   # S8.1: the admin plane fails closed
 
 
 def main() -> int:
@@ -38,6 +39,7 @@ def main() -> int:
     env = os.environ.copy()
     env.update(
         {
+            "DEE_API_AUTH_KEY": ADMIN,
             "DEE_CANDIDATES_DB_URL": url,
             "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),
             "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -52,7 +54,7 @@ def main() -> int:
     try:
         # Generous read timeout: the AI fixture yields many claims, and a live
         # run pays one reasoning call per claim in plausibility + probes.
-        with httpx.Client(base_url=BASE, timeout=httpx.Timeout(600, connect=5)) as c:
+        with httpx.Client(base_url=BASE, headers={"X-API-Key": ADMIN}, timeout=httpx.Timeout(600, connect=5)) as c:
             for _ in range(60):
                 try:
                     if c.get("/healthz").status_code == 200:

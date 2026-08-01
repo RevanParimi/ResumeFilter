@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.features.materialize import materialize_candidate
 from app.main import create_app
 from app.matching.schema import RequisitionStatus
-from tests.conftest import set_extraction_created_at
+from tests.conftest import ADMIN_HEADERS, set_extraction_created_at
 
 AS_OF = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
@@ -24,7 +24,7 @@ def _profile(name, email, skills):
 
 @contextmanager
 def _client(services):
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c
 
 

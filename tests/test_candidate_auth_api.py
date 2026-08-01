@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def _client(settings):
     # background portal thread) runs on fixture teardown even if the test
     # body raises.
     services = make_services(settings)
-    with TestClient(create_app(services), raise_server_exceptions=False) as client:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
 
 

@@ -9,6 +9,7 @@ from app.candidates.schema import (
     CandidateProfile, ContactInfo, ExtractedStr, ExtractionResult, SkillItem,
 )
 from app.main import create_app
+from tests.conftest import ADMIN_HEADERS
 from app.ledger.schema import ConsentPurpose
 
 NOW = datetime(2026, 7, 28, tzinfo=timezone.utc)
@@ -17,7 +18,7 @@ NOW_ISO = NOW.isoformat()
 
 @contextmanager
 def _client(services):
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c
 
 

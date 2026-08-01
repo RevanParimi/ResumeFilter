@@ -10,7 +10,7 @@ from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
 from app.ledger.schema import ConsentPurpose
 from app.main import create_app
-from tests.conftest import set_extraction_created_at
+from tests.conftest import ADMIN_HEADERS, set_extraction_created_at
 
 NOW = datetime(2026, 7, 28, tzinfo=timezone.utc)
 AS_OF = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -18,7 +18,7 @@ AS_OF = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
 @contextmanager
 def _client(services):
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c
 
 

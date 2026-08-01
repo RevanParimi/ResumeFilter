@@ -13,7 +13,7 @@ from app.candidates.extractor import extract_profile
 from app.features.materialize import MaterializedVector
 from app.features.schema import FeatureVector
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 _AS_OF = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -38,7 +38,7 @@ async def _seed(services, tag, values):
 def api(settings, flywheel):
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
 
 

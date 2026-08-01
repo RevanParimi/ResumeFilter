@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.candidates.hashing import contact_hash, normalize_email
 from app.candidates.models import CandidateRow
 from app.main import create_app
-from tests.conftest import make_services
+from tests.conftest import ADMIN_HEADERS, make_services
 
 EMAIL = "dev@example.com"
 
@@ -33,7 +33,7 @@ def client(settings, monkeypatch):
     # follows. create_app(services) injects the offline container.
     monkeypatch.setattr(settings, "verif_otp_debug_echo", True)
     services = make_services(settings)
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c, services
 
 
@@ -177,7 +177,7 @@ def test_one_candidate_cannot_confirm_anothers_verification(client):
 
 def test_the_debug_echo_is_absent_when_the_knob_is_off(settings):
     services = make_services(settings)  # verif_otp_debug_echo defaults to False
-    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         _, key = _candidate(services)
         body = c.post(
             "/portal/verifications", json={"method": "otp_email", "destination": EMAIL},

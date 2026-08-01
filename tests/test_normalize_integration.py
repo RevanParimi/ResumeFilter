@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from app.candidates.extractor import extract_profile, heuristic_profile
 from app.main import create_app
 from app.services.llm import NullLLM
-from tests.conftest import FakeLLM, make_services
+from tests.conftest import ADMIN_HEADERS, FakeLLM, make_services
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -86,7 +86,7 @@ async def test_llm_path_notice_period_normalized(settings):
 def test_api_exposes_normalized_profile(settings, flywheel):
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         cid = client.post(
             "/candidates", json={"resume_text": RESUME, "evaluate": False}
         ).json()["candidate_id"]

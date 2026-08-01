@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
 import app.features.models  # noqa: F401 — populate Base.metadata with feature tables
@@ -109,12 +110,25 @@ class FakeSpeech(SpeechClient):
         return Transcript(text=self.text, duration_seconds=30.0, model="fake-asr")
 
 
+#: The suite runs against a CONFIGURED admin key (S8.1). Before this, the whole
+#: suite ran fail-open, so no test could tell "authorized" from "unguarded".
+ADMIN_KEY = "test-admin-key"
+ADMIN_HEADERS = {"X-API-Key": ADMIN_KEY}
+
+
 @pytest.fixture
 def settings(monkeypatch) -> Settings:
     # Hermetic: bypass both .env and config.yaml so tests run on code defaults,
     # independent of any local config the developer may have changed.
     monkeypatch.setenv("DEE_CONFIG_FILE", "__tests_no_config__.yaml")
-    return Settings(_env_file=None, openrouter_api_key="")
+    return Settings(
+        _env_file=None, openrouter_api_key="", api_auth_key=SecretStr(ADMIN_KEY)
+    )
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    return dict(ADMIN_HEADERS)
 
 
 @pytest.fixture(autouse=True)
