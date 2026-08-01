@@ -235,17 +235,32 @@ explicitly that output is advisory, that human review is mandatory, and that the
 customer is the decision maker. The code already refuses to auto-reject; the
 contract must say so too.
 
-### 8.3 Employment IP conflict — check before commercialising
+### 8.3 Employment IP conflict — RAISED, DECLINED BY THE USER 2026-08-01
 
 The user is employed at IBM. IBM's IP-assignment and outside-activity clauses
 are broad, and IBM has both an HR consulting practice and AI products, so a
 talent-intelligence tool is plausibly "related to the employer's business."
+The recommendation was to read the agreement and, if required, file for
+outside-activity approval **before there is revenue**.
 
-**This is not a reason to stop.** It is a reason to read the agreement and, if
-required, file for outside-activity approval **before there is revenue**.
-Retrofitting this after a customer has signed is materially worse than doing it
-now. Flagged as the single highest-consequence non-technical item in this
-document.
+**The user declined, 2026-08-01**, on the grounds that IBM has lakhs of
+employees, does not trace small side projects, and its people are occupied with
+day-to-day work. **That is their call and it stands. Do not re-raise it**
+unprompted.
+
+**Residual risk, recorded once so the record is honest and not re-argued:** the
+objection answers *"will IBM come looking?"*, which was not the failure mode.
+IP-assignment operates at the moment of creation and surfaces when a
+**counterparty** asks — investor legal diligence, acquirer IP review, or an
+enterprise vendor questionnaire's "do you own this IP" line. **§6 Phase 3 is
+explicitly platform sale and investors**, so the trigger sits on this document's
+own plan, at the point of maximum leverage to lose. Detection by IBM is not
+required for the risk to materialise.
+
+**Practical consequence if it is never cleared:** Phases 0–2 (build, design
+partners, direct invoicing) are largely unaffected in practice. Phase 3 is where
+it bites. A future session reaching Phase 3 should surface this section then —
+**that is a trigger, not a reminder to nag.**
 
 ### 8.4 Entity and invoicing
 
