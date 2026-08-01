@@ -47,6 +47,8 @@ from app.ledger.schema import (
     Organization,
     ReputationAssessment,
 )
+from app.interview.questions import NothingToAskError
+from app.interview.service import AnswerTooLargeError, SessionConflictError
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
@@ -63,6 +65,7 @@ from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services import Services
 from app.services.llm import NullLLM
+from app.services.speech import SpeechFailed, SpeechUnavailable
 from app.services.report_store import OutcomeLabel, OutcomeRecord
 
 
@@ -1170,6 +1173,145 @@ async def org_candidate_claims(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return claims.model_dump(mode="json")
+
+
+# ── AI interviews, candidate plane (S7.3) ───────────────────────────────────
+# The interview asks the depth report's OWN probes. Every handler resolves the
+# candidate from the key, never a path or body param. Audio is transcribed in
+# memory and discarded (only a sha256 digest survives); the TRANSCRIPT is kept
+# and is the candidate's to read here — it is never in an org payload.
+
+
+class StartInterviewRequest(BaseModel):
+    domain: str = "genai"
+
+
+class SubmitAnswerRequest(BaseModel):
+    """Exactly one of `text` / `audio_b64`. `question_id` is REQUIRED: an answer
+    must name the question it answers, so two racing clients cannot collapse
+    into one turn (409 on a mismatch)."""
+
+    question_id: str
+    text: str | None = None
+    audio_b64: str | None = None
+    mime: str | None = None
+
+
+def _interview_body(session, following) -> dict:
+    return {
+        "session": session.model_dump(mode="json"),
+        "next_question": following.model_dump(mode="json") if following else None,
+    }
+
+
+@candidate_router.post("/portal/interviews")
+async def start_interview(
+    req: StartInterviewRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> dict:
+    services = _services(request)
+    try:
+        session = services.interview.start(candidate_id, domain_key=req.domain)
+    except NothingToAskError as exc:   # nothing on file worth asking about
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SessionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except KeyError as exc:            # unknown domain key
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _interview_body(session, services.interview.next_question(session))
+
+
+@candidate_router.get("/portal/interviews")
+async def list_interviews(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    summaries = _services(request).interview.list_for_candidate(candidate_id)
+    return {"interviews": [s.model_dump(mode="json") for s in summaries]}
+
+
+@candidate_router.get("/portal/interviews/{session_id}")
+async def get_interview(
+    session_id: str, request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    """The candidate's own full view — transcripts included. It is their data,
+    and an advisory score whose basis they cannot read is not advisory."""
+    services = _services(request)
+    try:
+        session = services.interview.get(candidate_id, session_id)
+    except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
+        raise HTTPException(status_code=404, detail="interview not found") from exc
+    return _interview_body(session, services.interview.next_question(session))
+
+
+@candidate_router.post("/portal/interviews/{session_id}/answers")
+async def submit_answer(
+    session_id: str,
+    req: SubmitAnswerRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> dict:
+    services = _services(request)
+    try:
+        session, following = await services.interview.answer(
+            candidate_id, session_id, question_id=req.question_id,
+            text=req.text, audio_b64=req.audio_b64, mime=req.mime,
+        )
+    except SessionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AnswerTooLargeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SpeechUnavailable as exc:
+        # The designed no-key path, said out loud: answer in text instead.
+        raise HTTPException(
+            status_code=422, detail=f"speech_unavailable: {exc}"
+        ) from exc
+    except SpeechFailed as exc:
+        # Nothing was recorded, so retrying costs the candidate nothing.
+        raise HTTPException(status_code=422, detail=f"speech_failed: {exc}") from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="interview not found") from exc
+    except ValueError as exc:          # no body, or bad base64
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _interview_body(session, following)
+
+
+@candidate_router.post("/portal/interviews/{session_id}/finish")
+async def finish_interview(
+    session_id: str, request: Request, candidate_id: str = Depends(require_candidate)
+) -> dict:
+    services = _services(request)
+    try:
+        session = services.interview.finish(candidate_id, session_id)
+    except SessionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="interview not found") from exc
+    return _interview_body(session, None)
+
+
+@org_router.get("/interview/candidates/{candidate_id}/assessments")
+async def org_candidate_interviews(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> dict:
+    """Consent-gated interview assessments (INTERVIEW_READ — a new purpose, not
+    a widening of verification_read). Every attempt — allowed or denied — is
+    audited by the store. Headers only: bands, dimensions, proxy band,
+    timestamps. NEVER the candidate's words."""
+    try:
+        summaries = _services(request).interview.assessments_for_org(
+            org_id=org_id, candidate_id=candidate_id
+        )
+    except ConsentError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "attempts": len(summaries),
+        "assessments": [s.model_dump(mode="json") for s in summaries],
+    }
 
 
 @router.post("/candidates/{candidate_id}/verifications/manual-review")
