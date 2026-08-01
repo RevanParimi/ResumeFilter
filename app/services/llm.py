@@ -24,7 +24,7 @@ from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
-Tier = Literal["reasoning", "reasoning_hard", "parsing", "bulk"]
+Tier = Literal["reasoning", "reasoning_hard", "parsing", "bulk", "scoring"]
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 

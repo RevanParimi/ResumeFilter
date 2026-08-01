@@ -216,6 +216,33 @@ doc_max_pages: 20                 # parse cap
 doc_metadata_skew_days: 1         # creation-vs-modification skew worth noting
 moonlight_min_overlap_months: 12  # higher than xf_overlap_months_min on purpose
 
+# --- AI interviews (PI-7) - S7.3 delivery + advisory scoring -------------------
+# The interview asks the depth report's OWN probes. Scoring is deterministic;
+# the LLM may only ADJUST a dimension by interview_llm_max_delta and can never
+# alone produce a band. No key => audio is refused and it runs as a TEXT
+# interview. Advisory: an interview never gates matching, ranking, or scoring.
+interview_max_questions: 8
+interview_min_questions: 3          # below this there is nothing worth asking -> 422
+interview_session_ttl_minutes: 120  # read-time expiry; no sweeper exists (PI-8)
+interview_max_audio_b64_chars: 8000000   # ~6MB decoded; refused before any decode
+interview_max_answer_chars: 20000
+interview_min_answer_words: 12      # shorter -> scores nothing (which is not zero)
+interview_max_words_per_second: 4.0      # audio; human speech is ~2.5
+interview_max_typed_words_per_second: 8.0
+interview_llm_max_delta: 0.2        # hard cap on the LLM's influence per dimension
+interview_llm_excerpt_chars: 4000
+interview_min_confidence: 0.5       # below this -> insufficient_signal, never assert
+interview_deep_threshold: 0.75
+interview_solid_threshold: 0.55
+interview_emerging_threshold: 0.35
+interview_weight_specificity: 1.0
+interview_weight_ownership: 1.0
+interview_weight_depth: 1.5         # dominant: did they cover what a real answer must
+interview_weight_consistency: 1.0
+ret_interview_session_days: 1095    # 3y, posture only (the sweep is PI-8)
+speech_timeout_seconds: 60
+speech_max_retries: 2
+
 # --- API hardening -------------------------------------------------------------
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.

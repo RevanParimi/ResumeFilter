@@ -39,12 +39,16 @@ class ConsentPurpose(StrEnum):
     candidate's ledger history (enforced at query time in S3.2);
     identity_verify = the platform may verify the candidate's identity via an
     EXTERNAL source (S7.1 -- first-party self-service methods need no grant);
-    verification_read = an org may see the candidate's identity assurance."""
+    verification_read = an org may see the candidate's identity assurance;
+    interview_read = an org may see the candidate's AI-interview assessments
+    (S7.3 -- a NEW purpose rather than another widening of verification_read,
+    whose dated redefinition window is closed; see LEDGER.md)."""
 
     LEDGER_WRITE = "ledger_write"
     LEDGER_READ = "ledger_read"
     IDENTITY_VERIFY = "identity_verify"
     VERIFICATION_READ = "verification_read"
+    INTERVIEW_READ = "interview_read"
 
 
 class CodingPlatform(StrEnum):

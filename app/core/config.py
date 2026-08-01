@@ -177,6 +177,34 @@ class Settings(BaseSettings):
     # notice period, not a second job.
     moonlight_min_overlap_months: int = Field(default=12, ge=1)
 
+    # --- AI interviews (PI-7, S7.3) -------------------------------------------
+    # Band cut-points are knobs (the ai_*/fr_*/rep_* precedent -- a band is a
+    # presentation choice over a score). The scorer's OWN internals are module
+    # constants in scoring.py, versioned by SCORER_VERSION: a deploy that
+    # silently redefined "specific" would make two stored assessments
+    # incomparable.
+    interview_max_questions: int = Field(default=8, ge=1)
+    interview_min_questions: int = Field(default=3, ge=1)
+    interview_session_ttl_minutes: int = Field(default=120, ge=1)
+    interview_max_audio_b64_chars: int = Field(default=8_000_000, ge=1024)
+    interview_max_answer_chars: int = Field(default=20_000, ge=64)
+    interview_min_answer_words: int = Field(default=12, ge=1)
+    interview_max_words_per_second: float = Field(default=4.0, gt=0.0)
+    interview_max_typed_words_per_second: float = Field(default=8.0, gt=0.0)
+    interview_llm_max_delta: float = Field(default=0.2, ge=0.0, le=0.5)
+    interview_llm_excerpt_chars: int = Field(default=4000, ge=100)
+    interview_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    interview_deep_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+    interview_solid_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    interview_emerging_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+    interview_weight_specificity: float = Field(default=1.0, ge=0.0)
+    interview_weight_ownership: float = Field(default=1.0, ge=0.0)
+    interview_weight_depth: float = Field(default=1.5, ge=0.0)
+    interview_weight_consistency: float = Field(default=1.0, ge=0.0)
+    ret_interview_session_days: int = Field(default=1095, ge=1)  # 3y, posture only
+    speech_timeout_seconds: int = Field(default=60, ge=1)
+    speech_max_retries: int = Field(default=2, ge=0)
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is
@@ -352,7 +380,8 @@ class Settings(BaseSettings):
         return bool(self.github_token.get_secret_value())
 
     def model_for_tier(
-        self, tier: Literal["reasoning", "reasoning_hard", "parsing", "bulk"]
+        self,
+        tier: Literal["reasoning", "reasoning_hard", "parsing", "bulk", "scoring"],
     ) -> str:
         """Resolve a logical tier to a concrete, config-driven model id."""
         return {
@@ -360,6 +389,9 @@ class Settings(BaseSettings):
             "reasoning_hard": self.model_reasoning_hard,
             "parsing": self.model_fast,
             "bulk": self.model_bulk,
+            # S7.3 interview scoring. Advisory, human-reviewed, and capped to a
+            # +/- delta over the deterministic rubric, so the value tier is right.
+            "scoring": self.model_scoring,
         }[tier]
 
 
