@@ -67,7 +67,7 @@ plus one new service seam.
 | ↳ | `InterviewStatus` · `QuestionSource` · `AnswerChannel` · `InterviewBand` · `ProxyBand` · `InterviewQuestion` · `InterviewTurn` · `TurnScore` · `ProxyFinding` · `ProxyRisk` · `InterviewAssessment` · `InterviewSession` · `InterviewSummary` | |
 | `app/interview/questions.py` | `build_question_plan` — probes ▸ profile templates ▸ domain seeds | pure |
 | `app/interview/scoring.py` | deterministic rubric per turn; aggregation to an assessment | pure, clock-free |
-| `app/interview/proxy.py` | `assess_proxy_risk` over assurance + behaviour | pure, clock-injected |
+| `app/interview/proxy.py` | `assess_proxy_risk` over assurance + behaviour | pure, clock-free |
 | `app/interview/models.py` | `InterviewSessionRow`, `InterviewTurnRow` | ORM |
 | `app/interview/store.py` | `InterviewStore` — CRUD + candidate-scoped reads | I/O |
 | `app/interview/service.py` | `InterviewService` — the state machine, consent, audit | I/O |
@@ -331,9 +331,17 @@ interview_llm_max_delta: 0.2             interview_llm_excerpt_chars: 4000
 interview_min_confidence: 0.5
 interview_weight_specificity: 1.0        interview_weight_ownership: 1.0
 interview_weight_depth: 1.5              interview_weight_consistency: 1.0
+interview_deep_threshold: 0.75           interview_solid_threshold: 0.55
+interview_emerging_threshold: 0.35
 ret_interview_session_days: 1095
 speech_timeout_seconds: 60               speech_max_retries: 2
 ```
+
+Band cut-points are knobs (the `ai_*` / `fr_*` / `rep_*` precedent — a band is a
+presentation choice over a score). The *scorer's own internals* — what counts as a
+concrete token, how many make a specific answer — are module constants versioned by
+`scorer_version`, not knobs: they define what the number means, and a deploy that
+silently redefines it would make two stored assessments incomparable.
 
 `model_scoring`, `speech_provider`, `asr_model` already exist and stop being inert.
 `tts_model` stays inert and is documented as such. **Severities and bands are code
