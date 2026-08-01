@@ -279,6 +279,45 @@
 - **Next action:** **PI-7 is COMPLETE. Next is PI-8 — and it is LAUNCH
   READINESS, not the "scale & learning" the old backlog assumed. Plan it in a
   fresh session: it is a big PI and deserves its own context window.**
+  **GTM POSITION SETTLED 2026-08-01 — read
+  `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md` BEFORE planning
+  PI-8.** It answers "how does this become revenue" and it constrains PI-8's
+  priorities. Three decisions, all taken with the user: **(1) the wedge — we
+  sell PRE-SCREEN FRAUD DETECTION for Indian IT hiring** (S2.1–S2.4 + S7.2
+  document forensics + moonlighting + S7.3 proxy risk), *not* the platform,
+  because it is the one slice with **no cold start** (value from one customer's
+  own resumes on day one), it occupies a funnel position the Indian BGV
+  incumbents do not (they verify *after* selection; we screen *before*), and it
+  is **validatable retrospectively in weeks** against resumes a customer already
+  has — the cheapest known path to closing gap-analysis v2 §2, the seven
+  unvalidated numbers. **The evaluation ledger comes OFF the pitch** (not out of
+  the repo): it is the most impressive subsystem and worth exactly zero to
+  customer #1. **(2) the buyer — Indian staffing/recruitment agencies (50–500
+  people) first**, then mid-size IT services (200–2000), then **BGV vendors as a
+  CHANNEL, not a competitor** — the same partnership that unblocks enterprise
+  distribution also unblocks EPFO/UAN, which S7.2 established is a vendor
+  problem, not a legal one. Explicitly **not** TCS/Infosys/Wipro first (12–18
+  month empanelment cycles filter a solo vendor in week one). **(3) the sequence
+  — design partners before customers:** 3–5 firms, free, paying in real resumes
+  + retrospective outcome labels; that is the only thing that retires the
+  unvalidated-numbers risk and it is the precondition for every other path.
+  **Rejected with reasons recorded** (§9 there): selling to LinkedIn/Naukri/
+  Indeed is an *exit* available after traction, not an entry (platforms buy
+  traction and teams, not code — pre-traction the idea just gets built in-house);
+  LinkedIn advertising + investors is the wrong GTM for Indian enterprise HR
+  tech, which sells on relationships and referrals.
+  **Four commercial blockers the technical audit could not see** (§8 there, none
+  in gap-analysis §9): **DPDP correction/rectification + grievance-officer
+  contact are RFP BLOCKERS, not polish** — the consent architecture is a
+  *differentiator* in an Indian enterprise RFP, which reclassifies the two
+  statutory rights deferred since S6.4, and PI-8 should own them for commercial
+  reasons rather than legal fear; **false-positive liability must live in the
+  CONTRACT**, not only in code (advisory-only is right and is currently asserted
+  nowhere a customer signs); **the IBM IP/outside-activity agreement must be
+  checked BEFORE there is revenue** (highest-consequence non-technical item —
+  cheap now, much worse retrofitted after a customer signs); and invoicing B2B
+  in India needs a sole proprietorship + GST, which is *not* "starting a
+  company" in the sense the user declined.
   **The question that decided it was asked and answered on 2026-08-01.** There
   is **no pilot org and none close**, and the user's goal for veritas is
   **"real companies, eventually — I want it launchable."** That overturned the
@@ -307,12 +346,33 @@
   **Already sound, do not rebuild:** the `Dockerfile` is production-shaped
   (non-root, healthcheck, env-var config, volume for data) and CI runs the fully
   offline suite on py3.11 + 3.12.
-  **The biggest scope call, deliberately left open for the brainstorm: is
-  API-only launchable?** The stance has been API-first since M1, and S5.3's
-  "employer dashboard" shipped as JSON read-models, **not a UI**. Indian
-  employers will expect a screen. Whether PI-8 includes a front end — and how
-  thin — could double the PI, so decide it at the top rather than discovering it
-  midway.
+  **The biggest scope call — is API-only launchable? — is now ANSWERED: NO.**
+  Settled 2026-08-01 by the GTM work above. **API-only is not launchable**,
+  because options 2 and 3 both require a screen a non-engineer can evaluate: no
+  corp-dev team and no staffing-firm delivery head assesses a repo or a Postman
+  collection. So "build a UI" was never a competing strategy — it is the shared
+  cost of entry for every path, and it lands in PI-8. The stance had been
+  API-first since M1 and S5.3's "employer dashboard" shipped as JSON
+  read-models, **not a UI**; that is what changes here.
+  **Second scope call, also ANSWERED — PI-8 hardens the WHOLE platform**, all 63
+  endpoints and all three auth planes, *not* only the wedge path. The user chose
+  this over the recommended wedge-only cut (which would have skipped blocker 4,
+  candidate self-registration, since the wedge's buyer is the employer and
+  candidates never touch it). **It is coherent with a narrow pitch: the pitch
+  narrows, the platform does not** — when a design partner asks "can you also
+  verify employment / run the interview / share across our group companies," the
+  answer is a working endpoint rather than a roadmap promise, and for these
+  buyers that question arrives in the *first* meeting. **The accepted cost,
+  stated plainly:** roughly double the wedge-only scope, and nothing demoable
+  until late in the PI. **Mitigation, and it is a real planning constraint:
+  sequence the UI + wedge demo path EARLY inside PI-8** so a demo exists before
+  the PI closes — Phase 1 (design partners) is blocked on it.
+  **Priority order inside PI-8, derived from the GTM doc §7:** (i) anything on
+  the wedge demo path; (ii) blockers 1,2,3,5,7 — migrations-on-boot, Postgres,
+  report-store rewrite, org self-onboard, rate limiting — which make hosting a
+  customer possible at all; (iii) blocker 6 retention sweep **plus the two DPDP
+  statutory rights**, all three now RFP blockers; (iv) blocker 4 candidate
+  self-registration and blocker 8 observability.
   **S7.3 follow-ups (deferred, none merge-blocking):** voice-consistency proxy
   detection (needs a new `ConsentPurpose`, a stored voice embedding, and legal
   review — the honest path to a *real* proxy signal); **a no-speech/energy guard
@@ -562,10 +622,19 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 │                 not the audio one — S7.2's claim_ref) and an unreadable
 │                 stored assessment that bricked /portal/me forever (S7.2's
 │                 METHOD_LEVEL KeyError).]
-└── PI-8  SCALE & LEARNING (shaped) — Postgres cutover + real embeddings ·
-        calibration harness (predicted vs ledger outcomes) · observability +
-        org self-serve.  STANDING NON-GOALS: payments/payroll/contracts,
-        sourcing/outreach, native coding assessments (revisit post-PI-7)
+└── PI-8  LAUNCH READINESS (shaped, not yet planned) — "what stops a real
+        company onboarding without the operator hand-holding the database?"
+        WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
+        UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot (2) Postgres
+        (3) report-store rewrite (4) candidate self-register (5) org
+        self-onboard (6) retention sweep (7) rate limiting (8) observability
+        — PLUS the two DPDP statutory rights (correction, grievance officer),
+        promoted to RFP blockers by the GTM doc §8.
+        GTM: sell the FRAUD-SCREEN wedge to staffing agencies; ledger off the
+        pitch.  See 2026-08-01-veritas-gtm-positioning.md.
+        PI-9 = calibration harness, gated on PI-8 landing real orgs.
+        STANDING NON-GOALS: payments/payroll/contracts, sourcing/outreach,
+        native coding assessments (revisit post-PI-8)
 ```
 
 ## Standing conventions (do not relitigate)
@@ -580,6 +649,58 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 - LLM provider: OpenRouter + Qwen tiers (see `config.yaml`).
 
 ## Session log
+
+- **2026-08-01 (2)** — **GTM positioning settled. No code.** The user asked the
+  question the repo had never asked: *how does this become revenue?* — offering
+  three options (build a UI + advertise + investors · sell to LinkedIn/Naukri/
+  Indeed · sell direct to companies via API). Written up as
+  `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md`.
+  **Two framing corrections did most of the work.** (a) The three options are
+  **not alternatives** — options 2 and 3 both require a screen a non-engineer can
+  evaluate, so "build a UI" is the shared cost of entry, not a competing
+  strategy. That is what answered the API-only question above. (b) The binding
+  question is **not which channel but what single thing we sell**: veritas is
+  eight subsystems presented as one platform, and nobody buys "talent
+  intelligence platform."
+  **The wedge chosen is pre-screen fraud detection**, and the reason it beats
+  every other slice is a property no other subsystem has: **it produces value
+  from one customer's own resumes on day one.** The ledger needs N orgs; the
+  calibration harness needs outcomes; matching and comp are me-too against every
+  ATS. Fraud screening needs nothing but a resume — and it can be validated
+  *retrospectively*, against resumes a customer already rejected, which is the
+  cheapest path to answering gap-analysis v2 §2 ("seven advisory numbers, none
+  ever checked against reality"). That reframes §2 from a technical debt item
+  into the central commercial risk, and makes closing it a *side effect* of the
+  first design partners rather than a project.
+  **The counter-intuitive call: the evaluation ledger comes off the pitch.** It
+  is the most architecturally impressive thing in the repo (PI-3, consent-first,
+  audited) and commercially the worst opening move, because it is worth exactly
+  zero to customer #1. It stays built; it becomes the expansion story.
+  **The user overruled my scope recommendation and it is recorded as theirs:** I
+  recommended PI-8 harden only the wedge path (skipping blocker 4, since the
+  wedge's buyer is the employer); the user chose the **whole platform**. Reasoned
+  through and it is coherent — the pitch narrows, the platform does not — with
+  the cost (≈2× scope, nothing demoable until late) and the mitigation (sequence
+  the wedge demo path early) both written into the doc and the Next action above.
+  **The doc records four blockers no technical audit could have produced** (§8):
+  DPDP correction + grievance-officer contact are **RFP blockers**, because the
+  consent architecture is a *differentiator* in an Indian enterprise RFP rather
+  than only a compliance cost; false-positive liability needs contract language,
+  not just advisory-only code; the **IBM IP / outside-activity agreement must be
+  checked before there is revenue**; and B2B invoicing needs a proprietorship +
+  GST, which is not "starting a company" in the sense the user declined.
+  **Kill criteria were written in advance** (§10) — while it is still cheap to be
+  honest — so a future session cannot rationalise sunk cost: no design partner
+  willing to hand over resumes for free ⇒ the wedge is wrong, not the pitch;
+  retrospective accuracy at chance ⇒ the fabrication stack, not the GTM, is the
+  problem. **Rejected options are recorded with reasoning** (§9), the important
+  one being that selling to a platform is an *exit* available after traction, not
+  an entry: platforms buy traction and teams, not code, and pre-traction the idea
+  is simply built in-house. **Open, deliberately** (§11): pricing model, hosting
+  posture (shared vs per-customer — interacts with the deferred multi-tenancy
+  call), deploy target (Railway tooling is present in the environment and is the
+  obvious candidate — confirm in PI-8's brainstorm, it collapses blockers 1–3),
+  and whether the demo UI is throwaway or the real front end.
 
 - **2026-08-01** — **S7.3 (AI interview delivery v0) BUILT, REVIEWED, MERGED.
   PI-7 COMPLETE.** Full sprint cycle in one session: brainstorm → spec
