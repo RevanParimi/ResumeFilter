@@ -85,3 +85,16 @@ def test_summary_round_trips_through_json():
     dumped = s.model_dump(mode="json")
     assert dumped["status"] == "completed"
     assert dumped["advisory"] is True
+
+
+def test_verification_never_imports_interview():
+    """Layering, pinned: app/interview/ reads the S7.1 assurance number, so the
+    dependency runs one way only. The same rule S5.2 set for ledger<-comp."""
+    import pathlib
+
+    verification = pathlib.Path("app/verification")
+    offenders = [
+        f.name for f in verification.glob("*.py")
+        if "app.interview" in f.read_text(encoding="utf-8")
+    ]
+    assert offenders == [], f"verification must not import interview: {offenders}"
