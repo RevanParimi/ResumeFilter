@@ -53,6 +53,32 @@ credential is configured and the environment is not explicitly declared local.
 A missing secret is a boot failure with a loud message, never an open door.
 There is no config knob to restore the old behaviour — see §0.5.
 
+### 1.1 The fix is suite-wide, not three lines — measured
+
+Do not plan this as a small change. Measured at `47b5fc3`:
+
+- `api_auth_key` defaults to `SecretStr("")` (`app/core/config.py:361`), so
+  **fail-open is the default posture**, not an edge case.
+- **`tests/conftest.py` never sets it.** The entire 1175-test suite therefore
+  runs in fail-open mode today.
+- **7 test files call admin routes with no key at all** and pass *because* of
+  the defect.
+- 26 smoke scripts likewise assume the open door.
+
+So closing it means: the gate, plus a conftest-level test credential, plus a
+shared header helper, plus touching those 7 files and the smokes. Mechanical,
+but wide.
+
+**Two planning consequences:**
+
+1. **Do it as the very first task in S8.1**, before Postgres and before the
+   report-store rewrite. Any other order means re-touching every file the other
+   changes already moved.
+2. **The suite passing today is not evidence the gate works.** A test that never
+   sends a credential cannot distinguish "authorized" from "unguarded" — which
+   is exactly how this survived eight PIs and four branch reviews. The new tests
+   must assert the **refusal**, not just the success path.
+
 ## 2. Six gaps the technical audit did not have
 
 Gap-analysis v2 §9 audited the API **as an API**. Nothing had yet audited it as
