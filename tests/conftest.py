@@ -31,6 +31,7 @@ from app.services.flywheel import InMemoryFlywheel
 from app.services.github import GitHubRepoRaw, GitHubUserRaw
 from app.services.llm import LLMClient, NullLLM
 from app.services.report_store import InMemoryReportStore
+from app.services.speech import NullSpeech, SpeechClient, Transcript
 from app.services.vectorstore import InMemoryVectorStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -81,6 +82,30 @@ class FakeLLM(LLMClient):
             if needle in prompt or needle in system:
                 return response
         return ""
+
+
+class FakeSpeech(SpeechClient):
+    """Scripted ASR: returns canned text and records what it was handed.
+
+    Opt-in per test -- the default fixture services use NullSpeech, so the suite
+    proves the no-key path unless a test deliberately asks for audio."""
+
+    def __init__(
+        self,
+        text: str = "I built the ingestion path myself and it held under load",
+        settings: Settings | None = None,
+        fail: Exception | None = None,
+    ) -> None:
+        super().__init__(settings or Settings(_env_file=None, openrouter_api_key=""))
+        self.text = text
+        self.fail = fail
+        self.calls: list[tuple[str, str]] = []
+
+    async def atranscribe(self, *, audio_b64: str, mime: str) -> Transcript:
+        self.calls.append((audio_b64, mime))
+        if self.fail is not None:
+            raise self.fail
+        return Transcript(text=self.text, duration_seconds=30.0, model="fake-asr")
 
 
 @pytest.fixture
