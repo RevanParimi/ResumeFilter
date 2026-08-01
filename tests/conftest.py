@@ -33,7 +33,7 @@ from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.github import GitHubRepoRaw, GitHubUserRaw
 from app.services.llm import LLMClient, NullLLM
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from app.services.speech import NullSpeech, SpeechClient, Transcript
 from app.services.vectorstore import InMemoryVectorStore
 
@@ -223,7 +223,7 @@ def make_services(
             store=ProfileSourceStore(candidates._session_factory),
             candidates=candidates, settings=settings, curation=curation,
         )
-    report_store = InMemoryReportStore()
+    report_store = SqlReportStore(candidates._session_factory)
     if verification is None:
         from app.verification.service import VerificationService
         from app.verification.store import VerificationStore

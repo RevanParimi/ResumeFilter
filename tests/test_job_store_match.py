@@ -39,7 +39,7 @@ def _wire():
 def _seed_candidate(cands, features, ledger, name, email, skills, tier=None):
     from app.candidates.schema import ExtractionResult
     from app.features import default_view, get_feature_registry
-    from app.services.report_store import InMemoryReportStore
+    from app.reports.store import SqlReportStore
     saved = cands.ingest(
         ExtractionResult(profile=_profile(name, email, skills, tier), method="heuristic"),
         resume_text=email,
@@ -49,7 +49,7 @@ def _seed_candidate(cands, features, ledger, name, email, skills, tier=None):
     registry = get_feature_registry()
     mv = materialize_candidate(
         cid, view=default_view(registry), registry=registry, as_of=AS_OF,
-        candidate_store=cands, report_store=InMemoryReportStore(), ledger_store=ledger,
+        candidate_store=cands, report_store=SqlReportStore(cands._session_factory), ledger_store=ledger,
     )
     features.upsert_vector(mv)
     return cid

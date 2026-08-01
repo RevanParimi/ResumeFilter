@@ -65,9 +65,6 @@ chroma_collection: "depth-eval-evidence"
 # --- Flywheel (training-data sink) -------------------------------------------
 flywheel_path: "./data/flywheel.jsonl"
 
-# --- Report store (durable reports + human outcome records; SQLite) -----------
-report_db_path: "./data/reports.db"
-
 # --- Candidates (PI-1) ---------------------------------------------------------
 # Salt for contact dedup hashes (email/phone). Stable across deploys; NOT a secret.
 contact_hash_salt: "veritas-dedup-v1"

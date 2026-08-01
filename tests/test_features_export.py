@@ -11,7 +11,7 @@ from app.features import default_view, get_feature_registry
 from app.features.export import ParquetUnavailable, export_view_csv, export_view_parquet
 from app.features.materialize import materialize_candidate
 from app.ledger.store import LedgerStore
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from tests.conftest import make_candidate_store, set_extraction_created_at
 
 RESUME = "Jane Rao\nML Engineer\nSkills: Python, SQL\nEmail: jane@example.com\n"
@@ -24,7 +24,7 @@ def _settings():
 
 def _mv():
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     reg = get_feature_registry()
     view = default_view(reg, settings=_settings())
     cid = cs.ingest(ExtractionResult(profile=heuristic_profile(RESUME), method="heuristic"),

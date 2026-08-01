@@ -7,7 +7,7 @@ from app.features.materialize import materialize_candidate
 from app.features.training import build_training_set
 from app.ledger.schema import ConsentPurpose, InterviewOutcome, InterviewStage
 from app.ledger.store import LedgerStore
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from tests.conftest import make_candidate_store, set_extraction_created_at
 
 T = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -31,7 +31,7 @@ def _mv(cid, cs, ls, rs, reg, view):
 
 def _setup():
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     reg = get_feature_registry()
     view = default_view(reg)
     org = ls.create_organization("Org A")

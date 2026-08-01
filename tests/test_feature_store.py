@@ -7,7 +7,7 @@ from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
 from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from tests.conftest import make_candidate_store, set_extraction_created_at
 
 RESUME = "Jane Rao\nML Engineer\nSkills: Python, SQL\nEmail: jane@example.com\n"
@@ -31,7 +31,7 @@ def _make_mv(cs, ls, rs):
 
 def test_upsert_and_get_roundtrip():
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     fs = FeatureStore(cs._session_factory)
     cid, view, mv = _make_mv(cs, ls, rs)
     fs.upsert_vector(mv)
@@ -43,7 +43,7 @@ def test_upsert_and_get_roundtrip():
 
 def test_upsert_is_idempotent_on_same_cut():
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     fs = FeatureStore(cs._session_factory)
     cid, view, mv = _make_mv(cs, ls, rs)
     fs.upsert_vector(mv)
@@ -53,7 +53,7 @@ def test_upsert_is_idempotent_on_same_cut():
 
 def test_delete_candidate_cascades_vectors():
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     fs = FeatureStore(cs._session_factory)
     cid, view, mv = _make_mv(cs, ls, rs)
     fs.upsert_vector(mv)
@@ -67,7 +67,7 @@ def test_latest_as_of_returns_newest_cut_or_none():
     from app.features.schema import FeatureVector
 
     cs = make_candidate_store()
-    ls, rs = LedgerStore(cs._session_factory), InMemoryReportStore()
+    ls, rs = LedgerStore(cs._session_factory), SqlReportStore(cs._session_factory)
     fs = FeatureStore(cs._session_factory)
     cid, view, _ = _make_mv(cs, ls, rs)  # persists a candidate row (FK satisfied)
     assert fs.latest_as_of(view.name, view.version) is None

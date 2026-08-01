@@ -217,9 +217,6 @@ class Settings(BaseSettings):
     # --- Flywheel (training-data sink) ----------------------------------------
     flywheel_path: str = "./data/flywheel.jsonl"
 
-    # --- Report store (durable advisory reports + human outcomes) --------------
-    report_db_path: str = "./data/reports.db"
-
     # --- Candidates (PI-1) ------------------------------------------------------
     # Salt for contact dedup hashes (email/phone). NOT a secret — it must stay
     # stable across deploys or identity resolution breaks; changing it orphans

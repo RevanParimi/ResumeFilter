@@ -7,7 +7,7 @@ from app.features import default_view, get_feature_registry
 from app.features.materialize import MaterializedVector, materialize_candidate
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import LedgerStore
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from tests.conftest import make_candidate_store, set_extraction_created_at
 
 RESUME = "Jane Rao\nSenior ML Engineer\nSkills: Python, Spark, SQL\nEmail: jane@example.com\n"
@@ -21,7 +21,7 @@ def _settings():
 def _setup():
     cs = make_candidate_store()
     ls = LedgerStore(cs._session_factory)
-    rs = InMemoryReportStore()
+    rs = SqlReportStore(cs._session_factory)
     cid = cs.ingest(ExtractionResult(profile=heuristic_profile(RESUME), method="heuristic"),
                     resume_text=RESUME).candidate_id
     set_extraction_created_at(cs, cid, datetime(2026, 1, 1, tzinfo=timezone.utc))

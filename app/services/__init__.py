@@ -15,7 +15,7 @@ from app.ledger.store import LedgerStore, build_ledger_store
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
 from app.services.llm import LLMClient, build_llm
-from app.services.report_store import ReportStore, build_report_store
+from app.reports.store import ReportStore, build_report_store
 from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
 

@@ -24,7 +24,7 @@ from app.features.export import ParquetUnavailable, export_view_csv, export_view
 from app.features.materialize import materialize_candidate
 from app.features.store import build_feature_store
 from app.ledger.store import build_ledger_store
-from app.services.report_store import build_report_store
+from app.reports.store import build_report_store
 
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8042
@@ -95,7 +95,7 @@ def main() -> int:
         proc.wait(timeout=15)
 
     settings = Settings(_env_file=None, openrouter_api_key="",
-                        candidates_db_url=url, report_db_path=reports, vectorstore_backend="memory")
+                        candidates_db_url=url, vectorstore_backend="memory")
     cs, ls, rs = build_candidate_store(settings), build_ledger_store(settings), build_report_store(settings)
     fs = build_feature_store(settings)
     reg = get_feature_registry()

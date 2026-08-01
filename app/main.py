@@ -52,7 +52,7 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         log.info(
             "startup_complete",
             llm=type(svc.llm).__name__,
-            report_db=getattr(svc.report_store, "path", "memory"),
+            db=svc.settings.candidates_db_url.split("://", 1)[0],
             env=svc.settings.env,
         )
         yield

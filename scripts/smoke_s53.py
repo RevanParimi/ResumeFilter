@@ -28,7 +28,7 @@ from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
 from app.features.store import build_feature_store
 from app.ledger.store import build_ledger_store
-from app.services.report_store import build_report_store
+from app.reports.store import build_report_store
 
 PORT = 8053
 BASE = f"http://127.0.0.1:{PORT}"
@@ -115,7 +115,7 @@ def main() -> int:
 
     # ── In-process: materialize the candidate's core_v1 vector directly ────
     settings = Settings(_env_file=None, openrouter_api_key="", candidates_db_url=url,
-                        report_db_path=reports, vectorstore_backend="memory")
+                        vectorstore_backend="memory")
     cs = build_candidate_store(settings)
     ls = build_ledger_store(settings)
     rs = build_report_store(settings)

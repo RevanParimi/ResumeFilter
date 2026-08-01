@@ -50,8 +50,11 @@ def test_no_column_on_either_table_can_hold_audio():
 
 
 def test_report_id_is_a_loose_reference_not_a_foreign_key():
-    """Reports live in a separate SQLite database (report_db_path), so an FK is
-    not expressible -- the VerificationRow.consent_id precedent."""
+    """Still deliberately loose. Until S8.1 an FK was not EXPRESSIBLE (reports
+    lived in a second database); now it would be, and the reason is different:
+    adding it needs a batch_alter_table on a live table plus a decision about
+    what a deleted report should do to a finished interview. Deferred, not
+    forgotten -- S8.1 spec follow-ups."""
     assert not _cols(InterviewSessionRow)["report_id"].foreign_keys
 
 

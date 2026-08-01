@@ -67,7 +67,8 @@ from app.schemas.report import Report
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
-from app.services.report_store import OutcomeLabel, OutcomeRecord
+from app.reports.schema import OutcomeLabel, OutcomeRecord
+from app.reports.store import SubjectErasedError
 
 
 def _services(request: Request) -> Services:
@@ -282,12 +283,17 @@ async def create_candidate(
             resume_farm=farm,
         )
         report.candidate_id = outcome.candidate_id
-        services.report_store.save(report)
-        # DPDP: if the candidate was erased while the eval ran, a derived
-        # report must not outlive the erasure — drop it and return nothing.
-        if services.candidates.get_candidate(outcome.candidate_id) is None:
-            services.report_store.delete(report.id)
+        # DPDP: a derived report must not outlive the erasure of its subject.
+        # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
+        # landing after the save cascades the row away — so both halves of this
+        # race are the database's job, not a compensating delete we remember.
+        try:
+            services.report_store.save(report)
+        except SubjectErasedError:
             report = None
+        else:
+            if services.candidates.get_candidate(outcome.candidate_id) is None:
+                report = None
 
     return CandidateCreateResponse(
         candidate_id=outcome.candidate_id,
@@ -356,11 +362,18 @@ async def list_candidate_reports(candidate_id: str, request: Request) -> list[Re
 @router.delete("/candidates/{candidate_id}")
 async def delete_candidate(candidate_id: str, request: Request) -> dict:
     """DPDP erasure: candidate + resumes (raw text) + extractions + all reports
-    derived from them. Hard delete — there is nothing to un-delete."""
+    derived from them. Hard delete — there is nothing to un-delete.
+
+    Since S8.1 the reports go with the candidate through
+    ``reports.candidate_id ON DELETE CASCADE``, not through a call this handler
+    has to remember. ``reports_deleted`` is a COUNT READ taken before the
+    delete: an entry point that forgets it loses a number in a response, not a
+    person's data.
+    """
     services = _services(request)
     if services.candidates.get_candidate(candidate_id) is None:
         raise HTTPException(status_code=404, detail="candidate not found")
-    reports_deleted = services.report_store.delete_for_candidate(candidate_id)
+    reports_deleted = len(services.report_store.for_candidate(candidate_id))
     services.candidates.delete_candidate(candidate_id)
     return {
         "candidate_id": candidate_id,
@@ -994,7 +1007,9 @@ async def portal_erase(
     resumes + extractions + reports + cascaded ledger rows + the credential). The
     key stops authenticating afterward (credential CASCADEs)."""
     services = _services(request)
-    reports_deleted = services.report_store.delete_for_candidate(candidate_id)
+    # A count READ, then one delete: the reports CASCADE with the candidate row
+    # (S8.1). See the admin handler above for why that distinction matters.
+    reports_deleted = len(services.report_store.for_candidate(candidate_id))
     services.candidates.delete_candidate(candidate_id)
     return {"candidate_id": candidate_id, "deleted": True, "reports_deleted": reports_deleted}
 

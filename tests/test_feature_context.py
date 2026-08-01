@@ -3,7 +3,7 @@ from app.candidates.extractor import heuristic_profile
 from app.candidates.schema import ExtractionResult
 from app.features.context import build_context
 from app.schemas.report import DepthBand, Report
-from app.services.report_store import InMemoryReportStore
+from app.reports.store import SqlReportStore
 from tests.conftest import make_candidate_store, set_extraction_created_at
 from app.ledger.store import LedgerStore
 from app.ledger.schema import ConsentPurpose, InterviewStage, InterviewOutcome
@@ -14,7 +14,7 @@ RESUME = "Jane Rao\nSenior ML Engineer\nSkills: Python, Spark\nEmail: jane@examp
 def _stores():
     cs = make_candidate_store()
     ls = LedgerStore(cs._session_factory)
-    rs = InMemoryReportStore()
+    rs = SqlReportStore(cs._session_factory)
     return cs, ls, rs
 
 

@@ -39,9 +39,11 @@ class InterviewSessionRow(Base):
         ForeignKey("candidates.id", ondelete="CASCADE"), index=True
     )
     domain: Mapped[str] = mapped_column(String(32))
-    # Which depth report supplied the probes. NOT a FK: reports live in a
-    # separate SQLite database (report_db_path), so the constraint is not
-    # expressible -- the VerificationRow.consent_id precedent.
+    # Which depth report supplied the probes. Still NOT a FK: since S8.1 the
+    # constraint IS expressible (reports are in this database now), but adding
+    # it needs a batch_alter_table on a live table plus a decision about what a
+    # deleted report should do to a finished interview. Deferred deliberately --
+    # see the S8.1 spec's follow-ups.
     report_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(16), index=True)
     # The S7.1 hook, stamped when the session STARTED and never recomputed: a

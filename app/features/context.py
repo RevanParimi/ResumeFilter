@@ -17,7 +17,7 @@ from typing import Optional
 from app.candidates.store import CandidateStore
 from app.features.schema import FeatureContext
 from app.ledger.store import LedgerStore
-from app.services.report_store import ReportStore
+from app.reports.store import ReportStore
 
 
 def _utcnow() -> datetime:

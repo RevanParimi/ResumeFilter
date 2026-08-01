@@ -24,7 +24,7 @@ from app.candidates.store import build_candidate_store
 from app.features import default_view, get_feature_registry
 from app.features.context import build_context
 from app.ledger.store import build_ledger_store
-from app.services.report_store import build_report_store
+from app.reports.store import build_report_store
 
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8041
@@ -101,7 +101,7 @@ def main() -> int:
     # --- direct feature computation against the same scratch DBs ---------------
     settings = Settings(
         _env_file=None, openrouter_api_key="",
-        candidates_db_url=url, report_db_path=reports, vectorstore_backend="memory",
+        candidates_db_url=url, vectorstore_backend="memory",
     )
     cs = build_candidate_store(settings)
     ls = build_ledger_store(settings)
