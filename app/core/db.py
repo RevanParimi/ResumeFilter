@@ -43,6 +43,10 @@ def make_engine(url: str) -> Engine:
             directory = os.path.dirname(url.removeprefix(_SQLITE_FILE_PREFIX))
             if directory:
                 os.makedirs(directory, exist_ok=True)
+    else:
+        # Managed Postgres (Railway et al.) drops idle connections; without this
+        # the first request after a quiet period fails on a dead socket.
+        kwargs["pool_pre_ping"] = True
     engine = create_engine(url, **kwargs)
     if url.startswith("sqlite"):
         event.listens_for(engine, "connect")(_sqlite_fk_on)

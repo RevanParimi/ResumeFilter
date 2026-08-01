@@ -8,10 +8,13 @@ for the few tests that exercise the LLM path explicitly.
 from __future__ import annotations
 
 import json
+import os
+import uuid
 from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
+from sqlalchemy import create_engine, text
 
 import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
 import app.features.models  # noqa: F401 — populate Base.metadata with feature tables
@@ -152,10 +155,46 @@ def fake_github() -> FakeGitHub:
 
 def make_candidate_store() -> CandidateStore:
     """In-memory candidate store for tests. create_all is a TEST convenience;
-    real deployments migrate via Alembic (S1.2 decision)."""
-    engine = make_engine("sqlite://")
+    real deployments migrate via Alembic (S1.2 decision).
+
+    DEE_TEST_DB_URL runs the SAME suite against Postgres (S8.1). Each store gets
+    a throwaway schema, so tests stay as isolated as a fresh in-memory SQLite
+    database makes them.
+    """
+    url = os.environ.get("DEE_TEST_DB_URL", "").strip()
+    if not url:
+        engine = make_engine("sqlite://")
+    else:
+        schema = f"s_{uuid.uuid4().hex[:8]}"
+        bootstrap = create_engine(url)
+        with bootstrap.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        bootstrap.dispose()
+        engine = create_engine(
+            url, pool_pre_ping=True,
+            connect_args={"options": f"-csearch_path={schema}"},
+        )
     Base.metadata.create_all(engine)
     return CandidateStore(make_session_factory(engine))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _drop_postgres_test_schemas():
+    """Throwaway schemas are cheap to make and must not accumulate."""
+    yield
+    url = os.environ.get("DEE_TEST_DB_URL", "").strip()
+    if not url:
+        return
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        names = [
+            n for (n,) in conn.execute(
+                text(r"SELECT nspname FROM pg_namespace WHERE nspname LIKE 's\_%'")
+            )
+        ]
+        for name in names:
+            conn.execute(text(f'DROP SCHEMA "{name}" CASCADE'))
+    engine.dispose()
 
 
 def set_extraction_created_at(store, candidate_id, when):

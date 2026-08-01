@@ -15,6 +15,9 @@ chromadb>=0.5.0
 # --- Relational store (candidates; ledger/features later) ---
 sqlalchemy>=2.0
 alembic>=1.13
+# Postgres driver (S8.1 cutover). SQLite stays the dev/test default: the offline
+# suite must run on a clean checkout with no database service.
+psycopg[binary]>=3.1
 
 # --- Models / validation / config ---
 pydantic>=2.7.0

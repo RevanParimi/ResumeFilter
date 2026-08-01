@@ -179,3 +179,14 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
             assert (migrated_fk[cols] or None) == (fk.ondelete or None), (
                 f"{table} FK {cols} ondelete mismatch: {migrated_fk[cols]} != {fk.ondelete}"
             )
+
+
+def test_non_sqlite_engines_pre_ping():
+    """Managed Postgres closes idle connections; without pool_pre_ping the first
+    request after an idle period fails on a dead socket."""
+    engine = make_engine("postgresql+psycopg://u:p@localhost:5432/nope")
+    assert engine.pool._pre_ping is True
+
+
+def test_sqlite_engines_are_unchanged():
+    assert make_engine("sqlite://").pool._pre_ping is False
