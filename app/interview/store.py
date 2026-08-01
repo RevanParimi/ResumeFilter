@@ -24,11 +24,14 @@ from app.core.config import Settings, get_settings
 from app.interview.models import InterviewSessionRow, InterviewTurnRow
 from app.interview.schema import (
     AnswerChannel, InterviewAssessment, InterviewQuestion, InterviewSession,
-    InterviewStatus, InterviewTurn, QuestionSource, TurnScore,
+    InterviewStatus, InterviewSummary, InterviewTurn, QuestionSource, TurnScore,
 )
-from app.interview.session import effective_status
+from app.interview.session import effective_status, summarize
+from app.ledger import consent as consent_logic
 from app.ledger.consent import as_utc
-from app.ledger.store import LedgerStore
+from app.ledger.models import OrganizationRow
+from app.ledger.schema import ConsentPurpose
+from app.ledger.store import ConsentError, LedgerStore
 
 
 def _utcnow() -> datetime:
@@ -236,6 +239,86 @@ class InterviewStore:
             session.add(row)
             session.commit()
             return _turn(row)
+
+    # -- org disclosure --------------------------------------------------------
+
+    def assessments_for_org(
+        self, *, org_id: str, candidate_id: str, at: Optional[datetime] = None
+    ) -> list[InterviewSummary]:
+        """Query-time DPDP gate, mirroring VerificationStore.claims_for_org: an
+        org sees interview assessments only under an active INTERVIEW_READ
+        grant, and EVERY attempt -- allowed or denied -- is audited in the same
+        transaction, because surveillance must itself be observable.
+
+        A NEW purpose, not a widening of VERIFICATION_READ: that one's dated
+        redefinition window is closed (LEDGER.md), and an interview assessment
+        is a different kind of disclosure from an identity check anyway.
+
+        Returns HEADERS only. `InterviewSummary` has no transcript field, so the
+        candidate's own words cannot reach an org through this path even if a
+        future caller forgets to filter.
+
+        Only COMPLETED sessions are disclosed, and `attempts` is exactly this
+        count -- so retakes are visible rather than hideable. An abandoned
+        session is not an attempt at anything and stays in the portal only.
+        """
+        moment = as_utc(at) if at else _utcnow()
+        with self._session_factory() as session:
+            if session.get(OrganizationRow, org_id) is None:
+                raise LookupError(f"unknown organization: {org_id}")
+            if session.get(CandidateRow, candidate_id) is None:
+                raise LookupError(f"unknown candidate: {candidate_id}")
+
+            grants = self._ledger._grants_for(
+                session, candidate_id, ConsentPurpose.INTERVIEW_READ
+            )
+            decision = consent_logic.check_consent(
+                grants, org_id=org_id, purpose=ConsentPurpose.INTERVIEW_READ, at=moment
+            )
+            if not decision.allowed:
+                self._ledger._audit(
+                    session,
+                    actor_type="org",
+                    actor_id=org_id,
+                    action="interview.query",
+                    entity_type="candidate",
+                    entity_id=candidate_id,
+                    candidate_id=candidate_id,
+                    details={"allowed": False, "purpose": "interview_read"},
+                )
+                session.commit()
+                raise ConsentError(decision.reason)
+
+            rows = (
+                session.execute(
+                    select(InterviewSessionRow)
+                    .where(
+                        InterviewSessionRow.candidate_id == candidate_id,
+                        InterviewSessionRow.status == InterviewStatus.COMPLETED.value,
+                    )
+                    .order_by(InterviewSessionRow.started_at, InterviewSessionRow.id)
+                ).scalars().all()
+            )
+            summaries = [
+                summarize(_session(r, self._turn_rows(session, r.id)), at=moment)
+                for r in rows
+            ]
+            self._ledger._audit(
+                session,
+                actor_type="org",
+                actor_id=org_id,
+                action="interview.query",
+                entity_type="candidate",
+                entity_id=candidate_id,
+                candidate_id=candidate_id,
+                details={
+                    "allowed": True,
+                    "consent_id": decision.grant_id,
+                    "sessions": len(summaries),
+                },
+            )
+            session.commit()
+            return summaries
 
     def complete_session(
         self,

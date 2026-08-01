@@ -32,11 +32,11 @@ from app.domains.base import get_domain
 from app.interview.proxy import assess_proxy_risk
 from app.interview.questions import build_question_plan
 from app.interview.schema import (
-    AnswerChannel, InterviewBand, InterviewQuestion, InterviewSession, InterviewStatus,
-    InterviewSummary, ProxyBand,
+    AnswerChannel, InterviewQuestion, InterviewSession, InterviewStatus,
+    InterviewSummary,
 )
 from app.interview.scoring import adjust_with_llm, aggregate, score_turn, word_count
-from app.interview.session import effective_status
+from app.interview.session import effective_status, summarize
 from app.interview.store import InterviewStore
 from app.ledger.consent import as_utc
 from app.ledger.store import LedgerStore
@@ -232,7 +232,7 @@ class InterviewService:
     ) -> list[InterviewSummary]:
         moment = as_utc(at) if at else _utcnow()
         return [
-            self.summarize(s, at=moment)
+            summarize(s, at=moment)
             for s in self._store.sessions_for_candidate(candidate_id)
         ]
 
@@ -252,31 +252,9 @@ class InterviewService:
 
     # -- helpers ---------------------------------------------------------------
 
-    @staticmethod
-    def summarize(
-        session: InterviewSession, *, at: Optional[datetime] = None
-    ) -> InterviewSummary:
-        """Header projection: no transcript, no turns, by construction."""
-        moment = at or _utcnow()
-        assessment = session.assessment
-        return InterviewSummary(
-            id=session.id,
-            status=effective_status(session.status, session.expires_at, at=moment),
-            domain=session.domain,
-            band=assessment.band if assessment else InterviewBand.INSUFFICIENT_SIGNAL,
-            overall=assessment.overall if assessment else 0.0,
-            dimensions=dict(assessment.dimensions) if assessment else {},
-            confidence=assessment.confidence if assessment else 0.0,
-            proxy_band=assessment.proxy.band if assessment else ProxyBand.LOW,
-            questions_planned=(
-                assessment.questions_planned if assessment else len(session.questions)
-            ),
-            questions_answered=(
-                assessment.questions_answered if assessment else len(session.turns)
-            ),
-            started_at=session.started_at,
-            completed_at=session.completed_at,
-        )
+    #: The transcript-free header projection lives in session.py so the org
+    #: read and the candidate list share one implementation.
+    summarize = staticmethod(summarize)
 
     def _owned(self, candidate_id: str, session_id: str) -> InterviewSession:
         session = self._store.get_session(session_id)
