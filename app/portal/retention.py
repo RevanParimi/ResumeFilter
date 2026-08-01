@@ -16,6 +16,7 @@ RETENTION_KNOBS: dict[str, str] = {
     "resumes": "ret_resume_days",
     "profile_sources": "ret_profile_source_days",
     "verifications": "ret_verification_days",
+    "interviews": "ret_interview_session_days",
     "interview_records": "ret_interview_record_days",
     "coding_rounds": "ret_coding_round_days",
     "observed_offers": "ret_observed_offer_days",

@@ -171,6 +171,8 @@ def make_services(
     curation=None,
     portal=None,
     verification=None,
+    speech=None,
+    interview=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -214,15 +216,29 @@ def make_services(
             VerificationStore(candidates._session_factory, ledger=ledger, settings=settings),
             candidates, ledger, profile_sources=profile_sources, settings=settings,
         )
+    # Default to the REFUSING speech client: the suite proves the no-key path
+    # unless a test deliberately injects FakeSpeech.
+    speech = speech or NullSpeech(settings)
+    llm = llm or NullLLM(settings)
+    if interview is None:
+        from app.interview.service import InterviewService
+        from app.interview.store import InterviewStore
+        interview = InterviewService(
+            InterviewStore(candidates._session_factory, ledger=ledger,
+                           settings=settings),
+            candidates, ledger, report_store,
+            verification=verification, llm=llm, speech=speech, settings=settings,
+        )
     if portal is None:
         from app.portal.service import PortalService
         portal = PortalService(
             candidates, ledger, report_store, profile_sources,
-            verification=verification, settings=settings,
+            verification=verification, interview=interview, settings=settings,
         )
     return Services(
         settings=settings,
-        llm=llm or NullLLM(settings),
+        llm=llm,
+        speech=speech,
         vectorstore=InMemoryVectorStore(),
         github=github,
         flywheel=flywheel or InMemoryFlywheel(),
@@ -237,6 +253,7 @@ def make_services(
         curation=curation,
         portal=portal,
         verification=verification,
+        interview=interview,
     )
 
 

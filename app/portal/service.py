@@ -32,6 +32,7 @@ class PortalService:
         profile_sources,
         *,
         verification=None,
+        interview=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._candidates = candidates
@@ -41,6 +42,9 @@ class PortalService:
         # Optional so the portal stays constructible without the S7.1 spine;
         # when absent, `identity` is simply omitted from MyData.
         self._verification = verification
+        # Optional for the same reason: the portal stays constructible without
+        # the S7.3 package, and `interviews` is simply omitted from MyData.
+        self._interview = interview
         self._settings = settings or get_settings()
 
     def my_data(self, candidate_id: str) -> MyData:
@@ -71,6 +75,16 @@ class PortalService:
             if self._verification is not None
             else None
         )
+        # Summaries only. The transcripts live behind GET /portal/interviews/{id}
+        # -- the access view says what exists, not every word the candidate said.
+        interviews = (
+            self._interview.list_for_candidate(candidate_id)
+            if self._interview is not None
+            else []
+        )
+        oldest["interviews"] = min(
+            (i.started_at for i in interviews), default=None
+        )
         return MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -82,6 +96,7 @@ class PortalService:
             consents=self._ledger.consents_for_candidate(candidate_id),
             identity=identity,
             claims=claims,
+            interviews=interviews,
             retention=build_retention_policy(oldest, self._settings),
         )
 
@@ -153,9 +168,10 @@ def build_portal_service(
     report_store,
     profile_sources,
     verification=None,
+    interview=None,
 ) -> PortalService:
     return PortalService(
         candidates, ledger, report_store, profile_sources,
-        verification=verification,
+        verification=verification, interview=interview,
         settings=settings or get_settings(),
     )

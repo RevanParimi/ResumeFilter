@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import ResumeSummary
+from app.interview.schema import InterviewSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
 from app.profile_sources.schema import ProfileSourceSignal
 from app.verification.schema import ClaimEvidence, IdentityAssurance
@@ -82,4 +83,8 @@ class MyData(BaseModel):
     # S7.2 advisory employment-claim evidence. A SEPARATE field, never folded
     # into `identity`: a payslip says a job was real, not who the person is.
     claims: Optional[ClaimEvidence] = None
+    # S7.3 AI interviews, as HEADERS. Transcripts are the candidate's to read at
+    # GET /portal/interviews/{id}; bundling every word into the access view
+    # would make the one view they check hardest to actually read.
+    interviews: list[InterviewSummary] = Field(default_factory=list)
     retention: RetentionPolicy

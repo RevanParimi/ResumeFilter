@@ -16,6 +16,7 @@ from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
 from app.services.llm import LLMClient, build_llm
 from app.services.report_store import ReportStore, build_report_store
+from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
@@ -23,6 +24,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
     from app.curation.service import CurationService
     from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
+    from app.interview.service import InterviewService
     from app.matching.store import JobStore
     from app.portal.service import PortalService
     from app.profile_sources.service import ProfileSourceService
@@ -33,6 +35,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
 class Services:
     settings: Settings
     llm: LLMClient
+    speech: SpeechClient
     vectorstore: VectorStore
     github: GitHubService
     flywheel: Flywheel
@@ -47,6 +50,7 @@ class Services:
     curation: CurationService
     portal: PortalService
     verification: VerificationService
+    interview: InterviewService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -56,6 +60,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.curation.service import build_curation_service
     from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
+    from app.interview.service import build_interview_service
     from app.matching.store import build_job_store
     from app.portal.service import build_portal_service
     from app.profile_sources.service import build_profile_source_service
@@ -80,9 +85,18 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         settings, candidates=candidates, ledger=ledger,
         profile_sources=profile_sources,
     )
+    # Built AFTER verification (whose assurance number is the proxy hook) and
+    # BEFORE the portal (whose my_data view lists interview summaries).
+    llm = build_llm(settings)
+    speech = build_speech(settings)
+    interview = build_interview_service(
+        settings, candidates=candidates, ledger=ledger, report_store=report_store,
+        verification=verification, llm=llm, speech=speech,
+    )
     return Services(
         settings=settings,
-        llm=build_llm(settings),
+        llm=llm,
+        speech=speech,
         vectorstore=build_vectorstore(settings),
         github=github,
         flywheel=build_flywheel(settings),
@@ -98,9 +112,10 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         portal=build_portal_service(
             settings, candidates=candidates, ledger=ledger,
             report_store=report_store, profile_sources=profile_sources,
-            verification=verification,
+            verification=verification, interview=interview,
         ),
         verification=verification,
+        interview=interview,
     )
 
 
