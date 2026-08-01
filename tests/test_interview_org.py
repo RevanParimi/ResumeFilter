@@ -115,7 +115,11 @@ async def test_revocation_closes_it_again(wiring):
     assert services.interview.assessments_for_org(
         org_id=org_id, candidate_id=cid, at=NOW)
 
-    services.ledger.revoke_consent(grant.id)
+    # `now=NOW` for the same reason _grant does it: revoking at the wall clock
+    # and asserting at a pinned NOW passes only until wall-clock now passes that
+    # instant. This one detonated on 2026-08-01 at 12:00 UTC -- the grant side
+    # was fixed by the S7.2 review, the revoke side was missed.
+    services.ledger.revoke_consent(grant.id, now=NOW)
     with pytest.raises(ConsentError):
         services.interview.assessments_for_org(
             org_id=org_id, candidate_id=cid, at=NOW)
