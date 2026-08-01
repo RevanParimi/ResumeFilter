@@ -22,6 +22,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -60,6 +61,18 @@ class AnswerTooLargeError(Exception):
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True)
+class _Answer:
+    """One resolved answer on its way to storage. A value, not instance state:
+    two concurrent answers must not be able to see each other's flags."""
+
+    channel: AnswerChannel
+    transcript: str
+    digest: Optional[str] = None
+    duration: Optional[float] = None
+    truncated: bool = False
 
 
 class InterviewService:
@@ -155,13 +168,13 @@ class InterviewService:
                 f"answer question {current.id}; {question_id} is not the current one"
             )
 
-        channel, transcript, digest, duration = await self._resolve_answer(
+        answer = await self._resolve_answer(
             text=text, audio_b64=audio_b64, mime=mime
         )
 
         profile = self._candidates.latest_profile(candidate_id)
         score = score_turn(
-            transcript=transcript,
+            transcript=answer.transcript,
             expected_signals=current.expected_signals,
             profile=profile,
             settings=self._settings,
@@ -169,11 +182,17 @@ class InterviewService:
         score = await adjust_with_llm(
             self._llm,
             question_text=current.text,
-            transcript=transcript,
+            transcript=answer.transcript,
             expected_signals=current.expected_signals,
             base=score,
             settings=self._settings,
         )
+        if answer.truncated:
+            # Disclosed on the turn, never silent: a reviewer reading a score
+            # is entitled to know the text behind it was cut.
+            score = score.model_copy(
+                update={"codes": [*score.codes, "transcript_truncated"]}
+            )
 
         # The clock starts at the previous answer (or the session's start): that
         # is the window in which this answer was actually produced, and it is
@@ -182,11 +201,11 @@ class InterviewService:
         self._store.add_turn(
             session.id,
             question=current,
-            channel=channel,
-            transcript=transcript,
-            word_count=word_count(transcript),
-            audio_digest=digest,
-            audio_duration_seconds=duration,
+            channel=answer.channel,
+            transcript=answer.transcript,
+            word_count=word_count(answer.transcript),
+            audio_digest=answer.digest,
+            audio_duration_seconds=answer.duration,
             score=score,
             asked_at=asked_at,
             answered_at=moment,
@@ -286,10 +305,10 @@ class InterviewService:
 
     async def _resolve_answer(
         self, *, text: Optional[str], audio_b64: Optional[str], mime: Optional[str]
-    ) -> tuple[AnswerChannel, str, Optional[str], Optional[float]]:
-        """(channel, transcript, audio_digest, duration). The audio bytes exist
-        only inside this method: they are hashed and dropped, and nothing that
-        could reconstruct them is returned."""
+    ) -> "_Answer":
+        """Resolve one submitted answer. The audio bytes exist only inside this
+        method: they are hashed and dropped, and nothing that could reconstruct
+        them is returned."""
         if audio_b64:
             if len(audio_b64) > self._settings.interview_max_audio_b64_chars:
                 raise AnswerTooLargeError(
@@ -306,11 +325,27 @@ class InterviewService:
             except (binascii.Error, ValueError) as exc:
                 raise ValueError("audio is not valid base64") from exc
             digest = hashlib.sha256(raw).hexdigest()
-            return (
-                AnswerChannel.AUDIO,
-                (transcript.text or "").strip(),
-                digest,
-                transcript.duration_seconds,
+            # A typed answer is refused past interview_max_answer_chars, so a
+            # transcribed one cannot be allowed to stream unbounded text into
+            # the single Text column on the table -- the S7.2 `claim_ref`
+            # lesson: a bound that holds on one path and not the other is no
+            # bound. Truncated rather than refused, because the candidate did
+            # nothing wrong and losing their answer would be the worse outcome.
+            text_out = (transcript.text or "").strip()
+            truncated = False
+            if len(text_out) > self._settings.interview_max_answer_chars:
+                log.warning(
+                    "interview_transcript_truncated",
+                    chars=len(text_out), cap=self._settings.interview_max_answer_chars,
+                )
+                text_out = text_out[: self._settings.interview_max_answer_chars]
+                truncated = True
+            return _Answer(
+                channel=AnswerChannel.AUDIO,
+                transcript=text_out,
+                digest=digest,
+                duration=transcript.duration_seconds,
+                truncated=truncated,
             )
 
         if text and text.strip():
@@ -319,7 +354,7 @@ class InterviewService:
                     "answer exceeds interview_max_answer_chars="
                     f"{self._settings.interview_max_answer_chars}"
                 )
-            return AnswerChannel.TEXT, text.strip(), None, None
+            return _Answer(channel=AnswerChannel.TEXT, transcript=text.strip())
 
         raise ValueError("provide either text or audio_b64")
 

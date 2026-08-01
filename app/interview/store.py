@@ -16,11 +16,13 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
 from app.interview.models import InterviewSessionRow, InterviewTurnRow
 from app.interview.schema import (
     AnswerChannel, InterviewAssessment, InterviewQuestion, InterviewSession,
@@ -32,6 +34,8 @@ from app.ledger.consent import as_utc
 from app.ledger.models import OrganizationRow
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import ConsentError, LedgerStore
+
+log = get_logger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -57,6 +61,28 @@ def _turn(row: InterviewTurnRow) -> InterviewTurn:
     )
 
 
+def _assessment(row: InterviewSessionRow) -> Optional[InterviewAssessment]:
+    """Parse a stored assessment, or degrade to None.
+
+    A row this code cannot read must contribute NOTHING; it must never 500 the
+    candidate's own DPDP access. That is the S7.2 lesson exactly -- there, a
+    rogue verification row hit `METHOD_LEVEL[...]` and every later read of the
+    portal raised KeyError forever, so one bad write destroyed a data-principal
+    right permanently. `scorer_version` is stored precisely so a future scorer
+    can change shape; this is what makes that survivable.
+    """
+    if not row.assessment:
+        return None
+    try:
+        return InterviewAssessment(**row.assessment)
+    except ValidationError as exc:
+        log.warning(
+            "interview_assessment_unreadable",
+            session_id=row.id, scorer_version=row.scorer_version, error=str(exc)[:200],
+        )
+        return None
+
+
 def _session(
     row: InterviewSessionRow, turns: Sequence[InterviewTurnRow]
 ) -> InterviewSession:
@@ -69,7 +95,7 @@ def _session(
         assurance_level_at_start=row.assurance_level_at_start or 0,
         questions=[InterviewQuestion(**q) for q in (row.planned_questions or [])],
         turns=[_turn(t) for t in turns],
-        assessment=(InterviewAssessment(**row.assessment) if row.assessment else None),
+        assessment=_assessment(row),
         started_at=as_utc(row.started_at),
         completed_at=as_utc(row.completed_at) if row.completed_at else None,
         expires_at=as_utc(row.expires_at) if row.expires_at else None,
