@@ -467,13 +467,10 @@ async def delete_candidate(candidate_id: str, request: Request) -> dict:
     services = _services(request)
     if services.candidates.get_candidate(candidate_id) is None:
         raise HTTPException(status_code=404, detail="candidate not found")
-    reports_deleted = len(services.report_store.for_candidate(candidate_id))
-    services.candidates.delete_candidate(candidate_id)
-    return {
-        "candidate_id": candidate_id,
-        "deleted": True,
-        "reports_deleted": reports_deleted,
-    }
+    # ONE erasure path, shared with the portal handler below. Erasure has two
+    # entry points, and a rule applied at one and not the other is this repo's
+    # recurring defect (S7.1, S7.2, S7.3) -- so the steps live in the service.
+    return services.portal.erase(candidate_id)
 
 
 @router.delete("/candidates/{candidate_id}/resumes/{resume_id}")
@@ -1097,15 +1094,17 @@ async def portal_revoke_consent(
 async def portal_erase(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> dict:
-    """DPDP erasure, self-service. Reuses the candidate erasure path (candidate +
-    resumes + extractions + reports + cascaded ledger rows + the credential). The
-    key stops authenticating afterward (credential CASCADEs)."""
-    services = _services(request)
-    # A count READ, then one delete: the reports CASCADE with the candidate row
-    # (S8.1). See the admin handler above for why that distinction matters.
-    reports_deleted = len(services.report_store.for_candidate(candidate_id))
-    services.candidates.delete_candidate(candidate_id)
-    return {"candidate_id": candidate_id, "deleted": True, "reports_deleted": reports_deleted}
+    """DPDP erasure, self-service.
+
+    The SAME service call the admin plane makes, deliberately: erasure now has
+    two entry points and every step -- the report count, the login challenges
+    that cannot cascade, the candidate row itself -- lives in
+    ``PortalService.erase`` so neither door can forget what the other does.
+
+    Afterwards both the access key and every session stop authenticating: the
+    credential and ``auth_sessions`` both CASCADE with the candidate row.
+    """
+    return _services(request).portal.erase(candidate_id)
 
 
 # ── Identity verification, candidate plane (S7.1) ───────────────────────────

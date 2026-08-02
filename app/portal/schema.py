@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import ResumeSummary
+from app.auth.schema import SessionView
 from app.interview.schema import InterviewSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
 from app.profile_sources.schema import ProfileSourceSignal
@@ -87,4 +88,8 @@ class MyData(BaseModel):
     # GET /portal/interviews/{id}; bundling every word into the access view
     # would make the one view they check hardest to actually read.
     interviews: list[InterviewSummary] = Field(default_factory=list)
+    # S8.2 active sessions, so a candidate can see and revoke their own
+    # devices -- a transparency right consistent with the access log. Never
+    # the token: SessionView has no field able to carry one.
+    sessions: list[SessionView] = Field(default_factory=list)
     retention: RetentionPolicy

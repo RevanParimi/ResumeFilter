@@ -286,12 +286,6 @@ def make_services(
             candidates, ledger, report_store,
             verification=verification, llm=llm, speech=speech, settings=settings,
         )
-    if portal is None:
-        from app.portal.service import PortalService
-        portal = PortalService(
-            candidates, ledger, report_store, profile_sources,
-            verification=verification, interview=interview, settings=settings,
-        )
     # Honour settings.email_provider exactly as build_default_services does.
     # The default is "null", so the suite still proves the REFUSING path
     # (mirroring NullSpeech) -- but a test that configures capture gets
@@ -301,6 +295,15 @@ def make_services(
         from app.auth.service import build_auth_service
         auth = build_auth_service(
             settings, candidates=candidates, ledger=ledger, email=email
+        )
+    # Built BEFORE the portal, which composes it for MyData.sessions and
+    # for erasing login challenges (they carry no FK and cannot cascade).
+    if portal is None:
+        from app.portal.service import PortalService
+        portal = PortalService(
+            candidates, ledger, report_store, profile_sources,
+            verification=verification, interview=interview, auth=auth,
+            settings=settings,
         )
     return Services(
         settings=settings,

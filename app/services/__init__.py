@@ -123,7 +123,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         portal=build_portal_service(
             settings, candidates=candidates, ledger=ledger,
             report_store=report_store, profile_sources=profile_sources,
-            verification=verification, interview=interview,
+            verification=verification, interview=interview, auth=auth,
         ),
         verification=verification,
         interview=interview,

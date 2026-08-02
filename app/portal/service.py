@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+from app.auth.schema import Principal, PrincipalKind, PrincipalVia
 from app.candidates.store import CandidateStore
 from app.core.config import Settings, get_settings
 from app.ledger.consent import as_utc
@@ -33,6 +34,7 @@ class PortalService:
         *,
         verification=None,
         interview=None,
+        auth=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._candidates = candidates
@@ -45,6 +47,9 @@ class PortalService:
         # Optional for the same reason: the portal stays constructible without
         # the S7.3 package, and `interviews` is simply omitted from MyData.
         self._interview = interview
+        # Optional for the same reason (S8.2). It also owns the erasure of
+        # login challenges, which carry no FK and so cannot cascade.
+        self._auth = auth
         self._settings = settings or get_settings()
 
     def my_data(self, candidate_id: str) -> MyData:
@@ -85,6 +90,18 @@ class PortalService:
         oldest["interviews"] = min(
             (i.started_at for i in interviews), default=None
         )
+        # Live sessions only -- a device list exists for revoking things.
+        sessions = (
+            self._auth.sessions_for(
+                Principal(
+                    kind=PrincipalKind.CANDIDATE,
+                    via=PrincipalVia.SESSION,
+                    candidate_id=candidate_id,
+                )
+            )
+            if self._auth is not None
+            else []
+        )
         return MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -97,6 +114,7 @@ class PortalService:
             identity=identity,
             claims=claims,
             interviews=interviews,
+            sessions=sessions,
             retention=build_retention_policy(oldest, self._settings),
         )
 
@@ -160,6 +178,30 @@ class PortalService:
         return self._ledger.revoke_consent(consent_id)
 
 
+    def erase(self, candidate_id: str) -> dict:
+        """DPDP erasure. THE single path -- both the portal and the admin plane
+        call this, so neither can forget a step the other remembers.
+
+        Almost everything cascades from the candidate row: resumes, extractions,
+        reports (S8.1), ledger rows, verifications, interviews, credentials and
+        auth sessions. `login_challenges` is the one exception, because it
+        carries no foreign key -- at signup time no principal exists to point at
+        -- so it is deleted explicitly here rather than in a handler.
+
+        `reports_deleted` is a COUNT READ taken before the delete: an entry
+        point that forgets it loses a number in a response, not a person's data.
+        """
+        reports_deleted = len(self._report_store.for_candidate(candidate_id))
+        if self._auth is not None:
+            self._auth.erase_login_state(candidate_id)
+        deleted = self._candidates.delete_candidate(candidate_id)
+        return {
+            "candidate_id": candidate_id,
+            "deleted": deleted,
+            "reports_deleted": reports_deleted,
+        }
+
+
 def build_portal_service(
     settings: Optional[Settings] = None,
     *,
@@ -169,9 +211,10 @@ def build_portal_service(
     profile_sources,
     verification=None,
     interview=None,
+    auth=None,
 ) -> PortalService:
     return PortalService(
         candidates, ledger, report_store, profile_sources,
-        verification=verification, interview=interview,
+        verification=verification, interview=interview, auth=auth,
         settings=settings or get_settings(),
     )
