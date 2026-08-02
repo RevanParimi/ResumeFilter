@@ -810,10 +810,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
                  sequencing: finish PI-8 planning, build the UI, integrate,
                  THEN deploy. Slot/shape still to be decided.
         WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
-        UI.
-        WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
-        UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot (2) Postgres
-        (3) report-store rewrite (4) candidate self-register (5) org
+        UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot [DONE S8.1]
+        (2) Postgres [DONE S8.1] (3) report-store rewrite [DONE S8.1]
+        (4) candidate self-register (5) org
         self-onboard (6) retention sweep (7) rate limiting (8) observability
         — PLUS the two DPDP statutory rights (correction, grievance officer),
         promoted to RFP blockers by the GTM doc §8.
