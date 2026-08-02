@@ -3,9 +3,26 @@
 **Date:** 2026-08-01
 **Status:** Design approved by the user. Each S8.x gets its own sprint spec
 before it is built; this document fixes the decisions that span sprints.
+**Amended 2026-08-02** — see the box below; §5 and §5.5 changed, §12 lost one
+open question.
 **Read order:** `docs/ROADMAP.md` "Next action" →
 `2026-08-01-veritas-gtm-positioning.md` → `2026-08-01-veritas-gap-analysis-v2.md`
 §9 → this.
+
+> **AMENDMENT — 2026-08-02, by the user.** PI-8 is **re-sequenced**:
+> **S8.2 → S8.4 → UI built externally → integrate → S8.3 → deploy.** Sprint IDs
+> are stable identifiers and do not move; only the execution order does. Three
+> consequences, all recorded where they bite:
+> 1. **§5.5 is superseded.** S8.2 no longer pins S8.4's contracts, because the
+>    UI is now built *after* S8.4 ships real endpoints rather than in parallel
+>    against stubs.
+> 2. **§12's `admin_users` question is CLOSED — it rides S8.2.**
+> 3. **The deploy is the last act of the PI**, not part of S8.1. S8.1 shipped
+>    deploy-*ready* (`railway.json` + a README `## Deploy` section) and the user
+>    deleted the Railway project mid-sprint.
+>
+> Full reasoning, with rejected alternatives, in
+> `2026-08-02-s82-identity-access-design.md` §0.
 
 **PI-8's question:** *what stops a real company onboarding without the operator
 hand-holding the database?*
@@ -297,6 +314,12 @@ so explicitly.
 
 ## 5. Sprint boundaries
 
+**Execution order (amended 2026-08-02):** S8.1 ✅ → **S8.2 → S8.4 → UI (external)
+→ integration + composite smoke → S8.3 → deploy.** The sprint definitions below
+are unchanged; they are simply built in that order. S8.3 still lands before the
+deploy — which is now the last act of the PI, so nothing is publicly reachable
+while its rate limits and retention sweep are outstanding.
+
 ### S8.1 — Deployable spine
 
 *What stops a container from booting into a working system?*
@@ -330,7 +353,9 @@ so explicitly.
   planes.
 - Org self-onboard (blocker 5) and candidate self-registration (blocker 4).
 - CORS (§4.6) and CSRF (§4.3).
-- **Pins the S8.4 API contract** — see §5.5.
+- **`admin_users` rides here** — §12's open question, closed 2026-08-02.
+- ~~Pins the S8.4 API contract — see §5.5.~~ **Dropped by the 2026-08-02
+  amendment**; see §5.5.
 
 ### S8.3 — Operating safely
 
@@ -360,16 +385,24 @@ so explicitly.
   style — **no new state, no new consent purpose**.
 - OpenAPI polish sufficient to generate a typed client.
 
-### 5.5 Sequencing note — the contract is pinned before it is built
+### 5.5 Sequencing note — SUPERSEDED 2026-08-02
 
-The UI is being designed **in parallel and externally** (decision 0.1). If S8.4's
-endpoint shapes are not settled until S8.4, the design work targets a moving
-target and integration is a rewrite.
+~~The UI is being designed **in parallel and externally** (decision 0.1). If
+S8.4's endpoint shapes are not settled until S8.4, the design work targets a
+moving target and integration is a rewrite. **Therefore: S8.2 pins the S8.4
+request/response contracts** — as committed Pydantic schemas and a published
+OpenAPI document, with the handlers returning `501` until S8.4 fills them in.~~
 
-**Therefore: S8.2 pins the S8.4 request/response contracts** — as committed
-Pydantic schemas and a published OpenAPI document, with the handlers returning
-`501` until S8.4 fills them in. The contract is the deliverable; the
-implementation follows.
+**Superseded by the 2026-08-02 re-sequencing.** Pinning existed only to protect
+*parallel* design work from a moving target. Under S8.2 → S8.4 → UI, the UI is
+built against endpoints that already work, so committing schemas and `501`
+handlers one sprint before their implementation buys nothing and costs a sync
+burden for exactly one sprint. **S8.2 publishes OpenAPI for what it ships; S8.4
+publishes its own.**
+
+The concern §5.5 was protecting against has not vanished — it has moved. It is
+now the *ordering* itself that protects integration: nothing is designed against
+a contract that does not exist yet.
 
 ## 6. Data model summary
 
@@ -435,9 +468,17 @@ Postgres URL). **No knob restores fail-open admin auth** (§0.5).
 
 - Fully offline, as always. `CaptureEmail` and a fake clock make the whole OTP
   path deterministic; no network, no provider.
-- **Every authorization test that exists today gains a session-mode twin**
-  (§3, §4.7). This is the PI's main regression risk and the tests must be
-  explicit about which mode they exercise.
+- **Every authorization gate must be proven against both modes** (§3, §4.7) —
+  the PI's main regression risk. **Amended 2026-08-02:** this was written as
+  "every authorization test gains a session-mode twin", which S8.2 §2 replaces
+  with a stronger and much smaller construction — **one resolver per plane**
+  (so existing header-key tests already execute the shared path), **three
+  resolver suites** (where cookie-vs-header actually differs), and **a
+  structural guard over the FastAPI route table** asserting every non-public
+  route establishes its principal through one of those three. Twins are
+  hand-written only for the six cases where authorization means something beyond
+  identity resolution. The guard is the metadata-drift-guard pattern applied to
+  authorization, and unlike twins it covers routes that do not exist yet.
 - **Adversarial cases that must be tests, not hopes:** admin plane with no
   configured secret **refuses to boot**; a session for candidate A cannot read
   candidate B (404, indistinguishable); a revoked session 401s immediately; an
@@ -489,5 +530,9 @@ Postgres URL). **No knob restores fail-open admin auth** (§0.5).
   deferred multi-tenancy call. GTM §11.
 - **Session TTL and idle timeout defaults** — the values in §8 are placeholders
   pending one real usage pattern.
-- **Whether `admin_users` earns its own sprint slice or rides S8.2** — the most
-  trimmable item in the PI (§0.5).
+- ~~**Whether `admin_users` earns its own sprint slice or rides S8.2** — the most
+  trimmable item in the PI (§0.5).~~ **CLOSED 2026-08-02 — it rides S8.2.** S8.1
+  made admin fail closed on a *shared secret*, which still cannot attribute an
+  action to a person; since S8.2 builds `auth_sessions` + OTP login anyway,
+  operator accounts are a third principal on machinery already being written.
+  Deferring would have meant doing §4.7's regression work twice.
