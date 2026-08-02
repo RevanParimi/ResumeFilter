@@ -10,9 +10,30 @@
 ## ▶ Current state
 
 - **Current sprint:** **S8.2 (Identity & access) BUILT and GREEN on branch
-  `s82-identity-access` — 1200→1373, `smoke_s82` 21/21 exit 0, and all six
-  regression smokes green (s13 11/11, s41, s53, s64 10/10, s73 18/18,
-  s81 10/10). PENDING whole-branch review + merge (not yet on main).**
+  `s82-identity-access`, REVIEWED and MERGED to main — 1200→1377,
+  `smoke_s82` 21/21 exit 0, and all six regression smokes green (s13 11/11,
+  s41, s53, s64 10/10, s73 18/18, s81 10/10). Branch deleted.**
+  **The whole-branch review (inline) found ONE real defect, and this branch
+  had introduced it itself: an UNAUTHENTICATED LOGIN LOCKOUT.** Once the
+  candidate plane started sending for both purposes (the Task-12 fix), one
+  address could hold two live challenges; `verify_code` took the FIRST it
+  found (signup before login), so a correct login code was checked against
+  the signup hash and refused until the shadow expired — burning the attempt
+  counter to `exhausted` on the way. Anyone could fire a signup code at any
+  candidate's address and lock that person out of their own account,
+  repeatably. Reproduced, fixed twice (the candidate plane files both
+  purposes under ONE scope so the state cannot arise; `verify_code`
+  evaluates EVERY live challenge and accepts the first MATCH so it cannot
+  arise on another plane), then re-reproduced to confirm. Mutation-tested
+  per layer — and the second layer's mutant SURVIVED at first, because
+  collapsing the scope makes it unreachable through the public API, so a
+  test now drives the store directly to build the two-challenge state.
+  Also from the review: `org_user_by_email`/`admin_user_by_email` ordered by
+  `created_at` (uniqueness on `org_users` is PER-ORG, so an unordered
+  `.first()` is implementation-defined on Postgres). Probed and sound:
+  cross-plane code redemption, cross-candidate session isolation, a disabled
+  org_user holding a live session, erasure with an empty email_hash, and
+  garbage/oversized session cookies.**
   **PI-8 was RE-SEQUENCED first (decision 0.1): S8.2 → S8.4 → UI → integrate →
   S8.3 → deploy.** Sprint IDs are stable; only the order moved. Two consequences
   recorded in the PI-8 design: **§5.5 is superseded** (S8.2 no longer pins
@@ -424,18 +445,8 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.2 is BUILT and green on `s82-identity-access`, and it is
-  NOT yet merged.** Two things, in order:
-  **(a) Whole-branch review of `s82-identity-access`, then merge.** The harness
-  in these sessions forbids spawning agents unless asked, so this has been an
-  inline build — the branch has had no independent review pass. **Where to look
-  hardest, ranked:** the four resolvers and `_accept` in
-  `app/api/routes.py` (every plane's authorization now flows through them);
-  `AuthService._establish` (the claim — the sprint's sharpest edge);
-  `PortalService.erase` (the one non-structural guarantee); and the
-  `PUBLIC_PATHS` set, since widening it is the only way to leave a route
-  unguarded without the route-table guard noticing.
-  **(b) Then S8.4 (UI integration surface), NOT S8.3** — batch upload, cursor
+- **Next action:** **S8.2 is DONE, reviewed and merged. Next is S8.4 (UI
+  integration surface), NOT S8.3** — batch upload, cursor
   pagination, the fraud-screen read-model, OpenAPI good enough to build against.
   It was pulled ahead so the external UI is designed against endpoints that
   actually work rather than 501 stubs, and so the wedge demo exists mid-PI,
