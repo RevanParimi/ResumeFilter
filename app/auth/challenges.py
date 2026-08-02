@@ -54,6 +54,12 @@ def mint_code(length: int, *, salt: str, rng: random.Random) -> tuple[str, str]:
     return code, otp_logic.hash_code(code, salt)
 
 
+def hash_supplied(code: str, *, salt: str) -> str:
+    """Digest a code the user typed, so the caller compares digests and never
+    handles a stored plaintext (there isn't one) or an unsalted hash."""
+    return otp_logic.hash_code(code or "", salt)
+
+
 def may_send(
     *, last_sent_at: Optional[datetime], cooldown_seconds: int, at: datetime
 ) -> bool:
@@ -70,12 +76,14 @@ def evaluate_verification(
     max_attempts: int,
     at: datetime,
 ) -> VerifyOutcome:
-    """Decide a verification attempt. Order is load-bearing.
+    """Decide a verification attempt.
 
-    Exhaustion and expiry are checked BEFORE the code. The reverse lets an
-    attacker keep guessing past the cap so long as the final guess happens to be
-    right -- which is precisely the guess a brute-forcer is making, so checking
-    the code first would make the cap decorative.
+    Exhaustion and expiry are checked BEFORE the code. Both orderings still
+    refuse a correct code once the cap is hit -- the guarantee does not hinge on
+    this -- but checking state first means an exhausted or expired challenge
+    reports what is actually wrong instead of reporting WRONG_CODE and bumping
+    the counter forever. A caller that keeps incrementing a dead challenge is
+    doing unbounded writes on an attacker's schedule.
     """
     if stored_hash is None:
         return VerifyOutcome.NOT_FOUND

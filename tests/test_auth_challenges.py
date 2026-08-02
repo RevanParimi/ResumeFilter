@@ -103,3 +103,18 @@ def test_exhausted_beats_expired():
 
 def test_naive_expiry_is_coerced():
     assert _verify(expires_at=datetime(2026, 8, 2, 12, 5)) == VerifyOutcome.OK
+
+
+def test_a_dead_challenge_reports_why_instead_of_wrong_code():
+    """What the state-before-code ordering actually buys.
+
+    Both orderings refuse a correct code once the cap is hit, so the guarantee
+    does not hinge on this. Checking state first means an exhausted or expired
+    challenge reports what is really wrong -- and, crucially, the caller stops
+    bumping the attempt counter on a dead row, which would otherwise be
+    unbounded writes on an attacker's schedule.
+    """
+    assert _verify(
+        supplied_hash="wrong", attempts=5, max_attempts=5
+    ) == VerifyOutcome.EXHAUSTED
+    assert _verify(supplied_hash="wrong", expires_at=NOW) == VerifyOutcome.EXPIRED

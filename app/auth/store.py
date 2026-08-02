@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth import sessions as session_logic
@@ -59,12 +60,44 @@ def _admin_user(row: AdminUserRow) -> AdminUser:
     )
 
 
+class OrgNameTaken(Exception):
+    """Signup named an organization that already exists."""
+
+
 class AuthStore:
     def __init__(
-        self, session_factory: sessionmaker, *, settings: Optional[Settings] = None
+        self,
+        session_factory: sessionmaker,
+        *,
+        ledger=None,
+        settings: Optional[Settings] = None,
     ) -> None:
         self._session_factory = session_factory
+        self._ledger = ledger
         self._settings = settings or get_settings()
+
+    def _audit_candidate(
+        self, session: Session, *, action: str, entity_id: str, candidate_id: str
+    ) -> None:
+        """Audit in the SAME transaction as the write (the LedgerStore rule), so
+        an outcome can never exist without its trail.
+
+        Only candidate-subject events are written: `audit_log` is candidate-
+        scoped by design, so an org-user or operator login has no subject to
+        attribute the row to. Those are structured-logged instead, and widening
+        the table is a recorded follow-up rather than a silent omission.
+        """
+        if self._ledger is None:
+            return
+        self._ledger._audit(
+            session,
+            actor_type="candidate",
+            actor_id=candidate_id,
+            action=action,
+            entity_type="auth_session",
+            entity_id=entity_id,
+            candidate_id=candidate_id,
+        )
 
     # -- sessions ------------------------------------------------------------
 
@@ -122,6 +155,14 @@ class AuthStore:
         )
         with self._session_factory() as session:
             session.add(row)
+            session.flush()
+            if kind == PrincipalKind.CANDIDATE:
+                self._audit_candidate(
+                    session,
+                    action="auth.session.create",
+                    entity_id=row.id,
+                    candidate_id=subject_id,
+                )
             session.commit()
             return raw, self._view(row, at, current_id=row.id)
 
@@ -192,6 +233,13 @@ class AuthStore:
             if row.revoked_at is not None:
                 return False
             row.revoked_at = as_utc(at)
+            if row.candidate_id:
+                self._audit_candidate(
+                    session,
+                    action="auth.session.revoke",
+                    entity_id=row.id,
+                    candidate_id=row.candidate_id,
+                )
             session.commit()
             return True
 
@@ -324,6 +372,37 @@ class AuthStore:
             session.add(row)
             session.commit()
             return _org_user(row)
+
+    def create_org_with_owner(
+        self, *, name: str, email_hash: str
+    ) -> tuple[str, OrgUser]:
+        """Create the organization AND its first owner in ONE transaction.
+
+        Atomicity is the point: an org that exists with nobody able to log into
+        it can only be fixed by an operator, which is exactly the hand-holding
+        self-onboarding is meant to remove. Either both rows land or neither
+        does, so a failed signup leaves nothing behind to collide with a retry.
+        """
+        from app.ledger.models import OrganizationRow  # local: avoids a cycle
+
+        with self._session_factory() as session:
+            org = OrganizationRow(name=name)
+            session.add(org)
+            try:
+                session.flush()
+            except IntegrityError as exc:
+                session.rollback()
+                raise OrgNameTaken(
+                    f"organization name already exists: {name!r}"
+                ) from exc
+            user = OrgUserRow(
+                organization_id=org.id,
+                email_hash=email_hash,
+                role=str(OrgUserRole.OWNER),
+            )
+            session.add(user)
+            session.commit()
+            return org.id, _org_user(user)
 
     def org_user_by_email(self, email_hash: str) -> Optional[OrgUser]:
         """Enabled org users only -- a disabled row must not authenticate."""
