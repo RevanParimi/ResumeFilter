@@ -320,6 +320,42 @@ class CandidateStore:
             )
             return row.candidate_id if row else None
 
+    # -- self-registration support (S8.2) --------------------------------------
+
+    def find_by_email_hash(self, email_hash: str) -> Optional[str]:
+        """The candidate whose contact hash matches, else None.
+
+        This is what lets a self-registering candidate CLAIM the record built
+        from a resume an org uploaded, rather than forking a duplicate person.
+
+        The hash MUST be produced by the same salted function that wrote it
+        (``app.candidates.hashing.contact_hash`` with ``contact_hash_salt``) or
+        nothing will ever match and every signup silently creates a duplicate.
+        """
+        if not email_hash:
+            return None
+        with self._session_factory() as session:
+            row = session.execute(
+                select(CandidateRow).where(CandidateRow.email_hash == email_hash)
+            ).scalars().first()
+            return row.id if row else None
+
+    def create_bare_candidate(self, *, email_hash: str) -> str:
+        """A candidate row carrying a contact hash and nothing else — someone
+        who signed up before any resume of theirs was ever submitted."""
+        with self._session_factory() as session:
+            row = CandidateRow(email_hash=email_hash)
+            session.add(row)
+            session.commit()
+            return row.id
+
+    def email_hash_for(self, candidate_id: str) -> Optional[str]:
+        """The stored contact hash, needed by the erasure path to clear login
+        challenges — which have no FK and therefore cannot cascade."""
+        with self._session_factory() as session:
+            row = session.get(CandidateRow, candidate_id)
+            return row.email_hash if row else None
+
     def save_fingerprint(
         self, fp: Fingerprint, *, resume_id: str, candidate_id: str
     ) -> bool:

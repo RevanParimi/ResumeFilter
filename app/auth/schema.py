@@ -94,6 +94,23 @@ class SessionView(BaseModel):
     current: bool = False   # is this the session making the request?
 
 
+class ResolvedSession(BaseModel):
+    """What the store hands back when a token is looked up.
+
+    A contract rather than a detached ORM row, matching every other store in the
+    repo: the resolver needs an id, a status and whichever principal column is
+    set, and nothing downstream should be able to reach further into the table.
+    """
+
+    id: str
+    status: SessionStatus
+    candidate_id: Optional[str] = None
+    org_user_id: Optional[str] = None
+    admin_user_id: Optional[str] = None
+    csrf_token: str = ""
+    last_seen_at: datetime
+
+
 class OrgUser(BaseModel):
     id: str
     organization_id: str
