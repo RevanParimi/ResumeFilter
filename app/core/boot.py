@@ -1,8 +1,13 @@
-"""Launch-time configuration checks (PI-8 S8.1).
+"""Launch-time configuration checks (PI-8, S8.1 + S8.2).
 
 ``require_api_key`` refuses every request when no credential is configured, but
 a service that 401s everything looks merely broken. This module makes the
 misconfiguration loud at the one moment an operator is watching: boot.
+
+S8.2 adds three prod-only refusals for the browser-facing surface. They belong
+here for the same reason: a session cookie sent in the clear, a wildcard CORS
+origin, or a capture email provider each produce a service that *works* while
+being unsafe, which is the failure mode a boot check exists to catch.
 
 There is deliberately NO ``env`` exemption (spec 0.1). ``env`` DEFAULTS to
 "local", so an env-gated escape would make a safe deploy depend on remembering
@@ -35,4 +40,33 @@ def verify_launch_config(settings: Settings) -> None:
             "are ephemeral (every row is lost on redeploy) and SQLite "
             "serializes writes across workers. Point DEE_CANDIDATES_DB_URL at "
             "Postgres."
+        )
+
+    # -- S8.2: the three ways a BROWSER-FACING deployment is misconfigured -----
+    # These are prod-only, and that is not the escape 0.1 rejected: there the
+    # refusal would have keyed on `env` DEFAULTING to the safe value. Here the
+    # refusing state IS the deployed one, so a forgotten variable still lands on
+    # the strict side.
+    if settings.env != "prod":
+        return
+    if not settings.session_cookie_secure:
+        raise LaunchConfigError(
+            "DEE_ENV=prod with session_cookie_secure=false. The session cookie "
+            "would travel in the clear, and SameSite=None (required, because "
+            "the UI is separately hosted) is rejected by every browser without "
+            "Secure. Set session_cookie_secure=true and serve over HTTPS."
+        )
+    if "*" in settings.cors_allowed_origins:
+        raise LaunchConfigError(
+            'DEE_ENV=prod with "*" in cors_allowed_origins. This API is called '
+            "with credentials, so a wildcard origin is never correct — browsers "
+            "reject the combination, and relying on that as the guard leaves a "
+            "defect waiting to be 'fixed' by silencing the console error. List "
+            "the UI's exact origins."
+        )
+    if settings.email_provider == "capture":
+        raise LaunchConfigError(
+            "DEE_ENV=prod with email_provider=capture. CaptureEmail writes login "
+            "codes to email_capture_path in plaintext — that is an OTP leak "
+            "wearing a test harness's clothes. Use email_provider=smtp."
         )

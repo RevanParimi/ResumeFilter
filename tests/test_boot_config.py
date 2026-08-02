@@ -62,3 +62,78 @@ def test_prod_on_postgres_launches(settings):
 def test_local_on_sqlite_launches(settings):
     ok = settings.model_copy(update={"api_auth_key": SecretStr("a-real-key")})
     assert verify_launch_config(ok) is None
+
+
+# ── S8.2: a browser-facing deployment has three more ways to be wrong ────────
+# All prod-only, and that is NOT S8.1's rejected escape: there the refusal would
+# have keyed on `env` DEFAULTING to the safe value. Here the refusing state IS
+# the deployed one, so a forgotten variable still lands on the strict side.
+
+
+def _prod(settings, **over):
+    """Prod-shaped and passing S8.1's two refusals, so each test below isolates
+    exactly the new refusal it names."""
+    base = {
+        "api_auth_key": SecretStr("a-real-key"),
+        "env": "prod",
+        "candidates_db_url": "postgresql+psycopg://u:p@h:5432/db",
+    }
+    base.update(over)
+    return settings.model_copy(update=base)
+
+
+def test_prod_refuses_insecure_session_cookie(settings):
+    """SameSite=None requires Secure in every browser, and a session cookie over
+    plain HTTP is a session token in the clear."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, session_cookie_secure=False))
+    assert "session_cookie_secure" in str(exc.value)
+
+
+def test_prod_refuses_wildcard_cors_origin(settings):
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, cors_allowed_origins=["*"]))
+    assert "cors_allowed_origins" in str(exc.value)
+
+
+def test_prod_refuses_wildcard_even_beside_real_origins(settings):
+    """A wildcard hiding in a list of legitimate origins is the likelier
+    mistake, and it is just as fatal."""
+    with pytest.raises(LaunchConfigError):
+        verify_launch_config(
+            _prod(settings, cors_allowed_origins=["https://app.example.com", "*"])
+        )
+
+
+def test_prod_refuses_capture_email_provider(settings):
+    """CaptureEmail writes login codes to a file in plaintext -- an OTP leak
+    wearing a test harness's clothes."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, email_provider="capture"))
+    assert "capture" in str(exc.value)
+
+
+def test_prod_accepts_a_sound_browser_facing_config(settings):
+    ok = _prod(settings, cors_allowed_origins=["https://app.example.com"])
+    assert verify_launch_config(ok) is None
+
+
+def test_local_may_use_capture_and_insecure_cookies(settings):
+    """The key-less smoke runs over http://localhost and reads codes from a
+    capture file. Both must stay possible outside prod."""
+    ok = settings.model_copy(update={
+        "api_auth_key": SecretStr("a-real-key"),
+        "session_cookie_secure": False,
+        "session_cookie_samesite": "lax",
+        "email_provider": "capture",
+    })
+    assert verify_launch_config(ok) is None
+
+
+def test_auth_defaults_are_closed(settings):
+    """Defaults must be the refusing ones: no origin may call cross-site and no
+    email provider is configured until someone says so."""
+    assert settings.session_cookie_secure is True
+    assert settings.session_cookie_samesite == "none"
+    assert settings.cors_allowed_origins == []
+    assert settings.email_provider == "null"

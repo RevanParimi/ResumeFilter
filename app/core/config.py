@@ -353,9 +353,54 @@ class Settings(BaseSettings):
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
     max_pdf_b64_chars: int = 14_000_000  # ≈ 10 MB PDF once base64-decoded
-    # Optional shared-secret gate (FR-15). SECRET → env/.env only, never YAML.
-    # Empty (default) = auth disabled (local/dev). /healthz and / stay open.
+    # Shared-secret admin gate (FR-15). SECRET → env/.env only, never YAML.
+    # Empty is NOT "auth disabled" — since S8.1 it is the MOST refusing state:
+    # require_api_key 401s everything and verify_launch_config refuses to boot.
+    # The default stays empty so a forgotten variable fails loudly, not openly.
     api_auth_key: SecretStr = Field(default=SecretStr(""))
+
+    # --- Auth sessions + login (PI-8, S8.2) -----------------------------------
+    # Opaque server-side sessions, NOT JWT (PI-8 decision 0.2): a JWT stays valid
+    # after a candidate revokes consent or erases their account, which is a DPDP
+    # correctness bug rather than a preference. An opaque row dies with a DELETE.
+    session_ttl_minutes: int = Field(default=720, ge=1)
+    session_idle_timeout_minutes: int = Field(default=120, ge=0)
+    session_token_bytes: int = Field(default=32, ge=16)
+    # last_seen_at feeds the idle timeout, but writing it on EVERY request turns
+    # each authenticated GET into a row lock plus a WAL entry on the hottest path
+    # in the system. The staleness this admits is bounded by this knob and is
+    # two orders below the idle window, so it cannot change a timeout decision.
+    session_last_seen_write_seconds: int = Field(default=60, ge=0)
+    session_cookie_name: str = "dee_session"
+    # SameSite=None is REQUIRED, not chosen: the UI is separately hosted, so every
+    # request is cross-site and Lax would drop the cookie entirely. None mandates
+    # Secure, which mandates HTTPS — so `false` is for localhost only, and prod
+    # refuses to boot with it (app/core/boot.py).
+    session_cookie_secure: bool = True
+    session_cookie_samesite: Literal["none", "lax", "strict"] = "none"
+    csrf_cookie_name: str = "dee_csrf"
+    csrf_token_bytes: int = Field(default=32, ge=16)
+    login_otp_length: int = Field(default=6, ge=4, le=10)
+    login_otp_ttl_seconds: int = Field(default=600, ge=30)
+    login_otp_max_attempts: int = Field(default=5, ge=1)
+    login_otp_cooldown_seconds: int = Field(default=60, ge=0)
+    # Fail-closed: no origin may call this API cross-site until one is named.
+    # NEVER "*" — browsers forbid it with credentials anyway, and relying on that
+    # as the guard leaves a defect waiting for someone to silence the error.
+    cors_allowed_origins: list[str] = Field(default_factory=list)
+
+    # --- Email seam (PI-8, S8.2) ----------------------------------------------
+    # Shaped like llm.py / speech.py. "null" REFUSES (503 email_unavailable) so
+    # nothing silently degrades. "capture" is reachable only by explicit config,
+    # never by fallback, and prod refuses to boot with it.
+    email_provider: Literal["null", "smtp", "capture"] = "null"
+    email_from: str = ""
+    email_smtp_host: str = ""
+    email_smtp_port: int = Field(default=587, ge=1, le=65535)
+    email_smtp_starttls: bool = True
+    email_capture_path: str = ""   # where CaptureEmail writes; the smoke reads it
+    email_smtp_user: SecretStr = Field(default=SecretStr(""))
+    email_smtp_password: SecretStr = Field(default=SecretStr(""))
 
     # --- Service --------------------------------------------------------------
     log_level: str = "INFO"

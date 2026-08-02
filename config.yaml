@@ -246,6 +246,37 @@ speech_max_retries: 2
 max_resume_chars: 200000
 max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
 
+# --- Auth sessions + login (PI-8, S8.2) ----------------------------------------
+# Opaque server-side sessions, NOT JWT: a JWT stays valid after a candidate
+# revokes consent or erases their account, which is a DPDP correctness bug.
+session_ttl_minutes: 720
+session_idle_timeout_minutes: 120
+session_token_bytes: 32
+session_last_seen_write_seconds: 60  # throttles a per-request write
+session_cookie_name: "dee_session"
+# SameSite=None is required (the UI is separately hosted) and mandates Secure.
+# false is for localhost ONLY -- prod refuses to boot with it.
+session_cookie_secure: true
+session_cookie_samesite: "none"     # none | lax | strict
+csrf_cookie_name: "dee_csrf"
+csrf_token_bytes: 32
+login_otp_length: 6
+login_otp_ttl_seconds: 600
+login_otp_max_attempts: 5
+login_otp_cooldown_seconds: 60
+cors_allowed_origins: []            # fail-closed; NEVER "*" (prod refuses it)
+
+# --- Email seam (PI-8, S8.2) ---------------------------------------------------
+# "null" REFUSES (503 email_unavailable) -- nothing silently degrades. "capture"
+# is for the key-less smoke, is never selected by fallback, and prod refuses it.
+# SMTP credentials are SECRETS: DEE_EMAIL_SMTP_USER / DEE_EMAIL_SMTP_PASSWORD.
+email_provider: "null"              # null | smtp | capture
+email_from: ""
+email_smtp_host: ""
+email_smtp_port: 587
+email_smtp_starttls: true
+email_capture_path: ""
+
 # --- Service -----------------------------------------------------------------
 log_level: "INFO"
 log_json: true                      # true = JSON logs (prod); false = console (dev)
