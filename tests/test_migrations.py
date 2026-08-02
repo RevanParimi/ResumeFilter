@@ -17,6 +17,7 @@ import app.curation.models  # noqa: F401 — populate Base.metadata
 import app.verification.models  # noqa: F401 — populate Base.metadata
 import app.interview.models  # noqa: F401 — populate Base.metadata
 import app.reports.models  # noqa: F401 — populate Base.metadata
+import app.auth.models  # noqa: F401 — populate Base.metadata
 from app.core.db import Base, make_engine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +63,10 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     assert "interview_sessions" in names  # S7.3 migration 0015
     assert "reports" in names  # S8.1 migration 0016
     assert "outcomes" in names  # S8.1 migration 0016
+    assert "org_users" in names  # S8.2 migration 0017
+    assert "admin_users" in names  # S8.2 migration 0017
+    assert "auth_sessions" in names  # S8.2 migration 0017
+    assert "login_challenges" in names  # S8.2 migration 0017
     org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
     assert "reliability_weight" in org_cols  # S3.4 migration 0006
 
@@ -99,13 +104,17 @@ VERIFICATION_TABLES = ("verifications", "verification_challenges")  # S7.1 — C
 
 REPORT_TABLES = ("reports", "outcomes")  # S8.1 — reports CASCADE from candidates
 
+# S8.2 — auth_sessions CASCADEs from all THREE of its possible principals;
+# login_challenges deliberately has no FK (no principal exists at signup).
+AUTH_TABLES = ("org_users", "admin_users", "auth_sessions", "login_challenges")
+
 
 def test_migrated_indexes_match_orm(tmp_path):
     """Every index the ORM declares on a ledger table exists in the migrated
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -162,7 +171,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES:
+    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():
