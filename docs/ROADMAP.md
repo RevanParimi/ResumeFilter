@@ -9,7 +9,87 @@
 
 ## ▶ Current state
 
-- **Current sprint:** **S8.1 (Deployable spine) BUILT and GREEN on branch
+- **Current sprint:** **S8.2 (Identity & access) BUILT and GREEN on branch
+  `s82-identity-access` — 1200→1373, `smoke_s82` 21/21 exit 0, and all six
+  regression smokes green (s13 11/11, s41, s53, s64 10/10, s73 18/18,
+  s81 10/10). PENDING whole-branch review + merge (not yet on main).**
+  **PI-8 was RE-SEQUENCED first (decision 0.1): S8.2 → S8.4 → UI → integrate →
+  S8.3 → deploy.** Sprint IDs are stable; only the order moved. Two consequences
+  recorded in the PI-8 design: **§5.5 is superseded** (S8.2 no longer pins
+  S8.4's contracts with 501 stubs — pinning only ever protected *parallel* UI
+  design, and the UI is now built after S8.4 ships real endpoints), and
+  **§12's `admin_users` question is CLOSED — it rides S8.2**.
+  **What shipped:** a new pure package `app/auth/` (`schema.py` ·
+  `sessions.py` · `csrf.py` · `challenges.py` · `models.py` · `store.py` ·
+  `service.py`), a new seam `app/services/email.py`, migration
+  `0017_auth_identity` (four tables), 13 new HTTP routes, `AUTH.md`.
+  **(1) THE STRUCTURAL ANSWER TO PI-8'S HIGHEST RISK.** Sessions add a SECOND
+  entry point to every plane, and PI-8 §9 called for "every authorization test
+  gains a session-mode twin" — ~33 files of duplication covering only today's
+  routes. Replaced (decision 0.5) by **one resolver per plane**: the three
+  `require_*` dependencies became thin wrappers over
+  `AuthService.resolve(kind, session_token, header_key)` and **kept their return
+  types**, so **all 63 endpoints gained session mode with ZERO handler edits and
+  every pre-existing authorization test passes UNMODIFIED through the new
+  path** — which is the evidence that matters. Plus a **route-table guard**
+  (`tests/test_route_table_guard.py`) that walks the live FastAPI route table
+  and fails for any non-public route establishing a principal another way, so it
+  covers routes **not yet written**. That is the metadata-drift-guard pattern
+  applied to authorization. **Two things it surfaced:** FastAPI 0.138 does NOT
+  flatten `include_router` into `app.routes` (it stores an `_IncludedRouter`
+  wrapper), so a naive walk sees **9** routes and misses all 63 — the guard would
+  have passed vacuously, the exact failure mode of the fail-open admin gate; a
+  `>= 60` floor now asserts it inspected something. And `test_api_auth_gate`'s
+  `OPEN_PATHS` was a **second hand-maintained allowlist** beside `PUBLIC_PATHS`;
+  it now imports it, because the list that drifts is always the unwatched one.
+  **(2) CSRF LIVES INSIDE THE RESOLVERS**, not beside them. FastAPI runs
+  router-level dependencies BEFORE route-level ones, so a separate
+  `Depends(require_csrf)` on `org_router` would have run before `require_org`
+  established the principal, read `via` as unset, and **skipped the check on
+  every request** — a fail-open no cookie-using test would have noticed. The
+  exemption keys on `Principal.via`, never on "a header was present": a session
+  cookie plus an attacker-supplied `X-Org-Key` is still CSRF-checked (pinned by
+  a test named for the trap).
+  **(3) THE CLAIM (decision 0.4).** A candidate signing up with an address
+  already on file **attaches to that candidate record** rather than forking a
+  duplicate person — otherwise records built from org-uploaded resumes are
+  unreachable by their own subject, making the portal's DPDP rights theoretical
+  for every candidate in the system. Same trust boundary as S7.1's L2
+  `otp_email`; grants **no** identity assurance (fusing "logged in" with
+  "verified" would repeat S7.2's two-ladders mistake).
+  **(4) THE SMOKE CAUGHT A REAL DESIGN BUG NO UNIT TEST COULD.**
+  `_subject_exists` treated "a `candidates` row exists" as "this person has an
+  account" — but most candidate rows are created by an org uploading a resume,
+  about someone who has never touched the system. So signup no-op'd and **the
+  claim was unreachable in exactly the case it exists for.** 1363 green tests
+  said nothing, because the org-upload-then-candidate-signup sequence only
+  happens end to end in the smoke. **Fix: on the candidate plane signup and
+  login are the SAME act and both always send** — which is also a *stronger*
+  anti-enumeration property than silence (same status, same body, same email for
+  known and unknown). The org plane keeps the distinction, because an
+  `org_users` row IS an account. Four tests encoding the old behaviour were
+  rewritten to assert indistinguishability.
+  **(5) A SECOND ENUMERATION ORACLE, found while testing:** with email broken,
+  `login` for an UNKNOWN address short-circuited before sending and answered
+  202, while a KNOWN address reached the send and answered 503.
+  `EmailClient.available` is now probed **before any account lookup**.
+  **(6) MUTATION TESTING EARNED ITS KEEP** on `AuthService`: two mutants
+  SURVIVED the first pass. Deleting the kind check inside the CANDIDATE resolver
+  branch broke nothing (the test only pointed a *candidate* token at the org and
+  admin resolvers) — now every (token, plane) pair is asserted, plus "a principal
+  is never returned without its subject id". And moving the attempt cap after the
+  code check broke nothing either, which meant **my own comment claiming that
+  ordering was load-bearing was wrong**; corrected to what it actually buys.
+  **(7) ONE ERASURE PATH.** `PortalService.erase()` is called by BOTH the portal
+  and the admin plane. Sessions CASCADE; `login_challenges` **cannot** (no FK —
+  at signup time no principal exists), so they are deleted explicitly there. The
+  test that matters is `test_admin_erasure_kills_sessions_and_challenges_TOO`:
+  had the deletion gone in the portal handler — the obvious place — it fails.
+  **(8) Three new prod boot refusals:** insecure session cookie, `"*"` CORS
+  origin, capture email provider. **Standing gap, stated plainly: NO RATE
+  LIMITING** (decision 0.6) — acceptable only because the deploy is last; if
+  that sequencing changes, S8.3's limiter must come forward with it.
+- **Prior sprint detail (S8.1):** **S8.1 (Deployable spine) BUILT and GREEN on branch
   `s81-deployable-spine` — 1175→1200, `smoke_s81` 10/10 exit 0, and the four
   regression smokes (s13, s41, s53, s64, s73) all still green.** Four changes
   plus a deploy that was deliberately stopped.
@@ -344,14 +424,32 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.1 is done and merged. The user re-sequenced the rest of
-  PI-8 on 2026-08-01: finish the PI planning, BUILD THE UI, integrate it — and
-  only then deploy.** So the next step is **not** S8.2 code. It is:
-  (a) decide where the UI build lands (its own sprint after S8.4, or pulled
-  earlier — GTM §7 says Phase 1 is blocked on the demo path, and the demo path
-  IS the UI); (b) spec S8.2 (identity & access), remembering that **S8.2 pins
-  S8.4's request/response contracts** (PI-8 §5.5) precisely because the UI is
-  designed in parallel and externally (decision 0.1); (c) then build.
+- **Next action:** **S8.2 is BUILT and green on `s82-identity-access`, and it is
+  NOT yet merged.** Two things, in order:
+  **(a) Whole-branch review of `s82-identity-access`, then merge.** The harness
+  in these sessions forbids spawning agents unless asked, so this has been an
+  inline build — the branch has had no independent review pass. **Where to look
+  hardest, ranked:** the four resolvers and `_accept` in
+  `app/api/routes.py` (every plane's authorization now flows through them);
+  `AuthService._establish` (the claim — the sprint's sharpest edge);
+  `PortalService.erase` (the one non-structural guarantee); and the
+  `PUBLIC_PATHS` set, since widening it is the only way to leave a route
+  unguarded without the route-table guard noticing.
+  **(b) Then S8.4 (UI integration surface), NOT S8.3** — batch upload, cursor
+  pagination, the fraud-screen read-model, OpenAPI good enough to build against.
+  It was pulled ahead so the external UI is designed against endpoints that
+  actually work rather than 501 stubs, and so the wedge demo exists mid-PI,
+  which is the mitigation GTM §7 named for the whole-platform scope.
+  **Carry into S8.4:** the route-table guard means a new route must depend on
+  one of the four resolvers or the build fails — batch upload and the
+  fraud-screen read-model are org-plane routes, so `require_org`. And **S8.4 is
+  the last sprint before the UI**, so anything the UI needs and does not get here
+  becomes an integration rewrite.
+  **Carry into S8.3 (now after the UI):** rate limiting is the one genuinely
+  outstanding safety item — the OTP surface has per-challenge caps and cooldowns
+  but no per-email/per-IP limits, and on the candidate plane any address can be
+  mailed a code (a mail-bombing vector). It lands before the deploy, which is
+  fine **only while the deploy stays last**.
   **The Railway project was deleted by the user** — nothing in the repo depends
   on it (`DEE_TEST_DB_URL` is opt-in and unset by default; CI brings its own
   Postgres via a `postgres:18` service container). The repo stays
@@ -799,16 +897,26 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │             16 migrations up/down/up + 29 SQL-shaped tests; a container
     │             booted, migrated an empty PG and served /healthz before the
     │             deploy was stopped]
-    ├── [ ] S8.2  Identity & access — org_users/admin_users/auth_sessions/
-    │            login_challenges · email seam · OTP signup+login · org and
-    │            candidate self-serve · CORS + CSRF · PINS the S8.4 contract
-    ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
-    │            retention sweep · DPDP correction + grievance officer
+    ├── [x] S8.2  Identity & access — org_users/admin_users/auth_sessions/
+    │            login_challenges (migration 0017) · email seam · email-OTP
+    │            signup+login on all 3 planes · org + candidate self-serve ·
+    │            operator accounts · CORS + CSRF · ONE resolver per plane +
+    │            a route-table guard
+    │            [1200→1373 green, smoke_s82 21/21, six regression smokes green;
+    │             contract-pinning DROPPED (§5.5 superseded by the re-sequence)]
     ├── [ ] S8.4  UI integration surface — batch upload · cursor pagination ·
     │            fraud-screen read-model · OpenAPI for a typed client
-    └── [ ] S8.5? UI BUILD + INTEGRATION (new, 2026-08-01) — the user's
-                 sequencing: finish PI-8 planning, build the UI, integrate,
-                 THEN deploy. Slot/shape still to be decided.
+    │            ** PULLED AHEAD OF S8.3 (2026-08-02) **
+    ├── [ ] S8.5  UI BUILD (external, claude.ai/design) + INTEGRATION —
+    │            wire it to the API, CORS origins, composite smoke
+    ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
+    │            retention sweep · DPDP correction + grievance officer
+    │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
+    └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
+        EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
+        integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the
+        order moved. S8.3 still precedes the deploy, which is now last, so the
+        unthrottled OTP surface is never publicly reachable.
         WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
         UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot [DONE S8.1]
         (2) Postgres [DONE S8.1] (3) report-store rewrite [DONE S8.1]
