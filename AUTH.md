@@ -102,6 +102,17 @@ and one address can legitimately be both a candidate and an org user.
 Rows are **deleted on consume or supersession**: short-TTL secret material is
 hygiene, not a retention policy.
 
+### One live challenge per address, per plane
+
+`_scope_purpose` files candidate-plane signup and login under **one** scope. A
+second live challenge for the same address is not merely untidy — it was an
+**unauthenticated login lockout**: `verify_code` checked signup first, so a
+correct login code was evaluated against the wrong hash and refused until the
+shadowing challenge expired, and anyone could trigger it against any candidate.
+Found in whole-branch review, reproduced, and fixed twice over: the scope is
+collapsed so the state cannot arise, and `verify_code` evaluates **every** live
+challenge before refusing so it cannot arise on another plane either.
+
 ### No account enumeration
 
 Signup and login always answer `202`, and every verify failure answers one
@@ -174,6 +185,11 @@ had been tested but undeliverable since 2026-07-31.
 - **Org-user and operator auth events are not in `audit_log`** — that table is
   candidate-scoped by design. Widening it is a recorded follow-up.
 - **No org-user invites.** `org_users.role` (`owner`/`member`) ships so adding
-  them needs no migration, but the endpoints do not.
+  them needs no migration, but the endpoints do not. **When they land, fix
+  `org_user_by_email` first:** uniqueness on `org_users` is per-organization, so
+  one address may legitimately hold logins at two firms, and that lookup can
+  then only return one of them. It is ordered by `created_at` today so the
+  choice is at least deterministic, but the real answer is for the caller to
+  name the organization. No current code path can create that state.
 - **Org signup fails on a duplicate organization name** (unique constraint).
   Surfaced as `400 invalid_code`, which is a poor message for a real user.

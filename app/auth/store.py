@@ -405,15 +405,27 @@ class AuthStore:
             return org.id, _org_user(user)
 
     def org_user_by_email(self, email_hash: str) -> Optional[OrgUser]:
-        """Enabled org users only -- a disabled row must not authenticate."""
+        """Enabled org users only -- a disabled row must not authenticate.
+
+        Ordered by `created_at` because the schema permits ONE address to hold
+        a login at two organizations (uniqueness is per-org, so a consultant at
+        two client firms is legal). No code path creates that state today --
+        there are no invites in S8.2 -- but an unordered `.first()` is
+        implementation-defined on Postgres, so this would become a login that
+        silently lands in a different org depending on the plan the optimizer
+        chose. Deterministic now; see AUTH.md section 9 for the real fix when
+        invites land.
+        """
         if not email_hash:
             return None
         with self._session_factory() as session:
             row = session.execute(
-                select(OrgUserRow).where(
+                select(OrgUserRow)
+                .where(
                     (OrgUserRow.email_hash == email_hash)
                     & (OrgUserRow.disabled_at.is_(None))
                 )
+                .order_by(OrgUserRow.created_at, OrgUserRow.id)
             ).scalars().first()
             return _org_user(row) if row else None
 
@@ -446,11 +458,16 @@ class AuthStore:
         if not email_hash:
             return None
         with self._session_factory() as session:
+            # email_hash is UNIQUE on admin_users, so at most one row can
+            # match; the ordering is belt-and-braces against a future migration
+            # relaxing that constraint.
             row = session.execute(
-                select(AdminUserRow).where(
+                select(AdminUserRow)
+                .where(
                     (AdminUserRow.email_hash == email_hash)
                     & (AdminUserRow.disabled_at.is_(None))
                 )
+                .order_by(AdminUserRow.created_at, AdminUserRow.id)
             ).scalars().first()
             return _admin_user(row) if row else None
 

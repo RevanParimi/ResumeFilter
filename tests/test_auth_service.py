@@ -604,3 +604,134 @@ def test_a_principal_is_never_returned_without_its_subject_id(auth):
                 continue
             subject = p.candidate_id or p.org_user_id or p.admin_user_id
             assert subject, f"{kind} principal has no subject id"
+
+
+def test_a_stale_signup_challenge_cannot_shadow_a_login(auth):
+    """An unauthenticated LOGIN-LOCKOUT, found in whole-branch review.
+
+    Once the candidate plane started sending for BOTH purposes, one address
+    could hold two live challenges. verify_code checked SIGNUP first, so a
+    correct LOGIN code was evaluated against the signup hash and refused --
+    every time, until the shadowing challenge expired.
+
+    That made it an unauthenticated denial of service: anyone could fire a
+    signup code at any candidate's address and lock that person out of their
+    own account for the challenge TTL, repeatably.
+
+    Two fixes, both pinned here: the candidate plane files signup and login
+    under ONE scope so the state cannot arise, and verify_code evaluates every
+    live challenge before refusing so it cannot arise on another plane either.
+    """
+    email = "victim@example.in"
+    _existing_candidate(auth, email)
+
+    # Attacker fires a signup code at the victim's address.
+    auth.service.request_code(
+        email=email, plane=AuthPlane.CANDIDATE, purpose=LoginPurpose.SIGNUP,
+        at=NOW, rng=_rng(),
+    )
+    attacker_code = auth.code()
+
+    # The victim requests their own login code, past the cooldown.
+    later = NOW + timedelta(seconds=61)
+    auth.service.request_code(
+        email=email, plane=AuthPlane.CANDIDATE, purpose=LoginPurpose.LOGIN,
+        at=later, rng=random.Random(999),
+    )
+    victim_code = auth.code()
+    assert victim_code != attacker_code
+
+    # It works -- the whole point.
+    _, _, principal = auth.service.verify_code(
+        email=email, plane=AuthPlane.CANDIDATE, code=victim_code, at=later
+    )
+    assert principal.candidate_id
+
+    # And the superseded code is dead, not merely deprioritised.
+    with pytest.raises(ChallengeRefused):
+        auth.service.verify_code(
+            email=email, plane=AuthPlane.CANDIDATE, code=attacker_code, at=later
+        )
+
+
+def test_only_one_live_challenge_per_address_on_the_candidate_plane(auth):
+    """The structural half of the fix: signup and login share one scope, so a
+    second request supersedes rather than sitting beside the first."""
+    from app.auth.challenges import ChallengeScope
+
+    email = "one@example.in"
+    auth.service.request_code(
+        email=email, plane=AuthPlane.CANDIDATE, purpose=LoginPurpose.SIGNUP,
+        at=NOW, rng=_rng(),
+    )
+    auth.service.request_code(
+        email=email, plane=AuthPlane.CANDIDATE, purpose=LoginPurpose.LOGIN,
+        at=NOW + timedelta(seconds=61), rng=random.Random(7),
+    )
+    email_hash = auth.service.hash_email(email)
+    live = [
+        p for p in (LoginPurpose.SIGNUP, LoginPurpose.LOGIN)
+        if auth.service._store.get_challenge(
+            ChallengeScope(email_hash, p, AuthPlane.CANDIDATE)
+        ) is not None
+    ]
+    assert live == [LoginPurpose.LOGIN]
+
+
+def test_a_wrong_code_does_not_burn_an_unrelated_challenges_attempts(auth):
+    """Attempts are spent only on the challenge the code was actually wrong
+    for -- never on one that was merely expired or exhausted."""
+    from app.auth.challenges import ChallengeScope
+
+    email = "org@example.in"
+    auth.service.request_code(
+        email=email, plane=AuthPlane.ORG, purpose=LoginPurpose.SIGNUP,
+        payload={"organization_name": "Acme"}, at=NOW, rng=_rng(),
+    )
+    with pytest.raises(ChallengeRefused):
+        auth.service.verify_code(
+            email=email, plane=AuthPlane.ORG, code="000000", at=NOW
+        )
+    scope = ChallengeScope(
+        auth.service.hash_email(email), LoginPurpose.SIGNUP, AuthPlane.ORG
+    )
+    assert auth.service._store.get_challenge(scope).attempts == 1
+
+
+def test_verify_accepts_the_matching_challenge_not_the_first_one(auth):
+    """Defense in depth, exercised directly.
+
+    `_scope_purpose` collapses the candidate plane so two live challenges
+    cannot arise there -- which means the "evaluate every live challenge" layer
+    is never reached through the public API, and a mutation test showed it was
+    therefore untested. So this drives the store directly to construct the
+    two-live-challenge state and proves the correct code still wins.
+
+    Without this, a future plane that legitimately files two purposes would
+    silently reintroduce the login lockout.
+    """
+    from app.auth.challenges import ChallengeScope, mint_code
+
+    email_hash = auth.service.hash_email("two@example.in")
+    salt = auth.service._settings.contact_hash_salt
+    expires = NOW + timedelta(minutes=10)
+
+    shadow_code, shadow_digest = mint_code(6, salt=salt, rng=random.Random(11))
+    real_code, real_digest = mint_code(6, salt=salt, rng=random.Random(22))
+    assert shadow_code != real_code
+
+    # SIGNUP is the one _live_scopes looks at first -- the shadow position.
+    auth.service._store.upsert_challenge(
+        ChallengeScope(email_hash, LoginPurpose.SIGNUP, AuthPlane.CANDIDATE),
+        code_hash=shadow_digest, expires_at=expires, payload={}, at=NOW,
+    )
+    auth.service._store.upsert_challenge(
+        ChallengeScope(email_hash, LoginPurpose.LOGIN, AuthPlane.CANDIDATE),
+        code_hash=real_digest, expires_at=expires, payload={}, at=NOW,
+    )
+
+    # The code belonging to the SECOND challenge must still be accepted.
+    _, _, principal = auth.service.verify_code(
+        email="two@example.in", plane=AuthPlane.CANDIDATE, code=real_code, at=NOW
+    )
+    assert principal.candidate_id

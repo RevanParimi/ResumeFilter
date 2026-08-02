@@ -93,6 +93,20 @@ class AuthService:
             normalize_email(email or ""), self._settings.contact_hash_salt
         )
 
+    @staticmethod
+    def _scope_purpose(plane: AuthPlane, purpose: LoginPurpose) -> LoginPurpose:
+        """The purpose a CHALLENGE is filed under.
+
+        On the candidate plane signup and login are the same act, so they must
+        share ONE scope. Filing them separately let two live challenges exist
+        for one address, and `verify_code` checked signup first -- so an
+        unauthenticated attacker could request a signup code for any candidate's
+        address and SHADOW that person's real login code until it expired.
+        Reproduced before this existed; regression-tested in
+        test_auth_service.py::test_a_stale_signup_challenge_cannot_shadow_a_login.
+        """
+        return LoginPurpose.LOGIN if plane == AuthPlane.CANDIDATE else purpose
+
     def _subject_exists(self, plane: AuthPlane, email_hash: str) -> bool:
         if plane == AuthPlane.ORG:
             return self._store.org_user_by_email(email_hash) is not None
@@ -136,7 +150,11 @@ class AuthService:
             )
 
         email_hash = self._hash_email(email)
-        scope = ChallengeScope(email_hash=email_hash, purpose=purpose, plane=plane)
+        scope = ChallengeScope(
+            email_hash=email_hash,
+            purpose=self._scope_purpose(plane, purpose),
+            plane=plane,
+        )
 
         # Opportunistic hygiene on a path that already runs -- no scheduler.
         self._store.purge_expired_for_email(email_hash, at=at)
@@ -219,28 +237,31 @@ class AuthService:
 
     # -- redeeming a code ----------------------------------------------------
 
-    def _find_scope(
+    def _live_scopes(
         self, email_hash: str, plane: AuthPlane, purpose: Optional[LoginPurpose]
-    ) -> Optional[tuple[ChallengeScope, object]]:
-        """Locate the live challenge for this address on this plane.
+    ) -> list[tuple[ChallengeScope, object]]:
+        """EVERY live challenge for this address on this plane, not just the
+        first.
 
-        Signup and login challenges are mutually exclusive by construction --
-        signup no-ops when an account exists and login no-ops when it does not
-        -- so searching both is unambiguous, and it keeps ONE /verify endpoint
-        per plane instead of making the browser track which flow it started.
+        Returning only the first let one scope SHADOW another: a stale signup
+        challenge was checked before the login challenge, so a correct login
+        code was evaluated against the wrong hash and refused. `_scope_purpose`
+        now collapses the candidate plane to one scope so this cannot arise
+        there, and returning all of them keeps it from arising anywhere else.
         """
         purposes = (
-            [purpose] if purpose is not None
+            [self._scope_purpose(plane, purpose)] if purpose is not None
             else [LoginPurpose.SIGNUP, LoginPurpose.LOGIN]
         )
-        for candidate_purpose in purposes:
+        found = []
+        for candidate_purpose in dict.fromkeys(purposes):   # de-dup, keep order
             scope = ChallengeScope(
                 email_hash=email_hash, purpose=candidate_purpose, plane=plane
             )
             row = self._store.get_challenge(scope)
             if row is not None:
-                return scope, row
-        return None
+                found.append((scope, row))
+        return found
 
     def verify_code(
         self,
@@ -255,26 +276,43 @@ class AuthService:
     ) -> tuple[str, str, Principal]:
         """Redeem a code and issue a session. Returns (token, csrf, principal)."""
         email_hash = self._hash_email(email)
-        found = self._find_scope(email_hash, plane, purpose)
-        if found is None:
+        live = self._live_scopes(email_hash, plane, purpose)
+        if not live:
             raise ChallengeRefused("not_found")
-        scope, row = found
 
-        outcome = challenge_logic.evaluate_verification(
-            stored_hash=row.code_hash,
-            supplied_hash=challenge_logic.hash_supplied(
-                code, salt=self._settings.contact_hash_salt
-            ),
-            expires_at=row.expires_at,
-            attempts=row.attempts or 0,
-            max_attempts=self._settings.login_otp_max_attempts,
-            at=at,
+        supplied = challenge_logic.hash_supplied(
+            code, salt=self._settings.contact_hash_salt
         )
-        if outcome == VerifyOutcome.WRONG_CODE:
-            self._store.bump_attempts(scope)
-            raise ChallengeRefused("wrong_code")
-        if outcome != VerifyOutcome.OK:
-            raise ChallengeRefused(str(outcome))
+        # Evaluate EVERY live challenge before refusing. Accepting the first
+        # match -- rather than the first challenge -- is what stops one scope
+        # shadowing another and locking a real user out with a correct code.
+        outcomes = [
+            (
+                scope,
+                row,
+                challenge_logic.evaluate_verification(
+                    stored_hash=row.code_hash,
+                    supplied_hash=supplied,
+                    expires_at=row.expires_at,
+                    attempts=row.attempts or 0,
+                    max_attempts=self._settings.login_otp_max_attempts,
+                    at=at,
+                ),
+            )
+            for scope, row in live
+        ]
+        winner = next(
+            ((s, r) for s, r, o in outcomes if o == VerifyOutcome.OK), None
+        )
+        if winner is None:
+            # Only now is this a real failure, so only now does it cost an
+            # attempt -- and only on the challenges the code was actually
+            # wrong for, never on one that was merely expired or exhausted.
+            for scope, _, outcome in outcomes:
+                if outcome == VerifyOutcome.WRONG_CODE:
+                    self._store.bump_attempts(scope)
+            raise ChallengeRefused(str(outcomes[0][2]))
+        scope, row = winner
 
         # Consume BEFORE minting the session: a code is single-use, and a crash
         # after this point costs a login rather than leaving a reusable code.
