@@ -150,23 +150,54 @@ def test_org_login_works_after_signup(auth):
 # ── no enumeration ──────────────────────────────────────────────────────────
 
 
-def test_login_for_an_unknown_address_sends_nothing(auth):
+def test_org_login_for_an_unknown_address_sends_nothing(auth):
     assert auth.service.request_code(
-        email="nobody@nowhere.in", plane=AuthPlane.CANDIDATE,
+        email="nobody@nowhere.in", plane=AuthPlane.ORG,
         purpose=LoginPurpose.LOGIN, at=NOW, rng=_rng(),
     ) is False
     assert auth.sent_count() == 0
 
 
-def test_signup_for_a_taken_address_sends_nothing(auth):
+def test_org_signup_for_a_taken_address_sends_nothing(auth):
     """And deliberately does NOT quietly send a login code instead -- silently
     changing what the caller asked for is how confused-deputy bugs start."""
-    _existing_candidate(auth, "taken@example.in")
+    auth.service.request_code(
+        email="ops@acme.in", plane=AuthPlane.ORG, purpose=LoginPurpose.SIGNUP,
+        payload={"organization_name": "Acme"}, at=NOW, rng=_rng(),
+    )
+    auth.service.verify_code(
+        email="ops@acme.in", plane=AuthPlane.ORG, code=auth.code(), at=NOW
+    )
+    before = auth.sent_count()
     assert auth.service.request_code(
-        email="taken@example.in", plane=AuthPlane.CANDIDATE,
-        purpose=LoginPurpose.SIGNUP, at=NOW, rng=_rng(),
+        email="ops@acme.in", plane=AuthPlane.ORG, purpose=LoginPurpose.SIGNUP,
+        payload={"organization_name": "Acme Again"}, at=NOW, rng=_rng(),
     ) is False
-    assert auth.sent_count() == 0
+    assert auth.sent_count() == before
+
+
+def test_the_candidate_plane_treats_signup_and_login_as_the_same_act(auth):
+    """A candidates row is NOT an account.
+
+    Most were created by an org uploading a resume, about someone who has never
+    touched this system. Refusing signup because "a record exists" made
+    decision 0.4's claim unreachable in exactly the case it exists for -- caught
+    by smoke_s82, not by any unit test, which is why this one is here now.
+
+    Treating both purposes identically also makes the plane uniform: known and
+    unknown addresses get the same answer and the same email, so there is
+    nothing to enumerate.
+    """
+    _existing_candidate(auth, "known@example.in")
+    for email in ("known@example.in", "stranger@example.in"):
+        for purpose in (LoginPurpose.SIGNUP, LoginPurpose.LOGIN):
+            auth.service._store.delete_challenges_for_email(
+                auth.service._hash_email(email)
+            )
+            assert auth.service.request_code(
+                email=email, plane=AuthPlane.CANDIDATE, purpose=purpose,
+                at=NOW, rng=_rng(),
+            ) is True
 
 
 def test_there_is_no_admin_signup(auth):

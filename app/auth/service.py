@@ -141,17 +141,38 @@ class AuthService:
         # Opportunistic hygiene on a path that already runs -- no scheduler.
         self._store.purge_expired_for_email(email_hash, at=at)
 
-        exists = self._subject_exists(plane, email_hash)
-        if purpose == LoginPurpose.LOGIN and not exists:
-            log.info("auth.request_code.noop", plane=str(plane), reason="no_account")
-            return False
-        if purpose == LoginPurpose.SIGNUP and exists:
-            log.info("auth.request_code.noop", plane=str(plane), reason="already_exists")
-            return False
-        if purpose == LoginPurpose.SIGNUP and plane == AuthPlane.ADMIN:
-            # Operators are created BY an operator; there is no admin signup.
-            log.info("auth.request_code.noop", plane="admin", reason="no_admin_signup")
-            return False
+        # On the CANDIDATE plane, signup and login are the SAME act and both
+        # always send.
+        #
+        # A candidates row is not an account. Most of them were created by an
+        # org uploading a resume, about a person who has never touched this
+        # system -- so "a record exists" says nothing about whether they have
+        # signed up, and refusing signup on that basis makes decision 0.4's
+        # claim UNREACHABLE in precisely the case it exists for. (Caught by
+        # scripts/smoke_s82.py, which is the only place the org-upload-then-
+        # candidate-signup sequence is exercised end to end.)
+        #
+        # Treating the two purposes identically here also removes the
+        # enumeration difference outright on the plane with the most people in
+        # it: every address gets the same answer and the same email.
+        if plane != AuthPlane.CANDIDATE:
+            exists = self._subject_exists(plane, email_hash)
+            if purpose == LoginPurpose.LOGIN and not exists:
+                log.info(
+                    "auth.request_code.noop", plane=str(plane), reason="no_account"
+                )
+                return False
+            if purpose == LoginPurpose.SIGNUP and exists:
+                log.info(
+                    "auth.request_code.noop", plane=str(plane), reason="already_exists"
+                )
+                return False
+            if purpose == LoginPurpose.SIGNUP and plane == AuthPlane.ADMIN:
+                # Operators are created BY an operator; there is no admin signup.
+                log.info(
+                    "auth.request_code.noop", plane="admin", reason="no_admin_signup"
+                )
+                return False
 
         existing = self._store.get_challenge(scope)
         if existing is not None and not challenge_logic.may_send(

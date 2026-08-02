@@ -77,26 +77,59 @@ def test_unknown_email_login_still_returns_202(client, capture_path):
     a list of who has an account here."""
     r = client.post("/auth/candidate/login", json={"email": "nobody@nowhere.in"})
     assert r.status_code == 202
-    assert _sent(capture_path) == 0
 
 
-def test_signup_on_a_taken_address_returns_202_and_sends_nothing(
+def test_the_candidate_plane_is_indistinguishable_known_vs_unknown(
     client, capture_path
 ):
-    _signup_candidate(client, capture_path, "taken@example.in")
+    """Uniformity is the anti-enumeration property, and on the candidate plane
+    it is total: same status, same body, same email sent, whether or not a
+    record exists. (A candidates row is not an account -- see
+    test_the_candidate_plane_treats_signup_and_login_as_the_same_act.)"""
+    _signup_candidate(client, capture_path, "known@example.in")
+
     before = _sent(capture_path)
-    r = client.post("/auth/candidate/signup", json={"email": "taken@example.in"})
+    known = client.post("/auth/candidate/login", json={"email": "known@example.in"})
+    after_known = _sent(capture_path)
+    unknown = client.post(
+        "/auth/candidate/login", json={"email": "stranger@example.in"}
+    )
+    after_unknown = _sent(capture_path)
+
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    assert after_known - before == after_unknown - after_known == 1
+
+
+def test_org_signup_on_a_taken_address_returns_202_and_sends_nothing(
+    client, capture_path
+):
+    """The ORG plane keeps the distinction: an org_user IS an account."""
+    client.post(
+        "/auth/org/signup",
+        json={"email": "ops@acme.in", "organization_name": "Acme"},
+    )
+    client.post(
+        "/auth/org/verify",
+        json={"email": "ops@acme.in", "code": _code(capture_path)},
+    )
+    before = _sent(capture_path)
+    r = client.post(
+        "/auth/org/signup",
+        json={"email": "ops@acme.in", "organization_name": "Acme Again"},
+    )
     assert r.status_code == 202
     assert _sent(capture_path) == before
 
 
 def test_a_cooldown_is_not_observable(client, capture_path):
-    """A cooldown can only fire for an address that HAS an account, so leaking
-    it as a 429 would be the enumeration oracle by another door."""
+    """A cooldown is a refusal the SERVICE makes, and the route answers 202
+    anyway. Surfacing it as a 429 would say "this scope has a live challenge",
+    which is the enumeration oracle by another door."""
     client.post("/auth/candidate/signup", json={"email": "a@b.in"})
     r = client.post("/auth/candidate/signup", json={"email": "a@b.in"})
     assert r.status_code == 202
-    assert _sent(capture_path) == 1
+    assert _sent(capture_path) == 1      # the second send was suppressed
 
 
 def test_there_is_no_admin_signup_route(client):
