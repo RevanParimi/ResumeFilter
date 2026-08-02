@@ -84,11 +84,16 @@ def test_every_admin_route_carries_the_gate():
         )
 
 
-#: Everything reachable with NO credential of any kind. `/` and `/healthz` are
-#: deliberate (probes and humans); the rest is FastAPI's own doc surface.
-OPEN_PATHS = {
-    "/", "/healthz", "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc",
-}
+#: Everything reachable with NO credential of any kind.
+#:
+#: S8.2 made this the SAME list the route-table guard uses, rather than a second
+#: copy beside it. Two hand-maintained allowlists drift, and the one that drifts
+#: is always the one nobody is looking at -- which is the shape of the defect
+#: this whole file exists to prevent.
+#:
+#: It holds `/` and `/healthz` (probes and humans), FastAPI's doc surface, and
+#: the login endpoints, which by definition run BEFORE a principal exists.
+from app.api.routes import PUBLIC_PATHS as OPEN_PATHS  # noqa: E402
 
 
 def _walk(app):
@@ -104,11 +109,15 @@ def _walk(app):
 def test_nothing_is_reachable_without_a_credential_by_accident(settings, flywheel):
     """Pins the unauthenticated surface. A new public endpoint has to be added
     to OPEN_PATHS on purpose -- it cannot arrive by forgetting a dependency."""
-    from app.api.routes import require_candidate, require_org
+    from app.api.routes import (
+        require_any_principal, require_candidate, require_org,
+    )
 
     services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
-    gates = {require_api_key, require_org, require_candidate}
+    # require_any_principal is a real gate, not an exemption: it accepts a
+    # session of ANY plane but refuses a header key and refuses anonymity.
+    gates = {require_api_key, require_org, require_candidate, require_any_principal}
 
     ungated = {r.path for r in _walk(app) if not (_gates(r) & gates)}
 

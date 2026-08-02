@@ -126,6 +126,15 @@ class AuthService:
         code instead: silently changing what the caller asked for is how
         confused-deputy bugs start.
         """
+        # Probe the provider FIRST, before any account lookup. Otherwise a
+        # broken provider answers 503 for an address that exists and 202 for one
+        # that does not -- an enumeration oracle that appears only when email is
+        # misconfigured, which is exactly when nobody is watching for it.
+        if not self._email.available:
+            raise EmailUnavailableError(
+                "no email provider is configured; set email_provider=smtp"
+            )
+
         email_hash = self._hash_email(email)
         scope = ChallengeScope(email_hash=email_hash, purpose=purpose, plane=plane)
 
@@ -483,6 +492,27 @@ class AuthService:
             subject_id=subject,
             at=at or datetime.now(timezone.utc),
         )
+
+    # -- operator accounts ---------------------------------------------------
+    # Thin pass-throughs so the route layer never reaches into the store. The
+    # admin plane is the one place a human account is created rather than
+    # self-registered, and keeping it behind the service means the hashing rule
+    # (_hash_email) can never drift between here and login.
+
+    def hash_email(self, email: str) -> str:
+        return self._hash_email(email)
+
+    def find_admin_user(self, email_hash: str):
+        return self._store.admin_user_by_email(email_hash)
+
+    def create_admin_user(self, *, email_hash: str, label: str = ""):
+        return self._store.create_admin_user(email_hash=email_hash, label=label)
+
+    def list_admin_users(self):
+        return self._store.list_admin_users()
+
+    def delete_admin_user(self, admin_user_id: str) -> bool:
+        return self._store.delete_admin_user(admin_user_id)
 
     def erase_login_state(self, candidate_id: str) -> int:
         """Delete every login challenge for this candidate's address.

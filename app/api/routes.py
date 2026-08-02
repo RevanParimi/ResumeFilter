@@ -10,13 +10,18 @@ from __future__ import annotations
 import base64
 import binascii
 import hmac
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from pydantic import BaseModel, Field, model_validator
 
 from app import __version__
+from app.auth.csrf import csrf_matches
+from app.auth.schema import (
+    AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia, SessionView,
+)
+from app.auth.service import ChallengeRefused, EmailUnavailableError
 from app.candidates.extractor import extract_profile
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
@@ -75,54 +80,143 @@ def _services(request: Request) -> Services:
     return request.app.state.services
 
 
-async def require_api_key(
-    request: Request, x_api_key: Optional[str] = Header(default=None)
-) -> None:
-    """Admin-plane gate (FR-15), fail-CLOSED since S8.1.
+# Paths that establish no principal, by definition. Everything else must go
+# through one of the four resolvers below, and tests/test_route_table_guard.py
+# fails the build if it does not. WIDENING THIS SET IS THE REVIEWABLE ACT —
+# it is how "someone forgot a gate" becomes "someone edited a named list".
+PUBLIC_PATHS: set[str] = {
+    "/", "/healthz", "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json",
+    "/auth/org/signup", "/auth/org/login", "/auth/org/verify",
+    "/auth/candidate/signup", "/auth/candidate/login", "/auth/candidate/verify",
+    "/auth/admin/login", "/auth/admin/verify",
+}
 
-    An unset credential is the MOST refusing state, not the least: before this,
-    a forgotten ``DEE_API_AUTH_KEY`` made all 27 admin endpoints public —
-    including the one that mints any candidate's access key.
-    ``verify_launch_config`` stops the process before it can serve in that
-    state; this is the second layer, so an app built without the lifespan is
-    still guarded.
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _accept(request: Request, principal: Principal) -> Principal:
+    """Record the principal and enforce CSRF in ONE place.
+
+    CSRF lives inside the resolvers rather than beside them as its own
+    dependency, and that is a correctness decision, not tidiness: FastAPI runs
+    router-level dependencies BEFORE route-level ones, so a separate
+    ``Depends(require_csrf)`` on ``org_router`` would execute before
+    ``require_org`` had established the principal, read ``via`` as unset, and
+    skip the check on every request — a fail-open that tests using cookies
+    would never notice. Here the ordering cannot be got wrong.
+
+    The exemption keys on ``principal.via``, NEVER on "was a header present":
+    otherwise a browser carrying a session cookie plus an attacker-supplied
+    ``X-Org-Key`` would skip CSRF entirely. ``AuthService.resolve`` prefers the
+    session when both arrive, so the stronger requirement always wins.
     """
-    expected = _services(request).settings.api_auth_key.get_secret_value()
-    if not expected or not hmac.compare_digest(x_api_key or "", expected):
-        raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
+    request.state.principal = principal
+    if request.method not in _SAFE_METHODS and principal.via == PrincipalVia.SESSION:
+        settings = _services(request).settings
+        if not csrf_matches(
+            request.cookies.get(settings.csrf_cookie_name),
+            request.headers.get("X-CSRF-Token"),
+        ):
+            raise HTTPException(
+                status_code=403, detail="missing or invalid CSRF token"
+            )
+    return principal
 
 
-async def require_org(
-    request: Request, x_org_key: Optional[str] = Header(default=None)
-) -> str:
-    """Resolve an org's own API key to its id (S3.2). Unlike the admin key,
-    this is always enforced — org data operations are never open."""
-    org_id = _services(request).ledger.authenticate_org(x_org_key or "")
-    if org_id is None:
+async def require_api_key(request: Request) -> Principal:
+    """Admin-plane gate (FR-15). Fail-CLOSED since S8.1; session-capable since S8.2.
+
+    Since S8.2 every plane resolves through ONE service call, so a gate cannot
+    be forgotten at a second door — the bug shape that shipped as a real defect
+    in S7.1, S7.2 and S7.3, and which sessions would otherwise multiply by two.
+
+    An unset ``DEE_API_AUTH_KEY`` is still the MOST refusing state (enforced in
+    ``AuthService._from_key``), and ``verify_launch_config`` stops the process
+    before it can serve in that state at all.
+    """
+    principal = _services(request).auth.resolve(
+        kind=PrincipalKind.ADMIN,
+        session_token=_session_cookie(request),
+        header_key=request.headers.get("X-API-Key"),
+    )
+    if principal is None:
+        raise HTTPException(status_code=401, detail="invalid or missing admin credential")
+    return _accept(request, principal)
+
+
+async def require_org(request: Request) -> str:
+    """Resolve the caller to ONE organization (S3.2), by session or by key.
+
+    The return type is unchanged — every handler still receives ``org_id: str``
+    — which is why sessions reached all 63 endpoints without editing one.
+    """
+    principal = _services(request).auth.resolve(
+        kind=PrincipalKind.ORG,
+        session_token=_session_cookie(request),
+        header_key=request.headers.get("X-Org-Key"),
+    )
+    if principal is None:
         raise HTTPException(status_code=401, detail="invalid or missing X-Org-Key")
-    return org_id
+    return _accept(request, principal).org_id
 
 
-async def require_candidate(
-    request: Request, x_candidate_key: Optional[str] = Header(default=None)
-) -> str:
-    """Resolve a candidate's own access key to their id (S6.4). Always enforced —
-    the portal is the data principal's private surface."""
-    candidate_id = _services(request).candidates.authenticate_candidate(x_candidate_key or "")
-    if candidate_id is None:
+async def require_candidate(request: Request) -> str:
+    """Resolve the caller to ONE candidate (S6.4), by session or by key.
+
+    Always enforced — the portal is the data principal's private surface, and
+    cross-candidate isolation stays structural because handlers still receive
+    the id from here rather than from a path or body param.
+    """
+    principal = _services(request).auth.resolve(
+        kind=PrincipalKind.CANDIDATE,
+        session_token=_session_cookie(request),
+        header_key=request.headers.get("X-Candidate-Key"),
+    )
+    if principal is None:
         raise HTTPException(status_code=401, detail="invalid or missing X-Candidate-Key")
-    return candidate_id
+    return _accept(request, principal).candidate_id
 
 
-# Everything except "/" and /healthz sits behind the (optional) API key.
+async def require_any_principal(request: Request) -> Principal:
+    """The cross-plane resolver, for the session-lifecycle routes only.
+
+    A candidate, an org user and an operator all need to see and revoke their
+    own sessions through one route. Without a name for that, those four routes
+    would need three copies each or would sit outside the route-table guard —
+    and a route outside the guard is the entire problem.
+
+    SESSION ONLY: a header key has no session to list or revoke, so it 401s
+    here rather than resolving to something that pretends to work.
+    """
+    principal = _services(request).auth.resolve_any(
+        session_token=_session_cookie(request)
+    )
+    if principal is None:
+        raise HTTPException(status_code=401, detail="a session is required")
+    return _accept(request, principal)
+
+
+def _session_cookie(request: Request) -> Optional[str]:
+    return request.cookies.get(_services(request).settings.session_cookie_name)
+
+
+# Everything except "/" and /healthz sits behind the admin credential.
+# CSRF is enforced inside require_api_key itself (see _accept), so there is no
+# second dependency here whose ordering could be got wrong.
 router = APIRouter(dependencies=[Depends(require_api_key)])
 public_router = APIRouter()
-# Org-authenticated data plane (X-Org-Key), separate from the admin router so an
-# org never needs the platform's shared secret to submit or query its own data.
+# Org-authenticated data plane (X-Org-Key or an org-user session), separate from
+# the admin router so an org never needs the platform's shared secret to submit
+# or query its own data.
 org_router = APIRouter()
-# Candidate-authenticated DPDP portal plane (X-Candidate-Key). Every route acts
-# on the candidate resolved from the key — never a path/body param.
+# Candidate-authenticated DPDP portal plane (X-Candidate-Key or a candidate
+# session). Every route acts on the candidate resolved from the credential —
+# never a path/body param.
 candidate_router = APIRouter()
+# Login surfaces. Dependency-free by definition: they run BEFORE a principal
+# exists, which is why every path here is listed in PUBLIC_PATHS.
+auth_router = APIRouter()
 
 
 class EvaluateRequest(BaseModel):
@@ -1516,3 +1610,271 @@ async def healthz(request: Request) -> dict:
         "llm_mode": "null" if isinstance(services.llm, NullLLM) else "live",
         "domains": list_domains(),
     }
+
+
+# ── Auth: email-OTP signup / login / sessions (S8.2) ─────────────────────────
+# Every route below either sits in PUBLIC_PATHS (it runs BEFORE a principal
+# exists) or depends on require_any_principal. The route-table guard enforces
+# that there is no third option.
+
+
+class OrgSignupRequest(BaseModel):
+    email: str
+    organization_name: str = Field(min_length=1, max_length=200)
+
+
+class EmailOnlyRequest(BaseModel):
+    email: str
+
+
+class VerifyRequest(BaseModel):
+    email: str
+    code: str
+
+
+#: Signup and login always answer 202, whether or not the address is known. An
+#: endpoint that reveals which addresses are registered is an enumeration
+#: oracle, and it is the kind only an attacker ever notices.
+_ACCEPTED = {"status": "accepted"}
+
+
+def _set_session_cookies(
+    response: Response, *, token: str, csrf: str, settings
+) -> None:
+    """One helper for both cookies so their flags cannot drift between planes.
+
+    The session cookie is httpOnly, so XSS cannot read it. The CSRF cookie
+    deliberately is NOT, because the browser client has to read it to echo it
+    back in X-CSRF-Token. That asymmetry IS the double-submit scheme, not an
+    oversight -- a reviewer seeing httponly=False here should read on, not fix.
+    """
+    common = dict(
+        secure=settings.session_cookie_secure,
+        samesite=settings.session_cookie_samesite,
+        max_age=settings.session_ttl_minutes * 60,
+        path="/",
+    )
+    response.set_cookie(settings.session_cookie_name, token, httponly=True, **common)
+    response.set_cookie(settings.csrf_cookie_name, csrf, httponly=False, **common)
+
+
+def _request_code(
+    request: Request,
+    *,
+    email: str,
+    plane: AuthPlane,
+    purpose: LoginPurpose,
+    payload: Optional[dict] = None,
+) -> dict:
+    """Shared signup/login handler for all three planes."""
+    try:
+        _services(request).auth.request_code(
+            email=email,
+            plane=plane,
+            purpose=purpose,
+            payload=payload,
+            at=datetime.now(timezone.utc),
+        )
+    except EmailUnavailableError as exc:
+        # An honest 503 rather than a 202 that leaves someone waiting forever for
+        # a code that was never sent (the NullSpeech posture from S7.3).
+        raise HTTPException(status_code=503, detail="email_unavailable") from exc
+    except ChallengeRefused:
+        # Includes the cooldown case, and answering 202 anyway keeps the response
+        # uniform. A cooldown can only be triggered by an address that HAS an
+        # account, so surfacing it would be the enumeration oracle by another
+        # door. The previously sent code is still live and still in their inbox,
+        # so the user loses nothing.
+        pass
+    return dict(_ACCEPTED)
+
+
+def _verify(
+    request: Request, response: Response, *, email: str, code: str, plane: AuthPlane
+) -> dict:
+    services = _services(request)
+    try:
+        token, csrf, principal = services.auth.verify_code(
+            email=email,
+            plane=plane,
+            code=code,
+            at=datetime.now(timezone.utc),
+            user_agent=request.headers.get("user-agent"),
+        )
+    except ChallengeRefused as exc:
+        # ONE status and ONE detail for every failure mode. Distinguishing
+        # expired from wrong from exhausted tells a brute-forcer which of their
+        # assumptions was right, which is precisely the help not to give.
+        raise HTTPException(status_code=400, detail="invalid_code") from exc
+    _set_session_cookies(response, token=token, csrf=csrf, settings=services.settings)
+    return {
+        "principal": principal.kind.value,
+        "csrf_token": csrf,
+        "organization_id": principal.org_id,
+    }
+
+
+@auth_router.post("/auth/org/signup", status_code=202)
+async def auth_org_signup(req: OrgSignupRequest, request: Request) -> dict:
+    return _request_code(
+        request,
+        email=req.email,
+        plane=AuthPlane.ORG,
+        purpose=LoginPurpose.SIGNUP,
+        payload={"organization_name": req.organization_name},
+    )
+
+
+@auth_router.post("/auth/org/login", status_code=202)
+async def auth_org_login(req: EmailOnlyRequest, request: Request) -> dict:
+    return _request_code(
+        request, email=req.email, plane=AuthPlane.ORG, purpose=LoginPurpose.LOGIN
+    )
+
+
+@auth_router.post("/auth/org/verify")
+async def auth_org_verify(
+    req: VerifyRequest, request: Request, response: Response
+) -> dict:
+    return _verify(
+        request, response, email=req.email, code=req.code, plane=AuthPlane.ORG
+    )
+
+
+@auth_router.post("/auth/candidate/signup", status_code=202)
+async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> dict:
+    return _request_code(
+        request,
+        email=req.email,
+        plane=AuthPlane.CANDIDATE,
+        purpose=LoginPurpose.SIGNUP,
+    )
+
+
+@auth_router.post("/auth/candidate/login", status_code=202)
+async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> dict:
+    return _request_code(
+        request,
+        email=req.email,
+        plane=AuthPlane.CANDIDATE,
+        purpose=LoginPurpose.LOGIN,
+    )
+
+
+@auth_router.post("/auth/candidate/verify")
+async def auth_candidate_verify(
+    req: VerifyRequest, request: Request, response: Response
+) -> dict:
+    return _verify(
+        request, response, email=req.email, code=req.code, plane=AuthPlane.CANDIDATE
+    )
+
+
+# NOTE: there is deliberately NO /auth/admin/signup. Operators are created by an
+# existing operator through POST /admin/users, behind the shared admin key.
+
+
+@auth_router.post("/auth/admin/login", status_code=202)
+async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> dict:
+    return _request_code(
+        request, email=req.email, plane=AuthPlane.ADMIN, purpose=LoginPurpose.LOGIN
+    )
+
+
+@auth_router.post("/auth/admin/verify")
+async def auth_admin_verify(
+    req: VerifyRequest, request: Request, response: Response
+) -> dict:
+    return _verify(
+        request, response, email=req.email, code=req.code, plane=AuthPlane.ADMIN
+    )
+
+
+# -- session lifecycle: cross-plane, session-only ----------------------------
+
+
+@auth_router.get("/auth/me")
+async def auth_me(principal: Principal = Depends(require_any_principal)) -> dict:
+    """What the browser client calls on load to learn who it is."""
+    return {
+        "kind": principal.kind.value,
+        "organization_id": principal.org_id,
+        "session_id": principal.session_id,
+    }
+
+
+@auth_router.post("/auth/logout")
+async def auth_logout(
+    request: Request,
+    response: Response,
+    principal: Principal = Depends(require_any_principal),
+) -> dict:
+    services = _services(request)
+    revoked = services.auth.logout(principal)
+    response.delete_cookie(services.settings.session_cookie_name, path="/")
+    response.delete_cookie(services.settings.csrf_cookie_name, path="/")
+    return {"logged_out": revoked}
+
+
+@auth_router.get("/auth/sessions", response_model=list[SessionView])
+async def auth_sessions(
+    request: Request, principal: Principal = Depends(require_any_principal)
+) -> list[SessionView]:
+    """The caller's own live sessions. Ownership resolves from the session, never
+    from a parameter, so another principal's devices are simply unreachable."""
+    return _services(request).auth.sessions_for(principal)
+
+
+@auth_router.post("/auth/sessions/{session_id}/revoke")
+async def auth_revoke_session(
+    session_id: str,
+    request: Request,
+    principal: Principal = Depends(require_any_principal),
+) -> dict:
+    """Unknown and not-owned both 404 -- indistinguishable, so a session id
+    cannot be probed (the S6.4 rule)."""
+    if not _services(request).auth.revoke_session(principal, session_id):
+        raise HTTPException(status_code=404, detail="session not found")
+    return {"session_id": session_id, "revoked": True}
+
+
+# -- operator accounts (admin plane; decision 0.3) ---------------------------
+
+
+class AdminUserRequest(BaseModel):
+    email: str
+    label: str = ""
+
+
+@router.post("/admin/users")
+async def create_admin_user(req: AdminUserRequest, request: Request) -> dict:
+    """Bootstrap reuses the shared key rather than inventing a mechanism.
+
+    X-API-Key already exists and already fails closed (S8.1), so it becomes the
+    machine/root credential while operator accounts become the human one -- the
+    two-modes-per-plane rule applied to the admin plane. No boot-time side
+    effects, no DEE_ADMIN_BOOTSTRAP_EMAIL, no chicken-and-egg.
+    """
+    services = _services(request)
+    email_hash = services.auth.hash_email(req.email)
+    if services.auth.find_admin_user(email_hash) is not None:
+        raise HTTPException(status_code=409, detail="operator already exists")
+    return services.auth.create_admin_user(
+        email_hash=email_hash, label=req.label
+    ).model_dump(mode="json")
+
+
+@router.get("/admin/users")
+async def list_admin_users(request: Request) -> list[dict]:
+    return [
+        a.model_dump(mode="json")
+        for a in _services(request).auth.list_admin_users()
+    ]
+
+
+@router.delete("/admin/users/{admin_user_id}")
+async def delete_admin_user(admin_user_id: str, request: Request) -> dict:
+    """A hard delete: their sessions CASCADE away with them."""
+    if not _services(request).auth.delete_admin_user(admin_user_id):
+        raise HTTPException(status_code=404, detail="operator not found")
+    return {"admin_user_id": admin_user_id, "deleted": True}

@@ -41,6 +41,13 @@ class EmailSendFailed(Exception):
 
 
 class EmailClient(ABC):
+    #: Can this client deliver at all? Callers probe this BEFORE doing any
+    #: account lookup, so a broken provider refuses identically for addresses
+    #: that exist and addresses that do not. Without it, "503 for a real user,
+    #: 202 for a stranger" is an account-enumeration oracle that only appears
+    #: when email is misconfigured -- i.e. exactly when nobody is watching.
+    available: bool = True
+
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
 
@@ -55,6 +62,8 @@ class NullEmail(EmailClient):
     Both omissions are deliberate: an OTP in a log file is an OTP leak, and the
     address it was going to is the personal data this system exists to protect.
     """
+
+    available = False
 
     def send(self, *, to: str, subject: str, body: str) -> None:
         log.info("email.dispatch.refused", provider="null")

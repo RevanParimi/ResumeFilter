@@ -16,10 +16,13 @@ from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import __version__
-from app.api.routes import candidate_router, org_router, public_router, router
+from app.api.routes import (
+    auth_router, candidate_router, org_router, public_router, router,
+)
 from app.core.boot import verify_launch_config
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
@@ -69,6 +72,22 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     app.include_router(org_router)
     app.include_router(candidate_router)
     app.include_router(public_router)
+    app.include_router(auth_router)
+
+    # CORS (S8.2). Fail-CLOSED: with no configured origin the middleware is not
+    # installed at all, so nothing cross-site can reach the API. Never "*" —
+    # browsers forbid a wildcard alongside credentials, and leaning on that as
+    # the guard leaves a defect waiting to be "fixed" by silencing the console
+    # error. Prod refuses to BOOT with a wildcard (app/core/boot.py).
+    cors_settings = services.settings if services is not None else get_settings()
+    if cors_settings.cors_allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(cors_settings.cors_allowed_origins),
+            allow_credentials=True,      # the session cookie has to ride along
+            allow_methods=["*"],
+            allow_headers=["*", "X-CSRF-Token"],
+        )
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):

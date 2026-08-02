@@ -14,12 +14,14 @@ from app.core.config import Settings, get_settings
 from app.ledger.store import LedgerStore, build_ledger_store
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
+from app.services.email import EmailClient, build_email
 from app.services.llm import LLMClient, build_llm
 from app.reports.store import ReportStore, build_report_store
 from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
+    from app.auth.service import AuthService
     from app.comp.service import CompService
     from app.curation.service import CurationService
     from app.dashboard.service import DashboardService
@@ -51,11 +53,14 @@ class Services:
     portal: PortalService
     verification: VerificationService
     interview: InterviewService
+    email: EmailClient
+    auth: AuthService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
     # Function-local import: at call time every module is fully loaded, so this
     # sidesteps the import cycle the top-level import would create.
+    from app.auth.service import build_auth_service
     from app.comp.service import build_comp_service
     from app.curation.service import build_curation_service
     from app.dashboard.service import build_dashboard_service
@@ -93,6 +98,12 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         settings, candidates=candidates, ledger=ledger, report_store=report_store,
         verification=verification, llm=llm, speech=speech,
     )
+    # Auth is built LAST among the stateful services: it resolves every plane's
+    # principal, so it needs candidates + ledger already standing.
+    email = build_email(settings)
+    auth = build_auth_service(
+        settings, candidates=candidates, ledger=ledger, email=email
+    )
     return Services(
         settings=settings,
         llm=llm,
@@ -116,6 +127,8 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         ),
         verification=verification,
         interview=interview,
+        email=email,
+        auth=auth,
     )
 
 

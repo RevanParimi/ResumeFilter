@@ -37,6 +37,7 @@ from app.services.flywheel import InMemoryFlywheel
 from app.services.github import GitHubRepoRaw, GitHubUserRaw
 from app.services.llm import LLMClient, NullLLM
 from app.reports.store import SqlReportStore
+from app.services.email import build_email
 from app.services.speech import NullSpeech, SpeechClient, Transcript
 from app.services.vectorstore import InMemoryVectorStore
 
@@ -227,6 +228,8 @@ def make_services(
     verification=None,
     speech=None,
     interview=None,
+    email=None,
+    auth=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -289,6 +292,16 @@ def make_services(
             candidates, ledger, report_store, profile_sources,
             verification=verification, interview=interview, settings=settings,
         )
+    # Honour settings.email_provider exactly as build_default_services does.
+    # The default is "null", so the suite still proves the REFUSING path
+    # (mirroring NullSpeech) -- but a test that configures capture gets
+    # capture, instead of silently getting a client that refuses everything.
+    email = email or build_email(settings)
+    if auth is None:
+        from app.auth.service import build_auth_service
+        auth = build_auth_service(
+            settings, candidates=candidates, ledger=ledger, email=email
+        )
     return Services(
         settings=settings,
         llm=llm,
@@ -308,6 +321,8 @@ def make_services(
         portal=portal,
         verification=verification,
         interview=interview,
+        email=email,
+        auth=auth,
     )
 
 
