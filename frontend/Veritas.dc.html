@@ -1,0 +1,2470 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+<script src="./api.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #070d14; }
+  a { color: var(--link, #22a5c4); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  input { font: inherit; }
+  input::placeholder { color: var(--muted); opacity: 1; }
+  input:focus-visible, button:focus-visible, [role="button"]:focus-visible {
+    outline: 2px solid var(--focus); outline-offset: 2px;
+  }
+  @keyframes orbit { to { transform: rotateY(360deg); } }
+  @keyframes drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes pulseglow { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
+</style>
+</helmet>
+
+<div style="{{ themeVars }}">
+<div style="min-height:100vh; background:var(--bg); color:var(--text); font-family:Manrope, system-ui, sans-serif; font-size:13px; -webkit-font-smoothing:antialiased;">
+
+  <sc-if value="{{ isAuth }}" hint-placeholder-val="{{ true }}">
+    <div style="display:grid; grid-template-columns:1fr 460px; min-height:100vh;">
+
+      <div style="position:relative; overflow:hidden; background:linear-gradient(150deg,#052833 0%,#07253a 45%,#191a52 100%); color:#e6eef5; padding:32px 40px; display:flex; flex-direction:column;">
+        <div style="position:absolute; width:600px; height:600px; left:-160px; top:-140px; border-radius:50%; background:radial-gradient(circle, rgba(34,211,238,0.14), transparent 62%);"></div>
+        <div style="position:absolute; width:520px; height:520px; right:-180px; bottom:-160px; border-radius:50%; background:radial-gradient(circle, rgba(139,92,246,0.2), transparent 64%);"></div>
+
+        <div style="position:relative; display:flex; align-items:center; gap:10px;">
+          <div style="width:30px; height:30px; border-radius:8px; background:linear-gradient(140deg,#22d3ee,#8b5cf6); display:grid; place-items:center;">
+            <div style="width:9px; height:9px; background:#04121a; transform:rotate(45deg); border-radius:2px;"></div>
+          </div>
+          <div>
+            <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; letter-spacing:-0.01em;">Veritas</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.2em; color:#67e8f9; text-transform:uppercase;">Pre-screen intelligence</div>
+          </div>
+        </div>
+
+        <div style="position:relative; flex:1; display:grid; place-items:center; min-height:240px;">
+          <div style="position:relative; width:300px; height:300px; animation:drift 9s ease-in-out infinite;">
+            <div style="position:absolute; inset:0; border-radius:50%; background:radial-gradient(circle, rgba(103,232,249,0.14), transparent 58%);"></div>
+            <div style="position:absolute; inset:0; transform:rotateX(14deg); transform-style:preserve-3d;">
+              <div style="position:absolute; inset:0; transform-style:preserve-3d; animation:orbit 44s linear infinite;">
+                <div style="position:absolute; inset:0; border:1px solid rgba(103,232,249,0.32); border-radius:50%; transform:rotateY(0deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(103,232,249,0.28); border-radius:50%; transform:rotateY(24deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(139,92,246,0.28); border-radius:50%; transform:rotateY(48deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(139,92,246,0.26); border-radius:50%; transform:rotateY(72deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(103,232,249,0.26); border-radius:50%; transform:rotateY(96deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(103,232,249,0.28); border-radius:50%; transform:rotateY(120deg);"></div>
+                <div style="position:absolute; inset:0; border:1px solid rgba(139,92,246,0.26); border-radius:50%; transform:rotateY(144deg);"></div>
+                <div style="position:absolute; left:0; right:0; top:24%; height:52%; border:1px solid rgba(103,232,249,0.18); border-radius:50%;"></div>
+                <div style="position:absolute; left:0; right:0; top:39%; height:22%; border:1px solid rgba(103,232,249,0.14); border-radius:50%;"></div>
+              </div>
+            </div>
+            <div style="position:absolute; left:50%; top:50%; width:11px; height:84px; margin:-42px 0 0 -5.5px; border-radius:50%; background:linear-gradient(180deg, transparent, #a5f3fc, transparent); filter:blur(5px); animation:pulseglow 4.5s ease-in-out infinite;"></div>
+          </div>
+        </div>
+
+        <div style="position:relative;">
+          <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:32px; line-height:1.1; letter-spacing:-0.025em; margin:0;">
+            Four subsystems.<br>
+            <span style="background:linear-gradient(92deg,#22d3ee,#a78bfa); -webkit-background-clip:text; background-clip:text; color:transparent;">One reason to look closer.</span>
+          </h1>
+          <p style="font-size:13.5px; line-height:1.6; color:#9db8c8; margin:12px 0 0 0; max-width:48ch;">Built for Indian IT staffing. Upload the resumes you already have and get back a ranked, reasoned list of who needs a human — never a verdict, never an auto-reject.</p>
+          <div style="display:flex; gap:34px; margin-top:22px;">
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">4</div>
+              <div style="font-size:11px; color:#7d97a8;">fabrication subsystems</div>
+            </div>
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">500</div>
+              <div style="font-size:11px; color:#7d97a8;">resumes per batch</div>
+            </div>
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">DPDP</div>
+              <div style="font-size:11px; color:#7d97a8;">consent-first by design</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--panel); border-left:1px solid var(--border); display:flex; flex-direction:column; padding:22px 40px;">
+        <div style="display:flex; justify-content:flex-end;">
+          <button onClick="{{ toggleTheme }}" style="{{ themeBtn }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/sun-moon.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/sun-moon.svg) center/contain no-repeat;"></span><span>{{ themeLabel }}</span></button>
+        </div>
+
+        <div style="flex:1; display:flex; flex-direction:column; justify-content:center; max-width:340px; width:100%;">
+
+          <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+            <h2 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; letter-spacing:-0.02em; margin:0 0 4px 0; color:var(--heading);">{{ authTitle }}</h2>
+            <p style="font-size:13px; color:var(--muted); margin:0 0 18px 0;">A one-time code is the only way in — no passwords, no SSO.</p>
+
+            <div style="display:flex; gap:20px; border-bottom:1px solid var(--border); margin-bottom:18px;">
+              <button onClick="{{ setOrg }}" style="{{ tabOrg }}">Organisation</button>
+              <button onClick="{{ setCandidate }}" style="{{ tabCandidate }}">Candidate</button>
+              <button onClick="{{ setAdmin }}" style="{{ tabAdmin }}">Operator</button>
+            </div>
+
+            <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:0 0 14px 0;">{{ planeHint }}</p>
+
+            <sc-if value="{{ canSignUp }}" hint-placeholder-val="{{ true }}">
+              <div style="display:inline-flex; gap:3px; padding:3px; margin-bottom:14px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
+                <button onClick="{{ setSignIn }}" style="{{ modeSignIn }}">Sign in</button>
+                <button onClick="{{ setSignUp }}" style="{{ modeSignUp }}">Create account</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ operatorOnly }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex; gap:9px; align-items:flex-start; padding:10px 12px; margin-bottom:14px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
+                <span style="width:15px; height:15px; flex:none; display:inline-block; margin-top:1px; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat; color:var(--muted);"></span>
+                <span style="font-size:11.5px; line-height:1.5; color:var(--muted);">There is no operator sign-up. Accounts are minted by an existing operator from the console.</span>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ needsOrgName }}" hint-placeholder-val="{{ false }}">
+              <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Organisation name</label>
+              <input placeholder="Sampoorna Staffing" value="{{ orgNameInput }}" onInput="{{ setOrgNameInput }}" style="{{ field }}">
+              <div style="height:12px;"></div>
+            </sc-if>
+
+            <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Email</label>
+            <input type="email" placeholder="{{ emailPlaceholder }}" value="{{ emailInput }}" onInput="{{ setEmailInput }}" onKeyDown="{{ onEmailKey }}" style="{{ field }}">
+
+            <button onClick="{{ sendCode }}" style="{{ primaryBtn }}" style-hover="filter:brightness(1.08)">{{ authAction }}</button>
+
+            <sc-if value="{{ authError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">{{ authErrorText }}</div>
+            </sc-if>
+
+            <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:14px 0 0 0;">If that address is registered, a code is on its way. We answer the same way either way — that is deliberate.</p>
+
+            <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; line-height:1.55; color:var(--muted);">Veritas is advisory. It never auto-rejects and never labels a person as fake.</div>
+          </sc-if>
+
+          <sc-if value="{{ isVerify }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ backToLogin }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">← Use a different address</button>
+            <h2 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; letter-spacing:-0.02em; margin:14px 0 4px 0; color:var(--heading);">Enter your code</h2>
+            <p style="font-size:13px; color:var(--muted); margin:0 0 18px 0;">Sent to <strong style="color:var(--text);">{{ emailInput }}</strong>. Expires in ten minutes.</p>
+
+            <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:7px;">
+              <sc-for list="{{ otpBoxes }}" as="b" hint-placeholder-count="6">
+                <input inputMode="numeric" value="{{ b.value }}" onInput="{{ b.onInput }}" onKeyDown="{{ b.onKeyDown }}" style="{{ otpBox }}">
+              </sc-for>
+            </div>
+
+            <button onClick="{{ submitCode }}" style="{{ primaryBtn }}" style-hover="filter:brightness(1.08)">{{ verifyAction }}</button>
+
+            <sc-if value="{{ authError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">{{ authErrorText }}</div>
+            </sc-if>
+
+            <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:14px 0 0 0;">Didn't get it? <a href="#" onClick="{{ resendCode }}">Send another code</a>. Within a minute of the last one this may send nothing — the first code is still live. Expired, wrong and too-many-attempts all return one message, on purpose.</p>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isApp }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid; grid-template-columns:212px minmax(0,1fr); min-height:100vh;">
+
+      <div style="background:var(--rail); border-right:1px solid var(--border); padding:16px 12px; display:flex; flex-direction:column; gap:20px;">
+        <div style="display:flex; align-items:center; gap:9px; padding:0 4px;">
+          <div style="width:26px; height:26px; border-radius:7px; background:linear-gradient(140deg,#22d3ee,#8b5cf6); display:grid; place-items:center;">
+            <div style="width:8px; height:8px; background:#04121a; transform:rotate(45deg); border-radius:2px;"></div>
+          </div>
+          <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; letter-spacing:-0.01em; color:var(--heading);">Veritas</div>
+        </div>
+
+        <sc-if value="{{ isOrgPlane }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; flex-direction:column; gap:1px;">
+            <div style="{{ navGroup }}">Screening</div>
+            <button onClick="{{ goQueue }}" style="{{ navQueue }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/list-filter.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/list-filter.svg) center/contain no-repeat;"></span><span>Screening queue</span></button>
+            <button onClick="{{ goBatches }}" style="{{ navBatches }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/layers.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/layers.svg) center/contain no-repeat;"></span><span>Batches</span></button>
+            <button onClick="{{ goSummary }}" style="{{ navSummary }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/chart-no-axes-column.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/chart-no-axes-column.svg) center/contain no-repeat;"></span><span>Batch summary</span></button>
+            <button onClick="{{ goUpload }}" style="{{ navUpload }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/upload.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/upload.svg) center/contain no-repeat;"></span><span>Upload</span></button>
+            <button onClick="{{ goEvaluate }}" style="{{ navEvaluate }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/zap.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/zap.svg) center/contain no-repeat;"></span><span>Instant check</span></button>
+            <div style="{{ navGroup }}">Demand</div>
+            <button onClick="{{ goRoles }}" style="{{ navRoles }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/briefcase.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/briefcase.svg) center/contain no-repeat;"></span><span>Roles</span></button>
+            <button onClick="{{ goComp }}" style="{{ navComp }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/indian-rupee.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/indian-rupee.svg) center/contain no-repeat;"></span><span>Comp intelligence</span></button>
+            <div style="{{ navGroup }}">Account</div>
+            <button onClick="{{ goDevices }}" style="{{ navDevices }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat;"></span><span>Signed-in devices</span></button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isOperatorPlane }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; flex-direction:column; gap:1px;">
+            <div style="{{ navGroup }}">Operator</div>
+            <button onClick="{{ goAdminOrgs }}" style="{{ navAdminOrgs }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat;"></span><span>Organisations</span></button>
+            <button onClick="{{ goAdminUsers }}" style="{{ navAdminUsers }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat;"></span><span>Operator accounts</span></button>
+            <button onClick="{{ goCuration }}" style="{{ navCuration }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat;"></span><span>Curation queue</span></button>
+            <div style="{{ navGroup }}">Account</div>
+            <button onClick="{{ goDevices }}" style="{{ navDevices }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat;"></span><span>Signed-in devices</span></button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isCandidatePlane }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; flex-direction:column; gap:1px;">
+            <div style="{{ navGroup }}">Your data</div>
+            <button onClick="{{ goPortal }}" style="{{ navPortal }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/circle-user.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/circle-user.svg) center/contain no-repeat;"></span><span>Overview</span></button>
+            <button onClick="{{ goAccessLog }}" style="{{ navAccessLog }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/eye.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/eye.svg) center/contain no-repeat;"></span><span>Who accessed it</span></button>
+            <button onClick="{{ goConsents }}" style="{{ navConsents }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/file-check.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/file-check.svg) center/contain no-repeat;"></span><span>Consents</span></button>
+            <button onClick="{{ goInterview }}" style="{{ navInterview }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic.svg) center/contain no-repeat;"></span><span>Interview</span></button>
+            <div style="{{ navGroup }}">Account</div>
+            <button onClick="{{ goDevices }}" style="{{ navDevices }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat;"></span><span>Signed-in devices</span></button>
+            <button onClick="{{ goErasure }}" style="{{ navErasure }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/trash-2.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/trash-2.svg) center/contain no-repeat;"></span><span>Delete everything</span></button>
+          </div>
+        </sc-if>
+
+        <div style="margin-top:auto; display:flex; flex-direction:column; gap:10px;">
+          <sc-if value="{{ isOrgPlane }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:10px 11px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Ingest</div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; margin-top:3px; color:var(--heading);">168<span style="color:var(--muted); font-size:11px;"> / 214</span></div>
+              <div style="height:3px; border-radius:99px; background:var(--track); margin-top:7px; overflow:hidden;">
+                <div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div>
+              </div>
+              <div style="font-size:10.5px; color:var(--muted); margin-top:5px;">46 still screening</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ isCandidatePlane }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:10px 11px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Your rights</div>
+              <div style="font-size:11.5px; line-height:1.5; color:var(--muted); margin-top:5px;">Access, correction, consent control and erasure — exercised first-party, gated by identity alone.</div>
+            </div>
+          </sc-if>
+          <div style="display:flex; align-items:center; gap:8px; padding:0 4px;">
+            <div style="width:26px; height:26px; border-radius:50%; background:linear-gradient(140deg,#0e7490,#6d28d9); display:grid; place-items:center; font-size:11px; font-weight:700; color:#fff;">{{ accountInitial }}</div>
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--heading);">{{ accountName }}</div>
+              <button onClick="{{ signOut }}" style="background:none; border:0; padding:0; font-size:10.5px; color:var(--muted); cursor:pointer;" style-hover="color:var(--link)">Sign out</button>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace; font-size:9px; line-height:1.4; color:var(--muted); padding:0 4px; word-break:break-all;" title="Set with ?api=… or localStorage.veritas_api_base">API · {{ apiBase }}</div>
+        </div>
+      </div>
+
+      <div style="min-width:0;">
+        <div style="display:flex; align-items:center; gap:12px; padding:10px 24px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:5;">
+          <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:13.5px; color:var(--heading);">{{ screenTitle }}</div>
+          <sc-if value="{{ showSearch }}" hint-placeholder-val="{{ true }}">
+            <input placeholder="{{ searchPlaceholder }}" style="{{ searchField }}">
+          </sc-if>
+          <button onClick="{{ toggleTheme }}" style="{{ themeBtn }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/sun-moon.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/sun-moon.svg) center/contain no-repeat;"></span><span>{{ themeLabel }}</span></button>
+        </div>
+
+        <div style="padding:20px 24px 56px 24px; max-width:1180px;">
+
+          <sc-if value="{{ isMockScreen }}" hint-placeholder-val="{{ true }}">
+            <div style="{{ mockChip }}">{{ mockNote }}</div>
+          </sc-if>
+
+          <sc-if value="{{ showAdvisory }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; align-items:center; gap:9px; padding:7px 11px; border-radius:8px; background:var(--advisoryBg); border:1px solid var(--advisoryEdge); margin-bottom:20px;">
+              <span style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; padding:3px 7px; border-radius:5px; background:var(--advisoryChip); color:var(--advisoryText);">Advisory</span>
+              <span style="font-size:12px; color:var(--muted);">Every result requires human review. Veritas never auto-rejects, never ranks a person as fake, and makes no accuracy claim.</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; align-items:flex-end; gap:24px; flex-wrap:wrap; margin-bottom:18px;">
+              <div style="flex:1; min-width:300px;">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch · uploaded 09:14 IST</div>
+                <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">{{ batchName }}</h1>
+                <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:62ch;">Eleven of the 168 screened so far want a second pair of eyes. Each carries its reasoning; none carries a verdict.</p>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <div style="{{ statCard }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-elev);">11</div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">elevated</div>
+                </div>
+                <div style="{{ statCard }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-mod);">29</div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">moderate</div>
+                </div>
+                <div style="{{ statCard }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-low);">104</div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">low</div>
+                </div>
+                <div style="{{ statCard }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-ins);">24</div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">insufficient</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel);">
+              <sc-for list="{{ candidates }}" as="c" hint-placeholder-count="4">
+                <div onClick="{{ c.open }}" onKeyDown="{{ c.openKey }}" role="button" tabIndex="{{ 0 }}" style="display:grid; grid-template-columns:minmax(0,1fr) 196px 132px; gap:20px; align-items:center; padding:13px 16px; border-bottom:1px solid var(--border); cursor:pointer;" style-hover="background:var(--hover)">
+                  <div style="min-width:0; display:flex; gap:10px;">
+                    <div style="{{ c.avatar }}">{{ c.initials }}</div>
+                    <div style="min-width:0;">
+                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-size:13.5px; font-weight:600; color:var(--heading);">{{ c.name }}</span>
+                        <span style="{{ c.chip }}">{{ c.bandLabel }}</span>
+                      </div>
+                      <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ c.role }}</div>
+                      <p style="font-size:12.5px; line-height:1.5; color:var(--muted); margin:5px 0 0 0; max-width:70ch;">{{ c.reason }}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);">Loudest signal</div>
+                    <div style="font-size:12px; color:var(--text); margin-top:3px; line-height:1.4;">{{ c.loudest }}</div>
+                  </div>
+                  <div>
+                    <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                      <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--heading);">{{ c.scoreLabel }}</span>
+                      <span style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted);">{{ c.confLabel }}</span>
+                    </div>
+                    <div style="height:4px; border-radius:99px; background:var(--track); margin-top:5px; overflow:hidden;">
+                      <div style="{{ c.riskBar }}"></div>
+                    </div>
+                    <div style="height:2px; border-radius:99px; background:var(--track); margin-top:3px; overflow:hidden;">
+                      <div style="{{ c.confBar }}"></div>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isReport }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ goQueue }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">← Back to screening queue</button>
+
+            <div style="display:grid; grid-template-columns:minmax(0,1fr) 200px; gap:28px; align-items:center; margin-top:12px; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
+              <div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <div style="{{ reportAvatar }}">{{ reportInitials }}</div>
+                  <div>
+                    <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; line-height:1.2; letter-spacing:-0.02em; margin:0; color:var(--heading);">{{ reportName }}</h1>
+                    <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">{{ reportRole }}</div>
+                  </div>
+                </div>
+                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:12px 0 0 0; max-width:66ch;">{{ reportSummary }}</p>
+                <div style="display:inline-flex; align-items:center; gap:7px; margin-top:10px; padding:4px 9px; border-radius:6px; background:var(--panel2); border:1px solid var(--border);">
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);">Depth</span>
+                  <span style="font-size:11.5px; color:var(--text);">{{ reportDepth }}</span>
+                </div>
+              </div>
+              <div style="display:grid; place-items:center;">
+                <div style="{{ gaugeRing }}">
+                  <div style="width:88px; height:88px; border-radius:50%; background:var(--panel); display:grid; place-items:center; text-align:center;">
+                    <div>
+                      <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; line-height:1; color:var(--heading);">{{ reportScore }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-top:3px;">Fab. risk</div>
+                    </div>
+                  </div>
+                </div>
+                <div style="{{ reportChip }}">{{ reportBandLabel }}</div>
+                <div style="width:100%; margin-top:9px;">
+                  <div style="height:3px; border-radius:99px; background:var(--track); overflow:hidden;">
+                    <div style="{{ reportConfBar }}"></div>
+                  </div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:5px; text-align:center;">confidence {{ reportConfLabel }}</div>
+                </div>
+              </div>
+            </div>
+
+            <h2 style="{{ h2 }}">What drove it</h2>
+            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">The headline is a fusion of these three, weighted by their own confidence — one conclusion, three inputs, never four equal peers.</p>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+              <sc-for list="{{ reportComponents }}" as="k" hint-placeholder-count="3">
+                <div style="padding:14px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--link);">{{ k.title }}</div>
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; letter-spacing:-0.01em; margin:6px 0 2px 0; color:var(--heading);">{{ k.band }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted);">{{ k.meta }}</div>
+                  <p style="font-size:12.5px; line-height:1.5; color:var(--muted); margin:8px 0 0 0;">{{ k.detail }}</p>
+                </div>
+              </sc-for>
+            </div>
+
+            <h2 style="{{ h2 }}">Claim by claim</h2>
+
+            <sc-if value="{{ noVerdicts }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:24px; border-radius:10px; background:var(--panel); border:1px dashed var(--border); max-width:72ch;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; color:var(--heading);">Nothing to reason about yet</div>
+                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:7px 0 0 0;">{{ reportThinReason }}</p>
+                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:7px 0 0 0;">This is not a low score and it is not an error. Asking for a fuller resume is the only thing that changes it — and it changes it honestly.</p>
+                <button style="{{ smallPrimary }}" style-hover="filter:brightness(1.08)">Request a fuller resume</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hasVerdicts }}" hint-placeholder-val="{{ true }}">
+              <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Missing signals say what a genuine version of the claim would have shown and didn't — that is the sentence worth repeating to your client.</p>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                <sc-for list="{{ reportVerdicts }}" as="v" hint-placeholder-count="3">
+                  <div style="display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:22px; padding:16px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
+                    <div style="min-width:0;">
+                      <div style="display:flex; align-items:center; gap:9px; flex-wrap:wrap;">
+                        <span style="{{ v.chip }}">{{ v.status }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:9.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted);">{{ v.meta }}</span>
+                      </div>
+                      <p style="font-family:'Space Grotesk',sans-serif; font-weight:500; font-size:14.5px; line-height:1.45; letter-spacing:-0.005em; margin:9px 0 6px 0; max-width:62ch; color:var(--heading);">“{{ v.claim }}”</p>
+                      <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:0; max-width:68ch;">{{ v.reasoning }}</p>
+
+                      <div style="margin-top:11px; padding:10px 12px; border-radius:8px; background:var(--missBg); border:1px solid var(--missEdge);">
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--c-elev);">Missing signals</div>
+                        <div style="display:flex; flex-direction:column; gap:4px; margin-top:6px;">
+                          <sc-for list="{{ v.missing }}" as="m" hint-placeholder-count="2">
+                            <div style="font-size:12.5px; line-height:1.45; color:var(--text);">{{ m }}</div>
+                          </sc-for>
+                        </div>
+                      </div>
+
+                      <div style="margin-top:10px;">
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Evidence</div>
+                        <div style="display:flex; flex-direction:column; gap:5px; margin-top:6px;">
+                          <sc-for list="{{ v.evidence }}" as="e" hint-placeholder-count="2">
+                            <div style="display:grid; grid-template-columns:80px minmax(0,1fr); gap:10px; align-items:baseline;">
+                              <span style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:var(--link);">{{ e.source }}</span>
+                              <span style="font-size:12px; line-height:1.5; color:var(--muted);">{{ e.detail }}</span>
+                            </div>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style="padding:12px; border-radius:8px; background:var(--probeBg); border:1px solid var(--probeEdge);">
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--link);">Ask them this</div>
+                        <div style="display:flex; flex-direction:column; gap:7px; margin-top:7px;">
+                          <sc-for list="{{ v.probes }}" as="q" hint-placeholder-count="1">
+                            <div style="font-size:12.5px; line-height:1.45; color:var(--text);">{{ q }}</div>
+                          </sc-for>
+                        </div>
+                        <button onClick="{{ v.copy }}" style="{{ copyBtn }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat;"></span><span>{{ v.copyLabel }}</span></button>
+                      </div>
+                      <div style="margin-top:10px;">
+                        <div style="height:3px; border-radius:99px; background:var(--track); overflow:hidden;">
+                          <div style="{{ v.confBar }}"></div>
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted); margin-top:5px;">{{ v.coherenceLabel }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <h2 style="{{ h2 }}">Record what actually happened</h2>
+              <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Your judgement is the only ground truth this system will ever have.</p>
+              <div style="display:flex; gap:7px; flex-wrap:wrap;">
+                <button style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">Verified genuine</button>
+                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Candidate clarified</button>
+                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Verified fabricated</button>
+                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Inconclusive</button>
+              </div>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{ isSummary }}" hint-placeholder-val="{{ false }}">
+            <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch summary · {{ batchName }}</div>
+            <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">What we found in the first 168 resumes</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 18px 0; max-width:64ch;">Screened 2 August 2026 — 168 of 214 done, 46 still ingesting. Advisory throughout: every one of these is a reason to look closer, not a decision.</p>
+
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+              <div style="{{ bigStat }}">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-elev);">11</div>
+                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">elevated risk</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:1px;">7% of those screened</div>
+              </div>
+              <div style="{{ bigStat }}">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-mod);">29</div>
+                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">moderate</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:1px;">17%</div>
+              </div>
+              <div style="{{ bigStat }}">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-low);">104</div>
+                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">low</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:1px;">62%</div>
+              </div>
+              <div style="{{ bigStat }}">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-ins);">24</div>
+                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">insufficient signal</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:1px;">14% — too thin to assess</div>
+              </div>
+            </div>
+
+            <h2 style="{{ h2 }}">Top reasons a resume surfaced</h2>
+            <div style="display:flex; flex-direction:column; gap:9px; max-width:80ch;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Near-duplicate of another stored resume</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">14</span></div>
+                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Depth claims with no infrastructure footprint</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">12</span></div>
+                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:86%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Overlapping full-time employment dates</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">9</span></div>
+                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:64%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Template-shop phrasing</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">7</span></div>
+                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:50%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Seniority ahead of supported tenure</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">6</span></div>
+                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:43%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              </div>
+            </div>
+
+            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:20px 0 0 0; max-width:84ch;">No accuracy claim is made or implied. Near-duplicate matches are reported as similarity only — never whose resume was matched.</p>
+          </sc-if>
+
+          <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ false }}">
+            <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:0; color:var(--heading);">Drop the resumes you already have</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:62ch;">PDF or text, up to 500 at a time. Screening starts immediately and results appear as each one lands — you do not wait for the batch.</p>
+
+            <div style="max-width:640px; padding:32px 24px; text-align:center; border-radius:10px; background:var(--panel); border:1px dashed var(--dropEdge);">
+              <div style="width:36px; height:36px; margin:0 auto 10px auto; border-radius:10px; background:linear-gradient(140deg,#22d3ee,#8b5cf6); display:grid; place-items:center;">
+                <div style="width:10px; height:10px; background:#04121a; transform:rotate(45deg); border-radius:2px;"></div>
+              </div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; color:var(--heading);">Drop files here</div>
+              <p style="font-size:12px; color:var(--muted); margin:4px 0 12px 0;">or choose them from your machine</p>
+              <button style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">Choose resumes</button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; max-width:640px; margin-top:16px;">
+              <div>
+                <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Batch name</label>
+                <input defaultValue="{{ batchName }}" style="{{ field }}">
+              </div>
+              <div>
+                <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Evaluation domain</label>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:3px; padding:3px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
+                  <button onClick="{{ setDataEng }}" style="{{ domDataEng }}">Data Engineering</button>
+                  <button onClick="{{ setGenai }}" style="{{ domGenai }}">GenAI</button>
+                </div>
+              </div>
+            </div>
+
+            <h2 style="{{ h2 }}">Ingesting</h2>
+            <div style="max-width:640px;">
+              <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted);"><span>168 of 214 screened</span><span>46 pending</span></div>
+              <div style="height:5px; border-radius:99px; background:var(--track); margin-top:5px; overflow:hidden;"><div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin-top:10px;">Each resume is extracted, claim-checked and scored across four subsystems. It is slow on purpose. Partial results are already on the <a href="#" onClick="{{ goQueueLink }}">screening queue</a>.</p>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isBatches }}" hint-placeholder-val="{{ false }}">
+            <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:0; color:var(--heading);">Your batches</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:62ch;">You see only what your organisation uploaded. A candidate screened by someone else is not in this list.</p>
+
+            <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel); max-width:900px;">
+              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
+                <div>
+                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">{{ batchName }}</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">2 Aug 2026 · 214 resumes</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:11.5px; color:var(--link);">Screening · 78%</div>
+                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+                </div>
+                <div style="text-align:right; min-width:70px;">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">11</div>
+                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
+                </div>
+              </div>
+
+              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
+                <div>
+                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">TCS GenAI — Bengaluru panel</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">29 Jul 2026 · 96 resumes</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:11.5px; color:var(--muted);">Complete</div>
+                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:var(--doneBar);"></div></div>
+                </div>
+                <div style="text-align:right; min-width:70px;">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">7</div>
+                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
+                </div>
+              </div>
+
+              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
+                <div>
+                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">Infosys DE — lateral hiring</div>
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">21 Jul 2026 · 340 resumes</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:11.5px; color:var(--muted);">Complete</div>
+                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:var(--doneBar);"></div></div>
+                </div>
+                <div style="text-align:right; min-width:70px;">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">19</div>
+                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isPortal }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Everything Veritas holds about you</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Gated by your identity alone — never by a consent object. You can read it, correct it, or delete all of it today.</p>
+
+            <sc-if value="{{ portalError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">{{ portalErrorText }}</div>
+            </sc-if>
+            <sc-if value="{{ portalLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:12.5px; color:var(--muted); padding:8px 0;">Loading your data…</div>
+            </sc-if>
+
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+              <div style="{{ bigStat }}"><div style="{{ statNum }}">{{ portalCounts.resumes }}</div><div style="{{ statLabel }}">resume versions</div></div>
+              <div style="{{ bigStat }}"><div style="{{ statNum }}">{{ portalCounts.reports }}</div><div style="{{ statLabel }}">report references</div></div>
+              <div style="{{ bigStat }}"><div style="{{ statNum }}">{{ portalCounts.consents }}</div><div style="{{ statLabel }}">consent records</div></div>
+              <div style="{{ bigStat }}"><div style="{{ statNum }}">{{ portalCounts.interviews }}</div><div style="{{ statLabel }}">interviews</div></div>
+            </div>
+
+            <h2 style="{{ h2 }}">Profile</h2>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ portalProfile }}" as="p" hint-placeholder-count="4">
+                <div style="{{ kvRow }}">
+                  <span style="font-size:12px; color:var(--muted);">{{ p.k }}</span>
+                  <span style="font-size:12.5px; color:var(--heading);">{{ p.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <h2 style="{{ h2 }}">Reports about you</h2>
+            <p style="font-size:12.5px; color:var(--muted); margin:0 0 8px 0; max-width:76ch;">References only. The depth-report internals are not disclosed to you in this version, and you are never shown a risk score about yourself.</p>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ portalReports }}" as="r" hint-placeholder-count="3">
+                <div style="{{ kvRow }}">
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--link);">{{ r.id }}</span>
+                  <span style="font-size:12px; color:var(--muted);">{{ r.meta }}</span>
+                </div>
+              </sc-for>
+            </div>
+
+            <h2 style="{{ h2 }}">Identity assurance</h2>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ portalAssurance }}" as="a" hint-placeholder-count="3">
+                <div style="{{ kvRow }}">
+                  <span style="font-size:12.5px; color:var(--heading);">{{ a.method }}</span>
+                  <span style="{{ a.chip }}">{{ a.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:10px 0 0 0; max-width:84ch;">Outcomes only. No document, image or biometric is ever stored — the sole evidence field is a sha256 digest. Retention windows above are the surfaced policy; there is no automatic purge job yet, so use erasure if you want your data gone today.</p>
+          </sc-if>
+
+          <sc-if value="{{ isAccessLog }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Who accessed your data</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Every attempt is logged — the ones that were allowed and the ones that were refused, newest first. Platform-internal actions appear here too, not only disclosures to an organisation.</p>
+            <sc-if value="{{ accessLogEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">Nothing has accessed your data yet. That is a real answer, not an empty screen.</div>
+            </sc-if>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ accessLog }}" as="e" hint-placeholder-count="5">
+                <div style="display:grid; grid-template-columns:150px minmax(0,1fr) 130px 90px; gap:14px; align-items:center; padding:10px 14px; border-bottom:1px solid var(--border);">
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted);">{{ e.when }}</span>
+                  <span style="font-size:12.5px; color:var(--heading);">{{ e.org }}</span>
+                  <span style="font-size:12px; color:var(--muted);">{{ e.purpose }}</span>
+                  <span style="{{ e.chip }}">{{ e.outcome }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isConsents }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Consents</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Purpose-scoped, expiring and revocable. Revoking takes effect at the next read — not eventually.</p>
+            <sc-if value="{{ consentsEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">You have not granted any organisation access to anything.</div>
+            </sc-if>
+            <div style="display:flex; flex-direction:column; gap:8px; max-width:900px;">
+              <sc-for list="{{ consents }}" as="c" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 150px 100px; gap:16px; align-items:center; padding:13px 16px; border-radius:9px; background:var(--panel); border:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ c.org }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:3px;">{{ c.purpose }}</div>
+                  </div>
+                  <div style="font-size:11.5px; color:var(--muted);">{{ c.expiry }}</div>
+                  <div style="text-align:right;">
+                    <button onClick="{{ c.revoke }}" style="{{ c.action }}" style-hover="background:var(--hover)">{{ c.actionLabel }}</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isDevices }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Signed-in devices</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Sessions expire after 12 hours, or 2 hours idle. Revoking one signs it out immediately.</p>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ sessions }}" as="d" hint-placeholder-count="3">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 130px 120px 90px; gap:14px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:12.5px; color:var(--heading);">{{ d.agent }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:2px;">{{ d.id }}</div>
+                  </div>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ d.lastSeen }}</span>
+                  <span style="{{ d.chip }}">{{ d.status }}</span>
+                  <div style="text-align:right;">
+                    <button onClick="{{ d.revoke }}" style="{{ d.action }}" style-hover="background:var(--hover)">{{ d.actionLabel }}</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isEvaluate }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Instant check</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:70ch;">Paste one resume and get the whole assessment back. <strong style="color:var(--heading);">Nothing is stored</strong> — no candidate record is created, no resume is fingerprinted, and this run never enters anyone's screening queue. Use it to try the engine on a resume you are holding right now.</p>
+
+            <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; max-width:1060px; align-items:start;">
+              <div>
+                <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Resume text</label>
+                <textarea placeholder="Paste the resume here, or drop a PDF below." style="{{ textArea }}"></textarea>
+                <div style="display:flex; align-items:center; gap:9px; margin-top:8px;">
+                  <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Attach a PDF instead</button>
+                  <span style="font-size:11px; color:var(--muted);">PDF is sent as base64 and parsed in memory.</span>
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:12px;">
+                <div>
+                  <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Domain</label>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:3px; padding:3px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
+                    <button onClick="{{ setDataEng }}" style="{{ domDataEng }}">Data Eng</button>
+                    <button onClick="{{ setGenai }}" style="{{ domGenai }}">GenAI</button>
+                  </div>
+                </div>
+                <div>
+                  <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">GitHub URL <span style="font-weight:400; color:var(--muted);">optional</span></label>
+                  <input placeholder="github.com/their-handle" style="{{ field }}">
+                </div>
+                <div>
+                  <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Portfolio URL <span style="font-weight:400; color:var(--muted);">optional</span></label>
+                  <input placeholder="their-site.dev" style="{{ field }}">
+                </div>
+                <p style="font-size:11px; line-height:1.5; color:var(--muted); margin:0;">First-party links only. Anchored claims are grounded against these; the engine never scrapes a third-party profile.</p>
+                <button onClick="{{ runEvaluate }}" style="{{ primaryBtn }}" style-hover="filter:brightness(1.08)">{{ evaluateAction }}</button>
+              </div>
+            </div>
+
+            <sc-if value="{{ evalRunning }}" hint-placeholder-val="{{ false }}">
+              <h2 style="{{ h2 }}">Running</h2>
+              <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px 0; max-width:76ch;">Nine stages, and the reasoning ones are the slow ones. This is the same graph a batch upload runs per resume.</p>
+              <div style="display:flex; flex-direction:column; gap:5px; max-width:560px;">
+                <sc-for list="{{ evalNodes }}" as="n" hint-placeholder-count="9">
+                  <div style="display:grid; grid-template-columns:18px 150px minmax(0,1fr); gap:11px; align-items:center; padding:6px 10px; border-radius:7px; background:var(--panel); border:1px solid var(--border);">
+                    <span style="{{ n.dot }}"></span>
+                    <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--heading);">{{ n.id }}</span>
+                    <span style="font-size:11.5px; color:var(--muted);">{{ n.label }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ evalDone }}" hint-placeholder-val="{{ false }}">
+              <h2 style="{{ h2 }}">Result — not saved</h2>
+              <div style="display:flex; align-items:center; gap:9px; padding:7px 11px; border-radius:8px; background:var(--advisoryBg); border:1px solid var(--advisoryEdge); margin-bottom:12px; max-width:900px;">
+                <span style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; padding:3px 7px; border-radius:5px; background:var(--advisoryChip); color:var(--advisoryText);">Advisory</span>
+                <span style="font-size:12px; color:var(--muted);">Leaving this page discards it. To keep a report, upload the resume as a candidate instead.</span>
+              </div>
+
+              <div style="display:grid; grid-template-columns:minmax(0,1fr) 200px; gap:28px; align-items:center; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border); max-width:900px;">
+                <div>
+                  <div style="font-size:15px; font-weight:600; color:var(--heading);">Ad-hoc evaluation · genai</div>
+                  <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:8px 0 0 0; max-width:60ch;">Two claims cohere with the detail given. One asserts a fine-tuning run with no infrastructure behind it, and one deferred for want of grounding.</p>
+                  <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                    <span style="{{ evalChipElev }}">1 incoherent</span>
+                    <span style="{{ evalChipMod }}">1 deferred</span>
+                    <span style="{{ evalChipLow }}">2 coherent</span>
+                  </div>
+                </div>
+                <div style="display:grid; place-items:center;">
+                  <div style="{{ evalGauge }}">
+                    <div style="width:88px; height:88px; border-radius:50%; background:var(--panel); display:grid; place-items:center; text-align:center;">
+                      <div>
+                        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; line-height:1; color:var(--heading);">0.61</div>
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-top:3px;">Fab. risk</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="{{ evalBandChip }}">Elevated</div>
+                  <div style="font-size:10.5px; color:var(--muted); margin-top:8px; text-align:center;">confidence 0.58 · moderate</div>
+                </div>
+              </div>
+
+              <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:12px 0 0 0; max-width:84ch;">No resume-farm signal is available on an ad-hoc run — near-duplicate detection needs the stored corpus, and this resume was never fingerprinted against it.</p>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{ isRoles }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Roles</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Requisitions and role-conditioned shortlists. Ranking is advisory and never hides a candidate — it orders them.</p>
+
+            <sc-if value="{{ jobsEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">No requisitions yet. Create one and it appears here — a requisition needs at least one must-have or nice-to-have skill, or the API refuses it.</div>
+            </sc-if>
+
+            <div style="display:flex; flex-direction:column; gap:8px; max-width:900px;">
+              <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="3">
+                <div onClick="{{ j.select }}" style="display:grid; grid-template-columns:minmax(0,1fr) 110px 110px 90px; gap:14px; align-items:center; padding:13px 16px; border-radius:9px; background:var(--panel); border:1px solid var(--border); cursor:pointer;">
+                  <div>
+                    <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ j.title }}</div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ j.loc }} · {{ j.domain }}</div>
+                  </div>
+                  <div>
+                    <div style="font-size:12px; color:var(--heading);">{{ j.matched }} matched</div>
+                    <div style="font-size:10.5px; color:var(--muted); margin-top:2px;">{{ j.filled }}</div>
+                  </div>
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted);">{{ j.band_label }}</span>
+                  <div style="text-align:right;"><span style="{{ j.statusChip }}">{{ j.status }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ hasJobs }}" hint-placeholder-val="{{ true }}">
+            <h2 style="{{ h2 }}">Top matches</h2>
+            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Match score is skill and role fit. It is shown beside the fraud screen, never fused with it — a good match with an elevated risk band is still a good match that needs a conversation.</p>
+
+            <sc-if value="{{ boardEmptyPool }}" hint-placeholder-val="{{ false }}">
+              <div style="max-width:640px; padding:16px; border-radius:10px; background:var(--panel); border:1px dashed var(--border);">
+                <div style="font-size:13px; font-weight:600; color:var(--heading);">Nothing to rank yet</div>
+                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:6px 0 0 0;">{{ boardEmptyPoolText }}</p>
+              </div>
+            </sc-if>
+            <sc-if value="{{ boardError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">{{ boardErrorText }}</div>
+            </sc-if>
+
+            <div style="{{ listCard }}">
+              <sc-for list="{{ shortlist }}" as="m" hint-placeholder-count="3">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 120px 170px; gap:14px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ m.name }}</div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ m.role }} · {{ m.note }}</div>
+                  </div>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ m.cover }}</span>
+                  <div style="text-align:right; display:flex; gap:8px; align-items:center; justify-content:flex-end;">
+                    <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; color:var(--heading);">{{ m.score }}</span>
+                    <span style="{{ m.chip }}">{{ m.bandLabel }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            </sc-if>
+
+            <sc-if value="{{ boardConsentBlocked }}" hint-placeholder-val="{{ false }}">
+              <h2 style="{{ h2 }}">Not shared with you</h2>
+              <div style="max-width:640px; padding:16px; border-radius:10px; background:var(--panel); border:1px dashed var(--border);">
+                <div style="font-size:13px; font-weight:600; color:var(--heading);">This section is closed</div>
+                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:6px 0 0 0;">{{ boardErrorText }}</p>
+                <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Request access</button>
+              </div>
+            </sc-if>
+          </sc-if>
+
+          <sc-if value="{{ isComp }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Comp intelligence</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">A static market prior blended with de-identified, k-anonymised offers observed in the ledger. Advisory, like everything else.</p>
+
+            <sc-if value="{{ compError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ authErrorBox }}">{{ compErrorText }}</div>
+            </sc-if>
+
+            <sc-if value="{{ noComp }}" hint-placeholder-val="{{ false }}">
+              <div style="max-width:640px; padding:16px; border-radius:10px; background:var(--panel); border:1px dashed var(--border);">
+                <div style="font-size:13px; font-weight:600; color:var(--heading);">No requisition to benchmark</div>
+                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:6px 0 0 0;">{{ noCompReason }}</p>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hasComp }}" hint-placeholder-val="{{ true }}">
+            <div style="max-width:720px; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
+              <div style="display:flex; justify-content:space-between; align-items:baseline;">
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ compRole }}</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ compObservedLabel }}</div>
+                </div>
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:var(--heading);">{{ compP50Label }}</div>
+              </div>
+
+              <div style="position:relative; height:6px; border-radius:99px; background:var(--track); margin-top:18px;">
+                <div style="{{ compBandBar }}"></div>
+                <div style="{{ compMedianMark }}"></div>
+              </div>
+              <div style="position:relative; height:16px; margin-top:7px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">
+                <span style="position:absolute; left:15%; transform:translateX(-50%); white-space:nowrap;">{{ compP25Label }} · p25</span>
+                <span style="{{ compMedianLabelPos }}">{{ compP50Label }} · p50</span>
+                <span style="position:absolute; left:85%; transform:translateX(-50%); white-space:nowrap;">{{ compP75Label }} · p75</span>
+              </div>
+
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px;">
+                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
+                  <div style="font-size:11px; color:var(--muted);">Observed offers</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compObserved }}</div>
+                </div>
+                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
+                  <div style="font-size:11px; color:var(--muted);">Confidence</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compConfidenceLabel }}</div>
+                </div>
+                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
+                  <div style="font-size:11px; color:var(--muted);">This requisition</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compPositionLabel }}</div>
+                </div>
+              </div>
+
+              <sc-if value="{{ compPriorOnly }}" hint-placeholder-val="{{ true }}">
+                <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:14px 0 0 0;">No observed offers clear the k-anonymity floor for this role, so this band is the <strong style="color:var(--heading);">static prior alone</strong> — nothing has been learned from the ledger yet. Nothing in the product submits an offer today.</p>
+              </sc-if>
+            </div>
+            </sc-if>
+
+            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:14px 0 0 0; max-width:84ch;">Offer data is aggregated only at or above the k-anonymity floor of five observations. Below it the observed term is dropped entirely and the band falls back to the static prior, rather than reporting a thinner number. p25 and p75 preserve the static band\u2019s relative spread around the blended p50.</p>
+          </sc-if>
+
+          <sc-if value="{{ isAdminOrgs }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Organisations</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Org lifecycle is operator-run. An organisation self-registers, an operator confirms it.</p>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ adminOrgs }}" as="o" hint-placeholder-count="3">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 120px 110px 90px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ o.name }}</div>
+                    <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:2px;">{{ o.id }}</div>
+                  </div>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ o.seats }}</span>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ o.joined }}</span>
+                  <span style="{{ o.chip }}">{{ o.status }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isAdminUsers }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Operator accounts</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">There is no operator self-signup. Accounts are created by an operator, and the admin plane can mint any candidate's access key — treat this list as privileged.</p>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ adminUsers }}" as="u" hint-placeholder-count="3">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 130px 90px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+                  <div style="font-size:12.5px; color:var(--heading);">{{ u.email }}</div>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ u.lastSeen }}</span>
+                  <div style="text-align:right;"><button style="{{ smallGhost }}" style-hover="background:var(--hover)">Revoke</button></div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isCuration }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Curation queue</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Skill terms the taxonomy could not map. Resolving one writes an overlay that every later normalisation reads.</p>
+            <div style="{{ listCard }}">
+              <sc-for list="{{ curation }}" as="t" hint-placeholder-count="4">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) 90px 190px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+                  <div>
+                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ t.term }}</div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ t.suggestion }}</div>
+                  </div>
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted);">{{ t.count }}×</span>
+                  <div style="display:flex; gap:6px; justify-content:flex-end;">
+                    <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Map</button>
+                    <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Reject</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isInterview }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap;">
+              <div style="flex:1; min-width:300px;">
+                <h1 style="{{ h1 }}">Your interview</h1>
+                <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:64ch;">{{ plannedCopy }} Answer by voice or by typing — the rubric is the same either way.</p>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Question</div>
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:var(--heading);">{{ turnCounter }}</div>
+                <div style="display:inline-flex; align-items:center; gap:6px; margin-top:6px; padding:3px 8px; border-radius:6px; background:var(--panel2); border:1px solid var(--border);">
+                  <span style="width:12px; height:12px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/clock.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/clock.svg) center/contain no-repeat;"></span>
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">Session ends in 1:52</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:5px; margin-top:14px;">
+              <sc-for list="{{ turnPips }}" as="p" hint-placeholder-count="5">
+                <div style="{{ p.style }}"></div>
+              </sc-for>
+            </div>
+
+            <div style="margin-top:18px; padding:20px; border-radius:12px; background:var(--panel); border:1px solid var(--border); max-width:820px;">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--link);">{{ turnClaimType }}</div>
+              <p style="font-family:'Space Grotesk',sans-serif; font-weight:500; font-size:19px; line-height:1.45; color:var(--heading); margin:10px 0 0 0; max-width:52ch;">{{ turnQuestion }}</p>
+              <p style="font-size:12px; color:var(--muted); margin:8px 0 0 0;">Questions are text only — nothing is read aloud to you.</p>
+
+              <div style="display:inline-flex; gap:3px; padding:3px; margin-top:16px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
+                <button onClick="{{ setAudio }}" style="{{ chanAudio }}">Answer by voice</button>
+                <button onClick="{{ setText }}" style="{{ chanText }}">Type instead</button>
+              </div>
+
+              <sc-if value="{{ speechDown }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 14px; margin-top:14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
+                  <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic-off.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic-off.svg) center/contain no-repeat;"></span>
+                  <div>
+                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">Voice answers are unavailable right now</div>
+                    <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0 0; max-width:62ch;">No speech provider is configured, so audio is being refused rather than silently dropped. The interview continues in text and nothing about your score changes.</p>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showRecorder }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; gap:16px; margin-top:16px; padding:16px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
+                  <button onClick="{{ toggleRecord }}" style="{{ micBtn }}">
+                    <span style="{{ micGlyph }}"></span>
+                  </button>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ recordLabel }}</div>
+                    <div style="display:flex; align-items:center; gap:3px; height:22px; margin-top:7px;">
+                      <sc-for list="{{ levelBars }}" as="b" hint-placeholder-count="28">
+                        <div style="{{ b.style }}"></div>
+                      </sc-for>
+                    </div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:5px;">{{ recordHint }}</div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showTextBox }}" hint-placeholder-val="{{ false }}">
+                <textarea placeholder="Type your answer. Be specific — the scoring rewards detail a fabricator would not have." style="{{ textArea }}"></textarea>
+                <div style="display:flex; align-items:center; gap:12px; margin-top:7px;">
+                  <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">7 / 20,000 characters</span>
+                  <span style="{{ wordFloorChip }}">{{ wordFloorLabel }}</span>
+                </div>
+                <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:7px 0 0 0; max-width:62ch;">An answer under twelve words is not scored at all — that is different from scoring zero, and it leaves the claim unaddressed rather than answered badly.</p>
+              </sc-if>
+
+              <sc-if value="{{ turnFailed }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 14px; margin-top:14px; border-radius:9px; background:var(--missBg); border:1px solid var(--missEdge);">
+                  <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--c-elev); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/rotate-ccw.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/rotate-ccw.svg) center/contain no-repeat;"></span>
+                  <div style="flex:1;">
+                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">We couldn't transcribe that — this retry is free</div>
+                    <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0 0; max-width:62ch;">The failure was on our side, so it does not count as your answer and this question is still open. Record it again, or switch to typing.</p>
+                    <button onClick="{{ retryTurn }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Try again</button>
+                  </div>
+                </div>
+              </sc-if>
+
+              <div style="display:flex; align-items:center; gap:10px; margin-top:16px;">
+                <button onClick="{{ submitTurn }}" style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">{{ submitLabel }}</button>
+                <button onClick="{{ skipTurn }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Skip this question</button>
+                <span style="font-size:11px; color:var(--muted); margin-left:auto;">{{ turnStatus }}</span>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:10px; align-items:flex-start; margin-top:14px; max-width:820px; padding:12px 14px; border-radius:9px; background:var(--panel); border:1px solid var(--border);">
+              <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/lock.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/lock.svg) center/contain no-repeat;"></span>
+              <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:0;">Your audio is transcribed and then discarded — it is never stored. <strong style="color:var(--heading);">The transcript is yours.</strong> An organisation receives a summary of how the answers scored, never the transcript and never the individual turns.</p>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isErasure }}" hint-placeholder-val="{{ false }}">
+            <h1 style="{{ h1 }}">Delete everything</h1>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Erasure cascades: resumes and their raw text, extractions, fingerprints, linked reports, ledger records, interview transcripts and consents. It cannot be undone and there is no soft-delete behind it.</p>
+            <div style="max-width:640px; padding:18px; border-radius:10px; background:var(--missBg); border:1px solid var(--missEdge);">
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:14px; color:var(--heading);">This removes you from Veritas entirely</div>
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:7px 0 0 0;">Organisations that screened you keep no copy inside Veritas. Type <strong style="color:var(--heading);">DELETE</strong> to confirm.</p>
+              <input placeholder="DELETE" value="{{ erasureConfirm }}" onInput="{{ setErasureConfirm }}" style="{{ field }}">
+              <sc-if value="{{ erasureArmed }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ confirmErasure }}" style="{{ dangerBtn }}" style-hover="filter:brightness(1.06)">{{ erasureLabel }}</button>
+              </sc-if>
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;batchName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Wipro DE — August intake&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;speechEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Interview&quot;,&quot;label&quot;:&quot;Speech provider configured&quot;}}">
+const DARK = {
+  "--bg": "#070d14", "--panel": "#0d1620", "--panel2": "#111c27", "--rail": "#0a121b",
+  "--border": "rgba(255,255,255,0.09)", "--hover": "rgba(255,255,255,0.05)",
+  "--heading": "#eef4f9", "--text": "#cddae4", "--muted": "#8ba0b0",
+  "--track": "rgba(255,255,255,0.10)", "--doneBar": "rgba(255,255,255,0.26)",
+  "--a1": "#22d3ee", "--a2": "#8b5cf6", "--link": "#5cc8e4", "--focus": "#22d3ee",
+  "--c-elev": "#fb7185", "--c-mod": "#fbbf24", "--c-low": "#34d399", "--c-ins": "#94a3b8",
+  "--t-elev": "rgba(251,113,133,0.14)", "--t-mod": "rgba(251,191,36,0.13)",
+  "--t-low": "rgba(52,211,153,0.13)", "--t-ins": "rgba(148,163,184,0.14)",
+  "--e-elev": "rgba(251,113,133,0.34)", "--e-mod": "rgba(251,191,36,0.32)",
+  "--e-low": "rgba(52,211,153,0.3)", "--e-ins": "rgba(148,163,184,0.3)",
+  "--advisoryBg": "rgba(34,211,238,0.07)", "--advisoryEdge": "rgba(34,211,238,0.18)",
+  "--advisoryChip": "rgba(34,211,238,0.2)", "--advisoryText": "#a5f3fc",
+  "--missBg": "rgba(251,113,133,0.07)", "--missEdge": "rgba(251,113,133,0.2)",
+  "--probeBg": "rgba(34,211,238,0.06)", "--probeEdge": "rgba(34,211,238,0.2)",
+  "--dropEdge": "rgba(103,232,249,0.32)", "--fieldBg": "#111c27"
+};
+
+const LIGHT = {
+  "--bg": "#f2f5f8", "--panel": "#ffffff", "--panel2": "#f5f8fa", "--rail": "#ffffff",
+  "--border": "#dde5ec", "--hover": "#f1f5f9",
+  "--heading": "#12202c", "--text": "#2c3e4d", "--muted": "#59697a",
+  "--track": "#e3eaf0", "--doneBar": "#c3ced8",
+  "--a1": "#0891b2", "--a2": "#7c3aed", "--link": "#0e7490", "--focus": "#0891b2",
+  "--c-elev": "#be123c", "--c-mod": "#a16207", "--c-low": "#047857", "--c-ins": "#526577",
+  "--t-elev": "#fdf0f3", "--t-mod": "#fdf5e6", "--t-low": "#ecfaf4", "--t-ins": "#eff3f7",
+  "--e-elev": "#f5cdd6", "--e-mod": "#f0dfb8", "--e-low": "#c5e9db", "--e-ins": "#d5dee6",
+  "--advisoryBg": "#eef8fb", "--advisoryEdge": "#cbe7ef",
+  "--advisoryChip": "#d6eff6", "--advisoryText": "#0b5b70",
+  "--missBg": "#fdf1f4", "--missEdge": "#f2d3db", "--probeBg": "#f0f8fb", "--probeEdge": "#cfe6ee",
+  "--dropEdge": "#b9d7e2", "--fieldBg": "#f7fafc"
+};
+
+const BAND = {
+  elevated: { label: "Elevated", c: "var(--c-elev)", t: "var(--t-elev)", e: "var(--e-elev)" },
+  moderate: { label: "Moderate", c: "var(--c-mod)", t: "var(--t-mod)", e: "var(--e-mod)" },
+  low: { label: "Low", c: "var(--c-low)", t: "var(--t-low)", e: "var(--e-low)" },
+  insufficient: { label: "Insufficient data", c: "var(--c-ins)", t: "var(--t-ins)", e: "var(--e-ins)" }
+};
+const STATUS = { incoherent: BAND.elevated, defer: BAND.moderate, coherent: BAND.low, unverified: BAND.insufficient };
+
+const CANDIDATES = [
+  {
+    id: "cand_rohit", name: "Rohit Malviya", role: "Sr. GenAI Engineer · Pune · genai",
+    band: "elevated", score: 0.78, confidence: 0.71,
+    reason: "Fine-tuning and RLHF claims carry no training-infrastructure footprint — no cluster, no dataset scale, no eval harness.",
+    loudest: "Resume farm — near-duplicate, 0.91 overlap",
+    depth: "superficial · depth 0.31",
+    summary: "Three depth claims sit far ahead of anything the resume can account for, and the document is a near-duplicate of another in the corpus. Nothing here says fabricated — it says these are the questions to ask.",
+    components: [
+      { title: "Resume farm", band: "Near-duplicate", meta: "score 0.91 · conf 0.82 · corpus 4,182", detail: "One stored resume overlaps at 0.91 estimated Jaccard. Shared templates are common and legitimate. We never disclose whose resume matched." },
+      { title: "AI generation", band: "Possible", meta: "likelihood 0.54 · conf 0.48", detail: "Template phrasing and low burstiness. AI-assisted writing is legitimate — this is context, not a tell." },
+      { title: "Cross-field", band: "Minor issues", meta: "score 0.22 · conf 0.66", detail: "A four-month gap in 2023 and one seniority step slightly ahead of tenure. Pure date math, no model involved." }
+    ],
+    verdicts: [
+      {
+        claim: "Fine-tuned GPT-4 on 2M internal support tickets to improve resolution accuracy by 34%.",
+        type: "fine_tuning", status: "incoherent", coherence: 0.18, confidence: 0.79,
+        reasoning: "GPT-4 was not openly fine-tunable at the stated period, and the resume describes no training stack, no eval methodology and no dataset preparation for a run of that size. The 34% figure has no baseline attached.",
+        missing: ["Any named training or serving infrastructure", "Dataset preparation, labelling or deduplication work", "An evaluation harness or holdout behind the 34%"],
+        evidence: ["rule · fine_tuning_infra: none of the expected infrastructure signals present", "llm · a run at this scale implies a cost and a team that appear nowhere in the resume", "github · linked repository contains prompt templates only, no training code"],
+        probes: ["Which base checkpoint did you start from, and who hosted the run?", "How did you build the eval set the 34% is measured against — and what was the baseline?", "What did you do about ticket deduplication before training?"]
+      },
+      {
+        claim: "Built production RAG serving 50k queries per day at p95 latency under 200ms.",
+        type: "rag", status: "defer", coherence: 0.44, confidence: 0.31,
+        reasoning: "Plausible in shape, but nothing in the resume or the linked sources grounds it either way. Confidence sits below the assertion threshold, so the system defers rather than flags.",
+        missing: ["The vector store and embedding model", "A chunking or retrieval-evaluation strategy"],
+        evidence: ["rule · rag_infra: two of five expected signals present", "vectorstore · no grounding retrieved for this claim"],
+        probes: ["What sat in front of the vector store to hold p95 under 200ms?", "How did you measure retrieval quality separately from generation quality?"]
+      },
+      {
+        claim: "Led a team of 4 engineers building an internal multi-agent workflow tool.",
+        type: "multi_agent", status: "coherent", coherence: 0.72, confidence: 0.64,
+        reasoning: "Scope, team size and tenure line up. The description is specific about failure modes, which fabricated claims rarely are.",
+        missing: [],
+        evidence: ["rule · multi_agent: orchestration and failure-handling signals both present", "llm · the described retry semantics match how these systems actually break"],
+        probes: ["Where did the agent loop most often get stuck, and what did you do about it?"]
+      }
+    ]
+  },
+  {
+    id: "cand_imran", name: "Imran Qureshi", role: "GenAI Engineer · Gurugram · genai",
+    band: "elevated", score: 0.71, confidence: 0.55,
+    reason: "Phrasing sits inside a template-shop corpus; three other resumes in the store share its structure almost sentence for sentence.",
+    loudest: "AI generation — likely, template phrases",
+    depth: "emerging · depth 0.44",
+    summary: "The document, not the person, is what stands out here. Structure and phrasing repeat across several stored resumes; the underlying claims are mostly unremarkable.",
+    components: [
+      { title: "AI generation", band: "Likely", meta: "likelihood 0.81 · conf 0.62", detail: "Four stylometry detectors fired, led by template phrasing and uniform sentence length." },
+      { title: "Resume farm", band: "Similar", meta: "score 0.63 · conf 0.58 · corpus 4,182", detail: "Three stored resumes overlap above 0.6. Similarity only — we never disclose whose." },
+      { title: "Cross-field", band: "Consistent", meta: "score 0.08 · conf 0.71", detail: "Dates hold together. No overlaps, no unexplained gaps." }
+    ],
+    verdicts: [
+      {
+        claim: "Deployed LLM-powered chatbots leveraging cutting-edge transformer architectures at scale.",
+        type: "rag", status: "unverified", coherence: 0.5, confidence: 0.22,
+        reasoning: "The sentence carries no specifics to reason about — no model, no volume, no system. There is nothing here to verify either way.",
+        missing: ["Any named model, framework or serving surface", "Any number attached to 'at scale'"],
+        evidence: ["rule · generic_phrasing: claim contains no anchorable specifics"],
+        probes: ["Which model, and where was it served from?", "What does 'at scale' mean in requests per day for this system?"]
+      }
+    ]
+  },
+  {
+    id: "cand_priya", name: "Priya Nandakumar", role: "Data Engineer · Bengaluru · data_eng",
+    band: "moderate", score: 0.54, confidence: 0.63,
+    reason: "Two full-time roles overlap by six months, March to September 2024. Common and often legitimate — worth exactly one question.",
+    loudest: "Cross-field — major issues, timeline overlap",
+    depth: "solid · depth 0.68",
+    summary: "The engineering claims hold up well. One timeline overlap is the only thing worth raising, and it has an ordinary explanation more often than not.",
+    components: [
+      { title: "Cross-field", band: "Major issues", meta: "score 0.61 · conf 0.88", detail: "Two full-time roles overlap 6 months (Mar–Sep 2024). Notice periods and contract work explain most of these." },
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.19 · conf 0.57", detail: "Idiosyncratic phrasing and uneven sentence rhythm — reads as written by hand." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.11 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Owned the Airflow migration for a 400-table warehouse ingest, cutting nightly runtime from 6h to 90m.",
+        type: "etl", status: "coherent", coherence: 0.81, confidence: 0.77,
+        reasoning: "Specific, dated, and the described bottleneck matches how these migrations actually go. The runtime claim is the kind of number people who did the work remember.",
+        missing: [],
+        evidence: ["rule · etl_orchestration: four of five expected signals present", "llm · the stated failure mode is a real one and is described correctly"],
+        probes: ["What was actually eating the six hours before you started?"]
+      }
+    ]
+  },
+  {
+    id: "cand_divya", name: "Divya Raghunathan", role: "Lead Data Engineer · Noida · data_eng",
+    band: "moderate", score: 0.48, confidence: 0.69,
+    reason: "Stated seniority runs about four years ahead of the tenure the dates support.",
+    loudest: "Cross-field — minor issues, seniority vs tenure",
+    depth: "solid · depth 0.63",
+    summary: "Nothing about the work looks wrong. The title is the outlier, which is a conversation rather than a concern.",
+    components: [
+      { title: "Cross-field", band: "Minor issues", meta: "score 0.34 · conf 0.72", detail: "Lead title held at 3.5 years total experience — early, not impossible." },
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.24 · conf 0.51", detail: "No detector fired above threshold." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.09 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Led a 6-person platform team owning streaming ingest across three business units.",
+        type: "streaming", status: "defer", coherence: 0.52, confidence: 0.34,
+        reasoning: "The technical detail is credible; the scope of ownership is what the dates do not support. Below the assertion threshold, so this defers to you.",
+        missing: ["Anything establishing team ownership rather than participation"],
+        evidence: ["rule · seniority_vs_tenure: stated scope exceeds supported tenure by about four years"],
+        probes: ["Who did you report to, and who reported to you on that team?"]
+      }
+    ]
+  },
+  {
+    id: "cand_aakash", name: "Aakash Venkataraman", role: "GenAI Engineer · Hyderabad · genai",
+    band: "insufficient", score: null, confidence: 0.18,
+    reason: "340 words, no dated roles, no anchored claims. This is not a low score — there is nothing here yet to reason about.",
+    loudest: "None — ask for a fuller resume",
+    depth: "insufficient signal",
+    summary: "The resume is too thin to assess. That is the honest answer, and it is a common one.",
+    thinReason: "The resume is too thin to extract claims from — 340 words, no dated roles, nothing anchored to a repository or a system.",
+    components: [
+      { title: "AI generation", band: "Insufficient text", meta: "conf 0.11", detail: "340 words is below the floor the detectors need." },
+      { title: "Cross-field", band: "Insufficient data", meta: "conf 0.09", detail: "No dated roles to run timeline math against." },
+      { title: "Resume farm", band: "Insufficient data", meta: "corpus 4,182", detail: "Too little text to fingerprint reliably." }
+    ],
+    verdicts: []
+  },
+  {
+    id: "cand_sneha", name: "Sneha Kulkarni", role: "Data Engineer · Chennai · data_eng",
+    band: "low", score: 0.19, confidence: 0.74,
+    reason: "Pipeline claims cohere with dated, specific work — named orchestration, real row volumes, and a failure story with a fix attached.",
+    loudest: "None — nothing to probe",
+    depth: "deep · depth 0.79",
+    summary: "Everything checks out against the detail the resume itself provides. No claim needed deferring.",
+    components: [
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.14 · conf 0.66", detail: "No detector fired." },
+      { title: "Cross-field", band: "Consistent", meta: "score 0.05 · conf 0.81", detail: "Dates are continuous and internally consistent." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.07 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Rebuilt CDC ingest from Oracle to Snowflake, 1.2B rows/day, with a replay path for schema drift.",
+        type: "etl", status: "coherent", coherence: 0.88, confidence: 0.8,
+        reasoning: "The replay path is the detail that carries this. It is the part people only mention when they have been paged about it.",
+        missing: [],
+        evidence: ["rule · etl_orchestration: all expected signals present", "llm · schema-drift handling is described the way it actually behaves"],
+        probes: ["What broke the first time schema drift hit production?"]
+      }
+    ]
+  }
+];
+
+const pct = (v) => Math.round((v || 0) * 100) + "%";
+const num = (v) => (v === null || v === undefined ? "—" : v.toFixed(2));
+const confWord = (v) => (v >= 0.7 ? "high" : v >= 0.45 ? "moderate" : "low");
+const initials = (n) => n.split(" ").map((w) => w[0]).join("").slice(0, 2);
+
+const chip = (b) => ({
+  fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.12em",
+  textTransform: "uppercase", padding: "2px 7px", borderRadius: "4px",
+  background: b.t, color: b.c, border: "1px solid " + b.e, whiteSpace: "nowrap"
+});
+const avatar = (b, size) => ({
+  width: size + "px", height: size + "px", flex: "none", borderRadius: "50%",
+  display: "grid", placeItems: "center", fontSize: (size / 3) + "px", fontWeight: 700,
+  background: b.t, color: b.c, border: "1px solid " + b.e
+});
+const riskBar = (v, b) => ({ width: pct(v), height: "100%", borderRadius: "99px", background: b.c });
+const confBarStyle = (v) => ({ width: pct(v), height: "100%", borderRadius: "99px", background: "var(--muted)" });
+const gradBar = (v) => ({ width: pct(v), height: "100%", borderRadius: "99px", background: "linear-gradient(92deg,var(--a1),var(--a2))" });
+
+function splitEvidence(items) {
+  return (items || []).map((line) => {
+    const i = line.indexOf(" · ");
+    return i === -1 ? { source: "", detail: line } : { source: line.slice(0, i), detail: line.slice(i + 3) };
+  });
+}
+
+const H2 = {
+  fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "16px",
+  letterSpacing: "-0.015em", margin: "24px 0 5px 0", color: "var(--heading)"
+};
+const STAT_CARD = { padding: "9px 13px", borderRadius: "8px", minWidth: "78px", background: "var(--panel)", border: "1px solid var(--border)" };
+const BIG_STAT = { padding: "16px", borderRadius: "10px", background: "var(--panel)", border: "1px solid var(--border)" };
+const BATCH_ROW = {
+  display: "grid", gridTemplateColumns: "minmax(0,1fr) 130px 70px", gap: "20px", alignItems: "center",
+  padding: "13px 16px", borderBottom: "1px solid var(--border)", cursor: "pointer"
+};
+const FIELD = {
+  width: "100%", padding: "9px 11px", fontSize: "13px", color: "var(--text)",
+  background: "var(--fieldBg)", border: "1px solid var(--border)", borderRadius: "8px"
+};
+const SEARCH_FIELD = {
+  marginLeft: "auto", width: "220px", padding: "6px 10px", fontSize: "12px", color: "var(--text)",
+  background: "var(--fieldBg)", border: "1px solid var(--border)", borderRadius: "7px"
+};
+const OTP_BOX = {
+  width: "100%", padding: "10px 0", textAlign: "center", fontFamily: "'Space Grotesk', sans-serif",
+  fontWeight: 600, fontSize: "16px", color: "var(--heading)", background: "var(--fieldBg)",
+  border: "1px solid var(--border)", borderRadius: "8px"
+};
+const PRIMARY_BTN = {
+  width: "100%", marginTop: "12px", padding: "10px", fontFamily: "'Space Grotesk', sans-serif",
+  fontWeight: 600, fontSize: "13.5px", color: "#ffffff",
+  background: "linear-gradient(92deg,var(--a1),var(--a2))", border: 0, borderRadius: "8px", cursor: "pointer"
+};
+const SMALL_PRIMARY = {
+  marginTop: "12px", padding: "8px 14px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600,
+  fontSize: "12.5px", color: "#ffffff", background: "linear-gradient(92deg,var(--a1),var(--a2))",
+  border: 0, borderRadius: "7px", cursor: "pointer"
+};
+const SMALL_PRIMARY_FLAT = Object.assign({}, SMALL_PRIMARY, { marginTop: 0 });
+const GHOST_BTN = {
+  padding: "8px 14px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: "12.5px",
+  color: "var(--text)", background: "var(--panel2)", border: "1px solid var(--border)",
+  borderRadius: "7px", cursor: "pointer"
+};
+const COPY_BTN = {
+  display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "9px", padding: "5px 10px", fontSize: "11.5px", fontWeight: 600, color: "var(--link)",
+  background: "transparent", border: "1px solid var(--probeEdge)", borderRadius: "6px", cursor: "pointer"
+};
+const LINK_BTN = {
+  background: "none", border: 0, padding: 0, fontSize: "12px", fontWeight: 600,
+  color: "var(--muted)", cursor: "pointer", textAlign: "left"
+};
+const THEME_BTN = {
+  display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 10px", fontSize: "11.5px",
+  fontWeight: 600, color: "var(--muted)", background: "transparent",
+  border: "1px solid var(--border)", borderRadius: "7px", cursor: "pointer"
+};
+
+const tabBtn = (active) => ({
+  padding: "0 0 8px 0", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", border: 0,
+  background: "transparent", color: active ? "var(--heading)" : "var(--muted)",
+  borderBottom: "2px solid " + (active ? "var(--a1)" : "transparent"), marginBottom: "-1px"
+});
+const LEVELS = [4,9,15,7,20,12,6,17,22,10,5,14,19,8,13,21,9,6,16,11,18,7,12,20,8,5,14,10];
+
+const TEXT_AREA = {
+  width: "100%", minHeight: "150px", marginTop: "10px", padding: "12px 13px", fontSize: "13px",
+  lineHeight: 1.55, fontFamily: "'Manrope', sans-serif", color: "var(--text)", resize: "vertical",
+  background: "var(--fieldBg)", border: "1px solid var(--border)", borderRadius: "9px"
+};
+
+const modeBtn = (active) => ({
+  padding: "5px 11px", borderRadius: "6px", fontSize: "11.5px", fontWeight: 600, cursor: "pointer",
+  border: 0, background: active ? "linear-gradient(92deg,var(--a1),var(--a2))" : "transparent",
+  color: active ? "#ffffff" : "var(--muted)"
+});
+const navBtn = (active) => ({
+  display: "flex", alignItems: "center", gap: "9px", width: "100%", textAlign: "left",
+  padding: "7px 9px", borderRadius: "7px",
+  fontFamily: "'Manrope', sans-serif", fontSize: "12.5px", fontWeight: active ? 600 : 500,
+  color: active ? "var(--heading)" : "var(--muted)", cursor: "pointer",
+  border: "1px solid " + (active ? "var(--border)" : "transparent"),
+  background: active ? "var(--panel2)" : "transparent"
+});
+const domBtn = (active) => ({
+  padding: "7px 6px", borderRadius: "6px", fontSize: "12px", fontWeight: 600, cursor: "pointer", border: 0,
+  background: active ? "linear-gradient(92deg,var(--a1),var(--a2))" : "transparent",
+  color: active ? "#ffffff" : "var(--muted)"
+});
+
+const PLANE_HINT = {
+  org: "For staffing agencies. Screening queues, batches and reports for the resumes your organisation uploaded.",
+  candidate: "For candidates. Your own data, who accessed it, your consents and your right to erasure.",
+  operator: "For Veritas operators. Org lifecycle, curation queue and admin tooling. Accounts are created by an operator."
+};
+
+const ROWS = CANDIDATES.map((c) => {
+  const b = BAND[c.band];
+  return {
+    id: c.id, name: c.name, role: c.role, reason: c.reason, loudest: c.loudest,
+    initials: initials(c.name), avatar: avatar(b, 30),
+    chip: chip(b), bandLabel: b.label, scoreLabel: num(c.score),
+    riskBar: riskBar(c.score === null ? 0 : c.score, b),
+    confBar: confBarStyle(c.confidence),
+    confLabel: "conf " + num(c.confidence)
+  };
+});
+
+const REPORTS = {};
+CANDIDATES.forEach((c) => {
+  const b = BAND[c.band];
+  const deg = Math.round((c.score === null ? 0 : c.score) * 360);
+  REPORTS[c.id] = {
+    name: c.name, role: c.role, summary: c.summary, depth: c.depth,
+    initials: initials(c.name), avatar: avatar(b, 36),
+    thinReason: c.thinReason || "There are no extractable claims on this resume — not enough dated, specific or anchored material for the engine to reason about.",
+    score: num(c.score), bandLabel: b.label, chip: Object.assign(chip(b), { marginTop: "9px" }),
+    gauge: {
+      width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
+      background: "conic-gradient(from 180deg, " + b.c + " 0deg, " + b.c + " " + deg + "deg, var(--track) " + deg + "deg)"
+    },
+    confBar: gradBar(c.confidence),
+    confLabel: num(c.confidence) + " · " + confWord(c.confidence),
+    components: c.components,
+    verdicts: c.verdicts.map((v) => ({
+      claim: v.claim, status: v.status, chip: chip(STATUS[v.status]),
+      meta: v.type + " · coherence " + num(v.coherence),
+      reasoning: v.reasoning,
+      missing: v.missing.length ? v.missing : ["None — a genuine version of this claim would look like this one."],
+      evidence: splitEvidence(v.evidence.length ? v.evidence : ["— · No evidence either way."]),
+      probes: v.probes,
+      confBar: gradBar(v.confidence),
+      coherenceLabel: "coherence " + num(v.coherence) + " · confidence " + num(v.confidence)
+    }))
+  };
+});
+
+const TITLES = {
+  queue: "Screening queue", report: "Candidate risk detail", summary: "Batch summary",
+  upload: "Upload", batches: "Batches", portal: "Your data", accesslog: "Access log",
+  consents: "Consents", devices: "Signed-in devices", erasure: "Delete everything",
+  adminorgs: "Organisations", adminusers: "Operator accounts", curation: "Curation queue",
+  roles: "Roles", comp: "Comp intelligence", evaluate: "Instant check", interview: "Your interview"
+};
+
+const H1 = {
+  fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "26px",
+  lineHeight: 1.15, letterSpacing: "-0.025em", margin: 0, color: "var(--heading)"
+};
+const NAV_GROUP = {
+  fontFamily: "'JetBrains Mono', monospace", fontSize: "8.5px", letterSpacing: "0.18em",
+  textTransform: "uppercase", color: "var(--muted)", padding: "12px 9px 5px 9px"
+};
+const LIST_CARD = {
+  border: "1px solid var(--border)", borderRadius: "10px", overflow: "hidden",
+  background: "var(--panel)", maxWidth: "900px"
+};
+const KV_ROW = {
+  display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px",
+  padding: "10px 14px", borderBottom: "1px solid var(--border)"
+};
+const STAT_NUM = { fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "24px", lineHeight: 1, color: "var(--heading)" };
+const STAT_LABEL = { fontSize: "11.5px", color: "var(--muted)", marginTop: "5px" };
+const SMALL_GHOST = {
+  padding: "5px 11px", fontSize: "11.5px", fontWeight: 600, color: "var(--text)",
+  background: "var(--panel2)", border: "1px solid var(--border)", borderRadius: "6px", cursor: "pointer"
+};
+const SMALL_MUTED = Object.assign({}, SMALL_GHOST, { color: "var(--muted)", cursor: "default", background: "transparent" });
+const DANGER_BTN = {
+  marginTop: "12px", padding: "9px 15px", fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600,
+  fontSize: "12.5px", color: "#ffffff", background: "var(--c-elev)", border: 0,
+  borderRadius: "7px", cursor: "pointer"
+};
+
+const PORTAL_PROFILE = [
+  { k: "Name", v: "Priya Nandakumar" },
+  { k: "Email", v: "priya@sampoorna.in (hashed at rest)" },
+  { k: "Phone", v: "+91 ••••• ••210 (hashed at rest)" },
+  { k: "Location", v: "Bengaluru, Karnataka" },
+  { k: "Retention policy", v: "Resumes 3 years · access log 7 years — surfaced, not swept" }
+];
+const PORTAL_REPORTS = [
+  { id: "rep_4c1f9a72be03", meta: "data_eng · 2 Aug 2026" },
+  { id: "rep_9ab30ce71d55", meta: "data_eng · 21 Jul 2026" },
+  { id: "rep_1f77d0ba4e92", meta: "genai · 14 Jun 2026" }
+];
+const PORTAL_ASSURANCE = [
+  { method: "Self-attestation", status: "Held", band: "low" },
+  { method: "Contact-control OTP", status: "Held", band: "low" },
+  { method: "Operator manual review", status: "Not held", band: "insufficient" },
+  { method: "Government ID", status: "Not implemented", band: "insufficient" }
+];
+const ACCESS_LOG = [
+  { when: "2 Aug 2026 09:41", org: "Sampoorna Staffing", purpose: "ledger_read", outcome: "Allowed", band: "low" },
+  { when: "2 Aug 2026 09:41", org: "Sampoorna Staffing", purpose: "verification_read", outcome: "Refused", band: "elevated" },
+  { when: "29 Jul 2026 16:02", org: "Meridian Talent", purpose: "interview_read", outcome: "Allowed", band: "low" },
+  { when: "21 Jul 2026 11:18", org: "Meridian Talent", purpose: "ledger_read", outcome: "Allowed", band: "low" },
+  { when: "14 Jun 2026 08:55", org: "Northline Recruit", purpose: "ledger_read", outcome: "Refused", band: "elevated" }
+];
+const CONSENTS = [
+  { org: "Sampoorna Staffing", purpose: "ledger_read · expires 2 Nov 2026", expiry: "Active · 92 days left", active: true },
+  { org: "Meridian Talent", purpose: "interview_read · expires 14 Sep 2026", expiry: "Active · 43 days left", active: true },
+  { org: "Meridian Talent", purpose: "ledger_read · expires 14 Sep 2026", expiry: "Active · 43 days left", active: true },
+  { org: "Northline Recruit", purpose: "ledger_read · revoked 14 Jun 2026", expiry: "Revoked", active: false }
+];
+const RISK_SCREENS = ["queue", "report", "summary", "batches", "roles", "evaluate"];
+
+const EVAL_NODES = [
+  { id: "ingest", label: "Parse the resume, capture first-party links" },
+  { id: "ai_signals", label: "Four stylometry detectors — advisory only" },
+  { id: "cross_field", label: "Timeline forensics, pure date math" },
+  { id: "claim_extraction", label: "Atomic claims tagged by type and specificity" },
+  { id: "provenance", label: "Fetch GitHub signals for anchored claims" },
+  { id: "plausibility", label: "Senior-engineer reasoning pass — the slow one" },
+  { id: "probe_generation", label: "Questions a fabricator can't survive" },
+  { id: "scoring", label: "Conservative calibration, defer when unsure" },
+  { id: "report", label: "Assemble verdicts, evidence and bands" }
+];
+
+const TURNS = [
+  { type: "fine_tuning", q: "Which base checkpoint did you start from, and who hosted the training run?" },
+  { type: "fine_tuning", q: "How did you build the eval set the 34% is measured against — and what was the baseline?" },
+  { type: "rag", q: "What sat in front of the vector store to hold p95 under 200ms?" },
+  { type: "rag", q: "How did you measure retrieval quality separately from generation quality?" },
+  { type: "multi_agent", q: "Where did the agent loop most often get stuck, and what did you do about it?" }
+];
+
+const nodeDot = (state) => ({
+  width: "10px", height: "10px", borderRadius: "50%", justifySelf: "center",
+  background: state === "done" ? "var(--c-low)" : state === "active" ? "var(--a1)" : "var(--track)",
+  boxShadow: state === "active" ? "0 0 0 4px color-mix(in srgb, var(--a1) 22%, transparent)" : "none"
+});
+const pip = (state) => ({
+  height: "4px", flex: 1, borderRadius: "99px", maxWidth: "70px",
+  background: state === "done" ? "var(--c-low)" : state === "active" ? "linear-gradient(92deg,var(--a1),var(--a2))" : "var(--track)"
+});
+const levelBar = (h, live) => ({
+  width: "3px", height: h + "px", borderRadius: "99px",
+  background: live ? "linear-gradient(180deg,var(--a1),var(--a2))" : "var(--track)"
+});
+
+// State vocabularies that are NOT fabrication risk keep their own neutral
+// treatment — the green/amber/rose ramp stays reserved for risk alone.
+const stateChip = (strong) => ({
+  fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.12em",
+  textTransform: "uppercase", padding: "2px 7px", borderRadius: "4px", whiteSpace: "nowrap",
+  background: "var(--panel2)", color: strong ? "var(--heading)" : "var(--muted)",
+  border: "1px solid var(--border)"
+});
+
+const statusChip = (open) => ({
+  fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.12em",
+  textTransform: "uppercase", padding: "2px 7px", borderRadius: "4px", whiteSpace: "nowrap",
+  background: "var(--panel2)", color: open ? "var(--heading)" : "var(--muted)",
+  border: "1px solid var(--border)", opacity: open ? 1 : 0.75
+});
+
+const JOBS = [
+  { id: "job_7a21", title: "Senior Data Engineer", loc: "Bengaluru · hybrid", domain: "data_eng",
+    status: "Open", band: "low", matched: 24, band_label: "₹32–46 LPA", filled: "3 in panel" },
+  { id: "job_9c04", title: "GenAI Platform Engineer", loc: "Pune · onsite", domain: "genai",
+    status: "Open", band: "low", matched: 11, band_label: "₹38–58 LPA", filled: "1 in panel" },
+  { id: "job_2f88", title: "Analytics Engineer", loc: "Remote (India)", domain: "data_eng",
+    status: "On hold", band: "moderate", matched: 6, band_label: "₹22–31 LPA", filled: "—" }
+];
+
+const SHORTLIST = [
+  { name: "Sneha Kulkarni", role: "Data Engineer · Chennai", score: "0.86", cover: "coverage 0.82", band: "low", note: "Low fabrication risk · deep" },
+  { name: "Priya Nandakumar", role: "Data Engineer · Bengaluru", score: "0.79", cover: "coverage 0.74", band: "moderate", note: "One timeline overlap to raise" },
+  { name: "Divya Raghunathan", role: "Lead Data Engineer · Noida", score: "0.74", cover: "coverage 0.71", band: "moderate", note: "Seniority ahead of tenure" }
+];
+
+const ADMIN_ORGS = [
+  { name: "Sampoorna Staffing", id: "org_a91c4f", seats: "12 batches", joined: "12 Mar 2026", status: "Active", band: "low" },
+  { name: "Meridian Talent", id: "org_5be720", seats: "5 batches", joined: "2 May 2026", status: "Active", band: "low" },
+  { name: "Northline Recruit", id: "org_c3f8d1", seats: "0 batches", joined: "28 Jul 2026", status: "Pending", band: "moderate" }
+];
+const ADMIN_USERS = [
+  { email: "ops@veritas.in", lastSeen: "Active now" },
+  { email: "kavya@veritas.in", lastSeen: "Yesterday 17:22" },
+  { email: "arun@veritas.in", lastSeen: "29 Jul 2026" }
+];
+const CURATION = [
+  { term: "pyspark3", suggestion: "closest match: Apache Spark", count: 41 },
+  { term: "gen-ai engg", suggestion: "closest match: Generative AI", count: 27 },
+  { term: "adf pipelines", suggestion: "closest match: Azure Data Factory", count: 19 },
+  { term: "langraph", suggestion: "closest match: LangGraph", count: 12 }
+];
+const SESSIONS = [
+  { agent: "Chrome 128 · Windows 11 · Pune", id: "sess_7f2a…", lastSeen: "Active now", status: "This device", current: true },
+  { agent: "Safari 18 · iPhone · Pune", id: "sess_b910…", lastSeen: "26 minutes ago", status: "Live", current: false },
+  { agent: "Chrome 127 · macOS · Bengaluru", id: "sess_31dd…", lastSeen: "Yesterday 18:40", status: "Live", current: false }
+];
+
+// ── API plumbing ────────────────────────────────────────────────────────────
+// window.VeritasAPI comes from api.js (a plain <script>, since the logic class
+// is eval'd in a function scope and cannot import). It owns credentials,
+// X-CSRF-Token and the error taxonomy; nothing below re-implements those.
+const API = window.VeritasAPI;
+
+// Plane names differ on the two sides of the wire: the UI says "operator",
+// the API says "admin". One place to convert, so no call site guesses.
+const PLANE_PATH = { org: "org", candidate: "candidate", operator: "admin" };
+const KIND_TO_PLANE = { org: "org", candidate: "candidate", admin: "operator" };
+const LANDING = { org: "queue", candidate: "portal", operator: "adminorgs" };
+
+// One shape for every remote resource, so `renderVals` never has to ask
+// "is this loading, empty, or broken?" in more than one way.
+const IDLE = { loading: false, data: null, error: null };
+
+const ERROR_BOX = {
+  marginTop: "12px", padding: "9px 11px", borderRadius: "8px", fontSize: "11.5px",
+  lineHeight: 1.5, background: "var(--missBg)", border: "1px solid var(--missEdge)",
+  color: "var(--text)"
+};
+const NOTICE_BOX = {
+  marginTop: "12px", padding: "9px 11px", borderRadius: "8px", fontSize: "11.5px",
+  lineHeight: 1.5, background: "var(--advisoryBg)", border: "1px solid var(--advisoryEdge)",
+  color: "var(--advisoryText)"
+};
+const MOCK_CHIP = {
+  display: "inline-flex", alignItems: "center", gap: "6px", padding: "3px 9px",
+  marginBottom: "12px", borderRadius: "5px", fontFamily: "'JetBrains Mono', monospace",
+  fontSize: "9px", letterSpacing: "0.12em", textTransform: "uppercase",
+  background: "var(--panel2)", color: "var(--muted)", border: "1px dashed var(--border)"
+};
+
+// A 403 means two unrelated things and they need different words. The strings
+// are measured from the API, not guessed — see api.js.
+const CONSENT_COPY = "This candidate has not shared this section with your organisation. The attempt is recorded either way.";
+const CSRF_COPY = "Your sign-in moved on while this page was open. Sign in again to continue.";
+
+function errorCopy(err) {
+  if (!err) return "";
+  if (err.kind === "consent") return CONSENT_COPY;
+  if (err.kind === "csrf") return CSRF_COPY;
+  if (err.kind === "email_down") return "No email provider is configured on this API, so no code can be sent. Set DEE_EMAIL_PROVIDER to send one.";
+  if (err.kind === "invalid_code") return "That code did not work. Expired, wrong and too-many-attempts all look the same here, on purpose — request a new one.";
+  if (err.kind === "network") return err.detail;
+  return err.detail || "Something went wrong.";
+}
+
+const fmtDateTime = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleString(undefined, {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit"
+  });
+};
+const fmtDate = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso);
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+};
+const relTime = (iso) => {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (isNaN(then)) return String(iso);
+  const mins = Math.round((Date.now() - then) / 60000);
+  if (mins < 1) return "Active now";
+  if (mins < 60) return mins + (mins === 1 ? " minute ago" : " minutes ago");
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return hrs + (hrs === 1 ? " hour ago" : " hours ago");
+  return fmtDateTime(iso);
+};
+// The API hashes contact fields at rest and the portal returns what it holds.
+// Extraction wraps values as {value, confidence, span}; unwrap without pretending
+// a missing value is an empty one.
+const fieldValue = (f) => {
+  if (f === null || f === undefined) return null;
+  if (typeof f === "object" && "value" in f) return f.value;
+  return f;
+};
+
+class Component extends DCLogic {
+  state = { screen: "boot", plane: "org", authMode: "signin", selected: "cand_rohit", domain: "data_eng",
+    copied: null, theme: "dark", evalStage: 0, turn: 0, turnState: "idle", channel: "audio",
+    // auth
+    emailInput: "", orgNameInput: "", otp: ["", "", "", "", "", ""],
+    authBusy: false, authError: null, authNotice: null,
+    me: null,
+    // remote resources
+    portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
+    jobList: IDLE, board: IDLE, comp: IDLE,
+    selectedJob: null, busyId: null, erasureConfirm: "" };
+
+  // ── remote-resource helper ────────────────────────────────────────────────
+  // Every fetch goes through here so loading/error handling cannot drift, and
+  // so a 401 is never turned into a screen-level error message (api.js has
+  // already redirected to login by then).
+  load = (key, fn) => {
+    this.setState((s) => ({ [key]: { loading: true, data: s[key] && s[key].data, error: null } }));
+    return fn().then(
+      (data) => { this.setState({ [key]: { loading: false, data, error: null } }); return data; },
+      (err) => {
+        if (err && err.kind === "session_lost") return null;
+        this.setState({ [key]: { loading: false, data: null, error: err } });
+        return null;
+      }
+    );
+  };
+
+  componentDidMount() {
+    API.onSessionLost(this.handleSessionLost);
+    // GET /auth/me on load is the whole boot sequence: it is the only thing
+    // that knows whether a cookie from a previous visit is still alive.
+    API.get("/auth/me").then(
+      (me) => {
+        const plane = KIND_TO_PLANE[me.kind] || "org";
+        this.setState({ me, plane, screen: LANDING[plane] });
+        this.loadForScreen(LANDING[plane]);
+      },
+      (err) => {
+        // 401 here is the ordinary "not signed in yet" case, not a failure.
+        this.setState({
+          screen: "login",
+          me: null,
+          authError: err && err.kind === "network" ? err : null
+        });
+      }
+    );
+  }
+
+  handleSessionLost = () => {
+    // Rule 3: never retry, never leave a half-populated screen behind.
+    this.setState({
+      screen: "login", me: null, otp: ["", "", "", "", "", ""], authBusy: false,
+      authError: null,
+      authNotice: "Your session ended. Sign in again to continue.",
+      portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
+      jobList: IDLE, board: IDLE, comp: IDLE
+    });
+  };
+
+  // Fetch exactly what a screen renders, when it is opened. No global
+  // prefetch: an org session hitting /portal/me would 401 and log the user out.
+  loadForScreen = (screen) => {
+    if (screen === "portal") this.load("portal", () => API.get("/portal/me"));
+    else if (screen === "accesslog") this.load("accessLog", () => API.get("/portal/access-log"));
+    else if (screen === "consents") this.load("consentList", () => API.get("/portal/consents"));
+    else if (screen === "devices") this.load("sessionList", () => API.get("/auth/sessions"));
+    else if (screen === "roles") this.loadJobs();
+    else if (screen === "comp") this.loadComp();
+  };
+
+  nav = (screen) => () => { this.setState({ screen }); this.loadForScreen(screen); window.scrollTo(0, 0); };
+  goQueue = this.nav("queue");
+  goBatches = this.nav("batches");
+  goSummary = this.nav("summary");
+  goUpload = this.nav("upload");
+  goDevices = this.nav("devices");
+  goPortal = this.nav("portal");
+  goAccessLog = this.nav("accesslog");
+  goConsents = this.nav("consents");
+  goErasure = this.nav("erasure");
+  goEvaluate = this.nav("evaluate");
+  goInterview = this.nav("interview");
+  goRoles = this.nav("roles");
+
+  runEvaluate = () => {
+    clearInterval(this._evalTimer);
+    this.setState({ evalStage: 0 });
+    this._evalTimer = setInterval(() => {
+      this.setState((s) => {
+        const next = (s.evalStage || 0) + 1;
+        if (next > EVAL_NODES.length) { clearInterval(this._evalTimer); return { evalStage: 99 }; }
+        return { evalStage: next };
+      });
+    }, 520);
+  };
+
+  setAudio = () => this.setState({ channel: "audio" });
+  setText = () => this.setState({ channel: "text" });
+  toggleRecord = () => this.setState((s) => ({ turnState: s.turnState === "recording" ? "recorded" : "recording" }));
+  retryTurn = () => this.setState({ turnState: "idle" });
+  skipTurn = () => this.advance();
+  submitTurn = () => {
+    // turn 3 demonstrates a transcription failure: it must not consume the turn
+    if (this.state.channel === "audio" && this.state.turn === 2 && this.state.turnState !== "failed") {
+      this.setState({ turnState: "processing" });
+      clearTimeout(this._turnTimer);
+      this._turnTimer = setTimeout(() => this.setState({ turnState: "failed" }), 900);
+      return;
+    }
+    this.setState({ turnState: "processing" });
+    clearTimeout(this._turnTimer);
+    this._turnTimer = setTimeout(() => this.advance(), 900);
+  };
+  advance = () => {
+    this.setState((s) => ({ turn: Math.min(s.turn + 1, TURNS.length - 1), turnState: "idle" }));
+  };
+  goComp = this.nav("comp");
+  goAdminOrgs = this.nav("adminorgs");
+  goAdminUsers = this.nav("adminusers");
+  goCuration = this.nav("curation");
+  // ── auth ──────────────────────────────────────────────────────────────────
+  setEmailInput = (e) => this.setState({ emailInput: e.target.value, authError: null });
+  setOrgNameInput = (e) => this.setState({ orgNameInput: e.target.value, authError: null });
+  onEmailKey = (e) => { if (e.key === "Enter") { e.preventDefault(); this.sendCode(); } };
+
+  sendCode = () => {
+    const { plane, authMode, emailInput, orgNameInput } = this.state;
+    const email = (emailInput || "").trim();
+    if (!email) { this.setState({ authError: { detail: "Enter your email address." } }); return; }
+    const p = PLANE_PATH[plane];
+    // Operator has no signup route at all — accounts are minted via
+    // POST /admin/users by an existing operator.
+    const signingUp = authMode === "signup" && plane !== "operator";
+    const path = "/auth/" + p + (signingUp ? "/signup" : "/login");
+    const body = signingUp && plane === "org"
+      ? { email, organization_name: (orgNameInput || "").trim() }
+      : { email };
+    if (signingUp && plane === "org" && !body.organization_name) {
+      this.setState({ authError: { detail: "Enter your organisation name." } });
+      return;
+    }
+
+    this.setState({ authBusy: true, authError: null, authNotice: null });
+    API.post(path, body).then(
+      () => this.setState({
+        authBusy: false, screen: "verify", otp: ["", "", "", "", "", ""],
+        // Signup and login ALWAYS answer 202, known address or not. Never
+        // render "no account found" — that would re-open the enumeration hole
+        // the backend deliberately closed.
+        authNotice: null
+      }),
+      (err) => this.setState({ authBusy: false, authError: err })
+    );
+  };
+
+  resendCode = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const { plane, emailInput } = this.state;
+    // Always the LOGIN route on resend: a second signup for an address already
+    // on file is a silent no-op on the org plane.
+    API.post("/auth/" + PLANE_PATH[plane] + "/login", { email: (emailInput || "").trim() }).then(
+      () => this.setState({
+        authNotice: "If that address is registered, another code is on its way. Within a minute of the last one, the first code is still the live one.",
+        authError: null
+      }),
+      (err) => this.setState({ authError: err })
+    );
+  };
+
+  submitCode = () => {
+    const { plane, emailInput, otp } = this.state;
+    const code = (otp || []).join("").trim();
+    if (code.length < 6) { this.setState({ authError: { detail: "Enter all six digits." } }); return; }
+    this.setState({ authBusy: true, authError: null });
+    API.post("/auth/" + PLANE_PATH[plane] + "/verify", { email: (emailInput || "").trim(), code }).then(
+      (res) => {
+        const uiPlane = KIND_TO_PLANE[res.principal] || plane;
+        const screen = LANDING[uiPlane];
+        this.setState({
+          authBusy: false, authError: null, authNotice: null,
+          me: { kind: res.principal, organization_id: res.organization_id },
+          plane: uiPlane, screen, otp: ["", "", "", "", "", ""]
+        });
+        this.loadForScreen(screen);
+        window.scrollTo(0, 0);
+      },
+      (err) => this.setState({ authBusy: false, authError: err, otp: ["", "", "", "", "", ""] })
+    );
+  };
+
+  // Six boxes, one string. A pasted code lands in whichever box has focus, so
+  // `onInput` distributes anything longer than one character rather than
+  // needing an onPaste handler (which this runtime does not map).
+  otpHandlers = [0, 1, 2, 3, 4, 5].map((i) => ({
+    onInput: (e) => {
+      const raw = (e.target.value || "").replace(/\D/g, "");
+      this.setState((s) => {
+        const next = (s.otp || []).slice();
+        if (raw.length > 1) {
+          for (let k = 0; k < raw.length && i + k < 6; k++) next[i + k] = raw[k];
+        } else {
+          next[i] = raw;
+        }
+        return { otp: next, authError: null };
+      });
+    },
+    onKeyDown: (e) => {
+      if (e.key === "Enter") { e.preventDefault(); this.submitCode(); return; }
+      if (e.key === "Backspace" && !e.target.value) {
+        this.setState((s) => {
+          const next = (s.otp || []).slice();
+          if (i > 0) next[i - 1] = "";
+          return { otp: next };
+        });
+      }
+    }
+  }));
+
+  backToLogin = () => this.setState({
+    screen: "login", otp: ["", "", "", "", "", ""], authError: null, authNotice: null
+  });
+
+  signOut = () => {
+    // Ask the server to kill the session, then clear locally either way — a
+    // failed logout must not strand someone in a signed-in-looking shell.
+    API.post("/auth/logout").then(this.handleSessionLost, this.handleSessionLost);
+    this.setState({ authNotice: null });
+  };
+  goQueueLink = (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ screen: "queue" }); window.scrollTo(0, 0); };
+  noop = (e) => { if (e && e.preventDefault) e.preventDefault(); };
+
+  // ── portal / devices / roles / comp ───────────────────────────────────────
+  revokeConsent = (id) => () => {
+    this.setState({ busyId: id });
+    API.post("/portal/consents/" + id + "/revoke").then(
+      () => { this.setState({ busyId: null }); this.load("consentList", () => API.get("/portal/consents")); },
+      (err) => this.setState({ busyId: null, consentList: { loading: false, data: this.state.consentList.data, error: err } })
+    );
+  };
+
+  revokeSession = (id) => () => {
+    this.setState({ busyId: id });
+    API.post("/auth/sessions/" + id + "/revoke").then(
+      () => { this.setState({ busyId: null }); this.load("sessionList", () => API.get("/auth/sessions")); },
+      (err) => this.setState({ busyId: null, sessionList: { loading: false, data: this.state.sessionList.data, error: err } })
+    );
+  };
+
+  setErasureConfirm = (e) => this.setState({ erasureConfirm: e.target.value });
+  confirmErasure = () => {
+    if ((this.state.erasureConfirm || "").trim().toUpperCase() !== "DELETE") return;
+    this.setState({ busyId: "erase" });
+    API.del("/portal/me").then(
+      () => {
+        // Everything cascades server-side and the session dies with it, so the
+        // only honest next screen is login.
+        this.setState({ busyId: null, erasureConfirm: "" });
+        this.handleSessionLost();
+        this.setState({ authNotice: "Your data has been deleted. Nothing is left to sign in to." });
+      },
+      (err) => this.setState({ busyId: null, portal: { loading: false, data: this.state.portal.data, error: err } })
+    );
+  };
+
+  loadJobs = () => this.load("jobList", () => API.get("/jobs")).then((jobs) => {
+    if (jobs && jobs.length && !this.state.selectedJob) this.selectJob(jobs[0].id)();
+  });
+
+  selectJob = (id) => () => {
+    this.setState({ selectedJob: id });
+    // The board 422s with "no materialized candidates to match" when the
+    // feature store is empty. Materialization has NO HTTP route today, so for
+    // a self-registered org that is permanent, not transient — it renders as
+    // an empty state, never as a failure.
+    this.load("board", () => API.get("/jobs/" + id + "/board"));
+  };
+
+  loadComp = () => {
+    const jobs = this.state.jobList.data;
+    if (!jobs) { this.load("jobList", () => API.get("/jobs")).then(() => this.loadCompFor()); return; }
+    this.loadCompFor();
+  };
+  loadCompFor = () => {
+    const jobs = this.state.jobList.data || [];
+    const job = jobs.find((j) => j.id === this.state.selectedJob) || jobs[0];
+    if (!job) { this.setState({ comp: { loading: false, data: null, error: null } }); return; }
+    this.load("comp", () => API.get("/jobs/" + job.id + "/comp"));
+  };
+
+  toggleTheme = () => this.setState((s) => ({ theme: s.theme === "dark" ? "light" : "dark" }));
+  // operator has no self-signup path, so switching to it forces sign-in mode
+  setOrg = () => this.setState({ plane: "org" });
+  setCandidate = () => this.setState({ plane: "candidate" });
+  setAdmin = () => this.setState({ plane: "operator", authMode: "signin" });
+  setSignIn = () => this.setState({ authMode: "signin" });
+  setSignUp = () => this.setState({ authMode: "signup" });
+  setDataEng = () => this.setState({ domain: "data_eng" });
+  setGenai = () => this.setState({ domain: "genai" });
+
+  openHandlers = ROWS.reduce((acc, r) => {
+    acc[r.id] = () => { this.setState({ screen: "report", selected: r.id }); window.scrollTo(0, 0); };
+    return acc;
+  }, {});
+  keyHandlers = ROWS.reduce((acc, r) => {
+    acc[r.id] = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.openHandlers[r.id](); } };
+    return acc;
+  }, {});
+  rows = ROWS.map((r) => Object.assign({}, r, { open: this.openHandlers[r.id], openKey: this.keyHandlers[r.id] }));
+
+  _copyHandlers = {};
+  copyProbes = (key, probes) => () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(probes.join("\n")).catch(() => {});
+    }
+    this.setState({ copied: key });
+    clearTimeout(this._copyTimer);
+    this._copyTimer = setTimeout(() => this.setState({ copied: null }), 2000);
+  };
+  componentWillUnmount() {
+    clearTimeout(this._copyTimer);
+    clearTimeout(this._turnTimer);
+    clearInterval(this._evalTimer);
+  }
+
+  renderVals() {
+    const s = this.state.screen;
+    const r = REPORTS[this.state.selected] || REPORTS.cand_rohit;
+    // "boot" is the pre-/auth/me state: neither the shell nor the login form,
+    // so a returning user with a live cookie never sees the login screen flash.
+    const authed = s !== "login" && s !== "verify" && s !== "boot";
+    const dark = this.state.theme === "dark";
+    const stage = this.state.evalStage || 0;
+    const audio = this.state.channel !== "text";
+    const speechOk = this.props.speechEnabled ?? true;
+    const recording = this.state.turnState === "recording";
+    const st = this.state;
+    return Object.assign({
+      themeVars: dark ? DARK : LIGHT,
+      themeLabel: dark ? "Light mode" : "Dark mode",
+      themeBtn: THEME_BTN,
+      toggleTheme: this.toggleTheme,
+
+      isAuth: s === "login" || s === "verify", isApp: authed,
+      isLogin: s === "login", isVerify: s === "verify",
+      isQueue: s === "queue", isReport: s === "report", isSummary: s === "summary",
+      isUpload: s === "upload", isBatches: s === "batches",
+      screenTitle: TITLES[s] || "Screening queue",
+
+      goQueue: this.goQueue, goBatches: this.goBatches, goSummary: this.goSummary,
+      goUpload: this.goUpload, goQueueLink: this.goQueueLink, signOut: this.signOut,
+      sendCode: this.sendCode, backToLogin: this.backToLogin, noop: this.noop,
+      setOrg: this.setOrg, setCandidate: this.setCandidate, setAdmin: this.setAdmin,
+      setDataEng: this.setDataEng, setGenai: this.setGenai,
+
+      // -- auth bindings ----------------------------------------------------
+      emailInput: st.emailInput, setEmailInput: this.setEmailInput, onEmailKey: this.onEmailKey,
+      orgNameInput: st.orgNameInput, setOrgNameInput: this.setOrgNameInput,
+      submitCode: this.submitCode, resendCode: this.resendCode,
+      verifyAction: st.authBusy ? "Checking…" : "Verify and continue",
+      otpBoxes: (st.otp || []).map((v, i) => ({
+        value: v, onInput: this.otpHandlers[i].onInput, onKeyDown: this.otpHandlers[i].onKeyDown
+      })),
+      authError: !!(st.authError || st.authNotice),
+      authErrorBox: st.authError ? ERROR_BOX : NOTICE_BOX,
+      authErrorText: st.authError ? errorCopy(st.authError) : (st.authNotice || ""),
+
+      tabOrg: tabBtn(this.state.plane === "org"),
+      tabCandidate: tabBtn(this.state.plane === "candidate"),
+      tabAdmin: tabBtn(this.state.plane === "operator"),
+      planeHint: PLANE_HINT[this.state.plane],
+      canSignUp: this.state.plane !== "operator",
+      operatorOnly: this.state.plane === "operator",
+      needsOrgName: this.state.plane === "org" && this.state.authMode === "signup",
+      modeSignIn: modeBtn(this.state.authMode === "signin"),
+      modeSignUp: modeBtn(this.state.authMode === "signup"),
+      setSignIn: this.setSignIn, setSignUp: this.setSignUp,
+      authTitle: this.state.plane === "operator" ? "Operator sign in"
+        : this.state.authMode === "signup" ? "Create your account" : "Sign in",
+      authAction: this.state.authMode === "signup" && this.state.plane !== "operator"
+        ? "Create account and send code" : "Send code",
+      emailPlaceholder: this.state.plane === "candidate" ? "you@example.com"
+        : this.state.plane === "operator" ? "you@veritas.in" : "you@agency.in",
+      domDataEng: domBtn(this.state.domain === "data_eng"),
+      domGenai: domBtn(this.state.domain === "genai"),
+
+      otpBox: OTP_BOX, field: FIELD, searchField: SEARCH_FIELD,
+      primaryBtn: PRIMARY_BTN, smallPrimary: SMALL_PRIMARY, smallPrimaryFlat: SMALL_PRIMARY_FLAT,
+      ghostBtn: GHOST_BTN, copyBtn: COPY_BTN, linkBtn: LINK_BTN,
+      statCard: STAT_CARD, bigStat: BIG_STAT, batchRow: BATCH_ROW, h2: H2,
+
+      navQueue: navBtn(s === "queue" || s === "report"),
+      navBatches: navBtn(s === "batches"),
+      navSummary: navBtn(s === "summary"),
+      navUpload: navBtn(s === "upload"),
+      navDevices: navBtn(s === "devices"),
+      navPortal: navBtn(s === "portal"),
+      navAccessLog: navBtn(s === "accesslog"),
+      navConsents: navBtn(s === "consents"),
+      navErasure: navBtn(s === "erasure"),
+      navGroup: NAV_GROUP,
+
+      isOrgPlane: this.state.plane === "org",
+      isCandidatePlane: this.state.plane === "candidate",
+      isOperatorPlane: this.state.plane === "operator",
+      isEvaluate: s === "evaluate",
+      navEvaluate: navBtn(s === "evaluate"),
+      goEvaluate: this.goEvaluate,
+      runEvaluate: this.runEvaluate,
+      textArea: TEXT_AREA,
+      evaluateAction: stage === 0 || stage === undefined ? "Evaluate this resume" : stage === 99 ? "Run it again" : "Running…",
+      evalRunning: stage > 0 && stage < 99,
+      evalDone: stage === 99,
+      evalNodes: EVAL_NODES.map((n, i) => Object.assign({}, n, {
+        dot: nodeDot(stage === 99 || stage > i + 1 ? "done" : stage === i + 1 ? "active" : "idle")
+      })),
+      evalGauge: {
+        width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
+        background: "conic-gradient(from 180deg, var(--c-elev) 0deg, var(--c-elev) 220deg, var(--track) 220deg)"
+      },
+      evalBandChip: Object.assign(chip(BAND.elevated), { marginTop: "9px" }),
+      evalChipElev: chip(BAND.elevated),
+      evalChipMod: chip(BAND.moderate),
+      evalChipLow: chip(BAND.low),
+
+      isInterview: s === "interview",
+      navInterview: navBtn(s === "interview"),
+      goInterview: this.goInterview,
+      turnCounter: (this.state.turn + 1) + " of " + TURNS.length,
+      plannedCopy: TURNS.length + " questions were planned for you (the engine plans between three and eight, depending on how many claims are worth probing).",
+      wordFloorChip: stateChip(false),
+      wordFloorLabel: "under the 12-word floor",
+      turnPips: TURNS.map((_t, i) => ({
+        style: pip(i < this.state.turn ? "done" : i === this.state.turn ? "active" : "idle")
+      })),
+      turnClaimType: TURNS[this.state.turn].type,
+      turnQuestion: TURNS[this.state.turn].q,
+      chanAudio: modeBtn(audio),
+      chanText: modeBtn(!audio),
+      setAudio: this.setAudio, setText: this.setText,
+      speechDown: audio && !speechOk,
+      showRecorder: audio && speechOk,
+      showTextBox: !audio || !speechOk,
+      micBtn: {
+        width: "46px", height: "46px", flex: "none", borderRadius: "50%", cursor: "pointer",
+        display: "grid", placeItems: "center", border: 0, color: "#ffffff",
+        background: recording ? "var(--c-elev)" : "linear-gradient(140deg,var(--a1),var(--a2))"
+      },
+      micGlyph: {
+        width: "18px", height: "18px", display: "inline-block", background: "currentColor",
+        WebkitMask: "url(https://unpkg.com/lucide-static@0.460.0/icons/" + (recording ? "square" : "mic") + ".svg) center/contain no-repeat",
+        mask: "url(https://unpkg.com/lucide-static@0.460.0/icons/" + (recording ? "square" : "mic") + ".svg) center/contain no-repeat"
+      },
+      recordLabel: recording ? "Recording — 00:14" : this.state.turnState === "recorded" ? "Recorded — 00:22" : "Ready when you are",
+      recordHint: recording ? "Tap to stop. Audio is transcribed, then discarded." : "Asked for once, at the first question. Up to about six minutes per answer.",
+      levelBars: LEVELS.map((h) => ({ style: levelBar(recording ? h : 3, recording) })),
+      turnFailed: this.state.turnState === "failed",
+      retryTurn: this.retryTurn, submitTurn: this.submitTurn, skipTurn: this.skipTurn,
+      toggleRecord: this.toggleRecord,
+      submitLabel: this.state.turnState === "processing" ? "Scoring…" : "Submit answer",
+      turnStatus: this.state.turnState === "processing" ? "Scoring deterministically — a model may nudge, never grade."
+        : this.state.turnState === "failed" ? "This question is still open."
+        : "Answers are scored one turn at a time.",
+
+      isRoles: s === "roles",
+      isComp: s === "comp",
+      navRoles: navBtn(s === "roles"),
+      navComp: navBtn(s === "comp"),
+      goRoles: this.goRoles, goComp: this.goComp,
+      jobs: JOBS.map((j) => Object.assign({}, j, { statusChip: statusChip(j.status === "Open") })),
+      shortlist: SHORTLIST.map((m) => Object.assign({}, m, {
+        chip: chip(BAND[m.band]), bandLabel: BAND[m.band].label + " risk"
+      })),
+      showSearch: this.state.plane !== "candidate",
+      searchPlaceholder: this.state.plane === "operator" ? "Search organisations" : "Search candidates",
+      showAdvisory: RISK_SCREENS.indexOf(s) !== -1,
+      isAdminOrgs: s === "adminorgs",
+      isAdminUsers: s === "adminusers",
+      isCuration: s === "curation",
+      navAdminOrgs: navBtn(s === "adminorgs"),
+      navAdminUsers: navBtn(s === "adminusers"),
+      navCuration: navBtn(s === "curation"),
+      goAdminOrgs: this.goAdminOrgs, goAdminUsers: this.goAdminUsers, goCuration: this.goCuration,
+      adminOrgs: ADMIN_ORGS.map((o) => Object.assign({}, o, { chip: stateChip(o.status === "Active") })),
+      adminUsers: ADMIN_USERS,
+      curation: CURATION,
+      smallGhost: SMALL_GHOST,
+      accountName: this.state.plane === "candidate" ? "Priya Nandakumar"
+        : this.state.plane === "operator" ? "ops@veritas.in"
+        : (this.props.orgName ?? "Sampoorna Staffing"),
+      accountInitial: this.state.plane === "candidate" ? "P" : this.state.plane === "operator" ? "O" : "S",
+      isPortal: s === "portal",
+      isAccessLog: s === "accesslog",
+      isConsents: s === "consents",
+      isDevices: s === "devices",
+      isErasure: s === "erasure",
+
+      goDevices: this.goDevices, goPortal: this.goPortal, goAccessLog: this.goAccessLog,
+      goConsents: this.goConsents, goErasure: this.goErasure,
+
+      h1: H1, listCard: LIST_CARD, kvRow: KV_ROW, statNum: STAT_NUM, statLabel: STAT_LABEL,
+      dangerBtn: DANGER_BTN,
+
+      portalProfile: PORTAL_PROFILE,
+      portalReports: PORTAL_REPORTS,
+      portalAssurance: PORTAL_ASSURANCE.map((a) => Object.assign({}, a, { chip: stateChip(a.status === "Held") })),
+      accessLog: ACCESS_LOG.map((e) => Object.assign({}, e, { chip: stateChip(e.outcome === "Allowed") })),
+      consents: CONSENTS.map((c) => Object.assign({}, c, {
+        action: c.active ? SMALL_GHOST : SMALL_MUTED,
+        actionLabel: c.active ? "Revoke" : "Revoked"
+      })),
+      sessions: SESSIONS.map((d) => Object.assign({}, d, {
+        chip: stateChip(d.current),
+        action: d.current ? SMALL_MUTED : SMALL_GHOST,
+        actionLabel: d.current ? "—" : "Revoke"
+      })),
+
+      orgName: this.props.orgName ?? "Sampoorna Staffing",
+      batchName: this.props.batchName ?? "Wipro DE — August intake",
+
+      candidates: this.rows,
+
+      reportName: r.name, reportRole: r.role, reportSummary: r.summary, reportDepth: r.depth,
+      reportInitials: r.initials, reportAvatar: r.avatar,
+      reportScore: r.score, reportBandLabel: r.bandLabel, reportChip: r.chip,
+      gaugeRing: r.gauge, reportConfBar: r.confBar, reportConfLabel: r.confLabel,
+      reportThinReason: r.thinReason, reportComponents: r.components,
+      hasVerdicts: r.verdicts.length > 0, noVerdicts: r.verdicts.length === 0,
+      reportVerdicts: r.verdicts.map((v, i) => {
+        const key = this.state.selected + ":" + i;
+        if (!this._copyHandlers[key]) this._copyHandlers[key] = this.copyProbes(key, v.probes);
+        return Object.assign({}, v, {
+          copy: this._copyHandlers[key],
+          copyLabel: this.state.copied === key ? "Copied" : (v.probes.length > 1 ? "Copy questions" : "Copy question")
+        });
+      })
+    }, this.liveVals());
+  }
+
+  /* Everything the API actually serves. Applied OVER the mock bag above, so a
+   * wired screen has no mock left to fall back to: a fallback would make a
+   * broken backend look like a working one, which is the specific way a
+   * confident UI makes an honest backend lie (UI.md §7). */
+  liveVals() {
+    const st = this.state;
+    const me = st.me || {};
+    const busy = (id) => st.busyId === id;
+
+    // -- portal (candidate plane) -----------------------------------------
+    const my = st.portal.data;
+    const prof = (my && my.profile) || null;
+    const name = prof ? fieldValue(prof.full_name) : null;
+    const retention = (my && my.retention && my.retention.windows) || [];
+    const retentionLine = retention.length
+      ? retention.map((w) => w.data_class + " " + w.ttl_days + "d").join(" · ")
+        + (my.retention.sweep_active ? "" : " — surfaced, not swept")
+      : "—";
+
+    const portalProfile = my ? [
+      { k: "Name", v: name || "Not extracted" },
+      { k: "Email", v: prof && fieldValue(prof.email) ? fieldValue(prof.email) : "Held as a hash only" },
+      { k: "Phone", v: prof && fieldValue(prof.phone) ? fieldValue(prof.phone) : "Held as a hash only" },
+      { k: "Location", v: (prof && fieldValue(prof.location)) || "—" },
+      { k: "Resume versions", v: String((my.resumes || []).length) },
+      { k: "Retention policy", v: retentionLine }
+    ] : [];
+
+    // The subject sees that a report EXISTS and when — never its internals.
+    const portalReports = my ? (my.reports || []).map((x) => ({
+      id: x.report_id, meta: x.domain + " · " + fmtDate(x.created_at)
+    })) : [];
+
+    // S7.1 assurance ladder. `identity` is null until the candidate verifies
+    // anything, which is the common case and not an error.
+    const held = new Set(((my && my.identity && my.identity.methods_held) || []).map(String));
+    const portalAssurance = my ? [
+      ["Self-attestation", "self_attested"],
+      ["Contact-control OTP (email)", "otp_email"],
+      ["Contact-control OTP (phone)", "otp_phone"],
+      ["Operator manual review", "manual_review"],
+      ["Government ID", "government_id"]
+    ].map(([label, key]) => {
+      const isHeld = held.has(key);
+      const status = key === "government_id" && !isHeld ? "Not implemented" : (isHeld ? "Held" : "Not held");
+      return { method: label, status, chip: stateChip(isHeld) };
+    }) : [];
+
+    const accessRows = st.accessLog.data;
+    const accessLog = accessRows ? accessRows.map((e) => ({
+      when: fmtDateTime(e.at),
+      org: e.actor_name || e.actor_id || (e.actor_type === "system" ? "Veritas (internal)" : e.actor_type),
+      purpose: e.action,
+      outcome: e.allowed === true ? "Allowed" : e.allowed === false ? "Refused" : "—",
+      chip: stateChip(e.allowed === true)
+    })) : [];
+
+    const consentRows = st.consentList.data;
+    const consents = consentRows ? consentRows.map((c) => {
+      const g = c.grant || {};
+      const active = c.state === "active";
+      return {
+        org: g.organization_name || g.org_id || "—",
+        purpose: g.purpose + (g.expires_at ? " · expires " + fmtDate(g.expires_at) : ""),
+        expiry: c.state === "active" ? "Active" : c.state === "revoked" ? "Revoked" : "Expired",
+        active,
+        action: active && !busy(g.id) ? SMALL_GHOST : SMALL_MUTED,
+        actionLabel: busy(g.id) ? "…" : active ? "Revoke" : "Revoked",
+        revoke: active ? this.revokeConsent(g.id) : this.noop
+      };
+    }) : [];
+
+    // -- devices (any plane) ----------------------------------------------
+    const sessRows = st.sessionList.data;
+    const sessions = sessRows ? sessRows.map((d) => ({
+      agent: d.user_agent || "Unknown device",
+      id: String(d.id).slice(0, 8) + "…",
+      lastSeen: relTime(d.last_seen_at),
+      status: d.current ? "This device" : (d.status === "active" ? "Live" : d.status),
+      current: d.current,
+      chip: stateChip(d.current),
+      // The current session cannot revoke itself — the API 404s it, and an
+      // affordance that always fails is worse than none.
+      action: d.current || busy(d.id) ? SMALL_MUTED : SMALL_GHOST,
+      actionLabel: busy(d.id) ? "…" : d.current ? "—" : "Revoke",
+      revoke: d.current ? this.noop : this.revokeSession(d.id)
+    })) : [];
+
+    // -- roles + comp (org plane) -----------------------------------------
+    const jobRows = st.jobList.data;
+    const jobs = jobRows ? jobRows.map((j) => ({
+      id: j.id, title: j.title,
+      loc: j.location || "—",
+      domain: j.domain,
+      status: j.status === "open" ? "Open" : j.status === "on_hold" ? "On hold" : j.status,
+      matched: (j.must_have_skills || []).length + (j.nice_to_have_skills || []).length,
+      band_label: "—",
+      filled: "—",
+      statusChip: statusChip(j.status === "open"),
+      select: this.selectJob(j.id)
+    })) : [];
+
+    const boardData = st.board.data;
+    const boardErr = st.board.error;
+    const shortlist = boardData && boardData.match && boardData.match.matches
+      ? boardData.match.matches.map((m) => {
+          const b = BAND[m.risk_band] || BAND.insufficient;
+          return {
+            name: m.candidate_id,
+            role: "match " + (m.score !== undefined && m.score !== null ? m.score.toFixed(2) : "—"),
+            score: m.score !== undefined && m.score !== null ? m.score.toFixed(2) : "—",
+            cover: "coverage " + (m.skill_coverage !== undefined && m.skill_coverage !== null ? m.skill_coverage.toFixed(2) : "—"),
+            chip: chip(b), bandLabel: b.label + " risk",
+            note: m.reasoning || ""
+          };
+        })
+      : [];
+
+    // Two shapes for the same numbers, and they are NOT interchangeable:
+    // GET /jobs/{id}/comp returns a CompBenchmark, which WRAPS the estimate
+    // (plus the requisition's own band and how it sits against the market);
+    // POST /comp/estimate returns the bare CompBandEstimate. Unwrap once here
+    // so no reader has to remember which endpoint it came from.
+    const compRaw = st.comp.data;
+    const compData = compRaw ? (compRaw.estimate || compRaw) : null;
+    const compPosition = compRaw ? compRaw.position : null;
+    const compJob = (jobRows || []).find((j) => j.id === st.selectedJob) || (jobRows || [])[0] || null;
+    // The API answers in absolute INR; Indian comp is spoken in lakhs.
+    const lpa = (v) => (v === null || v === undefined ? "—" : "₹" + (v / 100000).toFixed(1) + " LPA");
+    const medianPct = (function () {
+      if (!compData) return "50%";
+      const lo = compData.p25, hi = compData.p75, mid = compData.p50;
+      if ([lo, hi, mid].some((x) => x === null || x === undefined) || hi <= lo) return "50%";
+      const frac = Math.min(1, Math.max(0, (mid - lo) / (hi - lo)));
+      return (15 + frac * 70).toFixed(2) + "%";
+    })();
+
+    // Screens with no endpoint behind them (spec 0.4). They keep their mock
+    // data and must SAY so on screen.
+    const MOCK_SCREENS = {
+      queue: 1, report: 1, summary: 1, upload: 1, batches: 1,
+      evaluate: 1, interview: 1, adminorgs: 1, adminusers: 1, curation: 1
+    };
+
+    return {
+      authAction: st.authBusy
+        ? "Sending…"
+        : (st.authMode === "signup" && st.plane !== "operator" ? "Create account and send code" : "Send code"),
+
+      // Who you actually are, not a prop.
+      accountName: me.kind === "candidate"
+        ? (name || "Your data")
+        : me.kind === "admin" ? "Operator" : (me.organization_id ? "Org " + String(me.organization_id).slice(0, 8) : "Organisation"),
+      accountInitial: me.kind === "candidate" ? (name ? name[0] : "C") : me.kind === "admin" ? "O" : "S",
+
+      // Which backend this page is talking to. An invisible base URL is how a
+      // demo ends up pointed somewhere nobody expects.
+      apiBase: API.base(),
+
+      // Honest labelling of what is real (spec 0.4).
+      mockChip: MOCK_CHIP,
+      mockNote: API.MOCK_NOTE,
+      isMockScreen: !!MOCK_SCREENS[st.screen],
+
+      portalLoading: st.portal.loading,
+      portalError: !!st.portal.error,
+      portalErrorText: errorCopy(st.portal.error),
+      portalProfile, portalReports, portalAssurance,
+      portalCounts: {
+        resumes: my ? (my.resumes || []).length : 0,
+        reports: my ? (my.reports || []).length : 0,
+        consents: my ? (my.consents || []).length : 0,
+        interviews: my ? (my.interviews || []).length : 0
+      },
+
+      accessLog,
+      accessLogLoading: st.accessLog.loading,
+      accessLogEmpty: !!accessRows && accessRows.length === 0,
+
+      consents,
+      consentsLoading: st.consentList.loading,
+      consentsEmpty: !!consentRows && consentRows.length === 0,
+
+      sessions,
+      sessionsLoading: st.sessionList.loading,
+
+      erasureConfirm: st.erasureConfirm,
+      setErasureConfirm: this.setErasureConfirm,
+      confirmErasure: this.confirmErasure,
+      erasureArmed: (st.erasureConfirm || "").trim().toUpperCase() === "DELETE",
+      erasureLabel: busy("erase") ? "Deleting…" : "Delete everything",
+
+      jobs,
+      jobsLoading: st.jobList.loading,
+      jobsEmpty: !!jobRows && jobRows.length === 0,
+      hasJobs: jobs.length > 0,
+      shortlist,
+      // The board's three real outcomes, kept apart: a consent 403 is the
+      // designed "not shared with you" block; a 422 is an empty pool, which is
+      // permanent today because materialization has no HTTP route at all.
+      boardConsentBlocked: !!(boardErr && boardErr.kind === "consent"),
+      boardEmptyPool: !!(boardErr && boardErr.kind === "unprocessable"),
+      boardEmptyPoolText: "No candidates have been materialised into the feature store yet, so there is nothing to rank. There is no API route that does this today — it lands in S8.4.",
+      boardError: !!(boardErr && boardErr.kind !== "consent" && boardErr.kind !== "unprocessable"),
+      boardErrorText: errorCopy(boardErr),
+      boardLoading: st.board.loading,
+
+      compLoading: st.comp.loading,
+      compError: !!st.comp.error,
+      compErrorText: errorCopy(st.comp.error),
+      // Comp is benchmarked per requisition, so with none there is nothing to
+      // show — better to say that than render a band made entirely of dashes.
+      // `noComp` deliberately covers BOTH "no requisition" and "the benchmark
+      // did not come back", so the screen can never render nothing at all.
+      hasComp: !!compData,
+      noComp: !compData && !st.comp.loading && !st.jobList.loading,
+      noCompReason: compJob
+        ? "The comp benchmark for this requisition did not load."
+        : "Comp is benchmarked per requisition. Create one on the Roles screen and its band appears here.",
+      compRole: compJob ? (compJob.title + " · " + (compJob.location || "—")) : "No requisition selected",
+      compP25Label: lpa(compData && compData.p25),
+      compP50Label: lpa(compData && compData.p50),
+      compP75Label: lpa(compData && compData.p75),
+      compObserved: compData ? String(compData.n_observed) : "—",
+      compObservedLabel: compData
+        ? (compData.n_observed > 0
+            ? compData.n_observed + " observed offers · above the k=5 floor"
+            : "No observed offers above the k=5 floor")
+        : "—",
+      compConfidenceLabel: compData && compData.confidence !== null && compData.confidence !== undefined
+        ? compData.confidence.toFixed(2) + " · " + confWord(compData.confidence)
+        : "—",
+      // The median sits where it actually falls between p25 and p75, so a
+      // skewed band is not silently redrawn as a symmetric one.
+      compBandBar: { position: "absolute", left: "15%", width: "70%", height: "100%", borderRadius: "99px", background: "linear-gradient(92deg,var(--a1),var(--a2))" },
+      compMedianMark: { position: "absolute", left: medianPct, top: "-4px", width: "2px", height: "14px", background: "var(--heading)" },
+      compMedianLabelPos: { position: "absolute", left: medianPct, transform: "translateX(-50%)", whiteSpace: "nowrap", color: "var(--heading)" },
+      compPriorOnly: !!(compData && !compData.n_observed),
+      // `position` is null when the requisition carries no band of its own —
+      // which is not "at market", so it must not render as a number.
+      compPositionLabel: compPosition
+        ? (compPosition + (compRaw && compRaw.delta_pct !== null && compRaw.delta_pct !== undefined
+            ? " " + (compRaw.delta_pct >= 0 ? "+" : "") + (compRaw.delta_pct * 100).toFixed(0) + "%"
+            : ""))
+        : "No band set"
+    };
+  }
+}
+
+</script>
+</body>
+</html>

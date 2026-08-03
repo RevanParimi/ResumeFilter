@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/broadsheet-93819aef-a072-427f-9fc7-f40ac21d68b1/styles.css">
+<style>
+  body { margin: 0; }
+  a { color: #006786; }
+  a:hover { color: #004961; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:#f3f2f2; color:#201e1d; font-family:'Source Serif 4', Georgia, serif;">
+
+  <div style="max-width:1240px; margin:0 auto; padding:26px 50px 0 50px;">
+    <div style="display:flex; align-items:baseline; gap:30px;">
+      <span style="font-weight:700; font-size:30px; letter-spacing:-0.02em; margin-right:auto;">Veritas</span>
+      <a href="#" onClick="{{ goQueue }}" style="{{ navQueue }}" style-hover="color:#004961">Screening</a>
+      <a href="#" onClick="{{ goBatches }}" style="{{ navBatches }}" style-hover="color:#004961">Batches</a>
+      <a href="#" onClick="{{ goSummary }}" style="{{ navSummary }}" style-hover="color:#004961">Summary</a>
+      <a href="#" onClick="{{ goUpload }}" style="{{ navUpload }}" style-hover="color:#004961">Upload</a>
+      <span style="font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:#605d5d;">{{ orgName }}</span>
+    </div>
+    <div style="height:4px; background:#201e1d; margin-top:14px;"></div>
+    <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#605d5d;">
+      <span>Pre-screen fraud detection · advisory</span>
+      <span>Sunday, 2 August 2026</span>
+      <span>Human review required on every result</span>
+    </div>
+    <div style="height:1px; background:#201e1d;"></div>
+  </div>
+
+  <div style="max-width:1240px; margin:0 auto; padding:26px 50px 70px 50px;">
+
+    <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:60px; align-items:start;">
+        <div>
+          <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#006786; margin-bottom:10px;">Batch · uploaded 2 Aug 2026, 09:14 IST</div>
+          <h1 style="font-weight:700; font-size:54px; line-height:1.04; letter-spacing:-0.02em; margin:0 0 16px 0; max-width:15ch;">{{ batchName }}</h1>
+          <p style="font-size:19px; line-height:1.5; margin:0; max-width:54ch; color:#444141;"><em>168 of 214 screened.</em> Eleven resumes want a second pair of eyes before they reach the client. Each one carries its reasoning; none of them carries a verdict.</p>
+          <sc-if value="{{ showRails }}" hint-placeholder-val="{{ true }}"><p style="font-size:14px; line-height:1.6; margin:22px 0 0 0; max-width:80ch; color:#444141; border-left:3px solid #0088b0; padding-left:16px;"><strong>Advisory.</strong> Veritas never auto-rejects and never ranks a person as fake. Everything below is a reason to look closer, with the reasoning attached. A person decides.</p></sc-if>
+        </div>
+        <div style="padding-top:34px;">
+          <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d; margin-bottom:14px;">Distribution</div>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div style="display:flex; align-items:baseline; gap:12px;"><span style="font-size:30px; font-weight:700; color:#d6006c; min-width:46px;">11</span><span style="font-size:14px; color:#444141;">elevated</span></div>
+            <div style="display:flex; align-items:baseline; gap:12px;"><span style="font-size:30px; font-weight:700; min-width:46px;">29</span><span style="font-size:14px; color:#444141;">moderate</span></div>
+            <div style="display:flex; align-items:baseline; gap:12px;"><span style="font-size:30px; font-weight:700; min-width:46px;">104</span><span style="font-size:14px; color:#444141;">low</span></div>
+            <div style="display:flex; align-items:baseline; gap:12px;"><span style="font-size:30px; font-weight:700; color:#605d5d; min-width:46px;">24</span><span style="font-size:14px; color:#444141;">insufficient signal</span></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:22px;">
+            <div style="flex:1; height:3px; background:#d7d3d3;"><div style="width:78%; height:100%; background:#0088b0;"></div></div>
+            <span style="font-size:13px; color:#605d5d;">46 left</span>
+          </div>
+          <div style="margin-top:8px; font-size:13px; color:#605d5d; font-style:italic;">Still ingesting — rows appear as they land.</div>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:baseline; gap:24px; margin:44px 0 8px 0;">
+        <h2 style="font-size:32px; font-weight:700; margin:0; letter-spacing:-0.015em;">Ranked by how much they need a human</h2>
+        <span style="font-size:13px; color:#605d5d; margin-left:auto;">Sorted by fabrication risk, then confidence</span>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:34px; margin-top:26px;">
+        <sc-for list="{{ candidates }}" as="c" hint-placeholder-count="4">
+          <div onClick="{{ c.open }}" onKeyDown="{{ c.openKey }}" role="button" tabIndex="{{ 0 }}" style="display:grid; grid-template-columns:minmax(0,1fr) 270px; gap:44px; align-items:start; cursor:pointer; padding:8px; margin:-8px; border-radius:2px;" style-hover="background:rgba(32,30,29,0.04)">
+            <div>
+              <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:4px; flex-wrap:wrap;">
+                <h3 style="font-weight:700; font-size:27px; margin:0; letter-spacing:-0.01em;">{{ c.name }}</h3>
+                <span class="tag {{ c.tagClass }}">{{ c.bandLabel }}</span>
+              </div>
+              <div style="font-size:13px; letter-spacing:0.06em; text-transform:uppercase; color:#605d5d; margin-bottom:10px;">{{ c.role }}</div>
+              <p style="font-size:17px; line-height:1.5; margin:0; max-width:62ch;">{{ c.reason }}</p>
+            </div>
+            <div style="padding-top:6px;">
+              <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d;">Loudest signal</div>
+              <div style="font-size:17px; margin:4px 0 14px 0;">{{ c.loudest }}</div>
+              <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d;">Confidence</div>
+              <div style="display:flex; align-items:center; gap:10px; margin-top:5px;">
+                <sc-if value="{{ showConfBar }}" hint-placeholder-val="{{ true }}"><div style="flex:1; height:3px; background:#d7d3d3;"><div style="{{ c.confBar }}"></div></div></sc-if>
+                <sc-if value="{{ showConfNum }}" hint-placeholder-val="{{ true }}"><span style="font-size:14px;">{{ c.confLabel }}</span></sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isReport }}" hint-placeholder-val="{{ false }}">
+      <a href="#" onClick="{{ goQueue }}" style="font-size:13px; letter-spacing:0.1em; text-transform:uppercase; text-decoration:none;">← Back to screening queue</a>
+
+      <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:60px; align-items:start; margin-top:22px;">
+        <div>
+          <h1 style="font-weight:700; font-size:54px; line-height:1.04; letter-spacing:-0.02em; margin:0 0 6px 0;">{{ reportName }}</h1>
+          <div style="font-size:13px; letter-spacing:0.08em; text-transform:uppercase; color:#605d5d;">{{ reportRole }}</div>
+          <p style="font-size:19px; line-height:1.5; margin:18px 0 0 0; max-width:56ch; color:#444141;">{{ reportSummary }}</p>
+          <sc-if value="{{ showRails }}" hint-placeholder-val="{{ true }}"><p style="font-size:14px; line-height:1.6; margin:20px 0 0 0; max-width:78ch; color:#444141; border-left:3px solid #0088b0; padding-left:16px;"><strong>Advisory · human review required.</strong> This is not a decision and not an accuracy claim. Thresholds are conservative reasoned defaults, not validated against hiring outcomes.</p></sc-if>
+        </div>
+        <div style="padding-top:10px;">
+          <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d;">Fabrication risk</div>
+          <div style="font-size:72px; font-weight:700; line-height:1; letter-spacing:-0.03em; margin:6px 0 8px 0;">{{ reportScore }}</div>
+          <span class="tag {{ reportTagClass }}">{{ reportBandLabel }}</span>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:16px;">
+            <sc-if value="{{ showConfBar }}" hint-placeholder-val="{{ true }}"><div style="flex:1; height:3px; background:#d7d3d3;"><div style="{{ reportConfBar }}"></div></div></sc-if>
+            <sc-if value="{{ showConfNum }}" hint-placeholder-val="{{ true }}"><span style="font-size:14px;">{{ reportConfLabel }}</span></sc-if>
+          </div>
+          <div style="font-size:12px; color:#605d5d; margin-top:5px;">confidence — read the score against it</div>
+          <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d; margin-top:22px;">Depth</div>
+          <div style="font-size:17px; margin-top:4px;">{{ reportDepth }}</div>
+        </div>
+      </div>
+
+      <h2 style="font-size:32px; font-weight:700; margin:52px 0 6px 0; letter-spacing:-0.015em;">What drove it</h2>
+      <p style="font-size:15px; color:#605d5d; margin:0 0 24px 0; max-width:70ch;">The headline is a fusion. These three are its inputs, weighted by their own confidence — never four equal peers.</p>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:40px;">
+        <sc-for list="{{ reportComponents }}" as="k" hint-placeholder-count="3">
+          <div>
+            <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#006786;">{{ k.title }}</div>
+            <div style="font-size:27px; font-weight:700; margin:6px 0 2px 0; letter-spacing:-0.01em;">{{ k.band }}</div>
+            <div style="font-size:13px; color:#605d5d;">{{ k.meta }}</div>
+            <p style="font-size:15px; line-height:1.5; margin:10px 0 0 0;">{{ k.detail }}</p>
+          </div>
+        </sc-for>
+      </div>
+
+      <h2 style="font-size:32px; font-weight:700; margin:52px 0 6px 0; letter-spacing:-0.015em;">Claim by claim</h2>
+
+      <sc-if value="{{ noVerdicts }}" hint-placeholder-val="{{ false }}">
+        <p style="font-size:21px; line-height:1.5; margin:14px 0 0 0; max-width:56ch;">Nothing to reason about yet. {{ reportThinReason }}</p>
+        <p style="font-size:16px; line-height:1.55; margin:14px 0 0 0; max-width:62ch; color:#444141;">This is not a low score and it is not an error. Asking the candidate for a fuller resume is the only thing that changes it — and it changes it honestly.</p>
+        <button class="btn btn-primary" style="margin-top:20px;">Request a fuller resume</button>
+      </sc-if>
+
+      <sc-if value="{{ hasVerdicts }}" hint-placeholder-val="{{ true }}">
+      <p style="font-size:15px; color:#605d5d; margin:0 0 30px 0; max-width:70ch;">Every claim is reasoned separately. <em>Missing signals</em> say what a genuine version of the claim would have shown and didn't — that is the sentence worth repeating to your client.</p>
+
+      <div style="display:flex; flex-direction:column; gap:44px;">
+        <sc-for list="{{ reportVerdicts }}" as="v" hint-placeholder-count="3">
+          <div style="display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:44px; align-items:start;">
+            <div>
+              <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:8px; flex-wrap:wrap;">
+                <span class="tag {{ v.tagClass }}">{{ v.status }}</span>
+                <span style="font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#605d5d;">{{ v.meta }}</span>
+              </div>
+              <p style="font-size:21px; line-height:1.4; margin:0 0 10px 0; max-width:56ch;">“{{ v.claim }}”</p>
+              <p style="font-size:16px; line-height:1.55; margin:0; max-width:62ch; color:#444141;">{{ v.reasoning }}</p>
+              <div style="margin-top:16px;">
+                <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#d6006c;">Missing signals</div>
+                <ul style="margin:6px 0 0 0; padding-left:20px; max-width:62ch;">
+                  <sc-for list="{{ v.missing }}" as="m" hint-placeholder-count="2">
+                    <li style="font-size:16px; line-height:1.55; margin-bottom:4px;">{{ m }}</li>
+                  </sc-for>
+                </ul>
+              </div>
+              <div style="margin-top:14px;">
+                <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d;">Evidence</div>
+                <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px; max-width:62ch;">
+                  <sc-for list="{{ v.evidence }}" as="e" hint-placeholder-count="2">
+                    <div style="display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:baseline;">
+                      <span style="font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:#605d5d;">{{ e.source }}</span>
+                      <span style="font-size:15px; line-height:1.55; color:#444141;">{{ e.detail }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+            <div style="padding-top:4px;">
+              <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#605d5d;">Ask them this</div>
+              <div class="card" style="gap:10px; margin-top:10px;">
+                <sc-for list="{{ v.probes }}" as="q" hint-placeholder-count="1">
+                  <p style="font-size:15px; line-height:1.45; margin:0;">{{ q }}</p>
+                </sc-for>
+                <button class="btn btn-ghost" onClick="{{ v.copy }}" style="align-self:flex-start; padding-left:0;">{{ v.copyLabel }}</button>
+              </div>
+              <div style="display:flex; align-items:center; gap:10px; margin-top:16px;">
+                <sc-if value="{{ showConfBar }}" hint-placeholder-val="{{ true }}"><div style="flex:1; height:3px; background:#d7d3d3;"><div style="{{ v.confBar }}"></div></div></sc-if>
+                <sc-if value="{{ showConfNum }}" hint-placeholder-val="{{ true }}"><span style="font-size:14px;">{{ v.confLabel }}</span></sc-if>
+              </div>
+              <div style="font-size:12px; color:#605d5d; margin-top:5px;">{{ v.coherenceLabel }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <h2 style="font-size:32px; font-weight:700; margin:52px 0 6px 0; letter-spacing:-0.015em;">Record what actually happened</h2>
+      <p style="font-size:15px; color:#605d5d; margin:0 0 18px 0; max-width:70ch;">Your judgement is the only ground truth this system will ever have.</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary">Verified genuine</button>
+        <button class="btn btn-secondary">Candidate clarified</button>
+        <button class="btn btn-secondary">Verified fabricated</button>
+        <button class="btn btn-secondary">Inconclusive</button>
+      </div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ isSummary }}" hint-placeholder-val="{{ false }}">
+      <div style="font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:#006786; margin-bottom:10px;">Batch summary · {{ batchName }}</div>
+      <h1 style="font-weight:700; font-size:54px; line-height:1.04; letter-spacing:-0.02em; margin:0 0 16px 0; max-width:18ch;">What we found in the first 168 resumes</h1>
+      <p style="font-size:19px; line-height:1.5; margin:0 0 40px 0; max-width:56ch; color:#444141;">Screened 2 August 2026 — 168 of 214 done, 46 still ingesting. Advisory throughout: every one of these is a reason to look closer, not a decision.</p>
+
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:40px;">
+        <div>
+          <div style="font-size:60px; font-weight:700; line-height:1; letter-spacing:-0.03em; color:#d6006c;">11</div>
+          <div style="font-size:15px; margin-top:8px;">elevated risk</div>
+          <div style="font-size:13px; color:#605d5d;">7% of those screened</div>
+        </div>
+        <div>
+          <div style="font-size:60px; font-weight:700; line-height:1; letter-spacing:-0.03em;">29</div>
+          <div style="font-size:15px; margin-top:8px;">moderate</div>
+          <div style="font-size:13px; color:#605d5d;">17%</div>
+        </div>
+        <div>
+          <div style="font-size:60px; font-weight:700; line-height:1; letter-spacing:-0.03em;">104</div>
+          <div style="font-size:15px; margin-top:8px;">low</div>
+          <div style="font-size:13px; color:#605d5d;">62%</div>
+        </div>
+        <div>
+          <div style="font-size:60px; font-weight:700; line-height:1; letter-spacing:-0.03em; color:#605d5d;">24</div>
+          <div style="font-size:15px; margin-top:8px;">insufficient signal</div>
+          <div style="font-size:13px; color:#605d5d;">14% — too thin to assess</div>
+        </div>
+      </div>
+
+      <h2 style="font-size:32px; font-weight:700; margin:52px 0 20px 0; letter-spacing:-0.015em;">Top reasons a resume surfaced</h2>
+      <div style="display:flex; flex-direction:column; gap:18px; max-width:74ch;">
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:17px;"><span>Near-duplicate of another stored resume</span><span>14</span></div>
+          <div style="height:3px; background:#d7d3d3; margin-top:6px;"><div style="width:100%; height:100%; background:#0088b0;"></div></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:17px;"><span>Depth claims with no infrastructure footprint</span><span>12</span></div>
+          <div style="height:3px; background:#d7d3d3; margin-top:6px;"><div style="width:86%; height:100%; background:#0088b0;"></div></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:17px;"><span>Overlapping full-time employment dates</span><span>9</span></div>
+          <div style="height:3px; background:#d7d3d3; margin-top:6px;"><div style="width:64%; height:100%; background:#0088b0;"></div></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:17px;"><span>Template-shop phrasing</span><span>7</span></div>
+          <div style="height:3px; background:#d7d3d3; margin-top:6px;"><div style="width:50%; height:100%; background:#0088b0;"></div></div>
+        </div>
+        <div>
+          <div style="display:flex; justify-content:space-between; font-size:17px;"><span>Seniority ahead of supported tenure</span><span>6</span></div>
+          <div style="height:3px; background:#d7d3d3; margin-top:6px;"><div style="width:43%; height:100%; background:#0088b0;"></div></div>
+        </div>
+      </div>
+
+      <p style="font-size:14px; line-height:1.6; margin:40px 0 0 0; max-width:78ch; color:#444141; border-left:3px solid #0088b0; padding-left:16px;"><strong>Advisory.</strong> No accuracy claim is made or implied. Near-duplicate matches are reported as similarity only — never whose resume was matched.</p>
+    </sc-if>
+
+    <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ false }}">
+      <h1 style="font-weight:700; font-size:54px; line-height:1.04; letter-spacing:-0.02em; margin:0 0 16px 0; max-width:14ch;">Drop the resumes you already have</h1>
+      <p style="font-size:19px; line-height:1.5; margin:0 0 34px 0; max-width:54ch; color:#444141;">PDF or text, up to 500 at a time. Screening starts immediately and results appear as each one lands — you do not wait for the batch.</p>
+
+      <div style="max-width:640px; padding:60px 40px; text-align:center; border:2px dashed rgba(32,30,29,0.3); border-radius:4px; background:#eae9e9;">
+        <div style="font-size:25px; font-weight:700; margin-bottom:8px;">Drop files here</div>
+        <p style="font-size:15px; color:#605d5d; margin:0 0 18px 0;">or choose them from your machine</p>
+        <button class="btn btn-primary">Choose resumes</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:40px; max-width:900px; margin-top:44px;">
+        <div class="field">
+          <label>Batch name</label>
+          <input class="input" defaultValue="{{ batchName }}">
+        </div>
+        <div class="field">
+          <label>Evaluation domain</label>
+          <div class="seg">
+            <label class="seg-opt"><input type="radio" name="dom" defaultChecked="{{ true }}">Data Engineering</label>
+            <label class="seg-opt"><input type="radio" name="dom">GenAI</label>
+          </div>
+        </div>
+      </div>
+
+      <h2 style="font-size:32px; font-weight:700; margin:52px 0 16px 0; letter-spacing:-0.015em;">Ingesting</h2>
+      <div style="max-width:74ch;">
+        <div style="display:flex; justify-content:space-between; font-size:15px; color:#605d5d;"><span>168 of 214 screened</span><span>46 pending</span></div>
+        <div style="height:3px; background:#d7d3d3; margin-top:8px;"><div style="width:78%; height:100%; background:#0088b0;"></div></div>
+        <p style="font-size:15px; line-height:1.55; margin-top:16px; color:#444141;">Each resume is extracted, claim-checked and scored across four subsystems. It is slow on purpose. Partial results are already on the <a href="#" onClick="{{ goQueue }}">screening queue</a>.</p>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBatches }}" hint-placeholder-val="{{ false }}">
+      <h1 style="font-weight:700; font-size:54px; line-height:1.04; letter-spacing:-0.02em; margin:0 0 16px 0;">Your batches</h1>
+      <p style="font-size:19px; line-height:1.5; margin:0 0 36px 0; max-width:54ch; color:#444141;">You see only what your organisation uploaded. A candidate screened by someone else is not in this list.</p>
+      <table class="table" style="max-width:1000px;">
+        <thead>
+          <tr><th>Batch</th><th>Uploaded</th><th>Resumes</th><th>Status</th><th>Elevated</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="font-size:17px;">{{ batchName }}</td>
+            <td>2 Aug 2026</td><td>214</td>
+            <td><span class="tag tag-accent">Screening · 78%</span></td>
+            <td style="color:#aa0b56; font-weight:600;">11</td>
+            <td><a href="#" onClick="{{ goQueue }}" style="font-size:14px;">Open queue</a></td>
+          </tr>
+          <tr>
+            <td style="font-size:17px;">TCS GenAI — Bengaluru panel</td>
+            <td>29 Jul 2026</td><td>96</td>
+            <td><span class="tag tag-neutral">Complete</span></td>
+            <td style="color:#aa0b56; font-weight:600;">7</td>
+            <td><a href="#" onClick="{{ goQueue }}" style="font-size:14px;">Open queue</a></td>
+          </tr>
+          <tr>
+            <td style="font-size:17px;">Infosys DE — lateral hiring</td>
+            <td>21 Jul 2026</td><td>340</td>
+            <td><span class="tag tag-neutral">Complete</span></td>
+            <td style="color:#aa0b56; font-weight:600;">19</td>
+            <td><a href="#" onClick="{{ goQueue }}" style="font-size:14px;">Open queue</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </sc-if>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Tenancy&quot;},&quot;batchName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Wipro DE — August intake&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Tenancy&quot;},&quot;showAdvisoryRails&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Advisory posture&quot;},&quot;confidenceDisplay&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;bar + number&quot;,&quot;number only&quot;,&quot;bar only&quot;],&quot;default&quot;:&quot;bar + number&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Advisory posture&quot;}}">
+const BAND_LABEL = { elevated: "Elevated", moderate: "Moderate", low: "Low", insufficient: "Insufficient data" };
+const BAND_TAG = { elevated: "tag-accent-2", moderate: "tag-accent", low: "tag-neutral", insufficient: "tag-neutral" };
+const STATUS_TAG = { incoherent: "tag-accent-2", defer: "tag-accent", coherent: "tag-neutral", unverified: "tag-neutral" };
+
+const NAV_ON = { textDecoration: "none", fontSize: "15px", fontWeight: 600, color: "#006786" };
+const NAV_OFF = { textDecoration: "none", fontSize: "15px", fontWeight: 400, color: "#201e1d" };
+
+const CANDIDATES = [
+  {
+    id: "cand_rohit",
+    name: "Rohit Malviya",
+    role: "Sr. GenAI Engineer · Pune · genai",
+    band: "elevated", score: 0.78, confidence: 0.71,
+    reason: "Fine-tuning and RLHF claims carry no training-infrastructure footprint — no cluster, no dataset scale, no eval harness.",
+    loudest: "Resume farm — near-duplicate, 0.91 overlap",
+    depth: "superficial · depth 0.31",
+    summary: "Three depth claims sit far ahead of anything the resume can account for, and the document is a near-duplicate of another in the corpus. Nothing here says fabricated — it says these are the questions to ask.",
+    components: [
+      { title: "Resume farm", band: "Near-duplicate", meta: "score 0.91 · confidence 0.82 · corpus 4,182",
+        detail: "One stored resume overlaps at 0.91 estimated Jaccard. Shared templates are common and legitimate. We do not disclose whose resume matched." },
+      { title: "AI generation", band: "Possible", meta: "likelihood 0.54 · confidence 0.48",
+        detail: "Template phrasing and low burstiness. AI-assisted writing is legitimate and this alone means little — it is context, not a tell." },
+      { title: "Cross-field", band: "Minor issues", meta: "score 0.22 · confidence 0.66",
+        detail: "A four-month gap in 2023 and one seniority step that runs slightly ahead of tenure. Pure date math, no model involved." }
+    ],
+    verdicts: [
+      {
+        claim: "Fine-tuned GPT-4 on 2M internal support tickets to improve resolution accuracy by 34%.",
+        type: "fine_tuning", status: "incoherent", coherence: 0.18, confidence: 0.79,
+        reasoning: "GPT-4 was not openly fine-tunable at the stated period, and the resume describes no training stack, no eval methodology and no dataset preparation for a run of that size. The 34% figure has no baseline attached.",
+        missing: ["any named training or serving infrastructure", "dataset preparation, labelling or deduplication work", "an evaluation harness or holdout behind the 34%"],
+        evidence: ["rule · fine_tuning_infra: none of the expected infrastructure signals present", "llm · a run at this scale implies a cost and a team that appear nowhere in the resume", "github · linked repository contains prompt templates only, no training code"],
+        probes: ["Which base checkpoint did you start from, and who hosted the run?", "How did you build the eval set the 34% is measured against — and what was the baseline?", "What did you do about ticket deduplication before training?"]
+      },
+      {
+        claim: "Built production RAG serving 50k queries per day at p95 latency under 200ms.",
+        type: "rag", status: "defer", coherence: 0.44, confidence: 0.31,
+        reasoning: "Plausible in shape, but nothing in the resume or the linked sources grounds it either way. Confidence sits below the assertion threshold, so the system defers rather than flags.",
+        missing: ["the vector store and embedding model", "a chunking or retrieval-evaluation strategy"],
+        evidence: ["rule · rag_infra: two of five expected signals present", "vectorstore · no grounding retrieved for this claim"],
+        probes: ["What sat in front of the vector store to hold p95 under 200ms?", "How did you measure retrieval quality separately from generation quality?"]
+      },
+      {
+        claim: "Led a team of 4 engineers building an internal multi-agent workflow tool.",
+        type: "multi_agent", status: "coherent", coherence: 0.72, confidence: 0.64,
+        reasoning: "Scope, team size and tenure line up. The description is specific about failure modes, which fabricated claims rarely are.",
+        missing: [],
+        evidence: ["rule · multi_agent: orchestration and failure-handling signals both present", "llm · the described retry semantics match how these systems actually break"],
+        probes: ["Where did the agent loop most often get stuck, and what did you do about it?"]
+      }
+    ]
+  },
+  {
+    id: "cand_imran",
+    name: "Imran Qureshi",
+    role: "GenAI Engineer · Gurugram · genai",
+    band: "elevated", score: 0.71, confidence: 0.55,
+    reason: "Phrasing sits inside a template-shop corpus; three other resumes in the store share its structure almost sentence for sentence.",
+    loudest: "AI generation — likely, template phrases",
+    depth: "emerging · depth 0.44",
+    summary: "The document, not the person, is what stands out here. Structure and phrasing repeat across several stored resumes; the underlying claims are mostly unremarkable.",
+    components: [
+      { title: "AI generation", band: "Likely", meta: "likelihood 0.81 · confidence 0.62", detail: "Four stylometry detectors fired, led by template phrasing and uniform sentence length." },
+      { title: "Resume farm", band: "Similar", meta: "score 0.63 · confidence 0.58 · corpus 4,182", detail: "Three stored resumes overlap above 0.6. Similarity only — we never disclose whose." },
+      { title: "Cross-field", band: "Consistent", meta: "score 0.08 · confidence 0.71", detail: "Dates hold together. No overlaps, no unexplained gaps." }
+    ],
+    verdicts: [
+      {
+        claim: "Deployed LLM-powered chatbots leveraging cutting-edge transformer architectures at scale.",
+        type: "rag", status: "unverified", coherence: 0.5, confidence: 0.22,
+        reasoning: "The sentence carries no specifics to reason about — no model, no volume, no system. There is nothing here to verify either way.",
+        missing: ["any named model, framework or serving surface", "any number attached to 'at scale'"],
+        evidence: ["rule · generic_phrasing: claim contains no anchorable specifics"],
+        probes: ["Which model, and where was it served from?", "What does 'at scale' mean in requests per day for this system?"]
+      }
+    ]
+  },
+  {
+    id: "cand_priya",
+    name: "Priya Nandakumar",
+    role: "Data Engineer · Bengaluru · data_eng",
+    band: "moderate", score: 0.54, confidence: 0.63,
+    reason: "Two full-time roles overlap by six months, March to September 2024. Common and often legitimate — worth exactly one question.",
+    loudest: "Cross-field — major issues, timeline overlap",
+    depth: "solid · depth 0.68",
+    summary: "The engineering claims hold up well. One timeline overlap is the only thing worth raising, and it has an ordinary explanation more often than not.",
+    components: [
+      { title: "Cross-field", band: "Major issues", meta: "score 0.61 · confidence 0.88", detail: "Two full-time roles overlap 6 months (Mar–Sep 2024). Notice periods and contract work explain most of these." },
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.19 · confidence 0.57", detail: "Idiosyncratic phrasing and uneven sentence rhythm — reads as written by hand." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.11 · confidence 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Owned the Airflow migration for a 400-table warehouse ingest, cutting nightly runtime from 6h to 90m.",
+        type: "etl", status: "coherent", coherence: 0.81, confidence: 0.77,
+        reasoning: "Specific, dated, and the described bottleneck matches how these migrations actually go. The runtime claim is the kind of number people who did the work remember.",
+        missing: [],
+        evidence: ["rule · etl_orchestration: four of five expected signals present", "llm · the stated failure mode is a real one and is described correctly"],
+        probes: ["What was actually eating the six hours before you started?"]
+      }
+    ]
+  },
+  {
+    id: "cand_divya",
+    name: "Divya Raghunathan",
+    role: "Lead Data Engineer · Noida · data_eng",
+    band: "moderate", score: 0.48, confidence: 0.69,
+    reason: "Stated seniority runs about four years ahead of the tenure the dates support.",
+    loudest: "Cross-field — minor issues, seniority vs tenure",
+    depth: "solid · depth 0.63",
+    summary: "Nothing about the work looks wrong. The title is the outlier, which is a conversation rather than a concern.",
+    components: [
+      { title: "Cross-field", band: "Minor issues", meta: "score 0.34 · confidence 0.72", detail: "Lead title held at 3.5 years total experience — early, not impossible." },
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.24 · confidence 0.51", detail: "No detector fired above threshold." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.09 · confidence 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Led a 6-person platform team owning streaming ingest across three business units.",
+        type: "streaming", status: "defer", coherence: 0.52, confidence: 0.34,
+        reasoning: "The technical detail is credible; the scope of ownership is what the dates do not support. Below the assertion threshold, so this defers to you.",
+        missing: ["anything establishing team ownership rather than participation"],
+        evidence: ["rule · seniority_vs_tenure: stated scope exceeds supported tenure by about four years"],
+        probes: ["Who did you report to, and who reported to you on that team?"]
+      }
+    ]
+  },
+  {
+    id: "cand_aakash",
+    name: "Aakash Venkataraman",
+    role: "GenAI Engineer · Hyderabad · genai",
+    band: "insufficient", score: null, confidence: 0.18,
+    reason: "340 words, no dated roles, no anchored claims. This is not a low score — there is nothing here yet to reason about.",
+    loudest: "None — ask for a fuller resume",
+    depth: "insufficient signal",
+    summary: "The resume is too thin to assess. That is the honest answer, and it is a common one.",
+    thinReason: "The resume is too thin to extract claims from — 340 words, no dated roles, nothing anchored to a repository or a system.",
+    components: [
+      { title: "AI generation", band: "Insufficient text", meta: "confidence 0.11", detail: "340 words is below the floor the detectors need." },
+      { title: "Cross-field", band: "Insufficient data", meta: "confidence 0.09", detail: "No dated roles to run timeline math against." },
+      { title: "Resume farm", band: "Insufficient data", meta: "corpus 4,182", detail: "Too little text to fingerprint reliably." }
+    ],
+    verdicts: []
+  },
+  {
+    id: "cand_sneha",
+    name: "Sneha Kulkarni",
+    role: "Data Engineer · Chennai · data_eng",
+    band: "low", score: 0.19, confidence: 0.74,
+    reason: "Pipeline claims cohere with dated, specific work — named orchestration, real row volumes, and a failure story with a fix attached.",
+    loudest: "None — nothing to probe",
+    depth: "deep · depth 0.79",
+    summary: "Everything checks out against the detail the resume itself provides. No claim needed deferring.",
+    components: [
+      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.14 · confidence 0.66", detail: "No detector fired." },
+      { title: "Cross-field", band: "Consistent", meta: "score 0.05 · confidence 0.81", detail: "Dates are continuous and internally consistent." },
+      { title: "Resume farm", band: "Unique", meta: "score 0.07 · confidence 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
+    ],
+    verdicts: [
+      {
+        claim: "Rebuilt CDC ingest from Oracle to Snowflake, 1.2B rows/day, with a replay path for schema drift.",
+        type: "etl", status: "coherent", coherence: 0.88, confidence: 0.8,
+        reasoning: "The replay path is the detail that carries this. It is the part people only mention when they have been paged about it.",
+        missing: [],
+        evidence: ["rule · etl_orchestration: all expected signals present", "llm · schema-drift handling is described the way it actually behaves"],
+        probes: ["What broke the first time schema drift hit production?"]
+      }
+    ]
+  }
+];
+
+function pct(v) { return Math.round((v || 0) * 100) + "%"; }
+function num(v) { return (v === null || v === undefined) ? "—" : v.toFixed(2); }
+function confWord(v) { return v >= 0.7 ? "high" : v >= 0.45 ? "moderate" : "low"; }
+function bar(v) { return { height: "100%", background: "#201e1d", width: pct(v) }; }
+function splitEvidence(items) {
+  return (items || []).map((line) => {
+    const i = line.indexOf(" · ");
+    return i === -1
+      ? { source: "", detail: line }
+      : { source: line.slice(0, i), detail: line.slice(i + 3) };
+  });
+}
+
+const QUEUE_ROWS = CANDIDATES.map((c) => ({
+  id: c.id,
+  name: c.name,
+  role: c.role,
+  reason: c.reason,
+  loudest: c.loudest,
+  tagClass: BAND_TAG[c.band],
+  bandLabel: c.score === null ? BAND_LABEL[c.band] : BAND_LABEL[c.band] + " · " + num(c.score),
+  confBar: bar(c.confidence),
+  confLabel: num(c.confidence) + " · " + confWord(c.confidence)
+}));
+
+const REPORTS = {};
+CANDIDATES.forEach((c) => {
+  REPORTS[c.id] = {
+    name: c.name,
+    role: c.role,
+    summary: c.summary,
+    thinReason: c.thinReason || "There are no extractable claims on this resume — not enough dated, specific or anchored material for the engine to reason about.",
+    depth: c.depth,
+    score: num(c.score),
+    tagClass: BAND_TAG[c.band],
+    bandLabel: BAND_LABEL[c.band],
+    confBar: bar(c.confidence),
+    confLabel: num(c.confidence) + " · " + confWord(c.confidence),
+    components: c.components,
+    verdicts: c.verdicts.map((v) => ({
+      claim: v.claim,
+      status: v.status,
+      tagClass: STATUS_TAG[v.status],
+      meta: v.type,
+      reasoning: v.reasoning,
+      missing: v.missing.length ? v.missing : ["None — a genuine version of this claim would look like this one."],
+      evidence: splitEvidence(v.evidence.length ? v.evidence : ["— · No evidence either way."]),
+      probes: v.probes,
+      confBar: bar(v.confidence),
+      confLabel: num(v.confidence) + " · " + confWord(v.confidence),
+      coherenceLabel: "coherence " + num(v.coherence) + " · confidence"
+    }))
+  };
+});
+
+class Component extends DCLogic {
+  state = { screen: "queue", selected: "cand_rohit", copied: null };
+
+  copyProbes = (key, probes) => () => {
+    const text = probes.join("\n");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+    this.setState({ copied: key });
+    clearTimeout(this._copyTimer);
+    this._copyTimer = setTimeout(() => this.setState({ copied: null }), 2000);
+  };
+
+  _copyHandlers = {};
+
+  componentWillUnmount() { clearTimeout(this._copyTimer); }
+
+  nav = (screen) => (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    this.setState({ screen });
+    window.scrollTo(0, 0);
+  };
+
+  goQueue = this.nav("queue");
+  goSummary = this.nav("summary");
+  goUpload = this.nav("upload");
+  goBatches = this.nav("batches");
+
+  openHandlers = QUEUE_ROWS.reduce((acc, row) => {
+    acc[row.id] = () => {
+      this.setState({ screen: "report", selected: row.id });
+      window.scrollTo(0, 0);
+    };
+    return acc;
+  }, {});
+
+  keyHandlers = QUEUE_ROWS.reduce((acc, row) => {
+    acc[row.id] = (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        this.openHandlers[row.id]();
+      }
+    };
+    return acc;
+  }, {});
+
+  rows = QUEUE_ROWS.map((row) => Object.assign({}, row, {
+    open: this.openHandlers[row.id],
+    openKey: this.keyHandlers[row.id]
+  }));
+
+  renderVals() {
+    const s = this.state.screen;
+    const r = REPORTS[this.state.selected] || REPORTS.cand_rohit;
+    const conf = this.props.confidenceDisplay || "bar + number";
+    return {
+      orgName: this.props.orgName ?? "Sampoorna Staffing",
+      batchName: this.props.batchName ?? "Wipro DE — August intake",
+      showRails: this.props.showAdvisoryRails ?? true,
+      showConfBar: conf !== "number only",
+      showConfNum: conf !== "bar only",
+      isQueue: s === "queue",
+      isReport: s === "report",
+      isSummary: s === "summary",
+      isUpload: s === "upload",
+      isBatches: s === "batches",
+      navQueue: (s === "queue" || s === "report") ? NAV_ON : NAV_OFF,
+      navBatches: s === "batches" ? NAV_ON : NAV_OFF,
+      navSummary: s === "summary" ? NAV_ON : NAV_OFF,
+      navUpload: s === "upload" ? NAV_ON : NAV_OFF,
+      reportThinReason: r.thinReason,
+      goQueue: this.goQueue,
+      goSummary: this.goSummary,
+      goUpload: this.goUpload,
+      goBatches: this.goBatches,
+      candidates: this.rows,
+      reportName: r.name,
+      reportRole: r.role,
+      reportSummary: r.summary,
+      reportDepth: r.depth,
+      reportScore: r.score,
+      reportTagClass: r.tagClass,
+      reportBandLabel: r.bandLabel,
+      reportConfBar: r.confBar,
+      reportConfLabel: r.confLabel,
+      reportComponents: r.components,
+      reportVerdicts: r.verdicts.map((v, i) => {
+        const key = this.state.selected + ":" + i;
+        if (!this._copyHandlers[key]) this._copyHandlers[key] = this.copyProbes(key, v.probes);
+        return Object.assign({}, v, {
+          copy: this._copyHandlers[key],
+          copyLabel: this.state.copied === key ? "Copied" : (v.probes.length > 1 ? "Copy questions" : "Copy question")
+        });
+      }),
+      hasVerdicts: r.verdicts.length > 0,
+      noVerdicts: r.verdicts.length === 0
+    };
+  }
+}
+
+</script>
+</body>
+</html>

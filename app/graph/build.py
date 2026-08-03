@@ -1,6 +1,6 @@
 """Assemble the LangGraph pipeline.
 
-The graph is DOMAIN-AGNOSTIC: it wires the seven nodes in order and never
+The graph is DOMAIN-AGNOSTIC: it wires the nine nodes in order and never
 references GenAI. Domain selection happens at runtime via ``state.domain`` and
 the registry. Importing ``app.domains`` registers the built-in domains.
 

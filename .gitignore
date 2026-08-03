@@ -15,3 +15,12 @@ __pycache__/
 # Runtime data (regenerated)
 .chroma/
 data/flywheel.jsonl
+
+# UI wiring (2026-08-03)
+# NOTE: .gitignore has no inline comments — a trailing "# ..." becomes part of
+# the pattern and silently matches nothing.
+# Captured OTP codes: secret material.
+tmp_mail.jsonl
+# Design-tool paste screenshots (659 KB), not source.
+frontend/uploads/
+frontend/.thumbnail
