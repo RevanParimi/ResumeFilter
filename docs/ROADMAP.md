@@ -1078,8 +1078,31 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     ├── [ ] S8.4  UI integration surface — batch upload · cursor pagination ·
     │            fraud-screen read-model · OpenAPI for a typed client
     │            ** PULLED AHEAD OF S8.3 (2026-08-02) **
-    ├── [ ] S8.5  UI BUILD (external, claude.ai/design) + INTEGRATION —
-    │            wire it to the API, CORS origins, composite smoke
+    │            NEW INPUTS from the wiring session (2026-08-03), measured
+    │            against a real client rather than predicted:
+    │              - org signup with a TAKEN org name => 202 + a real code that
+    │                then verifies as 400 invalid_code. Blocks org self-serve
+    │                onboarding (blocker 5). Two-line fix + a test.
+    │              - feature materialization has NO HTTP route, so
+    │                GET /jobs/{id}/board is a PERMANENT 422 for a new org
+    │              - CompBenchmark wraps the estimate, CompBandEstimate does
+    │                not: two shapes for one set of numbers
+    │              - POST /jobs 422s a requisition with no skills
+    ├── [~] S8.5  UI BUILD (external, claude.ai/design) + INTEGRATION
+    │            [x] UI built externally — frontend/, dark+light, 17 screens
+    │            [x] WIRED 2026-08-03 (76cee48): frontend/api.js seam
+    │                (window.VeritasAPI; no npm/bundler, outside CI) ·
+    │                auth x3 planes · /auth/me boot · candidate DPDP portal ·
+    │                devices · roles · comp · CSRF-vs-consent 403 fork on
+    │                MEASURED detail strings · unwired screens labelled
+    │                "sample data" · 36/36 contract + 9/9 browser + 27/27 CDP
+    │                click-through; pytest 1377 unchanged
+    │            [ ] screens 2/4/5/6 (queue · summary · upload · batches) —
+    │                BLOCKED: no endpoints until S8.4
+    │            [ ] report detail · instant check · operator console ·
+    │                interview runner — reachable but admin-router today;
+    │                deferred so S8.4's plane decision cannot force a rewrite
+    │            [ ] composite smoke across the wired UI
     ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
