@@ -9,6 +9,155 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-03 — THE UI IS WIRED TO THE API. Committed `76cee48`;
+  `pytest -q` 1377 passed, unchanged (no `app/` code was touched).** This was
+  the integration step PI-8 was re-sequenced around
+  (`S8.2 → S8.4 → UI → integrate → S8.3 → deploy`). Spec:
+  `docs/superpowers/specs/2026-08-03-ui-api-wiring-design.md`.
+  **Scope, chosen by the user: through roles/comp.** Wired = auth on all three
+  planes · `GET /auth/me` as the boot sequence · candidate DPDP portal
+  (`/portal/me`, access-log, consents + revoke, erasure) · devices
+  (`/auth/sessions` + revoke) · roles (`/jobs`, board) · comp
+  (`/jobs/{id}/comp`). Deliberately NOT wired: `/report/{id}`, `/evaluate`, the
+  operator console, the interview runner — all admin-router or likely to move
+  to the org plane in S8.4, so wiring them now buys an integration rewrite.
+  **The seam: a new `frontend/api.js` exposing `window.VeritasAPI`, loaded by
+  ONE added `<script>` line.** The `.dc.html` logic class is eval'd through
+  `new Function(...)` — a function scope, not a module — so a global is the
+  only seam that exists. No npm, no bundler; **`frontend/` stays out of CI**
+  per decision 0.1. `api.js` owns `credentials:"include"` (not an omittable
+  option), `X-CSRF-Token` read from the cookie **at call time** (a re-login
+  rotates it, and a cached one fails closed looking like an auth bug), 401 →
+  redirect once and **never** retry (there is still no rate limiter, S8.3), and
+  a typed `ApiError{status, detail, kind}`.
+  **BOTH 403 detail strings were MEASURED off the running API, not assumed:**
+  `"missing or invalid CSRF token"` (`app/api/routes.py:122`) vs
+  `"no active consent for purpose '<p>'"` (`app/ledger/consent.py:58`). The
+  default for an unrecognised 403 is **`consent`**, because that is the NORMAL
+  state (UI.md §6) and calling it an auth failure turns an expected empty
+  section into a red error.
+  **Honesty rule made structural (spec 0.4):** wired screens **drop their mock
+  constant outright** — no fallback-to-mock, because a fallback makes a broken
+  backend look like a working one. The eight screens with no endpoint keep mock
+  data and now carry a visible **"sample data"** chip, and the resolved API base
+  renders in the rail. UI.md §7 warns a confident UI can make an honest backend
+  lie; an unlabelled mock screening queue beside four live screens IS that.
+  **⚠ A REAL DEFECT FOUND AND REPRODUCED ON MAIN — NOT FIXED (no `app/` change
+  in a wiring session; it wants its own spec + TDD):** **org signup with an
+  organisation name that already exists returns 202, sends a real code, and
+  then `verify` rejects that CORRECT code as `400 invalid_code`.**
+  `_establish` raises `ChallengeRefused("org_name_taken")`
+  (`app/auth/service.py:363`) and the route maps **every** `ChallengeRefused` to
+  one `invalid_code` (`app/api/routes.py:1697`). The single-message rule exists
+  so a brute-forcer learns nothing about *codes*; here it is swallowing a
+  **registration** failure. The user has a valid code in their inbox, types it
+  correctly, is told it is wrong, burns their attempts and cannot self-onboard —
+  and "Acme Staffing" is exactly the name two customers pick. It is the
+  house shape again: **one handler collapsing two unrelated failures.**
+  `missing_organization_name` rides the same path. **Fix belongs in S8.3/S8.4:
+  separate the registration failure from the code failure without re-opening
+  the enumeration oracle** (org names are not secret — a distinct
+  `409 organization_name_taken` leaks nothing an org-name uniqueness check
+  does not already leak).
+  **Two more findings, neither on any gap list:** (1) `GET /jobs/{id}/comp`
+  returns a **`CompBenchmark` that WRAPS the estimate** (plus `position` /
+  `delta_pct`), while `POST /comp/estimate` returns the bare
+  `CompBandEstimate` — two shapes for the same numbers, and assuming one
+  rendered a band made entirely of dashes; now unwrapped once, centrally.
+  (2) **`GET /jobs/{id}/board` 422s `"no materialized candidates to match"` on
+  an empty feature store, and materialization has NO HTTP ROUTE AT ALL**
+  (`app/features/materialize.py` is reachable only from Python), so for a
+  self-registered org that 422 is **permanent, not transient** — it renders as
+  an empty state and is an S8.4 input. Also `POST /jobs` refuses a requisition
+  with no skills (422). And the **OTP resend cooldown is 60s and silent** — a
+  resend inside it answers 202 and sends nothing, so the copy must not promise
+  a new code; it now says the first code is still the live one.
+  **Verification, since `frontend/` has no CI and no test runner (all three
+  green):** 36/36 cross-origin contract checks driven with a real `Origin`
+  header and a cookie jar (preflight · 202 for known **and** unknown addresses ·
+  both cookies accepted over http · `/auth/me` on the cookie alone · CSRF absent
+  → 403 and present → 200 · the consent 403 distinct from it · one
+  `invalid_code` for every OTP failure); **9/9 in a real browser at the real
+  origin**, including a deliberate CSRF-header bypass to prove the fork is real
+  and a dead-API `network` state; and **27/27 clicking through every wired
+  screen on both planes over CDP** — which is what caught the comp wrapper,
+  since a DOM dump of one screen never would.
+  **Config, local `.env` only (all three default to broken-for-a-browser, none
+  can ship — prod refuses to boot with any):** `DEE_CORS_ALLOWED_ORIGINS`
+  (JSON array), **BOTH** `DEE_SESSION_COOKIE_SECURE=false` **and**
+  `DEE_SESSION_COOKIE_SAMESITE=lax`, `DEE_EMAIL_PROVIDER=capture` +
+  `DEE_EMAIL_CAPTURE_PATH`. `tmp_mail.jsonl` (captured OTPs), `frontend/uploads/`
+  and `frontend/.thumbnail` are gitignored. **Note `.gitignore` has no inline
+  comments** — a trailing `# …` becomes part of the pattern and silently matches
+  nothing; that bit once this session.
+  **Next: `git checkout -- data/veritas.db` after any local demo run** — the dev
+  DB is a TRACKED file, so test orgs and candidate emails otherwise land in git.
+- **Session 2026-08-02 — UI-Spec REVIEWED against the code; next session is API
+  WIRING.** The external UI (`Veritas.dc.html`, mock data only) is described in
+  the new root doc `UI-Spec.md`, which was cross-checked route by route against
+  the **live route table (78 app routes + 5 doc/root = 83, matching UI.md)** and
+  the Pydantic schemas — enumerated from the running routers, not remembered.
+  **The gap list was accurate for everything it named, and missed ten surfaces**,
+  now folded into `UI-Spec.md` as items 9–17: ingest-response fraud signals
+  thrown away (`CandidateCreateResponse.matched_existing/matched_on/
+  duplicate_resume/resume_farm` — the near-duplicate check runs AT INGEST, so
+  "this exact resume was uploaded before" is available before any report opens);
+  the org-side S7.2 reads (`GET /verification/candidates/{id}/assurance` and
+  `.../claims`); **moonlighting** (`ClaimEvidence.concurrent_employment`, a named
+  GTM wedge component, absent from the UI entirely); `POST /ledger/offers` (the
+  Comp screen renders observed-offer figures but nothing submits one, so
+  `n_observed` stays 0 and the blend is prior-only in practice);
+  `POST /ledger/orgs/{id}/api-key` (X-Org-Key IS the API product per decision
+  0.4, and no screen obtains or rotates it); operator consent administration;
+  operator candidate surfaces; `POST /candidates/{id}/auth-key`; org offboarding.
+  `POST /evaluate` and the candidate-side interview runner were BUILT in response
+  (`UI-Spec.md` §8b/§8c). **Two documentation defects found, BOTH THE SAME
+  SHAPE — a route's plane assumed rather than read off the router it is
+  registered on:** `GET /domains` and `POST /evaluate` were both marked org-plane
+  and are both on the ADMIN router (an org session gets 401). Twice in one
+  carefully-written document. **The cheap structural fix, and it is the house
+  metadata-drift-guard pattern applied to docs: have
+  `tests/test_route_table_guard.py` emit `docs/routes.md` (method · path · plane)
+  and check the spec's endpoint tables against it.** Also corrected: there is
+  **no `/auth/admin/signup`** (org and candidate self-serve; operators are minted
+  via `POST /admin/users`, the first one bootstrapped with `X-API-Key` — see
+  `routes.py:1850-1856`), and the candidate card is NOT substantial design work
+  (its three sections are all evaluation-ledger data, which is off the pitch;
+  what to keep is the 200-with-per-section-status pattern).
+  **Fixed in the repo this session (uncommitted): `app/graph/build.py:3` said
+  "seven nodes" while `_PIPELINE` has nine.**
+  **⚠ THE WIRING SESSION'S THREE PRECONDITIONS — all config, all defaulting to
+  broken-for-a-browser, and nothing authenticates until they are set:**
+  (1) `cors_allowed_origins = []` fail-closed, so the middleware is NOT INSTALLED
+  and every browser call dies at preflight while Postman works fine — set
+  `DEE_CORS_ALLOWED_ORIGINS` to the UI's exact origin; (2) the cookie defaults are
+  prod-correct and localhost-broken — `session_cookie_secure=True` +
+  `samesite='none'` means the browser SILENTLY DROPS the cookie over http, so
+  `/auth/org/verify` returns 200 with a `Set-Cookie` that never becomes a cookie
+  and everything then 401s. Set **BOTH** `DEE_SESSION_COOKIE_SECURE=false` **and**
+  `DEE_SESSION_COOKIE_SAMESITE=lax` — changing only the first gives the identical
+  symptom for a different reason, since `SameSite=None` without `Secure` is also
+  rejected. It works because SameSite ignores PORT: `localhost:5173` and
+  `localhost:8000` are the same *site* (Lax sends it) but different *origins*
+  (CORS still applies). Prod refuses to boot with `secure=false`
+  (`app/core/boot.py:52-58`), so the dev setting cannot ship by accident;
+  (3) `email_provider='null'` means **login is impossible** — every signup/login
+  returns `503 email_unavailable` and no OTP exists anywhere. Set
+  `DEE_EMAIL_PROVIDER=capture` + `DEE_EMAIL_CAPTURE_PATH=<file>` and read codes
+  from the JSON-lines file; note `build_email` falls back to `NullEmail` when
+  capture has no path, so a pathless capture refuses silently.
+  **These are a local `.env`, not code changes — no merge, no prod impact.**
+  **Plane reality to wire around:** `/report/{id}`, `/report/{id}/outcome`,
+  `/evaluate` and `POST /candidates` are ALL admin-router, so the centerpiece
+  risk-detail screen can only be demoed as an operator until S8.4. And there is
+  still **no rate limiting** (S8.3), so a UI retry loop will not be caught.
+  **The two product decisions that should be settled BEFORE more design lands on
+  screens 2/4/6:** UI.md §2.1 tenancy (`UI-Spec.md` line 104 already asserts "you
+  see only what your organisation uploaded", but `reports`/`candidates`/`resumes`
+  have **no org column** — verified), and UI.md §9 Q3 batch identity (nothing in
+  the schema has a batch). Both are cheap now and a rebuild later.
+  **`UI-Spec.md` items 9–17 should feed the S8.4 spec directly as measured
+  requirements input** — S8.4 is the last sprint before integration.
 - **Current sprint:** **S8.2 (Identity & access) BUILT and GREEN on branch
   `s82-identity-access`, REVIEWED and MERGED to main — 1200→1377,
   `smoke_s82` 21/21 exit 0, and all six regression smokes green (s13 11/11,
@@ -445,9 +594,20 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.2 is DONE, reviewed and merged. Next is S8.4 (UI
-  integration surface), NOT S8.3** — batch upload, cursor
-  pagination, the fraud-screen read-model, OpenAPI good enough to build against.
+- **Next action:** **The UI is wired (2026-08-03, `76cee48`). Next is S8.4 (UI
+  integration surface)**, now with measured requirements from a real client
+  rather than a predicted one. **Take these into the S8.4 spec first:**
+  (a) **close the `org_name_taken` lockout** above — it breaks org self-serve
+  onboarding, which is the whole point of S8.2's signup flow, and it is a
+  two-line fix plus a test; (b) **give feature materialization an HTTP route**,
+  or `GET /jobs/{id}/board` is a permanent 422 for every self-registered org;
+  (c) **settle whether `CompBenchmark`/`CompBandEstimate` should really be two
+  shapes** for one set of numbers; (d) the wedge path (`/report/{id}`,
+  `/evaluate`, `POST /candidates`) is still admin-router, so screens 2–6 stay
+  mock until it moves to the org plane — that decision (UI.md §9 Q2) is now
+  blocking visible UI work, not theoretical. Original S8.4 scope stands:
+  batch upload, cursor pagination, the fraud-screen read-model, OpenAPI good
+  enough to build against.
   It was pulled ahead so the external UI is designed against endpoints that
   actually work rather than 501 stubs, and so the wedge demo exists mid-PI,
   which is the mitigation GTM §7 named for the whole-platform scope.
