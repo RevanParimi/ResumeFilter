@@ -76,11 +76,20 @@ report.
 **Consequence:** the demo the whole GTM rests on cannot be built against today's
 API by an org user. S8.4's stated scope (batch upload, cursor pagination,
 fraud-screen read-model, OpenAPI) therefore implies something not yet written
-down: **the wedge path has to be exposed on the org plane.** Design against that
-intent, and expect the endpoint paths in §5 to be the S8.4 shapes rather than
-today's admin paths.
+down: **the wedge path has to be exposed on the org plane.**
 
-### 2.1 The open question S8.4 must answer first
+> **RESOLVED 2026-08-05 (§9 Q2) — S8.4 ADDS org-plane routes and LEAVES the
+> admin routes alone.** The table above stays true: those admin paths keep
+> working and keep their cross-tenant reach, because that is the operator's
+> support and debugging view and nothing else provides it. What changes is that
+> an org-plane equivalent appears beside each one, scoped to what the caller's
+> organisation uploaded (§2.1). Rejected: moving the routes outright — one
+> canonical path per action is tidier, but it takes the cross-tenant view away
+> from operators, breaks every existing `X-API-Key` machine client, and churns
+> the admin-plane tests and all six regression smokes for a cosmetic gain.
+> Spec: `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
+
+### 2.1 The open question S8.4 must answer first — **RESOLVED 2026-08-05**
 
 Candidates are **global and deduplicated by email hash across all organizations**
 (S1.1 identity resolution). And:
@@ -107,9 +116,44 @@ a partial answer. **This is a product decision, not an implementation detail, an
 it should be settled before the UI's screening queue is designed** — because
 "my queue" versus "the candidate universe" are different screens.
 
-The UI can be designed against the assumption **"an org sees only the batches it
-uploaded"**, which is the answer most buyers will assume is true. Flagging it
-here so nobody discovers it during integration.
+> **RESOLVED 2026-08-05 — an org sees only what it uploaded**, which is what the
+> UI was already designed against and what a staffing buyer assumes is true.
+>
+> **Ownership is a property of the upload, not of the person.** Candidates stay
+> global and deduplicated by email hash — that is S1.1 identity resolution, and
+> it is what makes cross-corpus near-duplicate detection worth anything. What
+> gains an owner is the *act*: `resumes.org_id` and `reports.org_id`, both
+> nullable (every existing row and every admin-plane upload has no owner) and
+> both **`ON DELETE SET NULL`**, because an organisation offboarding must not
+> destroy a candidate's resume. That resume is the person's data; the only
+> cascade permitted to delete it is the candidate's own erasure, which already
+> exists.
+>
+> "My queue" is therefore **derived, not denormalized** — the candidates having
+> at least one resume owned by my org — so there is no second source of truth to
+> drift out of step with the first.
+>
+> Answering the three questions above in order: **no**, Agency A does not see
+> Agency B's report; Priya appears in **both** queues off one shared candidate
+> row, because each agency owns its own upload of her; and near-duplicate
+> detection **does** compare across the whole corpus while disclosing only
+> *that* a match exists and how similar, never whose (§4.B).
+>
+> Rejected: a shared candidate universe (cheapest, but "did the other agency see
+> the report I paid for?" is the first question a buyer asks and the answer would
+> be yes), and one deploy per customer (no schema change, but it hard-codes a
+> hosting posture that is still open in GTM §11 and kills the cross-customer
+> resume-farm signal outright).
+>
+> **The enforcement matters as much as the rule.** Four consecutive branch
+> reviews (S7.1, S7.2, S7.3, S8.2) each found the same shape: a rule applied at
+> one entry point and not the other. So org-plane handlers do not get the option
+> — every org-plane read of a candidate, resume or report goes through a scoped
+> facade whose methods all take `org_id` first, there is no unscoped read
+> reachable from an org handler, and a guard test fails the build if one appears.
+> Another org's report is **404, not 403** — indistinguishable, per the S6.4
+> cross-candidate and S7.1 verification precedent, since a 403 confirms the
+> report exists.
 
 ## 3. Auth — fully built, implement exactly this
 
@@ -196,6 +240,29 @@ the loudest signal**. Rows must be scannable without opening anything.
 > model) LLM-assisted. Design for a progress state and partial results, not a
 > spinner that blocks until 500 finish.
 
+> **RESOLVED 2026-08-05 (§9 Q3 + Q5) — a batch is a REAL stored object, and
+> processing is CLIENT-DRIVEN.** `screening_batches` + `batch_items` (S8.4
+> Phase B), so a queue can be named, resumed, summarized and paginated.
+>
+> There is no worker, no scheduler and no `BackgroundTasks` anywhere in `app/` —
+> `POST /candidates` awaits the whole nine-node graph inline — so 500 resumes in
+> one request is not physically possible. Upload therefore only *registers*
+> items (a row insert, fast), and a bounded `POST /screening/batches/{id}/process`
+> does the slow work a few items at a time while the UI polls for progress.
+> Nothing is lost on redeploy, and no background execution enters the repo ahead
+> of S8.3's observability.
+>
+> **Batch status is derived at read time, never stored** — progress is a count
+> over item statuses (the S7.1 assurance / S7.3 `effective_status` rule). A
+> stored status is a fact that goes stale when a process dies and that nothing
+> corrects; an item stuck `processing` past a timeout simply reads as `pending`
+> again, so a batch interrupted mid-run heals itself instead of wedging.
+>
+> Rejected: in-process `BackgroundTasks` (nicer UX, but work dies silently on
+> redeploy leaving items stuck `processing`), and client-side grouping with no
+> stored batch (smallest change, but screens A and C are both built on a batch
+> that persists, and there would be nothing server-side to name or resume).
+
 ### B. Candidate risk detail — *where trust is won or lost* ✅ (admin-plane today)
 
 `GET /report/{report_id}` returns the full `Report`. This is the richest object
@@ -231,6 +298,25 @@ Design guidance:
 - **`resume_farm.matches[]` needs care under §2.1** — it may reference resumes
   belonging to another customer. Show *that* a near-duplicate exists and its
   similarity, not whose it is, until the tenancy question is settled.
+
+> **RESOLVED 2026-08-05 (§9 Q4) — the org sees the FULL report,
+> counterparty-redacted.** Everything above, including `verdicts[]`,
+> `missing_signals` and `probes[]`: those are the fields that convert a score
+> into an action, and a headline-only view would strip out both the sentence a
+> recruiter repeats to their client and the questions that make the demo land.
+>
+> The single redaction is `resume_farm.matches[]` → similarity and count, never
+> identity, exactly as this section already required — now permanent rather than
+> pending, since tenancy resolved the way it did.
+>
+> **The redaction lives in ONE projection function**, called by both the
+> single-report read and the batch queue read-model. Two copies would be a bound
+> that holds on one path and not the other — which is verbatim the S7.2
+> `claim_ref` finding and the S7.3 transcript finding, the same defect shape two
+> sprints running.
+>
+> §7's rule is unaffected and still binds: a fuller report is not a more
+> confident one, and there is still no accuracy claim to make.
 
 ### C. Batch summary / "what did we find" 🔜
 
@@ -349,17 +435,23 @@ Stated plainly because a confident-looking UI can make an honest backend lie:
   standing non-goals.
 - 🚫 Passwords, SSO, social login — login is email OTP only, by decision.
 
-## 9. Open questions — for the user, before or during S8.4
+## 9. Open questions — **ALL FIVE CLOSED 2026-08-05**
 
-1. **Tenancy (§2.1).** Does an org see only its own uploads? This changes the
-   screening queue's shape and is the biggest one.
-2. **Does the wedge path move to the org plane, or does S8.4 add org-plane
-   equivalents** and leave the admin routes alone? Affects every path in §4.A/B.
-3. **Batch identity.** Is a "batch" a real stored object with a name and a
-   status, or just a client-side grouping of uploads? A screening queue really
-   wants the former; nothing in the schema has it today.
-4. **How much of the depth report does the org see?** The full `Report` includes
-   claim-level verdicts and evidence. That is the most valuable view and the most
-   sensitive one.
-5. **Ingest feedback.** Batch upload of 500 needs progress. Poll, or does S8.4
-   add a status endpoint?
+Settled with the user while shaping S8.4. Full reasoning and the rejected
+alternatives are in
+`docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`; each
+answer is also recorded inline in the section it governs.
+
+| # | Question | Answer | Where |
+|---|---|---|---|
+| 1 | Tenancy — does an org see only its own uploads? | **Yes.** Ownership is a property of the upload (`resumes.org_id`, `reports.org_id`, nullable, `SET NULL`); candidates stay global and deduplicated. Enforced by a scoped facade + a guard test, and another org's report is **404**. | §2.1 |
+| 2 | Move the wedge path to the org plane, or add equivalents? | **Add** org-plane routes; the admin routes stay as the operator's cross-tenant view. | §2 |
+| 3 | Is a batch a real stored object? | **Yes** — `screening_batches` + `batch_items`. Status is **derived at read time**, never stored. | §4.A |
+| 4 | How much of the depth report does the org see? | **All of it**, including `verdicts[]`, `missing_signals` and `probes[]`. One redaction: `resume_farm.matches[]` loses identity, keeps similarity — applied in a single shared projection. | §4.B |
+| 5 | Ingest feedback — poll, or a status endpoint? | **Both, and the client drives the work.** Upload registers items; a bounded `process` call does a few at a time; the UI polls batch progress. There is no worker anywhere in `app/`. | §4.A |
+
+**One consequence worth carrying into design:** Q1 and Q3 together mean the
+screening queue is "my batches", not "the candidate universe" — so an org that
+has uploaded nothing sees an **empty queue, not an error**. That is the correct
+resting state for a newly self-registered organisation and it is the first
+screen every new customer will ever see.

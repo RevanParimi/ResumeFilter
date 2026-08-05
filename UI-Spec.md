@@ -61,8 +61,15 @@ Six candidates cover every band including `insufficient_data`.
 
 | Maps to | |
 |---|---|
-| fraud-screen read-model over a batch | 🔜 |
-| cursor pagination | 🔜 — **no pagination UI yet** |
+| fraud-screen read-model over a batch | 🔜 — S8.4 Phase B, `GET /screening/batches/{id}/queue` |
+| cursor pagination | 🔜 — **no pagination UI yet**; S8.4 Phase B, one opaque cursor over `(created_at, id)` |
+
+**Settled 2026-08-05 (UI.md §9):** the queue is scoped to **batches this
+organisation uploaded**, so an org that has uploaded nothing gets an **empty
+queue, not an error** — the resting state of every newly self-registered
+customer, and the first screen they will ever see. The row's ingest-time signals
+(`matched_existing`, `duplicate_resume`, `resume_farm`) come back into the
+read-model here; UI-Spec item 9 recorded them being thrown away.
 
 ---
 
@@ -85,10 +92,15 @@ Six candidates cover every band including `insufficient_data`.
 
 | Maps to | |
 |---|---|
-| `GET /report/{id}` | ✅ (admin plane today) |
+| `GET /report/{id}` | ✅ (admin plane today) — S8.4 Phase A adds the org-plane equivalent, scoped to reports this org owns; another org's report is **404**, not 403 |
 | `POST /report/{id}/outcome` | ✅ |
 
 Resume-farm matches show similarity only — never whose resume matched.
+**Settled 2026-08-05 (UI.md §9 Q4):** this is now permanent rather than pending
+the tenancy call, and it is the *only* redaction — the org sees the full report,
+`verdicts[]` / `missing_signals` / `probes[]` included. Server-side the redaction
+is a single shared projection used by both this screen's endpoint and the batch
+queue read-model, so it cannot hold on one path and lapse on the other.
 
 ---
 
@@ -102,11 +114,14 @@ Resume-farm matches show similarity only — never whose resume matched.
   partial results.
 - **Batches:** per-org list with progress and elevated counts. Copy states the
   tenancy assumption: you see only what your organisation uploaded.
+  **Confirmed 2026-08-05 — this is no longer an assumption but a decision**
+  (UI.md §2.1); the copy stands as written.
 
 | Maps to | |
 |---|---|
-| batch upload (500 files) | 🔜 — today `POST /candidates` is one at a time, admin-only |
-| batch as a stored object | 🔜 — nothing in the schema has it |
+| batch upload (500 files) | 🔜 — today `POST /candidates` is one at a time, admin-only. S8.4 Phase B adds an org-plane batch upload that **registers** items without evaluating them |
+| batch as a stored object | 🔜 — nothing in the schema has it. S8.4 Phase B adds `screening_batches` + `batch_items` |
+| live ingest progress | 🔜 — **poll `GET /screening/batches/{id}`; the client also drives the work** via a bounded `POST .../process`. There is no worker in `app/`, so "live progress" is the UI's loop, not a server push. Design for partial results — which this screen already does |
 | `GET /domains` | ⚠️ **admin router — an org session gets 401.** The two domains (`data_eng`, `genai`) are correctly hard-coded in the UI today. |
 
 ---

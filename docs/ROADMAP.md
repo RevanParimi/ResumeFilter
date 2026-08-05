@@ -9,6 +9,69 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-05 — S8.4 IS SPEC'D. `UI.md`'s five open questions are ALL
+  CLOSED with the user, and the sprint builds as TWO branches from one spec.**
+  Spec: `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
+  No `app/` code was touched; this session is documents only.
+  **The centre of gravity turned out not to be batch upload but TENANCY.**
+  `reports` / `candidates` / `resumes` have never had an org column, so
+  "the customer's data" had no definition — and S8.4 cannot expose the wedge to
+  an org until it does. **Settled: an org sees only what it UPLOADED, and
+  ownership is a property of the UPLOAD, not of the person.** `resumes.org_id` +
+  `reports.org_id`, nullable, **`ON DELETE SET NULL`** — because an organisation
+  offboarding must not destroy a candidate's resume; that is the *person's* data
+  and the only cascade allowed to delete it is the candidate's own erasure, which
+  already exists. Candidates stay **global and deduplicated** (S1.1), so the
+  cross-corpus resume-farm signal survives, and "my queue" is **derived, not
+  denormalized** — no second source of truth to drift. Another org's report is
+  **404, never 403** (S6.4/S7.1 precedent: a 403 confirms it exists).
+  **The enforcement is the point, not the rule.** A tenancy rule spread across
+  ~20 org-plane routes is the one-entry-point bug shape *by construction* — the
+  shape every branch review since S7.1 has caught. So org handlers get **no
+  option**: one scoped facade whose every method takes `org_id` first, no
+  unscoped read reachable from an org handler, and a **guard test in the
+  `test_route_table_guard.py` family** that covers routes not yet written. It
+  must be proven **non-vacuous** — S8.2 recorded FastAPI 0.138 not flattening
+  `include_router`, which made a naive walk see 9 routes instead of 63 and would
+  have passed while inspecting almost nothing.
+  **The other four answers:** ADD org-plane routes and KEEP the admin ones (the
+  operator's cross-tenant support view; moving them would break every `X-Org-Key`
+  machine client, and `X-Org-Key` IS the API product) · a batch is a REAL stored
+  object with status **derived at read time, never stored** (a stored status goes
+  stale when a process dies and nothing corrects it; an item stuck `processing`
+  past a timeout reads `pending` again, so a redeploy mid-batch self-heals) · the
+  org sees the **FULL report** including `missing_signals` and `probes[]`, with
+  **one** redaction (`resume_farm.matches[]` keeps similarity, loses identity)
+  applied in **ONE shared projection** — two copies would be S7.2's `claim_ref`
+  and S7.3's transcript finding a third time.
+  **⚠ THE CONSTRAINT THAT SHAPED THE BATCH DESIGN, measured not assumed: there
+  is NO worker, NO scheduler and NO `BackgroundTasks` anywhere in `app/`**, and
+  `POST /candidates` awaits the whole nine-node graph inline
+  (`routes.py:345-378`). 500 resumes in one request is not physically possible.
+  So upload only **registers** items (a row insert) and a bounded
+  `POST /screening/batches/{id}/process` does the slow work while the UI polls.
+  Nothing dies on redeploy and no background execution enters the repo ahead of
+  S8.3's observability.
+  **The DPDP wrinkle, stated in the spec rather than hidden (§4.2):**
+  `batch_items.raw_text` holds personal data with **no candidate to cascade
+  from** — a resume cannot be written to `resumes` before extraction, because a
+  resume row needs a candidate and identity resolution needs the extraction. So
+  the text is **cleared on success** (S7.1 challenge hygiene: deleted on a path
+  that already runs), `DELETE /screening/batches/{id}` ships **this** sprint as a
+  real delete path, and unprocessed items get a declared window
+  (`ret_batch_item_days`) that is named S8.3 sweep input. A **failed** item keeps
+  its text, because the org must be able to retry — failure is not a reason to
+  destroy the input.
+  **⚠ S8.4 BREAKS THE WIRED UI IN TWO PLACES, named in spec §4.7 rather than
+  discovered at integration:** org signup gains a **409** for a taken org name
+  (the wiring session's 36/36 contract suite asserts "202 always" and will fail
+  **on purpose**), and `POST /comp/estimate` changes shape to match
+  `GET /jobs/{id}/comp` (the UI already unwraps `CompBenchmark` centrally, so
+  this makes that unwrap correct for both paths). Everything else is additive.
+  **`UI.md` and `UI-Spec.md` were updated in place** — §2, §2.1, §4.A, §4.B and
+  §9 now carry the resolutions with their rejected alternatives, so the UI docs
+  no longer describe tenancy as an assumption.
+  **Next: the S8.4 Phase A plan**, then TDD build.
 - **Session 2026-08-03 — THE UI IS WIRED TO THE API. Committed `76cee48`;
   `pytest -q` 1377 passed, unchanged (no `app/` code was touched).** This was
   the integration step PI-8 was re-sequenced around
@@ -594,20 +657,26 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **The UI is wired (2026-08-03, `76cee48`). Next is S8.4 (UI
-  integration surface)**, now with measured requirements from a real client
-  rather than a predicted one. **Take these into the S8.4 spec first:**
-  (a) **close the `org_name_taken` lockout** above — it breaks org self-serve
-  onboarding, which is the whole point of S8.2's signup flow, and it is a
-  two-line fix plus a test; (b) **give feature materialization an HTTP route**,
-  or `GET /jobs/{id}/board` is a permanent 422 for every self-registered org;
-  (c) **settle whether `CompBenchmark`/`CompBandEstimate` should really be two
-  shapes** for one set of numbers; (d) the wedge path (`/report/{id}`,
-  `/evaluate`, `POST /candidates`) is still admin-router, so screens 2–6 stay
-  mock until it moves to the org plane — that decision (UI.md §9 Q2) is now
-  blocking visible UI work, not theoretical. Original S8.4 scope stands:
-  batch upload, cursor pagination, the fraud-screen read-model, OpenAPI good
-  enough to build against.
+- **Next action:** **S8.4 is spec'd (2026-08-05). Next is the S8.4 PHASE A
+  plan, then the TDD build.** Spec:
+  `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
+  **Phase A is ownership and nothing else can precede it:** migration
+  `0018_upload_ownership` · the scoped facade + its non-vacuous guard · org-plane
+  `POST /screening/candidates`, `GET /screening/reports/{id}`,
+  `GET /screening/candidates/{id}/reports` · the single redacting projection ·
+  the `org_name_taken` fix. **Phase B is the screening surface:** migration
+  `0019_screening_batches` · register/process/queue/summary/delete · cursor
+  pagination · the materialization route · both 422 sites · comp's single shape ·
+  OpenAPI. Two branches, two reviews, two merges — because a new
+  security-relevant invariant should not share a diff with pagination polish.
+  **The four wiring-session defects are folded into spec §2** and are no longer
+  a loose list: the `org_name_taken` lockout is fixed at **both** doors (a 409 at
+  signup before any code is sent, plus a distinct refusal at verify) without
+  re-opening enumeration — the protected property is "does this ADDRESS have an
+  account", and an org *name* is not secret. **Deliberately carried past S8.4:**
+  org-plane `POST /evaluate` and `POST /talent/search` — `/evaluate` is
+  candidate-less so there is no owner to stamp, and talent search is a
+  cross-corpus read wanting its own tenancy decision (spec §8).
   It was pulled ahead so the external UI is designed against endpoints that
   actually work rather than 501 stubs, and so the wedge demo exists mid-PI,
   which is the mitigation GTM §7 named for the whole-platform scope.
@@ -1075,19 +1144,66 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            a route-table guard
     │            [1200→1373 green, smoke_s82 21/21, six regression smokes green;
     │             contract-pinning DROPPED (§5.5 superseded by the re-sequence)]
-    ├── [ ] S8.4  UI integration surface — batch upload · cursor pagination ·
-    │            fraud-screen read-model · OpenAPI for a typed client
+    ├── [~] S8.4  UI integration surface — SPEC WRITTEN 2026-08-05, builds as
+    │            TWO BRANCHES from one spec (decision 0.5)
     │            ** PULLED AHEAD OF S8.3 (2026-08-02) **
-    │            NEW INPUTS from the wiring session (2026-08-03), measured
-    │            against a real client rather than predicted:
+    │            [x] spec: 2026-08-05-s84-ui-integration-surface-design.md
+    │                UI.md's FIVE open questions ALL CLOSED with the user:
+    │                  1 tenancy  => an org sees only what it UPLOADED.
+    │                    Ownership is a property of the UPLOAD, not the person:
+    │                    resumes.org_id + reports.org_id, nullable, SET NULL
+    │                    (an org offboarding must not destroy a person's
+    │                    resume). Candidates stay GLOBAL + deduped, so the
+    │                    cross-corpus resume-farm signal survives. "My queue"
+    │                    is DERIVED, not denormalized. Another org's report is
+    │                    404, never 403.
+    │                  2 plane   => ADD org-plane routes, KEEP the admin ones
+    │                    as the operator's cross-tenant support view
+    │                  3 batch   => a REAL stored object (screening_batches +
+    │                    batch_items); status DERIVED at read time, never
+    │                    stored
+    │                  4 report  => the org sees the FULL report (verdicts,
+    │                    missing_signals, probes); ONE redaction —
+    │                    resume_farm.matches[] loses identity, keeps similarity
+    │                  5 ingest  => CLIENT-DRIVEN. There is NO worker, no
+    │                    scheduler and no BackgroundTasks anywhere in app/
+    │                    (verified), and POST /candidates awaits the whole
+    │                    9-node graph inline, so 500 resumes in one request is
+    │                    not physically possible. Upload REGISTERS; a bounded
+    │                    process call does the slow work; the UI polls.
+    │            [ ] Phase A — ownership: migration 0018_upload_ownership · a
+    │                SCOPED FACADE + a guard test in the route-table-guard
+    │                family (the tenancy rule is the one-entry-point bug shape
+    │                by construction, so handlers get no option) · org-plane
+    │                POST /screening/candidates, GET /screening/reports/{id},
+    │                GET /screening/candidates/{id}/reports · ONE redacting
+    │                projection shared by both readers · the org_name_taken fix
+    │            [ ] Phase B — screening surface: migration
+    │                0019_screening_batches · register/process/queue/summary/
+    │                delete · cursor pagination (opaque, over (created_at, id))
+    │                · admin POST /features/materialize · BOTH 422 sites
+    │                (routes.py:925 match AND :1023 board) become 200 + a
+    │                reason · comp returns ONE shape · OpenAPI operation_id +
+    │                response_model on every route, asserted by a test
+    │            MEASURED INPUTS from the wiring session (2026-08-03), all now
+    │            folded into the spec §2:
     │              - org signup with a TAKEN org name => 202 + a real code that
     │                then verifies as 400 invalid_code. Blocks org self-serve
-    │                onboarding (blocker 5). Two-line fix + a test.
+    │                onboarding (blocker 5). Fixed at BOTH doors: a 409 at
+    │                signup (before a code is sent) AND a distinct refusal at
+    │                verify, without re-opening the enumeration oracle — the
+    │                property protected is "does this ADDRESS have an account",
+    │                and an org NAME is not secret.
     │              - feature materialization has NO HTTP route, so
     │                GET /jobs/{id}/board is a PERMANENT 422 for a new org
     │              - CompBenchmark wraps the estimate, CompBandEstimate does
     │                not: two shapes for one set of numbers
     │              - POST /jobs 422s a requisition with no skills
+    │            ⚠ BREAKS THE WIRED UI IN TWO PLACES, named in spec §4.7 rather
+    │              than discovered at integration: org signup gains a 409 (the
+    │              36/36 contract suite asserts "202 always" and will fail on
+    │              purpose), and POST /comp/estimate changes shape (the UI
+    │              already unwraps centrally, so this makes it correct).
     ├── [~] S8.5  UI BUILD (external, claude.ai/design) + INTEGRATION
     │            [x] UI built externally — frontend/, dark+light, 17 screens
     │            [x] WIRED 2026-08-03 (76cee48): frontend/api.js seam
@@ -1098,10 +1214,19 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                "sample data" · 36/36 contract + 9/9 browser + 27/27 CDP
     │                click-through; pytest 1377 unchanged
     │            [ ] screens 2/4/5/6 (queue · summary · upload · batches) —
-    │                BLOCKED: no endpoints until S8.4
-    │            [ ] report detail · instant check · operator console ·
-    │                interview runner — reachable but admin-router today;
-    │                deferred so S8.4's plane decision cannot force a rewrite
+    │                BLOCKED: no endpoints until S8.4 Phase B. Now designable:
+    │                the queue is "MY batches" (tenancy settled 2026-08-05), so
+    │                an org that has uploaded nothing shows an EMPTY QUEUE, not
+    │                an error — the first screen every new customer ever sees
+    │            [ ] report detail — unblocked by S8.4 Phase A
+    │                (GET /screening/reports/{id}, org plane, full report with
+    │                resume_farm.matches[] redacted to similarity-only)
+    │            [ ] instant check (/evaluate) · operator console · interview
+    │                runner — /evaluate STAYS admin past S8.4 by decision
+    │                (candidate-less, so no owner to stamp); operator console is
+    │                admin by nature; interview runner is candidate-plane
+    │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
+    │                new 409 makes it fail ON PURPOSE (spec §4.7)
     │            [ ] composite smoke across the wired UI
     ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
@@ -1138,6 +1263,40 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-05** — **S8.4 specced. Documents only; no `app/` code touched.**
+  Spec `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`;
+  `UI.md` §2/§2.1/§4.A/§4.B/§9 and `UI-Spec.md` §2/§3/§4 updated in place so the
+  UI docs record decisions rather than assumptions.
+  **`UI.md`'s five open questions are all closed** (§0.1–0.4 of the spec, each
+  with its rejected alternatives), and the sprint splits into **two branches**
+  (§0.5) because a tenancy invariant across ~20 org-plane routes should not share
+  a review with pagination and OpenAPI polish.
+  **The finding that reframed the sprint: S8.4 is not really about batch upload,
+  it is about tenancy.** `reports`/`candidates`/`resumes` have never had an org
+  column, so "the customer's data" was undefined — and no wedge endpoint can be
+  exposed to an org until it is. The resolution that made the rest fall out:
+  **ownership belongs to the UPLOAD, not the person**, which keeps candidates
+  global and deduplicated (so cross-corpus resume-farm detection survives) while
+  giving every read something to scope by. **`SET NULL`, not `CASCADE`** — an org
+  offboarding must not destroy a person's resume.
+  **Three things were measured rather than assumed, and two of them changed the
+  design.** (a) **There is no worker, no scheduler and no `BackgroundTasks`
+  anywhere in `app/`**, and `POST /candidates` awaits the whole nine-node graph
+  inline — so the batch design became register-then-client-driven-process rather
+  than anything asynchronous. (b) The `"no materialized candidates to match"`
+  422 is at **two** call sites (`routes.py:925` match, `:1023` board), not one —
+  the house one-rule-two-doors shape appearing in the *defect list* this time.
+  (c) The three `limit`-only pagination sites were confirmed as curation
+  unmapped, job match and talent search.
+  **A DPDP hole was found while designing and closed in the design, not deferred:
+  `batch_items.raw_text` holds personal data with no candidate to cascade from**,
+  because a resume row cannot exist before extraction. Hence: cleared on success,
+  a real `DELETE` path shipping in the same sprint, and a declared retention
+  window for the abandoned case.
+  **Two deliberate breaks to the already-wired UI were named in the spec (§4.7)
+  rather than left for integration** — org signup gains a 409 (the 36/36 contract
+  suite will fail on purpose) and `POST /comp/estimate` changes shape to agree
+  with `GET /jobs/{id}/comp`.
 - **2026-08-01 (4)** — **S8.1 (Deployable spine) specced, planned, built inline
   TDD, and merged. 1175→1200 green; `smoke_s81` 10/10; s13/s41/s53/s64/s73 all
   still green.** Two decisions taken with the user before any code, both
