@@ -304,6 +304,15 @@ holds on one path and lapses on the other — verbatim the S7.2 `claim_ref`
 finding and the S7.3 transcript finding, the same defect shape two sprints
 running. A test asserts both callers go through it.
 
+### 3.5 `TENANCY.md`
+
+A root doc, peer of `AUTH.md` / `PORTAL.md` / `VERIFICATION.md`. It records the
+model, why candidates stay global, what "unowned" means, the enforcement and the
+four branch reviews that motivated it, the 404-not-403 rule, the single
+redaction, and what is deliberately **not** scoped yet (§8). Written in Phase A,
+because a tenancy rule nobody can look up is a tenancy rule the next sprint
+reinvents differently.
+
 ---
 
 ## 4. Phase B — the screening surface
@@ -421,7 +430,7 @@ never hand-maintained, because a hand-maintained list is the one that drifts
 
 ---
 
-## 4.7 What this breaks in the already-wired UI
+### 4.7 What this breaks in the already-wired UI
 
 The UI was wired on 2026-08-03 against the API as it stood. Two changes here are
 visible to it, and both are cheap **now** and an integration bug **later**, so
