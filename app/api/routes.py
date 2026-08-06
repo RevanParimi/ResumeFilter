@@ -1779,6 +1779,19 @@ def _verify(
 
 @auth_router.post("/auth/org/signup", status_code=202)
 async def auth_org_signup(req: OrgSignupRequest, request: Request) -> dict:
+    """Refuse a taken org name HERE, before a code is ever sent (S8.4 §2.1).
+
+    The old behaviour answered 202, mailed a real code, and then rejected that
+    CORRECT code at verify as `invalid_code` -- because org creation happens in
+    `_establish`, and every ChallengeRefused collapsed into one message. The
+    user burned their attempts and could not onboard.
+
+    This does not re-open the enumeration oracle. What that oracle protects is
+    whether an ADDRESS has an account, and this check never looks at the
+    address: an unknown address still gets 202 exactly like a known one.
+    """
+    if not _services(request).auth.organization_name_available(req.organization_name):
+        raise HTTPException(status_code=409, detail="organization_name_taken")
     return _request_code(
         request,
         email=req.email,

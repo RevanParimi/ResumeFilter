@@ -30,6 +30,7 @@ from app.auth.schema import (
 )
 from app.core.config import Settings, get_settings
 from app.ledger.consent import as_utc
+from app.ledger.models import OrganizationRow
 
 #: Which nullable FK column carries the principal for each plane.
 _PRINCIPAL_COLUMN = {
@@ -403,6 +404,22 @@ class AuthStore:
             session.add(user)
             session.commit()
             return org.id, _org_user(user)
+
+    def organization_name_exists(self, name: str) -> bool:
+        """Is this organization name already taken?
+
+        Used to refuse a signup BEFORE a code is sent (S8.4 §2.1). This leaks
+        nothing: org names are not secret, and the uniqueness constraint
+        already discloses the same fact to anyone who completes a signup. The
+        property that IS protected -- whether an email address has an account
+        -- is untouched, because this never looks at the address.
+        """
+        with self._session_factory() as session:
+            return session.execute(
+                select(OrganizationRow.id)
+                .where(OrganizationRow.name == name.strip())
+                .limit(1)
+            ).scalars().first() is not None
 
     def org_user_by_email(self, email_hash: str) -> Optional[OrgUser]:
         """Enabled org users only -- a disabled row must not authenticate.

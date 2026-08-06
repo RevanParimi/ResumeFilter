@@ -561,6 +561,10 @@ class AuthService:
     def hash_email(self, email: str) -> str:
         return self._hash_email(email)
 
+    def organization_name_available(self, name: str) -> bool:
+        """True when `name` is free. Routes talk to the service, not the store."""
+        return not self._store.organization_name_exists(name)
+
     def find_admin_user(self, email_hash: str):
         return self._store.admin_user_by_email(email_hash)
 
