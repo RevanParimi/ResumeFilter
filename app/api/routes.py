@@ -306,12 +306,15 @@ class CandidateCreateResponse(BaseModel):
     resume_farm: Optional[ResumeFarmAssessment] = None
 
 
-@router.post("/candidates", response_model=CandidateCreateResponse)
-async def create_candidate(
-    req: CandidateCreateRequest, request: Request
+async def _ingest_one(
+    req: CandidateCreateRequest, request: Request, *, org_id: Optional[str] = None
 ) -> CandidateCreateResponse:
-    """Upload → extract → store → (auto) depth-eval. The graph stays
-    candidate-unaware: the API stamps report.candidate_id after evaluation."""
+    """Upload → extract → store → (auto) depth-eval, for ONE resume.
+
+    Shared by the admin route (no owner) and the org route (owner = caller).
+    Kept as one function on purpose: duplicating it would be the
+    one-rule-two-doors shape in the sprint that exists to eliminate it.
+    """
     services = _services(request)
 
     caps = services.settings
@@ -343,7 +346,7 @@ async def create_candidate(
         raise HTTPException(status_code=422, detail="empty_resume")
 
     result = await extract_profile(text, llm=services.llm, settings=services.settings)
-    outcome = services.candidates.ingest(result, text)
+    outcome = services.candidates.ingest(result, text, org_id=org_id)
 
     # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
     # comparison must exclude the uploader's own candidate (re-uploads and new
@@ -382,7 +385,7 @@ async def create_candidate(
         # landing after the save cascades the row away — so both halves of this
         # race are the database's job, not a compensating delete we remember.
         try:
-            services.report_store.save(report)
+            services.report_store.save(report, org_id=org_id)
         except SubjectErasedError:
             report = None
         else:
@@ -400,6 +403,15 @@ async def create_candidate(
         report=report,
         resume_farm=farm,
     )
+
+
+@router.post("/candidates", response_model=CandidateCreateResponse)
+async def create_candidate(
+    req: CandidateCreateRequest, request: Request
+) -> CandidateCreateResponse:
+    """Admin plane: no owner. Cross-tenant by design -- this is the operator's
+    view, and S8.4 deliberately left it alone."""
+    return await _ingest_one(req, request)
 
 
 class CandidateDetail(BaseModel):
@@ -715,6 +727,49 @@ async def consent_status(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ── Screening (S8.4 Phase A) ────────────────────────────────────────────────
+# The wedge, reachable by the org that bought it: upload one resume, read back
+# its own (redacted) report, list its own reports about one person. Batch
+# upload is Phase B.
+
+
+@org_router.post("/screening/candidates", response_model=CandidateCreateResponse)
+async def screening_create_candidate(
+    req: CandidateCreateRequest, request: Request, org_id: str = Depends(require_org)
+) -> CandidateCreateResponse:
+    """The wedge, on the plane that bought it (S8.4 §3.2).
+
+    Synchronous like its admin twin -- this is the one-off upload. Batch is
+    Phase B. The resume and its report are stamped with the caller's org.
+    """
+    return await _ingest_one(req, request, org_id=org_id)
+
+
+@org_router.get("/screening/reports/{report_id}", response_model=Report)
+async def screening_get_report(
+    report_id: str, request: Request, org_id: str = Depends(require_org)
+) -> Report:
+    """404 -- never 403 -- for a report this org did not commission: a 403
+    would confirm it exists."""
+    found = _services(request).screening_scope.report(org_id, report_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return found
+
+
+@org_router.get(
+    "/screening/candidates/{candidate_id}/reports", response_model=list[Report]
+)
+async def screening_candidate_reports(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> list[Report]:
+    """This org's own reports about one person. A person they have never
+    uploaded yields an empty list, not a 404."""
+    return _services(request).screening_scope.reports_for_candidate(
+        org_id, candidate_id
+    )
 
 
 class RecordSubmitRequest(BaseModel):
