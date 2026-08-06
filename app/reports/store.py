@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
@@ -75,14 +76,22 @@ class SqlReportStore:
             row.created_at = as_utc(report.created_at)
             try:
                 s.commit()
-            except IntegrityError:
+            except IntegrityError as err:
                 s.rollback()
                 if report.candidate_id is None:
+                    # No candidate FK, so any IntegrityError is unrelated to
+                    # candidate erasure.
                     raise
-                # ``org_id`` is SET NULL and cannot fail an insert, so an
-                # integrity failure here still means one thing: the subject was
-                # erased mid-flight.
-                raise SubjectErasedError(report.candidate_id) from None
+                # Two FKs now: candidate (CASCADE) and org (SET NULL).
+                # Verify the actual cause: does the candidate still exist?
+                # This is dialect-independent and checks the real precondition.
+                candidate_exists = s.get(CandidateRow, report.candidate_id) is not None
+                if not candidate_exists:
+                    # The subject was genuinely erased mid-flight.
+                    raise SubjectErasedError(report.candidate_id) from None
+                # Candidate exists, so the FK failure is from org_id (or some
+                # other unforeseen FK). Re-raise the original error.
+                raise
 
     def get(self, report_id: str) -> Optional[Report]:
         with self._session_factory() as s:
