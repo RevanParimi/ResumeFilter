@@ -65,3 +65,33 @@ def test_deleting_an_org_leaves_the_resume_intact_and_unowned(services):
         assert s.execute(
             select(ResumeRow).where(ResumeRow.candidate_id == outcome.candidate_id)
         ).scalars().first() is not None
+
+
+def test_report_save_stamps_org_and_keeps_it_out_of_the_body(services):
+    from datetime import datetime, timezone
+    from app.schemas.report import Report
+
+    org = services.ledger.create_organization("Beta Staffing")
+    report = Report(id="rep-1", domain="genai", created_at=datetime.now(timezone.utc))
+    services.report_store.save(report, org_id=org.id)
+
+    with services.candidates._session_factory() as s:
+        row = s.get(ReportRow, "rep-1")
+        assert row.org_id == org.id
+        assert "org_id" not in row.body, "ownership is storage, not the report contract"
+
+    assert services.report_store.get("rep-1").model_dump().get("org_id") is None
+
+
+def test_resaving_without_an_org_does_not_un_own_a_report(services):
+    """save() is an upsert; a later save from another path must not orphan it."""
+    from datetime import datetime, timezone
+    from app.schemas.report import Report
+
+    org = services.ledger.create_organization("Gamma Staffing")
+    report = Report(id="rep-2", domain="genai", created_at=datetime.now(timezone.utc))
+    services.report_store.save(report, org_id=org.id)
+    services.report_store.save(report)  # no org_id supplied
+
+    with services.candidates._session_factory() as s:
+        assert s.get(ReportRow, "rep-2").org_id == org.id

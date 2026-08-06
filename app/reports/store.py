@@ -37,7 +37,7 @@ class SubjectErasedError(RuntimeError):
 
 
 class ReportStore(Protocol):
-    def save(self, report: Report) -> None: ...
+    def save(self, report: Report, *, org_id: Optional[str] = None) -> None: ...
     def get(self, report_id: str) -> Optional[Report]: ...
     def add_outcome(self, rec: OutcomeRecord) -> None: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
@@ -51,9 +51,16 @@ class SqlReportStore:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def save(self, report: Report) -> None:
+    def save(self, report: Report, *, org_id: Optional[str] = None) -> None:
         """Upsert. (The old store used ``INSERT OR REPLACE``, which Postgres
-        does not have -- the SQL had to be rewritten whatever we did here.)"""
+        does not have -- the SQL had to be rewritten whatever we did here.)
+
+        ``org_id`` is a STORAGE fact and never enters ``body``: the Report
+        contract is what a client receives, and ownership is not part of it.
+        Supplying no ``org_id`` on a re-save LEAVES the existing owner alone --
+        un-owning a report by forgetting an argument would be a silent
+        cross-tenant leak in the making.
+        """
         with self._session_factory() as s:
             row = s.get(ReportRow, report.id)
             if row is None:
@@ -62,6 +69,8 @@ class SqlReportStore:
             row.domain = report.domain
             row.depth_band = report.depth_band.value
             row.candidate_id = report.candidate_id
+            if org_id is not None:
+                row.org_id = org_id
             row.body = report.model_dump(mode="json")
             row.created_at = as_utc(report.created_at)
             try:
@@ -70,8 +79,9 @@ class SqlReportStore:
                 s.rollback()
                 if report.candidate_id is None:
                     raise
-                # The only FK on this row is the candidate, so an integrity
-                # failure here means the subject was erased mid-flight.
+                # ``org_id`` is SET NULL and cannot fail an insert, so an
+                # integrity failure here still means one thing: the subject was
+                # erased mid-flight.
                 raise SubjectErasedError(report.candidate_id) from None
 
     def get(self, report_id: str) -> Optional[Report]:
