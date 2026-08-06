@@ -65,9 +65,26 @@ def test_the_input_report_is_not_mutated():
     )
 
 
-def test_a_report_with_no_matches_is_returned_unharmed():
+def test_a_report_with_no_farm_assessment_stays_none():
+    """No assessment ever ran -- None must round-trip as None, not be
+    upgraded into a synthesized 'insufficient_data' conclusion nobody reached."""
     r = Report(id="rep-2", domain="genai", created_at=datetime.now(timezone.utc))
+    assert r.resume_farm is None
     out = redact_for_org(r)
+    assert out.resume_farm is None
+
+
+def test_a_present_but_empty_assessment_stays_present_and_empty():
+    """The detector ran and found nothing -- that assessment object must
+    survive, distinguishable from the no-assessment-at-all case above."""
+    r = Report(
+        id="rep-3",
+        domain="genai",
+        created_at=datetime.now(timezone.utc),
+        resume_farm=ResumeFarmAssessment(),
+    )
+    out = redact_for_org(r)
+    assert out.resume_farm is not None
     assert out.resume_farm.matches == []
 
 

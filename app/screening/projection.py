@@ -15,7 +15,6 @@ usually the admin plane's own object.
 
 from __future__ import annotations
 
-from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 
 
@@ -27,15 +26,16 @@ def redact_for_org(report: Report) -> Report:
     what convert a score into an action (UI.md §4.B), and withholding them
     would make the numbers less useful without making them more honest.
 
-    ``resume_farm`` is ``None`` for pre-S2.3 reports and ad-hoc ``POST
-    /evaluate`` runs that never touched the farm detector. The org-facing copy
-    normalizes that into an empty, ``INSUFFICIENT_DATA`` assessment rather
-    than leaving ``None`` -- "no farm signal was computed" is representable
-    honestly, and org-facing callers never have to null-check ``resume_farm``.
+    ``resume_farm`` stays exactly what it was -- ``None`` round-trips as
+    ``None``, and a present-but-empty assessment round-trips as present and
+    empty -- because a null and an ``insufficient_data`` conclusion are
+    different facts (no assessment ever ran, vs. one ran and could not say),
+    and this function's one job is stripping counterparty identity, not
+    inventing signal.
     """
-    farm = report.resume_farm or ResumeFarmAssessment()
-    if not farm.matches:
-        return report.model_copy(deep=True, update={"resume_farm": farm.model_copy(deep=True)})
+    farm = report.resume_farm
+    if farm is None or not farm.matches:
+        return report.model_copy(deep=True)
 
     redacted = [
         m.model_copy(update={"candidate_id": None, "resume_id": None})
