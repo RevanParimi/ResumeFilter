@@ -69,6 +69,7 @@ from app.verification.service import (
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
+from app.screening.projection import redact_ingest_response_for_org
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
@@ -743,8 +744,16 @@ async def screening_create_candidate(
 
     Synchronous like its admin twin -- this is the one-off upload. Batch is
     Phase B. The resume and its report are stamped with the caller's org.
+
+    ``_ingest_one`` scans the whole platform's fingerprints for the resume
+    farm check (fraud detection has to, by design); redact the response here
+    before it leaves the org plane so a caller never sees another customer's
+    candidate_id/resume_id. The admin twin (create_candidate) returns the
+    same read unredacted on purpose -- that is the operator's cross-tenant
+    support view.
     """
-    return await _ingest_one(req, request, org_id=org_id)
+    resp = await _ingest_one(req, request, org_id=org_id)
+    return redact_ingest_response_for_org(resp)
 
 
 @org_router.get("/screening/reports/{report_id}", response_model=Report)

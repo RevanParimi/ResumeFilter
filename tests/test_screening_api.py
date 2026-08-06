@@ -110,6 +110,62 @@ def test_the_org_report_is_redacted_but_complete(services, farm_resume_a, farm_r
         assert "verdicts" in body and "fabrication_risk" in body
 
 
+def test_org_upload_response_does_not_leak_counterparty_identity(
+    services, farm_resume_a, farm_resume_b
+):
+    """The UPLOAD response -- not just the later GET -- must not carry another
+    org's candidate_id/resume_id. _ingest_one's resume_farm scan
+    (services.candidates.similar_resumes) is genuinely cross-tenant: fraud
+    detection has to see the whole platform's fingerprints, not just this
+    org's own. The same assessment appears TWICE in the response (the
+    top-level resume_farm and the embedded report's own resume_farm) and both
+    must be redacted before screening_create_candidate returns."""
+    _, key_a = _key(services, "Agency A")
+    _, key_b = _key(services, "Agency B")
+    with _client(services) as c:
+        c.post("/screening/candidates", headers={"X-Org-Key": key_a},
+               json={"resume_text": farm_resume_a, "domain": "genai"})
+        up_b = c.post("/screening/candidates", headers={"X-Org-Key": key_b},
+                      json={"resume_text": farm_resume_b, "domain": "genai"})
+        assert up_b.status_code == 200, up_b.text
+        body = up_b.json()
+
+        top_matches = body["resume_farm"]["matches"]
+        assert top_matches, "expected a cross-tenant near-duplicate match"
+        for m in top_matches:
+            assert m["similarity"] > 0
+            assert m["candidate_id"] is None
+            assert m["resume_id"] is None
+
+        report_matches = body["report"]["resume_farm"]["matches"]
+        assert report_matches, "the embedded report carries the same assessment"
+        for m in report_matches:
+            assert m["similarity"] > 0
+            assert m["candidate_id"] is None
+            assert m["resume_id"] is None
+
+
+def test_admin_upload_response_keeps_counterparty_identity(
+    services, admin_headers, farm_resume_a, farm_resume_b
+):
+    """The admin plane's cross-tenant view is unchanged: operators need the
+    real ids for fraud support, so the redaction must be org-plane only."""
+    _, key_a = _key(services, "Agency A")
+    with _client(services) as c:
+        c.post("/screening/candidates", headers={"X-Org-Key": key_a},
+               json={"resume_text": farm_resume_a, "domain": "genai"})
+        up = c.post("/candidates", headers=admin_headers,
+                    json={"resume_text": farm_resume_b, "domain": "genai"})
+        assert up.status_code == 200, up.text
+        body = up.json()
+
+        matches = body["resume_farm"]["matches"]
+        assert matches, "expected a cross-tenant near-duplicate match"
+        for m in matches:
+            assert m["candidate_id"] is not None
+            assert m["resume_id"] is not None
+
+
 def test_admin_upload_stays_unowned_and_invisible_to_orgs(services, genuine_resume,
                                                           admin_headers):
     org_id, key = _key(services, "Agency A")
