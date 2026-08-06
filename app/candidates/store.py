@@ -84,7 +84,13 @@ class CandidateStore:
         self._session_factory = session_factory
         self._access_key_bytes = access_key_bytes
 
-    def ingest(self, result: ExtractionResult, resume_text: str) -> IngestOutcome:
+    def ingest(
+        self,
+        result: ExtractionResult,
+        resume_text: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> IngestOutcome:
         sha = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()
         profile = result.profile
         with self._session_factory() as session:
@@ -118,6 +124,7 @@ class CandidateStore:
                     version=(latest or 0) + 1,
                     raw_text=resume_text,
                     text_sha256=sha,
+                    org_id=org_id,
                 )
                 session.add(resume)
                 session.flush()
