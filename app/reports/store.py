@@ -44,6 +44,10 @@ class ReportStore(Protocol):
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
     def delete(self, report_id: str) -> bool: ...
     def for_candidate(self, candidate_id: str) -> list[Report]: ...
+    def get_for_org(self, org_id: str, report_id: str) -> Optional[Report]: ...
+    def for_candidate_and_org(
+        self, org_id: str, candidate_id: str
+    ) -> list[Report]: ...
 
 
 class SqlReportStore:
@@ -138,6 +142,32 @@ class SqlReportStore:
             rows = s.execute(
                 select(ReportRow)
                 .where(ReportRow.candidate_id == candidate_id)
+                .order_by(ReportRow.created_at)
+            ).scalars().all()
+            return [Report.model_validate(r.body) for r in rows]
+
+    def get_for_org(self, org_id: str, report_id: str) -> Optional[Report]:
+        """One report, but only if this org commissioned it.
+
+        A report with ``org_id IS NULL`` -- pre-S8.4, or uploaded through the
+        admin plane -- belongs to NOBODY, not to everybody. Returning None here
+        rather than raising is what lets the route answer 404 instead of 403:
+        another org's report must be indistinguishable from one that is absent.
+        """
+        with self._session_factory() as s:
+            row = s.get(ReportRow, report_id)
+            if row is None or row.org_id != org_id:
+                return None
+            return Report.model_validate(row.body)
+
+    def for_candidate_and_org(self, org_id: str, candidate_id: str) -> list[Report]:
+        with self._session_factory() as s:
+            rows = s.execute(
+                select(ReportRow)
+                .where(
+                    ReportRow.candidate_id == candidate_id,
+                    ReportRow.org_id == org_id,
+                )
                 .order_by(ReportRow.created_at)
             ).scalars().all()
             return [Report.model_validate(r.body) for r in rows]

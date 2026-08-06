@@ -347,6 +347,24 @@ class CandidateStore:
             ).scalars().first()
             return row.id if row else None
 
+    def org_owns_candidate(self, org_id: str, candidate_id: str) -> bool:
+        """Does this org hold at least one upload of this person?
+
+        "My candidates" is DERIVED, never denormalized: there is no
+        candidates.org_id, because a candidate is a person and two orgs can
+        both have uploaded them. One ownership fact, one home -- nothing to
+        drift out of step.
+        """
+        with self._session_factory() as session:
+            return session.execute(
+                select(ResumeRow.id)
+                .where(
+                    ResumeRow.candidate_id == candidate_id,
+                    ResumeRow.org_id == org_id,
+                )
+                .limit(1)
+            ).scalars().first() is not None
+
     def create_bare_candidate(self, *, email_hash: str) -> str:
         """A candidate row carrying a contact hash and nothing else — someone
         who signed up before any resume of theirs was ever submitted."""
