@@ -230,6 +230,7 @@ def make_services(
     interview=None,
     email=None,
     auth=None,
+    screening_scope=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -305,6 +306,9 @@ def make_services(
             verification=verification, interview=interview, auth=auth,
             settings=settings,
         )
+    if screening_scope is None:
+        from app.screening.scope import build_org_scoped_reads
+        screening_scope = build_org_scoped_reads(report_store, candidates)
     return Services(
         settings=settings,
         llm=llm,
@@ -326,6 +330,7 @@ def make_services(
         interview=interview,
         email=email,
         auth=auth,
+        screening_scope=screening_scope,
     )
 
 

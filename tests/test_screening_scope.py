@@ -105,3 +105,61 @@ def test_candidate_erasure_still_takes_owned_reports_with_it(services):
         assert s.get(ReportRow, "rep-erase") is None, (
             "an owned report must still die with its subject"
         )
+
+
+def test_facade_report_redacts_and_scopes(services):
+    from app.schemas.fabrication import ResumeFarmAssessment, ResumeMatch
+
+    a, b = _org(services, "Agency A"), _org(services, "Agency B")
+    cand = _upload(services, a).candidate_id
+    r = Report(
+        id="rep-f", domain="genai", candidate_id=cand,
+        created_at=datetime.now(timezone.utc),
+        resume_farm=ResumeFarmAssessment(
+            matches=[ResumeMatch(candidate_id="other", resume_id="res", similarity=0.9)],
+        ),
+    )
+    services.report_store.save(r, org_id=a)
+
+    got = services.screening_scope.report(a, "rep-f")
+    assert got is not None
+    assert got.resume_farm.matches[0].candidate_id is None, "facade must redact"
+    assert got.resume_farm.matches[0].similarity == 0.9
+
+    assert services.screening_scope.report(b, "rep-f") is None
+
+
+def test_facade_reports_for_candidate_redacts_every_element(services):
+    from app.schemas.fabrication import ResumeFarmAssessment, ResumeMatch
+
+    a = _org(services, "Agency A")
+    cand = _upload(services, a).candidate_id
+    for rid in ("rep-1", "rep-2"):
+        services.report_store.save(
+            Report(id=rid, domain="genai", candidate_id=cand,
+                   created_at=datetime.now(timezone.utc),
+                   resume_farm=ResumeFarmAssessment(
+                       matches=[ResumeMatch(candidate_id="o", resume_id="r",
+                                            similarity=0.5)])),
+            org_id=a,
+        )
+    out = services.screening_scope.reports_for_candidate(a, cand)
+    assert len(out) == 2
+    assert all(m.candidate_id is None for r in out for m in r.resume_farm.matches)
+
+
+def test_facade_owns_candidate(services):
+    a, b = _org(services, "Agency A"), _org(services, "Agency B")
+    cand = _upload(services, a).candidate_id
+    assert services.screening_scope.owns_candidate(a, cand) is True
+    assert services.screening_scope.owns_candidate(b, cand) is False
+
+
+def test_every_facade_read_takes_org_id_first():
+    """The signature IS the enforcement; Task 7's guard is the backstop."""
+    import inspect
+    from app.screening.scope import OrgScopedReads
+
+    for name in ("report", "reports_for_candidate", "owns_candidate"):
+        params = list(inspect.signature(getattr(OrgScopedReads, name)).parameters)
+        assert params[:2] == ["self", "org_id"], f"{name} must scope by org first"
