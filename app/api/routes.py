@@ -21,7 +21,9 @@ from app.auth.csrf import csrf_matches
 from app.auth.schema import (
     AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia, SessionView,
 )
-from app.auth.service import ChallengeRefused, EmailUnavailableError
+from app.auth.service import (
+    ChallengeRefused, EmailUnavailableError, RegistrationRefused,
+)
 from app.candidates.extractor import extract_profile
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
@@ -1764,8 +1766,12 @@ def _verify(
             at=datetime.now(timezone.utc),
             user_agent=request.headers.get("user-agent"),
         )
+    except RegistrationRefused as exc:
+        # The code was RIGHT. This is a registration failure, and reporting it
+        # as invalid_code is what locked users out of their own signup.
+        raise HTTPException(status_code=409, detail=exc.reason) from exc
     except ChallengeRefused as exc:
-        # ONE status and ONE detail for every failure mode. Distinguishing
+        # ONE status and ONE detail for every CODE failure mode. Distinguishing
         # expired from wrong from exhausted tells a brute-forcer which of their
         # assumptions was right, which is precisely the help not to give.
         raise HTTPException(status_code=400, detail="invalid_code") from exc

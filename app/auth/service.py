@@ -64,6 +64,22 @@ class ChallengeRefused(AuthError):
         self.reason = reason
 
 
+class RegistrationRefused(AuthError):
+    """The code was RIGHT; establishing the principal failed.
+
+    Split out from ChallengeRefused because collapsing the two is what let a
+    taken organization name present as a wrong code -- the user typing a
+    correct code, being told it was wrong, and burning their attempts.
+
+    The single-message rule exists so a brute-forcer learns nothing about
+    CODES. It was never meant to swallow a registration failure.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class AuthService:
     def __init__(
         self,
@@ -355,13 +371,17 @@ class AuthService:
             if user is None:
                 name = (payload.get("organization_name") or "").strip()
                 if not name:
-                    raise ChallengeRefused("missing_organization_name")
+                    raise RegistrationRefused("missing_organization_name")
                 try:
                     org_id, user = self._store.create_org_with_owner(
                         name=name, email_hash=email_hash
                     )
                 except OrgNameTaken as exc:
-                    raise ChallengeRefused("org_name_taken") from exc
+                    # Reachable despite the signup-time check (S8.4 §2.1): the
+                    # name can be taken in the window between the two calls.
+                    # Same reason string as the signup-time 409 (Task 8) so the
+                    # two paths for the identical condition read identically.
+                    raise RegistrationRefused("organization_name_taken") from exc
             return user.id, Principal(
                 kind=PrincipalKind.ORG,
                 via=PrincipalVia.SESSION,
@@ -374,6 +394,10 @@ class AuthService:
             if admin is None:
                 # There is no admin signup. Reachable only by racing an operator
                 # deletion between request_code and verify_code.
+                #
+                # Stays a ChallengeRefused -> 400. Distinguishing "not an
+                # operator" from "wrong code" IS an enumeration oracle, and on
+                # the privileged plane.
                 raise ChallengeRefused("no_such_operator")
             return admin.id, Principal(
                 kind=PrincipalKind.ADMIN,

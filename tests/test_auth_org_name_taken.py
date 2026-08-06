@@ -128,3 +128,96 @@ def test_unknown_and_known_ADDRESSES_are_still_indistinguishable(
     assert known.json() == unknown.json()
     assert mid - before == 0, "a known address's re-signup must send nothing (S8.2)"
     assert after - mid == 1, "a genuinely new address's signup must still send a code"
+
+
+def test_a_name_taken_during_the_window_is_409_not_invalid_code(
+    client, capture_path
+):
+    """The race Task 8 cannot close: taken between signup and verify.
+
+    This is the ONLY path that still reaches _establish's OrgNameTaken, and it
+    is the one that must never resurface as 'your code is wrong'.
+    """
+    r = client.post("/auth/org/signup",
+                    json={"email": "ops@acme.example",
+                          "organization_name": "Acme Staffing"})
+    assert r.status_code == 202
+    code = _code(capture_path)
+
+    # Somebody else registers the name in the window.
+    client.app_services.ledger.create_organization("Acme Staffing")
+
+    v = client.post("/auth/org/verify",
+                    json={"email": "ops@acme.example", "code": code})
+    assert v.status_code == 409, "a CORRECT code must never be reported as wrong"
+    assert v.json()["detail"] == "organization_name_taken"
+
+
+def test_every_genuine_code_failure_is_still_one_invalid_code(
+    client, capture_path
+):
+    client.post("/auth/org/signup",
+                json={"email": "ops@fresh.example",
+                      "organization_name": "Fresh Co"})
+    wrong = client.post("/auth/org/verify",
+                        json={"email": "ops@fresh.example", "code": "000000"})
+    assert wrong.status_code == 400
+    assert wrong.json()["detail"] == "invalid_code"
+
+
+def test_missing_organization_name_is_a_registration_failure_too(
+    client, capture_path
+):
+    """Rides the same path as org_name_taken and must not read as a bad code.
+
+    Driven through the service because the route schema requires the field --
+    this state is reachable only from a machine client or a schema change, and
+    it is precisely the kind of path that rots unwatched.
+    """
+    from datetime import datetime, timezone
+    from app.auth.schema import AuthPlane, LoginPurpose
+
+    client.app_services.auth.request_code(
+        email="ops@noname.example", plane=AuthPlane.ORG,
+        purpose=LoginPurpose.SIGNUP, payload={}, at=datetime.now(timezone.utc),
+    )
+    v = client.post("/auth/org/verify",
+                    json={"email": "ops@noname.example",
+                          "code": _code(capture_path)})
+    assert v.status_code == 409
+    assert v.json()["detail"] == "missing_organization_name"
+
+
+def test_the_409_for_a_taken_name_does_not_vary_with_the_callers_address(
+    client, capture_path
+):
+    """Deferred minor from the Task 8 review: the anti-enumeration property for
+    THIS refusal is that it never varies with the caller's address, not just
+    that it holds by code inspection. Pin it directly: same taken org name,
+    one signup from a known address, one from an unknown address -- identical
+    status, identical body, identical emails-sent delta (zero, since a 409 at
+    signup never sends a code).
+    """
+    assert client.post("/auth/org/signup",
+                       json={"email": "known2@x.example",
+                             "organization_name": "Known Two Co"}).status_code == 202
+    assert client.post("/auth/org/verify",
+                       json={"email": "known2@x.example",
+                             "code": _code(capture_path)}).status_code == 200
+
+    client.app_services.ledger.create_organization("Contested Name")
+
+    before = _sent(capture_path)
+    known = client.post("/auth/org/signup",
+                        json={"email": "known2@x.example",
+                              "organization_name": "Contested Name"})
+    mid = _sent(capture_path)
+    unknown = client.post("/auth/org/signup",
+                          json={"email": "nobody-else-at-all@y.example",
+                                "organization_name": "Contested Name"})
+    after = _sent(capture_path)
+
+    assert known.status_code == unknown.status_code == 409
+    assert known.json() == unknown.json() == {"detail": "organization_name_taken"}
+    assert mid - before == 0
+    assert after - mid == 0
