@@ -78,6 +78,20 @@ def test_reports_for_a_candidate_are_scoped_to_the_caller(services, genuine_resu
         )
 
 
+def test_reports_for_a_nonexistent_candidate_are_an_empty_list_not_404(services):
+    """A wholly nonexistent candidate id must read the same as one this org has
+    simply never uploaded: 200 with []. 'I have no reports on them' and 'they
+    do not exist' are different facts, and only the first is this org's
+    business -- the facade must not leak the second."""
+    _, key = _key(services, "Agency A")
+    with _client(services) as c:
+        resp = c.get(
+            "/screening/candidates/does-not-exist/reports", headers={"X-Org-Key": key}
+        )
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 def test_the_org_report_is_redacted_but_complete(services, farm_resume_a, farm_resume_b):
     _, key = _key(services, "Agency A")
     with _client(services) as c:

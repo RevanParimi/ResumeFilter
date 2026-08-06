@@ -156,10 +156,22 @@ def test_facade_owns_candidate(services):
 
 
 def test_every_facade_read_takes_org_id_first():
-    """The signature IS the enforcement; Task 7's guard is the backstop."""
+    """The signature IS the enforcement; Task 7's guard is the backstop.
+
+    Introspects OrgScopedReads for its own public callables instead of a
+    hardcoded tuple -- a hardcoded list is the same unwatched-list drift the
+    S8.2 review found in OPEN_PATHS/PUBLIC_PATHS: a method added later would
+    silently escape the check. This way a new method is covered for free.
+    """
     import inspect
     from app.screening.scope import OrgScopedReads
 
-    for name in ("report", "reports_for_candidate", "owns_candidate"):
+    public_methods = [
+        name for name, _ in inspect.getmembers(OrgScopedReads, predicate=inspect.isfunction)
+        if not name.startswith("_")
+    ]
+    assert public_methods, "OrgScopedReads exposes no public methods to check"
+
+    for name in public_methods:
         params = list(inspect.signature(getattr(OrgScopedReads, name)).parameters)
         assert params[:2] == ["self", "org_id"], f"{name} must scope by org first"
