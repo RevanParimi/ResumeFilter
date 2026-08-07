@@ -9,6 +9,111 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-06/07 — S8.4 PHASE A (upload ownership) BUILT, REVIEWED and
+  MERGED. 1377→1434 green, `smoke_s84a` 23/23 exit 0, all regression smokes
+  green (s12, s13, s23, s41, s53 OK · s64 10/10 · s73 18/18 · s81 10/10 ·
+  s82 21/21).** Plan:
+  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`. Built
+  subagent-driven across 10 tasks + a closeout fix round; every task got a
+  fresh implementer and its own review.
+  **The wedge is now reachable by the customer who bought it.** A
+  self-registered org can upload a resume, read its fraud report and list a
+  candidate's reports without an operator touching anything: migration
+  `0018_upload_ownership` (`resumes.org_id` + `reports.org_id`, nullable,
+  **`ON DELETE SET NULL`**), `OrgScopedReads` as the one door org handlers read
+  people through, three `/screening/*` org routes, one redacting projection, and
+  `TENANCY.md`.
+  **⚠ THE HEADLINE FINDING — A CROSS-TENANT IDENTITY LEAK, FOUND BY THE GUARD
+  THIS SPRINT BUILT.** `POST /screening/candidates` computed `resume_farm` from
+  `similar_resumes()`, which scans the WHOLE platform corpus, and returned it
+  with **real `candidate_id`/`resume_id` of other customers' candidates** — in
+  BOTH the top-level `resume_farm` and the embedded `report.resume_farm`. The
+  read routes were redacted from day one; **the ingest response never was.**
+  This is spec §3.4's own named risk ("a bound that holds on one path and lapses
+  on the other") realised: the spec counted **two** org-facing readers and there
+  were three. Task 6's review missed it too — it checked the read routes and the
+  ownership stamping. The Task 7 scope guard went red on it before a customer
+  could. Fixed in `5a13d0b`; all stripping now goes through one
+  `_stripped_matches` primitive. **The lesson for Phase B, and it is a change of
+  method: enumerate the FIELDS that cross the tenant boundary, not the HANDLERS
+  that read people.** Counting readers is what missed this.
+  **⚠ THE SECOND ONE-RULE-TWO-DOORS BUG, one branch deeper, found by the
+  whole-branch review:** `ingest()` stamped `org_id` only when it *created* a
+  resume row. On a `text_sha256` match the existing row was reused and ownership
+  was **dropped on the floor** — so when two agencies are handed the same PDF
+  (the likeliest real input this product sees), the second one owned nothing and
+  `org_owns_candidate` returned False for the org that had just uploaded her.
+  With `evaluate=false` there is no report to fall back on either, so such an
+  upload left **zero** ownership record anywhere. Ruled **spec conformance, not
+  a design choice** — §0.1 says "each agency owns its own upload of her", and a
+  single-valued `org_id` cannot hold two owners, so the row must not be shared:
+  reuse iff the incoming `org_id` matches, else a new version owned by the
+  caller. Gated on `org_id is not None`, so **the admin path is byte-identical**
+  and every pre-existing dedup test and smoke passes unmodified.
+  **The guard was defeated by renaming a local variable**, and that was measured
+  rather than argued: `svc = _services(request)` MISSED, `s` MISSED, a one-line
+  `scope.report(...) or services.report_store.get(...)` MISSED, literal
+  `services` CAUGHT. Not an adversarial shape — "svc" is a name somebody picks
+  without thinking, which makes it the likeliest way this guard ever fails
+  silently. Receivers are now AST-resolved; sanctioned expressions are deleted
+  from a line before the watched patterns match the residue. Proven red against
+  the **live** route table with an aliased read planted in a real handler.
+  **A guard's worth is its honesty about its own reach**, so both the docstring
+  and `TENANCY.md` §5 now state what it does NOT cover: two attributes only
+  (`features`/`jobs`/`ledger`/`portal`/`verification`/`interview`/`dashboard`/
+  `comp` are invisible), one hop *inside* `routes.py` only, line-level not
+  dataflow.
+  **⚠ FIVE SMOKES WERE MAKING LIVE BILLED CALLS** — `s13`, `s23`, `s41`, `s53`,
+  `s64` never pinned `DEE_OPENROUTER_API_KEY`, and this repo's `.env` holds a
+  real one. Measured, not theorised: `smoke_s23` ran **past a ten-minute
+  timeout** before the pin and finishes in seconds after it. The review flagged
+  only `s13` and proposed deferring it; deferring is what would have kept a
+  money-spending trap live. **All nine smokes now pin it.** S7.3 recorded this
+  trap once already.
+  **`TENANCY.md` had six overclaims and they are corrected** — it asserted a
+  smoke check that does not exist (while §9 of the same document said seven
+  sections later that the case is deliberately not smoked), claimed "no unscoped
+  read reachable from an org handler" when `_ingest_one` has five allowlisted
+  ones, said "per-statement" where the guard matches per physical line, and
+  cited S7.1's verification route as the 404-never-403 precedent when that route
+  answers **403 on consent and 404 on lookup** — the opposite of the rule it was
+  cited for. Also newly *decided* rather than left implicit: `resume_version` /
+  `matched_existing` / `matched_on` stay **unredacted** on the org plane — a
+  count and a match-type are not an identity, and it is the fraud signal the
+  wedge sells.
+  **Two reviewer claims were wrong and were corrected rather than propagated:**
+  the migration guard is `test_migrated_fks_and_nullability_match_orm` (the name
+  the review gave does not exist), and `0018` makes **four**
+  `batch_alter_table` migrations, not five.
+  **Deliberately deferred, with reasons:** feature tests build schema via
+  `create_all` rather than `alembic upgrade`; the `save()` rollback TOCTOU
+  (misattributed message, not lost data); `ALLOWLISTED_LINES` being
+  content-keyed; **case-sensitive org names — fixing that without a matching
+  case-insensitive UNIQUE INDEX would create a NEW lockout**, so it needs a
+  migration and belongs in Phase B; `missing_organization_name` returning 409
+  rather than 422.
+  **⚠ THE DOC LIED ABOUT THE ONE ROUTE THAT MATTERS, AND THAT IS WHY THE
+  SPRINT'S LOAD-BEARING DECISION WAS UNPROVEN.** The plan, `TENANCY.md` §8/§9
+  and the smoke all asserted **"there is no HTTP route to delete an
+  organisation"**. There is: `DELETE /ledger/orgs/{org_id}`
+  (`routes.py:671`) → `session.delete(OrganizationRow)` — precisely the
+  `SET NULL` trigger, admin-key reachable today. The false premise is what made
+  the sprint skip smoking `SET NULL`, the one choice a `CASCADE` typo destroys
+  silently. **`smoke_s84a` now offboards an org over HTTP and proves the
+  uploaded report survives, unowned** — and the check was proven non-vacuous by
+  planting `ondelete="CASCADE"` in `0018`, watching it go red naming itself,
+  and reverting. 20/20 → **23/23**.
+  **The guard needed a second round, including a false positive I introduced.**
+  The receiver resolver handled only `=`, so an *annotated* local — a form this
+  codebase already uses — still walked past; the allowlist still suppressed a
+  whole line; and the residue technique made a **docstring quoting the rule read
+  as a breach of it**, which in a codebase this densely documented is how a
+  guard gets switched off. Lines are now stripped of comments *and* string
+  literals via `tokenize`. Both directions pinned: prose cannot forge a
+  violation, and prose cannot forge the sanctioned door. Guard tests 5 → 12.
+  **Next: the S8.4 Phase B spec + plan** (screening surface — batches,
+  processing, the fraud-screen read-model, cursor pagination, materialization
+  route, both 422 sites, comp's single shape, OpenAPI).
 - **Session 2026-08-05 — S8.4 IS SPEC'D. `UI.md`'s five open questions are ALL
   CLOSED with the user, and the sprint builds as TWO branches from one spec.**
   Spec: `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
@@ -657,14 +762,29 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 is spec'd (2026-08-05). Next is the S8.4 PHASE A
-  plan, then the TDD build.** Spec:
-  `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
-  **Phase A is ownership and nothing else can precede it:** migration
-  `0018_upload_ownership` · the scoped facade + its non-vacuous guard · org-plane
-  `POST /screening/candidates`, `GET /screening/reports/{id}`,
-  `GET /screening/candidates/{id}/reports` · the single redacting projection ·
-  the `org_name_taken` fix. **Phase B is the screening surface:** migration
+- **Next action:** **S8.4 Phase A is MERGED (2026-08-07). Next is the S8.4
+  PHASE B spec + plan, then the TDD build.** Spec (already written, covers both
+  phases): `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`
+  §4. Phase B needs its own plan; Phase A's is
+  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`.
+  **⚠ CARRY INTO PHASE B — the method change Phase A paid for.** Phase A's
+  cross-tenant leak got in because spec §3.4 enumerated the *handlers that read
+  people* and concluded there were two; the third reader was the **ingest
+  response**, which returns a report without reading one. **Phase B's tenancy
+  section must be written as "for each org-plane response FIELD, where did this
+  value come from" rather than "which handlers read people."** The queue
+  read-model and the summary are both new org-facing response shapes, which is
+  exactly where this recurs.
+  **Three Phase-A carry-overs that are now Phase B's:** (1) **org names are
+  compared case-sensitively**, and making the check case-insensitive without a
+  matching case-insensitive UNIQUE INDEX would create a *new* signup lockout —
+  it needs a migration, so it rides `0019`; (2) `resumes` can now hold multiple
+  rows with one `text_sha256` (one per owning org) — the queue read-model must
+  not assume otherwise; (3) `OrgScopedReads.owns_candidate` ships and is
+  **correct but unused** — Phase B's queue is its first real consumer, so a
+  join-table model (`resume_uploads`) should be considered there rather than
+  bolted on later.
+  **Phase B is the screening surface:** migration
   `0019_screening_batches` · register/process/queue/summary/delete · cursor
   pagination · the materialization route · both 422 sites · comp's single shape ·
   OpenAPI. Two branches, two reviews, two merges — because a new
@@ -1171,13 +1291,32 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                    9-node graph inline, so 500 resumes in one request is
     │                    not physically possible. Upload REGISTERS; a bounded
     │                    process call does the slow work; the UI polls.
-    │            [ ] Phase A — ownership: migration 0018_upload_ownership · a
+    │            [x] Phase A — ownership: migration 0018_upload_ownership · a
     │                SCOPED FACADE + a guard test in the route-table-guard
     │                family (the tenancy rule is the one-entry-point bug shape
     │                by construction, so handlers get no option) · org-plane
     │                POST /screening/candidates, GET /screening/reports/{id},
     │                GET /screening/candidates/{id}/reports · ONE redacting
     │                projection shared by both readers · the org_name_taken fix
+    │                [MERGED 2026-08-07; 1377→1434 green, smoke_s84a 23/23,
+    │                 all regression smokes green. TENANCY.md written.
+    │                 THE GUARD PAID FOR ITSELF ON DAY ONE: it caught a
+    │                 CROSS-TENANT IDENTITY LEAK in the org UPLOAD RESPONSE
+    │                 (real candidate_id/resume_id of OTHER customers, in both
+    │                 the top-level resume_farm and the embedded report). The
+    │                 read routes were redacted; the ingest response never was,
+    │                 because spec §3.4 counted TWO org-facing readers and
+    │                 there were three. Phase B must enumerate the FIELDS that
+    │                 cross the boundary, not the HANDLERS that read people.
+    │                 The branch review then found the same shape one branch
+    │                 deeper: ingest() dropped org_id on the duplicate-text
+    │                 path, so two agencies handed the SAME PDF left the second
+    │                 owning nothing. And the guard itself was defeated by
+    │                 naming a local `svc` instead of `services` — measured,
+    │                 not argued. Both closed; the guard now AST-resolves
+    │                 receivers and documents what it cannot see.
+    │                 Also closed: FIVE smokes were making LIVE BILLED calls
+    │                 (smoke_s23 ran past a 10-minute timeout before the pin).]
     │            [ ] Phase B — screening surface: migration
     │                0019_screening_batches · register/process/queue/summary/
     │                delete · cursor pagination (opaque, over (created_at, id))
@@ -1263,6 +1402,51 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-06/07** — **S8.4 Phase A built, reviewed and merged.** 1377→1434
+  green, `smoke_s84a` 23/23, all regression smokes green. Plan
+  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`; built
+  subagent-driven over 10 tasks with a per-task review, then a whole-branch
+  review and one closeout fix round.
+  **What shipped:** migration `0018_upload_ownership`, `app/screening/`
+  (`projection.py` + `scope.py`), three org-plane `/screening/*` routes, the
+  `org_name_taken` fix at both doors, `tests/test_org_scope_guard.py`,
+  `TENANCY.md`, `scripts/smoke_s84a.py`.
+  **The sprint's own guard caught the sprint's own Critical**, which is the
+  result worth remembering: the org **upload response** was returning other
+  customers' `candidate_id`/`resume_id` in both the top-level `resume_farm` and
+  the embedded report. Read routes were redacted; the ingest response never was.
+  Root cause is a *method* failure, not an oversight — spec §3.4 enumerated
+  org-facing **readers** and found two; the third returns a report without
+  reading one.
+  **Then the whole-branch review found the same shape one level deeper:**
+  `ingest()` stamped `org_id` only on row creation, so two agencies handed the
+  identical PDF left the second owning nothing (and with `evaluate=false`,
+  nothing anywhere). Ruled spec conformance rather than a design call, since
+  §0.1 already said "each agency owns its own upload of her".
+  **And the guard was defeated by a variable name** — `svc` instead of
+  `services`, measured against the shipped detector. Fixed by AST-resolving
+  receivers; the guard now also documents the four things it cannot see.
+  **Three process notes worth carrying.** (1) **Two reviewer claims were wrong
+  and were checked before being written down** — a migration-guard test name
+  that does not exist, and "five `batch_alter_table` migrations" when it is
+  four. A fix round that implements a review literally propagates its errors.
+  (2) **Deferring a measured money leak is how it becomes permanent** — the
+  review flagged one unpinned smoke and proposed deferring it; four more had the
+  same defect, and `smoke_s23` ran past a ten-minute timeout making live billed
+  calls. All nine now pin the key. (3) **Three subagents died on API session
+  limits** mid-review and mid-fix; the surviving discipline is that the ledger
+  (`.superpowers/sdd/.../progress.md`, gitignored by design) held enough state
+  each time to resume without re-deriving anything.
+  **(4) A doc's false claim cost more than the doc.** "There is no HTTP route to
+  delete an organisation" was wrong, sat in the plan *and* `TENANCY.md`, and was
+  the stated reason the smoke never proved `SET NULL` — the sprint's
+  load-bearing decision. The lesson is not "check docs"; it is that **a premise
+  used to justify skipping a test deserves the same verification as the test**.
+  **(5) The fix round introduced a defect of its own** — stripping sanctioned
+  expressions from a line made a docstring quoting the rule read as a breach of
+  it. Caught only because the re-review probed the detector adversarially rather
+  than reading the diff. Every guard change from here should be pinned in both
+  directions: it must fire on the bad shape *and* stay silent on prose.
 - **2026-08-05** — **S8.4 specced. Documents only; no `app/` code touched.**
   Spec `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`;
   `UI.md` §2/§2.1/§4.A/§4.B/§9 and `UI-Spec.md` §2/§3/§4 updated in place so the
