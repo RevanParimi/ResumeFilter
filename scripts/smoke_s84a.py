@@ -15,7 +15,7 @@ The checks this sprint exists to protect:
   * cross_org_read_404 / cross_org_read_404_matches_absent -- another org's
     report answers exactly like a report that does not exist. A 403, or a
     body that differs by one byte, would confirm the report exists.
-  * upload_farm_matches_redacted_top_level / _embedded -- THE headline
+  * cross_org_upload_top_level_redacted / _embedded_report_redacted -- THE headline
     guarantee of the sprint. A Critical cross-tenant leak was found and fixed
     during this sprint: the org upload response was returning real
     candidate_id/resume_id of another customer's candidate, in both the
@@ -252,7 +252,14 @@ def main() -> int:
         theirs = org_b.get(f"/screening/reports/{report_id_a}")
         absent = org_b.get("/screening/reports/no-such-report")
         check("cross_org_read_404", theirs.status_code == 404)
-        check("cross_org_read_404_matches_absent", theirs.text == absent.text)
+        check(
+            "cross_org_read_404_matches_absent",
+            # Assert the absent side's status too: without it this check leans
+            # entirely on the one above for its floor, and two identical 500s
+            # would read as "indistinguishable".
+            absent.status_code == 404 and theirs.text == absent.text,
+            f"theirs={theirs.status_code} absent={absent.status_code}",
+        )
 
         # 11-12. Dedup held: one person, two owners, each seeing only its own.
         up_b = org_b.post(
@@ -266,10 +273,15 @@ def main() -> int:
         )
         reports_a = org_a.get(f"/screening/candidates/{candidate_id}/reports")
         reports_b = org_b.get(f"/screening/candidates/{candidate_id}/reports")
+        report_id_b = (up_b.json().get("report") or {}).get("id")
         check(
             "each_org_sees_only_its_own_report",
             reports_a.status_code == 200 and reports_b.status_code == 200
-            and len(reports_a.json()) == 1 and len(reports_b.json()) == 1,
+            and [r["id"] for r in reports_a.json()] == [report_id_a]
+            # Assert WHICH report, not just how many: a swap bug (A gets B's,
+            # B gets A's) is 1/1 either way and would pass a length check.
+            and [r["id"] for r in reports_b.json()] == [report_id_b],
+            f"a={[r['id'] for r in reports_a.json()]} b={[r['id'] for r in reports_b.json()]}",
         )
 
         # 13. The redaction, on a report that really has matches -- same org,
@@ -281,7 +293,11 @@ def main() -> int:
         farm_report = org_a.get(
             f"/screening/reports/{farm_same_org.json()['report']['id']}"
         ).json()
-        farm_matches = farm_report.get("resume_farm", {}).get("matches", [])
+        # `or {}` rather than a .get default: resume_farm is Optional and
+        # serialises as JSON null, not as an absent key, so a .get default
+        # never fires and `None.get(...)` would raise -- turning a named FAIL
+        # into a traceback in exactly the state these checks exist to catch.
+        farm_matches = (farm_report.get("resume_farm") or {}).get("matches", [])
         check(
             "farm_matches_redacted_on_get",
             bool(farm_matches)
@@ -311,9 +327,10 @@ def main() -> int:
                 "/screening/candidates", {"resume_text": FARM_B, "domain": "genai"}
             )
             cross_body = cross_up.json()
-            top_matches = cross_body.get("resume_farm", {}).get("matches", [])
+            top_matches = (cross_body.get("resume_farm") or {}).get("matches", [])
             embedded_matches = (
-                cross_body.get("report", {}).get("resume_farm", {}).get("matches", [])
+                ((cross_body.get("report") or {}).get("resume_farm") or {})
+                .get("matches", [])
             )
             check(
                 "cross_org_upload_top_level_redacted",
