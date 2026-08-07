@@ -66,6 +66,10 @@ def main() -> int:
         "DEE_REPORT_DB_PATH": reports,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
         "DEE_VECTORSTORE_BACKEND": "memory",
+        # Key-less BY CONSTRUCTION: this repo's .env carries a real key,
+        # so without this a bare run makes live BILLED calls from a smoke
+        # that claims to prove the no-key path (S7.3 recorded this trap).
+        "DEE_OPENROUTER_API_KEY": "",
         "DEE_API_AUTH_KEY": ADMIN,
     })
     admin_h = {"X-API-Key": ADMIN}

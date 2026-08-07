@@ -47,6 +47,10 @@ def main() -> int:
             "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
             # Chroma init can hang on some machines; the smoke stays bounded.
             "DEE_VECTORSTORE_BACKEND": "memory",
+            # Key-less BY CONSTRUCTION: this repo's .env carries a real key,
+            # so without this a bare run makes live BILLED calls from a smoke
+            # that claims to prove the no-key path (S7.3 recorded this trap).
+            "DEE_OPENROUTER_API_KEY": "",
         }
     )
     proc = subprocess.Popen(

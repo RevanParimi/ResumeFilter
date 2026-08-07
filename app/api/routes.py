@@ -21,7 +21,9 @@ from app.auth.csrf import csrf_matches
 from app.auth.schema import (
     AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia, SessionView,
 )
-from app.auth.service import ChallengeRefused, EmailUnavailableError
+from app.auth.service import (
+    ChallengeRefused, EmailUnavailableError, RegistrationRefused,
+)
 from app.candidates.extractor import extract_profile
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
@@ -69,6 +71,7 @@ from app.verification.service import (
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
+from app.screening.projection import redact_ingest_response_for_org
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
@@ -306,12 +309,15 @@ class CandidateCreateResponse(BaseModel):
     resume_farm: Optional[ResumeFarmAssessment] = None
 
 
-@router.post("/candidates", response_model=CandidateCreateResponse)
-async def create_candidate(
-    req: CandidateCreateRequest, request: Request
+async def _ingest_one(
+    req: CandidateCreateRequest, request: Request, *, org_id: Optional[str] = None
 ) -> CandidateCreateResponse:
-    """Upload → extract → store → (auto) depth-eval. The graph stays
-    candidate-unaware: the API stamps report.candidate_id after evaluation."""
+    """Upload → extract → store → (auto) depth-eval, for ONE resume.
+
+    Shared by the admin route (no owner) and the org route (owner = caller).
+    Kept as one function on purpose: duplicating it would be the
+    one-rule-two-doors shape in the sprint that exists to eliminate it.
+    """
     services = _services(request)
 
     caps = services.settings
@@ -343,7 +349,7 @@ async def create_candidate(
         raise HTTPException(status_code=422, detail="empty_resume")
 
     result = await extract_profile(text, llm=services.llm, settings=services.settings)
-    outcome = services.candidates.ingest(result, text)
+    outcome = services.candidates.ingest(result, text, org_id=org_id)
 
     # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
     # comparison must exclude the uploader's own candidate (re-uploads and new
@@ -382,7 +388,7 @@ async def create_candidate(
         # landing after the save cascades the row away — so both halves of this
         # race are the database's job, not a compensating delete we remember.
         try:
-            services.report_store.save(report)
+            services.report_store.save(report, org_id=org_id)
         except SubjectErasedError:
             report = None
         else:
@@ -400,6 +406,15 @@ async def create_candidate(
         report=report,
         resume_farm=farm,
     )
+
+
+@router.post("/candidates", response_model=CandidateCreateResponse)
+async def create_candidate(
+    req: CandidateCreateRequest, request: Request
+) -> CandidateCreateResponse:
+    """Admin plane: no owner. Cross-tenant by design -- this is the operator's
+    view, and S8.4 deliberately left it alone."""
+    return await _ingest_one(req, request)
 
 
 class CandidateDetail(BaseModel):
@@ -715,6 +730,57 @@ async def consent_status(
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ── Screening (S8.4 Phase A) ────────────────────────────────────────────────
+# The wedge, reachable by the org that bought it: upload one resume, read back
+# its own (redacted) report, list its own reports about one person. Batch
+# upload is Phase B.
+
+
+@org_router.post("/screening/candidates", response_model=CandidateCreateResponse)
+async def screening_create_candidate(
+    req: CandidateCreateRequest, request: Request, org_id: str = Depends(require_org)
+) -> CandidateCreateResponse:
+    """The wedge, on the plane that bought it (S8.4 §3.2).
+
+    Synchronous like its admin twin -- this is the one-off upload. Batch is
+    Phase B. The resume and its report are stamped with the caller's org.
+
+    ``_ingest_one`` scans the whole platform's fingerprints for the resume
+    farm check (fraud detection has to, by design); redact the response here
+    before it leaves the org plane so a caller never sees another customer's
+    candidate_id/resume_id. The admin twin (create_candidate) returns the
+    same read unredacted on purpose -- that is the operator's cross-tenant
+    support view.
+    """
+    resp = await _ingest_one(req, request, org_id=org_id)
+    return redact_ingest_response_for_org(resp)
+
+
+@org_router.get("/screening/reports/{report_id}", response_model=Report)
+async def screening_get_report(
+    report_id: str, request: Request, org_id: str = Depends(require_org)
+) -> Report:
+    """404 -- never 403 -- for a report this org did not commission: a 403
+    would confirm it exists."""
+    found = _services(request).screening_scope.report(org_id, report_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return found
+
+
+@org_router.get(
+    "/screening/candidates/{candidate_id}/reports", response_model=list[Report]
+)
+async def screening_candidate_reports(
+    candidate_id: str, request: Request, org_id: str = Depends(require_org)
+) -> list[Report]:
+    """This org's own reports about one person. A person they have never
+    uploaded yields an empty list, not a 404."""
+    return _services(request).screening_scope.reports_for_candidate(
+        org_id, candidate_id
+    )
 
 
 class RecordSubmitRequest(BaseModel):
@@ -1700,8 +1766,12 @@ def _verify(
             at=datetime.now(timezone.utc),
             user_agent=request.headers.get("user-agent"),
         )
+    except RegistrationRefused as exc:
+        # The code was RIGHT. This is a registration failure, and reporting it
+        # as invalid_code is what locked users out of their own signup.
+        raise HTTPException(status_code=409, detail=exc.reason) from exc
     except ChallengeRefused as exc:
-        # ONE status and ONE detail for every failure mode. Distinguishing
+        # ONE status and ONE detail for every CODE failure mode. Distinguishing
         # expired from wrong from exhausted tells a brute-forcer which of their
         # assumptions was right, which is precisely the help not to give.
         raise HTTPException(status_code=400, detail="invalid_code") from exc
@@ -1715,6 +1785,19 @@ def _verify(
 
 @auth_router.post("/auth/org/signup", status_code=202)
 async def auth_org_signup(req: OrgSignupRequest, request: Request) -> dict:
+    """Refuse a taken org name HERE, before a code is ever sent (S8.4 §2.1).
+
+    The old behaviour answered 202, mailed a real code, and then rejected that
+    CORRECT code at verify as `invalid_code` -- because org creation happens in
+    `_establish`, and every ChallengeRefused collapsed into one message. The
+    user burned their attempts and could not onboard.
+
+    This does not re-open the enumeration oracle. What that oracle protects is
+    whether an ADDRESS has an account, and this check never looks at the
+    address: an unknown address still gets 202 exactly like a known one.
+    """
+    if not _services(request).auth.organization_name_available(req.organization_name):
+        raise HTTPException(status_code=409, detail="organization_name_taken")
     return _request_code(
         request,
         email=req.email,

@@ -85,6 +85,14 @@ def test_migrated_schema_matches_orm_models(tmp_path):
     assert structural == []
 
 
+# S1.2/S2.3 — candidates is the identity backbone (no FK); resumes CASCADEs
+# from candidates and (S8.4) carries org_id SET NULL; extractions CASCADEs
+# from both resumes and candidates; resume_fingerprints CASCADEs the same way.
+# None of these were previously iterated by the drift/FK/nullability guards
+# below, so a CASCADE typo on resumes.org_id would have passed every test
+# while the ORM correctly said SET NULL.
+CANDIDATE_TABLES = ("candidates", "resumes", "extractions", "resume_fingerprints")
+
 LEDGER_TABLES = (
     "organizations", "consent_grants", "interview_records",
     "evaluation_events", "audit_log", "coding_round_results", "observed_offers",
@@ -114,7 +122,7 @@ def test_migrated_indexes_match_orm(tmp_path):
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -171,7 +179,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():

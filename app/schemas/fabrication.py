@@ -12,6 +12,7 @@ S2.4 — unified fabrication risk: advisory fusion of the three signals above.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -98,10 +99,16 @@ class DuplicationBand(StrEnum):
 
 
 class ResumeMatch(BaseModel):
-    """One stored resume (another candidate's) with estimated content overlap."""
+    """One stored resume (another candidate's) with estimated content overlap.
 
-    candidate_id: str
-    resume_id: str
+    ``candidate_id`` and ``resume_id`` are **None on the org plane** (S8.4
+    §3.4): the matched resume may belong to another customer, so an org learns
+    THAT a near-duplicate exists and how similar it is, never whose it is. The
+    admin plane always populates them.
+    """
+
+    candidate_id: Optional[str] = None
+    resume_id: Optional[str] = None
     similarity: float = Field(ge=0.0, le=1.0)  # estimated Jaccard over shingles
 
 

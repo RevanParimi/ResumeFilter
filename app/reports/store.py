@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
@@ -37,12 +38,16 @@ class SubjectErasedError(RuntimeError):
 
 
 class ReportStore(Protocol):
-    def save(self, report: Report) -> None: ...
+    def save(self, report: Report, *, org_id: Optional[str] = None) -> None: ...
     def get(self, report_id: str) -> Optional[Report]: ...
     def add_outcome(self, rec: OutcomeRecord) -> None: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
     def delete(self, report_id: str) -> bool: ...
     def for_candidate(self, candidate_id: str) -> list[Report]: ...
+    def get_for_org(self, org_id: str, report_id: str) -> Optional[Report]: ...
+    def for_candidate_and_org(
+        self, org_id: str, candidate_id: str
+    ) -> list[Report]: ...
 
 
 class SqlReportStore:
@@ -51,9 +56,16 @@ class SqlReportStore:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def save(self, report: Report) -> None:
+    def save(self, report: Report, *, org_id: Optional[str] = None) -> None:
         """Upsert. (The old store used ``INSERT OR REPLACE``, which Postgres
-        does not have -- the SQL had to be rewritten whatever we did here.)"""
+        does not have -- the SQL had to be rewritten whatever we did here.)
+
+        ``org_id`` is a STORAGE fact and never enters ``body``: the Report
+        contract is what a client receives, and ownership is not part of it.
+        Supplying no ``org_id`` on a re-save LEAVES the existing owner alone --
+        un-owning a report by forgetting an argument would be a silent
+        cross-tenant leak in the making.
+        """
         with self._session_factory() as s:
             row = s.get(ReportRow, report.id)
             if row is None:
@@ -62,6 +74,8 @@ class SqlReportStore:
             row.domain = report.domain
             row.depth_band = report.depth_band.value
             row.candidate_id = report.candidate_id
+            if org_id is not None:
+                row.org_id = org_id
             row.body = report.model_dump(mode="json")
             row.created_at = as_utc(report.created_at)
             try:
@@ -69,10 +83,19 @@ class SqlReportStore:
             except IntegrityError:
                 s.rollback()
                 if report.candidate_id is None:
+                    # No candidate FK, so any IntegrityError is unrelated to
+                    # candidate erasure.
                     raise
-                # The only FK on this row is the candidate, so an integrity
-                # failure here means the subject was erased mid-flight.
-                raise SubjectErasedError(report.candidate_id) from None
+                # Two FKs now: candidate (CASCADE) and org (SET NULL).
+                # Verify the actual cause: does the candidate still exist?
+                # This is dialect-independent and checks the real precondition.
+                candidate_exists = s.get(CandidateRow, report.candidate_id) is not None
+                if not candidate_exists:
+                    # The subject was genuinely erased mid-flight.
+                    raise SubjectErasedError(report.candidate_id) from None
+                # Candidate exists, so the FK failure is from org_id (or some
+                # other unforeseen FK). Re-raise the original error.
+                raise
 
     def get(self, report_id: str) -> Optional[Report]:
         with self._session_factory() as s:
@@ -119,6 +142,32 @@ class SqlReportStore:
             rows = s.execute(
                 select(ReportRow)
                 .where(ReportRow.candidate_id == candidate_id)
+                .order_by(ReportRow.created_at)
+            ).scalars().all()
+            return [Report.model_validate(r.body) for r in rows]
+
+    def get_for_org(self, org_id: str, report_id: str) -> Optional[Report]:
+        """One report, but only if this org commissioned it.
+
+        A report with ``org_id IS NULL`` -- pre-S8.4, or uploaded through the
+        admin plane -- belongs to NOBODY, not to everybody. Returning None here
+        rather than raising is what lets the route answer 404 instead of 403:
+        another org's report must be indistinguishable from one that is absent.
+        """
+        with self._session_factory() as s:
+            row = s.get(ReportRow, report_id)
+            if row is None or row.org_id != org_id:
+                return None
+            return Report.model_validate(row.body)
+
+    def for_candidate_and_org(self, org_id: str, candidate_id: str) -> list[Report]:
+        with self._session_factory() as s:
+            rows = s.execute(
+                select(ReportRow)
+                .where(
+                    ReportRow.candidate_id == candidate_id,
+                    ReportRow.org_id == org_id,
+                )
                 .order_by(ReportRow.created_at)
             ).scalars().all()
             return [Report.model_validate(r.body) for r in rows]

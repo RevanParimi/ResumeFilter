@@ -167,3 +167,45 @@ def test_save_still_raises_for_integrity_failures_it_cannot_explain(store):
     """An unattached report has no FK, so an IntegrityError there is NOT the
     erasure race and must not be relabelled as one."""
     assert store.save(_report()) is None
+
+
+def test_save_rejects_bad_org_id_even_with_valid_candidate(services):
+    """Reports now have two FKs (candidate CASCADE, org SET NULL). An
+    IntegrityError from a bad org_id must not be swallowed and re-raised as
+    SubjectErasedError; only a genuine candidate erasure should do that.
+
+    This is a latent bug (no shipped caller passes org_id yet) that becomes
+    live at Task 6 when routes wire org_id arguments.
+    """
+    from datetime import datetime, timezone
+    from sqlalchemy.exc import IntegrityError
+
+    from app.reports.store import SubjectErasedError
+
+    # Create a candidate so candidate_id is valid.
+    from app.candidates.schema import (
+        CandidateProfile, ContactInfo, ExtractedStr, ExtractionResult,
+    )
+    outcome = services.candidates.ingest(
+        ExtractionResult(
+            profile=CandidateProfile(
+                full_name=ExtractedStr(value="Test"),
+                contact=ContactInfo(email=ExtractedStr(value="test@x.io")),
+            ),
+            method="heuristic",
+        ),
+        resume_text="test text",
+    )
+
+    # Try to save a report with that candidate but a bad org_id.
+    report = Report(
+        id="rep-bad-org",
+        domain="genai",
+        created_at=datetime.now(timezone.utc),
+        candidate_id=outcome.candidate_id,
+    )
+
+    # This must raise IntegrityError (bad org FK), NOT SubjectErasedError
+    # (which would incorrectly blame the candidate).
+    with pytest.raises(IntegrityError):
+        services.report_store.save(report, org_id="org-does-not-exist")

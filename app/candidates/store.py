@@ -84,7 +84,13 @@ class CandidateStore:
         self._session_factory = session_factory
         self._access_key_bytes = access_key_bytes
 
-    def ingest(self, result: ExtractionResult, resume_text: str) -> IngestOutcome:
+    def ingest(
+        self,
+        result: ExtractionResult,
+        resume_text: str,
+        *,
+        org_id: Optional[str] = None,
+    ) -> IngestOutcome:
         sha = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()
         profile = result.profile
         with self._session_factory() as session:
@@ -96,17 +102,36 @@ class CandidateStore:
             self._refresh_identity(cand, profile)
             session.flush()
 
-            resume = (
+            same_text = (
                 session.execute(
-                    select(ResumeRow).where(
+                    select(ResumeRow)
+                    .where(
                         ResumeRow.candidate_id == cand.id,
                         ResumeRow.text_sha256 == sha,
                     )
+                    .order_by(ResumeRow.version)
                 )
                 .scalars()
-                .first()
+                .all()
             )
-            duplicate = resume is not None
+            # A fact about the TEXT, not about which row we land on: the same
+            # bytes were seen before, and that stays true whether this upload
+            # reuses a row or gets its own.
+            duplicate = bool(same_text)
+
+            # Ownership is a property of the UPLOAD, not of the person (S8.4
+            # spec 0.1: "each agency owns its own upload of her"), and one
+            # org_id column cannot hold two owners -- so an upload by a
+            # DIFFERENT org gets its own row rather than silently joining
+            # somebody else's. Prefer this caller's own row: once two orgs hold
+            # rows for the same text, taking the first match would hand org B
+            # org A's row and spawn a third on every re-upload.
+            resume = next((r for r in same_text if r.org_id == org_id), None)
+            if resume is None and org_id is None and same_text:
+                # The admin plane never diverges: an unowned upload reuses
+                # whatever is already there, exactly as it did pre-S8.4.
+                resume = same_text[0]
+
             if resume is None:
                 latest = session.execute(
                     select(func.max(ResumeRow.version)).where(
@@ -118,6 +143,7 @@ class CandidateStore:
                     version=(latest or 0) + 1,
                     raw_text=resume_text,
                     text_sha256=sha,
+                    org_id=org_id,
                 )
                 session.add(resume)
                 session.flush()
@@ -339,6 +365,24 @@ class CandidateStore:
                 select(CandidateRow).where(CandidateRow.email_hash == email_hash)
             ).scalars().first()
             return row.id if row else None
+
+    def org_owns_candidate(self, org_id: str, candidate_id: str) -> bool:
+        """Does this org hold at least one upload of this person?
+
+        "My candidates" is DERIVED, never denormalized: there is no
+        candidates.org_id, because a candidate is a person and two orgs can
+        both have uploaded them. One ownership fact, one home -- nothing to
+        drift out of step.
+        """
+        with self._session_factory() as session:
+            return session.execute(
+                select(ResumeRow.id)
+                .where(
+                    ResumeRow.candidate_id == candidate_id,
+                    ResumeRow.org_id == org_id,
+                )
+                .limit(1)
+            ).scalars().first() is not None
 
     def create_bare_candidate(self, *, email_hash: str) -> str:
         """A candidate row carrying a contact hash and nothing else — someone

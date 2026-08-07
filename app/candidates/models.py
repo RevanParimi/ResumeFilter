@@ -69,6 +69,16 @@ class ResumeRow(Base):
     version: Mapped[int] = mapped_column(Integer)
     raw_text: Mapped[str] = mapped_column(Text)
     text_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    # S8.4: which organization UPLOADED this resume. Nullable -- every
+    # pre-S8.4 row and every admin-plane upload is legitimately unowned.
+    # SET NULL, never CASCADE: an org offboarding must not destroy a person's
+    # resume. The only cascade permitted to delete it is the candidate's own
+    # erasure, one column up.
+    org_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     candidate: Mapped[CandidateRow] = relationship(back_populates="resumes")

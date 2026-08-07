@@ -32,6 +32,15 @@ class ReportRow(Base):
     candidate_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("candidates.id", ondelete="CASCADE"), nullable=True
     )
+    # S8.4: which organization COMMISSIONED this evaluation. Same nullable +
+    # SET NULL reasoning as resumes.org_id -- and note the contrast with
+    # candidate_id directly above, which CASCADES because an attached report
+    # is the subject's personal data.
+    org_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     body: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

@@ -17,6 +17,7 @@ from app.services.github import GitHubClient, GitHubService
 from app.services.email import EmailClient, build_email
 from app.services.llm import LLMClient, build_llm
 from app.reports.store import ReportStore, build_report_store
+from app.screening.scope import OrgScopedReads, build_org_scoped_reads
 from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
 
@@ -55,6 +56,7 @@ class Services:
     interview: InterviewService
     email: EmailClient
     auth: AuthService
+    screening_scope: OrgScopedReads
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -129,6 +131,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         interview=interview,
         email=email,
         auth=auth,
+        screening_scope=build_org_scoped_reads(report_store, candidates),
     )
 
 

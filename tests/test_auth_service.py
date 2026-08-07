@@ -17,7 +17,8 @@ from app.auth.schema import (
     AuthPlane, LoginPurpose, PrincipalKind, PrincipalVia,
 )
 from app.auth.service import (
-    AuthService, ChallengeRefused, EmailUnavailableError, build_auth_service,
+    AuthService, ChallengeRefused, EmailUnavailableError, RegistrationRefused,
+    build_auth_service,
 )
 from app.auth.store import AuthStore
 from app.candidates.models import CandidateRow
@@ -106,7 +107,10 @@ def test_org_signup_then_verify_creates_an_org_and_a_session(auth):
 
 def test_org_signup_is_atomic_on_a_taken_name(auth):
     """Either both rows land or neither: an org nobody can log into could only
-    be fixed by an operator, which is what self-onboarding exists to avoid."""
+    be fixed by an operator, which is what self-onboarding exists to avoid.
+
+    Raises RegistrationRefused, not ChallengeRefused (S8.4 Task 9): the code
+    was correct, so this must not present as a wrong code."""
     auth.service.request_code(
         email="a@one.in", plane=AuthPlane.ORG, purpose=LoginPurpose.SIGNUP,
         payload={"organization_name": "Acme"}, at=NOW, rng=_rng(),
@@ -118,10 +122,11 @@ def test_org_signup_is_atomic_on_a_taken_name(auth):
         email="b@two.in", plane=AuthPlane.ORG, purpose=LoginPurpose.SIGNUP,
         payload={"organization_name": "Acme"}, at=NOW, rng=_rng(),
     )
-    with pytest.raises(ChallengeRefused):
+    with pytest.raises(RegistrationRefused) as exc:
         auth.service.verify_code(
             email="b@two.in", plane=AuthPlane.ORG, code=auth.code(), at=NOW
         )
+    assert exc.value.reason == "organization_name_taken"
     assert auth.service._store.org_user_by_email(
         auth.service._hash_email("b@two.in")
     ) is None
