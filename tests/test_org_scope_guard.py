@@ -62,14 +62,28 @@ honesty about its own reach:
   line through an alias of the ATTRIBUTE (rather than of the services
   container) is caught only because ``store = _services(request).report_store``
   puts the forbidden attribute on the assignment line itself.
+* Receivers are resolved for the three plain-name binding forms (``=``,
+  annotated ``:`` and walrus ``:=``). NOT covered, measured: tuple unpacking
+  (``svc, x = _services(request), 1``), the container passed into a helper as
+  an ARGUMENT, ``getattr(services, "report_store")``, a backslash line
+  continuation splitting the receiver from the attribute, and the inline
+  ``_services(<name>)`` spelling when the parameter is called anything but
+  ``request`` (that regex hardcodes it; the AST path is argument-agnostic, so
+  only the inline form is affected).
+
+None of those are defended against here, and this list is the point: a guard
+whose reach is overstated is worse than a narrow one, because the overstatement
+is what stops somebody adding the check that would have caught the next bug.
 """
 
 from __future__ import annotations
 
 import ast
 import inspect
+import io
 import re
 import textwrap
+import tokenize
 
 from app.api.routes import require_org
 from app.main import create_app
@@ -88,12 +102,26 @@ SCOPED_ATTR = "screening_scope"
 _DEFAULT_RECEIVER = "services"
 
 
+def _is_services_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_services"
+    )
+
+
 def _service_receivers(source: str) -> set[str]:
     """Every local name bound to ``_services(request)`` in this source.
 
     This is the fix for the alias bypass: the guard used to hardcode the name
     ``services``, so renaming the local to ``svc`` -- an ordinary choice, not an
     attack -- disabled every check in the handler.
+
+    All three binding forms Python offers for a plain name are covered:
+    ``svc = _services(request)`` (Assign), ``svc: Services = _services(request)``
+    (AnnAssign -- this codebase does annotate locals), and
+    ``if (svc := _services(request))`` (NamedExpr). Tuple unpacking is not, and
+    is disclosed in the module docstring rather than silently missing.
     """
     names = {_DEFAULT_RECEIVER}
     try:
@@ -101,17 +129,51 @@ def _service_receivers(source: str) -> set[str]:
     except SyntaxError:  # pragma: no cover - handler source always parses
         return names
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign):
-            continue
-        value = node.value
-        if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)):
-            continue
-        if value.func.id != "_services":
-            continue
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                names.add(target.id)
+        if isinstance(node, ast.Assign) and _is_services_call(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+        elif isinstance(node, ast.AnnAssign) and _is_services_call(node.value):
+            if isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+        elif isinstance(node, ast.NamedExpr) and _is_services_call(node.value):
+            if isinstance(node.target, ast.Name):
+                names.add(node.target.id)
     return names
+
+
+def _code_lines(source: str) -> list[str]:
+    """Source lines with comments AND string literals blanked out.
+
+    Docstrings are the reason. This codebase documents its own rules densely --
+    a handler docstring reading "never read services.report_store; use
+    services.screening_scope" is entirely plausible, and under the residue
+    technique below it would read as a violation. A guard that fires on correct
+    code gets switched off within a sprint, so prose cannot be allowed to forge
+    either a violation or the sanctioned door.
+
+    ``tokenize`` rather than a regex: it handles triple-quoted docstrings
+    spanning many lines, a ``#`` inside a string, and a quote inside a comment,
+    none of which a line-wise regex gets right.
+    """
+    text = textwrap.dedent(source)
+    rows = [list(line) for line in text.splitlines()]
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        # pragma: no cover - fall back to the cruder comment strip
+        return [line.split("#", 1)[0] for line in text.splitlines()]
+    for tok in tokens:
+        if tok.type not in (tokenize.STRING, tokenize.COMMENT):
+            continue
+        (srow, scol), (erow, ecol) = tok.start, tok.end
+        for row_index in range(srow - 1, min(erow, len(rows))):
+            row = rows[row_index]
+            start = scol if row_index == srow - 1 else 0
+            end = ecol if row_index == erow - 1 else len(row)
+            for col in range(start, min(end, len(row))):
+                row[col] = " "
+    return ["".join(row) for row in rows]
 
 
 def _receiver_alternation(receivers: set[str]) -> str:
@@ -229,15 +291,21 @@ def _violations_in(source: str) -> list[str]:
     forbidden = _forbidden_res(receivers)
 
     hits = []
-    for line in source.splitlines():
-        code = _strip_comment(line)
-        stripped = code.strip()
-        if any(key in stripped for key in ALLOWLISTED_LINES):
-            continue
+    for code in _code_lines(source):
+        # Remove the sanctioned door AND any allowlisted expression, then see
+        # what is left. Both are removals rather than whole-line skips for the
+        # same reason: a line that reaches an exempt thing AND a store still
+        # reaches a store.
         residue = sanctioned.sub("", code)
-        for attr, pattern in forbidden:
-            if pattern.search(residue):
-                hits.append(f"services.{attr}")
+        for key in ALLOWLISTED_LINES:
+            if key in residue:
+                residue = residue.replace(key, "")
+        for _attr, pattern in forbidden:
+            found = pattern.search(residue)
+            if found:
+                # Report what was actually written, not a canonical spelling --
+                # a developer greps for the text in their file.
+                hits.append(found.group(0))
     return hits
 
 
@@ -386,6 +454,81 @@ def test_the_guard_catches_a_violation_sharing_a_line_with_the_facade():
     assert _violations_in(one_liner), (
         "a store read sharing a line with a facade call is still a store read"
     )
+
+
+def test_every_plain_name_binding_form_resolves_the_receiver():
+    """Re-review pin: the resolver handled only ``=``, so an ANNOTATED local --
+    a form this codebase already uses (``report: Optional[Report] = None``) --
+    slipped through, as did a walrus. That is the same
+    a-name-somebody-picks-without-thinking shape the alias fix was about."""
+    forms = {
+        "plain": "    svc = _services(request)\n",
+        "annotated": "    svc: Services = _services(request)\n",
+        "walrus": "    if (svc := _services(request)) is None:\n        return None\n",
+    }
+    for label, binding in forms.items():
+        source = (
+            "async def bad_handler(request, org_id):\n"
+            f"{binding}"
+            "    return svc.report_store.get('anything')\n"
+        )
+        assert "svc" in _service_receivers(source), f"{label} binding not resolved"
+        assert _violations_in(source), f"{label}: unscoped read must be caught"
+
+
+def test_prose_cannot_forge_a_violation_or_the_sanctioned_door():
+    """Re-review pin: the residue technique made a DOCSTRING naming both doors
+    read as a violation. This codebase documents its own rules densely, so that
+    is the plausible way this guard gets switched off -- and the converse
+    (prose mentioning screening_scope silencing a real read) is how it goes
+    quietly blind."""
+    documented = (
+        "async def good_handler(request, org_id):\n"
+        '    """Never read services.report_store here; use'
+        ' services.screening_scope."""\n'
+        "    svc = _services(request)\n"
+        "    return svc.screening_scope.report(org_id, 'x')\n"
+    )
+    assert not _violations_in(documented), (
+        "a docstring quoting the rule is not a breach of it"
+    )
+
+    prose_shield = (
+        "async def sneaky(request, org_id):\n"
+        '    """We go through services.screening_scope, honest."""\n'
+        "    services = _services(request)\n"
+        "    return services.report_store.get('x')\n"
+    )
+    assert _violations_in(prose_shield), (
+        "prose must not stand in for actually calling the facade"
+    )
+
+
+def test_an_allowlisted_line_does_not_shield_a_neighbouring_read():
+    """Re-review pin: the allowlist skipped the whole line with ``continue`` --
+    the identical shape already closed for the sanctioned door. An allowlisted
+    expression sharing a line with a genuine read must not launder it."""
+    shared_line = (
+        "async def sneaky(request, org_id):\n"
+        "    services = _services(request)\n"
+        "    return services.candidates.save_fingerprint(f)"
+        " or services.report_store.get('x')\n"
+    )
+    assert _violations_in(shared_line), (
+        "an allowlisted call on the same line must not exempt the store read"
+    )
+
+
+def test_the_offender_message_names_the_real_spelling():
+    """A failure reporting ``services.report_store`` for a read written
+    ``svc.report_store`` sends a developer grepping for a string that is not in
+    their file."""
+    source = (
+        "async def bad_handler(request, org_id):\n"
+        "    svc = _services(request)\n"
+        "    return svc.report_store.get('anything')\n"
+    )
+    assert _violations_in(source) == ["svc.report_store"]
 
 
 def test_a_purely_scoped_handler_is_not_a_false_positive():
