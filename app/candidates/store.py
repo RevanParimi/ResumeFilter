@@ -102,17 +102,36 @@ class CandidateStore:
             self._refresh_identity(cand, profile)
             session.flush()
 
-            resume = (
+            same_text = (
                 session.execute(
-                    select(ResumeRow).where(
+                    select(ResumeRow)
+                    .where(
                         ResumeRow.candidate_id == cand.id,
                         ResumeRow.text_sha256 == sha,
                     )
+                    .order_by(ResumeRow.version)
                 )
                 .scalars()
-                .first()
+                .all()
             )
-            duplicate = resume is not None
+            # A fact about the TEXT, not about which row we land on: the same
+            # bytes were seen before, and that stays true whether this upload
+            # reuses a row or gets its own.
+            duplicate = bool(same_text)
+
+            # Ownership is a property of the UPLOAD, not of the person (S8.4
+            # spec 0.1: "each agency owns its own upload of her"), and one
+            # org_id column cannot hold two owners -- so an upload by a
+            # DIFFERENT org gets its own row rather than silently joining
+            # somebody else's. Prefer this caller's own row: once two orgs hold
+            # rows for the same text, taking the first match would hand org B
+            # org A's row and spawn a third on every re-upload.
+            resume = next((r for r in same_text if r.org_id == org_id), None)
+            if resume is None and org_id is None and same_text:
+                # The admin plane never diverges: an unowned upload reuses
+                # whatever is already there, exactly as it did pre-S8.4.
+                resume = same_text[0]
+
             if resume is None:
                 latest = session.execute(
                     select(func.max(ResumeRow.version)).where(

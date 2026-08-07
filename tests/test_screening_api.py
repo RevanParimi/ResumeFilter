@@ -22,6 +22,16 @@ def _key(services, name):
     return org.id, services.ledger.issue_api_key(org.id)
 
 
+def _with_email(resume: str, email: str = "priya.nair@example.in") -> str:
+    """The shipped fixtures carry NO contact block, so identity resolution can
+    never match on them -- every upload would fork a new candidate and any
+    dedup assertion built on the bare fixture would be inert. Splice a contact
+    line in AFTER the header so heuristic name parsing (which reads line 0) is
+    unaffected, exactly as scripts/smoke_s84a.py does."""
+    lines = resume.splitlines()
+    return "\n".join([lines[0], f"Email: {email}"] + lines[1:])
+
+
 def test_org_can_upload_and_read_its_own_report(services, genuine_resume):
     _, key = _key(services, "Agency A")
     with _client(services) as c:
@@ -164,6 +174,64 @@ def test_admin_upload_response_keeps_counterparty_identity(
         for m in matches:
             assert m["candidate_id"] is not None
             assert m["resume_id"] is not None
+
+
+def test_two_orgs_uploading_the_same_resume_each_own_it(services, genuine_resume):
+    """The most likely real input this product sees: two agencies handed the
+    SAME PDF for the same person. One candidate row, one report each, and
+    BOTH orgs see her in their own queue -- spec §0.1. The rule has to hold
+    over HTTP too, not just at the store: this repo's recurring bug shape is a
+    rule that holds at one entry point and lapses at the other."""
+    org_a, key_a = _key(services, "Agency A")
+    org_b, key_b = _key(services, "Agency B")
+    same_pdf = _with_email(genuine_resume)
+    with _client(services) as c:
+        up_a = c.post("/screening/candidates", headers={"X-Org-Key": key_a},
+                      json={"resume_text": same_pdf, "domain": "genai"})
+        up_b = c.post("/screening/candidates", headers={"X-Org-Key": key_b},
+                      json={"resume_text": same_pdf, "domain": "genai"})
+        assert up_a.status_code == 200 and up_b.status_code == 200, up_b.text
+        a, b = up_a.json(), up_b.json()
+
+        assert b["candidate_id"] == a["candidate_id"], "one person, one candidate row"
+        assert b["duplicate_resume"] is True, "the same bytes were seen before"
+        assert b["resume_id"] != a["resume_id"], "each agency owns its own upload"
+
+        assert services.candidates.org_owns_candidate(org_a, a["candidate_id"])
+        assert services.candidates.org_owns_candidate(org_b, b["candidate_id"]), (
+            "org B uploaded her -- she must not be invisible to the org that "
+            "just paid to screen her"
+        )
+
+        mine = c.get(f"/screening/candidates/{a['candidate_id']}/reports",
+                     headers={"X-Org-Key": key_b})
+        assert mine.status_code == 200 and len(mine.json()) == 1
+
+
+def test_ownership_is_recorded_without_a_report_to_fall_back_on(
+    services, genuine_resume
+):
+    """evaluate=False leaves NO report to stamp, so the resume row is the only
+    ownership record there is. If ingest drops org_id on the duplicate branch,
+    this upload leaves zero trace of who uploaded it."""
+    org_a, key_a = _key(services, "Agency A")
+    org_b, key_b = _key(services, "Agency B")
+    same_pdf = _with_email(genuine_resume)
+    with _client(services) as c:
+        c.post("/screening/candidates", headers={"X-Org-Key": key_a},
+               json={"resume_text": same_pdf, "domain": "genai",
+                     "evaluate": False})
+        up_b = c.post("/screening/candidates", headers={"X-Org-Key": key_b},
+                      json={"resume_text": same_pdf, "domain": "genai",
+                            "evaluate": False})
+        assert up_b.status_code == 200, up_b.text
+        body = up_b.json()
+        assert body["report"] is None
+
+        assert services.candidates.org_owns_candidate(org_b, body["candidate_id"]), (
+            "no report exists to carry the ownership -- the resume row must"
+        )
+        assert services.candidates.org_owns_candidate(org_a, body["candidate_id"])
 
 
 def test_admin_upload_stays_unowned_and_invisible_to_orgs(services, genuine_resume,
