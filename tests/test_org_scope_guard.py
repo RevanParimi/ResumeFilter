@@ -31,10 +31,37 @@ check" problem one level up.
    violation to which frame? recurse into the whole app?) for a gain the one
    hop already covers for this codebase's actual shape.
 
-Also folded in: FORBIDDEN now requires the access to be off a ``services``-ish
-receiver (``services.candidates`` / ``_services(request).candidates``), not
-any object with a same-named attribute -- a future unrelated ``.candidates``
-on some other object should not trip a tenancy guard.
+Also folded in: FORBIDDEN requires the access to be off a services-ish receiver
+(``services.candidates`` / ``_services(request).candidates``), not any object
+with a same-named attribute -- a future unrelated ``.candidates`` on some other
+object should not trip a tenancy guard.
+
+Second fix round (post whole-branch review): qualifying to the *literal* name
+``services`` meant the guard was defeated by naming the local something else.
+``svc = _services(request)`` then ``svc.report_store.get(...)`` sailed straight
+through -- and that is not an adversarial shape, it is a name a developer picks
+without thinking. The receiver set is now resolved by AST per source: any local
+bound to ``_services(request)`` counts. A second hole closed with it: a
+SANCTIONED call and a FORBIDDEN call on ONE physical line (``... screening_scope
+.report(...) or services.report_store.get(...)``) used to be waved through by
+the sanctioned check, so the sanctioned expressions are now *removed* from the
+line and the FORBIDDEN patterns are matched against what remains.
+
+WHAT THIS GUARD DOES NOT COVER -- stated because a guard's whole value is its
+honesty about its own reach:
+
+* Exactly TWO attributes, ``report_store`` and ``candidates``.
+  ``services.features`` / ``.jobs`` / ``.ledger`` / ``.portal`` /
+  ``.verification`` / ``.interview`` / ``.dashboard`` / ``.comp`` are invisible
+  to it. That matters: ``POST /jobs/{id}/match`` and ``GET /jobs/{id}/board``
+  are org-plane routes reading the global feature store unfiltered (TENANCY.md
+  §8), and this guard would not notice.
+* ONE hop, within ``routes.py`` only -- helpers in other modules are skipped
+  outright. A read two hops of delegation deep passes unseen.
+* Line-level, not dataflow. A store handed to a local and called on a later
+  line through an alias of the ATTRIBUTE (rather than of the services
+  container) is caught only because ``store = _services(request).report_store``
+  puts the forbidden attribute on the assignment line itself.
 """
 
 from __future__ import annotations
@@ -42,22 +69,71 @@ from __future__ import annotations
 import ast
 import inspect
 import re
+import textwrap
 
 from app.api.routes import require_org
 from app.main import create_app
 from tests.test_route_table_guard import _resolvers_on, _walk
 
-#: Reads that bypass tenancy scoping, qualified to the services container so a
-#: same-named attribute on an unrelated object can't trip this. Two spellings
-#: cover the two styles the routes module uses: ``services = _services(request)``
-#: then ``services.X``, or the inline ``_services(request).X``.
-FORBIDDEN = (
-    r"(?:\bservices\.report_store\b|_services\(request\)\.report_store\b)",
-    r"(?:\bservices\.candidates\b|_services\(request\)\.candidates\b)",
-)
+#: Store attributes that bypass tenancy scoping when read off the services
+#: container. Qualified to a services-ish receiver so a same-named attribute on
+#: an unrelated object can't trip this.
+WATCHED_ATTRS = ("report_store", "candidates")
 
-#: The sanctioned door, qualified the same way.
-SANCTIONED = re.compile(r"\bservices\.screening_scope\b|_services\(request\)\.screening_scope\b")
+#: The sanctioned door.
+SCOPED_ATTR = "screening_scope"
+
+#: The conventional receiver name, always in the set even when the source never
+#: spells the assignment out (e.g. an inline ``_services(request).X``).
+_DEFAULT_RECEIVER = "services"
+
+
+def _service_receivers(source: str) -> set[str]:
+    """Every local name bound to ``_services(request)`` in this source.
+
+    This is the fix for the alias bypass: the guard used to hardcode the name
+    ``services``, so renaming the local to ``svc`` -- an ordinary choice, not an
+    attack -- disabled every check in the handler.
+    """
+    names = {_DEFAULT_RECEIVER}
+    try:
+        tree = ast.parse(textwrap.dedent(source))
+    except SyntaxError:  # pragma: no cover - handler source always parses
+        return names
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        value = node.value
+        if not (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)):
+            continue
+        if value.func.id != "_services":
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    return names
+
+
+def _receiver_alternation(receivers: set[str]) -> str:
+    return "|".join(re.escape(name) for name in sorted(receivers))
+
+
+def _forbidden_res(receivers: set[str]) -> list[tuple[str, re.Pattern[str]]]:
+    alt = _receiver_alternation(receivers)
+    return [
+        (
+            attr,
+            re.compile(rf"(?:\b(?:{alt})\.{attr}\b|_services\(request\)\.{attr}\b)"),
+        )
+        for attr in WATCHED_ATTRS
+    ]
+
+
+def _sanctioned_re(receivers: set[str]) -> re.Pattern[str]:
+    alt = _receiver_alternation(receivers)
+    return re.compile(
+        rf"\b(?:{alt})\.{SCOPED_ATTR}\b|_services\(request\)\.{SCOPED_ATTR}\b"
+    )
 
 #: Narrow, LINE-level exemptions -- not function-level, so one entry can't
 #: silence a neighboring genuine violation the way the old whole-function
@@ -134,25 +210,34 @@ def _strip_comment(line: str) -> str:
 
 
 def _violations_in(source: str) -> list[str]:
-    """FORBIDDEN patterns matched one physical LINE at a time.
+    """Watched attribute reads, matched one physical LINE at a time.
 
-    A line is a violation only if that line itself doesn't go through the
-    sanctioned door and isn't on the narrow allowlist above. Checking the
-    whole function for ``SANCTIONED`` (the pre-fix-round behavior) let one
-    mention anywhere silence every other line in the function -- this is the
-    per-statement replacement for that.
+    A line is a violation unless it is on the narrow allowlist. Checking the
+    whole function for the sanctioned door (the original behavior) let one
+    mention anywhere silence every other line in the function; checking whether
+    the LINE mentions it (the first fix round) still let one line do both. So
+    the sanctioned expressions are DELETED from the line and the watched
+    patterns are matched against the residue: a line that only reaches the
+    facade has nothing left to match, and a line that reaches the facade AND a
+    store still shows the store.
+
+    The receiver set is resolved from this source, so an aliased container
+    (``svc = _services(request)``) is caught like the conventional name.
     """
+    receivers = _service_receivers(source)
+    sanctioned = _sanctioned_re(receivers)
+    forbidden = _forbidden_res(receivers)
+
     hits = []
     for line in source.splitlines():
         code = _strip_comment(line)
-        if SANCTIONED.search(code):
-            continue
         stripped = code.strip()
         if any(key in stripped for key in ALLOWLISTED_LINES):
             continue
-        for pattern in FORBIDDEN:
-            if re.search(pattern, code):
-                hits.append(pattern)
+        residue = sanctioned.sub("", code)
+        for attr, pattern in forbidden:
+            if pattern.search(residue):
+                hits.append(f"services.{attr}")
     return hits
 
 
@@ -218,10 +303,10 @@ def test_no_org_handler_reads_candidates_or_reports_unscoped(services):
     offenders = []
     for route in _org_plane_endpoints(app):
         for label, source in _one_hop_sources(route):
-            for pattern in _violations_in(source):
+            for read in _violations_in(source):
                 offenders.append(
                     f"{sorted(route.methods)} {route.path} ({label}) "
-                    f"reads {pattern} directly -- use services.screening_scope"
+                    f"reads {read} directly -- use services.screening_scope"
                 )
     assert not offenders, "\n".join(offenders)
 
@@ -240,15 +325,15 @@ def test_the_guard_catches_an_unscoped_handler():
         "    services = _services(request)\n"
         "    return services.report_store.get('anything')\n"
     )
-    assert not SANCTIONED.search(unscoped_source)
+    assert not _sanctioned_re(_service_receivers(unscoped_source)).search(unscoped_source)
     assert _violations_in(unscoped_source), (
-        "the FORBIDDEN patterns no longer match a genuinely unscoped read"
+        "the watched patterns no longer match a genuinely unscoped read"
     )
 
 
 def test_the_guard_does_not_let_one_mention_silence_a_neighboring_violation():
-    """Fix-round regression pin for finding 1: a SANCTIONED mention on one
-    line must not suppress a FORBIDDEN read on a different line in the same
+    """Fix-round regression pin for finding 1: a sanctioned mention on one
+    line must not suppress a watched read on a different line in the same
     function. The pre-fix-round guard did exactly this with a whole-function
     substring check."""
     mixed_source = (
@@ -258,11 +343,61 @@ def test_the_guard_does_not_let_one_mention_silence_a_neighboring_violation():
         "    # falls back through services.screening_scope on some path\n"
         "    return ok or services.report_store.get('x')\n"
     )
-    assert SANCTIONED.search(mixed_source), "the sanctioned door must still be present somewhere"
+    assert _sanctioned_re(_service_receivers(mixed_source)).search(mixed_source), (
+        "the sanctioned door must still be present somewhere"
+    )
     assert _violations_in(mixed_source), (
         "a real violation on its own line must not be silenced by a "
-        "SANCTIONED mention elsewhere in the function"
+        "sanctioned mention elsewhere in the function"
     )
+
+
+def test_the_guard_survives_a_renamed_services_local():
+    """Second-fix-round pin: the guard used to hardcode the receiver name
+    ``services``, so calling the local anything else disabled every check in
+    the handler. That is not an adversarial shape -- it is a name somebody
+    picks without thinking, which makes it the likeliest way this guard would
+    ever have failed silently."""
+    for alias in ("svc", "s", "container"):
+        source = (
+            "async def bad_handler(request, org_id):\n"
+            f"    {alias} = _services(request)\n"
+            f"    return {alias}.report_store.get('anything')\n"
+        )
+        assert alias in _service_receivers(source), (
+            f"{alias!r} is bound to _services(request) and must count as a receiver"
+        )
+        assert _violations_in(source), (
+            f"an unscoped read through a local named {alias!r} must still be caught"
+        )
+
+
+def test_the_guard_catches_a_violation_sharing_a_line_with_the_facade():
+    """Second-fix-round pin: one physical line doing BOTH -- reaching the
+    facade and falling back to the store -- was waved through, because the
+    line mentioned the sanctioned door. The sanctioned expressions are now
+    removed before the watched patterns are matched."""
+    one_liner = (
+        "async def sneaky(request, org_id):\n"
+        "    services = _services(request)\n"
+        "    return services.screening_scope.report(org_id, 'x')"
+        " or services.report_store.get('x')\n"
+    )
+    assert _violations_in(one_liner), (
+        "a store read sharing a line with a facade call is still a store read"
+    )
+
+
+def test_a_purely_scoped_handler_is_not_a_false_positive():
+    """The other direction: stripping the sanctioned expressions must not
+    leave residue that trips the watched patterns. A guard that cried wolf on
+    correct code would be turned off within a sprint."""
+    clean_source = (
+        "async def good_handler(request, org_id):\n"
+        "    svc = _services(request)\n"
+        "    return svc.screening_scope.reports_for_candidate(org_id, 'cand')\n"
+    )
+    assert not _violations_in(clean_source)
 
 
 def test_the_guard_reaches_one_hop_into_a_same_module_helper():
