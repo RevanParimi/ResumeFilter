@@ -1732,8 +1732,10 @@ def _request_code(
     payload: Optional[dict] = None,
 ) -> dict:
     """Shared signup/login handler for all three planes."""
+    services = _services(request)
+    code: Optional[str] = None
     try:
-        _services(request).auth.request_code(
+        _sent, code = services.auth.issue_code(
             email=email,
             plane=plane,
             purpose=purpose,
@@ -1751,7 +1753,25 @@ def _request_code(
         # door. The previously sent code is still live and still in their inbox,
         # so the user loses nothing.
         pass
-    return dict(_ACCEPTED)
+
+    body = dict(_ACCEPTED)
+    # Double-guarded: local env AND the knob -- the verif_otp_debug_echo shape
+    # from S7.1. Every code-issuing route funnels through here, so the echo
+    # cannot be live on one plane and missing on another.
+    #
+    # This IS an enumeration oracle: `code` is None precisely when no code was
+    # sent, so the echoed body distinguishes a registered address from an
+    # unregistered one -- the very thing the uniform 202 above exists to hide.
+    # That is acceptable only because it cannot leave a developer's laptop:
+    # prod REFUSES TO BOOT with the knob on (app/core/boot.py), and staging
+    # ignores it.
+    if (
+        code is not None
+        and services.settings.env == "local"
+        and services.settings.login_otp_debug_echo
+    ):
+        body["debug_code"] = code
+    return body
 
 
 def _verify(

@@ -264,6 +264,10 @@ login_otp_length: 6
 login_otp_ttl_seconds: 600
 login_otp_max_attempts: 5
 login_otp_cooldown_seconds: 60
+# Echoes the sign-in code in the 202 body so local UI work does not mean
+# reading digits out of a capture file. Double-guarded: needs env=local too,
+# and prod REFUSES TO BOOT with it on. scripts/serve_demo.py turns it on.
+login_otp_debug_echo: false
 cors_allowed_origins: []            # fail-closed; NEVER "*" (prod refuses it)
 
 # --- Email seam (PI-8, S8.2) ---------------------------------------------------

@@ -1643,6 +1643,18 @@ function errorCopy(err) {
   return err.detail || "Something went wrong.";
 }
 
+// One code, six boxes. `debug_code` is sent ONLY by a local API with
+// login_otp_debug_echo on (app/core/boot.py refuses it in prod), so this fills
+// nothing unless the server chose to echo — the UI cannot switch it on.
+const OTP_BLANK = ["", "", "", "", "", ""];
+function otpBoxes(code) {
+  const out = OTP_BLANK.slice();
+  String(code || "").replace(/\D/g, "").slice(0, 6).split("").forEach((ch, i) => {
+    out[i] = ch;
+  });
+  return out;
+}
+
 const fmtDateTime = (iso) => {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -1822,13 +1834,24 @@ class Component extends DCLogic {
 
     this.setState({ authBusy: true, authError: null, authNotice: null });
     API.post(path, body).then(
-      () => this.setState({
-        authBusy: false, screen: "verify", otp: ["", "", "", "", "", ""],
-        // Signup and login ALWAYS answer 202, known address or not. Never
-        // render "no account found" — that would re-open the enumeration hole
-        // the backend deliberately closed.
-        authNotice: null
-      }),
+      (res) => {
+        // A LOCAL api with login_otp_debug_echo on returns the code itself, so
+        // a developer is not retyping six digits out of a capture file on every
+        // session. Absent in staging and prod — prod refuses to boot with the
+        // knob — so this branch simply never fires against a real deployment.
+        const echoed = res && res.debug_code;
+        this.setState({
+          authBusy: false, screen: "verify", otp: otpBoxes(echoed),
+          // Signup and login ALWAYS answer 202, known address or not. Never
+          // render "no account found" — that would re-open the enumeration hole
+          // the backend deliberately closed.
+          authNotice: echoed ? "Local API echoed the code — signing you in." : null
+        });
+        // Pass the code EXPLICITLY rather than trusting the setState above to
+        // have landed: submitCode reads this.state.otp, and racing it produces
+        // an "Enter all six digits" error on a screen that visibly has six.
+        if (echoed) this.submitCode(String(echoed));
+      },
       (err) => this.setState({ authBusy: false, authError: err })
     );
   };
@@ -1847,9 +1870,12 @@ class Component extends DCLogic {
     );
   };
 
-  submitCode = () => {
+  submitCode = (codeArg) => {
     const { plane, emailInput, otp } = this.state;
-    const code = (otp || []).join("").trim();
+    // `codeArg` is the local debug echo handing us the code directly. Typed
+    // check, not truthiness: this is also a click handler, so the argument is
+    // normally a DOM event — and `event.trim` would throw.
+    const code = (typeof codeArg === "string" ? codeArg : (otp || []).join("")).trim();
     if (code.length < 6) { this.setState({ authError: { detail: "Enter all six digits." } }); return; }
     this.setState({ authBusy: true, authError: null });
     API.post("/auth/" + PLANE_PATH[plane] + "/verify", { email: (emailInput || "").trim(), code }).then(

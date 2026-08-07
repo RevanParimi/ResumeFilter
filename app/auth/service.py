@@ -144,8 +144,38 @@ class AuthService:
     ) -> bool:
         """Mint and send a login code. Returns True when one was actually sent.
 
-        Returns False -- WITHOUT raising -- when there is deliberately nothing
-        to send:
+        A thin bool view of :meth:`issue_code`. It stays the default entry point
+        because "was a code sent" is all any production caller may know -- the
+        plaintext code is available only from `issue_code`, so reaching it is a
+        deliberate act rather than something a caller can do by accident.
+        """
+        sent, _ = self.issue_code(
+            email=email, plane=plane, purpose=purpose, payload=payload,
+            at=at, rng=rng,
+        )
+        return sent
+
+    def issue_code(
+        self,
+        *,
+        email: str,
+        plane: AuthPlane,
+        purpose: LoginPurpose,
+        payload: Optional[dict] = None,
+        at: datetime,
+        rng: Optional[random.Random] = None,
+    ) -> tuple[bool, Optional[str]]:
+        """Mint and send a login code, returning `(sent, plaintext_code)`.
+
+        The plaintext is returned for ONE caller: the local-only debug echo at
+        `_request_code` (double-guarded on env + knob, and prod refuses to boot
+        with it). Anything else wanting to know whether a code went out should
+        call :meth:`request_code`, which cannot leak it.
+
+        Returns `(True, code)` when one was actually sent.
+
+        Returns `(False, None)` -- WITHOUT raising -- when there is deliberately
+        nothing to send:
           * login for an address with no account, and
           * signup for an address that already has one.
         The HTTP layer answers 202 either way, so neither case is distinguishable
@@ -195,18 +225,18 @@ class AuthService:
                 log.info(
                     "auth.request_code.noop", plane=str(plane), reason="no_account"
                 )
-                return False
+                return False, None
             if purpose == LoginPurpose.SIGNUP and exists:
                 log.info(
                     "auth.request_code.noop", plane=str(plane), reason="already_exists"
                 )
-                return False
+                return False, None
             if purpose == LoginPurpose.SIGNUP and plane == AuthPlane.ADMIN:
                 # Operators are created BY an operator; there is no admin signup.
                 log.info(
                     "auth.request_code.noop", plane="admin", reason="no_admin_signup"
                 )
-                return False
+                return False, None
 
         existing = self._store.get_challenge(scope)
         if existing is not None and not challenge_logic.may_send(
@@ -249,7 +279,7 @@ class AuthService:
             payload=payload or {},
             at=at,
         )
-        return True
+        return True, code
 
     # -- redeeming a code ----------------------------------------------------
 
