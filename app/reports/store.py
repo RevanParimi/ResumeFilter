@@ -80,7 +80,7 @@ class SqlReportStore:
             row.created_at = as_utc(report.created_at)
             try:
                 s.commit()
-            except IntegrityError as err:
+            except IntegrityError:
                 s.rollback()
                 if report.candidate_id is None:
                     # No candidate FK, so any IntegrityError is unrelated to

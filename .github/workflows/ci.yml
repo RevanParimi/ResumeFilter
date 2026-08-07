@@ -43,9 +43,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      # Proves the three batch_alter_table migrations (0004, 0006, 0014) on a
-      # dialect where batch mode is a plain ALTER -- and proves the downgrades,
-      # which until S8.1 had never run anywhere.
+      # Proves the four batch_alter_table migrations (0004, 0006, 0014, 0018)
+      # on a dialect where batch mode is a plain ALTER -- and proves the
+      # downgrades, which until S8.1 had never run anywhere. (0018 uses batch
+      # mode twice, once per new org_id column, but it is one migration.)
       - name: migrations up/down/up
         run: |
           python - <<'PY'

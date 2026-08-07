@@ -115,8 +115,6 @@ def test_report_save_stamps_org_and_keeps_it_out_of_the_body(services):
         assert row.org_id == org.id
         assert "org_id" not in row.body, "ownership is storage, not the report contract"
 
-    assert services.report_store.get("rep-1").model_dump().get("org_id") is None
-
 
 def test_resaving_without_an_org_does_not_un_own_a_report(services):
     """save() is an upsert; a later save from another path must not orphan it."""

@@ -140,6 +140,16 @@ def assess_resume_farm(
         )
 
     confidence = min(0.9, 0.6 + 0.05 * min(corpus_size, 6))
+    # PRECONDITION: raw, pre-redaction matches. S8.4 widened
+    # ResumeMatch.candidate_id to Optional so the org plane can be handed
+    # matches with identity stripped (app/screening/projection.py) -- and a
+    # list of those collapses this set to {None}, i.e. distinct == 1, silently
+    # downgrading a farm-like cluster out of NEAR_DUPLICATE. Band first, redact
+    # second; never the other way round.
+    assert all(m.candidate_id is not None for m in matches), (
+        "assess_resume_farm needs un-redacted matches: banding counts DISTINCT "
+        "candidates, and redacted identity collapses that count to 1"
+    )
     distinct = len({m.candidate_id for m in matches})
     if any(m.similarity >= settings.rf_near_dup_threshold for m in matches) or (
         distinct >= settings.rf_cluster_candidates_min
