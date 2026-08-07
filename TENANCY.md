@@ -40,9 +40,15 @@ trusted. A typo in *both* the migration and the ORM model agrees with itself and
 slips past that guard; only
 `test_deleting_an_org_leaves_the_resume_intact_and_unowned`
 (`tests/test_upload_ownership.py`) catches it, by actually deleting an
-organisation and asserting the resume survives unowned. **No smoke covers this
-at all** — there is no HTTP route to delete an organisation (§8, §9). Without
-those two tests the mistake would be silent until the first offboarding.
+organisation and asserting the resume survives unowned.
+
+**There IS an HTTP route that triggers this**, and an earlier draft of this
+document said there was not — twice, in §8 and §9, which is why the smoke
+originally skipped it. `DELETE /ledger/orgs/{org_id}`
+(`app/api/routes.py:671`) calls `LedgerStore.delete_organization`, which does
+`session.delete(OrganizationRow)`: exactly the deletion the `SET NULL` contract
+is about, reachable today with an admin key. `smoke_s84a` now exercises it end
+to end. Without these the mistake would be silent until the first offboarding.
 
 ## 2. Why candidates stay global
 
@@ -76,6 +82,20 @@ silently joining somebody else's row. The consequences, all deliberate:
 - Lookup prefers *this caller's own* row. Once two orgs hold rows for one text,
   taking the first match would hand org B org A's row and spawn a third row on
   every re-upload.
+- **An offboarded org leaves one orphan row per (candidate, text) it held.**
+  `SET NULL` (§1) turns its rows unowned rather than deleting them, and the
+  admin fallback only ever adopts the lowest-version match, so a churned org's
+  row is never re-adopted by an organisation. Bounded by org churn, invisible to
+  every org, and the alternative — deleting it — is the `CASCADE` this document
+  exists to refuse.
+- **Farm detection now sees N matches where one person's resume is held by N
+  orgs.** The banding is unaffected: `distinct` counts `candidate_id`s and the
+  duplicate rows share one, and `similar_resumes` excludes the uploader's own
+  candidate, so a row is invisible to its own re-upload. What does shift
+  slightly is the reviewer-facing `reasoning` string and the `rf_max_matches`
+  truncation budget, which can now spend slots on duplicates of one person. It
+  is a sensitivity change to a fraud detector, so it is recorded rather than
+  left to be rediscovered.
 
 **Rejected — a shared candidate universe** (no per-upload ownership at all).
 Cheapest to build, and arguably the honest description of one shared corpus.
@@ -152,9 +172,16 @@ construction, so org handlers get no option to forget it:
    `.portal`, `.verification`, `.interview`, `.dashboard` and `.comp` are
    invisible to it (see §8 for two org-plane surfaces that matters for).
    Helpers in *other* modules are skipped entirely, so the "one hop" is one hop
-   *within `routes.py`*. The receiver is resolved by AST — any local bound to
-   `_services(request)` counts, not just one spelled `services` — but a read
-   reached through two hops of delegation would still pass unseen.
+   *within `routes.py`*. The receiver is resolved by AST for the three
+   plain-name binding forms (`=`, annotated `:`, walrus `:=`), so a renamed
+   local counts — but **not** tuple unpacking, not the container passed into a
+   helper as an argument, not `getattr(services, "report_store")`, not a
+   backslash continuation, and not the inline `_services(<name>)` spelling when
+   the parameter is called anything but `request`. A read two hops of delegation
+   deep also passes unseen. The guard's own module docstring carries this same
+   list, and it is deliberately explicit: an overstated reach is worse than a
+   narrow one, because it is what stops somebody adding the check that would
+   have caught the next bug.
 3. **The guard is proven non-vacuous.** S8.2 recorded the exact trap: FastAPI
    0.138 does not flatten `include_router` into `app.routes`, so a naive walk
    saw 9 routes instead of 63 and would have passed while inspecting almost
@@ -232,11 +259,14 @@ them more honest (spec §0.4, §7).
 
 **What is deliberately *not* redacted, decided rather than overlooked.** The
 upload response (`CandidateCreateResponse`) also carries `resume_version`,
-`matched_existing` and `matched_on`, and these are **cross-corpus by nature**:
+`matched_existing`, `matched_on` and `duplicate_resume`, and these are
+**cross-corpus by nature**:
 `resume_version` is a per-candidate counter spanning every organisation, so an
 org uploading a person for the first time can see a version above 1 and infer
 that other uploads of that person exist. `matched_existing` / `matched_on` say
-the same thing more directly.
+the same thing more directly, and `duplicate_resume` says the sharpest version
+of it: *these exact bytes* have been uploaded for this person before — possibly
+by a different customer.
 
 These stay, and the reasoning is the same principle as the `matches[]` strip
 rather than an exception to it: **a count and a match-type are not an
@@ -285,9 +315,9 @@ limiting, row-level security or a tenant-per-schema database (this sprint is
 application-level scoping with a structural guard; if the hosting posture ever
 demands database-level isolation, this is the layer it replaces, not one it
 fights), and org offboarding as a product *flow* — the `SET NULL` semantics
-(§1) make offboarding *safe*, but there is no admin route to delete an
-organisation today, which is why the smoke does not exercise it over HTTP (see
-below).
+(§1) make offboarding *safe*, and `DELETE /ledger/orgs/{org_id}` already
+performs it on the **admin** plane; what does not exist is an org-plane
+self-service flow, and that is the part deferred (`UI-Spec.md` item 17).
 
 ## 9. Proof
 
@@ -304,8 +334,13 @@ report that genuinely has matches, both from a same-org `GET` and — the
 sprint's headline guarantee, run the way a real customer would trigger
 it — from the **upload response of a second, different org**, on both the
 top-level and the embedded copy of the assessment; and an admin-plane upload
-that stays unowned and invisible to every org. The org-deletion `SET NULL`
-behaviour is deliberately **not** repeated in the smoke — there is no HTTP
-route to delete an organisation (§8), and
-`test_deleting_an_org_leaves_the_resume_intact_and_unowned` already covers it
-at the layer where it is reachable.
+that stays unowned and invisible to every org; and finally **the `SET NULL`
+contract itself, over HTTP** — an organisation is deleted through
+`DELETE /ledger/orgs/{org_id}` and its uploaded resume is shown to survive,
+readable by the admin plane and now reading as unowned. That last pair exists
+because the sprint originally skipped it on a false premise: the plan, this
+document and the smoke all asserted there was no HTTP route to delete an
+organisation. There is. `SET NULL` is the load-bearing choice of the whole
+sprint, and it is the one thing a `CASCADE` typo would destroy silently, so it
+is worth proving at the layer a real operator would trigger it rather than only
+in a unit test.

@@ -291,7 +291,8 @@ def main() -> int:
             "/screening/candidates", {"resume_text": FARM_B, "domain": "genai"}
         )
         farm_report = org_a.get(
-            f"/screening/reports/{farm_same_org.json()['report']['id']}"
+            f"/screening/reports/"
+            f"{(farm_same_org.json().get('report') or {}).get('id')}"
         ).json()
         # `or {}` rather than a .get default: resume_farm is Optional and
         # serialises as JSON null, not as an absent key, so a .get default
@@ -360,7 +361,7 @@ def main() -> int:
         #        invisible on the org plane.
         adm = admin.post("/candidates", json={"resume_text": OTHER, "domain": "genai"}, headers=ADMIN_H)
         check("admin_upload", adm.status_code == 200, adm.text if adm.status_code != 200 else "")
-        report_id_adm = adm.json()["report"]["id"]
+        report_id_adm = (adm.json().get("report") or {}).get("id")
         check(
             "admin_still_reads_its_own",
             admin.get(f"/report/{report_id_adm}", headers=ADMIN_H).status_code == 200,
@@ -368,6 +369,44 @@ def main() -> int:
         check(
             "admin_upload_invisible_to_orgs",
             org_a.get(f"/screening/reports/{report_id_adm}").status_code == 404,
+        )
+
+        # 18-20. THE SET NULL CONTRACT, over HTTP. An organisation offboarding
+        #        must NOT destroy a person's resume -- that is the load-bearing
+        #        FK choice of this whole sprint, and the one a CASCADE typo
+        #        would destroy silently.
+        #
+        #        This was originally skipped on a FALSE PREMISE: the plan, the
+        #        smoke and TENANCY.md all said there was no HTTP route to
+        #        delete an organisation. DELETE /ledger/orgs/{id} has existed
+        #        the whole time, on the admin plane. Proving it here means the
+        #        sprint's load-bearing decision is verified the way an operator
+        #        would actually trigger it, not only in a unit test.
+        #
+        #        Org B is the victim: it uploaded GENUINE_V2 earlier, so it
+        #        owns a resume AND a report. Deleting it last keeps every
+        #        earlier check's session valid.
+        cand_before = admin.get(f"/candidates/{candidate_id}", headers=ADMIN_H)
+        killed = admin.delete(f"/ledger/orgs/{org_b.org_id}", headers=ADMIN_H)
+        check(
+            "org_offboarded",
+            killed.status_code == 200,
+            killed.text if killed.status_code != 200 else "",
+        )
+        cand_after = admin.get(f"/candidates/{candidate_id}", headers=ADMIN_H)
+        check(
+            "offboarding_leaves_the_person_intact",
+            cand_before.status_code == 200 and cand_after.status_code == 200,
+            f"before={cand_before.status_code} after={cand_after.status_code}",
+        )
+        # The report org B commissioned survives the org that paid for it, and
+        # is now unowned -- readable by the operator, invisible to every org.
+        # A CASCADE typo makes this a 404 and fails the check.
+        check(
+            "offboarded_orgs_report_survives_unowned",
+            admin.get(f"/report/{report_id_b}", headers=ADMIN_H).status_code == 200
+            and org_a.get(f"/screening/reports/{report_id_b}").status_code == 404,
+            f"report_id_b={report_id_b}",
         )
     finally:
         proc.terminate()
