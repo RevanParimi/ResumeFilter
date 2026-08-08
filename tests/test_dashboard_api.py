@@ -73,7 +73,7 @@ def test_overview_endpoint(services):
         assert body["advisory"] is True
 
 
-def test_board_404_cross_org_and_422_empty_pool(services):
+def test_board_404_cross_org_and_empty_pool_reason(services):
     _, key_a = _org_key(services, "A")
     org_b = services.ledger.create_organization("B")
     key_b = services.ledger.issue_api_key(org_b.id)
@@ -82,8 +82,11 @@ def test_board_404_cross_org_and_422_empty_pool(services):
                      json={"title": "BE", "must_have_skills": ["python"]}).json()
         # cross-org -> 404
         assert c.get(f"/jobs/{req['id']}/board", headers={"X-Org-Key": key_b}).status_code == 404
-        # owned but nothing materialized -> 422
-        assert c.get(f"/jobs/{req['id']}/board", headers={"X-Org-Key": key_a}).status_code == 422
+        # owned but nothing materialized -> 200 with a reason (S8.4 Phase B):
+        # an empty feature store is a server-side state, not a client error.
+        board = c.get(f"/jobs/{req['id']}/board", headers={"X-Org-Key": key_a})
+        assert board.status_code == 200
+        assert board.json()["match"]["reason"] == "no_materialized_candidates"
 
 
 def test_board_200_with_materialized_pool(services):

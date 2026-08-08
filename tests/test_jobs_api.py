@@ -58,9 +58,14 @@ def test_crud_and_match_flow(services, settings):
         p = c.patch(f"/jobs/{req['id']}", headers=hdr, json={"status": "closed"})
         assert p.json()["status"] == RequisitionStatus.CLOSED.value
 
-        # match with empty pool -> 422
+        # match with empty pool -> 200 with a reason (S8.4 Phase B). An empty
+        # feature store is a SERVER-side state, and until this sprint there was
+        # no HTTP route a caller could use to fix it -- a 422 blamed the client
+        # for something only an operator could change.
         m0 = c.post(f"/jobs/{req['id']}/match", headers=hdr, json={"as_of": AS_OF.isoformat()})
-        assert m0.status_code == 422
+        assert m0.status_code == 200
+        assert m0.json()["pool_size"] == 0
+        assert m0.json()["reason"] == "no_materialized_candidates"
 
 
 def test_cross_org_match_404(services):

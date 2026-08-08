@@ -122,3 +122,8 @@ class MatchResult(BaseModel):
     pool_size: int
     filtered_size: int
     ranked: tuple[MatchedCandidate, ...] = ()
+    #: Why the ranking is empty, when it is. `no_materialized_candidates` means
+    #: the feature store has not been materialized -- a SERVER-side state, which
+    #: is why this is a 200 with a reason rather than a 422 blaming the caller
+    #: (S8.4 Phase B §1.11). None on every successful match.
+    reason: Optional[str] = None
