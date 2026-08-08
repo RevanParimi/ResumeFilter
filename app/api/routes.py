@@ -29,6 +29,7 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
 from app.features import default_view, get_feature_registry
+from app.features.materialize import materialize_candidate
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
 from app.comp import bands
@@ -57,7 +58,9 @@ from app.interview.questions import NothingToAskError
 from app.interview.service import AnswerTooLargeError, SessionConflictError
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
-from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
+from app.curation.schema import (
+    CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
+)
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.verification.documents import DocumentParseError
 from app.verification.schema import (
@@ -567,13 +570,17 @@ class CurationResolveRequest(BaseModel):
     decided_by: Optional[str] = None
 
 
-@router.get("/curation/skills/unmapped", response_model=list[UnmappedTerm])
+@router.get("/curation/skills/unmapped", response_model=UnmappedPage)
 async def list_unmapped_terms(
     request: Request,
     status: Optional[CurationStatus] = None,
     limit: Optional[int] = None,
-) -> list[UnmappedTerm]:
-    return _services(request).curation.list_unmapped(status, limit)
+    cursor: Optional[str] = None,
+) -> UnmappedPage:
+    try:
+        return _services(request).curation.list_unmapped(status, limit, cursor=cursor)
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/curation/skills/resolve", response_model=UnmappedTerm)
@@ -1117,7 +1124,10 @@ async def match_job(
     if result is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     if result.pool_size == 0:
-        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+        # 200, not 422: an empty feature store is a server-side state and the
+        # caller cannot fix it. Mirrors GET /candidates/{id}/card's
+        # 200-with-status pattern (UI.md §6).
+        return result.model_copy(update={"reason": "no_materialized_candidates"})
     return result
 
 
@@ -1215,7 +1225,13 @@ async def job_board(
     if board is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     if board.match.pool_size == 0:
-        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+        # The SAME change as match_job above, in the same commit: fixing one
+        # entry point and leaving the other is this repo's signature defect.
+        board = board.model_copy(update={
+            "match": board.match.model_copy(
+                update={"reason": "no_materialized_candidates"}
+            )
+        })
     return board
 
 
@@ -1715,6 +1731,66 @@ async def talent_search(req: TalentSearchRequest, request: Request) -> SearchRes
         pool_size=len(vectors),
         filtered_size=len(filtered),
         ranked=tuple(ranked[:limit]),
+    )
+
+
+class MaterializeRequest(BaseModel):
+    candidate_ids: Optional[list[str]] = None
+    as_of: Optional[datetime] = None
+    view_name: Optional[str] = None
+
+
+class MaterializeResponse(BaseModel):
+    view_name: str
+    view_version: int
+    as_of: Optional[datetime] = None
+    materialized: int = 0
+    skipped: int = 0
+
+
+@router.post("/features/materialize", response_model=MaterializeResponse)
+async def materialize_features(
+    body: MaterializeRequest, request: Request
+) -> MaterializeResponse:
+    """Compute + persist feature vectors. ADMIN plane, deliberately.
+
+    Materialization spans ALL candidates and is consent-masked per candidate
+    (S4.2), so on the org plane one customer's call would compute vectors over
+    every customer's people. It is an operator action.
+
+    Until this route existed, `app/features/materialize.py` was reachable only
+    from Python -- which made `GET /jobs/{id}/board`'s empty-pool state
+    permanent for a self-registered org rather than transient.
+    """
+    services = _services(request)
+    registry = get_feature_registry()
+    view = default_view(registry, settings=services.settings)
+    view_name = body.view_name or services.settings.feat_default_view
+
+    ids = body.candidate_ids
+    if ids is None:
+        ids = services.candidates.list_candidate_ids(
+            services.settings.materialize_max_candidates
+        )
+
+    materialized = skipped = 0
+    for candidate_id in ids:
+        mv = materialize_candidate(
+            candidate_id, view=view, registry=registry, as_of=body.as_of,
+            candidate_store=services.candidates,
+            report_store=services.report_store,
+            ledger_store=services.ledger,
+        )
+        if mv is None:
+            # No context for this candidate (unknown id, or nothing to compute).
+            skipped += 1
+            continue
+        services.features.upsert_vector(mv)
+        materialized += 1
+
+    return MaterializeResponse(
+        view_name=view_name, view_version=view.version, as_of=body.as_of,
+        materialized=materialized, skipped=skipped,
     )
 
 

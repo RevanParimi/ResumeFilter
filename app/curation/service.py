@@ -16,7 +16,9 @@ from app.candidates.normalize.skills import (
     set_curated_overlay,
 )
 from app.core.config import Settings, get_settings
-from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
+from app.curation.schema import (
+    CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
+)
 from app.curation.store import CurationStore, build_curation_store
 
 _CANONICAL_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -40,11 +42,16 @@ class CurationService:
 
     # --- review ---------------------------------------------------------------
     def list_unmapped(
-        self, status: Optional[CurationStatus] = None, limit: Optional[int] = None
-    ) -> list[UnmappedTerm]:
+        self,
+        status: Optional[CurationStatus] = None,
+        limit: Optional[int] = None,
+        *,
+        cursor: Optional[str] = None,
+    ) -> UnmappedPage:
         cap = self._settings.cur_queue_default_limit
         limit = cap if limit is None else max(1, min(limit, cap))
-        return self._store.list_terms(status, limit)
+        terms, next_cursor = self._store.list_terms(status, limit, cursor=cursor)
+        return UnmappedPage(terms=terms, next_cursor=next_cursor)
 
     # --- resolve --------------------------------------------------------------
     def resolve(

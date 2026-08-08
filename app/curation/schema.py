@@ -45,3 +45,16 @@ class UnmappedTerm(BaseModel):
     note: Optional[str] = None
     decided_by: Optional[str] = None
     decided_at: Optional[datetime] = None
+
+
+class UnmappedPage(BaseModel):
+    """S8.4 Phase B: a page of the review queue.
+
+    NOTE the sort key (occurrences, last_seen) is MUTABLE -- a term seen again
+    moves. Paging is therefore stable against inserts and not against
+    re-observation. Acceptable here and stated rather than hidden: this is an
+    internal operator queue (UI.md §4.F), not a customer surface.
+    """
+
+    terms: list[UnmappedTerm] = Field(default_factory=list)
+    next_cursor: Optional[str] = None

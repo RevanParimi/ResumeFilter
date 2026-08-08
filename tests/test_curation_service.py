@@ -22,7 +22,7 @@ def test_record_applies_length_guards(settings):
     svc.record_unmapped("a" * 65, source_type="github")        # too long
     svc.record_unmapped("   ", source_type="github")           # empty norm_key
     svc.record_unmapped("COBOL", source_type="linkedin_export")
-    keys = [t.norm_key for t in svc.list_unmapped(CurationStatus.PENDING)]
+    keys = [t.norm_key for t in svc.list_unmapped(CurationStatus.PENDING).terms]
     assert keys == ["cobol"]
 
 
@@ -32,9 +32,9 @@ def test_list_limit_clamped_to_config(settings):
     svc = CurationService(store=CurationStore(make_candidate_store()._session_factory), settings=small)
     for i in range(5):
         svc.record_unmapped(f"term{i}", source_type="github")
-    assert len(svc.list_unmapped(limit=10_000)) == 3   # clamped to cap (3), not 5
-    assert len(svc.list_unmapped(limit=2)) == 2         # explicit smaller limit honored
-    assert len(svc.list_unmapped()) == 3                # default is the cap
+    assert len(svc.list_unmapped(limit=10_000).terms) == 3   # clamped to cap (3), not 5
+    assert len(svc.list_unmapped(limit=2).terms) == 2        # explicit smaller limit honored
+    assert len(svc.list_unmapped().terms) == 3               # default is the cap
 
 
 def test_resolve_create_makes_normalize_skill_resolve(settings):
