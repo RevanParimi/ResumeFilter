@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -417,7 +417,11 @@ class AuthStore:
         with self._session_factory() as session:
             return session.execute(
                 select(OrganizationRow.id)
-                .where(OrganizationRow.name == name.strip())
+                # lower(), matching uq_organizations_name_ci EXACTLY. A check
+                # stricter or looser than its constraint is how the Phase A
+                # lockout comes back: the check refuses, the insert succeeds
+                # anyway, and two orgs share one name.
+                .where(func.lower(OrganizationRow.name) == name.strip().lower())
                 .limit(1)
             ).scalars().first() is not None
 

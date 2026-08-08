@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -18,6 +19,7 @@ import app.verification.models  # noqa: F401 — populate Base.metadata
 import app.interview.models  # noqa: F401 — populate Base.metadata
 import app.reports.models  # noqa: F401 — populate Base.metadata
 import app.auth.models  # noqa: F401 — populate Base.metadata
+import app.screening.models  # noqa: F401 — populate Base.metadata
 from app.core.db import Base, make_engine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +123,15 @@ AUTH_TABLES = ("org_users", "admin_users", "auth_sessions", "login_challenges")
 SCREENING_TABLES = ("screening_batches", "batch_items")
 
 
+def _is_expression_index(ix) -> bool:
+    """True when the index is over an expression (lower(name)) rather than plain
+    columns. `ix.columns` still lists the underlying column, so the test is on
+    `ix.expressions`, which holds a non-Column element in that case."""
+    from sqlalchemy import Column
+
+    return any(not isinstance(e, Column) for e in ix.expressions)
+
+
 def test_migrated_indexes_match_orm(tmp_path):
     """Every index the ORM declares on a ledger table exists in the migrated
     schema (name + column set + uniqueness)."""
@@ -134,6 +145,13 @@ def test_migrated_indexes_match_orm(tmp_path):
         orm = {
             ix.name: (tuple(c.name for c in ix.columns), bool(ix.unique))
             for ix in Base.metadata.tables[table].indexes
+            # MEASURED: SQLite does not reflect expression-based indexes at all
+            # ("SAWarning: Skipped unsupported reflection of expression-based
+            # index"), so comparing one fails on a schema that is correct.
+            # uq_organizations_name_ci is proven BEHAVIOURALLY below instead --
+            # the stronger check, since this comparison never established that
+            # any index was enforced, only that it existed.
+            if not _is_expression_index(ix)
         }
         for name, spec in orm.items():
             assert name in migrated, f"{table}: migration missing index {name}"
@@ -211,3 +229,46 @@ def test_non_sqlite_engines_pre_ping():
 
 def test_sqlite_engines_are_unchanged():
     assert make_engine("sqlite://").pool._pre_ping is False
+
+
+#: organizations.created_at / updated_at are NOT NULL and have no server
+#: default (the application is the source of truth), so a raw INSERT must
+#: supply them or it fails for a reason that has nothing to do with the test.
+_ORG_INSERT = (
+    "INSERT INTO organizations (id, name, status, created_at, updated_at) "
+    "VALUES (:id, :name, 'active', '2026-08-07', '2026-08-07')"
+)
+
+
+def test_case_insensitive_org_name_is_enforced_on_the_migrated_schema(tmp_path):
+    """What the index comparison cannot prove and what actually matters: the
+    migrated database REFUSES the collision (S8.4 Phase B §1.7)."""
+    import sqlalchemy as sa
+    from sqlalchemy.exc import IntegrityError
+
+    engine = _migrated_engine(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(sa.text(_ORG_INSERT), {"id": "o1", "name": "Acme Staffing"})
+    # `match` matters: without it a NOT NULL slip in this very INSERT would
+    # raise IntegrityError too, and the test would pass while proving nothing
+    # about the index it exists to check.
+    with pytest.raises(IntegrityError, match="uq_organizations_name_ci"):
+        with engine.begin() as conn:
+            conn.execute(sa.text(_ORG_INSERT), {"id": "o2", "name": "acme staffing"})
+
+
+def test_0019_refuses_to_run_over_colliding_org_names(tmp_path):
+    """A migration that silently picked a winner would be destroying a
+    customer's data to make an index fit."""
+    import sqlalchemy as sa
+
+    url, cfg = _scratch_config(tmp_path, "collide.db")
+    command.upgrade(cfg, "0018_upload_ownership")
+    engine = make_engine(url)
+    with engine.begin() as conn:
+        for oid, name in (("o1", "Acme"), ("o2", "acme")):
+            conn.execute(sa.text(_ORG_INSERT), {"id": oid, "name": name})
+
+    with pytest.raises(Exception) as exc:
+        command.upgrade(cfg, "head")
+    assert "acme" in str(exc.value).lower()

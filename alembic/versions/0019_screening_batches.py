@@ -86,8 +86,30 @@ def upgrade() -> None:
     op.create_index("ix_batch_items_batch_status", "batch_items", ["batch_id", "status"])
     op.create_index("ix_batch_items_batch_risk", "batch_items", ["batch_id", "risk_score"])
 
+    # --- Case-insensitive organisation names (S8.4 Phase B, carry-over 1) -----
+    # Refuse loudly rather than mangle: a database already holding both "Acme"
+    # and "acme" cannot take this index, and picking a winner on the customer's
+    # behalf is not this migration's decision to make.
+    conn = op.get_bind()
+    dupes = conn.execute(sa.text(
+        "SELECT lower(name) AS k FROM organizations "
+        "GROUP BY lower(name) HAVING count(*) > 1"
+    )).fetchall()
+    if dupes:
+        names = ", ".join(repr(row[0]) for row in dupes)
+        raise RuntimeError(
+            "0019 cannot add uq_organizations_name_ci: these organisation names "
+            f"already collide case-insensitively and must be resolved first: {names}"
+        )
+    op.create_index(
+        "uq_organizations_name_ci", "organizations",
+        [sa.text("lower(name)")], unique=True,
+    )
+
 
 def downgrade() -> None:
+    op.drop_index("uq_organizations_name_ci", table_name="organizations")
+
     op.drop_index("ix_batch_items_batch_risk", table_name="batch_items")
     op.drop_index("ix_batch_items_batch_status", table_name="batch_items")
     op.drop_index("ix_batch_items_text_sha256", table_name="batch_items")
