@@ -9,6 +9,55 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-07 (later) — S8.4 PHASE B IS SPEC'D AND PLANNED. Documents
+  only; no `app/` code touched. `pytest -q` re-measured green at 1434 first.**
+  Spec `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`,
+  plan `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` (15 tasks).
+  **The tenancy analysis is a FIELD table, not a handler count** — that is the
+  method change Phase A's leak paid for, applied to the two new org-facing
+  response shapes (the queue and the summary).
+  **The load-bearing design decision: the queue read-model is built from
+  `batch_items` ALONE, so no `Report` is ever on the org-plane read path.** A
+  `Report` is a cross-corpus object — `resume_farm.matches[]` is exactly what
+  Phase A leaked — so a path that never holds one has nothing to forget to
+  redact. It is also the only shape that pages: `risk_score` is a real column,
+  where the same number inside `reports.body` JSON is dialect-specific and
+  unindexable.
+  **`ItemSignals` holds scalars only, and that is DPDP rather than style:**
+  `batch_items.candidate_id` is `SET NULL` (an erasure must not rewrite an org's
+  record of what it screened), so anything stored beside it **outlives the
+  person it describes** — and a copied `fabrication_risk.reasoning` can quote
+  claim text. The queue's one-line reason is **composed at read time** from the
+  scalars instead. A column that cannot hold personal data needs nobody to
+  remember anything.
+  **Three measurements changed decisions.** (1) **SQLite enforces an expression
+  index but does not reflect one** (`SAWarning: Skipped unsupported reflection
+  of expression-based index`), so the case-insensitive org-name fix ships as a
+  functional UNIQUE index — the database computes it, so both insert paths
+  inherit it with no new check — and the index guard gains a disclosed exemption
+  plus a *behavioural* test, strictly stronger than the metadata comparison.
+  (2) **38 of 82 operations return an untyped `dict`, not the 5 first claimed** —
+  and the first count was wrong in this sprint's own signature way: it looked
+  for `200`/`201` while the OTP routes answer `202`, i.e. it measured its own
+  assumption instead of the API. (3) **The `_IncludedRouter` trap S8.2 recorded
+  is still live and caught me mid-measurement** — a naive walk of `app.routes`
+  saw **1** route, not 82; the new `operation_id` loop ships with the recursion.
+  **A guard gets stronger as a side effect:** extracting the ingest core so the
+  batch processor and the upload route share one pipeline removes all five
+  `ALLOWLISTED_LINES` from the org-scope guard (every one was a line of
+  `_ingest_one`), taking the allowlist to **empty**, pinned by a test.
+  **One deliberate deviation from the parent spec, recorded not slipped:** §4.5
+  asked for cursors on `/jobs/{id}/match` and `/talent/search` as well; both
+  re-rank per request, so there is no stored key and a cursor would promise a
+  stability it cannot keep. They keep `limit` and say so in the schema.
+  **➤ NEXT STEP, IF YOU ARE A NEW SESSION: execute that plan.** Create branch
+  `s84b-screening-surface` off `main`, open
+  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` and work Task 1
+  onward — TDD, commit per task, `pytest -q` green before each commit. Its
+  "Global Constraints" and "Self-review notes" sections are the two to read
+  before touching code. (The full "Next action" bullet further down this file
+  says the same thing; this line is here because this file is long enough that
+  a first read is truncated before reaching it.)
 - **Session 2026-08-06/07 — S8.4 PHASE A (upload ownership) BUILT, REVIEWED and
   MERGED. 1377→1434 green, `smoke_s84a` 23/23 exit 0, all regression smokes
   green (s12, s13, s23, s41, s53 OK · s64 10/10 · s73 18/18 · s81 10/10 ·
@@ -762,10 +811,27 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 Phase A is MERGED (2026-08-07). Next is the S8.4
-  PHASE B spec + plan, then the TDD build.** Spec (already written, covers both
-  phases): `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`
-  §4. Phase B needs its own plan; Phase A's is
+- **Next action:** **S8.4 Phase B IS SPEC'D AND PLANNED (2026-08-07). Next is
+  the TDD BUILD** on branch `s84b-screening-surface`, subagent-driven with a
+  per-task review, then a whole-branch review before merge.
+  **Plan: `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`** — 15
+  tasks, in dependency order: config → schema → tables/`0019` → case-insensitive
+  org names → cursor codec → **ingest-core extraction** → store → service →
+  the seven routes → curation cursor → materialize + both 422 sites → comp
+  shape → OpenAPI (38 untyped responses) → smoke → docs.
+  **Spec: `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`**
+  — the delta on the 2026-08-05 spec §4, which still stands.
+  **The three things to carry into the build, all measured this session:**
+  (1) the queue reads `batch_items` only, so **no `Report` is ever on the
+  org-plane read path** — that is what makes Phase A's leak structurally
+  impossible here rather than merely handled; (2) **`ItemSignals` is scalars
+  only** — `batch_items.candidate_id` is `SET NULL`, so anything stored beside
+  it outlives the erasure, and the queue's one-line reason is therefore
+  *composed at read time*, never copied from the report; (3) the OpenAPI job is
+  **38 untyped `dict` responses, not 5** — the first count looked only at
+  `200`/`201` while the OTP routes answer `202`, which is the sprint's own
+  measure-your-assumption failure in miniature.
+  Phase A's plan, for reference:
   `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`.
   **⚠ CARRY INTO PHASE B — the method change Phase A paid for.** Phase A's
   cross-tenant leak got in because spec §3.4 enumerated the *handlers that read
@@ -1402,6 +1468,66 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-07 (later)** — **S8.4 PHASE B IS SPEC'D AND PLANNED. Documents only;
+  no `app/` code touched, `pytest -q` re-measured green at 1434 before writing.**
+  Spec: `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`
+  (the *delta* on top of the 2026-08-05 spec §4, which still stands).
+  Plan: `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` — 15 tasks.
+  **The tenancy section is written the way Phase A's failure says it must be:**
+  a FIELD table (spec §2) listing every field of every new org-facing response,
+  where the value came from, and what stops it naming somebody who is not this
+  customer's — not a count of handlers that read people, which is the method
+  that missed the ingest-response leak.
+  **The design decision that carries the sprint: the queue read-model is built
+  from `batch_items` ALONE — no `Report` is ever on the org-plane read path.**
+  Two reasons, and the second is why it is in the spec rather than the plan:
+  a `Report` is a *cross-corpus object* (`resume_farm.matches[]` is exactly what
+  Phase A leaked), so a read path that never holds one has nothing to forget to
+  redact — the leak becomes structurally impossible instead of correctly
+  handled. It is also the only shape that pages: `risk_score` is a real column
+  and therefore sortable, where the same number inside `reports.body` JSON is
+  dialect-specific and unindexable.
+  **The DPDP decision that fell out of it, and it refuses the obvious
+  implementation:** `UI.md` asks each queue row for "a one-line reason", and
+  copying `fabrication_risk.reasoning` onto the item is refused —
+  `batch_items.candidate_id` is `SET NULL` (so an erasure cannot rewrite an
+  org's record of what it screened), which means anything stored beside it
+  **outlives the person it describes**, and a reasoning string can quote claim
+  text. So `ItemSignals` is **scalars only** and the reason is **composed at
+  read time** from them. A column that cannot hold personal data needs nobody
+  to remember anything.
+  **Three measurements taken while designing, each of which changed a
+  decision:**
+  (1) **SQLite ENFORCES an expression index but does not REFLECT one**
+  (`SAWarning: Skipped unsupported reflection of expression-based index`;
+  `get_indexes()` returns `[]` while `INSERT 'acme'` after `'Acme'` raises
+  `IntegrityError`). So the case-insensitive org-name fix ships as a functional
+  UNIQUE index — the database computes it, so **both** existing insert paths
+  inherit it with no new check — and `test_migrated_indexes_match_orm` gains a
+  disclosed expression-index exemption plus a *behavioural* test, which is
+  strictly stronger than the metadata comparison it replaces.
+  (2) **38 of 82 operations return an untyped `dict`**, not the 5 the spec first
+  claimed. **The first count was wrong in the sprint's own signature way:** it
+  looked for a `200`/`201` response and reported "5 missing" — all five were the
+  OTP routes, which answer **202**. The check was measuring its own assumption
+  about status codes rather than the API. Nothing is missing; 38 are untyped,
+  which is a bigger and different job, and it is now Task 13.
+  (3) **The `_IncludedRouter` trap is still live and it caught me** — a naive
+  walk of `app.routes` while measuring the OpenAPI surface returned **1** route,
+  not 82. S8.2 recorded this exact trap; `app/main.py`'s new `operation_id` loop
+  therefore ships with the recursion, not a `for route in app.routes`.
+  **A guard gets STRONGER as a side effect:** extracting the ingest core to
+  `app/screening/ingest.py` (so the batch processor and the single-upload route
+  run one pipeline) removes all five `ALLOWLISTED_LINES` from
+  `tests/test_org_scope_guard.py`, because every one of them was a line of
+  `_ingest_one`. The allowlist goes to **empty** and a test pins it there.
+  **Deviation from the parent spec, recorded rather than silently taken:** §4.5
+  asked for the cursor on `POST /jobs/{id}/match` and `POST /talent/search` too.
+  Both **re-rank on every request**, so there is no stored key and an opaque
+  cursor would promise a stability it cannot keep. They keep `limit` and say so
+  in the schema; the cursor lands on the three lists whose order is stored.
+  **Next: execute the plan** — branch `s84b-screening-surface`, subagent-driven,
+  per-task review, then a whole-branch review before merge.
 - **2026-08-06/07** — **S8.4 Phase A built, reviewed and merged.** 1377→1434
   green, `smoke_s84a` 23/23, all regression smokes green. Plan
   `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`; built
