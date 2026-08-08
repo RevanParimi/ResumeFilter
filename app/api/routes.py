@@ -24,12 +24,10 @@ from app.auth.schema import (
 from app.auth.service import (
     ChallengeRefused, EmailUnavailableError, RegistrationRefused,
 )
-from app.candidates.extractor import extract_profile
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
-from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 from app.features import default_view, get_feature_registry
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
@@ -71,12 +69,12 @@ from app.verification.service import (
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
+from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 from app.screening.projection import redact_ingest_response_for_org
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
 from app.reports.schema import OutcomeLabel, OutcomeRecord
-from app.reports.store import SubjectErasedError
 
 
 def _services(request: Request) -> Services:
@@ -312,15 +310,16 @@ class CandidateCreateResponse(BaseModel):
 async def _ingest_one(
     req: CandidateCreateRequest, request: Request, *, org_id: Optional[str] = None
 ) -> CandidateCreateResponse:
-    """Upload → extract → store → (auto) depth-eval, for ONE resume.
+    """HTTP adapter over the ONE ingest core (app/screening/ingest.py).
 
     Shared by the admin route (no owner) and the org route (owner = caller).
-    Kept as one function on purpose: duplicating it would be the
-    one-rule-two-doors shape in the sprint that exists to eliminate it.
+    The pipeline itself moved out so the batch processor runs the same code:
+    duplicating it would be the one-rule-two-doors shape in the sprint that
+    exists to eliminate it.
     """
     services = _services(request)
-
     caps = services.settings
+
     if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
         raise HTTPException(
             status_code=422,
@@ -331,6 +330,8 @@ async def _ingest_one(
             status_code=422,
             detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
         )
+    # Kept in the route so the 422 detail stays byte-identical to what clients
+    # (and five smokes) already assert.
     try:
         get_domain(req.domain)
     except KeyError as exc:
@@ -344,67 +345,25 @@ async def _ingest_one(
             raise HTTPException(
                 status_code=422, detail=f"pdf_parse_failed: {exc}"
             ) from exc
-    text = (text or "").strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="empty_resume")
 
-    result = await extract_profile(text, llm=services.llm, settings=services.settings)
-    outcome = services.candidates.ingest(result, text, org_id=org_id)
-
-    # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
-    # comparison must exclude the uploader's own candidate (re-uploads and new
-    # versions are legitimate), and the graph deliberately never learns the
-    # candidate identity.
-    farm = ResumeFarmAssessment()  # insufficient_data when the text is too short
-    fp = fingerprint_text(text, services.settings)
-    if fp is not None:
-        services.candidates.save_fingerprint(
-            fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
+    try:
+        result = await ingest_resume(
+            ingest_deps(services), request.app.state.engine,
+            text=text or "", domain=req.domain, evaluate=req.evaluate, org_id=org_id,
         )
-        matches, corpus = services.candidates.similar_resumes(
-            fp,
-            exclude_candidate_id=outcome.candidate_id,
-            threshold=services.settings.rf_similar_threshold,
-            limit=services.settings.rf_max_matches,
-        )
-        farm = assess_resume_farm(
-            matches,
-            shingle_count=fp.shingle_count,
-            corpus_size=corpus,
-            settings=services.settings,
-        )
-
-    report: Optional[Report] = None
-    if req.evaluate:
-        report = await request.app.state.engine.evaluate(
-            resume_text=text,
-            domain=req.domain,
-            candidate_profile=result.profile,
-            resume_farm=farm,
-        )
-        report.candidate_id = outcome.candidate_id
-        # DPDP: a derived report must not outlive the erasure of its subject.
-        # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
-        # landing after the save cascades the row away — so both halves of this
-        # race are the database's job, not a compensating delete we remember.
-        try:
-            services.report_store.save(report, org_id=org_id)
-        except SubjectErasedError:
-            report = None
-        else:
-            if services.candidates.get_candidate(outcome.candidate_id) is None:
-                report = None
+    except IngestRefused as exc:
+        raise HTTPException(status_code=422, detail=exc.reason) from exc
 
     return CandidateCreateResponse(
-        candidate_id=outcome.candidate_id,
-        resume_id=outcome.resume_id,
-        resume_version=outcome.resume_version,
-        matched_existing=outcome.matched_existing,
-        matched_on=outcome.matched_on,
-        duplicate_resume=outcome.duplicate_resume,
-        extraction_method=result.method,
-        report=report,
-        resume_farm=farm,
+        candidate_id=result.candidate_id,
+        resume_id=result.resume_id,
+        resume_version=result.resume_version,
+        matched_existing=result.matched_existing,
+        matched_on=result.matched_on,
+        duplicate_resume=result.duplicate_resume,
+        extraction_method=result.extraction_method,
+        report=result.report,
+        resume_farm=result.resume_farm,
     )
 
 
