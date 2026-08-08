@@ -70,7 +70,11 @@ from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
+from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
+from app.screening.schema import (
+    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage,
+)
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
@@ -740,6 +744,172 @@ async def screening_candidate_reports(
     return _services(request).screening_scope.reports_for_candidate(
         org_id, candidate_id
     )
+
+
+# ── Screening batches (S8.4 Phase B) ─────────────────────────────────────────
+# The wedge at volume: register what you have, process it in bounded calls,
+# read a ranked queue. Registration is a row insert; PROCESSING is the slow
+# part and the client drives it, because there is no worker anywhere in app/
+# (spec §0.3) and 500 nine-node graph runs cannot happen inside one request.
+
+
+class BatchItemInput(BaseModel):
+    """Exactly one of resume_text / resume_pdf_b64 is required."""
+
+    resume_text: Optional[str] = None
+    resume_pdf_b64: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _need_one_source(self) -> "BatchItemInput":
+        if not (self.resume_text or self.resume_pdf_b64):
+            raise ValueError("Provide resume_text or resume_pdf_b64.")
+        return self
+
+
+class BatchCreateRequest(BaseModel):
+    name: str = ""
+    domain: str = "genai"
+    items: list[BatchItemInput] = Field(default_factory=list)
+
+
+class BatchDeleteResponse(BaseModel):
+    batch_id: str
+    deleted: bool
+
+
+def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
+    """Decode every item to text AT REGISTRATION -- cheap, deterministic, no LLM.
+
+    A corrupt file therefore fails immediately rather than 400 items later, and
+    it fails the WHOLE registration: a half-registered batch would leave the org
+    unable to tell which files made it in.
+    """
+    texts: list[str] = []
+    for i, item in enumerate(req.items):
+        if item.resume_text and len(item.resume_text) > caps.max_resume_chars:
+            raise HTTPException(
+                status_code=422,
+                detail=f"item {i}: resume_text exceeds max_resume_chars={caps.max_resume_chars}",
+            )
+        if item.resume_pdf_b64 and len(item.resume_pdf_b64) > caps.max_pdf_b64_chars:
+            raise HTTPException(
+                status_code=422,
+                detail=f"item {i}: resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
+            )
+        text = item.resume_text
+        if not text and item.resume_pdf_b64:
+            try:
+                text = pdf_b64_to_text(item.resume_pdf_b64)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"item {i}: pdf_parse_failed: {exc}"
+                ) from exc
+        texts.append(text or "")
+    return texts
+
+
+def _org_user_id(request: Request) -> Optional[str]:
+    """The human behind the call, or None for a machine credential."""
+    principal = getattr(request.state, "principal", None)
+    return getattr(principal, "org_user_id", None)
+
+
+@org_router.post("/screening/batches", response_model=BatchDetail)
+async def create_screening_batch(
+    req: BatchCreateRequest, request: Request, org_id: str = Depends(require_org)
+) -> BatchDetail:
+    services = _services(request)
+    texts = _batch_texts(req, services.settings)
+    try:
+        return services.screening.register(
+            org_id, name=req.name, domain=req.domain, texts=texts,
+            created_by_org_user_id=_org_user_id(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@org_router.get("/screening/batches", response_model=BatchPage)
+async def list_screening_batches(
+    request: Request,
+    org_id: str = Depends(require_org),
+    cursor: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> BatchPage:
+    try:
+        return _services(request).screening.list(org_id, cursor=cursor, limit=limit)
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@org_router.get("/screening/batches/{batch_id}", response_model=BatchDetail)
+async def get_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchDetail:
+    """404 -- never 403 -- for another org's batch."""
+    found = _services(request).screening.get(org_id, batch_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return found
+
+
+@org_router.post("/screening/batches/{batch_id}/process", response_model=ProcessResult)
+async def process_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> ProcessResult:
+    """Bounded by `screening_max_items_per_call`. Call it until `remaining` is 0.
+
+    An item whose claim goes stale becomes claimable again, so a batch
+    interrupted by a redeploy heals on the next call rather than wedging.
+    """
+    result = await _services(request).screening.process(
+        org_id, batch_id, engine=request.app.state.engine
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return result
+
+
+@org_router.get("/screening/batches/{batch_id}/queue", response_model=QueuePage)
+async def screening_batch_queue(
+    batch_id: str,
+    request: Request,
+    org_id: str = Depends(require_org),
+    cursor: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> QueuePage:
+    """The fraud-screen read-model: riskiest first, unscreened rows last."""
+    try:
+        page = _services(request).screening.queue(
+            org_id, batch_id, cursor=cursor, limit=limit
+        )
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return page
+
+
+@org_router.get("/screening/batches/{batch_id}/summary", response_model=BatchSummary)
+async def screening_batch_summary(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchSummary:
+    found = _services(request).screening.summary(org_id, batch_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return found
+
+
+@org_router.delete("/screening/batches/{batch_id}", response_model=BatchDeleteResponse)
+async def delete_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchDeleteResponse:
+    """A real delete path on a new table, shipped in the sprint that creates it
+    -- `batch_items.raw_text` is personal data with no candidate to cascade
+    from (spec §4.2)."""
+    if not _services(request).screening.delete(org_id, batch_id):
+        raise HTTPException(status_code=404, detail="batch not found")
+    return BatchDeleteResponse(batch_id=batch_id, deleted=True)
 
 
 class RecordSubmitRequest(BaseModel):

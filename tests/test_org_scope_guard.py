@@ -94,8 +94,12 @@ from tests.test_route_table_guard import _resolvers_on, _walk
 #: an unrelated object can't trip this.
 WATCHED_ATTRS = ("report_store", "candidates")
 
-#: The sanctioned door.
-SCOPED_ATTR = "screening_scope"
+#: The sanctioned doors. Both take org_id as the first argument of every method
+#: and neither exposes an unscoped read: `screening_scope` (Phase A, reports and
+#: candidates) and `screening` (Phase B, batches). The batch STORE is
+#: deliberately not on `Services` at all, so there is nothing unscoped for a
+#: handler to reach in the first place.
+SCOPED_ATTRS = ("screening_scope", "screening")
 
 #: The conventional receiver name, always in the set even when the source never
 #: spells the assignment out (e.g. an inline ``_services(request).X``).
@@ -193,8 +197,13 @@ def _forbidden_res(receivers: set[str]) -> list[tuple[str, re.Pattern[str]]]:
 
 def _sanctioned_re(receivers: set[str]) -> re.Pattern[str]:
     alt = _receiver_alternation(receivers)
+    # `screening_scope` FIRST in the alternation: `screening` alone would match
+    # its prefix, and while the trailing \b happens to save us today (`_` is a
+    # word character), depending on that is exactly the kind of accident that
+    # turns a guard off without anyone noticing.
+    doors = "|".join(sorted(SCOPED_ATTRS, key=len, reverse=True))
     return re.compile(
-        rf"\b(?:{alt})\.{SCOPED_ATTR}\b|_services\(request\)\.{SCOPED_ATTR}\b"
+        rf"\b(?:{alt})\.(?:{doors})\b|_services\(request\)\.(?:{doors})\b"
     )
 
 #: EMPTY, and that is the point (S8.4 Phase B, Task 6). Every entry here was a
@@ -530,3 +539,12 @@ def test_the_guard_has_no_exemptions():
     """If a line ever needs allowlisting again, this test is where a reviewer is
     forced to look at the reason."""
     assert ALLOWLISTED_LINES == {}
+
+
+def test_the_batch_store_is_not_reachable_from_the_services_container():
+    """Structural, not stylistic: a handler cannot forget to scope a read it
+    has no way to perform."""
+    from app.services import Services
+
+    assert "screening_store" not in Services.__dataclass_fields__
+    assert not hasattr(Services, "batches")
