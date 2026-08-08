@@ -1,6 +1,7 @@
-"""Org-facing screening surface (S8.4).
+"""Screening batches: the surface the fraud-screen wedge is sold on (S8.4 Phase B).
 
-Phase A ships the tenancy pieces: ``projection`` (the one redaction) and
-``scope`` (the one door org handlers read through). Phase B adds the batch
-model and the fraud-screen read-model on top.
+An organisation registers a batch of resumes, drives bounded processing calls,
+and reads a ranked queue plus a roll-up summary. Every read here is org-scoped
+by construction -- see ``store.ScreeningStore``, whose every method takes
+``org_id`` first, and ``TENANCY.md``.
 """
