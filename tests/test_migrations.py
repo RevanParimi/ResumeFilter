@@ -116,13 +116,17 @@ REPORT_TABLES = ("reports", "outcomes")  # S8.1 — reports CASCADE from candida
 # login_challenges deliberately has no FK (no principal exists at signup).
 AUTH_TABLES = ("org_users", "admin_users", "auth_sessions", "login_challenges")
 
+# S8.4 Phase B — batches CASCADE from the org; the three subject pointers on
+# items SET NULL so an erasure cannot rewrite an org's screening record.
+SCREENING_TABLES = ("screening_batches", "batch_items")
+
 
 def test_migrated_indexes_match_orm(tmp_path):
     """Every index the ORM declares on a ledger table exists in the migrated
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -179,7 +183,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():

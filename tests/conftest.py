@@ -24,6 +24,11 @@ import app.curation.models  # noqa: F401 — populate Base.metadata with the cur
 import app.verification.models  # noqa: F401 — populate Base.metadata with verification tables
 import app.interview.models  # noqa: F401 — populate Base.metadata with interview tables
 import app.reports.models  # noqa: F401 — populate Base.metadata with report tables
+# Auth tables reached Base.metadata only via a lazy import inside the `services`
+# fixture; screening_batches has an FK to org_users, which must therefore be in
+# metadata BEFORE that module is imported. Explicit here, like every other row.
+import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
+import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow
