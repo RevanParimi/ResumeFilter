@@ -282,3 +282,12 @@ log_level: "INFO"
 log_json: true                      # true = JSON logs (prod); false = console (dev)
 env: "local"                        # local | staging | prod
 db_migrate_on_boot: true            # `alembic upgrade head` at startup (S8.1)
+
+# --- Screening batches (PI-8, S8.4 Phase B) ----------------------------------
+screening_max_batch_items: 500          # registration is cheap; a sanity bound
+screening_max_items_per_call: 5         # each item is a full nine-node graph run
+screening_claim_timeout_seconds: 900    # a 'processing' item older than this reads pending
+ret_batch_item_days: 90                 # unprocessed item text; S8.3 sweep input
+page_default_limit: 50
+page_max_limit: 200
+materialize_max_candidates: 1000        # bound on POST /features/materialize

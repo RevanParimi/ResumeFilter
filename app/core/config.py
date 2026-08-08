@@ -205,6 +205,29 @@ class Settings(BaseSettings):
     speech_timeout_seconds: int = Field(default=60, ge=1)
     speech_max_retries: int = Field(default=2, ge=0)
 
+    # --- Screening batches (PI-8, S8.4 Phase B) -------------------------------
+    # Registration is a row insert, so the batch bound is a sanity limit rather
+    # than a performance one. The per-call bound is the real cost control: each
+    # item is a full nine-node graph run, and there is no worker -- the client
+    # drives processing a few items at a time (spec §0.3).
+    screening_max_batch_items: int = Field(default=500, ge=1)
+    screening_max_items_per_call: int = Field(default=5, ge=1)
+    # An item still 'processing' after this reads as pending again, so a batch
+    # interrupted by a redeploy heals itself instead of wedging (spec §4.4).
+    screening_claim_timeout_seconds: int = Field(default=900, ge=1)
+    # Unprocessed item text. Declared here, swept by S8.3 -- the window is a
+    # posture, and the honest statement is that nothing deletes on it yet.
+    ret_batch_item_days: int = Field(default=90, ge=1)
+
+    # --- Cursor pagination (PI-8, S8.4 Phase B) -------------------------------
+    page_default_limit: int = Field(default=50, ge=1)
+    page_max_limit: int = Field(default=200, ge=1)
+
+    # --- Feature materialization (PI-8, S8.4 Phase B) -------------------------
+    # Bound on the admin materialize route when it is called with no explicit
+    # candidate list.
+    materialize_max_candidates: int = Field(default=1000, ge=1)
+
     # --- Vector store (ChromaDB) ----------------------------------------------
     # Chroma's PersistentClient can hang (not raise) on some machines; startup
     # gives it this long, then degrades to the in-memory store (grounding is
