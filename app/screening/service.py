@@ -180,7 +180,8 @@ class ScreeningService:
                     evaluate=True, org_id=org_id,
                 )
             except IngestRefused as exc:
-                self._store.fail(item.id, error=exc.reason, at=self._now())
+                self._store.fail(item.id, lease=item.claimed_at,
+                                 error=exc.reason, at=self._now())
                 failed += 1
                 continue
             except Exception as exc:  # noqa: BLE001 - deliberately broad, see below
@@ -188,13 +189,15 @@ class ScreeningService:
                 # is a closed vocabulary, and an exception message can quote the
                 # input that caused it.
                 log.error("batch_item_failed", item_id=item.id, error=repr(exc))
-                self._store.fail(item.id, error="internal_error", at=self._now())
+                self._store.fail(item.id, lease=item.claimed_at,
+                                 error="internal_error", at=self._now())
                 failed += 1
                 continue
 
             report = result.report
             self._store.complete(
                 item.id,
+                lease=item.claimed_at,
                 candidate_id=result.candidate_id,
                 resume_id=result.resume_id,
                 report_id=report.id if report is not None else None,

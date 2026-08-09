@@ -66,6 +66,9 @@ class ClaimedItem:
     id: str
     raw_text: str
     domain: str
+    #: The lease. `complete`/`fail` only land while the row still carries this
+    #: exact claim -- a claimant that outlived the timeout writes back nothing.
+    claimed_at: datetime
 
 
 def _signals_of(row: BatchItemRow) -> Optional[ItemSignals]:
@@ -185,7 +188,9 @@ class ScreeningStore:
             order = {item_id: i for i, item_id in enumerate(claimed)}
             rows = sorted(rows, key=lambda r: order[r.id])
             return [
-                ClaimedItem(id=r.id, raw_text=r.raw_text, domain=domain)
+                ClaimedItem(
+                    id=r.id, raw_text=r.raw_text, domain=domain, claimed_at=now
+                )
                 for r in rows
             ]
 
@@ -226,23 +231,43 @@ class ScreeningStore:
             ),
         )
 
+    def _holds_lease(self, item_id: str, lease: datetime):
+        """WHERE clause: the row still carries THIS claim.
+
+        `claim` re-asserts claimability before taking an item; this is the
+        matching guard on the way back out. A claimant that outlived
+        ``claim_timeout_seconds`` loses the row to the next claim, and its
+        late write-back must be discarded rather than landing on top of the
+        live claimant's result -- the same race, one step later.
+        """
+        return and_(
+            BatchItemRow.id == item_id,
+            BatchItemRow.status == ItemStatus.PROCESSING.value,
+            BatchItemRow.claimed_at == lease,
+        )
+
     def complete(
         self,
         item_id: str,
         *,
+        lease: datetime,
         candidate_id: Optional[str],
         resume_id: Optional[str],
         report_id: Optional[str],
         risk_score: Optional[float],
         signals: ItemSignals,
         at: datetime,
-    ) -> None:
+    ) -> bool:
         """Success. CLEARS ``raw_text``: the text now lives in ``resumes``,
-        where candidate erasure already cascades (spec §4.2)."""
+        where candidate erasure already cascades (spec §4.2).
+
+        False when the lease was lost (or the batch deleted) -- the caller's
+        work is discarded, because somebody else now owns the row's truth.
+        """
         with self._session_factory() as s:
-            s.execute(
+            res = s.execute(
                 update(BatchItemRow)
-                .where(BatchItemRow.id == item_id)
+                .where(self._holds_lease(item_id, lease))
                 .values(
                     status=ItemStatus.DONE.value,
                     raw_text="",
@@ -256,14 +281,18 @@ class ScreeningStore:
                 )
             )
             s.commit()
+            if res.rowcount != 1:
+                log.warning("lost_claim_lease", item_id=item_id, outcome="complete")
+                return False
+            return True
 
-    def fail(self, item_id: str, *, error: str, at: datetime) -> None:
-        """Failure KEEPS ``raw_text`` -- the org must be able to retry, and
-        failure is not a reason to destroy the input."""
+    def fail(self, item_id: str, *, lease: datetime, error: str, at: datetime) -> bool:
+        """Failure KEEPS ``raw_text`` -- see SCREENING.md §7 on what that does
+        and does not buy today. Lease-checked exactly like `complete`."""
         with self._session_factory() as s:
-            s.execute(
+            res = s.execute(
                 update(BatchItemRow)
-                .where(BatchItemRow.id == item_id)
+                .where(self._holds_lease(item_id, lease))
                 .values(
                     status=ItemStatus.FAILED.value,
                     error=error[:64],
@@ -271,6 +300,10 @@ class ScreeningStore:
                 )
             )
             s.commit()
+            if res.rowcount != 1:
+                log.warning("lost_claim_lease", item_id=item_id, outcome="fail")
+                return False
+            return True
 
     def delete_batch(self, org_id: str, batch_id: str) -> bool:
         """Delete the batch, its items and their text. Items CASCADE."""

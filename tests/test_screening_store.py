@@ -92,7 +92,8 @@ def test_complete_clears_the_text_and_stamps_the_signals(store, services):
     bid = store.create_batch(org, name="x", domain="genai",
                              created_by_org_user_id=None, texts=["one"])
     item = store.claim(org, bid, limit=1, now=NOW, timeout_seconds=900)[0]
-    store.complete(item.id, candidate_id=None, resume_id=None, report_id=None,
+    store.complete(item.id, lease=item.claimed_at, candidate_id=None,
+                   resume_id=None, report_id=None,
                    risk_score=0.8, signals=ItemSignals(risk_confidence=0.5), at=NOW)
 
     rows = store.all_items(org, bid, now=NOW)
@@ -109,7 +110,7 @@ def test_fail_keeps_the_text_so_the_org_can_retry(store, services):
     bid = store.create_batch(org, name="x", domain="genai",
                              created_by_org_user_id=None, texts=["one"])
     item = store.claim(org, bid, limit=1, now=NOW, timeout_seconds=900)[0]
-    store.fail(item.id, error="empty_resume", at=NOW)
+    store.fail(item.id, lease=item.claimed_at, error="empty_resume", at=NOW)
 
     rows = store.all_items(org, bid, now=NOW)
     assert rows[0].status is ItemStatus.FAILED
@@ -127,7 +128,8 @@ def test_unreadable_signals_degrade_to_none_rather_than_raising(store, services)
     bid = store.create_batch(org, name="x", domain="genai",
                              created_by_org_user_id=None, texts=["one"])
     item = store.claim(org, bid, limit=1, now=NOW, timeout_seconds=900)[0]
-    store.complete(item.id, candidate_id=None, resume_id=None, report_id=None,
+    store.complete(item.id, lease=item.claimed_at, candidate_id=None,
+                   resume_id=None, report_id=None,
                    risk_score=0.4, signals=ItemSignals(), at=NOW)
     with services.candidates._session_factory() as s:
         s.execute(update(BatchItemRow).where(BatchItemRow.id == item.id)
@@ -145,9 +147,11 @@ def test_the_queue_is_ranked_by_risk_with_unscored_items_last(store, services):
                              created_by_org_user_id=None,
                              texts=["a", "b", "c"])
     claimed = store.claim(org, bid, limit=2, now=NOW, timeout_seconds=900)
-    store.complete(claimed[0].id, candidate_id=None, resume_id=None, report_id=None,
+    store.complete(claimed[0].id, lease=claimed[0].claimed_at, candidate_id=None,
+                   resume_id=None, report_id=None,
                    risk_score=0.3, signals=ItemSignals(), at=NOW)
-    store.complete(claimed[1].id, candidate_id=None, resume_id=None, report_id=None,
+    store.complete(claimed[1].id, lease=claimed[1].claimed_at, candidate_id=None,
+                   resume_id=None, report_id=None,
                    risk_score=0.9, signals=ItemSignals(), at=NOW)
 
     rows, _ = store.queue_page(org, bid, cursor=None, limit=10, now=NOW)
@@ -162,7 +166,8 @@ def test_paging_across_an_insert_neither_skips_nor_duplicates(store, services):
                              created_by_org_user_id=None, texts=["a", "b", "c"])
     items = store.claim(org, bid, limit=3, now=NOW, timeout_seconds=900)
     for item, score in zip(items, (0.9, 0.6, 0.3)):
-        store.complete(item.id, candidate_id=None, resume_id=None, report_id=None,
+        store.complete(item.id, lease=item.claimed_at, candidate_id=None,
+                       resume_id=None, report_id=None,
                        risk_score=score, signals=ItemSignals(), at=NOW)
 
     first, cursor = store.queue_page(org, bid, cursor=None, limit=2, now=NOW)
@@ -216,6 +221,47 @@ def test_list_batches_is_newest_first_and_pages(store, services):
     assert len(page) == 2 and cursor is not None
     rest, _ = store.list_batches(org, cursor=cursor, limit=10)
     assert {b.id for b in page} | {b.id for b in rest} == set(ids)
+
+
+def test_a_lost_lease_cannot_overwrite_the_winners_result(store, services):
+    """The claim's race-safety, one step later. Claim call A blows past the
+    timeout mid-run (five slow graph runs), B legitimately re-claims the item
+    and completes it. A then finishes and writes back.
+
+    Without a lease check, A's late `fail` lands on top of B's result: status
+    FAILED and an error code beside B's risk_score and signals, with raw_text
+    already cleared -- a contradictory row the org can neither trust nor
+    retry. The claim was conditional; the write-back must be too.
+    """
+    org = _org(services)
+    bid = store.create_batch(org, name="x", domain="genai",
+                             created_by_org_user_id=None, texts=["only one"])
+    a = store.claim(org, bid, limit=1, now=NOW, timeout_seconds=900)[0]
+
+    later = NOW + timedelta(seconds=901)
+    b = store.claim(org, bid, limit=1, now=later, timeout_seconds=900)[0]
+    assert b.id == a.id, "the stale claim was re-claimable"
+
+    # A writes back while B still HOLDS the row. The row's status is still
+    # `processing`, so ONLY the lease clause can refuse this -- the assertion
+    # that kills the mutant deleting `claimed_at == lease` from the WHERE.
+    assert store.fail(a.id, lease=a.claimed_at, error="internal_error",
+                      at=later) is False
+
+    assert store.complete(
+        b.id, lease=b.claimed_at, candidate_id=None, resume_id=None,
+        report_id=None, risk_score=0.7, signals=ItemSignals(), at=later,
+    ) is True
+
+    assert store.complete(
+        a.id, lease=a.claimed_at, candidate_id=None, resume_id=None,
+        report_id=None, risk_score=0.2, signals=ItemSignals(), at=later,
+    ) is False
+
+    row = store.all_items(org, bid, now=later)[0]
+    assert row.status is ItemStatus.DONE
+    assert row.risk_score == 0.7, "the live claimant's result stands"
+    assert row.error is None
 
 
 def test_the_conditional_update_refuses_an_item_claimed_since_the_select(store, services):
