@@ -81,6 +81,21 @@ def test_materialize_accepts_an_explicit_candidate_list(services, genuine_resume
         assert unknown.json()["materialized"] == 0 and unknown.json()["skipped"] == 1
 
 
+def test_an_unknown_view_name_is_refused_not_echoed(services):
+    """The route accepted any view_name, materialized the DEFAULT view anyway,
+    and echoed the caller's name back -- a response that says it did something
+    it did not do."""
+    with _client(services) as c:
+        r = c.post("/features/materialize", json={"view_name": "not_a_view"})
+        assert r.status_code == 422
+        assert "not_a_view" in str(r.json()["detail"])
+
+        ok = c.post("/features/materialize",
+                    json={"view_name": services.settings.feat_default_view})
+        assert ok.status_code == 200
+        assert ok.json()["view_name"] == services.settings.feat_default_view
+
+
 def test_materialize_is_admin_only(services):
     _, key = _org_key(services)
     with _client(services) as c:

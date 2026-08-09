@@ -1961,7 +1961,14 @@ async def materialize_features(
     services = _services(request)
     registry = get_feature_registry()
     view = default_view(registry, settings=services.settings)
-    view_name = body.view_name or services.settings.feat_default_view
+    # Only the default view exists today. Refusing an unknown name is honest;
+    # accepting it, materializing the default anyway and echoing the caller's
+    # name back was a response claiming work that never happened.
+    if body.view_name is not None and body.view_name != view.name:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown view '{body.view_name}'; only '{view.name}' exists",
+        )
 
     ids = body.candidate_ids
     if ids is None:
@@ -1985,7 +1992,7 @@ async def materialize_features(
         materialized += 1
 
     return MaterializeResponse(
-        view_name=view_name, view_version=view.version, as_of=body.as_of,
+        view_name=view.name, view_version=view.version, as_of=body.as_of,
         materialized=materialized, skipped=skipped,
     )
 
