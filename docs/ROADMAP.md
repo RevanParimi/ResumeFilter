@@ -9,6 +9,104 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-08/09 — S8.4 PHASE B (screening surface) BUILT and GREEN on
+  branch `s84b-screening-surface`. 1434→1542 green, `smoke_s84b` 16/16 exit 0,
+  and ALL SIXTEEN smokes green (s12, s13, s23, s41, s51, s52, s53, s63, s64,
+  s71, s72, s73, s81, s82, s84a, s84b).** Plan:
+  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`, all 15 tasks,
+  TDD with a commit per task. **NOT YET REVIEWED OR MERGED — that is the next
+  action.**
+  **The wedge now works at volume, without an operator.** An organisation
+  registers a batch, drives bounded processing calls, and reads a ranked,
+  reasoned risk queue plus a screenshot-able roll-up: migration
+  `0019_screening_batches` (two tables), a new package `app/screening/`
+  (`schema` · `pagination` · `models` · `store` · `ingest` · `service`), seven
+  org-plane routes, and `SCREENING.md`.
+  **The load-bearing decision held all the way down: the queue read-model is
+  built from `batch_items` ALONE, so no `Report` is ever on the org read path.**
+  A `Report` is the cross-corpus object whose `resume_farm.matches[]` leaked in
+  Phase A — a path that never holds one has nothing to forget to redact, which
+  is strictly stronger than redacting correctly. Proven where it counts: the
+  service test and `smoke_s84b` both assert it **on a batch whose report
+  genuinely HAS farm matches**, seeded from a second organisation.
+  **`ItemSignals` holds scalars only, and the test asserts the field set BY
+  NAME** — so adding a prose field fails until somebody justifies it in writing.
+  The DPDP argument, not style: `batch_items.candidate_id` is `SET NULL`, so
+  anything stored beside it outlives the person it describes. The queue's
+  one-line `reason` is composed at read time from the scalars instead.
+  **⚠ TWO MUTANTS SURVIVED THE FIRST MUTATION PASS ON THE CLAIM, and the reason
+  generalises.** Deleting the conditional UPDATE's `WHERE` clause, and relaxing
+  `rowcount == 1` to `>= 0`, both survived every test — because the race they
+  defend against is **unreachable through two sequential `claim` calls**: the
+  second call's own SELECT filters the row out long before the UPDATE would.
+  This is S8.2's lesson exactly ("a fake that cannot enforce an invariant will
+  hide it", and its two-challenge test that had to drive the store directly).
+  Fixed by extracting `_try_claim` as a seam and building the interleaved state
+  in a test; both mutants now die naming that test. The other four mutants —
+  the stale branch, and the org filter on `claim`/`queue_page` — died first
+  time.
+  **⚠ THE PLAN CONTRADICTED ITSELF ON `derive_status`, and the test table was
+  right.** Its implementation snippet checked `pending` before `processing`, so
+  `pending=1, processing=1` would read `pending` while its own parametrize table
+  expected `processing`. Shipped processing-first: an item genuinely in flight
+  is the more informative fact, and a batch reporting `pending` while a call was
+  actively screening it would make the UI's poll look like a stall.
+  **⚠ THE `operation_id` LOOP HAD TO RUN LAST IN `create_app`, and the contract
+  test is what caught it.** `GET /` and `GET /healthz` are registered *after*
+  the `include_router` calls, so the loop placed beside those calls — where the
+  plan put it — silently missed both. Same family as S8.2's `_IncludedRouter`
+  trap: a pass that inspects less than it appears to.
+  **The OpenAPI measurement held exactly: 38 of 90 operations advertised
+  `{"type":"object","additionalProperties":true}`.** All 38 are now modelled and
+  the full suite passed with **no test changing a value**, which is the evidence
+  that nothing was reshaped. Two of the plan's guesses were wrong and were read
+  off the code instead: `_ACCEPTED` is `{"status": "accepted"}`, not
+  `{"accepted": true}`, and the requisition field is `must_have_skills`, not
+  `skills`. The three shared helpers now RETURN their models rather than dicts
+  FastAPI would coerce, so the annotations are true at the Python level too.
+  **A guard got stronger as a side effect, and the honest version of the claim
+  is narrower than it looks.** Extracting the ingest core to
+  `app/screening/ingest.py` moved all five `ALLOWLISTED_LINES` out of
+  `routes.py`, taking the scope guard's allowlist to **empty** (pinned by a
+  test). What that buys is not better *seeing* — those five lines were waved
+  through anyway — but the removal of dead content-keyed exemptions that would
+  one day match an unrelated future line. `screening` joins `screening_scope` as
+  a sanctioned door, ordered longest-first so the shorter name cannot shadow the
+  longer one, and the guard was **re-proven non-vacuous**: a planted org-plane
+  `_guard_probe` reading `report_store` turned it RED naming the route and the
+  attribute; removing it returned GREEN.
+  **⚠ THE SMOKE FOUND TWO THINGS A UNIT TEST COULD NOT.** (1) A single HTTP
+  client that signs up and then calls with `X-Org-Key` **still holds a session
+  cookie**, so CSRF — which keys on how the principal was established, not on
+  which header arrived (S8.2) — refused every POST with 403. That is the rule
+  working; org onboarding moved into throwaway cookie jars, because a machine
+  client has no cookies. (2) "A stolen cursor returns nothing" was the **wrong
+  assertion**: by that point org B owns a batch of its own, and a page
+  containing B's own work is correct. The check now asserts what a leak would
+  actually break — none of A's batch ids appear in B's page.
+  **Case-insensitive org names ship at the CONSTRAINT** (`uq_organizations_name_ci`
+  on `lower(name)`), so both insert paths inherit it with no new check. The
+  measurement Phase A predicted held: SQLite **enforces** an expression index
+  and does not **reflect** one, so the index guard skips expression indexes with
+  the measurement written into it and a behavioural test proves enforcement
+  instead — strictly stronger, since the metadata comparison never established
+  that any index was *enforced*. `0019` **refuses to run** over existing
+  case-collisions rather than picking a winner on a customer's behalf.
+  **`smoke_s63` was making live billed calls** — it was never on the list of
+  nine smokes Phase A pinned, and it ingests through the extractor. Now pinned.
+  That is the same trap for the third sprint running.
+  **Two deliberate contract breaks, both on endpoints the wired UI does not
+  call:** `GET /curation/skills/unmapped` now answers `UnmappedPage{terms,
+  next_cursor}` (its sort key is *mutable*, so paging is stable against inserts
+  and not against re-observation — stated in the model docstring, not
+  discovered), and `POST /comp/estimate` now answers `CompBenchmark`, matching
+  `GET /jobs/{id}/comp`. The frontend's central unwrap (`compRaw.estimate ||
+  compRaw`) already handled both; only its now-stale comment changed.
+  **Both former 422 sites became 200 with `reason`, in one commit** — fixing one
+  entry point and leaving the other is this repo's signature defect, so
+  `match_job` and `job_board` moved together.
+  **➤ NEXT STEP: review the branch, then merge.** Nothing is on `main` yet.
+
 - **Session 2026-08-07 (later) — S8.4 PHASE B IS SPEC'D AND PLANNED. Documents
   only; no `app/` code touched. `pytest -q` re-measured green at 1434 first.**
   Spec `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`,
@@ -811,277 +909,37 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 Phase B IS SPEC'D AND PLANNED (2026-08-07). Next is
-  the TDD BUILD** on branch `s84b-screening-surface`, subagent-driven with a
-  per-task review, then a whole-branch review before merge.
-  **Plan: `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`** — 15
-  tasks, in dependency order: config → schema → tables/`0019` → case-insensitive
-  org names → cursor codec → **ingest-core extraction** → store → service →
-  the seven routes → curation cursor → materialize + both 422 sites → comp
-  shape → OpenAPI (38 untyped responses) → smoke → docs.
-  **Spec: `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`**
-  — the delta on the 2026-08-05 spec §4, which still stands.
-  **The three things to carry into the build, all measured this session:**
-  (1) the queue reads `batch_items` only, so **no `Report` is ever on the
-  org-plane read path** — that is what makes Phase A's leak structurally
-  impossible here rather than merely handled; (2) **`ItemSignals` is scalars
-  only** — `batch_items.candidate_id` is `SET NULL`, so anything stored beside
-  it outlives the erasure, and the queue's one-line reason is therefore
-  *composed at read time*, never copied from the report; (3) the OpenAPI job is
-  **38 untyped `dict` responses, not 5** — the first count looked only at
-  `200`/`201` while the OTP routes answer `202`, which is the sprint's own
-  measure-your-assumption failure in miniature.
+- **Next action:** **S8.4 Phase B IS BUILT AND GREEN on branch
+  `s84b-screening-surface` (2026-08-08/09) — 1434→1542 green, `smoke_s84b`
+  16/16, all sixteen smokes green. NOTHING IS ON `main` YET. Next is the
+  WHOLE-BRANCH REVIEW, then merge.**
+  All 15 plan tasks are done, TDD, one commit per task; the plan file records
+  what each was. Read the "Current state" entry above before reviewing — it
+  names the six things this build measured that the plan did not predict,
+  including two mutation-test survivors on the claim and an `operation_id` pass
+  that silently skipped two routes.
+  **Where to look hardest in review, in order:**
+  (1) **`app/screening/store.py`'s claim** — a conditional UPDATE whose race is
+  unreachable through the public API, so it has a deliberate `_try_claim` seam
+  and a test that builds the interleaved state directly. Mutation testing found
+  two survivors here before that seam existed.
+  (2) **The org-plane FIELD table** — Phase A's leak got in through a response
+  field nobody enumerated. The new org-facing shapes are `QueueRow`,
+  `BatchSummary`, `BatchDetail`/`BatchView` and `ProcessResult`; check each
+  field's provenance, not each handler.
+  (3) **The 38 newly-modelled responses** — a model that drops a field is a
+  silent API break, and the suite passing is evidence but not proof for
+  responses no test asserts on in full.
+  (4) **`0019`'s org-name index** — the collision refusal runs on every deploy
+  and raises `RuntimeError`; confirm that is the behaviour wanted on a live
+  database rather than a failed boot nobody expected.
+  **Deferred out of Phase B, deliberately:** `ret_batch_item_days` is declared
+  and **nothing sweeps on it** (S8.3); there is still **no rate limiting**, so
+  `POST .../process` is bounded per call but not per caller; and no cross-batch
+  queue exists. All three are stated in `SCREENING.md` §7–8 rather than implied.
   Phase A's plan, for reference:
-  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`.
-  **⚠ CARRY INTO PHASE B — the method change Phase A paid for.** Phase A's
-  cross-tenant leak got in because spec §3.4 enumerated the *handlers that read
-  people* and concluded there were two; the third reader was the **ingest
-  response**, which returns a report without reading one. **Phase B's tenancy
-  section must be written as "for each org-plane response FIELD, where did this
-  value come from" rather than "which handlers read people."** The queue
-  read-model and the summary are both new org-facing response shapes, which is
-  exactly where this recurs.
-  **Three Phase-A carry-overs that are now Phase B's:** (1) **org names are
-  compared case-sensitively**, and making the check case-insensitive without a
-  matching case-insensitive UNIQUE INDEX would create a *new* signup lockout —
-  it needs a migration, so it rides `0019`; (2) `resumes` can now hold multiple
-  rows with one `text_sha256` (one per owning org) — the queue read-model must
-  not assume otherwise; (3) `OrgScopedReads.owns_candidate` ships and is
-  **correct but unused** — Phase B's queue is its first real consumer, so a
-  join-table model (`resume_uploads`) should be considered there rather than
-  bolted on later.
-  **Phase B is the screening surface:** migration
-  `0019_screening_batches` · register/process/queue/summary/delete · cursor
-  pagination · the materialization route · both 422 sites · comp's single shape ·
-  OpenAPI. Two branches, two reviews, two merges — because a new
-  security-relevant invariant should not share a diff with pagination polish.
-  **The four wiring-session defects are folded into spec §2** and are no longer
-  a loose list: the `org_name_taken` lockout is fixed at **both** doors (a 409 at
-  signup before any code is sent, plus a distinct refusal at verify) without
-  re-opening enumeration — the protected property is "does this ADDRESS have an
-  account", and an org *name* is not secret. **Deliberately carried past S8.4:**
-  org-plane `POST /evaluate` and `POST /talent/search` — `/evaluate` is
-  candidate-less so there is no owner to stamp, and talent search is a
-  cross-corpus read wanting its own tenancy decision (spec §8).
-  It was pulled ahead so the external UI is designed against endpoints that
-  actually work rather than 501 stubs, and so the wedge demo exists mid-PI,
-  which is the mitigation GTM §7 named for the whole-platform scope.
-  **Carry into S8.4:** the route-table guard means a new route must depend on
-  one of the four resolvers or the build fails — batch upload and the
-  fraud-screen read-model are org-plane routes, so `require_org`. And **S8.4 is
-  the last sprint before the UI**, so anything the UI needs and does not get here
-  becomes an integration rewrite.
-  **Carry into S8.3 (now after the UI):** rate limiting is the one genuinely
-  outstanding safety item — the OTP surface has per-challenge caps and cooldowns
-  but no per-email/per-IP limits, and on the candidate plane any address can be
-  mailed a code (a mail-bombing vector). It lands before the deploy, which is
-  fine **only while the deploy stays last**.
-  **The Railway project was deleted by the user** — nothing in the repo depends
-  on it (`DEE_TEST_DB_URL` is opt-in and unset by default; CI brings its own
-  Postgres via a `postgres:18` service container). The repo stays
-  **deploy-ready**: `railway.json` + a README `## Deploy` section, one command
-  whenever the UI is ready.
-  **Carry into S8.2, from the S8.1 build:** the boot guard
-  (`app/core/boot.py::verify_launch_config`) is the natural home for any further
-  launch-time refusal — CORS misconfiguration is the obvious next candidate; and
-  **PI-8's highest regression risk is still ahead** (§3, §4.7): sessions add a
-  SECOND entry point to every plane, so every existing authorization test needs a
-  session-mode twin or v2 §6's one-entry-point bug ships a fifth time.
-  **PI-8 design:** `docs/superpowers/specs/2026-08-01-pi8-launch-readiness-design.md`.
-  **S8.1 spec + plan:** `docs/superpowers/specs/2026-08-01-s81-deployable-spine-design.md`
-  · `docs/superpowers/plans/2026-08-01-s81-deployable-spine.md`.
-  The PI-level design fixes the
-  cross-sprint decisions; each S8.x still gets its own spec before it is built.
-  **⚠ FOUND WHILE DESIGNING, AND IT IS LIVE ON MAIN:
-  `require_api_key` (`app/api/routes.py:76-82`) FAILS OPEN** — with
-  `DEE_API_AUTH_KEY` unset, **all 27 admin endpoints are public**, including
-  `POST /candidates/{id}/auth-key` (mints any candidate's key = full
-  impersonation of a data principal) and `POST /ledger/orgs`. Correct for local
-  dev, catastrophic on deploy, and triggered by a forgotten env var rather than
-  an attack. **It is the house fail-open shape for the FOURTH time** (S7.1
-  `start()`, S7.2 identity route, S7.3 audio path). S8.1 makes the app **refuse
-  to boot** without an admin credential; **no config knob restores the old
-  behaviour.**
-  **Five design decisions (spec §0), all with rejected alternatives recorded:**
-  (0.1) **the UI is built externally via claude.ai/design and integrated later —
-  this repo ships NO HTML, templates or JS toolchain**, which keeps CI
-  Python-only and makes the API a *browser-client backend*, the lens under which
-  §2's six gaps were found; (0.2) **sessions are opaque server-side tokens, NOT
-  JWT** — a JWT stays valid after a candidate revokes consent or erases their
-  account, which is a DPDP correctness bug, not a preference; (0.3) **login is
-  email OTP, no passwords anywhere** — the biggest scope cut in the PI, reusing
-  `app/verification/otp.py` (already pure + tested) and killing password storage,
-  reset flows and breach liability outright; (0.4) **two auth modes per plane,
-  permanently — browsers get cookie sessions, machines keep header keys**,
-  because `X-Org-Key` is not legacy, it IS the API product (GTM option 3);
-  (0.5) **admin fails closed and gains real operator accounts** (a shared secret
-  cannot attribute an action to a person — S7.1's review already caught one
-  audit misattribution).
-  **SIX gaps the technical audit never had** (spec §2) — v2 §9 audited the API
-  *as an API*, and nothing had audited it as a *backend for a browser*: admin
-  fails open; **no CORS at all**, so a separately-hosted UI literally cannot call
-  this API; no batch resume upload (the wedge demo is "upload 500 resumes"); no
-  real pagination (`limit` only, 3 sites, no cursor); **no email infrastructure**;
-  no password hashing (moot under 0.3). **The email gap has a second
-  consequence worth knowing: S7.1's L2 contact-control assurance ships, is
-  tested, and has NEVER delivered an OTP to a human**, because `NullNotifier`
-  logs neither code nor destination — the ladder's second rung has been
-  theoretical since 2026-07-31, and S8.2's sender closes it.
-  **Sprint split:** S8.1 deployable spine (migrate-on-boot · fail-closed admin ·
-  Postgres · **fold** the report store · Railway) → S8.2 identity & access (4 new
-  tables · email seam · OTP signup/login · org + candidate self-serve · CORS +
-  CSRF) → S8.3 operating safely (dual-scoped rate limits · metrics · retention
-  sweep · DPDP correction + grievance) → S8.4 UI integration surface (batch
-  upload · cursor pagination · fraud-screen read-model · OpenAPI).
-  **v2 §3.1's open fork is CLOSED — FOLD `reports`+`outcomes` into the main DB,
-  do not port the raw-`sqlite3` store** (spec §2.1). What decided it was a
-  finding, not a preference: **DPDP erasure across the two databases is a
-  CONVENTION, not a guarantee.** `delete_for_candidate` has exactly two callers,
-  both route-layer (`routes.py:354-355` admin, `routes.py:988-989` portal); each
-  remembers to delete reports *then* the candidate, and **nothing enforces it**.
-  That is v2 §6's hunt-the-one-entry-point shape exactly — the one that shipped
-  as a real defect in S7.1, S7.2 and S7.3 — and a third entry point forgetting
-  one line orphans the full depth evaluation, verdicts and fabrication analysis
-  of an **erased person**, with no FK to catch it and no error to notice it.
-  The split also makes erasure **non-atomic** (no transaction spans two DBs:
-  fail between 354 and 355 and the reports are gone while the candidate stays),
-  and `report_store.py:76` runs `ALTER TABLE ADD COLUMN` in a `try/except` at
-  construction — a migration system reimplemented badly beside 15 real Alembic
-  ones. **Folding makes the orphan unrepresentable** (`reports.candidate_id →
-  candidates.id ON DELETE CASCADE`, nullable because `/evaluate` produces
-  candidate-less reports), which is the S7.1 "no column can hold a document"
-  move applied to the last place in the repo that ignored it. **Porting would
-  keep every defect and do the work anyway** — `INSERT OR REPLACE` is invalid on
-  PG, so the SQL gets rewritten regardless, buying a second raw-SQL store, a
-  second pool and a second migration path. **And PI-9 needs a join that cannot
-  exist across two databases** — `outcomes` is the human ground truth, S4.4's
-  features and leakage-free labels are in the main DB, and v2 §3.3's "cheapest
-  high-value sprint" only holds if that query is an ordinary join. **Do it now:**
-  the data migration is one local dev DB today and gets monotonically more
-  expensive from here, which is the whole point of PI-8.
-  **The sequencing subtlety that is easy to lose (spec §5.5): S8.2 PINS S8.4's
-  request/response contracts** — committed Pydantic schemas + published OpenAPI,
-  handlers returning 501 until S8.4 fills them — because the UI is being designed
-  externally *in parallel*, and an unpinned contract makes integration a rewrite.
-  **The PI's single highest regression risk (spec §3, §4.7): this adds a SECOND
-  entry point to every plane.** Sessions change how a principal is *established*
-  and nothing about what it may do — so every existing authorization test needs a
-  session-mode twin, or v2 §6's one-entry-point bug ships a fifth time.
-  **Prior framing, still true:** PI-8 is LAUNCH READINESS, not the "scale &
-  learning" the old backlog assumed.
-  **GTM POSITION SETTLED 2026-08-01 — read
-  `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md` BEFORE planning
-  PI-8.** It answers "how does this become revenue" and it constrains PI-8's
-  priorities. Three decisions, all taken with the user: **(1) the wedge — we
-  sell PRE-SCREEN FRAUD DETECTION for Indian IT hiring** (S2.1–S2.4 + S7.2
-  document forensics + moonlighting + S7.3 proxy risk), *not* the platform,
-  because it is the one slice with **no cold start** (value from one customer's
-  own resumes on day one), it occupies a funnel position the Indian BGV
-  incumbents do not (they verify *after* selection; we screen *before*), and it
-  is **validatable retrospectively in weeks** against resumes a customer already
-  has — the cheapest known path to closing gap-analysis v2 §2, the seven
-  unvalidated numbers. **The evaluation ledger comes OFF the pitch** (not out of
-  the repo): it is the most impressive subsystem and worth exactly zero to
-  customer #1. **(2) the buyer — Indian staffing/recruitment agencies (50–500
-  people) first**, then mid-size IT services (200–2000), then **BGV vendors as a
-  CHANNEL, not a competitor** — the same partnership that unblocks enterprise
-  distribution also unblocks EPFO/UAN, which S7.2 established is a vendor
-  problem, not a legal one. Explicitly **not** TCS/Infosys/Wipro first (12–18
-  month empanelment cycles filter a solo vendor in week one). **(3) the sequence
-  — design partners before customers:** 3–5 firms, free, paying in real resumes
-  + retrospective outcome labels; that is the only thing that retires the
-  unvalidated-numbers risk and it is the precondition for every other path.
-  **Rejected with reasons recorded** (§9 there): selling to LinkedIn/Naukri/
-  Indeed is an *exit* available after traction, not an entry (platforms buy
-  traction and teams, not code — pre-traction the idea just gets built in-house);
-  LinkedIn advertising + investors is the wrong GTM for Indian enterprise HR
-  tech, which sells on relationships and referrals.
-  **Four commercial blockers the technical audit could not see** (§8 there, none
-  in gap-analysis §9): **DPDP correction/rectification + grievance-officer
-  contact are RFP BLOCKERS, not polish** — the consent architecture is a
-  *differentiator* in an Indian enterprise RFP, which reclassifies the two
-  statutory rights deferred since S6.4, and PI-8 should own them for commercial
-  reasons rather than legal fear; **false-positive liability must live in the
-  CONTRACT**, not only in code (advisory-only is right and is currently asserted
-  nowhere a customer signs); **the IBM IP/outside-activity agreement must be
-  checked BEFORE there is revenue** (highest-consequence non-technical item —
-  cheap now, much worse retrofitted after a customer signs); and invoicing B2B
-  in India needs a sole proprietorship + GST, which is *not* "starting a
-  company" in the sense the user declined.
-  **The question that decided it was asked and answered on 2026-08-01.** There
-  is **no pilot org and none close**, and the user's goal for veritas is
-  **"real companies, eventually — I want it launchable."** That overturned the
-  recommendation I had been carrying here (calibration harness first): a harness
-  cannot measure anything until orgs are live submitting outcomes, and getting
-  orgs live is exactly what launchable means. **The calibration harness moves to
-  PI-9, gated on PI-8 succeeding** — it stays cheap (gap-analysis v2 §3.3: S4.2
-  features × S4.4 leakage-free labels already exist, only the metrics are
-  missing) and it becomes genuinely valuable the moment real outcomes arrive.
-  Nothing is lost by waiting; a harness measuring test fixtures would have been
-  actively misleading.
-  **PI-8's brief:** *what stops a real company onboarding without the operator
-  hand-holding the database?* The measured blocker list is
-  **gap-analysis v2 §9** — every row verified against the tree, not assumed:
-  (1) `alembic upgrade head` runs **nowhere** in the boot path, so a fresh
-  container starts against no schema; (2) SQLite is single-process, so
-  concurrent uvicorn workers contend on write locks; (3) `report_store.py` is
-  raw `sqlite3` outside Alembic and **blocks the Postgres cutover** (v2 §3.1);
-  (4) candidates cannot self-register — every key is minted by hand through the
-  admin plane; (5) orgs cannot self-onboard — `POST /ledger/orgs` needs the
-  shared admin secret; (6) retention is **declared but not enforced**
-  (`sweep_active=False` since S6.4 — now a real DPDP gap, not a nicety, once
-  real candidate data lands); (7) no rate limiting on 63 endpoints (the S7.3
-  review found unbounded ASR spend from a stolen candidate key); (8) no metrics,
-  tracing or alerting — structlog only.
-  **Already sound, do not rebuild:** the `Dockerfile` is production-shaped
-  (non-root, healthcheck, env-var config, volume for data) and CI runs the fully
-  offline suite on py3.11 + 3.12.
-  **The biggest scope call — is API-only launchable? — is now ANSWERED: NO.**
-  Settled 2026-08-01 by the GTM work above. **API-only is not launchable**,
-  because options 2 and 3 both require a screen a non-engineer can evaluate: no
-  corp-dev team and no staffing-firm delivery head assesses a repo or a Postman
-  collection. So "build a UI" was never a competing strategy — it is the shared
-  cost of entry for every path, and it lands in PI-8. The stance had been
-  API-first since M1 and S5.3's "employer dashboard" shipped as JSON
-  read-models, **not a UI**; that is what changes here.
-  **Second scope call, also ANSWERED — PI-8 hardens the WHOLE platform**, all 63
-  endpoints and all three auth planes, *not* only the wedge path. The user chose
-  this over the recommended wedge-only cut (which would have skipped blocker 4,
-  candidate self-registration, since the wedge's buyer is the employer and
-  candidates never touch it). **It is coherent with a narrow pitch: the pitch
-  narrows, the platform does not** — when a design partner asks "can you also
-  verify employment / run the interview / share across our group companies," the
-  answer is a working endpoint rather than a roadmap promise, and for these
-  buyers that question arrives in the *first* meeting. **The accepted cost,
-  stated plainly:** roughly double the wedge-only scope, and nothing demoable
-  until late in the PI. **Mitigation, and it is a real planning constraint:
-  sequence the UI + wedge demo path EARLY inside PI-8** so a demo exists before
-  the PI closes — Phase 1 (design partners) is blocked on it.
-  **Priority order inside PI-8, derived from the GTM doc §7:** (i) anything on
-  the wedge demo path; (ii) blockers 1,2,3,5,7 — migrations-on-boot, Postgres,
-  report-store rewrite, org self-onboard, rate limiting — which make hosting a
-  customer possible at all; (iii) blocker 6 retention sweep **plus the two DPDP
-  statutory rights**, all three now RFP blockers; (iv) blocker 4 candidate
-  self-registration and blocker 8 observability.
-  **S7.3 follow-ups (deferred, none merge-blocking):** voice-consistency proxy
-  detection (needs a new `ConsentPurpose`, a stored voice embedding, and legal
-  review — the honest path to a *real* proxy signal); **a no-speech/energy guard
-  on the ASR adapter** (voxtral returns confident prose for audio containing no
-  speech — verified live 2026-08-01, see `MODELS.md`); TTS question delivery
-  once a hosted Indian-English voice is on the account; org-invited,
-  requisition-targeted interviews; interview scores as feature-store features
-  once PI-9 can measure them; disclosing transcripts to orgs under a separate
-  explicit consent (deliberately not v0); Sarvam ASR for India data residency.
-  **Two S7.3 review minors carried (DEFER):** a stolen candidate key can drive
-  unlimited ASR spend — **now folded into PI-8 blocker (7)**, since there is no
-  rate limiter anywhere in the repo; and `add_turn`'s `sequence = count + 1` is
-  a TOCTOU under exact concurrency (SQLite serializes writes and the
-  current-question 409 gate stands in front of it) — **revisit under blocker (2)
-  when Postgres removes that serialization**.
-  **Still UNVERIFIED and worth stating plainly:** transcription quality on
-  Indian-accented English. No audio sample exists in the repo and TTS is
-  deferred, so the live check proved the seam works, not that the model hears
-  well. Test it before interviews go in front of real candidates.
+  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`; Phase B's:
+  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`.
 - **Long-range planning:** the current audit is
   **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
   re-audit, measured not remembered). It **supersedes** the 2026-07-26 vision
@@ -1330,8 +1188,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            a route-table guard
     │            [1200→1373 green, smoke_s82 21/21, six regression smokes green;
     │             contract-pinning DROPPED (§5.5 superseded by the re-sequence)]
-    ├── [~] S8.4  UI integration surface — SPEC WRITTEN 2026-08-05, builds as
-    │            TWO BRANCHES from one spec (decision 0.5)
+    ├── [x] S8.4  UI integration surface — BOTH PHASES BUILT (A merged
+    │            2026-08-07 c678753; B green on its branch 2026-08-09)
+    │            SPEC WRITTEN 2026-08-05, built as TWO BRANCHES from one spec
+    │            (decision 0.5)
     │            ** PULLED AHEAD OF S8.3 (2026-08-02) **
     │            [x] spec: 2026-08-05-s84-ui-integration-surface-design.md
     │                UI.md's FIVE open questions ALL CLOSED with the user:
@@ -1383,13 +1243,23 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                 receivers and documents what it cannot see.
     │                 Also closed: FIVE smokes were making LIVE BILLED calls
     │                 (smoke_s23 ran past a 10-minute timeout before the pin).]
-    │            [ ] Phase B — screening surface: migration
-    │                0019_screening_batches · register/process/queue/summary/
-    │                delete · cursor pagination (opaque, over (created_at, id))
-    │                · admin POST /features/materialize · BOTH 422 sites
-    │                (routes.py:925 match AND :1023 board) become 200 + a
-    │                reason · comp returns ONE shape · OpenAPI operation_id +
-    │                response_model on every route, asserted by a test
+    │            [x] Phase B — screening surface: BUILT AND GREEN on branch
+    │                s84b-screening-surface (2026-08-08/09). 1434→1542 green,
+    │                smoke_s84b 16/16, all 16 smokes green.
+    │                migration 0019_screening_batches (two tables + the
+    │                case-insensitive org-name expression index) ·
+    │                register/process/queue/summary/delete on the ORG plane ·
+    │                the queue read-model built from batch_items ALONE, so no
+    │                Report is ever on the org read path · ItemSignals scalars
+    │                only (the row outlives its candidate: SET NULL) · opaque
+    │                keyset cursor, carrying NO authority · ONE ingest core
+    │                shared by the route and the batch processor, which took
+    │                the scope guard's allowlist to EMPTY · admin
+    │                POST /features/materialize · BOTH 422 sites become 200 +
+    │                reason=no_materialized_candidates · comp returns ONE
+    │                shape · OpenAPI: explicit operation_id everywhere and all
+    │                38 untyped dict responses modelled, asserted by
+    │                tests/test_openapi_contract.py · SCREENING.md
     │            MEASURED INPUTS from the wiring session (2026-08-03), all now
     │            folded into the spec §2:
     │              - org signup with a TAKEN org name => 202 + a real code that
@@ -1467,6 +1337,38 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 - LLM provider: OpenRouter + Qwen tiers (see `config.yaml`).
 
 ## Session log
+
+- **2026-08-08/09** — **S8.4 Phase B built: the screening surface. 1434→1542
+  green, `smoke_s84b` 16/16, all sixteen smokes green. On branch
+  `s84b-screening-surface`, unreviewed and unmerged.** All 15 plan tasks, TDD,
+  one commit each. New package `app/screening/` (`schema` · `pagination` ·
+  `models` · `store` · `ingest` · `service`), migration `0019`, seven org-plane
+  routes, `SCREENING.md`.
+  **Six things this build measured that the plan did not predict:**
+  (1) **Two mutants survived the first pass on the claim** — the conditional
+  UPDATE's `WHERE` and `rowcount == 1` — because the race is unreachable
+  through two sequential calls; a `_try_claim` seam plus a test that builds the
+  interleaved state kills both. (2) **The plan contradicted itself on
+  `derive_status`**; its test table was the coherent reading, so `processing`
+  now beats `pending`. (3) **The `operation_id` loop had to run LAST in
+  `create_app`** — `/` and `/healthz` register after `include_router`, so the
+  loop where the plan put it missed both, caught by the new contract test.
+  (4) **`_ACCEPTED` is `{"status":"accepted"}`**, not `{"accepted":true}`, and
+  the requisition field is `must_have_skills`, not `skills` — both read off the
+  code rather than trusted. (5) **The smoke's CSRF 403** — one client that signs
+  up then calls with `X-Org-Key` still holds a session cookie, and CSRF keys on
+  how the principal was established (S8.2 working as designed). (6) **"A stolen
+  cursor returns nothing" was the wrong assertion** — org B legitimately owns a
+  batch by then; the check now asserts none of A's ids appear.
+  **`smoke_s63` was making live billed calls** and is now pinned — the same
+  trap for the third sprint running, on a smoke that was not on Phase A's list
+  of nine.
+  **The scope guard's allowlist is EMPTY** (the ingest extraction removed all
+  five entries) and the guard was re-proven non-vacuous against a planted
+  unscoped read. `screening` joins `screening_scope` as a sanctioned door.
+  **Two deliberate contract breaks**, both off the wired UI's path: the curation
+  queue answers `UnmappedPage`, and `POST /comp/estimate` answers
+  `CompBenchmark`. **Both 422 sites became 200 + `reason` in one commit.**
 
 - **2026-08-07 (later)** — **S8.4 PHASE B IS SPEC'D AND PLANNED. Documents only;
   no `app/` code touched, `pytest -q` re-measured green at 1434 before writing.**

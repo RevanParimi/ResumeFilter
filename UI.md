@@ -217,19 +217,35 @@ call fails in the browser while working fine in Postman.
 
 Ordered by what the demo needs. **A → B → C is the entire pitch.**
 
-### A. Screening queue — *the product* 🔜
+### A. Screening queue — *the product* ✅ (S8.4 Phase B — `SCREENING.md`)
 
 The one screen that matters. "Here are the resumes you dropped in, ranked by how
 much they need a human."
 
-Needs, none of which exist yet:
-- **Batch upload** (drag 500 PDFs/text files) 🔜 — today `POST /candidates` ✅
-  takes **one** `{resume_text | resume_pdf_b64, domain}` at a time, admin-only.
-- **A fraud-screen read-model** 🔜 — one call returning a ranked, reasoned risk
-  list over a batch. Today you would have to fan out to `GET /report/{id}` per
-  candidate.
-- **Cursor pagination** 🔜 — today only `limit` exists, on 3 endpoints, with no
-  cursor. A 500-resume queue cannot page.
+All three prerequisites now exist, on the **org plane** (`X-Org-Key` or an org
+session):
+- **Batch upload** ✅ — `POST /screening/batches` with
+  `{name, domain, items:[{resume_text|resume_pdf_b64}]}`. Registration only
+  inserts rows; it evaluates nothing (see the resolved note below).
+- **Bounded processing** ✅ — `POST /screening/batches/{id}/process` until
+  `remaining` is 0. Poll `GET /screening/batches/{id}` for derived progress.
+- **A fraud-screen read-model** ✅ — `GET /screening/batches/{id}/queue`
+  returns ranked rows, riskiest first, each already carrying its reason.
+- **Cursor pagination** ✅ — `cursor` + `limit` on the batch list and the
+  queue; pass `next_cursor` back as `cursor`.
+
+**Two fields a designer would otherwise invent, so they are stated here:**
+
+1. **`reason` is GENERATED, not stored.** It is composed at read time from the
+   row's own scalar signals. Render it as the row's one-line explanation — but
+   never treat it as an editable or model-authored sentence, and never expect it
+   to quote the resume. It cannot: the item stores no free text, because a
+   candidate's erasure sets `candidate_id` to NULL and anything stored beside it
+   would outlive the person (`SCREENING.md` §5).
+2. **An unprocessed row is a NORMAL state, not an error.** `status: "pending"`
+   with `risk_score: null` and `reason: "not screened yet"` means exactly that.
+   Show it greyed and sorted last. A `failed` row carries a reason **code**
+   (`empty_resume`, …) and is retryable — it is not a verdict about the person.
 
 Design it as: batch header (name, count, uploaded-at, progress) → rows sorted by
 risk band, each row showing **band · score · confidence · a one-line reason ·
@@ -318,11 +334,21 @@ Design guidance:
 > §7's rule is unaffected and still binds: a fuller report is not a more
 > confident one, and there is still no accuracy claim to make.
 
-### C. Batch summary / "what did we find" 🔜
+### C. Batch summary / "what did we find" ✅ (S8.4 Phase B)
+
+`GET /screening/batches/{id}/summary` → `{batch_id, name, domain, status,
+counts, n_screened, by_risk_band, top_signals[], advisory,
+human_review_required}`.
 
 A short, screenshot-able roll-up per batch: N screened, distribution across risk
-bands, top reasons. This is what gets pasted into a WhatsApp group and sells the
+bands, top signals. This is what gets pasted into a WhatsApp group and sells the
 next seat. Composed from the same read-model as A.
+
+**It is counts and enum members only — no names, no ids, no prose.** That is
+deliberate: a roll-up that quoted its riskiest row would re-open every tenancy
+question the read-model exists to close. If the design needs a name on this
+screen, it has to come from a drill-in the viewer is entitled to, not from the
+summary.
 
 ### D. Candidate DPDP portal ✅ — *compliance is a differentiator, not overhead*
 
