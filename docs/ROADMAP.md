@@ -9,6 +9,75 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-09 (later) — S8.4 PHASE B WHOLE-BRANCH REVIEW done: 6
+  Important + 4 Minor findings, ALL FIXED on the branch (9 commits, TDD, one
+  failing test proven before each fix), then MERGED to main. 1542→1553 green,
+  `smoke_s84b` 16/16, `smoke_s84a` 23/23 and `smoke_s63` re-run green
+  post-fix.** The four hot spots the roadmap named all HELD — every defect was
+  one step past where a hot spot pointed, which is worth remembering: the
+  places the builder worried about were defended; the same rule one door later
+  was not.
+  **The reviewer's findings, each proven before being fixed:**
+  (1) **A type-forged cursor was a 500 on demand** — `decode_cursor` checked
+  arity but not element types, so base64 of `[1,"x"]` decoded cleanly and hit
+  `datetime.fromisoformat` as an int: `TypeError`, which
+  `except (InvalidCursor, ValueError)` does not catch. Proven live on all
+  three paged endpoints. Fixed with per-element type specs on `decode_cursor`
+  plus `iso_datetime()` folding both fromisoformat failures into
+  `InvalidCursor`.
+  (2) **THE CLAIM WAS GUARDED GOING IN AND UNGUARDED GOING OUT** — the
+  branch's own headline seam (`_try_claim`) made the claim race-safe, but
+  `complete()`/`fail()` wrote back unconditionally. A process call outliving
+  `claim_timeout_seconds` loses its items to the next call; its late `fail`
+  then stamped FAILED + an error code over the live claimant's finished
+  result, with `raw_text` already cleared — a contradictory row. Fixed with a
+  lease (`ClaimedItem.claimed_at` in the write-back WHERE); the test asserts
+  the refusal while the row is still held by the winner — the one state where
+  ONLY the lease clause refuses — and the mutant deleting the clause was
+  probed and dies.
+  (3) **`counts()` returns None once the batch is deleted and none of its four
+  callers guarded it** — get/summary crashed in `derive_status`, list crashed
+  validating `BatchView(counts=None)`, process crashed on its final read (a
+  minutes-wide window against a one-keystroke DELETE in a second tab).
+  All four now read as absent/skip; the tests build the real interleaving
+  with a store whose `counts()` genuinely deletes the batch before
+  delegating.
+  (4) **The item-count cap ran AFTER the work it bounds** — an over-cap batch
+  of corrupt PDFs was fully decoded, then refused. The route now refuses on
+  `len(items)` first; the test proves the ordering by asserting the cap
+  message on items that would otherwise 422 as `pdf_parse_failed`.
+  (5) **`counts()` dragged every item's full `raw_text` out of the DB on every
+  poll** — it was built on `all_items()`, and it runs per poll of `get`, per
+  batch of every `list` page and at the end of every `process` call. Now a
+  GROUP BY with the stale-processing reinterpretation as a CASE, extracted to
+  `_stale_processing` and shared with `_claimable` so the SQL spelling of the
+  rule exists once.
+  (6) **"Kept on failure so the org can retry" was an overclaim** — no path
+  re-queues a failed item: `_claimable` covers pending + stale-processing
+  only, there is no retry route, and `add_items` has no route. SCREENING.md
+  §7 now states the truth (kept for S8.3's in-place retry, held under
+  `ret_batch_item_days`, deletable only via batch delete). **In-place retry
+  of failed items is a NAMED S8.3 input now, beside the sweep.**
+  Minor, also fixed: `POST /features/materialize` accepted any `view_name`,
+  materialized the default anyway and echoed the caller's name back (now 422
+  naming the one view that exists); **`GET /domains` and `GET /admin/users`
+  were still untyped — hiding inside ARRAYS**, which the contract test's
+  object-only detector missed (it now recurses through `items`, which is what
+  turned both red); 0019's collision check ran after its CREATE TABLEs, so on
+  dev SQLite (pysqlite autocommits around DDL) a refusal wedged the deploy on
+  're-run says table exists' even after the operator fixed the names — check
+  now runs first and the test proves the re-run succeeds after resolving the
+  collision; the two "exactly one of resume_text/resume_pdf_b64" docstrings
+  said exactly-one while both validators enforce at-least-one-text-wins.
+  **A machine trap measured this session:** on this OneDrive-synced checkout,
+  rewriting a file under `alembic/` and immediately running pytest in a
+  subprocess fails with `ImportError: cannot import name 'command' from
+  'alembic' (unknown location)` — sync lag makes the local `alembic/` dir
+  shadow the installed package as a namespace fallback. A byte-identical
+  rewrite reproduced it; it is the rewrite, not the content. Mutation-probe
+  scripts that touch `alembic/` need the file settled before the run.
+  **➤ NEXT STEP: wire the UI's screening screens to the seven batch routes,
+  then S8.3.** Nothing else is on the branch; it is merged and deleted.
 - **Session 2026-08-08/09 — S8.4 PHASE B (screening surface) BUILT and GREEN on
   branch `s84b-screening-surface`. 1434→1542 green, `smoke_s84b` 16/16 exit 0,
   and ALL SIXTEEN smokes green (s12, s13, s23, s41, s51, s52, s53, s63, s64,
@@ -909,36 +978,27 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 Phase B IS BUILT AND GREEN on branch
-  `s84b-screening-surface` (2026-08-08/09) — 1434→1542 green, `smoke_s84b`
-  16/16, all sixteen smokes green. NOTHING IS ON `main` YET. Next is the
-  WHOLE-BRANCH REVIEW, then merge.**
-  All 15 plan tasks are done, TDD, one commit per task; the plan file records
-  what each was. Read the "Current state" entry above before reviewing — it
-  names the six things this build measured that the plan did not predict,
-  including two mutation-test survivors on the claim and an `operation_id` pass
-  that silently skipped two routes.
-  **Where to look hardest in review, in order:**
-  (1) **`app/screening/store.py`'s claim** — a conditional UPDATE whose race is
-  unreachable through the public API, so it has a deliberate `_try_claim` seam
-  and a test that builds the interleaved state directly. Mutation testing found
-  two survivors here before that seam existed.
-  (2) **The org-plane FIELD table** — Phase A's leak got in through a response
-  field nobody enumerated. The new org-facing shapes are `QueueRow`,
-  `BatchSummary`, `BatchDetail`/`BatchView` and `ProcessResult`; check each
-  field's provenance, not each handler.
-  (3) **The 38 newly-modelled responses** — a model that drops a field is a
-  silent API break, and the suite passing is evidence but not proof for
-  responses no test asserts on in full.
-  (4) **`0019`'s org-name index** — the collision refusal runs on every deploy
-  and raises `RuntimeError`; confirm that is the behaviour wanted on a live
-  database rather than a failed boot nobody expected.
-  **Deferred out of Phase B, deliberately:** `ret_batch_item_days` is declared
-  and **nothing sweeps on it** (S8.3); there is still **no rate limiting**, so
-  `POST .../process` is bounded per call but not per caller; and no cross-batch
-  queue exists. All three are stated in `SCREENING.md` §7–8 rather than implied.
-  Phase A's plan, for reference:
-  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`; Phase B's:
+- **Next action:** **S8.4 IS COMPLETE — Phase B was whole-branch REVIEWED
+  (2026-08-09; 6 Important + 4 Minor, all fixed and proven, see the top
+  "Current state" entry) and MERGED to main. 1553 green, `smoke_s84b` 16/16,
+  `smoke_s84a` 23/23, `smoke_s63` re-run green. NOT yet pushed to the public
+  remote — push when the user says so.**
+  Per the PI-8 re-sequence (S8.2 → S8.4 → UI → integrate → S8.3 → deploy) the
+  next work is:
+  (1) **Wire the UI's screening screens to the seven batch routes** — the
+  screening queue screen still renders mock data behind its "sample data"
+  chip, and it is the wedge screen. Re-run the 36/36 contract suite from the
+  wiring session: org signup's "202 always" assertion now meets the
+  deliberate 409, and `POST /comp/estimate` now answers `CompBenchmark`
+  (the central unwrap already handles it). `frontend/api.js` is the seam.
+  (2) **Then S8.3** — its named inputs so far: rate limiting (bounded-per-call
+  is not bounded-per-caller), the `ret_batch_item_days` sweep, **in-place
+  retry of failed items** (new from the review — the text is retained for a
+  capability S8.3 must ship or the retention loses its justification),
+  observability, and the retention sweeps deferred since S6.4/S7.1.
+  **Deferred out of Phase B, deliberately:** no cross-batch queue
+  (`SCREENING.md` §8). Phase plans, for reference:
+  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md` and
   `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`.
 - **Long-range planning:** the current audit is
   **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
@@ -1188,8 +1248,8 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            a route-table guard
     │            [1200→1373 green, smoke_s82 21/21, six regression smokes green;
     │             contract-pinning DROPPED (§5.5 superseded by the re-sequence)]
-    ├── [x] S8.4  UI integration surface — BOTH PHASES BUILT (A merged
-    │            2026-08-07 c678753; B green on its branch 2026-08-09)
+    ├── [x] S8.4  UI integration surface — COMPLETE. BOTH PHASES MERGED
+    │            (A 2026-08-07 c678753; B reviewed + fixed + merged 2026-08-09)
     │            SPEC WRITTEN 2026-08-05, built as TWO BRANCHES from one spec
     │            (decision 0.5)
     │            ** PULLED AHEAD OF S8.3 (2026-08-02) **
