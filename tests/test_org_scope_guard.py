@@ -94,8 +94,12 @@ from tests.test_route_table_guard import _resolvers_on, _walk
 #: an unrelated object can't trip this.
 WATCHED_ATTRS = ("report_store", "candidates")
 
-#: The sanctioned door.
-SCOPED_ATTR = "screening_scope"
+#: The sanctioned doors. Both take org_id as the first argument of every method
+#: and neither exposes an unscoped read: `screening_scope` (Phase A, reports and
+#: candidates) and `screening` (Phase B, batches). The batch STORE is
+#: deliberately not on `Services` at all, so there is nothing unscoped for a
+#: handler to reach in the first place.
+SCOPED_ATTRS = ("screening_scope", "screening")
 
 #: The conventional receiver name, always in the set even when the source never
 #: spells the assignment out (e.g. an inline ``_services(request).X``).
@@ -193,62 +197,27 @@ def _forbidden_res(receivers: set[str]) -> list[tuple[str, re.Pattern[str]]]:
 
 def _sanctioned_re(receivers: set[str]) -> re.Pattern[str]:
     alt = _receiver_alternation(receivers)
+    # `screening_scope` FIRST in the alternation: `screening` alone would match
+    # its prefix, and while the trailing \b happens to save us today (`_` is a
+    # word character), depending on that is exactly the kind of accident that
+    # turns a guard off without anyone noticing.
+    doors = "|".join(sorted(SCOPED_ATTRS, key=len, reverse=True))
     return re.compile(
-        rf"\b(?:{alt})\.{SCOPED_ATTR}\b|_services\(request\)\.{SCOPED_ATTR}\b"
+        rf"\b(?:{alt})\.(?:{doors})\b|_services\(request\)\.(?:{doors})\b"
     )
 
-#: Narrow, LINE-level exemptions -- not function-level, so one entry can't
-#: silence a neighboring genuine violation the way the old whole-function
-#: SANCTIONED check did. Keyed by a distinctive substring of the exact
-#: offending line: if the line changes, the key stops matching and the access
-#: has to be re-justified rather than grandfathered in forever.
+#: EMPTY, and that is the point (S8.4 Phase B, Task 6). Every entry here was a
+#: line of `_ingest_one`, which moved to app/screening/ingest.py -- so the guard
+#: now runs with NO exemptions at all. A content-keyed allowlist whose keys no
+#: longer exist is not harmless: it is a silent exemption waiting to match an
+#: unrelated future line that happens to contain the same text.
 #:
-#: All five entries are in ``_ingest_one`` (app/api/routes.py), reached one hop
-#: from ``screening_create_candidate`` (POST /screening/candidates). Read
-#: closely: the rule this guard enforces is about READS that can cross a
-#: tenant boundary and REACH an org caller unredacted, not "any store access"
-#: -- a write that stamps org_id is the S8.4 ownership mechanism itself, and a
-#: cross-tenant read whose output is redacted before an org sees it is a
-#: different failure mode than the one this guard exists to catch.
-ALLOWLISTED_LINES = {
-    "services.candidates.ingest(result, text, org_id=org_id)": (
-        "a WRITE that stamps org_id -- the S8.4 ownership mechanism itself, "
-        "not a cross-tenant read."
-    ),
-    "services.report_store.save(report, org_id=org_id)": (
-        "a WRITE that stamps org_id -- same as above."
-    ),
-    "services.candidates.save_fingerprint(": (
-        "a WRITE of a content fingerprint keyed by resume_id/candidate_id "
-        "this SAME call's own ingest() just produced (see above); it returns "
-        "nothing to the caller, so there is nothing to leak across a tenant "
-        "boundary."
-    ),
-    "services.candidates.get_candidate(outcome.candidate_id) is None": (
-        "reads a candidate row by an id THIS SAME request's own org-scoped "
-        "write produced moments earlier (never a caller-supplied id), and "
-        "only returns a boolean -- a post-write erasure-race check, not a "
-        "lookup of someone else's data."
-    ),
-    "matches, corpus = services.candidates.similar_resumes(": (
-        "cross-tenant BY DESIGN, not a bug: farm/fraud detection has to scan "
-        "the WHOLE platform's fingerprints, not just this org's own, to catch "
-        "a resume seeded across customers -- excluding only the uploader's "
-        "own candidate would defeat the check. This line was found and left "
-        "RED on purpose by the prior review round (it named a real leak: the "
-        "response carried these ids to an org caller unredacted). It is now "
-        "allowlisted because the leak is fixed at the boundary, not because "
-        "the read changed: screening_create_candidate calls "
-        "redact_ingest_response_for_org (app/screening/projection.py) on the "
-        "return value of _ingest_one before answering the org caller, which "
-        "strips candidate_id/resume_id from every match in BOTH the "
-        "top-level resume_farm and the embedded report's own resume_farm. "
-        "The admin route (POST /candidates) returns this same read "
-        "unredacted on purpose -- that is the operator's cross-tenant "
-        "support view -- and is not reached by this guard because it is not "
-        "gated by require_org."
-    ),
-}
+#: The exemptions were never the bound anyway. The one genuinely cross-tenant
+#: read among them, `similar_resumes` (fraud detection must scan the WHOLE
+#: platform's fingerprints or a resume seeded across customers goes unseen), is
+#: still bounded exactly where it was: at the org-plane boundary, by
+#: `redact_ingest_response_for_org`.
+ALLOWLISTED_LINES: dict[str, str] = {}
 
 
 def _org_plane_endpoints(app):
@@ -564,3 +533,18 @@ def test_the_guard_reaches_one_hop_into_a_same_module_helper():
         "the helper itself must still read as a violation once reached"
     )
     assert _called_helper_names(handler_source) == {"_helper"}
+
+
+def test_the_guard_has_no_exemptions():
+    """If a line ever needs allowlisting again, this test is where a reviewer is
+    forced to look at the reason."""
+    assert ALLOWLISTED_LINES == {}
+
+
+def test_the_batch_store_is_not_reachable_from_the_services_container():
+    """Structural, not stylistic: a handler cannot forget to scope a read it
+    has no way to perform."""
+    from app.services import Services
+
+    assert "screening_store" not in Services.__dataclass_fields__
+    assert not hasattr(Services, "batches")

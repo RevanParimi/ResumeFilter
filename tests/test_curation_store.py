@@ -42,13 +42,13 @@ def test_list_orders_by_occurrences_then_recency_and_filters_status():
     st.record_unmapped("aterm", "Aterm", source_type="github", now=T0)
     st.record_unmapped("bterm", "Bterm", source_type="github", now=T0)
     st.record_unmapped("bterm", "Bterm", source_type="github", now=T0 + timedelta(days=1))
-    pending = st.list_terms(CurationStatus.PENDING, limit=10)
+    pending, _ = st.list_terms(CurationStatus.PENDING, limit=10)
     assert [t.norm_key for t in pending] == ["bterm", "aterm"]  # bterm has 2 occ
     st.resolve("aterm", action=CurationAction.IGNORE, canonical=None, category=None,
                note=None, decided_by=None, now=T0)
-    assert [t.norm_key for t in st.list_terms(CurationStatus.PENDING, limit=10)] == ["bterm"]
-    assert [t.norm_key for t in st.list_terms(CurationStatus.IGNORED, limit=10)] == ["aterm"]
-    assert len(st.list_terms(None, limit=10)) == 2  # no filter
+    assert [t.norm_key for t in st.list_terms(CurationStatus.PENDING, limit=10)[0]] == ["bterm"]
+    assert [t.norm_key for t in st.list_terms(CurationStatus.IGNORED, limit=10)[0]] == ["aterm"]
+    assert len(st.list_terms(None, limit=10)[0]) == 2  # no filter
 
 
 def test_resolve_unknown_raises():

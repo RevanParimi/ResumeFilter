@@ -17,7 +17,9 @@ from app.services.github import GitHubClient, GitHubService
 from app.services.email import EmailClient, build_email
 from app.services.llm import LLMClient, build_llm
 from app.reports.store import ReportStore, build_report_store
+from app.screening.ingest import IngestDeps
 from app.screening.scope import OrgScopedReads, build_org_scoped_reads
+from app.screening.service import ScreeningService, build_screening_service
 from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
 
@@ -57,6 +59,10 @@ class Services:
     email: EmailClient
     auth: AuthService
     screening_scope: OrgScopedReads
+    # The batch STORE is deliberately absent: no handler should be able to
+    # reach an unscoped batch read, and what is not on the container cannot be
+    # reached from a handler.
+    screening: ScreeningService
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -106,6 +112,14 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     auth = build_auth_service(
         settings, candidates=candidates, ledger=ledger, email=email
     )
+    # Late, and only after candidates/report_store/llm are bound: those four
+    # objects are everything ingestion needs (app/screening/ingest.py).
+    screening = build_screening_service(
+        settings,
+        deps=IngestDeps(
+            candidates=candidates, reports=report_store, llm=llm, settings=settings
+        ),
+    )
     return Services(
         settings=settings,
         llm=llm,
@@ -132,6 +146,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         email=email,
         auth=auth,
         screening_scope=build_org_scoped_reads(report_store, candidates),
+        screening=screening,
     )
 
 

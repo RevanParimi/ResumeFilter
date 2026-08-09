@@ -24,6 +24,11 @@ import app.curation.models  # noqa: F401 — populate Base.metadata with the cur
 import app.verification.models  # noqa: F401 — populate Base.metadata with verification tables
 import app.interview.models  # noqa: F401 — populate Base.metadata with interview tables
 import app.reports.models  # noqa: F401 — populate Base.metadata with report tables
+# Auth tables reached Base.metadata only via a lazy import inside the `services`
+# fixture; screening_batches has an FK to org_users, which must therefore be in
+# metadata BEFORE that module is imported. Explicit here, like every other row.
+import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
+import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow
@@ -231,6 +236,7 @@ def make_services(
     email=None,
     auth=None,
     screening_scope=None,
+    screening=None,
 ) -> Services:
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
@@ -309,6 +315,22 @@ def make_services(
     if screening_scope is None:
         from app.screening.scope import build_org_scoped_reads
         screening_scope = build_org_scoped_reads(report_store, candidates)
+    if screening is None:
+        # On the SAME session factory as every other store here, so a batch and
+        # the candidate it produces live in one database.
+        from app.screening.ingest import IngestDeps
+        from app.screening.service import ScreeningService
+        from app.screening.store import ScreeningStore
+
+        screening = ScreeningService(
+            ScreeningStore(
+                candidates._session_factory,
+                claim_timeout_seconds=settings.screening_claim_timeout_seconds,
+            ),
+            IngestDeps(candidates=candidates, reports=report_store,
+                       llm=llm, settings=settings),
+            settings=settings,
+        )
     return Services(
         settings=settings,
         llm=llm,
@@ -331,6 +353,7 @@ def make_services(
         email=email,
         auth=auth,
         screening_scope=screening_scope,
+        screening=screening,
     )
 
 

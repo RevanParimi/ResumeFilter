@@ -221,6 +221,16 @@ class CandidateStore:
                 resume_count=len(cand.resumes),
             )
 
+    def list_candidate_ids(self, limit: int) -> list[str]:
+        """Oldest first, bounded. Used by the admin materialization route --
+        the store has never needed a full enumeration before."""
+        with self._session_factory() as session:
+            return list(session.execute(
+                select(CandidateRow.id)
+                .order_by(CandidateRow.created_at, CandidateRow.id)
+                .limit(limit)
+            ).scalars().all())
+
     def latest_profile(self, candidate_id: str) -> Optional[CandidateProfile]:
         """Profile from the newest resume version (ties: newest extraction)."""
         with self._session_factory() as session:

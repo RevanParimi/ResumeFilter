@@ -57,8 +57,10 @@ def _submit_offer(c, org_h, cand_id, *, role="backend_engineer", seniority="seni
 
 
 def _estimate(c, org_h, title, years):
+    # S8.4 Phase B: POST /comp/estimate answers a CompBenchmark WRAPPING the
+    # estimate -- the same shape GET /jobs/{id}/comp has always returned.
     return c.post("/comp/estimate", headers=org_h,
-                  json={"title": title, "years_experience": years}).json()
+                  json={"title": title, "years_experience": years}).json()["estimate"]
 
 
 def main() -> int:

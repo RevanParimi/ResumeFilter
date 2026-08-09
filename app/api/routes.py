@@ -19,18 +19,18 @@ from pydantic import BaseModel, Field, model_validator
 from app import __version__
 from app.auth.csrf import csrf_matches
 from app.auth.schema import (
-    AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia, SessionView,
+    AdminUser, AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia,
+    SessionView,
 )
 from app.auth.service import (
     ChallengeRefused, EmailUnavailableError, RegistrationRefused,
 )
-from app.candidates.extractor import extract_profile
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
 from app.domains.base import get_domain, list_domains
-from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 from app.features import default_view, get_feature_registry
+from app.features.materialize import materialize_candidate
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
 from app.comp import bands
@@ -56,14 +56,20 @@ from app.ledger.schema import (
     ReputationAssessment,
 )
 from app.interview.questions import NothingToAskError
+from app.interview.schema import (
+    InterviewQuestion, InterviewSession, InterviewSummary,
+)
 from app.interview.service import AnswerTooLargeError, SessionConflictError
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
-from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
+from app.curation.schema import (
+    CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
+)
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.verification.documents import DocumentParseError
 from app.verification.schema import (
-    CLAIM_REF_MAX_CHARS, DocumentType, VerificationMethod, VerificationStatus,
+    CLAIM_REF_MAX_CHARS, ClaimEvidence, DocumentFinding, DocumentType,
+    IdentityAssurance, Verification, VerificationMethod, VerificationStatus,
 )
 from app.verification.service import (
     DestinationError, DocumentTooLargeError, MethodNotPermittedError,
@@ -71,16 +77,175 @@ from app.verification.service import (
 from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
+from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
+from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
+from app.screening.schema import (
+    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage,
+)
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
 from app.reports.schema import OutcomeLabel, OutcomeRecord
-from app.reports.store import SubjectErasedError
 
 
 def _services(request: Request) -> Services:
     return request.app.state.services
+
+
+# ── Response models for what used to be `-> dict` (S8.4 Phase B, Task 13) ────
+# MEASURED before this sprint: 38 of 90 operations advertised
+# {"type":"object","additionalProperties":true}, which generates
+# Record<string, any> and puts every client back to guessing. These models
+# describe the bodies that ALREADY EXIST -- not one field was added, removed or
+# renamed. Where a shape is shared (an acknowledgement, the auth 202) one model
+# is shared, because trading an untyped client for an unreadable one is not a
+# trade worth making.
+
+
+class ErasureResponse(BaseModel):
+    """DPDP erasure, from both entry points. `reports_deleted` is a COUNT READ
+    taken before the delete -- a number in a response, not a person's data."""
+
+    candidate_id: str
+    deleted: bool
+    reports_deleted: int = 0
+
+
+class ResumeDeletedResponse(BaseModel):
+    resume_id: str
+    deleted: bool
+
+
+class OrgDeletedResponse(BaseModel):
+    org_id: str
+    deleted: bool
+
+
+class AdminUserDeletedResponse(BaseModel):
+    admin_user_id: str
+    deleted: bool
+
+
+class ConsentRevokedResponse(BaseModel):
+    consent_id: str
+    revoked: bool
+
+
+class SessionRevokedResponse(BaseModel):
+    session_id: str
+    revoked: bool
+
+
+class CandidateKeyResponse(BaseModel):
+    """Returned ONCE at issuance; only the hash is stored."""
+
+    candidate_id: str
+    access_key: str
+
+
+class OrgKeyResponse(BaseModel):
+    """Returned ONCE at issuance; only the hash is stored."""
+
+    org_id: str
+    api_key: str
+
+
+class OutcomeRecordedResponse(BaseModel):
+    report_id: str
+    claim_id: Optional[str] = None
+    outcome: str
+    recorded_at: str
+
+
+class OutcomeListResponse(BaseModel):
+    report_id: str
+    outcomes: list[OutcomeRecord] = Field(default_factory=list)
+
+
+class OrgInterviewAssessments(BaseModel):
+    """The org-facing interview read: summaries only, no transcript (S7.3)."""
+
+    attempts: int = 0
+    assessments: list[InterviewSummary] = Field(default_factory=list)
+
+
+class StartVerificationResponse(BaseModel):
+    verification: Verification
+    #: local env + verif_otp_debug_echo ONLY; production can never echo.
+    debug_code: Optional[str] = None
+
+
+class VerificationListResponse(BaseModel):
+    verifications: list[Verification] = Field(default_factory=list)
+    assurance: IdentityAssurance
+    #: S7.2: a SECOND number beside assurance, never folded into it.
+    claims: ClaimEvidence
+
+
+class DocumentSubmitResponse(BaseModel):
+    verification: Verification
+    findings: list[DocumentFinding] = Field(default_factory=list)
+    claims: ClaimEvidence
+
+
+class InterviewTurnResponse(BaseModel):
+    """The candidate-plane interview body: the session plus what to ask next.
+    `next_question` is None when the session is finished."""
+
+    session: InterviewSession
+    next_question: Optional[InterviewQuestion] = None
+
+
+class InterviewListResponse(BaseModel):
+    interviews: list[InterviewSummary] = Field(default_factory=list)
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    env: str
+    llm_mode: str
+    domains: list[str] = Field(default_factory=list)
+
+
+class DomainInfo(BaseModel):
+    key: str
+    display_name: str
+    claim_types: list[str] = Field(default_factory=list)
+
+
+class ServiceInfo(BaseModel):
+    service: str
+    advisory: bool = True
+    human_review_required: bool = True
+    endpoints: list[str] = Field(default_factory=list)
+
+
+class CodeRequestAccepted(BaseModel):
+    """The 202 from every signup/login on all three planes. IDENTICAL for known
+    and unknown addresses on purpose -- see AUTH.md's anti-enumeration rule."""
+
+    status: str = "accepted"
+
+
+class SessionEstablished(BaseModel):
+    """A verified code. The session token is a cookie; the CSRF token is in the
+    body because a JS client has to echo it in a header."""
+
+    principal: str
+    csrf_token: str
+    organization_id: Optional[str] = None
+
+
+class AuthMeResponse(BaseModel):
+    kind: str
+    organization_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class LogoutResponse(BaseModel):
+    logged_out: bool
 
 
 # Paths that establish no principal, by definition. Everything else must go
@@ -277,7 +442,8 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
 
 
 class CandidateCreateRequest(BaseModel):
-    """Exactly one of resume_text / resume_pdf_b64 is required."""
+    """At least one of resume_text / resume_pdf_b64; resume_text wins when
+    both are sent (same rule as BatchItemInput, on purpose)."""
 
     resume_text: str | None = None
     resume_pdf_b64: str | None = None
@@ -312,15 +478,16 @@ class CandidateCreateResponse(BaseModel):
 async def _ingest_one(
     req: CandidateCreateRequest, request: Request, *, org_id: Optional[str] = None
 ) -> CandidateCreateResponse:
-    """Upload → extract → store → (auto) depth-eval, for ONE resume.
+    """HTTP adapter over the ONE ingest core (app/screening/ingest.py).
 
     Shared by the admin route (no owner) and the org route (owner = caller).
-    Kept as one function on purpose: duplicating it would be the
-    one-rule-two-doors shape in the sprint that exists to eliminate it.
+    The pipeline itself moved out so the batch processor runs the same code:
+    duplicating it would be the one-rule-two-doors shape in the sprint that
+    exists to eliminate it.
     """
     services = _services(request)
-
     caps = services.settings
+
     if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
         raise HTTPException(
             status_code=422,
@@ -331,6 +498,8 @@ async def _ingest_one(
             status_code=422,
             detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
         )
+    # Kept in the route so the 422 detail stays byte-identical to what clients
+    # (and five smokes) already assert.
     try:
         get_domain(req.domain)
     except KeyError as exc:
@@ -344,67 +513,25 @@ async def _ingest_one(
             raise HTTPException(
                 status_code=422, detail=f"pdf_parse_failed: {exc}"
             ) from exc
-    text = (text or "").strip()
-    if not text:
-        raise HTTPException(status_code=422, detail="empty_resume")
 
-    result = await extract_profile(text, llm=services.llm, settings=services.settings)
-    outcome = services.candidates.ingest(result, text, org_id=org_id)
-
-    # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
-    # comparison must exclude the uploader's own candidate (re-uploads and new
-    # versions are legitimate), and the graph deliberately never learns the
-    # candidate identity.
-    farm = ResumeFarmAssessment()  # insufficient_data when the text is too short
-    fp = fingerprint_text(text, services.settings)
-    if fp is not None:
-        services.candidates.save_fingerprint(
-            fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
+    try:
+        result = await ingest_resume(
+            ingest_deps(services), request.app.state.engine,
+            text=text or "", domain=req.domain, evaluate=req.evaluate, org_id=org_id,
         )
-        matches, corpus = services.candidates.similar_resumes(
-            fp,
-            exclude_candidate_id=outcome.candidate_id,
-            threshold=services.settings.rf_similar_threshold,
-            limit=services.settings.rf_max_matches,
-        )
-        farm = assess_resume_farm(
-            matches,
-            shingle_count=fp.shingle_count,
-            corpus_size=corpus,
-            settings=services.settings,
-        )
-
-    report: Optional[Report] = None
-    if req.evaluate:
-        report = await request.app.state.engine.evaluate(
-            resume_text=text,
-            domain=req.domain,
-            candidate_profile=result.profile,
-            resume_farm=farm,
-        )
-        report.candidate_id = outcome.candidate_id
-        # DPDP: a derived report must not outlive the erasure of its subject.
-        # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
-        # landing after the save cascades the row away — so both halves of this
-        # race are the database's job, not a compensating delete we remember.
-        try:
-            services.report_store.save(report, org_id=org_id)
-        except SubjectErasedError:
-            report = None
-        else:
-            if services.candidates.get_candidate(outcome.candidate_id) is None:
-                report = None
+    except IngestRefused as exc:
+        raise HTTPException(status_code=422, detail=exc.reason) from exc
 
     return CandidateCreateResponse(
-        candidate_id=outcome.candidate_id,
-        resume_id=outcome.resume_id,
-        resume_version=outcome.resume_version,
-        matched_existing=outcome.matched_existing,
-        matched_on=outcome.matched_on,
-        duplicate_resume=outcome.duplicate_resume,
-        extraction_method=result.method,
-        report=report,
-        resume_farm=farm,
+        candidate_id=result.candidate_id,
+        resume_id=result.resume_id,
+        resume_version=result.resume_version,
+        matched_existing=result.matched_existing,
+        matched_on=result.matched_on,
+        duplicate_resume=result.duplicate_resume,
+        extraction_method=result.extraction_method,
+        report=result.report,
+        resume_farm=result.resume_farm,
     )
 
 
@@ -468,8 +595,8 @@ async def list_candidate_reports(candidate_id: str, request: Request) -> list[Re
     return services.report_store.for_candidate(candidate_id)
 
 
-@router.delete("/candidates/{candidate_id}")
-async def delete_candidate(candidate_id: str, request: Request) -> dict:
+@router.delete("/candidates/{candidate_id}", response_model=ErasureResponse)
+async def delete_candidate(candidate_id: str, request: Request) -> ErasureResponse:
     """DPDP erasure: candidate + resumes (raw text) + extractions + all reports
     derived from them. Hard delete — there is nothing to un-delete.
 
@@ -488,10 +615,10 @@ async def delete_candidate(candidate_id: str, request: Request) -> dict:
     return services.portal.erase(candidate_id)
 
 
-@router.delete("/candidates/{candidate_id}/resumes/{resume_id}")
+@router.delete("/candidates/{candidate_id}/resumes/{resume_id}", response_model=ResumeDeletedResponse)
 async def delete_candidate_resume(
     candidate_id: str, resume_id: str, request: Request
-) -> dict:
+) -> ResumeDeletedResponse:
     """DPDP erasure of ONE resume version (+ its extractions). The candidate
     row and other versions stay; ownership is checked so one candidate's URL
     can never erase another's data."""
@@ -505,8 +632,8 @@ async def delete_candidate_resume(
     return {"resume_id": resume_id, "deleted": True}
 
 
-@router.post("/candidates/{candidate_id}/auth-key")
-async def issue_candidate_key(candidate_id: str, request: Request) -> dict:
+@router.post("/candidates/{candidate_id}/auth-key", response_model=CandidateKeyResponse)
+async def issue_candidate_key(candidate_id: str, request: Request) -> CandidateKeyResponse:
     """Admin/system mints (or rotates) a candidate's portal access key, returned
     ONCE. First-party self-serve registration is a productionization concern
     (PI-8); this is the offline-deterministic issuance path."""
@@ -604,13 +731,24 @@ class CurationResolveRequest(BaseModel):
     decided_by: Optional[str] = None
 
 
-@router.get("/curation/skills/unmapped", response_model=list[UnmappedTerm])
+@router.get(
+    "/curation/skills/unmapped", response_model=UnmappedPage,
+    description=(
+        "The unmapped-term review queue. Cursor-paginated; pass `next_cursor` back as `cursor`. NOTE the sort key "
+        "(occurrences, last_seen) is mutable, so paging is stable against "
+        "inserts and not against re-observation."
+    ),
+)
 async def list_unmapped_terms(
     request: Request,
     status: Optional[CurationStatus] = None,
     limit: Optional[int] = None,
-) -> list[UnmappedTerm]:
-    return _services(request).curation.list_unmapped(status, limit)
+    cursor: Optional[str] = None,
+) -> UnmappedPage:
+    try:
+        return _services(request).curation.list_unmapped(status, limit, cursor=cursor)
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/curation/skills/resolve", response_model=UnmappedTerm)
@@ -659,8 +797,8 @@ async def list_orgs(request: Request) -> list[Organization]:
     return _services(request).ledger.list_organizations()
 
 
-@router.post("/ledger/orgs/{org_id}/api-key")
-async def rotate_org_key(org_id: str, request: Request) -> dict:
+@router.post("/ledger/orgs/{org_id}/api-key", response_model=OrgKeyResponse)
+async def rotate_org_key(org_id: str, request: Request) -> OrgKeyResponse:
     try:
         api_key = _services(request).ledger.issue_api_key(org_id)
     except LookupError as exc:
@@ -668,8 +806,8 @@ async def rotate_org_key(org_id: str, request: Request) -> dict:
     return {"org_id": org_id, "api_key": api_key}
 
 
-@router.delete("/ledger/orgs/{org_id}")
-async def delete_org(org_id: str, request: Request) -> dict:
+@router.delete("/ledger/orgs/{org_id}", response_model=OrgDeletedResponse)
+async def delete_org(org_id: str, request: Request) -> OrgDeletedResponse:
     if not _services(request).ledger.delete_organization(org_id):
         raise HTTPException(status_code=404, detail="organization not found")
     return {"org_id": org_id, "deleted": True}
@@ -714,8 +852,8 @@ async def grant_consent(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("/ledger/consent/{consent_id}/revoke")
-async def revoke_consent(consent_id: str, request: Request) -> dict:
+@router.post("/ledger/consent/{consent_id}/revoke", response_model=ConsentRevokedResponse)
+async def revoke_consent(consent_id: str, request: Request) -> ConsentRevokedResponse:
     revoked = _services(request).ledger.revoke_consent(consent_id)
     return {"consent_id": consent_id, "revoked": revoked}
 
@@ -781,6 +919,187 @@ async def screening_candidate_reports(
     return _services(request).screening_scope.reports_for_candidate(
         org_id, candidate_id
     )
+
+
+# ── Screening batches (S8.4 Phase B) ─────────────────────────────────────────
+# The wedge at volume: register what you have, process it in bounded calls,
+# read a ranked queue. Registration is a row insert; PROCESSING is the slow
+# part and the client drives it, because there is no worker anywhere in app/
+# (spec §0.3) and 500 nine-node graph runs cannot happen inside one request.
+
+
+class BatchItemInput(BaseModel):
+    """At least one of resume_text / resume_pdf_b64; resume_text wins when
+    both are sent (same rule as CandidateCreateRequest, on purpose)."""
+
+    resume_text: Optional[str] = None
+    resume_pdf_b64: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _need_one_source(self) -> "BatchItemInput":
+        if not (self.resume_text or self.resume_pdf_b64):
+            raise ValueError("Provide resume_text or resume_pdf_b64.")
+        return self
+
+
+class BatchCreateRequest(BaseModel):
+    name: str = ""
+    domain: str = "genai"
+    items: list[BatchItemInput] = Field(default_factory=list)
+
+
+class BatchDeleteResponse(BaseModel):
+    batch_id: str
+    deleted: bool
+
+
+def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
+    """Decode every item to text AT REGISTRATION -- cheap, deterministic, no LLM.
+
+    A corrupt file therefore fails immediately rather than 400 items later, and
+    it fails the WHOLE registration: a half-registered batch would leave the org
+    unable to tell which files made it in.
+    """
+    # The count cap FIRST: it must cost arithmetic, not work. The service
+    # re-checks it (the invariant lives there); this copy exists so an
+    # over-cap batch is refused before a single PDF is decoded.
+    cap = caps.screening_max_batch_items
+    if len(req.items) > cap:
+        raise HTTPException(
+            status_code=422, detail=f"a batch holds at most {cap} items"
+        )
+    texts: list[str] = []
+    for i, item in enumerate(req.items):
+        if item.resume_text and len(item.resume_text) > caps.max_resume_chars:
+            raise HTTPException(
+                status_code=422,
+                detail=f"item {i}: resume_text exceeds max_resume_chars={caps.max_resume_chars}",
+            )
+        if item.resume_pdf_b64 and len(item.resume_pdf_b64) > caps.max_pdf_b64_chars:
+            raise HTTPException(
+                status_code=422,
+                detail=f"item {i}: resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
+            )
+        text = item.resume_text
+        if not text and item.resume_pdf_b64:
+            try:
+                text = pdf_b64_to_text(item.resume_pdf_b64)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"item {i}: pdf_parse_failed: {exc}"
+                ) from exc
+        texts.append(text or "")
+    return texts
+
+
+def _org_user_id(request: Request) -> Optional[str]:
+    """The human behind the call, or None for a machine credential."""
+    principal = getattr(request.state, "principal", None)
+    return getattr(principal, "org_user_id", None)
+
+
+@org_router.post("/screening/batches", response_model=BatchDetail)
+async def create_screening_batch(
+    req: BatchCreateRequest, request: Request, org_id: str = Depends(require_org)
+) -> BatchDetail:
+    services = _services(request)
+    texts = _batch_texts(req, services.settings)
+    try:
+        return services.screening.register(
+            org_id, name=req.name, domain=req.domain, texts=texts,
+            created_by_org_user_id=_org_user_id(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@org_router.get(
+    "/screening/batches", response_model=BatchPage,
+    description="Batches this organisation registered, newest first. Cursor-paginated; pass `next_cursor` back as `cursor`.",
+)
+async def list_screening_batches(
+    request: Request,
+    org_id: str = Depends(require_org),
+    cursor: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> BatchPage:
+    try:
+        return _services(request).screening.list(org_id, cursor=cursor, limit=limit)
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@org_router.get("/screening/batches/{batch_id}", response_model=BatchDetail)
+async def get_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchDetail:
+    """404 -- never 403 -- for another org's batch."""
+    found = _services(request).screening.get(org_id, batch_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return found
+
+
+@org_router.post("/screening/batches/{batch_id}/process", response_model=ProcessResult)
+async def process_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> ProcessResult:
+    """Bounded by `screening_max_items_per_call`. Call it until `remaining` is 0.
+
+    An item whose claim goes stale becomes claimable again, so a batch
+    interrupted by a redeploy heals on the next call rather than wedging.
+    """
+    result = await _services(request).screening.process(
+        org_id, batch_id, engine=request.app.state.engine
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return result
+
+
+@org_router.get(
+    "/screening/batches/{batch_id}/queue", response_model=QueuePage,
+    description="The fraud-screen queue, riskiest first. Cursor-paginated; pass `next_cursor` back as `cursor`.",
+)
+async def screening_batch_queue(
+    batch_id: str,
+    request: Request,
+    org_id: str = Depends(require_org),
+    cursor: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> QueuePage:
+    """The fraud-screen read-model: riskiest first, unscreened rows last."""
+    try:
+        page = _services(request).screening.queue(
+            org_id, batch_id, cursor=cursor, limit=limit
+        )
+    except (InvalidCursor, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return page
+
+
+@org_router.get("/screening/batches/{batch_id}/summary", response_model=BatchSummary)
+async def screening_batch_summary(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchSummary:
+    found = _services(request).screening.summary(org_id, batch_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return found
+
+
+@org_router.delete("/screening/batches/{batch_id}", response_model=BatchDeleteResponse)
+async def delete_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> BatchDeleteResponse:
+    """A real delete path on a new table, shipped in the sprint that creates it
+    -- `batch_items.raw_text` is personal data with no candidate to cascade
+    from (spec §4.2)."""
+    if not _services(request).screening.delete(org_id, batch_id):
+        raise HTTPException(status_code=404, detail="batch not found")
+    return BatchDeleteResponse(batch_id=batch_id, deleted=True)
 
 
 class RecordSubmitRequest(BaseModel):
@@ -976,7 +1295,13 @@ async def update_job(
     return r
 
 
-@org_router.post("/jobs/{req_id}/match", response_model=MatchResult)
+@org_router.post(
+    "/jobs/{req_id}/match",
+    response_model=MatchResult,
+    description=(
+        "Top-N advisory ranking. NOT paginated: the pool is re-ranked on every request, so there is no stable key to page on and a cursor would promise an ordering this endpoint cannot keep. Use `limit`."
+    ),
+)
 async def match_job(
     req_id: str, body: JobMatchRequest, request: Request, org_id: str = Depends(require_org)
 ) -> MatchResult:
@@ -988,7 +1313,10 @@ async def match_job(
     if result is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     if result.pool_size == 0:
-        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+        # 200, not 422: an empty feature store is a server-side state and the
+        # caller cannot fix it. Mirrors GET /candidates/{id}/card's
+        # 200-with-status pattern (UI.md §6).
+        return result.model_copy(update={"reason": "no_materialized_candidates"})
     return result
 
 
@@ -1038,10 +1366,18 @@ class CompEstimateRequest(BaseModel):
     seniority: Optional[SeniorityBand] = None
 
 
-@org_router.post("/comp/estimate", response_model=CompBandEstimate)
+@org_router.post("/comp/estimate", response_model=CompBenchmark)
 async def comp_estimate(
     body: CompEstimateRequest, request: Request, org_id: str = Depends(require_org)
-) -> CompBandEstimate:
+) -> CompBenchmark:
+    """One shape from both comp endpoints (S8.4 Phase B §1.12).
+
+    `GET /jobs/{id}/comp` has always returned a CompBenchmark WRAPPING the
+    estimate; this returned the bare estimate, and during the UI wiring session
+    assuming one shape rendered a band made entirely of dashes. The three
+    positioning fields are None because there is no requisition to position
+    against -- honest, where a 0.0 would read as 'exactly at market'.
+    """
     services = _services(request)
     try:
         signal = bands.role_signal_from_input(
@@ -1051,7 +1387,11 @@ async def comp_estimate(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return services.comp.estimate(signal, org_id=org_id)
+    return CompBenchmark(
+        estimate=services.comp.estimate(signal, org_id=org_id),
+        requisition_band=None, position=None, delta_pct=None,
+        reasoning="ad-hoc estimate: no requisition to position against",
+    )
 
 
 @org_router.get("/jobs/{req_id}/comp", response_model=CompBenchmark)
@@ -1086,7 +1426,13 @@ async def job_board(
     if board is None:
         raise HTTPException(status_code=404, detail="requisition not found")
     if board.match.pool_size == 0:
-        raise HTTPException(status_code=422, detail="no materialized candidates to match")
+        # The SAME change as match_job above, in the same commit: fixing one
+        # entry point and leaving the other is this repo's signature defect.
+        board = board.model_copy(update={
+            "match": board.match.model_copy(
+                update={"reason": "no_materialized_candidates"}
+            )
+        })
     return board
 
 
@@ -1145,10 +1491,10 @@ async def portal_grant_consent(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@candidate_router.post("/portal/consents/{consent_id}/revoke")
+@candidate_router.post("/portal/consents/{consent_id}/revoke", response_model=ConsentRevokedResponse)
 async def portal_revoke_consent(
     consent_id: str, request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> ConsentRevokedResponse:
     try:
         revoked = _services(request).portal.revoke(candidate_id, consent_id)
     except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
@@ -1156,10 +1502,10 @@ async def portal_revoke_consent(
     return {"consent_id": consent_id, "revoked": revoked}
 
 
-@candidate_router.delete("/portal/me")
+@candidate_router.delete("/portal/me", response_model=ErasureResponse)
 async def portal_erase(
     request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> ErasureResponse:
     """DPDP erasure, self-service.
 
     The SAME service call the admin plane makes, deliberately: erasure now has
@@ -1199,12 +1545,12 @@ class ManualReviewRequest(BaseModel):
     evidence_digest: str | None = None
 
 
-@candidate_router.post("/portal/verifications")
+@candidate_router.post("/portal/verifications", response_model=StartVerificationResponse)
 async def start_verification(
     req: StartVerificationRequest,
     request: Request,
     candidate_id: str = Depends(require_candidate),
-) -> dict:
+) -> StartVerificationResponse:
     services = _services(request)
     try:
         verification, code = services.verification.start(
@@ -1235,13 +1581,13 @@ async def start_verification(
     return body
 
 
-@candidate_router.post("/portal/verifications/{verification_id}/confirm")
+@candidate_router.post("/portal/verifications/{verification_id}/confirm", response_model=Verification)
 async def confirm_verification(
     verification_id: str,
     req: ConfirmVerificationRequest,
     request: Request,
     candidate_id: str = Depends(require_candidate),
-) -> dict:
+) -> Verification:
     services = _services(request)
     try:
         verification = services.verification.confirm(
@@ -1254,10 +1600,10 @@ async def confirm_verification(
     return verification.model_dump(mode="json")
 
 
-@candidate_router.get("/portal/verifications")
+@candidate_router.get("/portal/verifications", response_model=VerificationListResponse)
 async def list_verifications(
     request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> VerificationListResponse:
     services = _services(request)
     verifications, assurance = services.verification.list_for_candidate(candidate_id)
     return {
@@ -1270,10 +1616,10 @@ async def list_verifications(
     }
 
 
-@org_router.get("/verification/candidates/{candidate_id}/assurance")
+@org_router.get("/verification/candidates/{candidate_id}/assurance", response_model=IdentityAssurance)
 async def org_candidate_assurance(
     candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> dict:
+) -> IdentityAssurance:
     """Consent-gated identity assurance. Every attempt — allowed or denied — is
     audited by the store. Returns the advisory roll-up only: never the evidence
     digests, the destination hashes, or the individual attempt rows."""
@@ -1310,12 +1656,12 @@ class SubmitDocumentRequest(BaseModel):
     claim_ref: str | None = Field(default=None, max_length=CLAIM_REF_MAX_CHARS)
 
 
-@candidate_router.post("/portal/documents")
+@candidate_router.post("/portal/documents", response_model=DocumentSubmitResponse)
 async def submit_document(
     req: SubmitDocumentRequest,
     request: Request,
     candidate_id: str = Depends(require_candidate),
-) -> dict:
+) -> DocumentSubmitResponse:
     services = _services(request)
     try:
         verification, findings, claims = services.verification.submit_document(
@@ -1340,10 +1686,10 @@ async def submit_document(
     }
 
 
-@org_router.get("/verification/candidates/{candidate_id}/claims")
+@org_router.get("/verification/candidates/{candidate_id}/claims", response_model=ClaimEvidence)
 async def org_candidate_claims(
     candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> dict:
+) -> ClaimEvidence:
     """Consent-gated employment-claim evidence. Every attempt — allowed or
     denied — is audited by the store. Returns the advisory roll-up only: never
     an evidence digest, never a claim_ref, never a document."""
@@ -1380,19 +1726,16 @@ class SubmitAnswerRequest(BaseModel):
     mime: str | None = None
 
 
-def _interview_body(session, following) -> dict:
-    return {
-        "session": session.model_dump(mode="json"),
-        "next_question": following.model_dump(mode="json") if following else None,
-    }
+def _interview_body(session, following) -> InterviewTurnResponse:
+    return InterviewTurnResponse(session=session, next_question=following)
 
 
-@candidate_router.post("/portal/interviews")
+@candidate_router.post("/portal/interviews", response_model=InterviewTurnResponse)
 async def start_interview(
     req: StartInterviewRequest,
     request: Request,
     candidate_id: str = Depends(require_candidate),
-) -> dict:
+) -> InterviewTurnResponse:
     services = _services(request)
     try:
         session = services.interview.start(candidate_id, domain_key=req.domain)
@@ -1407,18 +1750,18 @@ async def start_interview(
     return _interview_body(session, services.interview.next_question(session))
 
 
-@candidate_router.get("/portal/interviews")
+@candidate_router.get("/portal/interviews", response_model=InterviewListResponse)
 async def list_interviews(
     request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> InterviewListResponse:
     summaries = _services(request).interview.list_for_candidate(candidate_id)
     return {"interviews": [s.model_dump(mode="json") for s in summaries]}
 
 
-@candidate_router.get("/portal/interviews/{session_id}")
+@candidate_router.get("/portal/interviews/{session_id}", response_model=InterviewTurnResponse)
 async def get_interview(
     session_id: str, request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> InterviewTurnResponse:
     """The candidate's own full view — transcripts included. It is their data,
     and an advisory score whose basis they cannot read is not advisory."""
     services = _services(request)
@@ -1429,13 +1772,13 @@ async def get_interview(
     return _interview_body(session, services.interview.next_question(session))
 
 
-@candidate_router.post("/portal/interviews/{session_id}/answers")
+@candidate_router.post("/portal/interviews/{session_id}/answers", response_model=InterviewTurnResponse)
 async def submit_answer(
     session_id: str,
     req: SubmitAnswerRequest,
     request: Request,
     candidate_id: str = Depends(require_candidate),
-) -> dict:
+) -> InterviewTurnResponse:
     services = _services(request)
     try:
         session, following = await services.interview.answer(
@@ -1461,10 +1804,10 @@ async def submit_answer(
     return _interview_body(session, following)
 
 
-@candidate_router.post("/portal/interviews/{session_id}/finish")
+@candidate_router.post("/portal/interviews/{session_id}/finish", response_model=InterviewTurnResponse)
 async def finish_interview(
     session_id: str, request: Request, candidate_id: str = Depends(require_candidate)
-) -> dict:
+) -> InterviewTurnResponse:
     services = _services(request)
     try:
         session = services.interview.finish(candidate_id, session_id)
@@ -1475,10 +1818,10 @@ async def finish_interview(
     return _interview_body(session, None)
 
 
-@org_router.get("/interview/candidates/{candidate_id}/assessments")
+@org_router.get("/interview/candidates/{candidate_id}/assessments", response_model=OrgInterviewAssessments)
 async def org_candidate_interviews(
     candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> dict:
+) -> OrgInterviewAssessments:
     """Consent-gated interview assessments (INTERVIEW_READ — a new purpose, not
     a widening of verification_read). Every attempt — allowed or denied — is
     audited by the store. Headers only: bands, dimensions, proxy band,
@@ -1497,10 +1840,10 @@ async def org_candidate_interviews(
     }
 
 
-@router.post("/candidates/{candidate_id}/verifications/manual-review")
+@router.post("/candidates/{candidate_id}/verifications/manual-review", response_model=Verification)
 async def record_manual_review(
     candidate_id: str, req: ManualReviewRequest, request: Request
-) -> dict:
+) -> Verification:
     """Admin plane: an operator checked something out of band (L3 REVIEWED).
     Only a digest of what was checked is stored, never the artifact."""
     try:
@@ -1537,7 +1880,13 @@ class TalentSearchRequest(BaseModel):
     limit: Optional[int] = Field(default=None, ge=1)
 
 
-@router.post("/talent/search", response_model=SearchResult)
+@router.post(
+    "/talent/search",
+    response_model=SearchResult,
+    description=(
+        "Top-N advisory ranking. NOT paginated: the pool is re-ranked on every request, so there is no stable key to page on and a cursor would promise an ordering this endpoint cannot keep. Use `limit`."
+    ),
+)
 async def talent_search(req: TalentSearchRequest, request: Request) -> SearchResult:
     """Filter + rank the materialized pool by a composite score. Advisory: it
     narrows and orders, never auto-rejects. Consent was masked at materialization
@@ -1589,6 +1938,73 @@ async def talent_search(req: TalentSearchRequest, request: Request) -> SearchRes
     )
 
 
+class MaterializeRequest(BaseModel):
+    candidate_ids: Optional[list[str]] = None
+    as_of: Optional[datetime] = None
+    view_name: Optional[str] = None
+
+
+class MaterializeResponse(BaseModel):
+    view_name: str
+    view_version: int
+    as_of: Optional[datetime] = None
+    materialized: int = 0
+    skipped: int = 0
+
+
+@router.post("/features/materialize", response_model=MaterializeResponse)
+async def materialize_features(
+    body: MaterializeRequest, request: Request
+) -> MaterializeResponse:
+    """Compute + persist feature vectors. ADMIN plane, deliberately.
+
+    Materialization spans ALL candidates and is consent-masked per candidate
+    (S4.2), so on the org plane one customer's call would compute vectors over
+    every customer's people. It is an operator action.
+
+    Until this route existed, `app/features/materialize.py` was reachable only
+    from Python -- which made `GET /jobs/{id}/board`'s empty-pool state
+    permanent for a self-registered org rather than transient.
+    """
+    services = _services(request)
+    registry = get_feature_registry()
+    view = default_view(registry, settings=services.settings)
+    # Only the default view exists today. Refusing an unknown name is honest;
+    # accepting it, materializing the default anyway and echoing the caller's
+    # name back was a response claiming work that never happened.
+    if body.view_name is not None and body.view_name != view.name:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown view '{body.view_name}'; only '{view.name}' exists",
+        )
+
+    ids = body.candidate_ids
+    if ids is None:
+        ids = services.candidates.list_candidate_ids(
+            services.settings.materialize_max_candidates
+        )
+
+    materialized = skipped = 0
+    for candidate_id in ids:
+        mv = materialize_candidate(
+            candidate_id, view=view, registry=registry, as_of=body.as_of,
+            candidate_store=services.candidates,
+            report_store=services.report_store,
+            ledger_store=services.ledger,
+        )
+        if mv is None:
+            # No context for this candidate (unknown id, or nothing to compute).
+            skipped += 1
+            continue
+        services.features.upsert_vector(mv)
+        materialized += 1
+
+    return MaterializeResponse(
+        view_name=view.name, view_version=view.version, as_of=body.as_of,
+        materialized=materialized, skipped=skipped,
+    )
+
+
 @router.get("/report/{report_id}", response_model=Report)
 async def get_report(report_id: str, request: Request) -> Report:
     report = _services(request).report_store.get(report_id)
@@ -1605,8 +2021,8 @@ class OutcomeRequest(BaseModel):
     notes: str = ""
 
 
-@router.post("/report/{report_id}/outcome")
-async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) -> dict:
+@router.post("/report/{report_id}/outcome", response_model=OutcomeRecordedResponse)
+async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) -> OutcomeRecordedResponse:
     services = _services(request)
     report = services.report_store.get(report_id)
     if report is None:
@@ -1641,8 +2057,8 @@ async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) 
     }
 
 
-@router.get("/report/{report_id}/outcomes")
-async def list_outcomes(report_id: str, request: Request) -> dict:
+@router.get("/report/{report_id}/outcomes", response_model=OutcomeListResponse)
+async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse:
     services = _services(request)
     if services.report_store.get(report_id) is None:
         raise HTTPException(status_code=404, detail="report not found")
@@ -1652,8 +2068,8 @@ async def list_outcomes(report_id: str, request: Request) -> dict:
     }
 
 
-@router.get("/domains")
-async def domains() -> list[dict]:
+@router.get("/domains", response_model=list[DomainInfo])
+async def domains() -> list[DomainInfo]:
     """Registered evaluation domains (FR-9)."""
     out = []
     for key in list_domains():
@@ -1664,8 +2080,8 @@ async def domains() -> list[dict]:
     return out
 
 
-@public_router.get("/healthz")
-async def healthz(request: Request) -> dict:
+@public_router.get("/healthz", response_model=HealthResponse)
+async def healthz(request: Request) -> HealthResponse:
     """Liveness + effective mode (FR-10). Open — load balancers don't have keys."""
     services = _services(request)
     return {
@@ -1730,7 +2146,7 @@ def _request_code(
     plane: AuthPlane,
     purpose: LoginPurpose,
     payload: Optional[dict] = None,
-) -> dict:
+) -> CodeRequestAccepted:
     """Shared signup/login handler for all three planes."""
     try:
         _services(request).auth.request_code(
@@ -1751,12 +2167,12 @@ def _request_code(
         # door. The previously sent code is still live and still in their inbox,
         # so the user loses nothing.
         pass
-    return dict(_ACCEPTED)
+    return CodeRequestAccepted()
 
 
 def _verify(
     request: Request, response: Response, *, email: str, code: str, plane: AuthPlane
-) -> dict:
+) -> SessionEstablished:
     services = _services(request)
     try:
         token, csrf, principal = services.auth.verify_code(
@@ -1776,15 +2192,15 @@ def _verify(
         # assumptions was right, which is precisely the help not to give.
         raise HTTPException(status_code=400, detail="invalid_code") from exc
     _set_session_cookies(response, token=token, csrf=csrf, settings=services.settings)
-    return {
-        "principal": principal.kind.value,
-        "csrf_token": csrf,
-        "organization_id": principal.org_id,
-    }
+    return SessionEstablished(
+        principal=principal.kind.value,
+        csrf_token=csrf,
+        organization_id=principal.org_id,
+    )
 
 
-@auth_router.post("/auth/org/signup", status_code=202)
-async def auth_org_signup(req: OrgSignupRequest, request: Request) -> dict:
+@auth_router.post("/auth/org/signup", status_code=202, response_model=CodeRequestAccepted)
+async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeRequestAccepted:
     """Refuse a taken org name HERE, before a code is ever sent (S8.4 §2.1).
 
     The old behaviour answered 202, mailed a real code, and then rejected that
@@ -1807,24 +2223,24 @@ async def auth_org_signup(req: OrgSignupRequest, request: Request) -> dict:
     )
 
 
-@auth_router.post("/auth/org/login", status_code=202)
-async def auth_org_login(req: EmailOnlyRequest, request: Request) -> dict:
+@auth_router.post("/auth/org/login", status_code=202, response_model=CodeRequestAccepted)
+async def auth_org_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request, email=req.email, plane=AuthPlane.ORG, purpose=LoginPurpose.LOGIN
     )
 
 
-@auth_router.post("/auth/org/verify")
+@auth_router.post("/auth/org/verify", response_model=SessionEstablished)
 async def auth_org_verify(
     req: VerifyRequest, request: Request, response: Response
-) -> dict:
+) -> SessionEstablished:
     return _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.ORG
     )
 
 
-@auth_router.post("/auth/candidate/signup", status_code=202)
-async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> dict:
+@auth_router.post("/auth/candidate/signup", status_code=202, response_model=CodeRequestAccepted)
+async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request,
         email=req.email,
@@ -1833,8 +2249,8 @@ async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> dict
     )
 
 
-@auth_router.post("/auth/candidate/login", status_code=202)
-async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> dict:
+@auth_router.post("/auth/candidate/login", status_code=202, response_model=CodeRequestAccepted)
+async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request,
         email=req.email,
@@ -1843,10 +2259,10 @@ async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> dict:
     )
 
 
-@auth_router.post("/auth/candidate/verify")
+@auth_router.post("/auth/candidate/verify", response_model=SessionEstablished)
 async def auth_candidate_verify(
     req: VerifyRequest, request: Request, response: Response
-) -> dict:
+) -> SessionEstablished:
     return _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.CANDIDATE
     )
@@ -1856,17 +2272,17 @@ async def auth_candidate_verify(
 # existing operator through POST /admin/users, behind the shared admin key.
 
 
-@auth_router.post("/auth/admin/login", status_code=202)
-async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> dict:
+@auth_router.post("/auth/admin/login", status_code=202, response_model=CodeRequestAccepted)
+async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request, email=req.email, plane=AuthPlane.ADMIN, purpose=LoginPurpose.LOGIN
     )
 
 
-@auth_router.post("/auth/admin/verify")
+@auth_router.post("/auth/admin/verify", response_model=SessionEstablished)
 async def auth_admin_verify(
     req: VerifyRequest, request: Request, response: Response
-) -> dict:
+) -> SessionEstablished:
     return _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.ADMIN
     )
@@ -1875,8 +2291,8 @@ async def auth_admin_verify(
 # -- session lifecycle: cross-plane, session-only ----------------------------
 
 
-@auth_router.get("/auth/me")
-async def auth_me(principal: Principal = Depends(require_any_principal)) -> dict:
+@auth_router.get("/auth/me", response_model=AuthMeResponse)
+async def auth_me(principal: Principal = Depends(require_any_principal)) -> AuthMeResponse:
     """What the browser client calls on load to learn who it is."""
     return {
         "kind": principal.kind.value,
@@ -1885,12 +2301,12 @@ async def auth_me(principal: Principal = Depends(require_any_principal)) -> dict
     }
 
 
-@auth_router.post("/auth/logout")
+@auth_router.post("/auth/logout", response_model=LogoutResponse)
 async def auth_logout(
     request: Request,
     response: Response,
     principal: Principal = Depends(require_any_principal),
-) -> dict:
+) -> LogoutResponse:
     services = _services(request)
     revoked = services.auth.logout(principal)
     response.delete_cookie(services.settings.session_cookie_name, path="/")
@@ -1907,12 +2323,12 @@ async def auth_sessions(
     return _services(request).auth.sessions_for(principal)
 
 
-@auth_router.post("/auth/sessions/{session_id}/revoke")
+@auth_router.post("/auth/sessions/{session_id}/revoke", response_model=SessionRevokedResponse)
 async def auth_revoke_session(
     session_id: str,
     request: Request,
     principal: Principal = Depends(require_any_principal),
-) -> dict:
+) -> SessionRevokedResponse:
     """Unknown and not-owned both 404 -- indistinguishable, so a session id
     cannot be probed (the S6.4 rule)."""
     if not _services(request).auth.revoke_session(principal, session_id):
@@ -1928,8 +2344,8 @@ class AdminUserRequest(BaseModel):
     label: str = ""
 
 
-@router.post("/admin/users")
-async def create_admin_user(req: AdminUserRequest, request: Request) -> dict:
+@router.post("/admin/users", response_model=AdminUser)
+async def create_admin_user(req: AdminUserRequest, request: Request) -> AdminUser:
     """Bootstrap reuses the shared key rather than inventing a mechanism.
 
     X-API-Key already exists and already fails closed (S8.1), so it becomes the
@@ -1946,16 +2362,16 @@ async def create_admin_user(req: AdminUserRequest, request: Request) -> dict:
     ).model_dump(mode="json")
 
 
-@router.get("/admin/users")
-async def list_admin_users(request: Request) -> list[dict]:
+@router.get("/admin/users", response_model=list[AdminUser])
+async def list_admin_users(request: Request) -> list[AdminUser]:
     return [
         a.model_dump(mode="json")
         for a in _services(request).auth.list_admin_users()
     ]
 
 
-@router.delete("/admin/users/{admin_user_id}")
-async def delete_admin_user(admin_user_id: str, request: Request) -> dict:
+@router.delete("/admin/users/{admin_user_id}", response_model=AdminUserDeletedResponse)
+async def delete_admin_user(admin_user_id: str, request: Request) -> AdminUserDeletedResponse:
     """A hard delete: their sessions CASCADE away with them."""
     if not _services(request).auth.delete_admin_user(admin_user_id):
         raise HTTPException(status_code=404, detail="operator not found")

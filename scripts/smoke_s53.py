@@ -1,6 +1,9 @@
 """S5.3 smoke: boot uvicorn on a migrated scratch DB, create two orgs (admin) +
 their X-Org-Keys, POST one candidate, create a job requisition, and assert
-GET /jobs/{id}/board -> 422 before the pool is materialized (empty pool).
+GET /jobs/{id}/board -> 200 with reason=no_materialized_candidates before the
+pool is materialized (S8.4 Phase B changed this from a 422: an empty feature
+store is a server-side state, and POST /features/materialize is now the route
+that fixes it).
 Re-boot, materialize the candidate's core_v1 vector directly (as smoke_s51.py
 does), and exercise the employer dashboard over HTTP (LLM-free): the pipeline
 overview, the lean board (200, non-empty pool, advisory comp), the drill-in
@@ -107,8 +110,9 @@ def main() -> int:
             req_id = req["id"]
 
             pre_board = c.get(f"/jobs/{req_id}/board", headers=org_h)
-            checks["board -> 422 before materialization (empty pool)"] = (
-                pre_board.status_code == 422
+            checks["board -> 200 + reason before materialization (empty pool)"] = (
+                pre_board.status_code == 200
+                and pre_board.json()["match"]["reason"] == "no_materialized_candidates"
             )
 
             state.update(org_id=org_id, org_key=org_key, org2_key=org2_key,

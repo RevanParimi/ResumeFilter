@@ -16,6 +16,7 @@ from typing import Optional
 
 from sqlalchemy import (
     JSON, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,6 +56,21 @@ class OrganizationRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+
+
+# S8.4 Phase B: "Acme Staffing" and "acme staffing" are one customer.
+#
+# An EXPRESSION index rather than a lowercase companion column, because a
+# companion column is a second source of truth maintained by application code at
+# two insert sites -- the one-rule-two-doors shape this codebase keeps being bitten
+# by. Here the database computes it, so BOTH existing insert paths inherit the
+# constraint with no new check: LedgerStore.create_organization and
+# AuthStore.create_org_with_owner already map IntegrityError to their own refusal.
+#
+# MEASURED: SQLite ENFORCES this and does not REFLECT it ("SAWarning: Skipped
+# unsupported reflection of expression-based index"), so tests/test_migrations.py
+# cannot compare it and proves it behaviourally instead.
+Index("uq_organizations_name_ci", func.lower(OrganizationRow.name), unique=True)
 
 
 class ConsentGrantRow(Base):

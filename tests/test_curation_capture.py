@@ -29,7 +29,7 @@ async def test_github_ingest_captures_unmapped_skill(settings, fake_github):
     services = make_services(settings, github=gh)
     cid = _candidate(services)
     await services.profile_sources.ingest_github(cid, handle="dev")
-    pending = services.curation.list_unmapped(CurationStatus.PENDING)
+    pending = services.curation.list_unmapped(CurationStatus.PENDING).terms
     assert any(t.norm_key == "cobol" and "github" in t.source_types for t in pending)
 
 
@@ -44,7 +44,7 @@ async def test_fully_mapped_signal_queues_nothing(settings):
     services = make_services(settings, github=gh)
     cid = _candidate(services)
     await services.profile_sources.ingest_github(cid, handle="dev")
-    assert services.curation.list_unmapped(CurationStatus.PENDING) == []
+    assert services.curation.list_unmapped(CurationStatus.PENDING).terms == []
 
 
 async def test_capture_failure_does_not_break_ingest(settings):

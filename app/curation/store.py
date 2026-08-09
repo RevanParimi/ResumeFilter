@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import sessionmaker
 
 from app.candidates.normalize.skills import SkillMatch
@@ -73,16 +73,57 @@ class CurationStore:
             session.commit()
 
     def list_terms(
-        self, status: Optional[CurationStatus] = None, limit: int = 200
-    ) -> list[UnmappedTerm]:
+        self,
+        status: Optional[CurationStatus] = None,
+        limit: int = 200,
+        *,
+        cursor: Optional[str] = None,
+    ) -> tuple[list[UnmappedTerm], Optional[str]]:
+        """Keyset-paged over (occurrences, last_seen, norm_key) -- the existing
+        order, plus norm_key to break ties into a total order."""
+        from app.screening.pagination import (
+            decode_cursor, encode_cursor, iso_datetime,
+        )
+
         with self._session_factory() as session:
             q = select(UnmappedTermRow)
             if status is not None:
                 q = q.where(UnmappedTermRow.status == status.value)
-            q = q.order_by(
-                UnmappedTermRow.occurrences.desc(), UnmappedTermRow.last_seen.desc()
-            ).limit(limit)
-            return [_to_term(r) for r in session.execute(q).scalars().all()]
+            if cursor is not None:
+                occ, seen, key = decode_cursor(
+                    cursor, arity=3, types=((int, float), str, str)
+                )
+                cut = iso_datetime(seen)
+                q = q.where(
+                    or_(
+                        UnmappedTermRow.occurrences < occ,
+                        and_(
+                            UnmappedTermRow.occurrences == occ,
+                            or_(
+                                UnmappedTermRow.last_seen < cut,
+                                and_(
+                                    UnmappedTermRow.last_seen == cut,
+                                    UnmappedTermRow.norm_key > key,
+                                ),
+                            ),
+                        ),
+                    )
+                )
+            rows = session.execute(
+                q.order_by(
+                    UnmappedTermRow.occurrences.desc(),
+                    UnmappedTermRow.last_seen.desc(),
+                    UnmappedTermRow.norm_key,
+                ).limit(limit + 1)
+            ).scalars().all()
+
+            more = len(rows) > limit
+            rows = rows[:limit]
+            next_cursor = (
+                encode_cursor((rows[-1].occurrences, rows[-1].last_seen, rows[-1].norm_key))
+                if more and rows else None
+            )
+            return [_to_term(r) for r in rows], next_cursor
 
     def get_term(self, norm_key: str) -> Optional[UnmappedTerm]:
         with self._session_factory() as session:

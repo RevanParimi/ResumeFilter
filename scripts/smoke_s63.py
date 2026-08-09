@@ -57,6 +57,12 @@ def main() -> int:
         "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
         "DEE_VECTORSTORE_BACKEND": "memory",
+        # Pinned EMPTY on purpose: this smoke ingests resumes through the
+        # extractor, and a developer with a real key in .env would otherwise
+        # ship live billed calls from a test run. S8.4 Phase A found five
+        # smokes doing exactly that; this one was not on that list and had the
+        # same hole (S8.4 Phase B, Task 10).
+        "DEE_OPENROUTER_API_KEY": "",
         "DEE_API_AUTH_KEY": ADMIN,
     })
     admin_h = {"X-API-Key": ADMIN}
@@ -78,8 +84,10 @@ def main() -> int:
                        json={"export_b64": _export_b64()}, headers=admin_h)
             checks["POST linkedin -> 200"] = r.status_code == 200
 
+            # S8.4 Phase B: this endpoint now answers UnmappedPage{terms, next_cursor}
+            # rather than a bare list -- the curation queue is cursor-paged.
             pend = c.get("/curation/skills/unmapped?status=pending", headers=admin_h).json()
-            pkeys = {t["norm_key"] for t in pend}
+            pkeys = {t["norm_key"] for t in pend["terms"]}
             checks["cobol queued pending"] = "cobol" in pkeys
             checks["pytorch lightning queued pending"] = "pytorch lightning" in pkeys
             checks["team player queued pending"] = "team player" in pkeys
@@ -115,7 +123,8 @@ def main() -> int:
             checks["Team Player still unmapped"] = skills.get("Team Player", {}).get("canonical") is None
 
             still_pending = {t["norm_key"] for t in
-                             c.get("/curation/skills/unmapped?status=pending", headers=admin_h).json()}
+                             c.get("/curation/skills/unmapped?status=pending",
+                                   headers=admin_h).json()["terms"]}
             checks["nothing re-queued pending"] = not (
                 {"cobol", "pytorch lightning", "team player"} & still_pending)
 
@@ -123,7 +132,7 @@ def main() -> int:
             deleted = c.delete(f"/candidates/{cid}", headers=admin_h)
             checks["DPDP delete candidate -> 200"] = deleted.status_code == 200
             all_terms = {t["norm_key"] for t in
-                         c.get("/curation/skills/unmapped", headers=admin_h).json()}
+                         c.get("/curation/skills/unmapped", headers=admin_h).json()["terms"]}
             checks["queue survives erasure"] = {"cobol", "pytorch lightning", "team player"} <= all_terms
     finally:
         proc.terminate()

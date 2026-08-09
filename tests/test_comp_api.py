@@ -48,7 +48,9 @@ def test_estimate_static_only(services):
         resp = c.post("/comp/estimate", headers={"X-Org-Key": key},
                       json={"title": "Senior Backend Engineer", "years_experience": 7})
         assert resp.status_code == 200
-        body = resp.json()
+        # S8.4 Phase B: this endpoint now answers the same CompBenchmark wrapper
+        # GET /jobs/{id}/comp does, so the estimate is one level in.
+        body = resp.json()["estimate"]
         assert body["advisory"] is True
         assert body["sources"] == ["static"]
         assert body["role_family"] == "backend_engineer"
@@ -112,3 +114,29 @@ def test_benchmark_cross_org_404_and_owned_ok(services):
         assert body["position"] in {"below", "at", "above"}
         # a different org cannot benchmark it
         assert c.get(f"/jobs/{req['id']}/comp", headers={"X-Org-Key": key_b}).status_code == 404
+
+
+def test_comp_estimate_returns_a_benchmark_with_null_positioning(services):
+    """S8.4 Phase B §1.12: one shape from both comp endpoints.
+
+    The three positioning fields are NULL rather than zero -- there was no
+    requisition to position against, and 0.0 would read as 'exactly at market'.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from tests.conftest import ADMIN_HEADERS
+
+    org = services.ledger.create_organization("Agency A")
+    key = services.ledger.issue_api_key(org.id)
+
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as c:
+        r = c.post("/comp/estimate", headers={"X-Org-Key": key}, json={
+            "skills": ["python"], "title": "Senior Engineer", "years_experience": 6,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "estimate" in body, "the same wrapper GET /jobs/{id}/comp returns"
+        assert body["requisition_band"] is None
+        assert body["position"] is None
+        assert body["delta_pct"] is None
+        assert body["advisory"] is True

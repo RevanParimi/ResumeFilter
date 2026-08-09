@@ -148,11 +148,24 @@ construction, so org handlers get no option to forget it:
 
    Note the precise claim: no unscoped read *on the facade*, not "no unscoped
    read reachable from an org handler". The latter would be false.
-   `POST /screening/candidates` reaches `_ingest_one`, which calls
-   `similar_resumes()` (cross-tenant by design) and `get_candidate()` — five
-   such lines, each carrying a written justification in the guard's
-   `ALLOWLISTED_LINES`. The defense for those is redaction at the boundary
-   (§7), not absence of the read.
+   `POST /screening/candidates` still reaches the ingest pipeline, which calls
+   `similar_resumes()` (cross-tenant by design) and `get_candidate()`. The
+   defense for those is redaction at the boundary (§7), not absence of the
+   read.
+
+   **S8.4 Phase B added a SECOND sanctioned door and emptied the allowlist.**
+   `app/screening/service.py`, `ScreeningService`, is the batch equivalent:
+   every method takes `org_id` first, and the batch **store** is deliberately
+   **not an attribute of `Services` at all** — a handler cannot forget to scope
+   a read it has no way to perform. Separately, extracting the ingest core into
+   `app/screening/ingest.py` moved all five formerly-allowlisted lines out of
+   `routes.py`, so `ALLOWLISTED_LINES` is now **empty**, pinned by
+   `test_the_guard_has_no_exemptions`. Be precise about what that buys: those
+   five lines were being waved through anyway, so the guard did not become
+   *stronger* at seeing them — it stopped carrying dead content-keyed
+   exemptions that would one day match an unrelated future line. The
+   cross-tenant read itself is unchanged and still bounded exactly where it
+   was, at the org boundary by `redact_ingest_response_for_org`.
 2. **A structural guard — `tests/test_org_scope_guard.py`.** It walks the
    *live* FastAPI route table, matches one **physical line** at a time (not
    per-function — a sanctioned call earlier in a handler must not
@@ -161,10 +174,13 @@ construction, so org handlers get no option to forget it:
    or `services.candidates` without going through the facade. Like
    `tests/test_route_table_guard.py` (`AUTH.md` §2), it covers routes **not yet
    written**, which is the property that makes it worth more than any number
-   of individual tests. It carries a line-level allowlist with a written reason
-   per entry — `similar_resumes` is cross-tenant *by design* (fraud detection
-   has to scan the whole platform), and its output is redacted at the boundary
-   instead of being blocked at the source.
+   of individual tests. It recognises **two** sanctioned doors — `screening_scope`
+   (reports and candidates) and `screening` (batches) — ordered longest-first
+   in its alternation so the shorter name cannot shadow the longer one. As of
+   S8.4 Phase B its line-level allowlist is **empty**, so it runs with no
+   exemptions at all; `similar_resumes` is still cross-tenant *by design*
+   (fraud detection has to scan the whole platform) but now lives outside
+   `routes.py`, redacted at the boundary rather than blocked at the source.
 
    **What it does not cover, stated plainly, because a guard's worth is its
    honesty about its own reach.** It watches exactly two attributes —
@@ -192,7 +208,10 @@ construction, so org handlers get no option to forget it:
    spellings including a renamed local. The walker was additionally watched
    going red against the **live** route table during the build, by temporarily
    pointing `screening_get_report` at the store; that step is a manual
-   verification, not a committed fixture.
+   verification, not a committed fixture. **Re-proven in S8.4 Phase B** the
+   same way, after the batch routes landed: a planted org-plane `_guard_probe`
+   calling `_services(request).report_store.get(...)` made the guard go RED
+   naming the route and the attribute, and removing it returned GREEN.
 
 **This is not a hypothetical defect.** Building this guard *found* one: Task
 6's `POST /screening/candidates` computed `resume_farm` by scanning the whole
@@ -284,6 +303,13 @@ through (§5). Naming the disclosure makes it a decision instead of an oversight
 
 ## 8. What is deliberately not scoped yet
 
+**Scoped as of S8.4 Phase B:** screening batches and their items
+(`SCREENING.md`). Every batch route filters on `screening_batches.org_id`, and
+the queue read-model is built from `batch_items` alone so no `Report` — the
+cross-corpus object whose `resume_farm.matches[]` leaked in Phase A — is ever
+on the org-plane read path. Nothing below changed.
+
+
 `POST /evaluate` and `POST /talent/search` remain **admin-only** this sprint.
 Both are named non-goals in the spec (§8), not oversights:
 
@@ -344,3 +370,27 @@ organisation. There is. `SET NULL` is the load-bearing choice of the whole
 sprint, and it is the one thing a `CASCADE` typo would destroy silently, so it
 is worth proving at the layer a real operator would trigger it rather than only
 in a unit test.
+
+**S8.4 Phase B adds** `tests/test_screening_schema.py`,
+`test_screening_models.py`, `test_screening_store.py`,
+`test_screening_service.py`, `test_screening_tenancy.py`,
+`test_screening_batches_api.py`, `test_screening_ingest.py`,
+`test_org_name_case_insensitive.py` and `test_openapi_contract.py`, plus
+`scripts/smoke_s84b.py` — 16/16 over real HTTP, key-less. The Phase B checks
+worth naming here are the tenancy ones: **every** batch route answering 404 for
+another organisation byte-identically to a batch that never existed; a queue row
+proven to carry no farm-match identities **on a batch whose report genuinely has
+them**, seeded from a second organisation; and a cursor minted by one
+organisation reaching none of that organisation's rows when replayed by
+another — a cursor is a sort position, not a capability.
+
+Case-insensitive organisation names are now enforced **at the constraint**
+(`uq_organizations_name_ci`, a functional UNIQUE index on `lower(name)`), so
+both insert paths inherit it with no new application check. SQLite *enforces*
+an expression index and does **not reflect** one, so
+`test_migrated_indexes_match_orm` skips expression indexes with the measurement
+written into it, and `test_case_insensitive_org_name_is_enforced_on_the_migrated_schema`
+proves the constraint behaviourally instead — strictly stronger, since the
+metadata comparison never established that any index was *enforced*.
+`test_0019_refuses_to_run_over_colliding_org_names` proves the migration
+refuses rather than picking a winner on a customer's behalf.
