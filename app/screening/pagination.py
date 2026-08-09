@@ -22,7 +22,8 @@ from __future__ import annotations
 import base64
 import binascii
 import json
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Optional, Union
 
 from app.core.config import Settings
 
@@ -37,8 +38,20 @@ def encode_cursor(values: tuple[Any, ...]) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
-def decode_cursor(cursor: str, *, arity: int) -> tuple[Any, ...]:
-    """Decode, or raise :class:`InvalidCursor`."""
+def decode_cursor(
+    cursor: str,
+    *,
+    arity: int,
+    types: Optional[tuple[Union[type, tuple[type, ...]], ...]] = None,
+) -> tuple[Any, ...]:
+    """Decode, or raise :class:`InvalidCursor`.
+
+    ``types`` is one spec per element (a type or tuple of types, isinstance
+    style). base64 is not validation: the payload is attacker-typed JSON, and
+    an element of the wrong type surfaces later as ``TypeError`` from
+    ``fromisoformat`` or as a DBAPI error on a typed backend -- neither of
+    which is the 422 this module promises.
+    """
     if not cursor:
         raise InvalidCursor("empty cursor")
     padded = cursor + "=" * (-len(cursor) % 4)
@@ -48,7 +61,24 @@ def decode_cursor(cursor: str, *, arity: int) -> tuple[Any, ...]:
         raise InvalidCursor("malformed cursor") from exc
     if not isinstance(values, list) or len(values) != arity:
         raise InvalidCursor("malformed cursor")
+    if types is not None:
+        for value, spec in zip(values, types):
+            if not isinstance(value, spec):
+                raise InvalidCursor("malformed cursor")
     return tuple(values)
+
+
+def iso_datetime(value: Any) -> datetime:
+    """A cursor element as a datetime, or :class:`InvalidCursor`.
+
+    ``datetime.fromisoformat`` raises ``TypeError`` on a non-string and
+    ``ValueError`` on a non-ISO string; a cursor's caller must see one refusal
+    for both.
+    """
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise InvalidCursor("malformed cursor") from exc
 
 
 def clamp_limit(limit: Optional[int], settings: Settings) -> int:

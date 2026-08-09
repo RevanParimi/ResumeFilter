@@ -81,15 +81,19 @@ class CurationStore:
     ) -> tuple[list[UnmappedTerm], Optional[str]]:
         """Keyset-paged over (occurrences, last_seen, norm_key) -- the existing
         order, plus norm_key to break ties into a total order."""
-        from app.screening.pagination import decode_cursor, encode_cursor
+        from app.screening.pagination import (
+            decode_cursor, encode_cursor, iso_datetime,
+        )
 
         with self._session_factory() as session:
             q = select(UnmappedTermRow)
             if status is not None:
                 q = q.where(UnmappedTermRow.status == status.value)
             if cursor is not None:
-                occ, seen, key = decode_cursor(cursor, arity=3)
-                cut = datetime.fromisoformat(seen)
+                occ, seen, key = decode_cursor(
+                    cursor, arity=3, types=((int, float), str, str)
+                )
+                cut = iso_datetime(seen)
                 q = q.where(
                     or_(
                         UnmappedTermRow.occurrences < occ,

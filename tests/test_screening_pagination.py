@@ -51,6 +51,29 @@ def test_wrong_arity_is_refused():
         decode_cursor(encode_cursor((1.0,)), arity=2)
 
 
+def test_wrong_element_types_are_refused():
+    """base64 is not validation: a cursor is attacker-typed JSON, and a decoded
+    element of the wrong type raises TypeError from fromisoformat -- or a
+    DBAPI error on Postgres -- neither of which is the promised 422."""
+    with pytest.raises(InvalidCursor):
+        decode_cursor(encode_cursor((1, "x")), arity=2, types=(str, str))
+    with pytest.raises(InvalidCursor):
+        decode_cursor(encode_cursor(("x", "y")), arity=2, types=((int, float), str))
+    # And the passing direction, so the guard cannot refuse every cursor.
+    assert decode_cursor(
+        encode_cursor((0.5, "id-1")), arity=2, types=((int, float), str)
+    ) == (0.5, "id-1")
+
+
+def test_a_non_iso_string_where_a_datetime_belongs_is_refused():
+    from app.screening.pagination import iso_datetime
+
+    with pytest.raises(InvalidCursor):
+        iso_datetime("not-a-date")
+    dt = datetime(2026, 8, 7, 12, 30, tzinfo=timezone.utc)
+    assert iso_datetime(str(dt)) == dt
+
+
 def test_limit_defaults_and_clamps():
     s = _settings()
     assert clamp_limit(None, s) == s.page_default_limit

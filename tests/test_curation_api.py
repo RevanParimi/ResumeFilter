@@ -95,3 +95,24 @@ def test_a_malformed_curation_cursor_is_422(services, admin_headers):
     with TestClient(create_app(services), headers=admin_headers,
                     raise_server_exceptions=False) as c:
         assert c.get("/curation/skills/unmapped?cursor=!!!").status_code == 422
+
+
+def test_a_type_forged_curation_cursor_is_422(services, admin_headers):
+    """Decodes fine, wrong types inside -- the shape that reached
+    datetime.fromisoformat as a non-string and raised TypeError."""
+    import base64
+    import json
+
+    from app.main import create_app
+    from fastapi.testclient import TestClient
+
+    def forge(values):
+        raw = json.dumps(values).encode()
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    with TestClient(create_app(services), headers=admin_headers,
+                    raise_server_exceptions=False) as c:
+        for forged in (forge([1, 2, "k"]), forge(["x", "2026-08-07", 3]),
+                       forge([1, "not-a-date", "k"])):
+            r = c.get(f"/curation/skills/unmapped?cursor={forged}")
+            assert r.status_code == 422, f"{forged} -> {r.status_code}"

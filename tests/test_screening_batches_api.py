@@ -94,6 +94,35 @@ def test_a_malformed_cursor_is_422_not_500(services, genuine_resume):
             assert r.status_code == 422, f"{path} -> {r.status_code}"
 
 
+def test_a_type_forged_cursor_is_422_not_500(services, genuine_resume):
+    """A cursor that DECODES but carries the wrong types. base64+arity is not
+    validation: `[1,"x"]` reached datetime.fromisoformat as an int and raised
+    TypeError -- which `except (InvalidCursor, ValueError)` does not catch --
+    so a hand-built cursor was a 500 on demand."""
+    import base64 as b64
+    import json
+
+    def forge(values):
+        raw = json.dumps(values).encode()
+        return b64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        cases = [
+            (f"/screening/batches?cursor={forge([1, 'x'])}", "int where ISO string"),
+            (f"/screening/batches?cursor={forge(['garbage', 'x'])}", "non-ISO string"),
+            (f"/screening/batches?cursor={forge([None, None])}", "nulls"),
+            (f"/screening/batches/{bid}/queue?cursor={forge(['x', 'y'])}",
+             "string where score"),
+            (f"/screening/batches/{bid}/queue?cursor={forge([[0.5], 'y'])}",
+             "nested list where score"),
+        ]
+        for path, why in cases:
+            r = c.get(path, headers={"X-Org-Key": key})
+            assert r.status_code == 422, f"{why}: {path} -> {r.status_code}"
+
+
 def test_the_queue_pages_with_a_cursor(services, genuine_resume):
     _, key = _key(services)
     with _client(services) as c:

@@ -26,7 +26,7 @@ from app.core.db import make_engine, make_session_factory
 from app.core.logging import get_logger
 from app.ledger.consent import as_utc
 from app.screening.models import BatchItemRow, ScreeningBatchRow
-from app.screening.pagination import decode_cursor, encode_cursor
+from app.screening.pagination import decode_cursor, encode_cursor, iso_datetime
 from app.screening.schema import BatchCounts, ItemSignals, ItemStatus
 
 log = get_logger("screening.store")
@@ -298,8 +298,10 @@ class ScreeningStore:
         with self._session_factory() as s:
             q = select(ScreeningBatchRow).where(ScreeningBatchRow.org_id == org_id)
             if cursor is not None:
-                last_created, last_id = decode_cursor(cursor, arity=2)
-                cut = datetime.fromisoformat(last_created)
+                last_created, last_id = decode_cursor(
+                    cursor, arity=2, types=(str, str)
+                )
+                cut = iso_datetime(last_created)
                 q = q.where(
                     or_(
                         ScreeningBatchRow.created_at < cut,
@@ -375,7 +377,9 @@ class ScreeningStore:
             sort_key = func.coalesce(BatchItemRow.risk_score, _UNSCORED)
             q = select(BatchItemRow).where(BatchItemRow.batch_id == batch_id)
             if cursor is not None:
-                last_score, last_id = decode_cursor(cursor, arity=2)
+                last_score, last_id = decode_cursor(
+                    cursor, arity=2, types=((int, float), str)
+                )
                 q = q.where(
                     or_(
                         sort_key < last_score,
