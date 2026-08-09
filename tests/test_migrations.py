@@ -272,3 +272,15 @@ def test_0019_refuses_to_run_over_colliding_org_names(tmp_path):
     with pytest.raises(Exception) as exc:
         command.upgrade(cfg, "head")
     assert "acme" in str(exc.value).lower()
+
+    # The check runs BEFORE any DDL, so the refusal leaves nothing behind:
+    # resolve the collision and the same upgrade must now succeed. (With the
+    # check after the CREATE TABLEs, pysqlite's autocommit-around-DDL left the
+    # new tables standing at version 0018, and this re-run died on 'table
+    # already exists' -- a deploy wedged even after the operator fixed the
+    # names.)
+    with engine.begin() as conn:
+        conn.execute(sa.text(
+            "UPDATE organizations SET name = 'Acme Two' WHERE id = 'o2'"
+        ))
+    command.upgrade(cfg, "head")

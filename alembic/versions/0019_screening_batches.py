@@ -26,6 +26,27 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # --- Case-insensitive organisation names: the COLLISION CHECK runs before
+    # any DDL. Refuse loudly rather than mangle: a database already holding
+    # both "Acme" and "acme" cannot take the unique index, and picking a
+    # winner on the customer's behalf is not this migration's decision to
+    # make. FIRST, because pysqlite autocommits around DDL -- a refusal
+    # after the CREATE TABLEs could leave them standing with alembic_version
+    # still at 0018, and the re-run would then fail on "table already exists"
+    # even after the names were fixed. (Postgres DDL is transactional and
+    # never had the problem; the ordering makes SQLite behave the same way.)
+    conn = op.get_bind()
+    dupes = conn.execute(sa.text(
+        "SELECT lower(name) AS k FROM organizations "
+        "GROUP BY lower(name) HAVING count(*) > 1"
+    )).fetchall()
+    if dupes:
+        names = ", ".join(repr(row[0]) for row in dupes)
+        raise RuntimeError(
+            "0019 cannot add uq_organizations_name_ci: these organisation names "
+            f"already collide case-insensitively and must be resolved first: {names}"
+        )
+
     op.create_table(
         "screening_batches",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -87,20 +108,7 @@ def upgrade() -> None:
     op.create_index("ix_batch_items_batch_risk", "batch_items", ["batch_id", "risk_score"])
 
     # --- Case-insensitive organisation names (S8.4 Phase B, carry-over 1) -----
-    # Refuse loudly rather than mangle: a database already holding both "Acme"
-    # and "acme" cannot take this index, and picking a winner on the customer's
-    # behalf is not this migration's decision to make.
-    conn = op.get_bind()
-    dupes = conn.execute(sa.text(
-        "SELECT lower(name) AS k FROM organizations "
-        "GROUP BY lower(name) HAVING count(*) > 1"
-    )).fetchall()
-    if dupes:
-        names = ", ".join(repr(row[0]) for row in dupes)
-        raise RuntimeError(
-            "0019 cannot add uq_organizations_name_ci: these organisation names "
-            f"already collide case-insensitively and must be resolved first: {names}"
-        )
+    # The collision check for this index ran at the TOP of upgrade().
     op.create_index(
         "uq_organizations_name_ci", "organizations",
         [sa.text("lower(name)")], unique=True,
