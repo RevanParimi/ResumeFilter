@@ -2334,11 +2334,12 @@ class Component extends DCLogic {
         })
       : [];
 
-    // Two shapes for the same numbers, and they are NOT interchangeable:
-    // GET /jobs/{id}/comp returns a CompBenchmark, which WRAPS the estimate
-    // (plus the requisition's own band and how it sits against the market);
-    // POST /comp/estimate returns the bare CompBandEstimate. Unwrap once here
-    // so no reader has to remember which endpoint it came from.
+    // BOTH comp endpoints now answer a CompBenchmark, which WRAPS the estimate
+    // (plus the requisition's own band and how it sits against the market).
+    // S8.4 Phase B made POST /comp/estimate match GET /jobs/{id}/comp; before
+    // that it returned the bare CompBandEstimate, and assuming one shape
+    // rendered a band made entirely of dashes. The `|| compRaw` fallback stays
+    // so this keeps working against either version of the API.
     const compRaw = st.comp.data;
     const compData = compRaw ? (compRaw.estimate || compRaw) : null;
     const compPosition = compRaw ? compRaw.position : null;

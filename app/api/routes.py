@@ -1177,10 +1177,18 @@ class CompEstimateRequest(BaseModel):
     seniority: Optional[SeniorityBand] = None
 
 
-@org_router.post("/comp/estimate", response_model=CompBandEstimate)
+@org_router.post("/comp/estimate", response_model=CompBenchmark)
 async def comp_estimate(
     body: CompEstimateRequest, request: Request, org_id: str = Depends(require_org)
-) -> CompBandEstimate:
+) -> CompBenchmark:
+    """One shape from both comp endpoints (S8.4 Phase B §1.12).
+
+    `GET /jobs/{id}/comp` has always returned a CompBenchmark WRAPPING the
+    estimate; this returned the bare estimate, and during the UI wiring session
+    assuming one shape rendered a band made entirely of dashes. The three
+    positioning fields are None because there is no requisition to position
+    against -- honest, where a 0.0 would read as 'exactly at market'.
+    """
     services = _services(request)
     try:
         signal = bands.role_signal_from_input(
@@ -1190,7 +1198,11 @@ async def comp_estimate(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return services.comp.estimate(signal, org_id=org_id)
+    return CompBenchmark(
+        estimate=services.comp.estimate(signal, org_id=org_id),
+        requisition_band=None, position=None, delta_pct=None,
+        reasoning="ad-hoc estimate: no requisition to position against",
+    )
 
 
 @org_router.get("/jobs/{req_id}/comp", response_model=CompBenchmark)
