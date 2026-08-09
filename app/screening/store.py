@@ -18,7 +18,7 @@ from hashlib import sha256
 from typing import Optional
 
 from pydantic import ValidationError
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings, get_settings
@@ -213,22 +213,30 @@ class ScreeningStore:
         return res.rowcount == 1
 
     @staticmethod
-    def _claimable(now: datetime, timeout_seconds: int):
-        """pending, or a `processing` claim old enough to be presumed dead.
+    def _stale_processing(now: datetime, timeout_seconds: int):
+        """A `processing` claim old enough to be presumed dead.
 
         A NULL ``claimed_at`` on a processing row is a bug state; treating it as
-        stale is the self-healing reading (spec §4.4).
+        stale is the self-healing reading (spec §4.4). The SQL spelling of the
+        rule ``_item_record`` applies in Python -- both are pinned by the
+        stale-claim tests, which assert the reinterpretation through `counts`
+        AND through an item read.
         """
         stale_before = now - timedelta(seconds=timeout_seconds)
+        return and_(
+            BatchItemRow.status == ItemStatus.PROCESSING.value,
+            or_(
+                BatchItemRow.claimed_at.is_(None),
+                BatchItemRow.claimed_at < stale_before,
+            ),
+        )
+
+    @classmethod
+    def _claimable(cls, now: datetime, timeout_seconds: int):
+        """pending, or a `processing` claim old enough to be presumed dead."""
         return or_(
             BatchItemRow.status == ItemStatus.PENDING.value,
-            and_(
-                BatchItemRow.status == ItemStatus.PROCESSING.value,
-                or_(
-                    BatchItemRow.claimed_at.is_(None),
-                    BatchItemRow.claimed_at < stale_before,
-                ),
-            ),
+            cls._stale_processing(now, timeout_seconds),
         )
 
     def _holds_lease(self, item_id: str, lease: datetime):
@@ -364,14 +372,32 @@ class ScreeningStore:
 
         The read reinterprets; it never rewrites. A stored status corrected by
         a read would be a fact that depends on who looked at it last.
+
+        A GROUP BY, not a row load: this runs on every poll of `get`, on every
+        batch of a `list` page and at the end of every `process` call, and the
+        item rows carry `raw_text` -- counting 500 pending resumes must not
+        drag 500 resumes' text out of the database each time.
         """
-        items = self.all_items(org_id, batch_id, now=now)
-        if items is None:
-            return None
-        counts = BatchCounts()
-        for item in items:
-            setattr(counts, item.status.value, getattr(counts, item.status.value) + 1)
-        return counts
+        with self._session_factory() as s:
+            batch = s.get(ScreeningBatchRow, batch_id)
+            if batch is None or batch.org_id != org_id:
+                return None
+            effective = case(
+                (
+                    self._stale_processing(now, self._claim_timeout),
+                    ItemStatus.PENDING.value,
+                ),
+                else_=BatchItemRow.status,
+            ).label("effective")
+            rows = s.execute(
+                select(effective, func.count())
+                .where(BatchItemRow.batch_id == batch_id)
+                .group_by(effective)
+            ).all()
+            counts = BatchCounts()
+            for status_value, n in rows:
+                setattr(counts, status_value, n)
+            return counts
 
     def all_items(
         self, org_id: str, batch_id: str, *, now: datetime
