@@ -209,6 +209,12 @@ class HealthResponse(BaseModel):
     domains: list[str] = Field(default_factory=list)
 
 
+class DomainInfo(BaseModel):
+    key: str
+    display_name: str
+    claim_types: list[str] = Field(default_factory=list)
+
+
 class ServiceInfo(BaseModel):
     service: str
     advisory: bool = True
@@ -2060,8 +2066,8 @@ async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse
     }
 
 
-@router.get("/domains")
-async def domains() -> list[dict]:
+@router.get("/domains", response_model=list[DomainInfo])
+async def domains() -> list[DomainInfo]:
     """Registered evaluation domains (FR-9)."""
     out = []
     for key in list_domains():
@@ -2354,8 +2360,8 @@ async def create_admin_user(req: AdminUserRequest, request: Request) -> AdminUse
     ).model_dump(mode="json")
 
 
-@router.get("/admin/users")
-async def list_admin_users(request: Request) -> list[dict]:
+@router.get("/admin/users", response_model=list[AdminUser])
+async def list_admin_users(request: Request) -> list[AdminUser]:
     return [
         a.model_dump(mode="json")
         for a in _services(request).auth.list_admin_users()

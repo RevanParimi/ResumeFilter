@@ -51,6 +51,18 @@ def test_every_route_declares_a_response_model(app):
         assert route.response_model is not None, f"{route.path} declares no response_model"
 
 
+def _is_untyped_object(schema: dict) -> bool:
+    """The shape `-> dict` generates. `-> list[dict]` wraps the same shape in
+    an array, so the check recurses through `items` -- the review found two
+    routes (`GET /domains`, `GET /admin/users`) hiding behind an array while
+    the object-only version of this test passed."""
+    if schema.get("type") == "object" and schema.get("additionalProperties") is True:
+        return True
+    if schema.get("type") == "array":
+        return _is_untyped_object(schema.get("items", {}))
+    return False
+
+
 def test_no_success_response_is_an_untyped_object(app):
     """`-> dict` generates Record<string, any> and puts the caller back to
     guessing. MEASURED at 38 of 90 before this sprint."""
@@ -62,7 +74,7 @@ def test_no_success_response_is_an_untyped_object(app):
                 if not code.startswith("2"):
                     continue
                 schema = resp.get("content", {}).get("application/json", {}).get("schema", {})
-                if schema.get("type") == "object" and schema.get("additionalProperties") is True:
+                if _is_untyped_object(schema):
                     untyped.append(f"{method.upper()} {path}")
     assert not untyped, f"untyped success schemas: {untyped}"
 
