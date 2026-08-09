@@ -952,6 +952,14 @@ def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
     it fails the WHOLE registration: a half-registered batch would leave the org
     unable to tell which files made it in.
     """
+    # The count cap FIRST: it must cost arithmetic, not work. The service
+    # re-checks it (the invariant lives there); this copy exists so an
+    # over-cap batch is refused before a single PDF is decoded.
+    cap = caps.screening_max_batch_items
+    if len(req.items) > cap:
+        raise HTTPException(
+            status_code=422, detail=f"a batch holds at most {cap} items"
+        )
     texts: list[str] = []
     for i, item in enumerate(req.items):
         if item.resume_text and len(item.resume_text) > caps.max_resume_chars:

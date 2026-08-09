@@ -84,6 +84,22 @@ def test_a_corrupt_pdf_refuses_the_whole_registration_and_names_the_item(service
         assert c.get("/screening/batches", headers={"X-Org-Key": key}).json()["batches"] == []
 
 
+def test_the_item_count_cap_runs_before_any_pdf_is_decoded(services):
+    """The bound must cost arithmetic, not work: an over-cap batch of corrupt
+    PDFs was decoded item by item and only THEN counted, so the cap protected
+    nothing. The cap message -- not pdf_parse_failed -- proves the ordering."""
+    _, key = _key(services)
+    cap = services.settings.screening_max_batch_items
+    items = [{"resume_pdf_b64": "bm90IGEgcGRm"} for _ in range(cap + 1)]
+    with _client(services) as c:
+        r = c.post("/screening/batches", headers={"X-Org-Key": key},
+                   json={"name": "x", "domain": "genai", "items": items})
+        assert r.status_code == 422
+        detail = str(r.json()["detail"])
+        assert "at most" in detail, detail
+        assert "pdf_parse_failed" not in detail, "a PDF was decoded before the cap"
+
+
 def test_a_malformed_cursor_is_422_not_500(services, genuine_resume):
     _, key = _key(services)
     with _client(services) as c:
