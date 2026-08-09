@@ -192,8 +192,15 @@ resume row needs a candidate and identity resolution needs the extraction.
 * **Cleared on success.** The text then lives in `resumes`, where candidate
   erasure already cascades. Deleted on a path that already runs (the S7.1
   challenge-hygiene pattern).
-* **Kept on failure.** The organisation must be able to retry; failure is not a
-  reason to destroy the input.
+* **Kept on failure — for a retry path that DOES NOT EXIST YET.** Stated
+  plainly rather than implied (the branch review caught the overclaim): a
+  `failed` item is not claimable, no route re-queues one, and `add_items`
+  has no route either. Today the org's only retry is registering the fixed
+  file again — which needs the file, not this column. The text is kept so an
+  in-place retry (named S8.3 input, beside the sweep) does not have to ask
+  the org to re-upload; until that ships, the honest description of this
+  column is: personal data held under `ret_batch_item_days`, deletable only
+  via `DELETE /screening/batches/{id}`.
 * **`DELETE /screening/batches/{id}` ships in the sprint that creates the
   table** — a real delete path, not a promise of one.
 * **`ret_batch_item_days` (90) is declared and NOT yet swept.** It is named

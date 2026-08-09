@@ -442,7 +442,8 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
 
 
 class CandidateCreateRequest(BaseModel):
-    """Exactly one of resume_text / resume_pdf_b64 is required."""
+    """At least one of resume_text / resume_pdf_b64; resume_text wins when
+    both are sent (same rule as BatchItemInput, on purpose)."""
 
     resume_text: str | None = None
     resume_pdf_b64: str | None = None
@@ -928,7 +929,8 @@ async def screening_candidate_reports(
 
 
 class BatchItemInput(BaseModel):
-    """Exactly one of resume_text / resume_pdf_b64 is required."""
+    """At least one of resume_text / resume_pdf_b64; resume_text wins when
+    both are sent (same rule as CandidateCreateRequest, on purpose)."""
 
     resume_text: Optional[str] = None
     resume_pdf_b64: Optional[str] = None

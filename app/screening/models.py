@@ -76,7 +76,8 @@ class BatchItemRow(Base):
     )
     status: Mapped[str] = mapped_column(String(16), default="pending")
     #: CLEARED on success -- the text then lives in `resumes`, where candidate
-    #: erasure already cascades. Kept on failure so the org can retry.
+    #: erasure already cascades. Kept on failure for an in-place retry that is
+    #: S8.3's job -- no path re-queues a failed item TODAY (SCREENING.md §7).
     raw_text: Mapped[str] = mapped_column(Text, default="")
     text_sha256: Mapped[str] = mapped_column(String(64), index=True)
 

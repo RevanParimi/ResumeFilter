@@ -105,7 +105,9 @@ def test_complete_clears_the_text_and_stamps_the_signals(store, services):
     assert rows[0].signals.risk_confidence == 0.5
 
 
-def test_fail_keeps_the_text_so_the_org_can_retry(store, services):
+def test_fail_keeps_the_text_so_a_future_retry_can_use_it(store, services):
+    """Kept for the S8.3 in-place retry; no path re-queues a failed item today
+    (SCREENING.md §7 states this plainly)."""
     org = _org(services)
     bid = store.create_batch(org, name="x", domain="genai",
                              created_by_org_user_id=None, texts=["one"])
