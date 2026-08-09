@@ -163,6 +163,87 @@ async def test_summary_is_counts_only(services, genuine_resume):
         assert leaked not in dumped, f"a roll-up must not carry {leaked}"
 
 
+class _DeleteRacingStore:
+    """The REAL store with the batch REALLY deleted between a caller's first
+    read and its counts() -- the interleaving a two-tab delete produces. Like
+    the _try_claim test, the race is unreachable through sequential public
+    calls, so the test builds the state directly; nothing here is canned."""
+
+    def __init__(self, inner, org_id):
+        self._inner = inner
+        self._org = org_id
+        self.armed = False
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def counts(self, org_id, batch_id, *, now):
+        if self.armed:
+            self.armed = False
+            self._inner.delete_batch(self._org, batch_id)
+        return self._inner.counts(org_id, batch_id, now=now)
+
+
+def _racing_service(services, org):
+    from app.screening.service import ScreeningService
+    from app.screening.store import ScreeningStore
+
+    store = _DeleteRacingStore(
+        ScreeningStore(services.candidates._session_factory), org
+    )
+    return ScreeningService(
+        store, services.screening._deps, settings=services.settings
+    ), store
+
+
+def test_a_batch_deleted_mid_get_is_absent_not_a_500(services, genuine_resume):
+    """DELETE from a second tab lands between batch_row and counts. The old
+    code called derive_status(None) -> AttributeError -> 500."""
+    org = _org(services)
+    svc, store = _racing_service(services, org)
+    batch = svc.register(org, name="x", domain="genai", texts=[genuine_resume],
+                         created_by_org_user_id=None)
+    store.armed = True
+    assert svc.get(org, batch.id) is None
+    assert svc.get(org, batch.id) is None, "and it stays absent"
+
+
+def test_a_batch_deleted_mid_list_is_skipped_not_a_500(services, genuine_resume):
+    org = _org(services)
+    svc, store = _racing_service(services, org)
+    svc.register(org, name="keep", domain="genai", texts=[genuine_resume],
+                 created_by_org_user_id=None)
+    svc.register(org, name="doomed", domain="genai", texts=[genuine_resume],
+                 created_by_org_user_id=None)
+    store.armed = True
+    page = svc.list(org, cursor=None, limit=10)
+    assert len(page.batches) == 1, "the vanished batch is skipped, the rest served"
+
+
+def test_a_batch_deleted_mid_summary_is_absent_not_a_500(services, genuine_resume):
+    org = _org(services)
+    svc, store = _racing_service(services, org)
+    batch = svc.register(org, name="x", domain="genai", texts=[genuine_resume],
+                        created_by_org_user_id=None)
+    store.armed = True
+    assert svc.summary(org, batch.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_batch_deleted_mid_process_is_absent_not_a_500(
+    services, genuine_resume
+):
+    """The widest window of the four: a process call runs graph evaluations
+    for minutes, and the final counts read raced a delete."""
+    org = _org(services)
+    svc, store = _racing_service(services, org)
+    batch = svc.register(org, name="x", domain="genai", texts=[genuine_resume],
+                         created_by_org_user_id=None)
+    engine = EvaluationEngine(services)
+    store.armed = True
+    assert await svc.process(org, batch.id, engine=engine) is None
+
+
 def test_every_read_is_none_for_another_org(services, genuine_resume):
     a, b = _org(services, "A"), _org(services, "B")
     batch = services.screening.register(a, name="x", domain="genai",

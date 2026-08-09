@@ -81,6 +81,9 @@ class ScreeningService:
         if record is None:
             return None
         counts = self._store.counts(org_id, batch_id, now=now)
+        if counts is None:
+            # Deleted between the two reads (a second tab). Absent, not a 500.
+            return None
         return BatchDetail(
             **self._batch_fields(record),
             counts=counts,
@@ -97,6 +100,9 @@ class ScreeningService:
         views = []
         for record in records:
             counts = self._store.counts(org_id, record.id, now=now)
+            if counts is None:
+                # Deleted since the page SELECT; serve the rest of the page.
+                continue
             views.append(BatchView(
                 **self._batch_fields(record),
                 counts=counts, status=derive_status(counts),
@@ -123,6 +129,8 @@ class ScreeningService:
         items = self._store.all_items(org_id, batch_id, now=now) or []
 
         counts = self._store.counts(org_id, batch_id, now=now)
+        if counts is None:
+            return None
         by_band: dict[str, int] = {}
         signals: dict[str, int] = {}
         for item in items:
@@ -217,6 +225,13 @@ class ScreeningService:
             processed += 1
 
         counts = self._store.counts(org_id, batch_id, now=self._now())
+        if counts is None:
+            # The org deleted the batch while this call was evaluating. The
+            # candidates and reports this call ingested are real and stay; the
+            # batch itself is now absent, and absent answers 404 everywhere.
+            log.warning("batch_deleted_mid_process", batch_id=batch_id,
+                        processed=processed, failed=failed)
+            return None
         return ProcessResult(
             batch_id=batch_id, processed=processed, failed=failed,
             remaining=counts.pending + counts.processing,
