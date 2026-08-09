@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.api.routes import (
-    auth_router, candidate_router, org_router, public_router, router,
+    ServiceInfo, auth_router, candidate_router, org_router, public_router, router,
 )
 from app.core.boot import verify_launch_config
 from app.core.config import get_settings
@@ -31,6 +31,20 @@ from app.graph.build import EvaluationEngine
 from app.services import Services, build_default_services
 
 log = get_logger("main")
+
+
+def _iter_api_routes(routes):
+    """Every real APIRoute, recursing through the _IncludedRouter wrappers
+    FastAPI 0.138 stores instead of flattening include_router. A naive
+    `for route in app.routes` sees ONE route here."""
+    from fastapi.routing import APIRoute
+
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is not None:
+            yield from _iter_api_routes(original.routes)
+        elif isinstance(route, APIRoute):
+            yield route
 
 
 def create_app(services: Optional[Services] = None) -> FastAPI:
@@ -124,9 +138,9 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             headers={"X-Request-ID": rid} if rid else None,
         )
 
-    @app.get("/")
-    async def root() -> dict:
-        return {
+    @app.get("/", response_model=ServiceInfo)
+    async def root() -> ServiceInfo:
+        return ServiceInfo(**{
             "service": "depth-eval-engine",
             "advisory": True,
             "human_review_required": True,
@@ -171,7 +185,24 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
                 "GET /jobs/{id}/board",
                 "GET /candidates/{id}/card",
             ],
-        }
+        })
+
+    # OpenAPI: give every route the handler's own name as its operation_id.
+    #
+    # LAST, deliberately: the `@app.get` routes above (/, /healthz) are
+    # registered after the include_router calls, so a loop placed beside those
+    # calls silently misses them -- which is how this was first written and what
+    # tests/test_openapi_contract.py caught.
+    #
+    # In a loop rather than 90 literals: a per-route operation_id= argument is
+    # 90 chances to typo and no protection at all for route 91. FastAPI's
+    # default is unique but unusable -- it derives
+    # `list_candidate_reports_candidates__candidate_id__reports_get` from the
+    # path -- and S8.4 exists partly so a typed client can be generated from
+    # this document. tests/test_openapi_contract.py asserts uniqueness, which is
+    # the one thing this loop cannot check for itself.
+    for route in _iter_api_routes(app.routes):
+        route.operation_id = route.name
 
     return app
 
