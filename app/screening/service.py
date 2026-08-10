@@ -22,7 +22,7 @@ from app.screening.ingest import IngestDeps, IngestRefused, ingest_resume
 from app.screening.pagination import clamp_limit
 from app.screening.schema import (
     BatchDetail, BatchPage, BatchSummary, BatchView, ItemSignals, ProcessResult,
-    QueuePage, QueueRow, SignalCount, compose_reason, derive_status,
+    QueuePage, QueueRow, RetryResult, SignalCount, compose_reason, derive_status,
     signals_from_report,
 )
 from app.screening.store import (
@@ -165,6 +165,19 @@ class ScreeningService:
 
     def delete(self, org_id: str, batch_id: str) -> bool:
         return self._store.delete_batch(org_id, batch_id)
+
+    def retry(self, org_id: str, batch_id: str) -> Optional[RetryResult]:
+        """Re-queue this batch's failed items. None = not this org's, or absent.
+
+        Deliberately NOT rate-limited itself: it is one UPDATE, and the spend
+        it unlocks is already bounded by `screening_process` on the call that
+        actually does the work.
+        """
+        found = self._store.requeue_failed(org_id, batch_id)
+        if found is None:
+            return None
+        requeued, skipped = found
+        return RetryResult(batch_id=batch_id, requeued=requeued, skipped=skipped)
 
     # ── processing ──────────────────────────────────────────────────────────
 

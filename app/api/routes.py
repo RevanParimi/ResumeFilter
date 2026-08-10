@@ -83,7 +83,7 @@ from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
 from app.screening.schema import (
-    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage,
+    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
 )
 from app.services import Services
 from app.services.llm import NullLLM
@@ -1176,6 +1176,23 @@ async def process_screening_batch(
             detail="rate_limited",
             headers={"Retry-After": str(exc.retry_after_seconds)},
         ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return result
+
+
+@org_router.post("/screening/batches/{batch_id}/retry", response_model=RetryResult)
+async def retry_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> RetryResult:
+    """Re-queue this batch's failed items, then call `process` as usual.
+
+    It RE-QUEUES; it does not process. There is exactly one door that evaluates
+    an item and this is not a second one -- which is also why an item with no
+    remaining text is reported as `skipped` rather than quietly re-queued: a
+    `requeued` count the next process call cannot honour is a lie.
+    """
+    result = _services(request).screening.retry(org_id, batch_id)
     if result is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return result
