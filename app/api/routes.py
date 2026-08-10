@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
 from app import __version__
@@ -2234,6 +2235,23 @@ async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse
         "report_id": report_id,
         "outcomes": [o.model_dump(mode="json") for o in services.report_store.outcomes(report_id)],
     }
+
+
+@router.get("/metrics", response_model=str, response_class=PlainTextResponse)
+async def metrics(request: Request) -> PlainTextResponse:
+    """Prometheus text exposition (S8.3 Phase A).
+
+    On the ADMIN router, so `require_api_key` is inherited rather than
+    remembered and the route-table guard covers it with no edit.
+
+    `response_model=str` is honest -- the body IS a string -- and it keeps
+    tests/test_openapi_contract.py's every-route-declares-a-model rule intact
+    without carving out an exemption for one route.
+    """
+    return PlainTextResponse(
+        _services(request).metrics.render(),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @router.get("/domains", response_model=list[DomainInfo])

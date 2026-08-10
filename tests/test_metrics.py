@@ -75,3 +75,76 @@ def test_duration_renders_as_a_sum_and_a_count():
 
 def test_an_empty_registry_renders_an_empty_document():
     assert build_metrics().render() == ""
+
+
+# ── the route and the counting middleware ────────────────────────────────────
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import create_app  # noqa: E402
+from tests.conftest import make_services  # noqa: E402
+
+
+@pytest.fixture
+def client(services):
+    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+        yield c
+
+
+def test_metrics_requires_the_admin_credential(client):
+    """It is on the admin router, so the gate is INHERITED rather than
+    remembered -- there is no second place to forget it."""
+    assert client.get("/metrics").status_code == 401
+
+
+def test_metrics_renders_prometheus_text(client, admin_headers):
+    client.get("/healthz")
+    resp = client.get("/metrics", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/plain")
+    assert "veritas_http_requests_total" in resp.text
+
+
+def test_requests_are_labelled_by_ROUTE_TEMPLATE_not_by_path(client, admin_headers):
+    """THE cardinality decision. Labelling by raw path makes one series per
+    batch id, and a scanner walking random URLs is an unbounded memory leak
+    dressed as observability."""
+    client.get("/screening/batches/aaaaaaaa-0000-0000-0000-000000000000")
+    client.get("/screening/batches/bbbbbbbb-0000-0000-0000-000000000000")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'route="/screening/batches/{batch_id}"' in text
+    assert "aaaaaaaa" not in text and "bbbbbbbb" not in text
+
+
+def test_an_unmatched_path_gets_one_shared_label(client, admin_headers):
+    client.get("/no/such/thing/1")
+    client.get("/no/such/thing/2")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'route="__unmatched__"' in text
+    assert "no/such/thing" not in text
+
+
+def test_a_rate_limited_request_is_counted_as_denied(
+    settings, fake_github, flywheel, admin_headers, tmp_path
+):
+    """The pairing that justifies the phase: a limit you cannot observe is a
+    guess."""
+    tuned = settings.model_copy(update={
+        "email_provider": "capture",
+        "email_capture_path": str(tmp_path / "mail.jsonl"),
+        "rate_limit_login_per_hour_per_email": 1,
+    })
+    services = make_services(tuned, github=fake_github, flywheel=flywheel)
+    with TestClient(create_app(services), raise_server_exceptions=False) as c:
+        c.post("/auth/org/login", json={"email": "a@example.com"})
+        c.post("/auth/org/login", json={"email": "a@example.com"})
+        text = c.get("/metrics", headers=admin_headers).text
+    assert 'decision="denied"' in text
+    assert 'rule="login_request"' in text
+
+
+def test_durations_are_recorded_against_the_template_too(client, admin_headers):
+    client.get("/healthz")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'veritas_http_request_duration_ms_count{route="/healthz"}' in text

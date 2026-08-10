@@ -47,6 +47,28 @@ def _iter_api_routes(routes):
             yield route
 
 
+def _route_template(app: FastAPI, request: Request) -> str:
+    """The matched route's PATH TEMPLATE, or ``__unmatched__``.
+
+    `request.scope["route"]` is set during routing, but Starlette's
+    BaseHTTPMiddleware does not guarantee the endpoint's scope mutations are
+    visible on the object we hold, so the match is re-resolved here. It is a
+    linear scan of the route table on a path that already logs and hashes --
+    and the alternative is a metric that silently degrades to __unmatched__ for
+    every request, which looks like working code.
+    """
+    from starlette.routing import Match
+
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if template:
+        return template
+    for candidate in _iter_api_routes(app.routes):
+        if candidate.matches(request.scope)[0] == Match.FULL:
+            return candidate.path
+    return "__unmatched__"
+
+
 def create_app(services: Optional[Services] = None) -> FastAPI:
     """Build the app; pass a Services bundle to inject fakes (tests)."""
 
@@ -118,13 +140,28 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             response.headers["X-Request-ID"] = rid
             return response
         finally:
+            elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
             log.info(
                 "access",
                 method=request.method,
                 path=request.url.path,
                 status=status,
-                duration_ms=round((time.perf_counter() - start) * 1000, 1),
+                duration_ms=elapsed_ms,
             )
+            # Label by the ROUTE TEMPLATE, never the raw path (S8.3 Phase A).
+            # The raw path is one series per batch id, and a scanner walking
+            # random URLs would be an unbounded memory leak dressed as
+            # observability. Anything unmatched collapses to ONE label.
+            services = getattr(app.state, "services", None)
+            if services is not None:
+                template = _route_template(app, request)
+                services.metrics.increment(
+                    "http_requests",
+                    route=template,
+                    method=request.method,
+                    status=str(status),
+                )
+                services.metrics.observe_duration(template, elapsed_ms)
             structlog.contextvars.clear_contextvars()
 
     @app.exception_handler(Exception)
