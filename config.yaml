@@ -245,6 +245,10 @@ speech_max_retries: 2
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
 max_resume_chars: 200000
 max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
+# Outcome notes: free text a human types beside a candidate's name, on BOTH
+# the operator's and the customer's route (S8.5). Enforced in ONE place,
+# app/reports/outcomes.py, so neither door can be bounded while the other is not.
+max_outcome_notes_chars: 2000
 
 # --- Auth sessions + login (PI-8, S8.2) ----------------------------------------
 # Opaque server-side sessions, NOT JWT: a JWT stays valid after a candidate
