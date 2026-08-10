@@ -284,3 +284,104 @@ def test_0019_refuses_to_run_over_colliding_org_names(tmp_path):
             "UPDATE organizations SET name = 'Acme Two' WHERE id = 'o2'"
         ))
     command.upgrade(cfg, "head")
+
+
+# ── 0020 outcome authorship (S8.5) ───────────────────────────────────────────
+
+_PRE_0020 = (
+    "INSERT INTO candidates (id, full_name, created_at, updated_at) "
+    "VALUES ('c1', 'A', '2026-01-01', '2026-01-01')",
+    "INSERT INTO reports (id, domain, depth_band, candidate_id, body, created_at) "
+    "VALUES ('r1', 'genai', 'moderate', 'c1', '{}', '2026-01-01')",
+    "INSERT INTO outcomes (report_id, claim_id, outcome, notes, recorded_at) "
+    "VALUES ('r1', NULL, 'inconclusive', 'looked fine', '2026-01-01')",
+)
+
+
+def test_0020_backfills_existing_outcomes_to_operator(tmp_path):
+    """Every pre-S8.5 outcome was written through the admin route -- there was
+    no other door -- so `operator` is a fact about those rows, not a guess."""
+    import sqlalchemy as sa
+
+    url, cfg = _scratch_config(tmp_path, "authorship.db")
+    command.upgrade(cfg, "0019_screening_batches")
+    engine = make_engine(url)
+    with engine.begin() as conn:
+        for stmt in _PRE_0020:
+            conn.execute(sa.text(stmt))
+
+    command.upgrade(cfg, "head")
+
+    with engine.begin() as conn:
+        row = conn.execute(sa.text(
+            "SELECT recorded_by, org_id, recorded_by_org_user_id FROM outcomes"
+        )).one()
+    assert row.recorded_by == "operator"
+    assert row.org_id is None
+    assert row.recorded_by_org_user_id is None
+
+
+def test_0020_leaves_no_server_default_behind_on_recorded_by(tmp_path):
+    """The default exists for the backfill only; the application stays the
+    source of truth for new rows (the 0004/0014 precedent). A server default
+    left standing would let a forgotten `recorded_by` become `operator`
+    silently -- the exact hazard the required field exists to remove."""
+    from sqlalchemy import inspect as sa_inspect
+
+    engine = _migrated_engine(tmp_path)
+    col = {c["name"]: c for c in sa_inspect(engine).get_columns("outcomes")}["recorded_by"]
+    assert col["default"] is None
+    assert col["nullable"] is False
+
+
+def test_0020_org_id_is_set_null_so_a_label_survives_offboarding(tmp_path):
+    """The contrast that matters: screening_batches.org_id CASCADEs because a
+    batch is the org's own operational work product. An outcome is a LABEL
+    about a person's record that the platform learns from, so offboarding must
+    not destroy it -- the same call, for the same reason, as reports.org_id."""
+    import sqlalchemy as sa
+
+    engine = _migrated_engine(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(sa.text("PRAGMA foreign_keys=ON"))
+        conn.execute(sa.text(_ORG_INSERT), {"id": "o1", "name": "Acme Staffing"})
+        for stmt in _PRE_0020[:2]:
+            conn.execute(sa.text(stmt))
+        conn.execute(sa.text(
+            "INSERT INTO outcomes (report_id, claim_id, outcome, notes, "
+            "recorded_at, recorded_by, org_id) VALUES "
+            "('r1', NULL, 'verified_fabricated', 'they admitted it', "
+            "'2026-01-01', 'organization', 'o1')"
+        ))
+        conn.execute(sa.text("DELETE FROM organizations WHERE id = 'o1'"))
+        row = conn.execute(sa.text(
+            "SELECT recorded_by, org_id FROM outcomes"
+        )).one()
+
+    assert row.org_id is None, "org_id must SET NULL, never CASCADE the label away"
+    assert row.recorded_by == "organization", (
+        "and recorded_by is why that is survivable: without it, a null org_id "
+        "would read as 'our own operator said this'"
+    )
+
+
+def test_0020_an_outcome_still_dies_with_its_candidate(tmp_path):
+    """Erasure reaches the notes through two CASCADEs, with nobody having to
+    remember: outcomes.report_id -> reports.id -> candidates.id."""
+    import sqlalchemy as sa
+
+    engine = _migrated_engine(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(sa.text("PRAGMA foreign_keys=ON"))
+        for stmt in _PRE_0020[:2]:
+            conn.execute(sa.text(stmt))
+        # Spelled out rather than reusing _PRE_0020's third statement: on the
+        # MIGRATED schema `recorded_by` has no server default (that is the
+        # point of the test above), so a row must state its own provenance.
+        conn.execute(sa.text(
+            "INSERT INTO outcomes (report_id, claim_id, outcome, notes, "
+            "recorded_at, recorded_by) VALUES "
+            "('r1', NULL, 'inconclusive', 'looked fine', '2026-01-01', 'operator')"
+        ))
+        conn.execute(sa.text("DELETE FROM candidates WHERE id = 'c1'"))
+        assert conn.execute(sa.text("SELECT COUNT(*) FROM outcomes")).scalar() == 0
