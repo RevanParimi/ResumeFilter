@@ -72,8 +72,18 @@ for the interview.
   - With `claim_id`: outcome applies to that claim (404/422 if unknown).
   - Without: outcome applies to the whole report.
   - Each outcome is persisted AND appended to the flywheel
-    (`record_type="outcome"`), closing the I6 loop.
+    (`record_type="outcome"`), closing the I6 loop. Since S8.5 the flywheel
+    record carries the label and its provenance but **not** `notes` — that sink
+    has no erasure path.
+  - `notes` is bounded by `max_outcome_notes_chars` (S8.5), on this route and
+    its org-plane twin alike.
 - **FR-8** `GET /report/{report_id}/outcomes` lists recorded outcomes.
+- **FR-7a / FR-8a** (S8.5) `POST /screening/reports/{report_id}/outcome` and
+  `GET /screening/reports/{report_id}/outcomes` are the **org-plane** twins:
+  same body and same refusals, scoped to reports the calling organisation
+  commissioned (404 — never 403 — otherwise), and the GET returns that
+  organisation's own judgments only. Every outcome records `recorded_by`
+  (`operator | organization`), `org_id` and `recorded_by_org_user_id`.
 
 ### 3.3 API surface & operability (M1)
 

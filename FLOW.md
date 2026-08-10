@@ -512,10 +512,29 @@ POST /report/{id}/outcome  {outcome, claim_id?, notes?}
   claim_id present → judgment on one claim; absent → on the whole report
 ```
 
+**S8.5 gave this route an org-plane twin**, because the reviewer who actually
+forms the judgment is the customer, not the operator:
+
+```
+POST /screening/reports/{id}/outcome   same body, 404 (never 403) if not yours
+GET  /screening/reports/{id}/outcomes  THIS org's own judgments, oldest first
+```
+
+Both doors validate through one constructor (`app/reports/outcomes.py`), which
+owns all three rules — the claim must belong to the report, `notes` must fit
+`max_outcome_notes_chars`, and the record must state its own provenance
+(`recorded_by` ∈ `operator | organization`, plus `org_id` and, when a human
+rather than an `X-Org-Key` machine client is behind the call,
+`recorded_by_org_user_id`).
+
 Each judgment lands in **two** places: the store's `outcomes` table (queryable
 per report, `GET /report/{id}/outcomes`) and the flywheel JSONL
 (`record_type: "outcome"`), so one stream joins every evaluation row to its
 eventual ground truth — the training loop (constraint #6) is now closable.
+**The flywheel record carries the label and the provenance but NOT `notes`**
+(S8.5): that file is append-only with no erasure path, and free text a human
+typed beside a candidate's name has no business in it. The notes stay in
+`outcomes`, where `outcomes → reports → candidates` CASCADE reaches them.
 `ReportStore.delete()` erases a report + outcomes for DPDP requests.
 
 ---

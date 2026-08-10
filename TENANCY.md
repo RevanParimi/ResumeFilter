@@ -126,11 +126,13 @@ every org's screening surface. The alternative reading, "unowned means every
 org can see it," would make the admin plane's own upload history a silent
 cross-tenant leak the day org-plane routes existed at all.
 
-This is why `OrgScopedReads.report` and `.reports_for_candidate` (§5) never
+This is why `OrgScopedAccess.report` and `.reports_for_candidate` (§5) never
 special-case a null `org_id` as a match: an org-scoped store read only ever
 matches rows whose `org_id` equals the caller's own id, and `NULL = 'org-a-id'`
 is false in SQL, not true. The admin plane's own upload of `OTHER` in the smoke
-below is exactly this case, proven over HTTP.
+below is exactly this case, proven over HTTP. **The S8.5 write inherits this
+for free** — recording an outcome on an unowned report is a 404, with no
+special case in the route saying so.
 
 ## 5. The enforcement — the facade and the guard
 
@@ -140,11 +142,29 @@ enforced by remembering to enforce it will be forgotten at the second door.** A
 tenancy rule spread across org-plane routes is exactly that shape by
 construction, so org handlers get no option to forget it:
 
-1. **A scoped facade — `app/screening/scope.py`, `OrgScopedReads`.** Every
+1. **A scoped facade — `app/screening/scope.py`, `OrgScopedAccess`.** Every
    method takes `org_id` as its *first* argument, there is no unscoped read
    **on this object**, and both report-returning methods (`.report`,
    `.reports_for_candidate`) redact (§6) before returning, so a handler cannot
    forget the redaction either.
+
+   **S8.5 renamed it from `OrgScopedReads`, because it now holds a WRITE**
+   (`.record_outcome`, beside `.outcomes`). A class named for reading while it
+   records judgments would be a lie in the one file whose entire job is being
+   trustworthy about scope, and the next person adding a write would either
+   believe the name or put their write somewhere worse. The **attribute** the
+   guard watches — `services.screening_scope` — deliberately did not change, so
+   the guard needed no edit and kept covering routes nobody has written.
+   `.record_outcome` returns `None` for "not yours, or absent", exactly as
+   `.report` does, so the reads and the write cannot disagree about what a
+   missing report looks like. `recorded_by` is **not a parameter** of it: this
+   facade *is* the org plane, so it cannot stamp anything else — structurally
+   stronger than a caller passing the right value.
+
+   Rejected: a second facade for writes (`OrgScopedWrites`). Two objects over
+   the same store is two places to forget the same rule, and the guard's
+   alternation would grow a third name to keep ordered — cost with no
+   protection.
 
    Note the precise claim: no unscoped read *on the facade*, not "no unscoped
    read reachable from an org handler". The latter would be false.
@@ -394,3 +414,15 @@ proves the constraint behaviourally instead — strictly stronger, since the
 metadata comparison never established that any index was *enforced*.
 `test_0019_refuses_to_run_over_colliding_org_names` proves the migration
 refuses rather than picking a winner on a customer's behalf.
+
+**S8.5 adds the first scoped WRITE** (`tests/test_screening_outcome_api.py`,
+`test_report_outcomes.py`, `scripts/smoke_s85_outcome.py` — 21/21). The tenancy
+check worth naming: **404 on a WRITE, byte-identical to absence, on both
+verbs.** The instinct on a refused write is 403, and a 403 confirms the report
+exists to anyone who guesses an id — so the write is held to exactly the rule
+§6 states for reads. The second check is a leak this document had no reason to
+consider before: not sideways but **downward**. A report has exactly one owning
+organisation, so no other customer can reach it, but an operator's internal
+note about that customer's report is written on the same report, and
+`GET /screening/reports/{id}/outcomes` filters to the caller's own `org_id` for
+that reason alone.
