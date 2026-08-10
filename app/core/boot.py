@@ -9,6 +9,10 @@ here for the same reason: a session cookie sent in the clear, a wildcard CORS
 origin, or a capture email provider each produce a service that *works* while
 being unsafe, which is the failure mode a boot check exists to catch.
 
+S8.3 adds a sixth, on the same argument: a disabled rate limiter serves every
+request perfectly while leaving the OTP endpoints -- the brute-force surface
+PI-8 itself created -- unthrottled on a public host.
+
 There is deliberately NO ``env`` exemption (spec 0.1). ``env`` DEFAULTS to
 "local", so an env-gated escape would make a safe deploy depend on remembering
 two variables instead of one -- the same fail-open shape, one indirection
@@ -69,4 +73,12 @@ def verify_launch_config(settings: Settings) -> None:
             "DEE_ENV=prod with email_provider=capture. CaptureEmail writes login "
             "codes to email_capture_path in plaintext — that is an OTP leak "
             "wearing a test harness's clothes. Use email_provider=smtp."
+        )
+    if not settings.rate_limit_enabled:
+        raise LaunchConfigError(
+            "DEE_ENV=prod with rate_limit_enabled=false. The OTP endpoints are "
+            "the brute-force surface this PI created, and they would be "
+            "unthrottled on a public host. No knob restores fail-open admin "
+            "auth (S8.1); this is the same class of thing. Set "
+            "rate_limit_enabled=true."
         )

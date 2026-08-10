@@ -219,6 +219,29 @@ class Settings(BaseSettings):
     # posture, and the honest statement is that nothing deletes on it yet.
     ret_batch_item_days: int = Field(default=90, ge=1)
 
+    # --- Rate limiting (PI-8, S8.3 Phase A) -----------------------------------
+    # ONE limiter, DB-backed, called from the SERVICE layer (spec §3.1). The
+    # defaults are the safe ones in both directions: limiting ON, and NO proxy
+    # trusted -- X-Forwarded-For is attacker-controlled, so trusting it by
+    # default would leave a limiter that looks installed and bounds nothing.
+    # Prod REFUSES TO BOOT with rate_limit_enabled=False (app/core/boot.py).
+    rate_limit_enabled: bool = True
+    #: 0 = ignore X-Forwarded-For entirely and use the socket peer. Set to the
+    #: number of proxies in front of the app (Railway: 1).
+    rate_limit_trusted_proxy_hops: int = Field(default=0, ge=0)
+    # Dual-scoped: per email AND per IP. Per-email alone lets an attacker spray
+    # one guess across ten thousand addresses; per-IP alone lets a botnet grind
+    # one address. Neither is a bound on its own (spec §2.3).
+    rate_limit_login_per_hour_per_email: int = Field(default=20, ge=1)
+    rate_limit_login_per_hour_per_ip: int = Field(default=100, ge=1)
+    rate_limit_verify_per_hour_per_email: int = Field(default=30, ge=1)
+    rate_limit_verify_per_hour_per_ip: int = Field(default=200, ge=1)
+    # Spend. 400 calls x screening_max_items_per_call (5) = 2000 items/hour --
+    # far above a human driving the UI, a hard ceiling on a runaway client
+    # loop. Bounded per CALL is not bounded per CALLER.
+    rate_limit_process_per_hour_per_org: int = Field(default=400, ge=1)
+    rate_limit_asr_per_hour_per_candidate: int = Field(default=60, ge=1)
+
     # --- Cursor pagination (PI-8, S8.4 Phase B) -------------------------------
     page_default_limit: int = Field(default=50, ge=1)
     page_max_limit: int = Field(default=200, ge=1)
