@@ -86,7 +86,8 @@ from app.screening.schema import (
 from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
-from app.reports.schema import OutcomeLabel, OutcomeRecord
+from app.reports.outcomes import OutcomeRefused, build_outcome
+from app.reports.schema import OutcomeLabel, OutcomeRecord, OutcomeSource
 
 
 def _services(request: Request) -> Services:
@@ -2014,47 +2015,75 @@ async def get_report(report_id: str, request: Request) -> Report:
 
 
 class OutcomeRequest(BaseModel):
-    """A human closing the loop on a report (or one claim within it)."""
+    """A human closing the loop on a report (or one claim within it).
+
+    `notes` is bounded by `max_outcome_notes_chars` inside `build_outcome`, not
+    here: the cap is config, and it must apply identically on the org plane's
+    route (S8.5).
+    """
 
     outcome: OutcomeLabel
     claim_id: Optional[str] = None
     notes: str = ""
 
 
+def _outcome_flywheel_record(rec: OutcomeRecord) -> dict:
+    """What one recorded outcome contributes to the training sink.
+
+    NO `notes`. The flywheel is an append-only JSONL with no erasure path, and
+    free text a human typed beside a candidate's name has no business in a file
+    no DPDP delete can reach. The label is the training signal; the prose never
+    was, and it still lives in `outcomes` where erasure genuinely reaches it
+    (outcomes -> reports -> candidates, both CASCADE).
+
+    It gains provenance instead: a calibration harness must be able to tell a
+    customer's judgment from our own operator's, or it trains on its own echo.
+    """
+    return {
+        "record_type": "outcome",
+        "report_id": rec.report_id,
+        "claim_id": rec.claim_id,
+        "outcome": rec.outcome.value,
+        "recorded_by": rec.recorded_by.value,
+        "org_id": rec.org_id,
+    }
+
+
+def _outcome_recorded(rec: OutcomeRecord) -> OutcomeRecordedResponse:
+    return OutcomeRecordedResponse(
+        report_id=rec.report_id,
+        claim_id=rec.claim_id,
+        outcome=rec.outcome.value,
+        recorded_at=rec.recorded_at.isoformat(),
+    )
+
+
 @router.post("/report/{report_id}/outcome", response_model=OutcomeRecordedResponse)
 async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) -> OutcomeRecordedResponse:
+    """The OPERATOR's door. The customer's is
+    `POST /screening/reports/{id}/outcome`, and both go through
+    `build_outcome` -- a rule enforced at one entry point and forgotten at the
+    second is this repo's signature defect (S8.5 spec §3)."""
     services = _services(request)
     report = services.report_store.get(report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
-    if req.claim_id is not None:
-        known = {v.claim_id for v in report.verdicts}
-        if req.claim_id not in known:
-            raise HTTPException(
-                status_code=422,
-                detail=f"claim '{req.claim_id}' is not part of report '{report_id}'",
-            )
+    try:
+        rec = build_outcome(
+            report,
+            outcome=req.outcome,
+            claim_id=req.claim_id,
+            notes=req.notes,
+            max_notes_chars=services.settings.max_outcome_notes_chars,
+            recorded_by=OutcomeSource.OPERATOR,
+        )
+    except OutcomeRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    rec = OutcomeRecord(
-        report_id=report_id, claim_id=req.claim_id, outcome=req.outcome, notes=req.notes
-    )
     services.report_store.add_outcome(rec)
     # Same sink as the evaluation rows, so training joins read one stream.
-    services.flywheel.log(
-        {
-            "record_type": "outcome",
-            "report_id": report_id,
-            "claim_id": req.claim_id,
-            "outcome": req.outcome.value,
-            "notes": req.notes,
-        }
-    )
-    return {
-        "report_id": report_id,
-        "claim_id": req.claim_id,
-        "outcome": req.outcome.value,
-        "recorded_at": rec.recorded_at.isoformat(),
-    }
+    services.flywheel.log(_outcome_flywheel_record(rec))
+    return _outcome_recorded(rec)
 
 
 @router.get("/report/{report_id}/outcomes", response_model=OutcomeListResponse)
