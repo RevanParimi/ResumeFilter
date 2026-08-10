@@ -109,6 +109,31 @@ def test_second_run_is_a_no_op(tmp_path):
         assert len(s.execute(select(OutcomeRow)).scalars().all()) == 1
 
 
+def test_imported_outcomes_are_stamped_operator(tmp_path):
+    """S8.5 regression pin, and the reason it exists is worth keeping: this
+    importer is a THIRD writer to `outcomes`, beside the operator's route and
+    the customer's, and it is the one nobody thinks of. `recorded_by` is NOT
+    NULL with no server default, so the full suite -- not the design -- is what
+    caught it.
+
+    `operator` is a fact about these rows and not a guess: they come from the
+    pre-S8.1 reports database, which predates the org plane entirely.
+    """
+    store = make_candidate_store()
+    cid = _candidate(store)
+    path = _old_db(tmp_path, [
+        ("rep_live", "genai", "2026-01-01T00:00:00+00:00", "solid", cid,
+         '{"id": "rep_live"}'),
+    ])
+
+    migrate(path, store._session_factory)
+
+    with store._session_factory() as s:
+        row = s.execute(select(OutcomeRow)).scalars().one()
+        assert row.recorded_by == "operator"
+        assert row.org_id is None
+
+
 def test_imported_reports_then_cascade_like_any_other(tmp_path):
     """An imported report is not a second-class row: erasure sweeps it."""
     store = make_candidate_store()

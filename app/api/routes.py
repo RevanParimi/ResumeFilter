@@ -152,6 +152,24 @@ class OrgKeyResponse(BaseModel):
     api_key: str
 
 
+class OutcomeRequest(BaseModel):
+    """A human closing the loop on a report (or one claim within it).
+
+    Defined up here with the two response models rather than beside the
+    operator's route, because BOTH doors take it and FastAPI resolves a
+    handler's annotations at decoration time -- the org-plane route is
+    registered earlier in this file.
+
+    `notes` is bounded by `max_outcome_notes_chars` inside `build_outcome`, not
+    by a Field constraint here: the cap is config, and it must apply
+    identically on both routes (S8.5 spec §4).
+    """
+
+    outcome: OutcomeLabel
+    claim_id: Optional[str] = None
+    notes: str = ""
+
+
 class OutcomeRecordedResponse(BaseModel):
     report_id: str
     claim_id: Optional[str] = None
@@ -920,6 +938,64 @@ async def screening_candidate_reports(
     return _services(request).screening_scope.reports_for_candidate(
         org_id, candidate_id
     )
+
+
+@org_router.post(
+    "/screening/reports/{report_id}/outcome",
+    response_model=OutcomeRecordedResponse,
+)
+async def screening_record_outcome(
+    report_id: str, req: OutcomeRequest, request: Request,
+    org_id: str = Depends(require_org),
+) -> OutcomeRecordedResponse:
+    """The customer closing the loop on a report they commissioned (S8.5).
+
+    The twin of the operator's `POST /report/{id}/outcome`; both validate
+    through `build_outcome`, so neither door can be bounded while the other is
+    not.
+
+    404 -- never 403 -- for a report this org did not commission, on a WRITE
+    as much as on a read. The instinct on a refused write is 403, and it would
+    confirm the report exists to anyone who guessed an id.
+    """
+    services = _services(request)
+    try:
+        rec = services.screening_scope.record_outcome(
+            org_id, report_id,
+            outcome=req.outcome,
+            claim_id=req.claim_id,
+            notes=req.notes,
+            max_notes_chars=services.settings.max_outcome_notes_chars,
+            org_user_id=_org_user_id(request),
+        )
+    except OutcomeRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if rec is None:
+        raise HTTPException(status_code=404, detail="report not found")
+
+    services.flywheel.log(_outcome_flywheel_record(rec))
+    return _outcome_recorded(rec)
+
+
+@org_router.get(
+    "/screening/reports/{report_id}/outcomes",
+    response_model=OutcomeListResponse,
+    description="This organisation's own judgments on a report it commissioned, oldest first.",
+)
+async def screening_list_outcomes(
+    report_id: str, request: Request, org_id: str = Depends(require_org)
+) -> OutcomeListResponse:
+    """THIS org's judgments -- not every judgment on the report.
+
+    An operator's internal note about a customer's report lives on the same
+    report, and the customer is not its audience. The admin twin
+    (`GET /report/{id}/outcomes`) returns everything on purpose; that is the
+    operator's cross-tenant support view.
+    """
+    found = _services(request).screening_scope.outcomes(org_id, report_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="report not found")
+    return OutcomeListResponse(report_id=report_id, outcomes=found)
 
 
 # ── Screening batches (S8.4 Phase B) ─────────────────────────────────────────
@@ -2012,19 +2088,6 @@ async def get_report(report_id: str, request: Request) -> Report:
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
     return report
-
-
-class OutcomeRequest(BaseModel):
-    """A human closing the loop on a report (or one claim within it).
-
-    `notes` is bounded by `max_outcome_notes_chars` inside `build_outcome`, not
-    here: the cap is config, and it must apply identically on the org plane's
-    route (S8.5).
-    """
-
-    outcome: OutcomeLabel
-    claim_id: Optional[str] = None
-    notes: str = ""
 
 
 def _outcome_flywheel_record(rec: OutcomeRecord) -> dict:
