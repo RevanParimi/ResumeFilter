@@ -1624,12 +1624,21 @@ class Component extends DCLogic {
   // Every fetch goes through here so loading/error handling cannot drift, and
   // so a 401 is never turned into a screen-level error message (api.js has
   // already redirected to login by then).
-  load = (key, fn) => {
+  // `still` is an optional guard evaluated when the response LANDS, not when it
+  // was sent. Without it a reply for the batch you just navigated away from
+  // arrives late and overwrites the one you are looking at — a queue showing
+  // another batch's rows, which is the one mistake this screen cannot make.
+  load = (key, fn, still) => {
     this.setState((s) => ({ [key]: { loading: true, data: s[key] && s[key].data, error: null } }));
     return fn().then(
-      (data) => { this.setState({ [key]: { loading: false, data, error: null } }); return data; },
+      (data) => {
+        if (still && !still()) return null;
+        this.setState({ [key]: { loading: false, data, error: null } });
+        return data;
+      },
       (err) => {
         if (err && err.kind === "session_lost") return null;
+        if (still && !still()) return null;
         this.setState({ [key]: { loading: false, data: null, error: err } });
         return null;
       }
@@ -1707,10 +1716,14 @@ class Component extends DCLogic {
   refreshBatch = (id) => {
     const batchId = id || this.state.selectedBatch;
     if (!batchId) return Promise.resolve(null);
+    // Tracked in an instance field, not state: the guard has to be correct the
+    // instant the user clicks, and setState has not flushed by then.
+    this._viewBatch = batchId;
+    const still = () => this._viewBatch === batchId;
     return Promise.all([
-      this.load("batch", () => API.get("/screening/batches/" + batchId)),
-      this.load("summary", () => API.get("/screening/batches/" + batchId + "/summary")),
-      this.load("queue", () => API.get("/screening/batches/" + batchId + "/queue"))
+      this.load("batch", () => API.get("/screening/batches/" + batchId), still),
+      this.load("summary", () => API.get("/screening/batches/" + batchId + "/summary"), still),
+      this.load("queue", () => API.get("/screening/batches/" + batchId + "/queue"), still)
     ]);
   };
   refresh = () => { this.refreshBatch(); };
@@ -1810,7 +1823,11 @@ class Component extends DCLogic {
 
   openReport = (reportId) => () => {
     this.setState({ screen: "report", report: IDLE });
-    this.load("report", () => API.get("/screening/reports/" + reportId));
+    // Same late-reply guard as the batch reads: two quick clicks must not leave
+    // the slower report rendered under the faster one's heading.
+    this._viewReport = reportId;
+    this.load("report", () => API.get("/screening/reports/" + reportId),
+              () => this._viewReport === reportId);
     window.scrollTo(0, 0);
   };
   openReportKey = (reportId) => (e) => {
@@ -1839,6 +1856,9 @@ class Component extends DCLogic {
     API.del("/screening/batches/" + id).then(
       () => {
         const wasSelected = this.state.selectedBatch === id;
+        // Drop the view token too, or an in-flight refresh of the batch that
+        // was just deleted lands afterwards and repopulates the screen.
+        if (wasSelected) this._viewBatch = null;
         this.setState({
           busyId: null,
           selectedBatch: wasSelected ? null : this.state.selectedBatch,
@@ -2118,7 +2138,11 @@ class Component extends DCLogic {
     API.post("/auth/logout").then(this.handleSessionLost, this.handleSessionLost);
     this.setState({ authNotice: null });
   };
-  goQueueLink = (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ screen: "queue" }); window.scrollTo(0, 0); };
+  // Goes through nav() like every other door onto the queue. It used to set
+  // `screen` directly and skip loadForScreen, which is this repo's signature
+  // defect in miniature: one rule, two entry points, and the second one lands
+  // on a queue that never fetched anything.
+  goQueueLink = (e) => { if (e && e.preventDefault) e.preventDefault(); this.goQueue(); };
   noop = (e) => { if (e && e.preventDefault) e.preventDefault(); };
 
   // ── portal / devices / roles / comp ───────────────────────────────────────
