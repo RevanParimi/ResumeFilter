@@ -9,6 +9,94 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-10 — THE SCREENING SCREENS ARE WIRED. Branch
+  `s85-screening-ui-wiring`, three commits, NO `app/` code touched
+  (`pytest -q` re-measured at 1553, unchanged). Verified three ways:
+  bindings 384/384, contract 25/25 over real HTTP, browser click-through
+  16/16 in headless Chrome.** Spec:
+  `docs/superpowers/specs/2026-08-10-ui-screening-wiring-design.md`.
+  **The wedge is now clickable end to end by the customer who bought it:**
+  sign up → drop resumes in → watch them screen → read a ranked, reasoned queue
+  → open a report → screenshot the roll-up → delete the batch. Queue, report,
+  summary, upload and batches all run against the seven batch routes plus Phase
+  A's report read; their mock constants (`CANDIDATES`, `ROWS`, `REPORTS`,
+  `splitEvidence`) are **deleted**, not left as a fallback.
+  **THE LOAD-BEARING DECISION: the client drives the work, and the screens SAY
+  so.** `process` does five items a call, each a full nine-node graph run, and
+  there is no worker anywhere in `app/` — so a sequential loop lives in the
+  browser. Registration evaluates nothing; closing the tab **pauses** the batch
+  (an item stale past `claim_timeout` re-reads as pending, so the next call
+  resumes it); every call bills a model. The loop therefore starts **on upload
+  and never on navigation** — registering 200 resumes is an instruction to
+  screen them, opening a batch is not — and **any** error stops it, because
+  there is still no rate limiter (S8.3).
+  **The driver's control flag is an INSTANCE FIELD, not state.** `setState` is
+  asynchronous, so a loop consulting `state.driving` reads the previous value on
+  the tick that starts it and stops before its first call. State is what
+  renders; the field is what the loop obeys.
+  **No polling timer at all**: the `process` call *is* the tick. With no worker,
+  an idle client means an idle batch, so a timer would animate a bar that cannot
+  move. And **paging is hidden while the driver runs** — the queue's sort key is
+  `COALESCE(risk_score, -1)` and screening an item moves it from null to a
+  score, so mid-run the key is *mutable*, which is the same limitation
+  `SCREENING.md` §6 states for the curation queue.
+  **⚠ THE BROWSER CHECK FOUND A REAL DEFECT ON ITS FIRST PASS, and no other
+  layer could have.** The Delete button sits **inside** the batch row, which is
+  itself a click target — so arming a delete also navigated away from the list
+  you armed it on. Fixed with `stopPropagation`. Neither the binding checker nor
+  any unit test can see event bubbling.
+  **⚠ A MUTANT SURVIVED THE BINDING CHECKER'S FIRST VERSION, and the reason is
+  worth keeping:** a field set to `undefined` passes an `in` check while
+  rendering as an empty string — which is *precisely* the silent blank the
+  checker exists to catch. `undefined` now counts as missing; all three planted
+  mutants die.
+  **⚠ TWO OF MY OWN CONTRACT CHECKS WERE MEASURING MY ASSUMPTIONS, this
+  sprint's recurring shape.** (1) I asserted base64 of `[1,"x"]` is a 422 — it
+  is a **valid** cursor, which is exactly what S8.4 Phase B's type-spec fix
+  made it; the forgery set is now five genuinely malformed shapes. (2) A
+  four-item batch under a cap of five proved "the loop is bounded and
+  terminates" **after one call**; it is seven items now, and the loop must
+  actually iterate (`remaining` goes 2 → 0).
+  **Six things the API's real shapes forced on the design, none cosmetic:**
+  the queue carries **no names** (scalars only, because `candidate_id` is SET
+  NULL), so rows are identified by id and the screen explains why · the header's
+  band counts come from `/summary`, not from a page of `/queue`, or "11
+  elevated" would silently mean "11 on this page" · `BatchView` has item-status
+  counts and no risk bands, so the batches list shows progress instead of the
+  mock's invented per-batch "elevated" column · summary shares are of
+  `n_screened`, never of the upload · the report's four outcome buttons are
+  **gone** because `POST /report/{id}/outcome` is admin-plane and would 401
+  every org user · and a corrupt PDF refuses the whole registration naming
+  `item 37`, which is meaningless against 400 filenames, so the UI translates
+  the index back to the file's name.
+  **`MOCK_NOTE` no longer says "until S8.4".** The five screens still on mock
+  data are mock because their routes are on **another plane** — admin
+  (`evaluate`, operator console, curation) or candidate (interview runner) —
+  which is a different and permanent reason.
+  **Two machine facts measured this session:** `innerText` applies CSS
+  `text-transform`, so uppercased column labels read as *absent* to a
+  case-sensitive assertion; and the page and the API must both be on
+  `localhost` — SameSite ignores the PORT, so `localhost:5174` and
+  `localhost:8096` are the same **site** (the Lax cookie is sent) and different
+  **origins** (CORS still applies), where `127.0.0.1` would be cross-site and
+  every call would 401 for a reason that looks nothing like the cause.
+  **⚠ A SELF-REVIEW OF THE BRANCH FOUND TWO MORE, both house shapes.**
+  (1) **One rule, two doors:** every path onto the queue went through `nav()`,
+  which loads what the screen renders — except `goQueueLink`, the upload
+  screen's "screening queue" link, which set `screen` directly and fetched
+  nothing. It landed on a queue that had never called the API and could not even
+  render the empty state, because that state is keyed on the batch list having
+  *arrived*. (2) **A late reply overwriting a live screen:** the three batch
+  reads and the report read `setState` unconditionally on resolve, so a response
+  for the batch you just left lands afterwards and replaces the one you are
+  looking at — a queue showing another batch's rows, which the comment beside
+  `selectBatch` already *claimed* was impossible. `load()` now takes a guard
+  evaluated when the response **lands**, keyed on an instance field rather than
+  state (the guard must be right the instant of the click, and `setState` has
+  not flushed by then).
+  **➤ NEXT STEP: an org-plane route for recording an outcome is now a NAMED
+  gap** (it is PI-9's calibration input and the report screen currently says so
+  in prose), then S8.3.
 - **Session 2026-08-09 (later) — S8.4 PHASE B WHOLE-BRANCH REVIEW done: 6
   Important + 4 Minor findings, ALL FIXED on the branch (9 commits, TDD, one
   failing test proven before each fix), then MERGED to main. 1542→1553 green,
@@ -1348,21 +1436,47 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                MEASURED detail strings · unwired screens labelled
     │                "sample data" · 36/36 contract + 9/9 browser + 27/27 CDP
     │                click-through; pytest 1377 unchanged
-    │            [ ] screens 2/4/5/6 (queue · summary · upload · batches) —
-    │                BLOCKED: no endpoints until S8.4 Phase B. Now designable:
-    │                the queue is "MY batches" (tenancy settled 2026-08-05), so
-    │                an org that has uploaded nothing shows an EMPTY QUEUE, not
-    │                an error — the first screen every new customer ever sees
-    │            [ ] report detail — unblocked by S8.4 Phase A
-    │                (GET /screening/reports/{id}, org plane, full report with
-    │                resume_farm.matches[] redacted to similarity-only)
+    │            [x] screens 2/4/5/6 (queue · summary · upload · batches)
+    │                WIRED 2026-08-10 on branch s85-screening-ui-wiring, plus
+    │                the report detail. Spec:
+    │                2026-08-10-ui-screening-wiring-design.md. No app/ code
+    │                touched (pytest 1553, unchanged).
+    │                The client DRIVES the work and the screens say so: process
+    │                is 5 items a call, there is no worker, so a sequential loop
+    │                runs in the browser -- started on UPLOAD and never on
+    │                navigation (every call bills a model), stopped by any error
+    │                (no rate limiter until S8.3), and the copy states that
+    │                closing the tab PAUSES the batch and reopening resumes it.
+    │                The queue carries NO NAMES by design and says why; the
+    │                header's bands come from /summary not from one page of
+    │                /queue; paging hides while the driver runs because the sort
+    │                key is mutable mid-run; the report's outcome buttons are
+    │                GONE (admin-plane route, would 401).
+    │                THREE VERIFICATION LAYERS, since frontend/ has no CI:
+    │                  - check_ui_bindings.js  384/384 bindings resolved by
+    │                    EXECUTING renderVals() over 8 states; non-vacuous
+    │                    against 3 mutants (one survived v1: an `undefined`
+    │                    field passes an `in` check and renders blank)
+    │                  - check_ui_screening_contract.py  25/25 over real HTTP in
+    │                    the BROWSER's posture (Origin + cookie + CSRF), which
+    │                    smoke_s84b deliberately does not exercise
+    │                  - check_ui_screening_browser.py  16/16 clicking through
+    │                    headless Chrome over CDP, incl. a real file picker via
+    │                    DOM.setFileInputFiles and every console error
+    │                THE BROWSER LAYER FOUND A REAL DEFECT: the Delete button
+    │                sits inside the clickable batch row, so arming a delete
+    │                navigated away. Nothing else could have seen it.
     │            [ ] instant check (/evaluate) · operator console · interview
     │                runner — /evaluate STAYS admin past S8.4 by decision
     │                (candidate-less, so no owner to stamp); operator console is
     │                admin by nature; interview runner is candidate-plane
+    │            [ ] AN ORG-PLANE ROUTE FOR RECORDING AN OUTCOME — named gap,
+    │                found 2026-08-10. POST /report/{id}/outcome is admin-plane,
+    │                so an org user cannot close the loop on a report they paid
+    │                for. It is PI-9's calibration input; the report screen says
+    │                so in prose today. Wants its own spec + TDD (app/ change).
     │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
     │                new 409 makes it fail ON PURPOSE (spec §4.7)
-    │            [ ] composite smoke across the wired UI
     ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
@@ -1398,6 +1512,40 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-10** — **The screening screens are wired. Branch
+  `s85-screening-ui-wiring`, three commits, no `app/` code touched
+  (`pytest -q` 1553, unchanged). 384/384 bindings · 25/25 contract · 16/16
+  browser.** Queue, report, summary, upload and batches now run against the
+  seven batch routes plus Phase A's report read; their mock constants are
+  deleted rather than kept as a fallback.
+  **What this session established, beyond "the screens work":**
+  (1) **The client drives the work, so the UI has to be honest about it.**
+  Registration evaluates nothing, the loop runs in the browser five items at a
+  time, closing the tab pauses the batch, and every call bills a model — which
+  is why the loop starts on *upload* and never on *navigation*, and why any
+  error stops it rather than retrying into an API with no rate limiter.
+  (2) **`setState` is asynchronous, so the loop cannot consult state.** A
+  driver reading `state.driving` on the tick that sets it reads the previous
+  value and halts before its first call. An instance field controls the loop;
+  state only renders it. This is a general trap for any self-scheduling work in
+  a React class.
+  (3) **A frontend with no CI needs guards that EXECUTE, not guards that
+  read.** The binding checker runs `renderVals()` over eight states and resolves
+  every `{{ }}` against the result — 384 of them, sc-for scopes included. Its
+  first version let a mutant live: a field set to `undefined` passes an `in`
+  check and renders as an empty string, which is the exact silent blank it
+  exists to catch.
+  (4) **Only the browser layer can see the browser's own semantics.** It found
+  the Delete button nested inside the clickable batch row, so arming a delete
+  navigated away. No unit test and no static check sees event bubbling.
+  (5) **Two of my own checks were measuring my assumptions** — the sprint's own
+  recurring shape, now three sprints running. A `[1,"x"]` cursor is *valid*
+  (S8.4b made it so), and a four-item batch under a cap of five "proved" a loop
+  that never looped.
+  (6) **A real product gap surfaced and was named rather than papered over:**
+  there is no org-plane route to record an outcome, so the customer cannot close
+  the loop on a report they paid for. It is PI-9's calibration input. The report
+  screen states it in prose; the fix wants its own spec.
 - **2026-08-08/09** — **S8.4 Phase B built: the screening surface. 1434→1542
   green, `smoke_s84b` 16/16, all sixteen smokes green. On branch
   `s84b-screening-surface`, unreviewed and unmerged.** All 15 plan tasks, TDD,

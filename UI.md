@@ -256,6 +256,36 @@ the loudest signal**. Rows must be scannable without opening anything.
 > model) LLM-assisted. Design for a progress state and partial results, not a
 > spinner that blocks until 500 finish.
 
+> **WIRED 2026-08-10 (S8.5).** Screens A, B and C now run against these routes.
+> Four things the API's shapes forced, recorded here so a redesign does not
+> re-litigate them:
+>
+> 1. **A queue row carries NO NAME.** `QueueRow` is scalars only, because
+>    `batch_items.candidate_id` is `ON DELETE SET NULL` and anything stored
+>    beside it outlives the person (`SCREENING.md` §5). Rows are identified by a
+>    short id and the screen **says so in a line of prose**; the extracted name
+>    appears on drill-in, from the report's `candidate_context`. Do not design a
+>    name column here — there is nothing to put in it, and fetching one report
+>    per row to find one would defeat a deliberate DPDP property.
+> 2. **Screening runs in the browser.** Registration evaluates nothing; the
+>    client calls `process` five items at a time until `remaining` is 0. So the
+>    UI starts the loop **on upload and never on navigation** (opening a batch
+>    is not an instruction to spend money), stops it on any error (there is no
+>    rate limiter yet — S8.3), and states plainly that closing the tab pauses
+>    the batch and reopening it resumes.
+> 3. **No polling timer.** The `process` call is the tick. With no worker, an
+>    idle client means an idle batch, and a timer would animate a bar that
+>    cannot move.
+> 4. **Paging is hidden while screening runs.** The queue's sort key is
+>    `COALESCE(risk_score, -1)` and screening an item moves it from null to a
+>    score, so mid-run the key is *mutable* — keyset paging is stable against
+>    inserts, not against re-observation (`SCREENING.md` §6, the same caveat as
+>    the curation queue).
+>
+> The batches list shows **progress, not risk**: `BatchView.counts` holds item
+> statuses only, and there is no per-band count without one `summary` call per
+> row.
+
 > **RESOLVED 2026-08-05 (§9 Q3 + Q5) — a batch is a REAL stored object, and
 > processing is CLIENT-DRIVEN.** `screening_batches` + `batch_items` (S8.4
 > Phase B), so a queue can be named, resumed, summarized and paginated.
@@ -279,10 +309,12 @@ the loudest signal**. Rows must be scannable without opening anything.
 > stored batch (smallest change, but screens A and C are both built on a batch
 > that persists, and there would be nothing server-side to name or resume).
 
-### B. Candidate risk detail — *where trust is won or lost* ✅ (admin-plane today)
+### B. Candidate risk detail — *where trust is won or lost* ✅ (org plane)
 
-`GET /report/{report_id}` returns the full `Report`. This is the richest object
-in the system and the UI's central rendering problem:
+`GET /screening/reports/{report_id}` (S8.4 Phase A, org plane, redacted) returns
+the full `Report`; `GET /report/{report_id}` is the operator's cross-tenant
+equivalent. This is the richest object in the system and the UI's central
+rendering problem:
 
 ```
 Report
@@ -334,6 +366,23 @@ Design guidance:
 > §7's rule is unaffected and still binds: a fuller report is not a more
 > confident one, and there is still no accuracy claim to make.
 
+> **WIRED 2026-08-10, with one section deliberately NOT built: recording an
+> outcome.** `POST /report/{report_id}/outcome` is on the **admin** router, so
+> an org session gets 401. The four verdict buttons the design carried are gone;
+> the heading stays and says why in a sentence. Four buttons that fail every
+> time would be worse than none — the same rule that stops the current session
+> offering to revoke itself.
+>
+> This is the calibration input PI-9 needs, so an org-plane route for it is a
+> real product gap, not a UI omission. It belongs in a sprint of its own.
+>
+> The three component cards are composed from `fabrication_risk.components[]`
+> joined to each subsystem's own assessment — the components carry the weights,
+> and the subsystems carry the only prose (`reasoning`) the API produces.
+> `resume_farm.matches[]` renders as a **count and top similarity**; the wired
+> screen never reads `candidate_id`/`resume_id` at all, so a regression in the
+> projection could not surface through it.
+
 ### C. Batch summary / "what did we find" ✅ (S8.4 Phase B)
 
 `GET /screening/batches/{id}/summary` → `{batch_id, name, domain, status,
@@ -349,6 +398,13 @@ deliberate: a roll-up that quoted its riskiest row would re-open every tenancy
 question the read-model exists to close. If the design needs a name on this
 screen, it has to come from a drill-in the viewer is entitled to, not from the
 summary.
+
+> **WIRED 2026-08-10.** Band shares are computed against **`n_screened`, never
+> the upload count**: at 20% processed the remaining 80% is unknown, not
+> "insufficient signal", and a percentage over the wrong denominator is the
+> quietest way for this screen to lie. `top_signals[]` arrives as the three
+> component ids (`ai_generation` · `cross_field` · `resume_farm`) and the UI
+> owns the labels.
 
 ### D. Candidate DPDP portal ✅ — *compliance is a differentiator, not overhead*
 

@@ -194,9 +194,13 @@
     del: function (p) { return request("DELETE", p); },
     onSessionLost: function (fn) { sessionLostHandler = fn; },
 
-    /* Screens with no endpoint until S8.4 render mock data. They must SAY so:
-     * a confident UI beside an honest backend is how a demo ends up showing a
-     * buyer numbers that were never computed (UI.md §7). */
-    MOCK_NOTE: "Sample data — this screen has no endpoint until S8.4",
+    /* Screens this session's plane has no endpoint for render mock data. They
+     * must SAY so: a confident UI beside an honest backend is how a demo ends
+     * up showing a buyer numbers that were never computed (UI.md §7).
+     *
+     * Since S8.4 the reason is never "not built" — the operator console and
+     * the instant check are ADMIN-plane routes, and the interview runner is
+     * candidate-plane. All three 401 an org session. */
+    MOCK_NOTE: "Sample data — this screen's endpoints are on another plane",
   };
 })(window);

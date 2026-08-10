@@ -221,14 +221,14 @@
         </sc-if>
 
         <div style="margin-top:auto; display:flex; flex-direction:column; gap:10px;">
-          <sc-if value="{{ isOrgPlane }}" hint-placeholder-val="{{ true }}">
+          <sc-if value="{{ hasBatch }}" hint-placeholder-val="{{ true }}">
             <div style="padding:10px 11px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
               <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Ingest</div>
-              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; margin-top:3px; color:var(--heading);">168<span style="color:var(--muted); font-size:11px;"> / 214</span></div>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; margin-top:3px; color:var(--heading);">{{ batchProgressLabel }}</div>
               <div style="height:3px; border-radius:99px; background:var(--track); margin-top:7px; overflow:hidden;">
-                <div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div>
+                <div style="{{ batchProgressBar }}"></div>
               </div>
-              <div style="font-size:10.5px; color:var(--muted); margin-top:5px;">46 still screening</div>
+              <div style="font-size:10.5px; color:var(--muted); margin-top:5px;">{{ batchStatusLabel }}</div>
             </div>
           </sc-if>
           <sc-if value="{{ isCandidatePlane }}" hint-placeholder-val="{{ false }}">
@@ -271,70 +271,117 @@
           </sc-if>
 
           <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ true }}">
-            <div style="display:flex; align-items:flex-end; gap:24px; flex-wrap:wrap; margin-bottom:18px;">
-              <div style="flex:1; min-width:300px;">
-                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch · uploaded 09:14 IST</div>
-                <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">{{ batchName }}</h1>
-                <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:62ch;">Eleven of the 168 screened so far want a second pair of eyes. Each carries its reasoning; none carries a verdict.</p>
+            <sc-if value="{{ noBatch }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:28px; border-radius:10px; background:var(--panel); border:1px dashed var(--border); max-width:66ch;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--heading);">Nothing screened yet</div>
+                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:8px 0 0 0;">You see only what your organisation uploaded, so a new account starts empty. That is the correct state, not an error.</p>
+                <button onClick="{{ goUpload }}" style="{{ smallPrimary }}" style-hover="filter:brightness(1.08)">Upload your first resumes</button>
               </div>
-              <div style="display:flex; gap:8px;">
-                <div style="{{ statCard }}">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-elev);">11</div>
-                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">elevated</div>
-                </div>
-                <div style="{{ statCard }}">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-mod);">29</div>
-                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">moderate</div>
-                </div>
-                <div style="{{ statCard }}">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-low);">104</div>
-                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">low</div>
-                </div>
-                <div style="{{ statCard }}">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-ins);">24</div>
-                  <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">insufficient</div>
-                </div>
-              </div>
-            </div>
+            </sc-if>
 
-            <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel);">
-              <sc-for list="{{ candidates }}" as="c" hint-placeholder-count="4">
-                <div onClick="{{ c.open }}" onKeyDown="{{ c.openKey }}" role="button" tabIndex="{{ 0 }}" style="display:grid; grid-template-columns:minmax(0,1fr) 196px 132px; gap:20px; align-items:center; padding:13px 16px; border-bottom:1px solid var(--border); cursor:pointer;" style-hover="background:var(--hover)">
-                  <div style="min-width:0; display:flex; gap:10px;">
-                    <div style="{{ c.avatar }}">{{ c.initials }}</div>
-                    <div style="min-width:0;">
-                      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                        <span style="font-size:13.5px; font-weight:600; color:var(--heading);">{{ c.name }}</span>
-                        <span style="{{ c.chip }}">{{ c.bandLabel }}</span>
-                      </div>
-                      <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ c.role }}</div>
-                      <p style="font-size:12.5px; line-height:1.5; color:var(--muted); margin:5px 0 0 0; max-width:70ch;">{{ c.reason }}</p>
-                    </div>
+            <sc-if value="{{ hasBatch }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:flex-end; gap:24px; flex-wrap:wrap; margin-bottom:18px;">
+                <div style="flex:1; min-width:300px;">
+                  <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch · {{ batchMeta }}</div>
+                  <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">{{ batchName }}</h1>
+                  <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:62ch;">Riskiest first; anything not screened sorts last. Each row carries its reasoning; none carries a verdict.</p>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <div style="{{ statCard }}">
+                    <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-elev);">{{ bandElevated }}</div>
+                    <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">elevated</div>
                   </div>
-                  <div>
-                    <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);">Loudest signal</div>
-                    <div style="font-size:12px; color:var(--text); margin-top:3px; line-height:1.4;">{{ c.loudest }}</div>
+                  <div style="{{ statCard }}">
+                    <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-mod);">{{ bandModerate }}</div>
+                    <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">moderate</div>
                   </div>
-                  <div>
-                    <div style="display:flex; align-items:baseline; justify-content:space-between;">
-                      <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--heading);">{{ c.scoreLabel }}</span>
-                      <span style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted);">{{ c.confLabel }}</span>
-                    </div>
-                    <div style="height:4px; border-radius:99px; background:var(--track); margin-top:5px; overflow:hidden;">
-                      <div style="{{ c.riskBar }}"></div>
-                    </div>
-                    <div style="height:2px; border-radius:99px; background:var(--track); margin-top:3px; overflow:hidden;">
-                      <div style="{{ c.confBar }}"></div>
-                    </div>
+                  <div style="{{ statCard }}">
+                    <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-low);">{{ bandLow }}</div>
+                    <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">low</div>
+                  </div>
+                  <div style="{{ statCard }}">
+                    <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--c-ins);">{{ bandInsufficient }}</div>
+                    <div style="font-size:10.5px; color:var(--muted); margin-top:1px;">insufficient</div>
                   </div>
                 </div>
-              </sc-for>
-            </div>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 14px; border-radius:10px; background:var(--panel); border:1px solid var(--border); margin-bottom:14px;">
+                <div style="flex:1; min-width:260px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted);"><span>{{ batchStatusLabel }} · {{ batchProgressLabel }}</span><span>{{ batchPending }} left</span></div>
+                  <div style="height:5px; border-radius:99px; background:var(--track); margin-top:6px; overflow:hidden;"><div style="{{ batchProgressBar }}"></div></div>
+                  <div style="font-size:11.5px; line-height:1.55; color:var(--muted); margin-top:7px;">{{ driveStatus }}</div>
+                </div>
+                <div style="display:flex; gap:7px;">
+                  <button onClick="{{ refresh }}" style="{{ ghostBtn }}" style-hover="background:var(--hover)">Refresh</button>
+                  <button onClick="{{ driveAction }}" style="{{ driveBtn }}" style-hover="filter:brightness(1.08)">{{ driveLabel }}</button>
+                </div>
+              </div>
+
+              <sc-if value="{{ driveError }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ uploadErrorBox }}">Screening stopped: {{ driveErrorText }} Nothing is retried automatically — start it again when you have looked.</div>
+              </sc-if>
+              <sc-if value="{{ queueError }}" hint-placeholder-val="{{ false }}">
+                <div style="{{ uploadErrorBox }}">{{ queueErrorText }}</div>
+              </sc-if>
+
+              <sc-if value="{{ queueEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:22px; border-radius:10px; background:var(--panel); border:1px dashed var(--border); max-width:66ch; font-size:12.5px; color:var(--muted);">This batch has no items.</div>
+              </sc-if>
+
+              <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel);">
+                <sc-for list="{{ candidates }}" as="c" hint-placeholder-count="4">
+                  <div onClick="{{ c.open }}" onKeyDown="{{ c.openKey }}" role="button" tabIndex="{{ 0 }}" style="display:grid; grid-template-columns:minmax(0,1fr) 196px 132px; gap:20px; align-items:center; padding:13px 16px; border-bottom:1px solid var(--border); cursor:pointer;" style-hover="background:var(--hover)">
+                    <div style="min-width:0; display:flex; gap:10px;">
+                      <div style="{{ c.avatar }}">{{ c.initials }}</div>
+                      <div style="min-width:0;">
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                          <span style="font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; color:var(--heading);">{{ c.name }}</span>
+                          <span style="{{ c.chip }}">{{ c.bandLabel }}</span>
+                        </div>
+                        <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ c.role }}</div>
+                        <p style="font-size:12.5px; line-height:1.5; color:var(--muted); margin:5px 0 0 0; max-width:70ch;">{{ c.reason }}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);">Loudest signal</div>
+                      <div style="font-size:12px; color:var(--text); margin-top:3px; line-height:1.4;">{{ c.loudest }}</div>
+                    </div>
+                    <div>
+                      <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                        <span style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--heading);">{{ c.scoreLabel }}</span>
+                        <span style="font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--muted);">{{ c.confLabel }}</span>
+                      </div>
+                      <div style="height:4px; border-radius:99px; background:var(--track); margin-top:5px; overflow:hidden;">
+                        <div style="{{ c.riskBar }}"></div>
+                      </div>
+                      <div style="height:2px; border-radius:99px; background:var(--track); margin-top:3px; overflow:hidden;">
+                        <div style="{{ c.confBar }}"></div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ hasMoreQueue }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ moreQueue }}" style="{{ ghostBtn }}" style-hover="background:var(--hover)">{{ moreQueueLabel }}</button>
+              </sc-if>
+
+              <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:16px 0 0 0; max-width:84ch;">Rows are identified by id, not by name: a candidate erasing themselves detaches this row, so nothing personal is stored beside it. Open a row for the extracted name and the full reasoning.</p>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isReport }}" hint-placeholder-val="{{ false }}">
             <button onClick="{{ goQueue }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">← Back to screening queue</button>
 
+            <sc-if value="{{ reportLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:22px; font-size:12.5px; color:var(--muted);">Loading the report…</div>
+            </sc-if>
+            <sc-if value="{{ reportError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ uploadErrorBox }}">{{ reportErrorText }}</div>
+            </sc-if>
+
+            <sc-if value="{{ hasReport }}" hint-placeholder-val="{{ true }}">
             <div style="display:grid; grid-template-columns:minmax(0,1fr) 200px; gap:28px; align-items:center; margin-top:12px; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
               <div>
                 <div style="display:flex; align-items:center; gap:10px;">
@@ -381,6 +428,10 @@
                 </div>
               </sc-for>
             </div>
+
+            <sc-if value="{{ hasFarmMatches }}" hint-placeholder-val="{{ false }}">
+              <p style="font-size:12px; line-height:1.6; color:var(--muted); margin:10px 0 0 0; max-width:80ch;">{{ reportFarmLine }}</p>
+            </sc-if>
 
             <h2 style="{{ h2 }}">Claim by claim</h2>
 
@@ -436,7 +487,9 @@
                             <div style="font-size:12.5px; line-height:1.45; color:var(--text);">{{ q }}</div>
                           </sc-for>
                         </div>
-                        <button onClick="{{ v.copy }}" style="{{ copyBtn }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat;"></span><span>{{ v.copyLabel }}</span></button>
+                        <sc-if value="{{ v.hasProbes }}" hint-placeholder-val="{{ true }}">
+                          <button onClick="{{ v.copy }}" style="{{ copyBtn }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/copy.svg) center/contain no-repeat;"></span><span>{{ v.copyLabel }}</span></button>
+                        </sc-if>
                       </div>
                       <div style="margin-top:10px;">
                         <div style="height:3px; border-radius:99px; background:var(--track); overflow:hidden;">
@@ -450,88 +503,96 @@
               </div>
 
               <h2 style="{{ h2 }}">Record what actually happened</h2>
-              <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Your judgement is the only ground truth this system will ever have.</p>
-              <div style="display:flex; gap:7px; flex-wrap:wrap;">
-                <button style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">Verified genuine</button>
-                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Candidate clarified</button>
-                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Verified fabricated</button>
-                <button style="{{ ghostBtn }}" style-hover="background:var(--hover)">Inconclusive</button>
-              </div>
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:0; max-width:76ch;">Your judgement is the only ground truth this system will ever have — and there is no way to give it to us from here yet. Recording an outcome is an operator action today (<span style="font-family:'JetBrains Mono',monospace; font-size:11px;">POST /report/&#123;id&#125;/outcome</span> is on the admin plane), and it is the input the calibration work is waiting on. Buttons that fail every time would be worse than saying so.</p>
+            </sc-if>
             </sc-if>
           </sc-if>
 
           <sc-if value="{{ isSummary }}" hint-placeholder-val="{{ false }}">
-            <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch summary · {{ batchName }}</div>
-            <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">What we found in the first 168 resumes</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 18px 0; max-width:64ch;">Screened 2 August 2026 — 168 of 214 done, 46 still ingesting. Advisory throughout: every one of these is a reason to look closer, not a decision.</p>
+            <sc-if value="{{ noBatch }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:28px; border-radius:10px; background:var(--panel); border:1px dashed var(--border); max-width:66ch;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--heading);">No batch to summarise</div>
+                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:8px 0 0 0;">Upload resumes and this becomes the page you screenshot.</p>
+                <button onClick="{{ goUpload }}" style="{{ smallPrimary }}" style-hover="filter:brightness(1.08)">Upload resumes</button>
+              </div>
+            </sc-if>
 
-            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
-              <div style="{{ bigStat }}">
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-elev);">11</div>
-                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">elevated risk</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:1px;">7% of those screened</div>
-              </div>
-              <div style="{{ bigStat }}">
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-mod);">29</div>
-                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">moderate</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:1px;">17%</div>
-              </div>
-              <div style="{{ bigStat }}">
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-low);">104</div>
-                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">low</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:1px;">62%</div>
-              </div>
-              <div style="{{ bigStat }}">
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-ins);">24</div>
-                <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">insufficient signal</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:1px;">14% — too thin to assess</div>
-              </div>
-            </div>
+            <sc-if value="{{ hasSummary }}" hint-placeholder-val="{{ true }}">
+              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch summary · {{ batchName }}</div>
+              <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">{{ summaryHeadline }}</h1>
+              <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 18px 0; max-width:64ch;">{{ summaryMeta }}</p>
 
-            <h2 style="{{ h2 }}">Top reasons a resume surfaced</h2>
-            <div style="display:flex; flex-direction:column; gap:9px; max-width:80ch;">
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Near-duplicate of another stored resume</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">14</span></div>
-                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
+              <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+                <div style="{{ bigStat }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-elev);">{{ bandElevated }}</div>
+                  <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">elevated risk</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:1px;">{{ shareElevated }} of those screened</div>
+                </div>
+                <div style="{{ bigStat }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-mod);">{{ bandModerate }}</div>
+                  <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">moderate</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:1px;">{{ shareModerate }}</div>
+                </div>
+                <div style="{{ bigStat }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-low);">{{ bandLow }}</div>
+                  <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">low</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:1px;">{{ shareLow }}</div>
+                </div>
+                <div style="{{ bigStat }}">
+                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:28px; line-height:1; color:var(--c-ins);">{{ bandInsufficient }}</div>
+                  <div style="font-size:12.5px; margin-top:6px; color:var(--heading);">insufficient signal</div>
+                  <div style="font-size:11px; color:var(--muted); margin-top:1px;">{{ shareInsufficient }} — too thin to assess</div>
+                </div>
               </div>
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Depth claims with no infrastructure footprint</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">12</span></div>
-                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:86%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-              </div>
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Overlapping full-time employment dates</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">9</span></div>
-                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:64%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-              </div>
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Template-shop phrasing</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">7</span></div>
-                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:50%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-              </div>
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>Seniority ahead of supported tenure</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">6</span></div>
-                <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="width:43%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-              </div>
-            </div>
 
-            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:20px 0 0 0; max-width:84ch;">No accuracy claim is made or implied. Near-duplicate matches are reported as similarity only — never whose resume was matched.</p>
+              <h2 style="{{ h2 }}">What was loudest, and how often</h2>
+              <sc-if value="{{ noSignals }}" hint-placeholder-val="{{ false }}">
+                <p style="font-size:12.5px; color:var(--muted); margin:0; max-width:76ch;">Nothing dominated on any screened resume yet.</p>
+              </sc-if>
+              <div style="display:flex; flex-direction:column; gap:9px; max-width:80ch;">
+                <sc-for list="{{ topSignals }}" as="s" hint-placeholder-count="3">
+                  <div>
+                    <div style="display:flex; justify-content:space-between; font-size:12.5px;"><span>{{ s.label }}</span><span style="font-family:'JetBrains Mono',monospace; color:var(--muted);">{{ s.count }}</span></div>
+                    <div style="height:4px; border-radius:99px; background:var(--track); margin-top:4px; overflow:hidden;"><div style="{{ s.bar }}"></div></div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:20px 0 0 0; max-width:84ch;">Counts and bands only — no names and no ids, so this page can be shared as it stands. No accuracy claim is made or implied. Near-duplicate matches are reported as similarity only, never whose resume was matched.</p>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isUpload }}" hint-placeholder-val="{{ false }}">
             <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:0; color:var(--heading);">Drop the resumes you already have</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:62ch;">PDF or text, up to 500 at a time. Screening starts immediately and results appear as each one lands — you do not wait for the batch.</p>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:62ch;">PDF or plain text. Registering a batch stores the files and evaluates nothing; screening then runs from this browser, a few resumes at a time, and you watch it on the queue.</p>
 
             <div style="max-width:640px; padding:32px 24px; text-align:center; border-radius:10px; background:var(--panel); border:1px dashed var(--dropEdge);">
               <div style="width:36px; height:36px; margin:0 auto 10px auto; border-radius:10px; background:linear-gradient(140deg,#22d3ee,#8b5cf6); display:grid; place-items:center;">
                 <div style="width:10px; height:10px; background:#04121a; transform:rotate(45deg); border-radius:2px;"></div>
               </div>
-              <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; color:var(--heading);">Drop files here</div>
-              <p style="font-size:12px; color:var(--muted); margin:4px 0 12px 0;">or choose them from your machine</p>
-              <button style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">Choose resumes</button>
+              <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; color:var(--heading);">Choose resumes</div>
+              <p style="font-size:12px; color:var(--muted); margin:4px 0 12px 0;">PDF, .txt or .md — anything else this API cannot read</p>
+              <input type="file" multiple="{{ true }}" accept=".pdf,.txt,.md,application/pdf,text/plain" onChange="{{ pickFiles }}" style="{{ fileInput }}">
             </div>
+
+            <sc-if value="{{ hasFiles }}" hint-placeholder-val="{{ false }}">
+              <div style="max-width:640px; margin-top:14px; border:1px solid var(--border); border-radius:10px; background:var(--panel); overflow:hidden;">
+                <sc-for list="{{ files }}" as="f" hint-placeholder-count="2">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 13px; border-bottom:1px solid var(--border);">
+                    <div style="min-width:0;">
+                      <div style="font-size:12.5px; color:var(--heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ f.name }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:2px;">{{ f.meta }}</div>
+                    </div>
+                    <button onClick="{{ f.remove }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Remove</button>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
 
             <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; max-width:640px; margin-top:16px;">
               <div>
                 <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Batch name</label>
-                <input defaultValue="{{ batchName }}" style="{{ field }}">
+                <input value="{{ batchNameInput }}" onInput="{{ setBatchNameInput }}" placeholder="Wipro DE — August intake" style="{{ field }}">
               </div>
               <div>
                 <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Evaluation domain</label>
@@ -542,11 +603,22 @@
               </div>
             </div>
 
-            <h2 style="{{ h2 }}">Ingesting</h2>
+            <div style="max-width:640px; display:flex; align-items:center; gap:10px; margin-top:14px;">
+              <button onClick="{{ submitUpload }}" style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">{{ uploadLabel }}</button>
+              <sc-if value="{{ hasFiles }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ clearFiles }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Clear</button>
+                <span style="font-size:11.5px; color:var(--muted);">{{ fileCountLabel }}</span>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ uploadError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ uploadErrorBox }}">{{ uploadErrorText }}</div>
+            </sc-if>
+
+            <h2 style="{{ h2 }}">What happens next</h2>
             <div style="max-width:640px;">
-              <div style="display:flex; justify-content:space-between; font-size:12.5px; color:var(--muted);"><span>168 of 214 screened</span><span>46 pending</span></div>
-              <div style="height:5px; border-radius:99px; background:var(--track); margin-top:5px; overflow:hidden;"><div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin-top:10px;">Each resume is extracted, claim-checked and scored across four subsystems. It is slow on purpose. Partial results are already on the <a href="#" onClick="{{ goQueueLink }}">screening queue</a>.</p>
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:0;">Each resume is extracted, claim-checked and scored across four subsystems, one small group at a time. It is slow on purpose, and it runs here rather than on a server: leave the page and the batch pauses where it is, come back and it carries on. Results land on the <a href="#" onClick="{{ goQueueLink }}">screening queue</a> as they finish.</p>
+              <p style="font-size:12px; line-height:1.6; color:var(--muted); margin:10px 0 0 0;">One unreadable file refuses the whole batch by design — a half-registered upload leaves you unable to say which files made it in.</p>
             </div>
           </sc-if>
 
@@ -554,52 +626,55 @@
             <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:0; color:var(--heading);">Your batches</h1>
             <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:62ch;">You see only what your organisation uploaded. A candidate screened by someone else is not in this list.</p>
 
+            <sc-if value="{{ batchesError }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ uploadErrorBox }}">{{ batchesErrorText }}</div>
+            </sc-if>
+            <sc-if value="{{ batchesLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:12.5px; color:var(--muted); padding:8px 0;">Loading your batches…</div>
+            </sc-if>
+            <sc-if value="{{ batchesEmpty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:28px; border-radius:10px; background:var(--panel); border:1px dashed var(--border); max-width:66ch;">
+                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; color:var(--heading);">No batches yet</div>
+                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:8px 0 0 0;">Nothing has been uploaded under this organisation.</p>
+                <button onClick="{{ goUpload }}" style="{{ smallPrimary }}" style-hover="filter:brightness(1.08)">Upload resumes</button>
+              </div>
+            </sc-if>
+
             <div style="border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--panel); max-width:900px;">
-              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
-                <div>
-                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">{{ batchName }}</div>
-                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">2 Aug 2026 · 214 resumes</div>
+              <sc-for list="{{ batchRows }}" as="b" hint-placeholder-count="3">
+                <div style="border-bottom:1px solid var(--border);">
+                  <div onClick="{{ b.open }}" onKeyDown="{{ b.openKey }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
+                    <div>
+                      <div style="font-size:13.5px; font-weight:600; color:var(--heading);">{{ b.name }}</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">{{ b.meta }}</div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:11.5px; color:var(--link);">{{ b.statusLabel }}</div>
+                      <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="{{ b.progressBar }}"></div></div>
+                      <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">{{ b.progressLabel }}</div>
+                    </div>
+                    <div style="text-align:right; min-width:70px;">
+                      <button onClick="{{ b.arm }}" style="{{ b.deleteBtn }}" style-hover="background:var(--hover)">{{ b.deleteLabel }}</button>
+                    </div>
+                  </div>
+                  <sc-if value="{{ b.armed }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding:11px 16px; background:var(--missBg); border-top:1px solid var(--missEdge);">
+                      <div style="font-size:12px; line-height:1.55; color:var(--text); max-width:74ch;">Delete “{{ b.name }}”? This removes the batch, its rows and any resume text still held for it. Candidates and reports already created from it are not deleted — those belong to the people they describe.</div>
+                      <div style="display:flex; gap:7px; margin-top:9px;">
+                        <button onClick="{{ b.confirm }}" style="{{ dangerBtn }}" style-hover="filter:brightness(1.08)">Delete batch</button>
+                        <button onClick="{{ b.cancel }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Keep it</button>
+                      </div>
+                    </div>
+                  </sc-if>
                 </div>
-                <div style="text-align:right;">
-                  <div style="font-size:11.5px; color:var(--link);">Screening · 78%</div>
-                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:78%; height:100%; border-radius:99px; background:linear-gradient(92deg,var(--a1),var(--a2));"></div></div>
-                </div>
-                <div style="text-align:right; min-width:70px;">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">11</div>
-                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
-                </div>
-              </div>
-
-              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
-                <div>
-                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">TCS GenAI — Bengaluru panel</div>
-                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">29 Jul 2026 · 96 resumes</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:11.5px; color:var(--muted);">Complete</div>
-                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:var(--doneBar);"></div></div>
-                </div>
-                <div style="text-align:right; min-width:70px;">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">7</div>
-                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
-                </div>
-              </div>
-
-              <div onClick="{{ goQueue }}" role="button" tabIndex="{{ 0 }}" style="{{ batchRow }}" style-hover="background:var(--hover)">
-                <div>
-                  <div style="font-size:13.5px; font-weight:600; color:var(--heading);">Infosys DE — lateral hiring</div>
-                  <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px;">21 Jul 2026 · 340 resumes</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:11.5px; color:var(--muted);">Complete</div>
-                  <div style="height:3px; width:104px; border-radius:99px; background:var(--track); margin-top:5px; margin-left:auto; overflow:hidden;"><div style="width:100%; height:100%; border-radius:99px; background:var(--doneBar);"></div></div>
-                </div>
-                <div style="text-align:right; min-width:70px;">
-                  <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:16px; color:var(--c-elev);">19</div>
-                  <div style="font-size:10.5px; color:var(--muted);">elevated</div>
-                </div>
-              </div>
+              </sc-for>
             </div>
+
+            <sc-if value="{{ hasMoreBatches }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ moreBatches }}" style="{{ ghostBtn }}" style-hover="background:var(--hover)">{{ moreBatchesLabel }}</button>
+            </sc-if>
+
+            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:16px 0 0 0; max-width:84ch;">Progress is counted from item statuses, which is all a batch stores — its risk breakdown lives on the batch summary, one click in.</p>
           </sc-if>
 
           <sc-if value="{{ isPortal }}" hint-placeholder-val="{{ false }}">
@@ -1089,7 +1164,7 @@
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;batchName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Wipro DE — August intake&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;speechEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Interview&quot;,&quot;label&quot;:&quot;Speech provider configured&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;speechEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Interview&quot;,&quot;label&quot;:&quot;Speech provider configured&quot;}}">
 const DARK = {
   "--bg": "#070d14", "--panel": "#0d1620", "--panel2": "#111c27", "--rail": "#0a121b",
   "--border": "rgba(255,255,255,0.09)", "--hover": "rgba(255,255,255,0.05)",
@@ -1131,159 +1206,50 @@ const BAND = {
 };
 const STATUS = { incoherent: BAND.elevated, defer: BAND.moderate, coherent: BAND.low, unverified: BAND.insufficient };
 
-const CANDIDATES = [
-  {
-    id: "cand_rohit", name: "Rohit Malviya", role: "Sr. GenAI Engineer · Pune · genai",
-    band: "elevated", score: 0.78, confidence: 0.71,
-    reason: "Fine-tuning and RLHF claims carry no training-infrastructure footprint — no cluster, no dataset scale, no eval harness.",
-    loudest: "Resume farm — near-duplicate, 0.91 overlap",
-    depth: "superficial · depth 0.31",
-    summary: "Three depth claims sit far ahead of anything the resume can account for, and the document is a near-duplicate of another in the corpus. Nothing here says fabricated — it says these are the questions to ask.",
-    components: [
-      { title: "Resume farm", band: "Near-duplicate", meta: "score 0.91 · conf 0.82 · corpus 4,182", detail: "One stored resume overlaps at 0.91 estimated Jaccard. Shared templates are common and legitimate. We never disclose whose resume matched." },
-      { title: "AI generation", band: "Possible", meta: "likelihood 0.54 · conf 0.48", detail: "Template phrasing and low burstiness. AI-assisted writing is legitimate — this is context, not a tell." },
-      { title: "Cross-field", band: "Minor issues", meta: "score 0.22 · conf 0.66", detail: "A four-month gap in 2023 and one seniority step slightly ahead of tenure. Pure date math, no model involved." }
-    ],
-    verdicts: [
-      {
-        claim: "Fine-tuned GPT-4 on 2M internal support tickets to improve resolution accuracy by 34%.",
-        type: "fine_tuning", status: "incoherent", coherence: 0.18, confidence: 0.79,
-        reasoning: "GPT-4 was not openly fine-tunable at the stated period, and the resume describes no training stack, no eval methodology and no dataset preparation for a run of that size. The 34% figure has no baseline attached.",
-        missing: ["Any named training or serving infrastructure", "Dataset preparation, labelling or deduplication work", "An evaluation harness or holdout behind the 34%"],
-        evidence: ["rule · fine_tuning_infra: none of the expected infrastructure signals present", "llm · a run at this scale implies a cost and a team that appear nowhere in the resume", "github · linked repository contains prompt templates only, no training code"],
-        probes: ["Which base checkpoint did you start from, and who hosted the run?", "How did you build the eval set the 34% is measured against — and what was the baseline?", "What did you do about ticket deduplication before training?"]
-      },
-      {
-        claim: "Built production RAG serving 50k queries per day at p95 latency under 200ms.",
-        type: "rag", status: "defer", coherence: 0.44, confidence: 0.31,
-        reasoning: "Plausible in shape, but nothing in the resume or the linked sources grounds it either way. Confidence sits below the assertion threshold, so the system defers rather than flags.",
-        missing: ["The vector store and embedding model", "A chunking or retrieval-evaluation strategy"],
-        evidence: ["rule · rag_infra: two of five expected signals present", "vectorstore · no grounding retrieved for this claim"],
-        probes: ["What sat in front of the vector store to hold p95 under 200ms?", "How did you measure retrieval quality separately from generation quality?"]
-      },
-      {
-        claim: "Led a team of 4 engineers building an internal multi-agent workflow tool.",
-        type: "multi_agent", status: "coherent", coherence: 0.72, confidence: 0.64,
-        reasoning: "Scope, team size and tenure line up. The description is specific about failure modes, which fabricated claims rarely are.",
-        missing: [],
-        evidence: ["rule · multi_agent: orchestration and failure-handling signals both present", "llm · the described retry semantics match how these systems actually break"],
-        probes: ["Where did the agent loop most often get stuck, and what did you do about it?"]
-      }
-    ]
-  },
-  {
-    id: "cand_imran", name: "Imran Qureshi", role: "GenAI Engineer · Gurugram · genai",
-    band: "elevated", score: 0.71, confidence: 0.55,
-    reason: "Phrasing sits inside a template-shop corpus; three other resumes in the store share its structure almost sentence for sentence.",
-    loudest: "AI generation — likely, template phrases",
-    depth: "emerging · depth 0.44",
-    summary: "The document, not the person, is what stands out here. Structure and phrasing repeat across several stored resumes; the underlying claims are mostly unremarkable.",
-    components: [
-      { title: "AI generation", band: "Likely", meta: "likelihood 0.81 · conf 0.62", detail: "Four stylometry detectors fired, led by template phrasing and uniform sentence length." },
-      { title: "Resume farm", band: "Similar", meta: "score 0.63 · conf 0.58 · corpus 4,182", detail: "Three stored resumes overlap above 0.6. Similarity only — we never disclose whose." },
-      { title: "Cross-field", band: "Consistent", meta: "score 0.08 · conf 0.71", detail: "Dates hold together. No overlaps, no unexplained gaps." }
-    ],
-    verdicts: [
-      {
-        claim: "Deployed LLM-powered chatbots leveraging cutting-edge transformer architectures at scale.",
-        type: "rag", status: "unverified", coherence: 0.5, confidence: 0.22,
-        reasoning: "The sentence carries no specifics to reason about — no model, no volume, no system. There is nothing here to verify either way.",
-        missing: ["Any named model, framework or serving surface", "Any number attached to 'at scale'"],
-        evidence: ["rule · generic_phrasing: claim contains no anchorable specifics"],
-        probes: ["Which model, and where was it served from?", "What does 'at scale' mean in requests per day for this system?"]
-      }
-    ]
-  },
-  {
-    id: "cand_priya", name: "Priya Nandakumar", role: "Data Engineer · Bengaluru · data_eng",
-    band: "moderate", score: 0.54, confidence: 0.63,
-    reason: "Two full-time roles overlap by six months, March to September 2024. Common and often legitimate — worth exactly one question.",
-    loudest: "Cross-field — major issues, timeline overlap",
-    depth: "solid · depth 0.68",
-    summary: "The engineering claims hold up well. One timeline overlap is the only thing worth raising, and it has an ordinary explanation more often than not.",
-    components: [
-      { title: "Cross-field", band: "Major issues", meta: "score 0.61 · conf 0.88", detail: "Two full-time roles overlap 6 months (Mar–Sep 2024). Notice periods and contract work explain most of these." },
-      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.19 · conf 0.57", detail: "Idiosyncratic phrasing and uneven sentence rhythm — reads as written by hand." },
-      { title: "Resume farm", band: "Unique", meta: "score 0.11 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
-    ],
-    verdicts: [
-      {
-        claim: "Owned the Airflow migration for a 400-table warehouse ingest, cutting nightly runtime from 6h to 90m.",
-        type: "etl", status: "coherent", coherence: 0.81, confidence: 0.77,
-        reasoning: "Specific, dated, and the described bottleneck matches how these migrations actually go. The runtime claim is the kind of number people who did the work remember.",
-        missing: [],
-        evidence: ["rule · etl_orchestration: four of five expected signals present", "llm · the stated failure mode is a real one and is described correctly"],
-        probes: ["What was actually eating the six hours before you started?"]
-      }
-    ]
-  },
-  {
-    id: "cand_divya", name: "Divya Raghunathan", role: "Lead Data Engineer · Noida · data_eng",
-    band: "moderate", score: 0.48, confidence: 0.69,
-    reason: "Stated seniority runs about four years ahead of the tenure the dates support.",
-    loudest: "Cross-field — minor issues, seniority vs tenure",
-    depth: "solid · depth 0.63",
-    summary: "Nothing about the work looks wrong. The title is the outlier, which is a conversation rather than a concern.",
-    components: [
-      { title: "Cross-field", band: "Minor issues", meta: "score 0.34 · conf 0.72", detail: "Lead title held at 3.5 years total experience — early, not impossible." },
-      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.24 · conf 0.51", detail: "No detector fired above threshold." },
-      { title: "Resume farm", band: "Unique", meta: "score 0.09 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
-    ],
-    verdicts: [
-      {
-        claim: "Led a 6-person platform team owning streaming ingest across three business units.",
-        type: "streaming", status: "defer", coherence: 0.52, confidence: 0.34,
-        reasoning: "The technical detail is credible; the scope of ownership is what the dates do not support. Below the assertion threshold, so this defers to you.",
-        missing: ["Anything establishing team ownership rather than participation"],
-        evidence: ["rule · seniority_vs_tenure: stated scope exceeds supported tenure by about four years"],
-        probes: ["Who did you report to, and who reported to you on that team?"]
-      }
-    ]
-  },
-  {
-    id: "cand_aakash", name: "Aakash Venkataraman", role: "GenAI Engineer · Hyderabad · genai",
-    band: "insufficient", score: null, confidence: 0.18,
-    reason: "340 words, no dated roles, no anchored claims. This is not a low score — there is nothing here yet to reason about.",
-    loudest: "None — ask for a fuller resume",
-    depth: "insufficient signal",
-    summary: "The resume is too thin to assess. That is the honest answer, and it is a common one.",
-    thinReason: "The resume is too thin to extract claims from — 340 words, no dated roles, nothing anchored to a repository or a system.",
-    components: [
-      { title: "AI generation", band: "Insufficient text", meta: "conf 0.11", detail: "340 words is below the floor the detectors need." },
-      { title: "Cross-field", band: "Insufficient data", meta: "conf 0.09", detail: "No dated roles to run timeline math against." },
-      { title: "Resume farm", band: "Insufficient data", meta: "corpus 4,182", detail: "Too little text to fingerprint reliably." }
-    ],
-    verdicts: []
-  },
-  {
-    id: "cand_sneha", name: "Sneha Kulkarni", role: "Data Engineer · Chennai · data_eng",
-    band: "low", score: 0.19, confidence: 0.74,
-    reason: "Pipeline claims cohere with dated, specific work — named orchestration, real row volumes, and a failure story with a fix attached.",
-    loudest: "None — nothing to probe",
-    depth: "deep · depth 0.79",
-    summary: "Everything checks out against the detail the resume itself provides. No claim needed deferring.",
-    components: [
-      { title: "AI generation", band: "Unlikely", meta: "likelihood 0.14 · conf 0.66", detail: "No detector fired." },
-      { title: "Cross-field", band: "Consistent", meta: "score 0.05 · conf 0.81", detail: "Dates are continuous and internally consistent." },
-      { title: "Resume farm", band: "Unique", meta: "score 0.07 · conf 0.74 · corpus 4,182", detail: "Nothing similar among stored resumes." }
-    ],
-    verdicts: [
-      {
-        claim: "Rebuilt CDC ingest from Oracle to Snowflake, 1.2B rows/day, with a replay path for schema drift.",
-        type: "etl", status: "coherent", coherence: 0.88, confidence: 0.8,
-        reasoning: "The replay path is the detail that carries this. It is the part people only mention when they have been paged about it.",
-        missing: [],
-        evidence: ["rule · etl_orchestration: all expected signals present", "llm · schema-drift handling is described the way it actually behaves"],
-        probes: ["What broke the first time schema drift hit production?"]
-      }
-    ]
-  }
-];
+// FabricationRiskBand on the wire → the four colours above. `insufficient_data`
+// is NOT a low score and must never be coloured like one (UI.md §1).
+const RISK_BAND = {
+  elevated: BAND.elevated, moderate: BAND.moderate, low: BAND.low,
+  insufficient_data: BAND.insufficient
+};
+// The three fixed component ids. `loudest_signal` is one of these or null —
+// never free text, because the item row cannot hold prose (SCREENING.md §5).
+const SIGNAL_LABEL = {
+  ai_generation: "AI-generation signals",
+  cross_field: "Cross-field inconsistency",
+  resume_farm: "Resume farm / near-duplicate"
+};
+// Each subsystem has its own vocabulary; the queue shows the loudest one's own
+// band, so all three have to be spellable.
+const SUB_BAND_LABEL = {
+  insufficient_text: "Insufficient text", unlikely: "Unlikely", possible: "Possible", likely: "Likely",
+  insufficient_data: "Insufficient data", consistent: "Consistent",
+  minor_issues: "Minor issues", major_issues: "Major issues",
+  unique: "Unique", similar: "Similar", near_duplicate: "Near-duplicate"
+};
+const DEPTH_LABEL = {
+  insufficient_signal: "insufficient signal", superficial: "superficial",
+  emerging: "emerging", solid: "solid", deep: "deep"
+};
+// BatchStatus is DERIVED server-side from item counts, never stored
+// (SCREENING.md §3). `partial` means "nothing left to do, but something failed"
+// and must not be flattened into `complete`.
+const BATCH_STATUS = {
+  empty: "Empty", pending: "Not started", processing: "Screening",
+  complete: "Complete", partial: "Complete with failures"
+};
+// ItemStatus is stored, unlike BatchStatus. `failed` carries a reason CODE and
+// is not a verdict about a person (UI.md §4.A).
+const ITEM_STATUS = {
+  pending: "not screened yet", processing: "screening now",
+  done: "screened", failed: "could not be screened"
+};
 
 const pct = (v) => Math.round((v || 0) * 100) + "%";
 const num = (v) => (v === null || v === undefined ? "—" : v.toFixed(2));
 const confWord = (v) => (v >= 0.7 ? "high" : v >= 0.45 ? "moderate" : "low");
 const initials = (n) => n.split(" ").map((w) => w[0]).join("").slice(0, 2);
+const shortId = (id) => (id ? String(id).slice(0, 12) : "—");
 
 const chip = (b) => ({
   fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", letterSpacing: "0.12em",
@@ -1299,13 +1265,6 @@ const riskBar = (v, b) => ({ width: pct(v), height: "100%", borderRadius: "99px"
 const confBarStyle = (v) => ({ width: pct(v), height: "100%", borderRadius: "99px", background: "var(--muted)" });
 const gradBar = (v) => ({ width: pct(v), height: "100%", borderRadius: "99px", background: "linear-gradient(92deg,var(--a1),var(--a2))" });
 
-function splitEvidence(items) {
-  return (items || []).map((line) => {
-    const i = line.indexOf(" · ");
-    return i === -1 ? { source: "", detail: line } : { source: line.slice(0, i), detail: line.slice(i + 3) };
-  });
-}
-
 const H2 = {
   fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: "16px",
   letterSpacing: "-0.015em", margin: "24px 0 5px 0", color: "var(--heading)"
@@ -1319,6 +1278,10 @@ const BATCH_ROW = {
 const FIELD = {
   width: "100%", padding: "9px 11px", fontSize: "13px", color: "var(--text)",
   background: "var(--fieldBg)", border: "1px solid var(--border)", borderRadius: "8px"
+};
+const FILE_INPUT = {
+  display: "block", margin: "0 auto", maxWidth: "100%", fontSize: "12px",
+  color: "var(--muted)", cursor: "pointer"
 };
 const SEARCH_FIELD = {
   marginLeft: "auto", width: "220px", padding: "6px 10px", fontSize: "12px", color: "var(--text)",
@@ -1396,47 +1359,6 @@ const PLANE_HINT = {
   candidate: "For candidates. Your own data, who accessed it, your consents and your right to erasure.",
   operator: "For Veritas operators. Org lifecycle, curation queue and admin tooling. Accounts are created by an operator."
 };
-
-const ROWS = CANDIDATES.map((c) => {
-  const b = BAND[c.band];
-  return {
-    id: c.id, name: c.name, role: c.role, reason: c.reason, loudest: c.loudest,
-    initials: initials(c.name), avatar: avatar(b, 30),
-    chip: chip(b), bandLabel: b.label, scoreLabel: num(c.score),
-    riskBar: riskBar(c.score === null ? 0 : c.score, b),
-    confBar: confBarStyle(c.confidence),
-    confLabel: "conf " + num(c.confidence)
-  };
-});
-
-const REPORTS = {};
-CANDIDATES.forEach((c) => {
-  const b = BAND[c.band];
-  const deg = Math.round((c.score === null ? 0 : c.score) * 360);
-  REPORTS[c.id] = {
-    name: c.name, role: c.role, summary: c.summary, depth: c.depth,
-    initials: initials(c.name), avatar: avatar(b, 36),
-    thinReason: c.thinReason || "There are no extractable claims on this resume — not enough dated, specific or anchored material for the engine to reason about.",
-    score: num(c.score), bandLabel: b.label, chip: Object.assign(chip(b), { marginTop: "9px" }),
-    gauge: {
-      width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
-      background: "conic-gradient(from 180deg, " + b.c + " 0deg, " + b.c + " " + deg + "deg, var(--track) " + deg + "deg)"
-    },
-    confBar: gradBar(c.confidence),
-    confLabel: num(c.confidence) + " · " + confWord(c.confidence),
-    components: c.components,
-    verdicts: c.verdicts.map((v) => ({
-      claim: v.claim, status: v.status, chip: chip(STATUS[v.status]),
-      meta: v.type + " · coherence " + num(v.coherence),
-      reasoning: v.reasoning,
-      missing: v.missing.length ? v.missing : ["None — a genuine version of this claim would look like this one."],
-      evidence: splitEvidence(v.evidence.length ? v.evidence : ["— · No evidence either way."]),
-      probes: v.probes,
-      confBar: gradBar(v.confidence),
-      coherenceLabel: "coherence " + num(v.coherence) + " · confidence " + num(v.confidence)
-    }))
-  };
-});
 
 const TITLES = {
   queue: "Screening queue", report: "Candidate risk detail", summary: "Batch summary",
@@ -1678,7 +1600,7 @@ const fieldValue = (f) => {
 };
 
 class Component extends DCLogic {
-  state = { screen: "boot", plane: "org", authMode: "signin", selected: "cand_rohit", domain: "data_eng",
+  state = { screen: "boot", plane: "org", authMode: "signin", domain: "data_eng",
     copied: null, theme: "dark", evalStage: 0, turn: 0, turnState: "idle", channel: "audio",
     // auth
     emailInput: "", orgNameInput: "", otp: ["", "", "", "", "", ""],
@@ -1687,18 +1609,36 @@ class Component extends DCLogic {
     // remote resources
     portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
     jobList: IDLE, board: IDLE, comp: IDLE,
-    selectedJob: null, busyId: null, erasureConfirm: "" };
+    batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
+    selectedJob: null, busyId: null, erasureConfirm: "",
+    // screening
+    selectedBatch: null, moreBusy: null, deleteArmed: null,
+    // the process driver (spec 0.2): the client does the work, so its state is
+    // real UI state rather than a spinner over somebody else's queue.
+    driving: false, driveError: null, driveDone: 0, driveFailed: 0,
+    // upload
+    files: [], uploadBusy: false, uploadError: null, uploadNotice: null,
+    batchNameInput: "" };
 
   // ── remote-resource helper ────────────────────────────────────────────────
   // Every fetch goes through here so loading/error handling cannot drift, and
   // so a 401 is never turned into a screen-level error message (api.js has
   // already redirected to login by then).
-  load = (key, fn) => {
+  // `still` is an optional guard evaluated when the response LANDS, not when it
+  // was sent. Without it a reply for the batch you just navigated away from
+  // arrives late and overwrites the one you are looking at — a queue showing
+  // another batch's rows, which is the one mistake this screen cannot make.
+  load = (key, fn, still) => {
     this.setState((s) => ({ [key]: { loading: true, data: s[key] && s[key].data, error: null } }));
     return fn().then(
-      (data) => { this.setState({ [key]: { loading: false, data, error: null } }); return data; },
+      (data) => {
+        if (still && !still()) return null;
+        this.setState({ [key]: { loading: false, data, error: null } });
+        return data;
+      },
       (err) => {
         if (err && err.kind === "session_lost") return null;
+        if (still && !still()) return null;
         this.setState({ [key]: { loading: false, data: null, error: err } });
         return null;
       }
@@ -1728,12 +1668,15 @@ class Component extends DCLogic {
 
   handleSessionLost = () => {
     // Rule 3: never retry, never leave a half-populated screen behind.
+    this._driving = false;
     this.setState({
       screen: "login", me: null, otp: ["", "", "", "", "", ""], authBusy: false,
       authError: null,
       authNotice: "Your session ended. Sign in again to continue.",
       portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
-      jobList: IDLE, board: IDLE, comp: IDLE
+      jobList: IDLE, board: IDLE, comp: IDLE,
+      batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
+      selectedBatch: null, driving: false, driveError: null
     });
   };
 
@@ -1746,6 +1689,295 @@ class Component extends DCLogic {
     else if (screen === "devices") this.load("sessionList", () => API.get("/auth/sessions"));
     else if (screen === "roles") this.loadJobs();
     else if (screen === "comp") this.loadComp();
+    else if (screen === "queue" || screen === "summary") this.loadScreening();
+    else if (screen === "batches") this.loadBatches();
+  };
+
+  // ── screening ─────────────────────────────────────────────────────────────
+  // Opening the queue with no batch chosen picks the newest, because the list
+  // is newest-first server-side. An org that has uploaded nothing lands on an
+  // EMPTY QUEUE, not an error — the first screen every new customer sees
+  // (UI.md §9).
+  loadScreening = () => {
+    if (this.state.selectedBatch) { this.refreshBatch(); return; }
+    this.load("batchList", () => API.get("/screening/batches")).then((page) => {
+      const first = page && page.batches && page.batches[0];
+      if (first) { this.setState({ selectedBatch: first.id }); this.refreshBatch(first.id); }
+    });
+  };
+
+  loadBatches = () => this.load("batchList", () => API.get("/screening/batches"));
+
+  // Three reads, one batch: detail carries progress, summary carries the
+  // whole-batch band counts the header shows, queue carries the ranked page.
+  // The header's numbers come from SUMMARY on purpose (spec 0.6) — over a paged
+  // list, "11 elevated" computed from one page would silently mean
+  // "11 on this page".
+  refreshBatch = (id) => {
+    const batchId = id || this.state.selectedBatch;
+    if (!batchId) return Promise.resolve(null);
+    // Tracked in an instance field, not state: the guard has to be correct the
+    // instant the user clicks, and setState has not flushed by then.
+    this._viewBatch = batchId;
+    const still = () => this._viewBatch === batchId;
+    return Promise.all([
+      this.load("batch", () => API.get("/screening/batches/" + batchId), still),
+      this.load("summary", () => API.get("/screening/batches/" + batchId + "/summary"), still),
+      this.load("queue", () => API.get("/screening/batches/" + batchId + "/queue"), still)
+    ]);
+  };
+  refresh = () => { this.refreshBatch(); };
+
+  selectBatch = (id) => () => {
+    // Switching batches must not leave the previous one's rows on screen while
+    // the new ones load — a queue showing another batch's people is the one
+    // mistake this screen cannot make. It also stops the driver: the loop is
+    // pinned to one batch id and nothing else may inherit it.
+    this._driving = false;
+    this.setState({ selectedBatch: id, screen: "queue", queue: IDLE, summary: IDLE, batch: IDLE,
+      driving: false, driveError: null, driveDone: 0, driveFailed: 0 });
+    this.refreshBatch(id);
+    window.scrollTo(0, 0);
+  };
+
+  // Keyset pagination: hand `next_cursor` straight back as `cursor` and APPEND.
+  // Replacing would lose everything above it; the cursor is a position, not a
+  // page number, so there is no going back.
+  loadMore = (key, path, field) => () => {
+    const held = this.state[key].data;
+    const cursor = held && held.next_cursor;
+    if (!cursor || this.state.moreBusy === key) return;
+    this.setState({ moreBusy: key });
+    API.get(path + (path.indexOf("?") === -1 ? "?" : "&") + "cursor=" + encodeURIComponent(cursor)).then(
+      (page) => this.setState((s) => ({
+        moreBusy: null,
+        [key]: { loading: false, error: null, data: Object.assign({}, page, {
+          [field]: ((s[key].data && s[key].data[field]) || []).concat(page[field] || [])
+        }) }
+      })),
+      (err) => this.setState((s) => ({ moreBusy: null, [key]: { loading: false, data: s[key].data, error: err } }))
+    );
+  };
+  moreBatches = this.loadMore("batchList", "/screening/batches", "batches");
+  moreQueue = () => {
+    const id = this.state.selectedBatch;
+    if (!id) return;
+    this.loadMore("queue", "/screening/batches/" + id + "/queue", "rows")();
+  };
+
+  // ── the process driver ────────────────────────────────────────────────────
+  // POST .../process does at most `screening_max_items_per_call` items, each a
+  // full nine-node graph run, so the client loops. Sequential by construction:
+  // the server's conditional claim stops two callers double-billing the SAME
+  // item, and nothing at all stops a client fanning out across DIFFERENT ones.
+  //
+  // Any error STOPS the loop. There is still no rate limiting server-side
+  // (S8.3), so a retrying driver is caught nowhere.
+  // `_driving` is the loop's control flag and `state.driving` is what renders.
+  // They cannot be the same field: setState is asynchronous, so a driver that
+  // consulted state would read the PREVIOUS value on the tick it starts and
+  // stop before its first call.
+  _drive = (batchId) => {
+    this._driving = true;
+    this._driveBatch = batchId;
+    this.setState({ driving: true, driveError: null, driveDone: 0, driveFailed: 0 });
+    this._tick(batchId);
+  };
+  startProcessing = () => {
+    if (this._driving || !this.state.selectedBatch) return;
+    this._drive(this.state.selectedBatch);
+  };
+
+  _halt = (extra) => {
+    this._driving = false;
+    this.setState(Object.assign({ driving: false }, extra || {}));
+  };
+  stopProcessing = () => this._halt();
+
+  _tick = (batchId) => {
+    // Stopped, unmounted, or the user moved to another batch — all three mean
+    // "do not start another call".
+    if (!this._driving || this._gone || this._driveBatch !== batchId) return;
+    API.post("/screening/batches/" + batchId + "/process").then(
+      (res) => {
+        if (this._gone || !this._driving || this._driveBatch !== batchId) return;
+        this.setState((s) => ({
+          driveDone: s.driveDone + (res.processed || 0),
+          driveFailed: s.driveFailed + (res.failed || 0)
+        }));
+        // The call IS the tick (spec 0.4): refresh from what just changed
+        // rather than polling a queue nothing else is working on.
+        this.refreshBatch(batchId);
+        if (!res.remaining) { this._halt(); return; }
+        this._tick(batchId);
+      },
+      (err) => {
+        // A 401 has already sent the user to login; anything else stops the
+        // loop and says why. Never retry (there is no rate limiter, S8.3).
+        if (this._gone) return;
+        if (err && err.kind === "session_lost") { this._driving = false; return; }
+        this._halt({ driveError: err });
+      }
+    );
+  };
+
+  openReport = (reportId) => () => {
+    this.setState({ screen: "report", report: IDLE });
+    // Same late-reply guard as the batch reads: two quick clicks must not leave
+    // the slower report rendered under the faster one's heading.
+    this._viewReport = reportId;
+    this.load("report", () => API.get("/screening/reports/" + reportId),
+              () => this._viewReport === reportId);
+    window.scrollTo(0, 0);
+  };
+  openReportKey = (reportId) => (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.openReport(reportId)(); }
+  };
+
+  // Two clicks, because this is a real delete of real personal data:
+  // batch_items.raw_text has no candidate to cascade from, and this route is
+  // the only path that removes it (SCREENING.md §7).
+  // The Delete button sits INSIDE the row, and the row is itself a click
+  // target that opens the batch. Without stopPropagation, arming a delete also
+  // navigates away from the list you armed it on — which a browser click-through
+  // caught and no unit test could have.
+  armDelete = (id) => (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    this.setState({ deleteArmed: id });
+  };
+  cancelDelete = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    this.setState({ deleteArmed: null });
+  };
+  confirmDelete = (id) => (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    this.setState({ busyId: id, deleteArmed: null });
+    if (this._driveBatch === id) this._driving = false;
+    API.del("/screening/batches/" + id).then(
+      () => {
+        const wasSelected = this.state.selectedBatch === id;
+        // Drop the view token too, or an in-flight refresh of the batch that
+        // was just deleted lands afterwards and repopulates the screen.
+        if (wasSelected) this._viewBatch = null;
+        this.setState({
+          busyId: null,
+          selectedBatch: wasSelected ? null : this.state.selectedBatch,
+          driving: wasSelected ? false : this.state.driving,
+          queue: wasSelected ? IDLE : this.state.queue,
+          summary: wasSelected ? IDLE : this.state.summary,
+          batch: wasSelected ? IDLE : this.state.batch
+        });
+        this.loadBatches();
+      },
+      (err) => this.setState({ busyId: null, batchList: { loading: false, data: this.state.batchList.data, error: err } })
+    );
+  };
+
+  // ── upload ────────────────────────────────────────────────────────────────
+  setBatchNameInput = (e) => this.setState({ batchNameInput: e.target.value });
+
+  // The API accepts resume_text or resume_pdf_b64 and nothing else, so a .docx
+  // is refused HERE, naming the file, rather than sent to be refused as
+  // "item 12" (spec 1.E).
+  pickFiles = (e) => {
+    const picked = Array.from((e.target && e.target.files) || []);
+    if (!picked.length) return;
+    this.setState((s) => ({
+      files: s.files.concat(picked.map((f) => ({
+        name: f.name, size: f.size, file: f,
+        kind: /\.pdf$/i.test(f.name) ? "pdf" : /\.(txt|md|text)$/i.test(f.name) ? "text" : "unsupported"
+      }))),
+      uploadError: null, uploadNotice: null
+    }));
+    // Let the same file be chosen again after it is removed.
+    if (e.target) e.target.value = "";
+  };
+  removeFile = (i) => () => this.setState((s) => ({ files: s.files.filter((_f, k) => k !== i), uploadError: null }));
+  clearFiles = () => this.setState({ files: [], uploadError: null, uploadNotice: null });
+
+  _readFile = (entry) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    // `local: true` marks a refusal this UI made itself, so the catch renders
+    // the sentence as written instead of running it through the API's
+    // index-naming rewrite.
+    reader.onerror = () => reject({ local: true, detail: "Could not read " + entry.name + " from disk." });
+    if (entry.kind === "text") {
+      reader.onload = () => resolve({ resume_text: String(reader.result || "") });
+      reader.readAsText(entry.file);
+    } else {
+      // readAsDataURL gives "data:application/pdf;base64,XXXX"; the API wants
+      // the payload alone.
+      reader.onload = () => {
+        const s = String(reader.result || "");
+        const i = s.indexOf(",");
+        resolve({ resume_pdf_b64: i === -1 ? s : s.slice(i + 1) });
+      };
+      reader.readAsDataURL(entry.file);
+    }
+  });
+
+  // A corrupt PDF refuses the WHOLE registration, naming the failing item's
+  // INDEX. "Item 37" means nothing to somebody looking at 400 filenames, so the
+  // index is translated back into the name it came from.
+  _nameIndex = (detail, files) => {
+    const m = /^item (\d+):\s*(.*)$/.exec(String(detail || ""));
+    if (!m) return detail;
+    const f = files[Number(m[1])];
+    return (f ? "“" + f.name + "”" : "item " + m[1]) + ": " + m[2]
+      + " — nothing was registered. Fix or remove that file and upload again.";
+  };
+
+  submitUpload = () => {
+    const files = this.state.files;
+    if (!files.length) { this.setState({ uploadError: { detail: "Choose at least one resume." } }); return; }
+    const bad = files.filter((f) => f.kind === "unsupported");
+    if (bad.length) {
+      this.setState({ uploadError: { detail:
+        "This API reads PDF and plain text only. Remove: " + bad.map((f) => f.name).join(", ") } });
+      return;
+    }
+    this.setState({ uploadBusy: true, uploadError: null, uploadNotice: null });
+    Promise.all(files.map(this._readFile))
+      .then((items) => {
+        // An EMPTY text file passes every check above and then fails Pydantic's
+        // "at least one of resume_text/resume_pdf_b64" as a VALIDATION error —
+        // a list-shaped detail carrying a field path, not the readable
+        // "item N:" refusal. Cheaper and clearer to name the file here.
+        const empties = items
+          .map((it, i) => (it.resume_text !== undefined && !it.resume_text.trim() ? files[i].name : null))
+          .filter(Boolean);
+        if (empties.length) {
+          throw { local: true, detail: "Nothing to screen in: " + empties.join(", ") };
+        }
+        return API.post("/screening/batches", {
+          name: (this.state.batchNameInput || "").trim(),
+          domain: this.state.domain,
+          items
+        });
+      })
+      .then((batch) => {
+        // Registering N resumes is an unambiguous instruction to screen them,
+        // so the driver starts here — and ONLY here. Merely opening a batch
+        // with pending items must never trigger billed work (spec 0.3).
+        this.setState({
+          uploadBusy: false, files: [], batchNameInput: "",
+          selectedBatch: batch.id, screen: "queue",
+          queue: IDLE, summary: IDLE, batch: IDLE
+        });
+        this.refreshBatch(batch.id);
+        this._drive(batch.id);
+        window.scrollTo(0, 0);
+      })
+      .catch((err) => {
+        // A 401 has already sent the user to login; anything on top of that
+        // would be a second explanation for one event.
+        if (err && err.kind === "session_lost") { this.setState({ uploadBusy: false }); return; }
+        this.setState({
+          uploadBusy: false,
+          uploadError: err && err.local ? err
+            : Object.assign({}, err, { detail: this._nameIndex(err && err.detail, files) })
+        });
+      });
   };
 
   nav = (screen) => () => { this.setState({ screen }); this.loadForScreen(screen); window.scrollTo(0, 0); };
@@ -1906,7 +2138,11 @@ class Component extends DCLogic {
     API.post("/auth/logout").then(this.handleSessionLost, this.handleSessionLost);
     this.setState({ authNotice: null });
   };
-  goQueueLink = (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ screen: "queue" }); window.scrollTo(0, 0); };
+  // Goes through nav() like every other door onto the queue. It used to set
+  // `screen` directly and skip loadForScreen, which is this repo's signature
+  // defect in miniature: one rule, two entry points, and the second one lands
+  // on a queue that never fetched anything.
+  goQueueLink = (e) => { if (e && e.preventDefault) e.preventDefault(); this.goQueue(); };
   noop = (e) => { if (e && e.preventDefault) e.preventDefault(); };
 
   // ── portal / devices / roles / comp ───────────────────────────────────────
@@ -1977,15 +2213,15 @@ class Component extends DCLogic {
   setDataEng = () => this.setState({ domain: "data_eng" });
   setGenai = () => this.setState({ domain: "genai" });
 
-  openHandlers = ROWS.reduce((acc, r) => {
-    acc[r.id] = () => { this.setState({ screen: "report", selected: r.id }); window.scrollTo(0, 0); };
-    return acc;
-  }, {});
-  keyHandlers = ROWS.reduce((acc, r) => {
-    acc[r.id] = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.openHandlers[r.id](); } };
-    return acc;
-  }, {});
-  rows = ROWS.map((r) => Object.assign({}, r, { open: this.openHandlers[r.id], openKey: this.keyHandlers[r.id] }));
+  // Handlers are memoised per row id rather than rebuilt each render: a new
+  // function identity every render would re-mount every row in the queue and
+  // lose the click that is in flight.
+  _rowHandlers = {};
+  rowHandler = (kind, id, make) => {
+    const key = kind + ":" + id;
+    if (!this._rowHandlers[key]) this._rowHandlers[key] = make();
+    return this._rowHandlers[key];
+  };
 
   _copyHandlers = {};
   copyProbes = (key, probes) => () => {
@@ -1997,6 +2233,9 @@ class Component extends DCLogic {
     this._copyTimer = setTimeout(() => this.setState({ copied: null }), 2000);
   };
   componentWillUnmount() {
+    // The driver outlives a render; it must not outlive the component.
+    this._gone = true;
+    this._driving = false;
     clearTimeout(this._copyTimer);
     clearTimeout(this._turnTimer);
     clearInterval(this._evalTimer);
@@ -2004,7 +2243,6 @@ class Component extends DCLogic {
 
   renderVals() {
     const s = this.state.screen;
-    const r = REPORTS[this.state.selected] || REPORTS.cand_rohit;
     // "boot" is the pre-/auth/me state: neither the shell nor the login form,
     // so a returning user with a live cookie never sees the login screen flash.
     const authed = s !== "login" && s !== "verify" && s !== "boot";
@@ -2063,7 +2301,7 @@ class Component extends DCLogic {
       domDataEng: domBtn(this.state.domain === "data_eng"),
       domGenai: domBtn(this.state.domain === "genai"),
 
-      otpBox: OTP_BOX, field: FIELD, searchField: SEARCH_FIELD,
+      otpBox: OTP_BOX, field: FIELD, searchField: SEARCH_FIELD, fileInput: FILE_INPUT,
       primaryBtn: PRIMARY_BTN, smallPrimary: SMALL_PRIMARY, smallPrimaryFlat: SMALL_PRIMARY_FLAT,
       ghostBtn: GHOST_BTN, copyBtn: COPY_BTN, linkBtn: LINK_BTN,
       statCard: STAT_CARD, bigStat: BIG_STAT, batchRow: BATCH_ROW, h2: H2,
@@ -2194,25 +2432,7 @@ class Component extends DCLogic {
         actionLabel: d.current ? "—" : "Revoke"
       })),
 
-      orgName: this.props.orgName ?? "Sampoorna Staffing",
-      batchName: this.props.batchName ?? "Wipro DE — August intake",
-
-      candidates: this.rows,
-
-      reportName: r.name, reportRole: r.role, reportSummary: r.summary, reportDepth: r.depth,
-      reportInitials: r.initials, reportAvatar: r.avatar,
-      reportScore: r.score, reportBandLabel: r.bandLabel, reportChip: r.chip,
-      gaugeRing: r.gauge, reportConfBar: r.confBar, reportConfLabel: r.confLabel,
-      reportThinReason: r.thinReason, reportComponents: r.components,
-      hasVerdicts: r.verdicts.length > 0, noVerdicts: r.verdicts.length === 0,
-      reportVerdicts: r.verdicts.map((v, i) => {
-        const key = this.state.selected + ":" + i;
-        if (!this._copyHandlers[key]) this._copyHandlers[key] = this.copyProbes(key, v.probes);
-        return Object.assign({}, v, {
-          copy: this._copyHandlers[key],
-          copyLabel: this.state.copied === key ? "Copied" : (v.probes.length > 1 ? "Copy questions" : "Copy question")
-        });
-      })
+      orgName: this.props.orgName ?? "Sampoorna Staffing"
     }, this.liveVals());
   }
 
@@ -2224,6 +2444,8 @@ class Component extends DCLogic {
     const st = this.state;
     const me = st.me || {};
     const busy = (id) => st.busyId === id;
+
+    const screening = this.screeningVals();
 
     // -- portal (candidate plane) -----------------------------------------
     const my = st.portal.data;
@@ -2354,14 +2576,16 @@ class Component extends DCLogic {
       return (15 + frac * 70).toFixed(2) + "%";
     })();
 
-    // Screens with no endpoint behind them (spec 0.4). They keep their mock
-    // data and must SAY so on screen.
+    // Screens this org session has no endpoint for. They keep their mock data
+    // and must SAY so on screen (spec 0.4). Three different reasons, none of
+    // them "not built yet" any more: `evaluate`, `adminorgs`, `adminusers` and
+    // `curation` are ADMIN-plane routes an org session gets 401 from, and
+    // `interview` is candidate-plane.
     const MOCK_SCREENS = {
-      queue: 1, report: 1, summary: 1, upload: 1, batches: 1,
       evaluate: 1, interview: 1, adminorgs: 1, adminusers: 1, curation: 1
     };
 
-    return {
+    return Object.assign(screening, {
       authAction: st.authBusy
         ? "Sending…"
         : (st.authMode === "signup" && st.plane !== "operator" ? "Create account and send code" : "Send code"),
@@ -2462,6 +2686,301 @@ class Component extends DCLogic {
             ? " " + (compRaw.delta_pct >= 0 ? "+" : "") + (compRaw.delta_pct * 100).toFixed(0) + "%"
             : ""))
         : "No band set"
+    });
+  }
+
+  /* The five screening screens (S8.5). Kept apart from liveVals() because it is
+   * the whole wedge, and because every value here is one hop from a route in
+   * SCREENING.md — a reader should be able to check the mapping without reading
+   * the portal. */
+  screeningVals() {
+    const st = this.state;
+    const batch = st.batch.data;
+    const sum = st.summary.data;
+    const queue = st.queue.data;
+    const listed = st.batchList.data;
+    const rep = st.report.data;
+
+    // -- batches -----------------------------------------------------------
+    const batchRows = listed && listed.batches ? listed.batches.map((b) => {
+      const c = b.counts || {};
+      const total = (c.pending || 0) + (c.processing || 0) + (c.done || 0) + (c.failed || 0);
+      const settled = (c.done || 0) + (c.failed || 0);
+      const frac = total ? settled / total : 0;
+      return {
+        id: b.id,
+        name: b.name || "Untitled batch",
+        // BatchView carries counts by ITEM STATUS only — there is no per-band
+        // count here and no route that gives one without a summary call per
+        // row, so the column says done/total instead of inventing "elevated"
+        // (spec 0.7).
+        meta: fmtDate(b.created_at) + " · " + total + (total === 1 ? " resume" : " resumes") + " · " + b.domain,
+        statusLabel: BATCH_STATUS[b.status] || b.status,
+        progressLabel: settled + " of " + total + " screened",
+        progressBar: gradBar(frac),
+        failedLabel: c.failed ? c.failed + " failed" : "",
+        current: b.id === st.selectedBatch,
+        open: this.rowHandler("open", b.id, () => this.selectBatch(b.id)),
+        openKey: this.rowHandler("openKey", b.id, () => (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.selectBatch(b.id)(); }
+        }),
+        armed: st.deleteArmed === b.id,
+        arm: this.rowHandler("arm", b.id, () => this.armDelete(b.id)),
+        confirm: this.rowHandler("del", b.id, () => this.confirmDelete(b.id)),
+        cancel: this.cancelDelete,
+        deleteLabel: st.busyId === b.id ? "Deleting…" : "Delete",
+        deleteBtn: st.busyId === b.id ? SMALL_MUTED : SMALL_GHOST
+      };
+    }) : [];
+
+    // -- the selected batch's header ---------------------------------------
+    const counts = (batch && batch.counts) || null;
+    const total = counts ? counts.pending + counts.processing + counts.done + counts.failed : 0;
+    const settled = counts ? counts.done + counts.failed : 0;
+    const byBand = (sum && sum.by_risk_band) || {};
+    const nScreened = (sum && sum.n_screened) || 0;
+    // A share of what has been SCREENED, never of what was uploaded: at 20%
+    // processed the other 80% is unknown, not "insufficient" (spec 1.C).
+    const share = (n) => (nScreened ? Math.round((n / nScreened) * 100) + "%" : "—");
+
+    const queueRows = queue && queue.rows ? queue.rows.map((r) => {
+      const sig = r.signals || null;
+      const b = (sig && RISK_BAND[sig.risk_band]) || BAND.insufficient;
+      const scored = r.risk_score !== null && r.risk_score !== undefined;
+      const loud = sig && sig.loudest_signal
+        ? (SIGNAL_LABEL[sig.loudest_signal] || sig.loudest_signal)
+            + (sig.loudest_band ? " — " + (SUB_BAND_LABEL[sig.loudest_band] || sig.loudest_band).toLowerCase() : "")
+        : (r.status === "done" ? "None — nothing dominated" : "—");
+      return {
+        // The queue holds no names, by design: candidate_id is SET NULL on
+        // erasure, so anything stored beside it would outlive the person
+        // (SCREENING.md §5). The name lives on the report, one click away.
+        name: shortId(r.candidate_id || r.item_id),
+        role: r.status === "done" ? "screened " + fmtDateTime(r.processed_at) : ITEM_STATUS[r.status] || r.status,
+        initials: r.status === "done" ? "··" : "—",
+        avatar: avatar(b, 30),
+        chip: chip(b), bandLabel: scored ? b.label : "Not screened",
+        reason: r.reason,
+        loudest: loud,
+        scoreLabel: num(r.risk_score),
+        riskBar: riskBar(scored ? r.risk_score : 0, b),
+        confBar: confBarStyle(sig ? sig.risk_confidence : 0),
+        confLabel: sig ? "conf " + num(sig.risk_confidence) : "conf —",
+        // A row with no report has nothing to open — an affordance that always
+        // fails is worse than none.
+        openable: !!r.report_id,
+        open: r.report_id ? this.rowHandler("rep", r.report_id, () => this.openReport(r.report_id)) : this.noop,
+        openKey: r.report_id ? this.rowHandler("repKey", r.report_id, () => this.openReportKey(r.report_id)) : this.noop
+      };
+    }) : [];
+
+    // -- report ------------------------------------------------------------
+    const ctx = (rep && rep.candidate_context) || {};
+    const fab = (rep && rep.fabrication_risk) || null;
+    const repBand = (fab && RISK_BAND[fab.band]) || BAND.insufficient;
+    const deg = Math.round((fab && fab.score ? fab.score : 0) * 360);
+    const subs = rep ? {
+      ai_generation: { title: "AI generation", a: rep.ai_generation, n: (x) => "likelihood " + num(x.likelihood) },
+      cross_field: { title: "Cross-field", a: rep.cross_field, n: (x) => "score " + num(x.score) },
+      resume_farm: { title: "Resume farm", a: rep.resume_farm, n: (x) => "score " + num(x.score) }
+    } : {};
+    // The component list is the FUSION's own record of what it weighed, so it
+    // drives the cards; each card's prose comes from that subsystem's own
+    // reasoning, which is the only place the API puts a sentence.
+    const reportComponents = fab ? fab.components.map((c) => {
+      const s = subs[c.id] || { title: c.id, a: null, n: () => "" };
+      const a = s.a;
+      return {
+        title: s.title,
+        band: SUB_BAND_LABEL[c.band] || c.band,
+        meta: (a ? s.n(a) + " · " : "") + "conf " + num(c.confidence) + " · weight " + num(c.weight),
+        detail: (a && a.reasoning) || "No reasoning was recorded for this component."
+      };
+    }) : [];
+    const farm = rep && rep.resume_farm;
+    const matches = (farm && farm.matches) || [];
+    // Similarity and count only. The org plane nulls the ids before they leave
+    // the API (Phase A); this screen never reads them either, so a regression
+    // there could not surface here.
+    const topSimilarity = matches.length
+      ? matches.reduce((m, x) => Math.max(m, x.similarity || 0), 0) : null;
+
+    const verdicts = rep ? (rep.verdicts || []).map((v, i) => {
+      const key = rep.id + ":" + i;
+      if (!this._copyHandlers[key]) this._copyHandlers[key] = this.copyProbes(key, v.probes || []);
+      return {
+        claim: v.claim_text,
+        status: v.status,
+        chip: chip(STATUS[v.status] || BAND.insufficient),
+        meta: v.claim_type + " · coherence " + num(v.coherence_score),
+        reasoning: v.reasoning || "No reasoning was recorded for this claim.",
+        missing: (v.missing_signals || []).length
+          ? v.missing_signals
+          : ["None — a genuine version of this claim would look like this one."],
+        evidence: (v.evidence || []).length
+          ? v.evidence.map((e) => ({ source: e.source, detail: e.detail }))
+          : [{ source: "—", detail: "No evidence either way." }],
+        probes: v.probes || [],
+        hasProbes: (v.probes || []).length > 0,
+        confBar: gradBar(v.confidence),
+        coherenceLabel: "coherence " + num(v.coherence_score) + " · confidence " + num(v.confidence),
+        copy: this._copyHandlers[key],
+        copyLabel: st.copied === key ? "Copied" : ((v.probes || []).length > 1 ? "Copy questions" : "Copy question")
+      };
+    }) : [];
+
+    // -- upload ------------------------------------------------------------
+    const files = st.files.map((f, i) => ({
+      name: f.name,
+      meta: (f.size > 1024 * 1024 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB")
+        + " · " + (f.kind === "pdf" ? "PDF" : f.kind === "text" ? "text" : "unsupported"),
+      bad: f.kind === "unsupported",
+      remove: this.removeFile(i)
+    }));
+
+    return {
+      // -- navigation + shared -------------------------------------------
+      refresh: this.refresh,
+      startProcessing: this.startProcessing, stopProcessing: this.stopProcessing,
+      moreBatches: this.moreBatches, moreQueue: this.moreQueue,
+
+      // -- batches --------------------------------------------------------
+      batchRows,
+      batchesLoading: st.batchList.loading,
+      batchesEmpty: !!listed && batchRows.length === 0,
+      batchesError: !!st.batchList.error,
+      batchesErrorText: errorCopy(st.batchList.error),
+      hasMoreBatches: !!(listed && listed.next_cursor),
+      moreBatchesLabel: st.moreBusy === "batchList" ? "Loading…" : "Load more batches",
+
+      // -- the selected batch ---------------------------------------------
+      hasBatch: !!batch,
+      // A brand-new organisation has uploaded nothing. That is the correct
+      // resting state and the first screen every customer ever sees (UI.md §9)
+      // — an empty queue, never an error.
+      noBatch: !st.selectedBatch && !st.batchList.loading && !!listed,
+      batchName: batch ? (batch.name || "Untitled batch") : "No batch selected",
+      batchMeta: batch
+        ? fmtDateTime(batch.created_at) + " · " + batch.domain + " · " + total + (total === 1 ? " resume" : " resumes")
+        : "",
+      batchStatusLabel: batch ? (BATCH_STATUS[batch.status] || batch.status) : "—",
+      batchProgressLabel: settled + " of " + total + " screened",
+      batchProgressBar: gradBar(total ? settled / total : 0),
+      batchPending: counts ? counts.pending + counts.processing : 0,
+      hasPending: !!(counts && counts.pending + counts.processing > 0),
+      batchFailed: counts ? counts.failed : 0,
+      hasFailed: !!(counts && counts.failed > 0),
+      queueLoading: st.queue.loading || st.summary.loading,
+      queueError: !!(st.queue.error || st.summary.error || st.batch.error),
+      queueErrorText: errorCopy(st.queue.error || st.summary.error || st.batch.error),
+
+      // -- the driver ------------------------------------------------------
+      driving: st.driving,
+      driveLabel: st.driving ? "Stop screening" : (settled >= total && total > 0 ? "All screened" : "Start screening"),
+      canDrive: !!(counts && counts.pending + counts.processing > 0),
+      // With nothing left to screen the button is inert rather than firing a
+      // call the server answers 0/0/0 to. An affordance that does nothing is
+      // the same mistake as one that always fails.
+      driveBtn: st.driving ? GHOST_BTN
+        : (counts && counts.pending + counts.processing > 0 ? SMALL_PRIMARY_FLAT : SMALL_MUTED),
+      driveAction: st.driving ? this.stopProcessing
+        : (counts && counts.pending + counts.processing > 0 ? this.startProcessing : this.noop),
+      driveStatus: st.driving
+        ? "Screening from this browser — " + st.driveDone + " done, " + st.driveFailed
+          + " failed this run. Leave the page and the batch pauses; it resumes where it stopped."
+        : (counts && counts.pending + counts.processing > 0
+            ? (counts.pending + counts.processing) + " not screened yet. Nothing runs until you start it — each resume is a full evaluation."
+            : "Nothing left to screen."),
+      driveError: !!st.driveError,
+      driveErrorText: errorCopy(st.driveError),
+
+      // -- queue -----------------------------------------------------------
+      candidates: queueRows,
+      queueEmpty: !!queue && queueRows.length === 0,
+      // No paging WHILE screening runs. The queue's sort key is
+      // COALESCE(risk_score, -1) and processing an item moves it from null to
+      // a score, so during a run the key is MUTABLE — the same limitation
+      // SCREENING.md §6 states for the curation queue, and keyset paging is
+      // stable against inserts, not against re-observation. Each tick reloads
+      // page one anyway.
+      hasMoreQueue: !!(queue && queue.next_cursor) && !st.driving,
+      moreQueueLabel: st.moreBusy === "queue" ? "Loading…" : "Load more",
+      bandElevated: byBand.elevated || 0,
+      bandModerate: byBand.moderate || 0,
+      bandLow: byBand.low || 0,
+      bandInsufficient: byBand.insufficient_data || 0,
+
+      // -- summary ---------------------------------------------------------
+      hasSummary: !!sum,
+      summaryScreened: nScreened,
+      summaryHeadline: sum
+        ? "What we found in " + nScreened + (nScreened === 1 ? " screened resume" : " screened resumes")
+        : "Nothing screened yet",
+      summaryMeta: sum
+        ? (BATCH_STATUS[sum.status] || sum.status) + " · " + settled + " of " + total
+          + " processed. Advisory throughout: every one of these is a reason to look closer, not a decision."
+        : "",
+      shareElevated: share(byBand.elevated || 0),
+      shareModerate: share(byBand.moderate || 0),
+      shareLow: share(byBand.low || 0),
+      shareInsufficient: share(byBand.insufficient_data || 0),
+      // top_signals holds the three fixed component ids and a count each —
+      // never a name, never a row (SCREENING.md §5).
+      topSignals: sum && sum.top_signals.length
+        ? sum.top_signals.map((s) => ({
+            label: SIGNAL_LABEL[s.signal] || s.signal,
+            count: s.count,
+            bar: gradBar(sum.top_signals[0].count ? s.count / sum.top_signals[0].count : 0)
+          }))
+        : [],
+      noSignals: !!sum && sum.top_signals.length === 0,
+
+      // -- report ----------------------------------------------------------
+      reportLoading: st.report.loading,
+      reportError: !!st.report.error,
+      reportErrorText: errorCopy(st.report.error),
+      hasReport: !!rep,
+      reportName: ctx.full_name || "Name not extracted",
+      reportRole: [ctx.role_title, ctx.seniority, rep && rep.domain].filter(Boolean).join(" · ") || "—",
+      reportSummary: rep ? (rep.summary || "No summary was generated for this report.") : "",
+      reportDepth: rep
+        ? (DEPTH_LABEL[rep.depth_band] || rep.depth_band) + " · depth " + num(rep.depth_score)
+        : "—",
+      reportInitials: ctx.full_name ? initials(ctx.full_name) : "··",
+      reportAvatar: avatar(repBand, 36),
+      reportScore: fab ? num(fab.score) : "—",
+      reportBandLabel: repBand.label,
+      reportChip: Object.assign(chip(repBand), { marginTop: "9px" }),
+      gaugeRing: {
+        width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
+        background: "conic-gradient(from 180deg, " + repBand.c + " 0deg, " + repBand.c + " " + deg + "deg, var(--track) " + deg + "deg)"
+      },
+      reportConfBar: gradBar(fab ? fab.confidence : 0),
+      reportConfLabel: fab ? num(fab.confidence) + " · " + confWord(fab.confidence) : "—",
+      reportComponents,
+      reportFarmLine: matches.length
+        ? matches.length + (matches.length === 1 ? " near-duplicate" : " near-duplicates")
+          + " in a corpus of " + (farm.corpus_size || 0) + ", top similarity " + num(topSimilarity)
+          + ". Whose resume matched is never disclosed."
+        : "",
+      hasFarmMatches: matches.length > 0,
+      reportVerdicts: verdicts,
+      hasVerdicts: verdicts.length > 0,
+      noVerdicts: !!rep && verdicts.length === 0,
+      reportThinReason: rep
+        ? "The engine found no claims on this resume worth reasoning about — not enough dated, specific or anchored material to extract."
+        : "",
+
+      // -- upload ----------------------------------------------------------
+      files,
+      hasFiles: files.length > 0,
+      fileCountLabel: files.length + (files.length === 1 ? " file ready" : " files ready"),
+      pickFiles: this.pickFiles, clearFiles: this.clearFiles, submitUpload: this.submitUpload,
+      batchNameInput: st.batchNameInput, setBatchNameInput: this.setBatchNameInput,
+      uploadLabel: st.uploadBusy ? "Registering…" : "Register batch and start screening",
+      uploadError: !!st.uploadError,
+      uploadErrorText: errorCopy(st.uploadError),
+      uploadErrorBox: ERROR_BOX
     };
   }
 }
