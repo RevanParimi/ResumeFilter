@@ -29,6 +29,7 @@ import app.reports.models  # noqa: F401 — populate Base.metadata with report t
 # metadata BEFORE that module is imported. Explicit here, like every other row.
 import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
 import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
+import app.ratelimit.models  # noqa: F401 — populate Base.metadata with the counter table
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow

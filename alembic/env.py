@@ -15,6 +15,7 @@ import app.ledger.models  # noqa: F401 — register ledger tables on Base.metada
 import app.features.models  # noqa: F401 — register feature tables on Base.metadata
 import app.curation.models  # noqa: F401 — register curation table on Base.metadata
 import app.reports.models  # noqa: F401 — register report tables on Base.metadata
+import app.ratelimit.models  # noqa: F401 — register the counter table on Base.metadata
 from app.core.config import get_settings
 from app.core.db import Base
 
