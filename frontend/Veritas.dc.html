@@ -1820,9 +1820,20 @@ class Component extends DCLogic {
   // Two clicks, because this is a real delete of real personal data:
   // batch_items.raw_text has no candidate to cascade from, and this route is
   // the only path that removes it (SCREENING.md §7).
-  armDelete = (id) => () => this.setState({ deleteArmed: id });
-  cancelDelete = () => this.setState({ deleteArmed: null });
-  confirmDelete = (id) => () => {
+  // The Delete button sits INSIDE the row, and the row is itself a click
+  // target that opens the batch. Without stopPropagation, arming a delete also
+  // navigates away from the list you armed it on — which a browser click-through
+  // caught and no unit test could have.
+  armDelete = (id) => (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    this.setState({ deleteArmed: id });
+  };
+  cancelDelete = (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+    this.setState({ deleteArmed: null });
+  };
+  confirmDelete = (id) => (e) => {
+    if (e && e.stopPropagation) e.stopPropagation();
     this.setState({ busyId: id, deleteArmed: null });
     if (this._driveBatch === id) this._driving = false;
     API.del("/screening/batches/" + id).then(
