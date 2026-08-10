@@ -9,6 +9,124 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-10 (latest) — S8.3 PHASE A BUILT AND GREEN on branch
+  `s83a-limits-and-metrics`. 1586 → 1665, `smoke_s83a` 19/19 on its second
+  run, ALL NINE smokes green (s63, s64, s73, s81, s82, s83a, s84a, s84b,
+  s85_outcome), and 10/10 mutants dead.** Spec:
+  `docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md` (S8.3
+  builds as TWO branches from one spec, the S8.4 shape); plan
+  `docs/superpowers/plans/2026-08-10-s83a-limits-and-metrics.md`, all 13 tasks,
+  TDD with a commit per task. **NOT YET REVIEWED OR MERGED — that is the next
+  action, then Phase B.**
+  **The service can now be run for paying customers on the abuse and spend
+  surface**: a DB-backed dual-scoped limiter (`app/ratelimit/`, migration
+  `0021`), in-place retry of failed batch items, and in-process counters at an
+  admin-gated `GET /metrics`, plus a new root doc `OPERATING.md`.
+  **THE LOAD-BEARING DECISION: the counters live in the DATABASE, and one
+  smoke check is the entire argument.** An in-process limiter resets on every
+  container start and is per-worker — two uvicorn workers silently double every
+  limit — and **both failures pass every unit test**. `smoke_s83a` check 6
+  therefore TERMINATES the server, starts a second one against the same
+  database, and asserts the limit still holds. Nothing else in the suite can
+  tell the two designs apart.
+  **THE LIMITER IS CALLED FROM THE SERVICE LAYER, NEVER FROM A ROUTE**, and
+  the count is not close: the OTP surface is **eight routes across three
+  planes and exactly TWO service methods**. `AuthService`'s own docstring
+  already gave the rule ("Every gate lives here rather than on a route… a rule
+  applied at one entry point and not the other has shipped as a real defect in
+  S7.1, S7.2 and S7.3"), so this sprint followed it rather than re-deriving it.
+  **THE ENUMERATION ORACLE THIS COULD HAVE REBUILT, and where the fix had to
+  go.** `AUTH.md` makes signup and login answer `202` for every address. A
+  limiter that counted *after* the has-an-account branch would leave an
+  unregistered address unlimited and a registered one at 429 — the same oracle,
+  rebuilt out of status codes. The increment goes **before** that branch;
+  a test and the smoke both assert a known and an unknown address are refused
+  **byte-identically**, and the mutation that moves the enforce call below the
+  branch dies naming that test.
+  It sits **after** the provider probe rather than at the very top, which is a
+  deliberate deviation from the plan: that probe's own comment explains why it
+  must run first, and hoisting a limiter above it would silently reorder a rule
+  another sprint reasoned about.
+  **`X-Forwarded-For` IS IGNORED unless `rate_limit_trusted_proxy_hops > 0`.**
+  The header is entirely attacker-controlled, so trusting it by default hands
+  every caller a free reset of their own per-IP scope — the limiter would pass
+  every other test in the file while bounding nothing. Default 0 (socket peer);
+  Railway sets 1. The test drives a spray with a *rotating forged* header and
+  asserts it is still refused.
+  **⚠ A DECLARED-INERT COLUMN FOUND BY THE SURVEY, not by a test:**
+  `auth_sessions.ip_hash` existed, was plumbed through `AuthStore.create_session`
+  AND `AuthService.verify_code(ip_hash=...)`, and was **never populated** —
+  `routes.py` did not pass it, so every session row held NULL while PI-8 §7
+  stated "`ip_hash`, never a raw IP" as though implemented. S8.3 needed IP
+  extraction for the limiter anyway; **one helper, two consumers**.
+  **`limiter` IS A REQUIRED CONSTRUCTOR ARGUMENT on all three services, and it
+  earned that within the hour.** Four tests in `test_screening_service.py`
+  build a `ScreeningService` directly and failed loudly at construction. Under
+  an `Optional` default they would have kept passing while silently running
+  **unlimited** — which is the entire failure mode. They now pass the
+  container's own limiter, not a permissive stand-in.
+  **The spend check runs BEFORE the claim** — a bound that runs after the work
+  it bounds is the S8.4 Phase B finding (4) shape, and here it would
+  additionally strand every claimed item in `processing` until the claim
+  timeout, for a call that did nothing. A test asserts `processing=0,
+  pending=1` after a refusal.
+  **Retry RE-QUEUES and does not process**, so there is still exactly one door
+  that evaluates an item. An item whose `raw_text` is gone is reported as
+  `skipped`, never re-queued: `requeued: 1` on an item that cannot run is a
+  promise the next `process` call breaks. `SCREENING.md` §7 has been admitting
+  since S8.4 Phase B that the text was "kept on failure — for a retry path that
+  DOES NOT EXIST YET"; that is now corrected rather than deleted, **and the
+  coupling is stated in both directions**: retaining the text is justified by
+  the retry, and the retry will be bounded by `ret_batch_item_days` once Phase
+  B's sweep lands.
+  **Metrics label by ROUTE TEMPLATE, never the raw path** — one series per
+  batch id would make a URL scanner an unbounded memory leak dressed as
+  observability. The template is **re-resolved against the route table** rather
+  than read off `request.scope["route"]`: `BaseHTTPMiddleware` does not
+  guarantee the endpoint's scope mutations are visible on the request object
+  the middleware holds, and the failure mode of trusting it is a metric that
+  silently degrades to `__unmatched__` for every request — which looks exactly
+  like working code.
+  `GET /metrics` is on the **admin router**, so the credential gate is
+  inherited rather than remembered, and `response_model=str` is honest (the
+  body IS a string) so `test_every_route_declares_a_response_model` needed no
+  exemption. **The route-table, org-scope and OpenAPI guards all covered both
+  new routes with no edit**, which is what they were built for.
+  **10/10 MUTANTS DIED — but probe 4 SURVIVED ITS FIRST VERSION, and the reason
+  is this sprint's most useful entry.** The mutation I wrote for "stop counting
+  at the first denial" actually changed which denial *wins*, not whether
+  counting stops. **A probe that does not express the behaviour it names proves
+  nothing** — it is the S8.5 "two of my own contract checks were measuring my
+  assumptions" shape, one layer further in, and the corrected probe (a `break`
+  after the denial) dies immediately.
+  **⚠ TWO OF THE SMOKE'S OWN CHECKS WERE ALSO MEASURING MY ASSUMPTIONS, the
+  same shape a third time.** (1) I asserted three clean logins for an address
+  that had just signed up — **signup and login share the `login_request`
+  budget**, correctly, because both mint and send a code, and counting them
+  separately would double the real bound. The limit drive now uses a fresh
+  address and the shared budget is its own **named check** rather than an
+  arithmetic accident. (2) `POST /ledger/orgs` returns `{org, api_key}` and I
+  read `["id"]` off the envelope; the key comes back from creation and there is
+  no second call to make.
+  **Measured, and it is a finding about the suite rather than the code: NO
+  existing test tripped the new limit.** 1586 → 1649 with the limiter live on
+  the real path and zero fallout — no test in the suite makes more than 20
+  login attempts against one address. The limiter is genuinely reachable
+  (`test_ratelimit_auth.py` gets real 429s); the suite simply never needed that
+  many codes.
+  **`rate_limit_default_per_minute` from the PI-8 config sketch was DROPPED,
+  not deferred**, with the reason written into `config.yaml`: a blanket limit
+  on unauthenticated POSTs covers exactly the `/auth/*` routes already limited
+  by name, and an enforced-nowhere knob costs more than it buys. Prod now
+  refuses to boot with `rate_limit_enabled=false` — the **sixth** boot refusal,
+  and it must sit after `boot.py`'s prod-only early return or every local run
+  breaks.
+  **Three counters (`llm_calls`, `asr_calls`, `screening_items`) are declared
+  in the registry's help table with NO call site**, recorded as deliberately
+  deferred to Phase B rather than silently skipped — they belong beside
+  `retention_deleted`, where the sweep gives them a reason to be read together.
+  **➤ NEXT STEP: review the Phase A branch, then merge, then S8.3 Phase B**
+  (retention sweep · DPDP correction/rectification · grievance officer).
 - **Session 2026-08-10 (later) — THE CUSTOMER CAN NOW CLOSE THE LOOP. Branch
   `s86-org-outcome-route`, nine commits, TDD throughout. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
@@ -1627,9 +1745,39 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                the design.
     │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
     │                new 409 makes it fail ON PURPOSE (spec §4.7)
-    ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
+    ├── [~] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
+    │            SPEC 2026-08-10, built as TWO BRANCHES from one spec (0.1):
+    │              spec: 2026-08-10-s83-operating-safely-design.md
+    │            [x] PHASE A — limits and metrics (branch
+    │                `s83a-limits-and-metrics`, 13 tasks, 1586 -> 1665 green,
+    │                smoke_s83a 19/19, all nine smokes green, 10/10 mutants
+    │                dead). NOT YET REVIEWED OR MERGED.
+    │                plan: 2026-08-10-s83a-limits-and-metrics.md
+    │                - app/ratelimit/ (schema/models/store/service) + 0021
+    │                - DB-backed counters, because an in-process limiter resets
+    │                  on redeploy and is per-worker, and BOTH failures pass
+    │                  every unit test. smoke check 6 restarts the server
+    │                  against the same DB -- the only check that can tell.
+    │                - enforced in the SERVICE layer: 8 OTP routes, 2 methods
+    │                - dual-scoped, ALL scopes counted, ANY denial denies
+    │                - counted BEFORE the has-an-account branch, so the 429 is
+    │                  byte-identical for a known and an unknown address
+    │                - X-Forwarded-For IGNORED unless trusted_proxy_hops > 0
+    │                - auth_sessions.ip_hash was declared and NEVER populated;
+    │                  the limiter's IP helper closes it
+    │                - POST /screening/batches/{id}/retry: re-queues, does not
+    │                  process; skips items whose text is gone
+    │                - GET /metrics (admin-gated), labelled by route TEMPLATE
+    │                - prod refuses to boot with rate_limit_enabled=false (6th)
+    │                - new root doc OPERATING.md
+    │            [ ] PHASE B — retention sweep (sweep_active stops being a
+    │                hardcoded False and DERIVES from config; the sweeper's
+    │                targets come from the SAME table as the portal's declared
+    │                windows) · data_principal_requests (correction + grievance,
+    │                one table, `full_name` the only auto-appliable field) ·
+    │                public GET /grievance + a 7th boot refusal · migration 0022
     └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the

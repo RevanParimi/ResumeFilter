@@ -36,7 +36,7 @@ holding open.
 
 ---
 
-## 2. The seven routes
+## 2. The eight batch routes
 
 All org-plane (`require_org`), all scoped by `org_id`, all answering **404 —
 never 403 — for another organisation's batch** (§6 of `TENANCY.md`: a 403
@@ -47,7 +47,8 @@ confirms the thing exists).
 | `POST` | `/screening/batches` | `BatchDetail` | `{name, domain, items:[{resume_text\|resume_pdf_b64}]}`. PDFs are decoded **here** |
 | `GET` | `/screening/batches` | `BatchPage` | cursor-paged, newest first |
 | `GET` | `/screening/batches/{id}` | `BatchDetail` | 404 if not yours |
-| `POST` | `/screening/batches/{id}/process` | `ProcessResult` | bounded; call until `remaining` is 0 |
+| `POST` | `/screening/batches/{id}/process` | `ProcessResult` | bounded; call until `remaining` is 0. Rate-limited per ORG (S8.3) |
+| `POST` | `/screening/batches/{id}/retry` | `RetryResult` | S8.3: re-queues `failed` items; does NOT process |
 | `GET` | `/screening/batches/{id}/queue` | `QueuePage` | cursor-paged, riskiest first |
 | `GET` | `/screening/batches/{id}/summary` | `BatchSummary` | counts only |
 | `DELETE` | `/screening/batches/{id}` | `BatchDeleteResponse` | items CASCADE, text included |
@@ -227,21 +228,33 @@ resume row needs a candidate and identity resolution needs the extraction.
 * **Cleared on success.** The text then lives in `resumes`, where candidate
   erasure already cascades. Deleted on a path that already runs (the S7.1
   challenge-hygiene pattern).
-* **Kept on failure — for a retry path that DOES NOT EXIST YET.** Stated
-  plainly rather than implied (the branch review caught the overclaim): a
-  `failed` item is not claimable, no route re-queues one, and `add_items`
-  has no route either. Today the org's only retry is registering the fixed
-  file again — which needs the file, not this column. The text is kept so an
-  in-place retry (named S8.3 input, beside the sweep) does not have to ask
-  the org to re-upload; until that ships, the honest description of this
-  column is: personal data held under `ret_batch_item_days`, deletable only
-  via `DELETE /screening/batches/{id}`.
+* **Kept on failure — and since S8.3 Phase A there is a path that uses it.**
+  `POST /screening/batches/{batch_id}/retry` flips this batch's `failed` items
+  back to `pending`, clearing `error`, `claimed_at` and `processed_at`; the
+  existing `process` call then picks them up, so there is still exactly **one**
+  door that evaluates an item. An item whose `raw_text` is already empty is
+  reported as `skipped`, never re-queued — it either succeeded (text cleared)
+  or failed as `empty_resume` and would fail identically, and a `requeued`
+  count the next `process` call cannot honour would be a lie.
+  *(This paragraph used to read "for a retry path that DOES NOT EXIST YET",
+  which the S8.4 Phase B review wrote after catching the original overclaim.
+  The capability has now shipped; the honest correction is this, not a
+  deletion of the history.)*
 * **`DELETE /screening/batches/{id}` ships in the sprint that creates the
   table** — a real delete path, not a promise of one.
-* **`ret_batch_item_days` (90) is declared and NOT yet swept.** It is named
-  S8.3 sweep input. The honest statement is that nothing deletes on it today;
-  a retention window nobody enforces is a posture, and calling it anything else
-  would be the overclaim `TENANCY.md` had six of.
+* **`ret_batch_item_days` (90) is declared and NOT yet swept.** It is S8.3
+  **Phase B** sweep input; Phase A shipped the limiter, the retry and the
+  metrics, and the sweep is the phase after. The honest statement is still that
+  nothing deletes on this window today — a retention window nobody enforces is
+  a posture, and calling it anything else would be the overclaim `TENANCY.md`
+  had six of.
+* **Retention will bound the retry, and that coupling is the point.** Once the
+  Phase B sweep clears `raw_text` past `ret_batch_item_days`, an item older
+  than the window stops being retryable — its input is gone. Retaining the text
+  is justified *by* the retry capability, and the retry is bounded *by* the
+  retention window; neither half stands alone. Stated here and in
+  `OPERATING.md` §6 rather than discovered by a customer whose retry silently
+  reports `skipped: 1`.
 
 No new `ConsentPurpose`. Screening an uploaded resume is the organisation's own
 first-party processing of a document it holds.
