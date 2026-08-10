@@ -38,6 +38,7 @@ from app.core.config import Settings
 from app.core.db import Base, make_engine, make_session_factory
 from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
+from app.metrics.registry import build_metrics
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.github import GitHubRepoRaw, GitHubUserRaw
@@ -238,7 +239,11 @@ def make_services(
     auth=None,
     screening_scope=None,
     screening=None,
+    metrics=None,
 ) -> Services:
+    # Real, per-app, and never disabled here: a fixture that cannot enforce
+    # an invariant will hide it (the S8.2 lesson S8.4 Phase B paid for twice).
+    metrics = metrics or build_metrics()
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
     ledger = ledger or LedgerStore(
@@ -302,7 +307,8 @@ def make_services(
     if auth is None:
         from app.auth.service import build_auth_service
         auth = build_auth_service(
-            settings, candidates=candidates, ledger=ledger, email=email
+            settings, candidates=candidates, ledger=ledger, email=email,
+            metrics=metrics,
         )
     # Built BEFORE the portal, which composes it for MyData.sessions and
     # for erasing login challenges (they carry no FK and cannot cascade).
@@ -355,6 +361,7 @@ def make_services(
         auth=auth,
         screening_scope=screening_scope,
         screening=screening,
+        metrics=metrics,
     )
 
 

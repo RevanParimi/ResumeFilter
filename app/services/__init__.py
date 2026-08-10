@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Optional
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.ledger.store import LedgerStore, build_ledger_store
+from app.metrics.registry import Metrics, build_metrics
 from app.services.flywheel import Flywheel, build_flywheel
 from app.services.github import GitHubClient, GitHubService
 from app.services.email import EmailClient, build_email
@@ -63,6 +64,10 @@ class Services:
     # reach an unscoped batch read, and what is not on the container cannot be
     # reached from a handler.
     screening: ScreeningService
+    # Per-app, never a module global: a shared registry would be written by
+    # every test in the suite and the first ordering-dependent assertion
+    # would be an unreproducible flake (S8.3 Phase A).
+    metrics: Metrics
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -80,6 +85,9 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.verification.service import build_verification_service
 
     settings = settings or get_settings()
+    # FIRST: every limiter built below takes it, so that a rate-limit decision
+    # is countable from the moment the first one is made.
+    metrics = build_metrics()
     # Hoisted so the profile-source service shares the one GitHub client + the
     # candidate store (handle derivation + existence checks) with the container.
     github = GitHubClient(settings)
@@ -110,7 +118,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     # principal, so it needs candidates + ledger already standing.
     email = build_email(settings)
     auth = build_auth_service(
-        settings, candidates=candidates, ledger=ledger, email=email
+        settings, candidates=candidates, ledger=ledger, email=email, metrics=metrics
     )
     # Late, and only after candidates/report_store/llm are bound: those four
     # objects are everything ingestion needs (app/screening/ingest.py).
@@ -147,6 +155,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         auth=auth,
         screening_scope=build_org_scoped_access(report_store, candidates),
         screening=screening,
+        metrics=metrics,
     )
 
 
