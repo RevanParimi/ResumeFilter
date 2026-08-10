@@ -80,6 +80,20 @@
   `localhost:8096` are the same **site** (the Lax cookie is sent) and different
   **origins** (CORS still applies), where `127.0.0.1` would be cross-site and
   every call would 401 for a reason that looks nothing like the cause.
+  **⚠ A SELF-REVIEW OF THE BRANCH FOUND TWO MORE, both house shapes.**
+  (1) **One rule, two doors:** every path onto the queue went through `nav()`,
+  which loads what the screen renders — except `goQueueLink`, the upload
+  screen's "screening queue" link, which set `screen` directly and fetched
+  nothing. It landed on a queue that had never called the API and could not even
+  render the empty state, because that state is keyed on the batch list having
+  *arrived*. (2) **A late reply overwriting a live screen:** the three batch
+  reads and the report read `setState` unconditionally on resolve, so a response
+  for the batch you just left lands afterwards and replaces the one you are
+  looking at — a queue showing another batch's rows, which the comment beside
+  `selectBatch` already *claimed* was impossible. `load()` now takes a guard
+  evaluated when the response **lands**, keyed on an instance field rather than
+  state (the guard must be right the instant of the click, and `setState` has
+  not flushed by then).
   **➤ NEXT STEP: an org-plane route for recording an outcome is now a NAMED
   gap** (it is PI-9's calibration input and the report screen currently says so
   in prose), then S8.3.
