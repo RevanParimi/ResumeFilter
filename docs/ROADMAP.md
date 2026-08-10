@@ -10,10 +10,10 @@
 ## ▶ Current state
 
 - **Session 2026-08-10 (later) — THE CUSTOMER CAN NOW CLOSE THE LOOP. Branch
-  `s86-org-outcome-route`, seven commits, TDD throughout. 1553 → 1584 green,
+  `s86-org-outcome-route`, nine commits, TDD throughout. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
   `smoke_s84b` 16/16 re-run green, and all three UI layers green (bindings
-  400/400 · contract 31/31 · browser 18/18).** Spec:
+  402/402 · contract 31/31 · browser 19/19).** Spec:
   `docs/superpowers/specs/2026-08-10-org-outcome-route-design.md`, plan
   `docs/superpowers/plans/2026-08-10-org-outcome-route.md`.
   **This closes the named gap the wiring session left.**
@@ -105,6 +105,33 @@
   `docs/routes.md` idea below. A comment in the code now says so. Same call for
   `UI.md` §5's five plane counts, which are the `a9b8e59` measurement and are
   now marked as not re-measured.
+  **⚠ A SELF-REVIEW OF THE BRANCH FOUND ONE REAL DEFECT, ONE NON-DEFECT I HAD
+  TALKED MYSELF INTO, AND ONE GAP.** 1584 → 1586 green; browser 18 → 19.
+  (1) **A 500 on a customer-facing write during an ordinary erasure.**
+  Recording an outcome is a READ (does this org own it?) then a WRITE, and
+  `outcomes.report_id` is a real FK — a candidate calling `DELETE /portal/me`
+  between the two CASCADEs the report away and the INSERT raises. **S8.4 Phase
+  B finding (3) one table over**: shorter window, same shape. `add_outcome`
+  now returns `False` and both doors map it to the 404 they already emit. The
+  cause is **verified after rollback** rather than assumed from the exception
+  (the `save()`/`SubjectErasedError` precedent) — two other FKs hang off this
+  row, and swallowing their failures as "the report vanished" would turn a
+  genuine bug into a quiet 404.
+  (2) **THE NON-DEFECT, and it is the more useful entry.** I claimed the
+  double-click guard had to be an instance field because `setState` is
+  asynchronous — the process driver's load-bearing lesson from earlier the
+  same day. **Probed it: planting the state-based guard leaves the browser
+  check GREEN**, because React flushes discrete events synchronously and the
+  second click already sees the first one's state. The field stays (it does
+  not depend on that behaviour holding, and this list is append-only), but the
+  comment now says **belt-and-braces, not a fix**, and the check states that it
+  does **not** discriminate the two spellings. Two lessons: a rule that was
+  load-bearing in one place is not automatically load-bearing in the next, and
+  a mutation probe is what tells you which — the same probe that killed 7/7
+  earlier is what refused to kill this one.
+  (3) A failed outcomes **read** rendered nothing at all — no history, no empty
+  state, no error — which invites recording the same judgement twice onto an
+  append-only list. The record action and the list read now fail separately.
   **➤ NEXT STEP: S8.3** (rate limiting · the `ret_batch_item_days` sweep ·
   in-place retry of failed items · observability · DPDP correction + grievance
   officer). Nothing else is outstanding on this branch.
@@ -1166,7 +1193,7 @@
   exposure. Advisory.
 - **Next action:** **S8.4 IS COMPLETE (both phases merged), the SCREENING
   SCREENS ARE WIRED (S8.5, merged 2026-08-10 `eed3d95`), and THE OUTCOME LOOP
-  IS CLOSED (branch `s86-org-outcome-route`, 2026-08-10). 1584 green,
+  IS CLOSED (branch `s86-org-outcome-route`, 2026-08-10). 1586 green,
   `smoke_s85_outcome` 21/21. NOT yet pushed to the public remote — push when
   the user says so.**
   Per the PI-8 re-sequence (S8.2 → S8.4 → UI → integrate → S8.3 → deploy) the
@@ -1576,8 +1603,8 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                admin by nature; interview runner is candidate-plane
     │            [x] AN ORG-PLANE ROUTE FOR RECORDING AN OUTCOME — DONE
     │                2026-08-10 on branch s86-org-outcome-route (spec + plan +
-    │                TDD, 7 commits). 1553→1584 green, smoke_s85_outcome 21/21,
-    │                UI bindings 400/400 · contract 31/31 · browser 18/18.
+    │                TDD, 9 commits). 1553→1586 green, smoke_s85_outcome 21/21,
+    │                UI bindings 402/402 · contract 31/31 · browser 19/19.
     │                POST + GET /screening/reports/{id}/outcome(s) on the org
     │                plane; migration 0020 gives `outcomes` authorship
     │                (recorded_by · org_id · recorded_by_org_user_id).
@@ -1636,10 +1663,10 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 ## Session log
 
 - **2026-08-10 (later)** — **The outcome loop is closed. Branch
-  `s86-org-outcome-route`, seven commits, TDD. 1553 → 1584 green,
+  `s86-org-outcome-route`, nine commits, TDD. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 first run, `smoke_s84a` 23/23 + `smoke_s84b` 16/16
-  re-run green, UI bindings 400/400 · contract 31/31 · browser 18/18, 7/7
-  mutants dead.**
+  re-run green, UI bindings 402/402 · contract 31/31 · browser 19/19, 7/7
+  mutants dead (and one probe that correctly refused to die — see 9).**
   Two org-plane routes (`POST`/`GET /screening/reports/{id}/outcome(s)`),
   migration `0020` (outcome authorship), one shared constructor for both doors,
   a notes bound at both doors, and the four verdict buttons back on the report
@@ -1677,6 +1704,16 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
      way**, with the staleness written down: `GET /`'s `endpoints` array and
      `UI.md` §5's plane counts. Patching in two entries would make an
      unmaintained list look maintained.
+  9. **A rule that was load-bearing in one place is not load-bearing in the
+     next, and only a probe tells you which.** The self-review "found" a
+     double-click defect by analogy with the process driver's async-`setState`
+     trap — recorded as load-bearing in the session directly above. Planting
+     the supposedly-broken guard left the browser check green: React flushes
+     discrete events synchronously, so a click handler is not a loop tick. The
+     same mutation technique that killed 7/7 real mutants is what refused to
+     kill this one. **Reasoning by analogy from this repo's own recorded
+     lessons is exactly as unreliable as any other reasoning that skips the
+     measurement.**
 - **2026-08-10** — **The screening screens are wired. Branch
   `s85-screening-ui-wiring`, three commits, no `app/` code touched
   (`pytest -q` 1553, unchanged). 384/384 bindings · 25/25 contract · 16/16
