@@ -293,11 +293,16 @@ def make_services(
     if interview is None:
         from app.interview.service import InterviewService
         from app.interview.store import InterviewStore
+        from app.ratelimit.service import build_rate_limiter as _build_limiter
         interview = InterviewService(
             InterviewStore(candidates._session_factory, ledger=ledger,
                            settings=settings),
             candidates, ledger, report_store,
-            verification=verification, llm=llm, speech=speech, settings=settings,
+            verification=verification, llm=llm, speech=speech,
+            limiter=_build_limiter(
+                settings, candidates._session_factory, metrics=metrics
+            ),
+            settings=settings,
         )
     # Honour settings.email_provider exactly as build_default_services does.
     # The default is "null", so the suite still proves the REFUSING path
@@ -325,6 +330,7 @@ def make_services(
     if screening is None:
         # On the SAME session factory as every other store here, so a batch and
         # the candidate it produces live in one database.
+        from app.ratelimit.service import build_rate_limiter
         from app.screening.ingest import IngestDeps
         from app.screening.service import ScreeningService
         from app.screening.store import ScreeningStore
@@ -337,6 +343,9 @@ def make_services(
             IngestDeps(candidates=candidates, reports=report_store,
                        llm=llm, settings=settings),
             settings=settings,
+            limiter=build_rate_limiter(
+                settings, candidates._session_factory, metrics=metrics
+            ),
         )
     return Services(
         settings=settings,

@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING, Optional
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.ratelimit.schema import LimitScope
+from app.ratelimit.service import RateLimiter
 from app.screening.ingest import IngestDeps, IngestRefused, ingest_resume
 from app.screening.pagination import clamp_limit
 from app.screening.schema import (
@@ -35,11 +37,19 @@ log = get_logger("screening.service")
 
 class ScreeningService:
     def __init__(
-        self, store: ScreeningStore, deps: IngestDeps, *, settings: Settings
+        self,
+        store: ScreeningStore,
+        deps: IngestDeps,
+        *,
+        settings: Settings,
+        limiter: RateLimiter,
     ) -> None:
         self._store = store
         self._deps = deps
         self._settings = settings
+        # REQUIRED, not optional. An optional limiter is a fail-open that
+        # surfaces in production, on the path that spends money.
+        self._limiter = limiter
 
     @staticmethod
     def _now() -> datetime:
@@ -168,6 +178,19 @@ class ScreeningService:
         code rather than propagating, because the alternative is a row stuck in
         `processing` until the claim times out for a reason nobody recorded.
         """
+        # BEFORE the claim, deliberately. A bound that runs after the work it
+        # bounds is the S8.4 Phase B finding (4) shape -- and here it would
+        # additionally strand every item this call claimed in `processing`
+        # until the claim timeout expired, for a call that did nothing.
+        #
+        # Before the ownership read too, so a refusal is indistinguishable
+        # whichever batch id was guessed.
+        self._limiter.enforce(
+            self._limiter.rules_for("screening_process"),
+            {LimitScope.ORG: org_id},
+            now=self._now(),
+        )
+
         if self._store.batch_row(org_id, batch_id) is None:
             return None
 
@@ -275,7 +298,13 @@ def _no_report_signals(result) -> ItemSignals:
 
 
 def build_screening_service(
-    settings: Optional[Settings] = None, *, deps: IngestDeps
+    settings: Optional[Settings] = None, *, deps: IngestDeps, metrics=None
 ) -> ScreeningService:
+    from app.ratelimit.service import build_rate_limiter
+
     settings = settings or get_settings()
-    return ScreeningService(build_screening_store(settings), deps, settings=settings)
+    store = build_screening_store(settings)
+    return ScreeningService(
+        store, deps, settings=settings,
+        limiter=build_rate_limiter(settings, store._session_factory, metrics=metrics),
+    )

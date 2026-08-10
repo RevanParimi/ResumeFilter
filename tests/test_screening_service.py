@@ -191,8 +191,13 @@ def _racing_service(services, org):
     store = _DeleteRacingStore(
         ScreeningStore(services.candidates._session_factory), org
     )
+    # The container's own limiter, not a permissive stand-in: `limiter` is a
+    # REQUIRED argument precisely so a construction site cannot end up silently
+    # unlimited, and a test that passed a no-op here would be re-opening that
+    # hole for itself.
     return ScreeningService(
-        store, services.screening._deps, settings=services.settings
+        store, services.screening._deps, settings=services.settings,
+        limiter=services.screening._limiter,
     ), store
 
 

@@ -41,6 +41,8 @@ from app.interview.session import effective_status, summarize
 from app.interview.store import InterviewStore
 from app.ledger.consent import as_utc
 from app.ledger.store import LedgerStore
+from app.ratelimit.schema import LimitScope
+from app.ratelimit.service import RateLimiter
 from app.services.llm import LLMClient
 from app.services.speech import SpeechClient
 from app.verification.schema import AssuranceLevel, IdentityAssurance
@@ -86,6 +88,7 @@ class InterviewService:
         verification,
         llm: LLMClient,
         speech: SpeechClient,
+        limiter: "RateLimiter",
         settings: Optional[Settings] = None,
     ) -> None:
         self._store = store
@@ -95,6 +98,9 @@ class InterviewService:
         self._verification = verification
         self._llm = llm
         self._speech = speech
+        # REQUIRED: the ASR path is the S7.3 review's named spend surface, and
+        # an optional limiter is a fail-open that only shows up on the bill.
+        self._limiter = limiter
         self._settings = settings or get_settings()
 
     # -- candidate plane -------------------------------------------------------
@@ -166,6 +172,17 @@ class InterviewService:
         if question_id != current.id:
             raise SessionConflictError(
                 f"answer question {current.id}; {question_id} is not the current one"
+            )
+
+        if audio_b64:
+            # ONLY when audio is present: a typed answer costs nothing and must
+            # not consume a transcription budget. Before _resolve_answer, so a
+            # refusal happens before the vendor call rather than after paying
+            # for it.
+            self._limiter.enforce(
+                self._limiter.rules_for("asr_transcribe"),
+                {LimitScope.CANDIDATE: candidate_id},
+                now=moment,
             )
 
         answer = await self._resolve_answer(
@@ -390,12 +407,19 @@ def build_interview_service(
     verification,
     llm: LLMClient,
     speech: SpeechClient,
+    metrics=None,
 ) -> InterviewService:
+    from app.ratelimit.service import build_rate_limiter
+
     settings = settings or get_settings()
     store = InterviewStore(
         candidates._session_factory, ledger=ledger, settings=settings
     )
     return InterviewService(
         store, candidates, ledger, report_store,
-        verification=verification, llm=llm, speech=speech, settings=settings,
+        verification=verification, llm=llm, speech=speech,
+        limiter=build_rate_limiter(
+            settings, candidates._session_factory, metrics=metrics
+        ),
+        settings=settings,
     )

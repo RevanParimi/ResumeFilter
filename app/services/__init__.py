@@ -127,6 +127,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         deps=IngestDeps(
             candidates=candidates, reports=report_store, llm=llm, settings=settings
         ),
+        metrics=metrics,
     )
     return Services(
         settings=settings,

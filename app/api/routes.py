@@ -1161,10 +1161,21 @@ async def process_screening_batch(
 
     An item whose claim goes stale becomes claimable again, so a batch
     interrupted by a redeploy heals on the next call rather than wedging.
+
+    Bounded per CALLER too since S8.3: `screening_max_items_per_call` caps one
+    request and says nothing about a client in a loop, and every call bills a
+    model.
     """
-    result = await _services(request).screening.process(
-        org_id, batch_id, engine=request.app.state.engine
-    )
+    try:
+        result = await _services(request).screening.process(
+            org_id, batch_id, engine=request.app.state.engine
+        )
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return result
@@ -1898,6 +1909,14 @@ async def submit_answer(
             candidate_id, session_id, question_id=req.question_id,
             text=req.text, audio_b64=req.audio_b64, mime=req.mime,
         )
+    except RateLimited as exc:
+        # Audio answers only (S8.3): the ASR path is the S7.3 review's named
+        # spend surface. A typed answer is never refused here.
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except SessionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AnswerTooLargeError as exc:
