@@ -9,6 +9,132 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-10 (later) — THE CUSTOMER CAN NOW CLOSE THE LOOP. Branch
+  `s86-org-outcome-route`, nine commits, TDD throughout. 1553 → 1586 green,
+  `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
+  `smoke_s84b` 16/16 re-run green, and all three UI layers green (bindings
+  402/402 · contract 31/31 · browser 19/19).** Spec:
+  `docs/superpowers/specs/2026-08-10-org-outcome-route-design.md`, plan
+  `docs/superpowers/plans/2026-08-10-org-outcome-route.md`.
+  **This closes the named gap the wiring session left.**
+  `POST /report/{id}/outcome` was admin-plane, so a customer who screened 400
+  resumes and formed a judgment had nowhere to put it — and that judgment is
+  PI-9's only calibration input. Two org-plane routes now exist
+  (`POST`/`GET /screening/reports/{id}/outcome(s)`), the report screen's four
+  buttons are back, and the apologetic paragraph is gone.
+  **THE LOAD-BEARING DECISION: `outcomes` records WHO judged, and
+  `recorded_by` exists BECAUSE `org_id` is SET NULL.** Migration `0020` adds
+  three columns. `org_id` SET NULLs — the contrast with
+  `screening_batches.org_id` (CASCADE) is the reasoning: a batch is an org's
+  own operational work product with no meaning once they are gone, while an
+  outcome is a **label about a person's record that the platform learns from**,
+  and the report it judges survives offboarding too. But then a null `org_id`
+  conflates "an operator recorded this" with "the customer who did has
+  offboarded", and **PI-9 must never train on our own operator's self-labels
+  believing a customer produced them** — that is circular, and the derived
+  answer would always look plausible. One `String(16)` column keeps the fact.
+  **ONE CONSTRUCTOR, TWO DOORS — and the test asserts BEHAVIOUR, not source.**
+  `app/reports/outcomes.build_outcome` owns all three rules (claim ∈ report,
+  notes ≤ cap, provenance stated). The admin door was migrated to it **before**
+  the org door was written, on purpose: building the second beside an
+  unmigrated first is the exact shape the shared constructor exists to prevent.
+  A test asserts both doors **refuse the same inputs** — "both call the helper"
+  is a claim about today's source; "both refuse the same input" survives
+  somebody rewriting a handler.
+  **⚠ A THIRD WRITER TO `outcomes` TURNED UP IN THE FULL SUITE, not in the
+  design:** `scripts/migrate_reports_into_main_db.py`, the one-off S8.1
+  importer. It is the door nobody thinks of, and the NOT NULL column with **no
+  server default** is what caught it — had the default been left standing, the
+  import would have succeeded and labelled those rows correctly for the wrong
+  reason. The same choice turned an erasure test red until its INSERT was made
+  honest. Pinned by a test.
+  **TWO BOUNDS THAT ARE S7.2's `claim_ref` ONE TABLE OVER.** `notes` was an
+  unbounded `str` into an unbounded `Text` column, about to be typed by
+  customers into a box beside a candidate's name: now
+  `max_outcome_notes_chars` (2000), enforced at **both** doors in one commit.
+  And **the flywheel record lost `notes` and gained provenance**, also at both
+  doors — that sink is an append-only JSONL with **no erasure path**, so free
+  text about a named person has no business in it. The label is the training
+  signal; the prose never was, and it still lives in `outcomes` where
+  `outcomes → reports → candidates` CASCADE genuinely reaches it. Measured
+  before deciding: no test asserted `notes` in a flywheel record.
+  **THE LEAK THIS ROUTE COULD PLAUSIBLY INTRODUCE IS DOWNWARD, NOT SIDEWAYS.**
+  A report has exactly one owning org, so no other customer can reach it — but
+  the **operator's** internal note about that customer's report is written on
+  the same report. `outcomes_for_org` filters on `org_id` on top of the
+  ownership check for that reason alone, and a test asserts the exact string
+  "internal: this agency keeps uploading fakes" is absent from the customer's
+  list while the operator's own view still shows it.
+  **404 — NEVER 403 — ON A WRITE.** The instinct on a refused write is 403, and
+  it confirms the report exists to anyone guessing ids. Both verbs answer
+  byte-identically to an unknown id, asserted in tests, in the smoke and in the
+  contract checker.
+  **The facade stopped calling itself Reads.** `OrgScopedReads` →
+  `OrgScopedAccess`, because it now holds a write; a class named for reading
+  while it records judgments is a lie in the one file whose whole job is being
+  trustworthy about scope. **The attribute the guard watches
+  (`services.screening_scope`) did not change, so `test_org_scope_guard.py`
+  needed no edit** and kept covering routes nobody has written. And
+  `test_every_facade_read_takes_org_id_first` **introspects** rather than
+  hardcoding, so the new write arrived already covered — which is exactly what
+  that choice was made for in Phase A.
+  **7/7 MUTANTS DIED** (dropped notes cap · a defaulted `recorded_by` · the
+  facade stamping OPERATOR on the org plane · `outcomes_for_org` losing its
+  org filter, and losing its ownership check · `record_outcome` falling back to
+  an unscoped read · the flywheel carrying notes again), plus 3 on the binding
+  checker.
+  **The smoke reaches two things no unit test can:** every unit test here
+  authenticates with `X-Org-Key`, a MACHINE credential with no human behind it,
+  so `recorded_by_org_user_id` is None in all of them — the smoke signs up
+  through a real session and proves a real `org_user` id lands on the row. And
+  it drives the route in the **browser's posture** (session + cookie jar +
+  CSRF), which S8.4 Phase B measured refuses POSTs with 403 when a cookie and
+  `X-Org-Key` are mixed.
+  **The browser check types the note the way a person does** — through the
+  native `value` setter plus a dispatched `input` event — because assigning
+  `.value` never fires React's handler and the note would post as `""` **with
+  the check still green**. It then reads the result back through a separate
+  machine credential, sweeping every report in the batch rather than guessing
+  which one the click opened.
+  **⚠ A PRE-EXISTING DRIFT FOUND AND DELIBERATELY NOT PATCHED:** `GET /`'s
+  `endpoints` list in `app/main.py` is hand-maintained and is missing **every**
+  `/screening/*` route (S8.4 A+B, and now S8.5). Adding two entries would make
+  an unmaintained list look maintained — the second hand-maintained list is
+  always the one that drifts (S8.2's `OPEN_PATHS`/`PUBLIC_PATHS` finding). The
+  real fix is deriving it from `/openapi.json`, and it belongs with the
+  `docs/routes.md` idea below. A comment in the code now says so. Same call for
+  `UI.md` §5's five plane counts, which are the `a9b8e59` measurement and are
+  now marked as not re-measured.
+  **⚠ A SELF-REVIEW OF THE BRANCH FOUND ONE REAL DEFECT, ONE NON-DEFECT I HAD
+  TALKED MYSELF INTO, AND ONE GAP.** 1584 → 1586 green; browser 18 → 19.
+  (1) **A 500 on a customer-facing write during an ordinary erasure.**
+  Recording an outcome is a READ (does this org own it?) then a WRITE, and
+  `outcomes.report_id` is a real FK — a candidate calling `DELETE /portal/me`
+  between the two CASCADEs the report away and the INSERT raises. **S8.4 Phase
+  B finding (3) one table over**: shorter window, same shape. `add_outcome`
+  now returns `False` and both doors map it to the 404 they already emit. The
+  cause is **verified after rollback** rather than assumed from the exception
+  (the `save()`/`SubjectErasedError` precedent) — two other FKs hang off this
+  row, and swallowing their failures as "the report vanished" would turn a
+  genuine bug into a quiet 404.
+  (2) **THE NON-DEFECT, and it is the more useful entry.** I claimed the
+  double-click guard had to be an instance field because `setState` is
+  asynchronous — the process driver's load-bearing lesson from earlier the
+  same day. **Probed it: planting the state-based guard leaves the browser
+  check GREEN**, because React flushes discrete events synchronously and the
+  second click already sees the first one's state. The field stays (it does
+  not depend on that behaviour holding, and this list is append-only), but the
+  comment now says **belt-and-braces, not a fix**, and the check states that it
+  does **not** discriminate the two spellings. Two lessons: a rule that was
+  load-bearing in one place is not automatically load-bearing in the next, and
+  a mutation probe is what tells you which — the same probe that killed 7/7
+  earlier is what refused to kill this one.
+  (3) A failed outcomes **read** rendered nothing at all — no history, no empty
+  state, no error — which invites recording the same judgement twice onto an
+  append-only list. The record action and the list read now fail separately.
+  **➤ NEXT STEP: S8.3** (rate limiting · the `ret_batch_item_days` sweep ·
+  in-place retry of failed items · observability · DPDP correction + grievance
+  officer). Nothing else is outstanding on this branch.
 - **Session 2026-08-10 — THE SCREENING SCREENS ARE WIRED. Branch
   `s85-screening-ui-wiring`, three commits, NO `app/` code touched
   (`pytest -q` re-measured at 1553, unchanged). Verified three ways:
@@ -97,6 +223,8 @@
   **➤ NEXT STEP: an org-plane route for recording an outcome is now a NAMED
   gap** (it is PI-9's calibration input and the report screen currently says so
   in prose), then S8.3.
+  **(DONE — built, smoked and wired the same day on branch
+  `s86-org-outcome-route`; see the session above.)**
 - **Session 2026-08-09 (later) — S8.4 PHASE B WHOLE-BRANCH REVIEW done: 6
   Important + 4 Minor findings, ALL FIXED on the branch (9 commits, TDD, one
   failing test proven before each fix), then MERGED to main. 1542→1553 green,
@@ -1063,20 +1191,18 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 IS COMPLETE (both phases merged) and the SCREENING
-  SCREENS ARE WIRED (S8.5, merged 2026-08-10 `eed3d95`). 1553 green; the UI
-  wiring touched no `app/` code. NOT yet pushed to the public remote — push when
+- **Next action:** **S8.4 IS COMPLETE (both phases merged), the SCREENING
+  SCREENS ARE WIRED (S8.5, merged 2026-08-10 `eed3d95`), and THE OUTCOME LOOP
+  IS CLOSED (branch `s86-org-outcome-route`, 2026-08-10). 1586 green,
+  `smoke_s85_outcome` 21/21. NOT yet pushed to the public remote — push when
   the user says so.**
   Per the PI-8 re-sequence (S8.2 → S8.4 → UI → integrate → S8.3 → deploy) the
   next work is:
-  (1) **An ORG-PLANE ROUTE FOR RECORDING AN OUTCOME.** Found while wiring the
-  report screen: `POST /report/{report_id}/outcome` is on the **admin** router
-  (`routes.py:2024`), so a customer cannot close the loop on a report they paid
-  for — and that outcome is exactly PI-9's calibration input. The report screen
-  currently states this in prose instead of showing four buttons that 401
-  (UI.md §4.B). This is an `app/` change: it wants its own spec + TDD, and the
-  tenancy question is already answered — an org may record an outcome on a
-  report it owns, which `OrgScopedReads` already decides.
+  (1) ~~An org-plane route for recording an outcome~~ — **DONE.** Two org-plane
+  routes, migration `0020` (outcome authorship), the report screen's four
+  buttons restored. The admin route stays where it is: it is the operator's
+  cross-tenant support view, and a test pins that it still 401s an org session
+  — which is *why* the twin had to exist.
   (2) **Then S8.3** — its named inputs so far: rate limiting (bounded-per-call
   is not bounded-per-caller), the `ret_batch_item_days` sweep, **in-place
   retry of failed items** (the text is retained for a capability S8.3 must ship
@@ -1475,11 +1601,30 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                runner — /evaluate STAYS admin past S8.4 by decision
     │                (candidate-less, so no owner to stamp); operator console is
     │                admin by nature; interview runner is candidate-plane
-    │            [ ] AN ORG-PLANE ROUTE FOR RECORDING AN OUTCOME — named gap,
-    │                found 2026-08-10. POST /report/{id}/outcome is admin-plane,
-    │                so an org user cannot close the loop on a report they paid
-    │                for. It is PI-9's calibration input; the report screen says
-    │                so in prose today. Wants its own spec + TDD (app/ change).
+    │            [x] AN ORG-PLANE ROUTE FOR RECORDING AN OUTCOME — DONE
+    │                2026-08-10 on branch s86-org-outcome-route (spec + plan +
+    │                TDD, 9 commits). 1553→1586 green, smoke_s85_outcome 21/21,
+    │                UI bindings 402/402 · contract 31/31 · browser 19/19.
+    │                POST + GET /screening/reports/{id}/outcome(s) on the org
+    │                plane; migration 0020 gives `outcomes` authorship
+    │                (recorded_by · org_id · recorded_by_org_user_id).
+    │                org_id SET NULLs like reports.org_id — an outcome is a
+    │                LABEL the platform learns from, not the org's operational
+    │                work product — and recorded_by exists BECAUSE of that:
+    │                a null org must not read as "our own operator said this".
+    │                ONE constructor (app/reports/outcomes.py) for BOTH doors,
+    │                admin migrated to it FIRST; a test asserts the two doors
+    │                refuse the SAME INPUTS, not that they call the same helper.
+    │                notes bounded (max_outcome_notes_chars) at both doors, and
+    │                the flywheel record lost `notes` at both doors — that sink
+    │                has no erasure path. The GET returns THIS org's judgments
+    │                only: the leak here is downward (an operator's internal
+    │                note), never sideways. 404 on a WRITE, byte-identical to
+    │                absence. OrgScopedReads -> OrgScopedAccess (it holds a
+    │                write now); the guard's watched attribute is unchanged so
+    │                it needed no edit. A THIRD writer to `outcomes` — the S8.1
+    │                one-off importer — was caught by the full suite, not by
+    │                the design.
     │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
     │                new 409 makes it fail ON PURPOSE (spec §4.7)
     ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
@@ -1517,6 +1662,58 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-10 (later)** — **The outcome loop is closed. Branch
+  `s86-org-outcome-route`, nine commits, TDD. 1553 → 1586 green,
+  `smoke_s85_outcome` 21/21 first run, `smoke_s84a` 23/23 + `smoke_s84b` 16/16
+  re-run green, UI bindings 402/402 · contract 31/31 · browser 19/19, 7/7
+  mutants dead (and one probe that correctly refused to die — see 9).**
+  Two org-plane routes (`POST`/`GET /screening/reports/{id}/outcome(s)`),
+  migration `0020` (outcome authorship), one shared constructor for both doors,
+  a notes bound at both doors, and the four verdict buttons back on the report
+  screen.
+  **What this session established, beyond "the customer can record an
+  outcome":**
+  1. **A column can exist to keep a fact that a `SET NULL` would otherwise
+     erase.** `recorded_by` is not metadata — without it, a null `org_id` reads
+     as "our own operator said this", and a calibration harness would train on
+     its own echo. The derived answer would always have looked plausible, which
+     is the worst kind of wrong.
+  2. **Migrate the FIRST door before writing the second.** Building the org
+     route beside an unmigrated admin route is precisely the shape a shared
+     constructor exists to prevent. And the test that matters asserts the two
+     doors **refuse the same inputs**, because "both call the helper" is a
+     claim about today's source.
+  3. **NOT NULL with no server default is a detector.** It found a THIRD writer
+     to `outcomes` that the design missed entirely — the S8.1 one-off importer.
+     With the default left standing, that import would have succeeded and
+     labelled the rows correctly for the wrong reason.
+  4. **The leak a new route introduces is not always the one the document
+     anticipates.** Every tenancy check written so far is about reading
+     sideways. A report has exactly one owner, so nothing can leak sideways
+     here — the exposure is DOWNWARD, to the customer, from the operator's own
+     note on the same report.
+  5. **404 on a WRITE.** The instinct on a refused write is 403, and 403
+     confirms the thing exists. Held to the same rule as the reads, byte for
+     byte, at three layers.
+  6. **A class that gains a write must lose a name that says Reads** — while
+     the attribute the guard watches stays put, so the guard needs no edit.
+  7. **A React input's `.value` can be set without its handler ever firing**,
+     which would have let the browser check post an empty note and stay green.
+     Typed through the native setter plus a dispatched `input` event.
+  8. **Two hand-maintained lists were found stale and deliberately left that
+     way**, with the staleness written down: `GET /`'s `endpoints` array and
+     `UI.md` §5's plane counts. Patching in two entries would make an
+     unmaintained list look maintained.
+  9. **A rule that was load-bearing in one place is not load-bearing in the
+     next, and only a probe tells you which.** The self-review "found" a
+     double-click defect by analogy with the process driver's async-`setState`
+     trap — recorded as load-bearing in the session directly above. Planting
+     the supposedly-broken guard left the browser check green: React flushes
+     discrete events synchronously, so a click handler is not a loop tick. The
+     same mutation technique that killed 7/7 real mutants is what refused to
+     kill this one. **Reasoning by analogy from this repo's own recorded
+     lessons is exactly as unreliable as any other reasoning that skips the
+     measurement.**
 - **2026-08-10** — **The screening screens are wired. Branch
   `s85-screening-ui-wiring`, three commits, no `app/` code touched
   (`pytest -q` 1553, unchanged). 384/384 bindings · 25/25 contract · 16/16

@@ -313,8 +313,8 @@ def make_services(
             settings=settings,
         )
     if screening_scope is None:
-        from app.screening.scope import build_org_scoped_reads
-        screening_scope = build_org_scoped_reads(report_store, candidates)
+        from app.screening.scope import build_org_scoped_access
+        screening_scope = build_org_scoped_access(report_store, candidates)
     if screening is None:
         # On the SAME session factory as every other store here, so a batch and
         # the candidate it produces live in one database.

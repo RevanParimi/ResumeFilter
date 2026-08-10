@@ -140,6 +140,14 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
 
     @app.get("/", response_model=ServiceInfo)
     async def root() -> ServiceInfo:
+        # A HAND-MAINTAINED HIGHLIGHTS LIST, not the route table, and it has
+        # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5)
+        # appear below. Stated rather than patched, because adding two entries
+        # would make an unmaintained list look maintained -- the second
+        # hand-maintained list is always the one that drifts (the S8.2 review's
+        # OPEN_PATHS/PUBLIC_PATHS finding). `GET /openapi.json` is generated
+        # from the code and is the authority; making this field derive from it
+        # is the real fix and belongs with the docs/routes.md idea in ROADMAP.
         return ServiceInfo(**{
             "service": "depth-eval-engine",
             "advisory": True,

@@ -67,6 +67,44 @@ def test_report_level_outcome_recorded_and_fed_to_flywheel(api):
     ]
     assert len(wheel_outcomes) == 1
     assert wheel_outcomes[0]["report_id"] == report["id"]
+    # S8.5: the flywheel is an append-only JSONL with NO erasure path, so the
+    # free text a human typed beside a candidate's name does not go into it.
+    # The label is the training signal; the prose never was.
+    assert "notes" not in wheel_outcomes[0]
+    assert "screen pending" not in str(wheel_outcomes[0])
+    # It gains provenance instead, which is what a calibration harness needs.
+    assert wheel_outcomes[0]["recorded_by"] == "operator"
+    assert wheel_outcomes[0]["org_id"] is None
+
+
+def test_the_admin_door_enforces_the_same_notes_cap_as_the_org_one(api):
+    """One rule, two doors. Fixing one entry point and leaving the other is
+    this repo's signature defect -- so the operator's route gained the bound in
+    the same commit that gave the customer a route at all."""
+    client, services = api
+    report = _evaluate(client)
+    over = "x" * (services.settings.max_outcome_notes_chars + 1)
+
+    resp = client.post(
+        f"/report/{report['id']}/outcome",
+        json={"outcome": "inconclusive", "notes": over},
+    )
+    assert resp.status_code == 422
+    assert "max_outcome_notes_chars" in resp.text
+    assert services.report_store.outcomes(report["id"]) == [], (
+        "a refused outcome must write nothing"
+    )
+
+
+def test_an_operator_recorded_outcome_says_so(api):
+    client, services = api
+    report = _evaluate(client)
+    client.post(f"/report/{report['id']}/outcome", json={"outcome": "inconclusive"})
+
+    stored = services.report_store.outcomes(report["id"])[0]
+    assert stored.recorded_by.value == "operator"
+    assert stored.org_id is None
+    assert stored.recorded_by_org_user_id is None
 
 
 def test_claim_level_outcome(api):

@@ -33,6 +33,7 @@ from app.candidates.models import CandidateRow  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.db import make_engine, make_session_factory  # noqa: E402
 from app.reports.models import OutcomeRow, ReportRow  # noqa: E402
+from app.reports.schema import OutcomeSource  # noqa: E402
 
 
 def _dt(raw: str) -> datetime:
@@ -87,6 +88,13 @@ def migrate(old_db_path: str, session_factory) -> dict:
             s.add(OutcomeRow(
                 report_id=report_id, claim_id=claim_id, outcome=outcome,
                 notes=notes or "", recorded_at=_dt(recorded_at),
+                # S8.5: `recorded_by` is NOT NULL with no server default, so
+                # every writer must state provenance -- and this importer is a
+                # THIRD writer to `outcomes`, easy to miss beside the two
+                # routes. `operator` is a fact about these rows, not a guess:
+                # they come from the pre-S8.1 reports database, which predates
+                # the org plane entirely.
+                recorded_by=OutcomeSource.OPERATOR.value,
             ))
             kept_outcomes += 1
 

@@ -366,15 +366,30 @@ Design guidance:
 > §7's rule is unaffected and still binds: a fuller report is not a more
 > confident one, and there is still no accuracy claim to make.
 
-> **WIRED 2026-08-10, with one section deliberately NOT built: recording an
-> outcome.** `POST /report/{report_id}/outcome` is on the **admin** router, so
-> an org session gets 401. The four verdict buttons the design carried are gone;
-> the heading stays and says why in a sentence. Four buttons that fail every
-> time would be worse than none — the same rule that stops the current session
-> offering to revoke itself.
+> **WIRED 2026-08-10. The outcome section shipped in a second pass the same
+> day, once the route it needs existed.** The first pass dropped the four
+> verdict buttons and said why in a sentence, because
+> `POST /report/{report_id}/outcome` is on the **admin** router and an org
+> session gets 401 — four buttons that fail every time would be worse than
+> none. That was recorded as a real product gap rather than a UI omission, and
+> S8.5 closed it: `POST /screening/reports/{id}/outcome` and
+> `GET /screening/reports/{id}/outcomes` are org-plane, so the buttons are back
+> and the apologetic paragraph is gone.
 >
-> This is the calibration input PI-9 needs, so an org-plane route for it is a
-> real product gap, not a UI omission. It belongs in a sprint of its own.
+> **The section states what recording does and does not do**, because a verdict
+> button on a fraud screen invites the assumption that it acts: nothing here
+> changes the score above it, the candidate's standing, or anything anyone else
+> sees. It is written down so the bands can eventually be measured against what
+> really happened. Judgements are **kept in order, never overwritten** — a
+> reviewer changing their mind after an interview is exactly what a calibration
+> harness wants to see — and the history list says, in one line, that none of
+> it is visible to the candidate.
+>
+> Two decisions worth keeping: **the notes box clears on success and is kept on
+> failure** (carrying one person's sentence onto the next candidate is how it
+> gets filed against the wrong person; retyping after our own 422 is the user
+> paying for our error), and **the busy state is per-button** — a spinner on
+> all four would be lying about which judgment is in flight.
 >
 > The three component cards are composed from `fabrication_risk.components[]`
 > joined to each subsystem's own assessment — the components carry the weights,
@@ -466,6 +481,16 @@ reputation, verification assurance, claim evidence, interview assessments.
 
 **Admin plane (30)** — includes the whole wedge path (§2) plus org lifecycle,
 candidate CRUD, profile sources, curation, reports and outcomes.
+
+> **These five counts are the `a9b8e59` measurement and have NOT been
+> re-measured since.** S8.4 Phase B added the seven batch routes plus
+> `POST /features/materialize`, and S8.5 added two more to the org plane
+> (`POST`/`GET /screening/reports/{id}/outcome(s)`). The counts are therefore
+> low; the plane *assignments* above are still right. Do not cite the numbers —
+> `GET /openapi.json` is the authority, as the next paragraph already says, and
+> the two documentation defects this section's own review found were both a
+> route's plane being assumed rather than read off the router it is registered
+> on.
 
 **Any-session (4)** ✅ — `/auth/me`, `/auth/sessions`,
 `/auth/sessions/{id}/revoke`, `/auth/logout`.

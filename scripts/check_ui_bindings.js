@@ -135,6 +135,19 @@ const REPORT = {
   },
 };
 
+// OutcomeRecord as GET /screening/reports/{id}/outcomes returns it (S8.5).
+// The second row carries an EMPTY note deliberately: `notes` is optional, and
+// a blank one is what a one-click judgment produces.
+const OUTCOMES = [
+  { report_id: "rep_4444", claim_id: null, outcome: "verified_fabricated",
+    notes: "The employer had never heard of them.",
+    recorded_at: "2026-08-10T11:02:00Z", recorded_by: "organization",
+    org_id: "org_1", recorded_by_org_user_id: "usr_1" },
+  { report_id: "rep_4444", claim_id: "clm_1", outcome: "candidate_clarified",
+    notes: "", recorded_at: "2026-08-10T14:41:00Z", recorded_by: "organization",
+    org_id: "org_1", recorded_by_org_user_id: "usr_1" },
+];
+
 const IDLE = { loading: false, data: null, error: null };
 const held = (d) => ({ loading: false, data: d, error: null });
 
@@ -148,9 +161,20 @@ const STATES = {
     summary: held(SUMMARY), batchList: held({ batches: [BATCH], next_cursor: "eyJhIjoxfQ" }),
     files: [{ name: "priya.pdf", size: 240000, kind: "pdf", file: null }],
   },
-  "org, report open": {
+  // Two report states on purpose. A report with NOTHING recorded is the state
+  // every report starts in, and it is the one where an empty-list mapping
+  // breaks; a report with judgments is the only state the history rows render
+  // in at all.
+  "org, report open, nothing recorded": {
     screen: "report", plane: "org", me: { kind: "org", organization_id: "org_1" },
     selectedBatch: BATCH.id, report: held(REPORT), batch: held(BATCH),
+    outcomes: held({ report_id: REPORT.id, outcomes: [] }),
+  },
+  "org, report open, judgements recorded": {
+    screen: "report", plane: "org", me: { kind: "org", organization_id: "org_1" },
+    selectedBatch: BATCH.id, report: held(REPORT), batch: held(BATCH),
+    outcomes: held({ report_id: REPORT.id, outcomes: OUTCOMES }),
+    outcomeNotes: "Called the listed manager; no such team.",
   },
   "org, empty account": {
     screen: "queue", plane: "org", me: { kind: "org", organization_id: "org_1" },

@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.candidates.models import CandidateRow
-from app.reports.schema import OutcomeLabel, OutcomeRecord
+from app.reports.schema import OutcomeLabel, OutcomeRecord, OutcomeSource
 from app.reports.store import SqlReportStore, build_report_store
 from app.schemas.report import Report
 from tests.conftest import make_candidate_store
@@ -92,10 +92,14 @@ def test_outcome_roundtrip(store):
             claim_id="clm_1",
             outcome=OutcomeLabel.VERIFIED_GENUINE,
             notes="confirmed in screen",
+            recorded_by=OutcomeSource.OPERATOR,
         )
     )
     store.add_outcome(
-        OutcomeRecord(report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE)
+        OutcomeRecord(
+            report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE,
+            recorded_by=OutcomeSource.OPERATOR,
+        )
     )
     outs = store.outcomes(rep.id)
     assert len(outs) == 2
@@ -105,10 +109,156 @@ def test_outcome_roundtrip(store):
     assert store.outcomes("rep_other") == []
 
 
+def test_outcome_provenance_survives_the_roundtrip(store, factory):
+    """A stamp that is written and not read back is not a stamp.
+
+    Both provenance FKs are REAL rows here rather than convenient strings --
+    the columns carry foreign keys, so a test that invents ids would prove the
+    roundtrip while hiding whether the constraints are satisfiable at all.
+    """
+    from app.auth.models import OrgUserRow
+    from app.ledger.models import OrganizationRow
+
+    with factory() as s:
+        s.add(OrganizationRow(id="org-a", name="Agency A"))
+        s.flush()
+        s.add(OrgUserRow(id="user-7", organization_id="org-a", email_hash="h"))
+        s.commit()
+
+    rep = _report()
+    store.save(rep)
+    store.add_outcome(
+        OutcomeRecord(
+            report_id=rep.id,
+            outcome=OutcomeLabel.VERIFIED_FABRICATED,
+            notes="the employer had never heard of them",
+            recorded_by=OutcomeSource.ORGANIZATION,
+            org_id="org-a",
+            recorded_by_org_user_id="user-7",
+        )
+    )
+    got = store.outcomes(rep.id)[0]
+    assert got.recorded_by is OutcomeSource.ORGANIZATION
+    assert got.org_id == "org-a"
+    assert got.recorded_by_org_user_id == "user-7"
+
+
+def test_outcomes_for_org_is_scoped_to_the_owner_and_to_its_own_rows(store, factory):
+    """Two independent facts, and both matter.
+
+    A report has exactly one owning org, so `outcomes_for_org` cannot leak
+    ACROSS tenants -- but it can leak DOWNWARD: an operator's internal note
+    about a customer's report ("this agency keeps uploading fakes") must not
+    appear in that customer's own list. Hence the org_id filter on top of the
+    ownership check.
+    """
+    from app.ledger.models import OrganizationRow
+
+    with factory() as s:
+        s.add(OrganizationRow(id="org-a", name="Agency A"))
+        s.add(OrganizationRow(id="org-b", name="Agency B"))
+        s.commit()
+
+    rep = _report()
+    store.save(rep, org_id="org-a")
+    store.add_outcome(OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.VERIFIED_GENUINE,
+        notes="spoke to the employer", recorded_by=OutcomeSource.ORGANIZATION,
+        org_id="org-a",
+    ))
+    store.add_outcome(OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE,
+        notes="internal: this agency keeps uploading fakes",
+        recorded_by=OutcomeSource.OPERATOR,
+    ))
+
+    mine = store.outcomes_for_org("org-a", rep.id)
+    assert mine is not None
+    assert [o.outcome for o in mine] == [OutcomeLabel.VERIFIED_GENUINE]
+    assert all("internal" not in o.notes for o in mine)
+
+    # The operator's cross-tenant view still sees both.
+    assert len(store.outcomes(rep.id)) == 2
+
+    # Another org's report, and an absent one, are the same answer: None, which
+    # the route turns into one 404 (TENANCY.md §6).
+    assert store.outcomes_for_org("org-b", rep.id) is None
+    assert store.outcomes_for_org("org-a", "rep_missing") is None
+
+
+def test_add_outcome_refuses_rather_than_crashing_when_the_report_has_gone(
+    store, factory
+):
+    """SELF-REVIEW finding: recording an outcome is a READ (does this org own
+    the report?) followed by a WRITE, and `outcomes.report_id` is a real FK.
+
+    A candidate erasing themselves between the two -- `DELETE /portal/me`
+    CASCADEs `candidates -> reports -> outcomes` -- makes the INSERT fail with
+    an IntegrityError, which is a 500 on a customer-facing write during an
+    entirely ordinary DPDP operation. This is S8.4 Phase B finding (3) one
+    table over: the window is short rather than minutes wide, but a 500 is a
+    500.
+
+    `False` rather than an exception, so both routes map it to the same 404
+    they already emit for a report that is not there -- which by then is the
+    literal truth.
+    """
+    from app.candidates.models import CandidateRow
+    from app.reports.models import ReportRow
+
+    with factory() as s:
+        s.add(CandidateRow(id="cand_race"))
+        s.commit()
+
+    rep = _report(candidate_id="cand_race")
+    store.save(rep)
+    rec = OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.VERIFIED_FABRICATED,
+        notes="they admitted it", recorded_by=OutcomeSource.OPERATOR,
+    )
+
+    # The erasure lands here, between the caller's ownership read and its write.
+    with factory() as s:
+        s.delete(s.get(ReportRow, rep.id))
+        s.commit()
+
+    assert store.add_outcome(rec) is False
+    assert store.outcomes(rep.id) == []
+
+
+def test_add_outcome_returns_true_on_the_ordinary_path(store):
+    """The other direction, so the refusal above cannot be implemented by
+    always refusing."""
+    rep = _report()
+    store.save(rep)
+    assert store.add_outcome(OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE,
+        recorded_by=OutcomeSource.OPERATOR,
+    )) is True
+    assert len(store.outcomes(rep.id)) == 1
+
+
+def test_outcomes_for_org_distinguishes_no_outcomes_from_no_report(store, factory):
+    """An empty list and None are different answers: "you have judged nothing"
+    is not "this is not yours"."""
+    from app.ledger.models import OrganizationRow
+
+    with factory() as s:
+        s.add(OrganizationRow(id="org-a", name="Agency A"))
+        s.commit()
+
+    rep = _report()
+    store.save(rep, org_id="org-a")
+    assert store.outcomes_for_org("org-a", rep.id) == []
+
+
 def test_delete_removes_report_and_outcomes(store):
     rep = _report()
     store.save(rep)
-    store.add_outcome(OutcomeRecord(report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE))
+    store.add_outcome(OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE,
+        recorded_by=OutcomeSource.OPERATOR,
+    ))
     assert store.delete(rep.id) is True
     assert store.get(rep.id) is None
     assert store.outcomes(rep.id) == []

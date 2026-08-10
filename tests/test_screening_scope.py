@@ -155,23 +155,110 @@ def test_facade_owns_candidate(services):
     assert services.screening_scope.owns_candidate(b, cand) is False
 
 
-def test_every_facade_read_takes_org_id_first():
-    """The signature IS the enforcement; Task 7's guard is the backstop.
+def test_every_facade_method_takes_org_id_first():
+    """The signature IS the enforcement; the guard is the backstop.
 
-    Introspects OrgScopedReads for its own public callables instead of a
+    Introspects OrgScopedAccess for its own public callables instead of a
     hardcoded tuple -- a hardcoded list is the same unwatched-list drift the
     S8.2 review found in OPEN_PATHS/PUBLIC_PATHS: a method added later would
-    silently escape the check. This way a new method is covered for free.
+    silently escape the check. This way a new method is covered for free, which
+    is how S8.5's write arrived already covered.
     """
     import inspect
-    from app.screening.scope import OrgScopedReads
+    from app.screening.scope import OrgScopedAccess
 
     public_methods = [
-        name for name, _ in inspect.getmembers(OrgScopedReads, predicate=inspect.isfunction)
+        name for name, _ in inspect.getmembers(OrgScopedAccess, predicate=inspect.isfunction)
         if not name.startswith("_")
     ]
-    assert public_methods, "OrgScopedReads exposes no public methods to check"
+    assert public_methods, "OrgScopedAccess exposes no public methods to check"
 
     for name in public_methods:
-        params = list(inspect.signature(getattr(OrgScopedReads, name)).parameters)
+        params = list(inspect.signature(getattr(OrgScopedAccess, name)).parameters)
         assert params[:2] == ["self", "org_id"], f"{name} must scope by org first"
+
+
+# ── S8.5: the facade grows a WRITE ───────────────────────────────────────────
+
+
+def test_the_facade_is_not_named_for_reading_any_more():
+    """A class named ``OrgScopedReads`` holding a write is a lie in the one
+    file whose entire job is being trustworthy about scope -- and the next
+    person adding a write would either believe the name or put their write
+    somewhere worse. The ATTRIBUTE the guard watches (`screening_scope`) is
+    deliberately unchanged, so tests/test_org_scope_guard.py needs no edit."""
+    import app.screening.scope as scope
+
+    assert hasattr(scope, "OrgScopedAccess")
+    assert not hasattr(scope, "OrgScopedReads")
+
+
+def test_facade_records_an_outcome_only_on_a_report_this_org_owns(services):
+    from app.reports.schema import OutcomeLabel, OutcomeSource
+
+    a, b = _org(services, "Agency A"), _org(services, "Agency B")
+    cand = _upload(services, a).candidate_id
+    _report(services, a, cand, "rep-own")
+
+    rec = services.screening_scope.record_outcome(
+        a, "rep-own", outcome=OutcomeLabel.VERIFIED_FABRICATED,
+        claim_id=None, notes="the employer had never heard of them",
+        max_notes_chars=2000, org_user_id=None,
+    )
+    assert rec is not None
+    assert rec.org_id == a
+    assert rec.recorded_by is OutcomeSource.ORGANIZATION, (
+        "the org plane cannot stamp anything else -- this facade IS that plane"
+    )
+    assert services.report_store.outcomes("rep-own")[0].notes.startswith("the employer")
+
+    # Another org's report, and an absent one, are the same None -> one 404.
+    assert services.screening_scope.record_outcome(
+        b, "rep-own", outcome=OutcomeLabel.VERIFIED_GENUINE, claim_id=None,
+        notes="", max_notes_chars=2000, org_user_id=None,
+    ) is None
+    assert services.screening_scope.record_outcome(
+        a, "rep-nope", outcome=OutcomeLabel.VERIFIED_GENUINE, claim_id=None,
+        notes="", max_notes_chars=2000, org_user_id=None,
+    ) is None
+    assert len(services.report_store.outcomes("rep-own")) == 1, (
+        "a refused write must write nothing"
+    )
+
+
+def test_facade_refuses_an_overlong_note_without_writing(services):
+    from app.reports.outcomes import OutcomeRefused
+    from app.reports.schema import OutcomeLabel
+
+    import pytest
+
+    a = _org(services, "Agency A")
+    cand = _upload(services, a).candidate_id
+    _report(services, a, cand, "rep-cap")
+
+    with pytest.raises(OutcomeRefused) as exc:
+        services.screening_scope.record_outcome(
+            a, "rep-cap", outcome=OutcomeLabel.INCONCLUSIVE, claim_id=None,
+            notes="x" * 51, max_notes_chars=50, org_user_id=None,
+        )
+    assert exc.value.code == "notes_too_long"
+    assert services.report_store.outcomes("rep-cap") == []
+
+
+def test_facade_outcomes_scopes_and_separates_absent_from_empty(services):
+    from app.reports.schema import OutcomeLabel
+
+    a, b = _org(services, "Agency A"), _org(services, "Agency B")
+    cand = _upload(services, a).candidate_id
+    _report(services, a, cand, "rep-list")
+
+    assert services.screening_scope.outcomes(a, "rep-list") == []
+    assert services.screening_scope.outcomes(b, "rep-list") is None
+    assert services.screening_scope.outcomes(a, "rep-nope") is None
+
+    services.screening_scope.record_outcome(
+        a, "rep-list", outcome=OutcomeLabel.CANDIDATE_CLARIFIED, claim_id=None,
+        notes="they explained the gap", max_notes_chars=2000, org_user_id=None,
+    )
+    mine = services.screening_scope.outcomes(a, "rep-list")
+    assert [o.outcome for o in mine] == [OutcomeLabel.CANDIDATE_CLARIFIED]

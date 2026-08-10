@@ -56,6 +56,12 @@ GENUINE = (FIXTURES / "genuine_genai_resume.txt").read_text(encoding="utf-8")
 # literal so the two cannot drift apart quietly.
 UI_ITEM_INDEX_RE = re.compile(r"^item (\d+):\s*(.*)$")
 
+# The `OUTCOME_NOTES_MAX` the notes input advertises via `maxlength`. Kept here
+# as a literal for the same reason as the regex above: the client bound is a
+# courtesy and the server bound is the rule, and the two silently disagreeing
+# would let the input accept text the API refuses.
+UI_NOTES_MAX = 2000
+
 CHECKS: list[tuple[str, bool, str]] = []
 
 
@@ -404,12 +410,62 @@ def run_checks(mailbox: Path) -> None:
           f"{theirs.status_code}/{theirs_q.status_code} body_matches={theirs.text == absent.text}")
     other.close()
 
-    # ── 14. The claim the report screen makes about outcomes ────────────────
-    outcome = b.post(f"/report/{drillable[0]['report_id']}/outcome",
-                     {"outcome": "verified_genuine"})
-    check("an_outcome_is_unreachable_from_an_org_session",
-          outcome.status_code == 401,
-          f"{outcome.status_code} {outcome.text[:80]}")
+    # ── 14. The outcome loop, which the report screen now DRIVES (S8.5) ─────
+    # The admin route is still unreachable from an org session, and that stays
+    # pinned: it is why the org-plane twin had to exist at all. What changed is
+    # that the screen no longer explains the gap -- it has four buttons, and
+    # every claim they make is checked here.
+    report_id = drillable[0]["report_id"]
+    admin_door = b.post(f"/report/{report_id}/outcome",
+                        {"outcome": "verified_genuine"})
+    check("the_operators_outcome_route_is_still_401_from_an_org_session",
+          admin_door.status_code == 401,
+          f"{admin_door.status_code} {admin_door.text[:80]}")
+
+    empty = b.get(f"/screening/reports/{report_id}/outcomes")
+    check("an_unjudged_report_lists_an_empty_array_not_a_404",
+          empty.status_code == 200 and empty.json()["outcomes"] == [],
+          f"{empty.status_code} {empty.text[:80]}")
+
+    no_csrf = b.post(f"/screening/reports/{report_id}/outcome",
+                     {"outcome": "verified_genuine"}, csrf=False)
+    check("recording_an_outcome_needs_csrf",
+          no_csrf.status_code == 403,
+          f"{no_csrf.status_code} {no_csrf.text[:80]}")
+
+    rec = b.post(f"/screening/reports/{report_id}/outcome",
+                 {"outcome": "verified_fabricated",
+                  "notes": "The employer had never heard of them."})
+    check("an_org_session_can_record_an_outcome",
+          rec.status_code == 200 and rec.json()["outcome"] == "verified_fabricated",
+          f"{rec.status_code} {rec.text[:120]}")
+
+    # The five fields the history rows read. A rename on any of them renders a
+    # blank row rather than an error, which is the failure this exists to catch.
+    listed = b.get(f"/screening/reports/{report_id}/outcomes")
+    row = (listed.json().get("outcomes") or [{}])[0]
+    check("an_outcome_row_carries_every_field_the_screen_reads",
+          listed.status_code == 200
+          and all(k in row for k in
+                  ("outcome", "notes", "recorded_at", "recorded_by", "claim_id")),
+          f"keys={sorted(row.keys())}")
+
+    # Append-only: the screen says judgements are kept in order rather than
+    # overwritten, and that sentence has to be true.
+    b.post(f"/screening/reports/{report_id}/outcome", {"outcome": "inconclusive"})
+    again = b.get(f"/screening/reports/{report_id}/outcomes").json()["outcomes"]
+    check("outcomes_append_rather_than_overwrite",
+          [o["outcome"] for o in again]
+          == ["verified_fabricated", "inconclusive"],
+          f"{[o['outcome'] for o in again]}")
+
+    # The input's maxlength is a courtesy; this is the rule. A UI that only had
+    # the courtesy would be trusting itself.
+    over = b.post(f"/screening/reports/{report_id}/outcome",
+                  {"outcome": "inconclusive", "notes": "x" * (UI_NOTES_MAX + 1)})
+    check("the_notes_cap_the_input_advertises_is_the_one_the_api_enforces",
+          over.status_code == 422 and str(UI_NOTES_MAX) in over.text,
+          f"{over.status_code} {over.text[:100]}")
 
     # ── 15. Delete: the DPDP path, and it needs CSRF like everything else ───
     no_csrf = b.delete(f"/screening/batches/{bid}", csrf=False)

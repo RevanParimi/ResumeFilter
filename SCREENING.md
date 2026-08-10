@@ -67,7 +67,42 @@ rather than 400 items later.
 
 **`created_by_org_user_id` is NULL for an `X-Org-Key` caller.** `X-Org-Key` is
 an *organisation* credential with no human behind it, and inventing an actor
-would be a false audit trail.
+would be a false audit trail. The same decision, and the same words, apply to
+`outcomes.recorded_by_org_user_id` below.
+
+### 2.1 Closing the loop — two more org-plane routes (S8.5)
+
+| Method | Path | Answers | Notes |
+|---|---|---|---|
+| `POST` | `/screening/reports/{id}/outcome` | `OutcomeRecordedResponse` | 404 if not yours; 422 on an unknown claim or over-long notes |
+| `GET` | `/screening/reports/{id}/outcomes` | `OutcomeListResponse` | **this org's own** judgments, oldest first |
+
+These sit beside `GET /screening/reports/{id}` (Phase A) rather than under
+`/batches/`, because a judgment is about a report, not about the batch the
+resume arrived in — an org may hold two reports about the same person from two
+different batches, and each is judged separately.
+
+**404 — never 403 — on a WRITE as much as on a read.** The instinct on a
+refused write is 403, and it would confirm the report exists to anyone who
+guessed an id. Both verbs answer byte-identically to an unknown id, asserted.
+
+**The GET returns THIS org's judgments, not every judgment on the report.** A
+report has exactly one owning organisation, so nothing here can leak
+*sideways* — but an operator's internal note about a customer's report lives on
+that same report, and the customer is not its audience. The operator's own
+`GET /report/{id}/outcomes` still returns everything; that is the cross-tenant
+support view.
+
+**Append-only.** A reviewer changing their mind is a fact, not a correction,
+and the sequence of judgments is precisely what a calibration harness wants to
+look at. Rejected: upsert on (report, claim, org).
+
+**Both doors share one constructor** — `app/reports/outcomes.build_outcome` —
+which owns all three rules: the claim must belong to the report, `notes` must
+fit `max_outcome_notes_chars` (2000), and the record must state its own
+provenance. A rule enforced at one entry point and forgotten at the second is
+this repo's signature defect; a test asserts the two doors **refuse the same
+inputs**, because "both call the helper" is a claim about today's source.
 
 ---
 
@@ -211,6 +246,29 @@ resume row needs a candidate and identity resolution needs the extraction.
 No new `ConsentPurpose`. Screening an uploaded resume is the organisation's own
 first-party processing of a document it holds.
 
+**Outcome notes (S8.5) are the only free text a customer can write about a
+person, and erasure reaches them without anybody remembering to:**
+`outcomes.report_id → reports.id` CASCADE, `reports.candidate_id →
+candidates.id` CASCADE. A candidate erasing themselves destroys every judgment
+ever written about them, in the database.
+
+Two decisions that follow from that:
+
+* **The flywheel record carries the label, never the note.**
+  `app/services/flywheel.py` is an append-only JSONL with **no erasure path**,
+  so free text a human typed beside a candidate's name has no business in it.
+  The label is the training signal; the prose never was. Changed at BOTH doors
+  in one commit, because fixing the customer's and leaving the operator's is
+  the defect shape rather than a smaller version of the fix.
+* **`outcomes.org_id` is `SET NULL`, not `CASCADE`** — the contrast with
+  `screening_batches.org_id` two rows up is the reasoning. A batch is the
+  organisation's own operational work product with no meaning once they are
+  gone; an outcome is a **label about a person's record** that the platform
+  learns from, and the report it judges survives offboarding too
+  (`reports.org_id`, same call). `recorded_by` exists *because* of that: with
+  `org_id` alone, NULL would conflate "an operator recorded this" with "the
+  customer who did has offboarded".
+
 ---
 
 ## 8. What is deliberately not here
@@ -250,3 +308,24 @@ first-party processing of a document it holds.
 * `tests/test_openapi_contract.py` — every route has an explicit unique
   `operation_id` and a typed success schema.
 * `scripts/smoke_s84b.py` — 16/16 over real HTTP, key-less.
+
+The outcome loop (§2.1):
+
+* `tests/test_report_outcomes.py` — the shared constructor's three rules, and
+  that `recorded_by` has no default in either the function or the model.
+* `tests/test_report_store.py` — provenance survives the roundtrip against
+  REAL organisation/org_user rows; `outcomes_for_org` separates "not yours"
+  (`None`) from "nothing recorded" (`[]`).
+* `tests/test_screening_outcome_api.py` — the loop over HTTP: 404 on both
+  verbs byte-identical to absence, an operator's note invisible to the
+  customer, both doors refusing the same inputs, and erasure destroying the
+  judgment.
+* `tests/test_migrations.py` — `0020`'s backfill to `operator`, no
+  server_default left behind, and `org_id` SET NULL proven by deleting a real
+  organisation.
+* `scripts/smoke_s85_outcome.py` — 21/21 over real HTTP, key-less. The only
+  place a real `org_user` id is attributed, because every unit test uses
+  `X-Org-Key`, which has no human behind it.
+* `scripts/check_ui_screening_contract.py` / `_browser.py` — the screen's own
+  claims: the maxlength it advertises is the cap the API enforces, and clicking
+  a button really records a judgment.

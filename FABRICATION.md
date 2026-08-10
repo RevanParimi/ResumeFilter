@@ -336,7 +336,11 @@ Config: `fr_moderate_threshold`, `fr_elevated_threshold`, `fr_min_confidence`,
 All four fields are `Optional` — pre-existing stored reports (and, for
 `resume_farm`, all POST /evaluate reports) validate unchanged with `null`.
 Every flywheel record carries `outcome: null`, closed later by human
-judgment via `POST /report/{id}/outcome`.
+judgment via `POST /report/{id}/outcome` — or, since S8.5, by the customer
+themselves via `POST /screening/reports/{id}/outcome`. That distinction is
+recorded on the row (`recorded_by`) and matters here specifically: a
+calibration harness that could not tell a customer's judgment from our own
+operator's would be measuring these thresholds against their own author.
 
 ## Config quick reference ([config.yaml](config.yaml), env override `DEE_*`)
 

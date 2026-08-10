@@ -376,6 +376,12 @@ class Settings(BaseSettings):
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
     max_pdf_b64_chars: int = 14_000_000  # ≈ 10 MB PDF once base64-decoded
+    # Free text a human types beside a candidate's name, now on BOTH the
+    # operator's and the customer's outcome route (S8.5). Unbounded is S7.2's
+    # `claim_ref` finding one table over -- that one stored 5031 chars including
+    # a salary and a UAN. A paragraph of reviewer reasoning fits; a pasted
+    # document does not.
+    max_outcome_notes_chars: int = Field(default=2_000, ge=1)
     # Shared-secret admin gate (FR-15). SECRET → env/.env only, never YAML.
     # Empty is NOT "auth disabled" — since S8.1 it is the MOST refusing state:
     # require_api_key 401s everything and verify_launch_config refuses to boot.
