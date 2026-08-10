@@ -293,10 +293,62 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
           f"opened={opened} named={named}")
     check("the_report_shows_claim_level_reasoning", "claim by claim" in report_body
           and ("missing signals" in report_body or "nothing to reason about" in report_body))
-    check("the_admin_only_outcome_buttons_are_gone",
-          not await tab.js("!!window.__q('button', 'Verified genuine')")
-          and "operator action today" in report_body,
-          "the section explains itself instead")
+    # ── 7b. THE LOOP CLOSES, by clicking (S8.5) ─────────────────────────────
+    # The four buttons this file used to assert were ABSENT. They are back
+    # because POST /screening/reports/{id}/outcome landed on the org plane,
+    # and the check inverted with them: a screen that says an action exists
+    # has to perform it.
+    check("the_four_outcome_buttons_are_present_and_the_prose_no_longer_apologises",
+          bool(await tab.js("!!window.__q('button', 'Verified genuine')"))
+          and bool(await tab.js("!!window.__q('button', 'Verified fabricated')"))
+          and bool(await tab.js("!!window.__q('button', 'Candidate clarified')"))
+          and bool(await tab.js("!!window.__q('button', 'Inconclusive')"))
+          and "operator action today" not in report_body,
+          "the section acts instead of explaining itself")
+
+    # Type into the notes field the way a person does, so the React onInput
+    # handler runs: setting .value directly would never fire it, and the note
+    # would post as "" while this check still went green.
+    await tab.js(
+        "(() => { const i = [...document.querySelectorAll('input')]"
+        ".find(x => (x.placeholder || '').startsWith('What did you find out'));"
+        " if (!i) return false;"
+        " const set = Object.getOwnPropertyDescriptor("
+        "   window.HTMLInputElement.prototype, 'value').set;"
+        " set.call(i, 'Called the listed manager; no such team.');"
+        " i.dispatchEvent(new Event('input', { bubbles: true })); return true; })()"
+    )
+    await tab.js("window.__click('button', 'Verified fabricated')")
+    recorded = await tab.wait("window.__has('judgement recorded')", 25,
+                              "the recorded judgement")
+    # Read back through the SEPARATE machine credential, and sweep the whole
+    # batch rather than guessing which report the click opened: "exactly one
+    # judgement exists anywhere in this batch" is both stronger than naming a
+    # report id and free of any assumption about row ordering.
+    queue_rows = api.get(f"/screening/batches/{bid}/queue").json()["rows"]
+    stored = [
+        o
+        for r in queue_rows if r.get("report_id")
+        for o in api.get(
+            f"/screening/reports/{r['report_id']}/outcomes"
+        ).json()["outcomes"]
+    ]
+    check("clicking_an_outcome_records_it_and_the_history_renders",
+          bool(recorded) and len(stored) == 1
+          and stored[0]["outcome"] == "verified_fabricated"
+          and stored[0]["notes"].startswith("Called the listed manager")
+          and stored[0]["recorded_by"] == "organization",
+          f"rendered={bool(recorded)} stored={[(o['outcome'], o['notes'][:24]) for o in stored]}")
+
+    # The note must be cleared after a SUCCESS -- leaving one person's sentence
+    # in the box is how it ends up filed against the next candidate.
+    still_typed = await tab.js(
+        "(() => { const i = [...document.querySelectorAll('input')]"
+        ".find(x => (x.placeholder || '').startsWith('What did you find out'));"
+        " return i ? i.value : null; })()"
+    )
+    check("the_notes_box_is_cleared_after_a_successful_record",
+          still_typed == "", f"value={still_typed!r}")
 
     # ── 8. Summary and batches ──────────────────────────────────────────────
     await tab.js("window.__click('button', 'Batch summary')")

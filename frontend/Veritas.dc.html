@@ -503,7 +503,42 @@
               </div>
 
               <h2 style="{{ h2 }}">Record what actually happened</h2>
-              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:0; max-width:76ch;">Your judgement is the only ground truth this system will ever have — and there is no way to give it to us from here yet. Recording an outcome is an operator action today (<span style="font-family:'JetBrains Mono',monospace; font-size:11px;">POST /report/&#123;id&#125;/outcome</span> is on the admin plane), and it is the input the calibration work is waiting on. Buttons that fail every time would be worse than saying so.</p>
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:0 0 14px 0; max-width:76ch;">Your judgement is the only ground truth this system will ever have. Nothing here changes the score above, this candidate's standing, or anything anyone else sees — it is written down so the bands can eventually be measured against what really happened instead of reasoned about.</p>
+
+              <div style="max-width:640px;">
+                <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Notes (optional)</label>
+                <input value="{{ outcomeNotes }}" onInput="{{ setOutcomeNotes }}" maxlength="{{ outcomeNotesMax }}" placeholder="What did you find out, and how?" style="{{ field }}">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); margin-top:5px;">{{ outcomeNotesCount }}</div>
+
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px;">
+                  <sc-for list="{{ outcomeButtons }}" as="o" hint-placeholder-count="4">
+                    <button onClick="{{ o.record }}" style="{{ o.style }}" style-hover="background:var(--hover)">{{ o.label }}</button>
+                  </sc-for>
+                </div>
+
+                <sc-if value="{{ outcomeError }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ uploadErrorBox }}">{{ outcomeErrorText }}</div>
+                </sc-if>
+
+                <sc-if value="{{ hasOutcomes }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-top:16px; border:1px solid var(--border); border-radius:10px; background:var(--panel); overflow:hidden;">
+                    <sc-for list="{{ outcomeRows }}" as="r" hint-placeholder-count="2">
+                      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:10px 13px; border-bottom:1px solid var(--border);">
+                        <div style="min-width:0;">
+                          <span style="{{ r.chip }}">{{ r.label }}</span>
+                          <div style="font-size:12px; color:var(--text); margin-top:6px; line-height:1.5;">{{ r.notes }}</div>
+                        </div>
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--muted); white-space:nowrap;">{{ r.when }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:9px 0 0 0;">{{ outcomeHistoryNote }}</p>
+                </sc-if>
+
+                <sc-if value="{{ noOutcomes }}" hint-placeholder-val="{{ false }}">
+                  <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:12px 0 0 0;">Nothing recorded on this report yet. Judgements are kept in order rather than overwritten — changing your mind later is itself worth knowing.</p>
+                </sc-if>
+              </div>
             </sc-if>
             </sc-if>
           </sc-if>
@@ -1244,6 +1279,24 @@ const ITEM_STATUS = {
   pending: "not screened yet", processing: "screening now",
   done: "screened", failed: "could not be screened"
 };
+// OutcomeLabel (S8.5). The order here is the order on screen, and it is not
+// alphabetical: the two findings a reviewer reaches for come first, the two
+// "we could not say" answers after. Colours follow the same rule the bands do
+// — `inconclusive` is NOT a low-risk result and must not be coloured like one.
+const OUTCOME_LABELS = [
+  { value: "verified_genuine", label: "Verified genuine", band: BAND.low },
+  { value: "verified_fabricated", label: "Verified fabricated", band: BAND.elevated },
+  { value: "candidate_clarified", label: "Candidate clarified", band: BAND.moderate },
+  { value: "inconclusive", label: "Inconclusive", band: BAND.insufficient }
+];
+const OUTCOME_BY_VALUE = OUTCOME_LABELS.reduce(
+  (m, o) => Object.assign(m, { [o.value]: o }), {}
+);
+// Mirrors config.yaml `max_outcome_notes_chars`. The server refuses over this
+// with a 422 naming the cap; the input's maxlength stops the user hitting it.
+// Both, on purpose: the client bound is a courtesy and the server bound is the
+// rule, and a client that only had the courtesy would be trusting itself.
+const OUTCOME_NOTES_MAX = 2000;
 
 const pct = (v) => Math.round((v || 0) * 100) + "%";
 const num = (v) => (v === null || v === undefined ? "—" : v.toFixed(2));
@@ -1610,6 +1663,7 @@ class Component extends DCLogic {
     portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
     jobList: IDLE, board: IDLE, comp: IDLE,
     batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
+    outcomes: IDLE,
     selectedJob: null, busyId: null, erasureConfirm: "",
     // screening
     selectedBatch: null, moreBusy: null, deleteArmed: null,
@@ -1618,7 +1672,9 @@ class Component extends DCLogic {
     driving: false, driveError: null, driveDone: 0, driveFailed: 0,
     // upload
     files: [], uploadBusy: false, uploadError: null, uploadNotice: null,
-    batchNameInput: "" };
+    batchNameInput: "",
+    // the outcome loop (S8.5) — the customer's own judgment on a report
+    outcomeNotes: "", outcomeBusy: null, outcomeError: null };
 
   // ── remote-resource helper ────────────────────────────────────────────────
   // Every fetch goes through here so loading/error handling cannot drift, and
@@ -1676,6 +1732,7 @@ class Component extends DCLogic {
       portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
       jobList: IDLE, board: IDLE, comp: IDLE,
       batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
+      outcomes: IDLE, outcomeNotes: "", outcomeBusy: null, outcomeError: null,
       selectedBatch: null, driving: false, driveError: null
     });
   };
@@ -1822,16 +1879,57 @@ class Component extends DCLogic {
   };
 
   openReport = (reportId) => () => {
-    this.setState({ screen: "report", report: IDLE });
+    this.setState({
+      screen: "report", report: IDLE, outcomes: IDLE,
+      // Notes belong to the report you were looking at. Carrying them onto the
+      // next candidate is how a sentence about one person ends up filed
+      // against another.
+      outcomeNotes: "", outcomeError: null, outcomeBusy: null
+    });
     // Same late-reply guard as the batch reads: two quick clicks must not leave
     // the slower report rendered under the faster one's heading.
     this._viewReport = reportId;
-    this.load("report", () => API.get("/screening/reports/" + reportId),
-              () => this._viewReport === reportId);
+    const still = () => this._viewReport === reportId;
+    this.load("report", () => API.get("/screening/reports/" + reportId), still);
+    // The report and its judgments are two reads because they are two routes;
+    // both carry the SAME guard, or a late outcome list lands on the report you
+    // navigated to next.
+    this.load("outcomes",
+              () => API.get("/screening/reports/" + reportId + "/outcomes"), still);
     window.scrollTo(0, 0);
   };
   openReportKey = (reportId) => (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.openReport(reportId)(); }
+  };
+
+  setOutcomeNotes = (e) => this.setState({ outcomeNotes: e.target.value });
+
+  // One click records one judgment. Deliberately NOT armed-then-confirmed like
+  // the batch delete: this appends a row, it destroys nothing, and a reviewer
+  // who changes their mind records that too (the list is append-only and shown
+  // in order). A confirm step on a reversible, additive action just teaches
+  // people to click through confirms.
+  recordOutcome = (label) => () => {
+    const reportId = this._viewReport;
+    if (!reportId || this.state.outcomeBusy) return;
+    this.setState({ outcomeBusy: label, outcomeError: null });
+    API.post("/screening/reports/" + reportId + "/outcome",
+             { outcome: label, notes: this.state.outcomeNotes }).then(
+      () => {
+        if (this._viewReport !== reportId) return;
+        this.setState({ outcomeBusy: null, outcomeNotes: "" });
+        this.load("outcomes",
+                  () => API.get("/screening/reports/" + reportId + "/outcomes"),
+                  () => this._viewReport === reportId);
+      },
+      (err) => {
+        if (err && err.kind === "session_lost") return;
+        if (this._viewReport !== reportId) return;
+        // The notes are NOT cleared on failure: they are the thing that was
+        // just refused, and retyping them is the user paying for our error.
+        this.setState({ outcomeBusy: null, outcomeError: err });
+      }
+    );
   };
 
   // Two clicks, because this is a real delete of real personal data:
@@ -2829,6 +2927,39 @@ class Component extends DCLogic {
       };
     }) : [];
 
+    // -- the outcome loop (S8.5) -------------------------------------------
+    // The four buttons the design carried from the start, finally callable:
+    // POST /screening/reports/{id}/outcome landed on the ORG plane this sprint.
+    // Handlers are cached per label so a re-render does not hand the template a
+    // new function every frame — the same reason `_copyHandlers` exists above.
+    if (!this._outcomeHandlers) {
+      this._outcomeHandlers = OUTCOME_LABELS.reduce(
+        (m, o) => Object.assign(m, { [o.value]: this.recordOutcome(o.value) }), {}
+      );
+    }
+    const outcomeButtons = OUTCOME_LABELS.map((o) => ({
+      label: st.outcomeBusy === o.value ? "Recording…" : o.label,
+      record: this._outcomeHandlers[o.value],
+      // Busy is per-BUTTON, not global: a spinner on all four would be lying
+      // about which judgment is in flight.
+      style: Object.assign({}, SMALL_GHOST, {
+        padding: "9px 12px", textAlign: "left",
+        opacity: st.outcomeBusy && st.outcomeBusy !== o.value ? 0.5 : 1,
+        cursor: st.outcomeBusy ? "default" : "pointer"
+      })
+    }));
+    const outcomeRows = ((st.outcomes.data && st.outcomes.data.outcomes) || []).map((o) => {
+      const meta = OUTCOME_BY_VALUE[o.outcome];
+      return {
+        label: meta ? meta.label : o.outcome,
+        chip: chip(meta ? meta.band : BAND.insufficient),
+        // An em dash rather than an empty node: a row whose notes were blank
+        // would otherwise render as a chip floating over nothing.
+        notes: o.notes || "—",
+        when: fmtDateTime(o.recorded_at)
+      };
+    });
+
     // -- upload ------------------------------------------------------------
     const files = st.files.map((f, i) => ({
       name: f.name,
@@ -2970,6 +3101,24 @@ class Component extends DCLogic {
       reportThinReason: rep
         ? "The engine found no claims on this resume worth reasoning about — not enough dated, specific or anchored material to extract."
         : "",
+
+      // -- the outcome loop (S8.5) -----------------------------------------
+      outcomeNotes: st.outcomeNotes,
+      setOutcomeNotes: this.setOutcomeNotes,
+      outcomeNotesMax: OUTCOME_NOTES_MAX,
+      outcomeNotesCount: st.outcomeNotes.length + " / " + OUTCOME_NOTES_MAX,
+      outcomeButtons,
+      outcomeError: !!st.outcomeError,
+      outcomeErrorText: errorCopy(st.outcomeError),
+      outcomeRows,
+      hasOutcomes: outcomeRows.length > 0,
+      // NOT `!hasOutcomes`: an empty list and a list that has not arrived are
+      // different states, and the empty-state copy must not flash while the
+      // read is still in flight (the same rule the queue's empty state follows).
+      noOutcomes: !!st.outcomes.data && outcomeRows.length === 0,
+      outcomeHistoryNote: outcomeRows.length === 1
+        ? "One judgement recorded. Nothing here is visible to the candidate."
+        : outcomeRows.length + " judgements, oldest first. Nothing here is visible to the candidate.",
 
       // -- upload ----------------------------------------------------------
       files,
