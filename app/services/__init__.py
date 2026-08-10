@@ -18,7 +18,7 @@ from app.services.email import EmailClient, build_email
 from app.services.llm import LLMClient, build_llm
 from app.reports.store import ReportStore, build_report_store
 from app.screening.ingest import IngestDeps
-from app.screening.scope import OrgScopedReads, build_org_scoped_reads
+from app.screening.scope import OrgScopedAccess, build_org_scoped_access
 from app.screening.service import ScreeningService, build_screening_service
 from app.services.speech import SpeechClient, build_speech
 from app.services.vectorstore import VectorStore, build_vectorstore
@@ -58,7 +58,7 @@ class Services:
     interview: InterviewService
     email: EmailClient
     auth: AuthService
-    screening_scope: OrgScopedReads
+    screening_scope: OrgScopedAccess
     # The batch STORE is deliberately absent: no handler should be able to
     # reach an unscoped batch read, and what is not on the container cannot be
     # reached from a handler.
@@ -145,7 +145,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         interview=interview,
         email=email,
         auth=auth,
-        screening_scope=build_org_scoped_reads(report_store, candidates),
+        screening_scope=build_org_scoped_access(report_store, candidates),
         screening=screening,
     )
 

@@ -1,7 +1,7 @@
 """Screening batches: persistence, org-scoped by construction (S8.4 Phase B).
 
 EVERY method takes ``org_id`` first and turns it into a WHERE clause. There is
-no unscoped read on this object -- the same rule as ``OrgScopedReads``, one
+no unscoped read on this object -- the same rule as ``OrgScopedAccess``, one
 table further along, and for the same reason: a rule enforced by remembering to
 enforce it gets forgotten at the second door.
 
