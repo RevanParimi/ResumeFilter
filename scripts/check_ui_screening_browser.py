@@ -350,6 +350,38 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     check("the_notes_box_is_cleared_after_a_successful_record",
           still_typed == "", f"value={still_typed!r}")
 
+    # Two clicks in one synchronous block must leave ONE judgement, because
+    # this list is append-only and a double-record is permanent.
+    #
+    # STATE ITS REACH HONESTLY: this does NOT discriminate between the
+    # instance-field guard the handler uses and a `state.outcomeBusy` one. That
+    # was the assumption when this check was written, and it was probed and
+    # found FALSE -- planting the state-based guard leaves this green, because
+    # React flushes discrete events synchronously and the second click already
+    # sees the first click's state. So this is a regression pin on the
+    # BEHAVIOUR ("one intent, one judgement"), not evidence for the guard's
+    # spelling. A check whose reach is overstated is what stops somebody adding
+    # the one that would have caught the next bug.
+    await tab.js(
+        "(() => { const b = [...document.querySelectorAll('button')]"
+        ".filter(x => /^(Inconclusive|Candidate clarified)$/.test("
+        "  (x.innerText || '').trim()));"
+        " b.forEach(x => x.click()); return b.length; })()"
+    )
+    await tab.wait("window.__has('judgements, oldest first')", 25,
+                   "the second judgement")
+    swept = [
+        o
+        for r in queue_rows if r.get("report_id")
+        for o in api.get(
+            f"/screening/reports/{r['report_id']}/outcomes"
+        ).json()["outcomes"]
+    ]
+    check("two_clicks_in_one_tick_record_exactly_one_judgement",
+          len(swept) == 2,
+          f"{len(swept)} total after 1 deliberate + 2 same-tick clicks: "
+          f"{[o['outcome'] for o in swept]}")
+
     # ── 8. Summary and batches ──────────────────────────────────────────────
     await tab.js("window.__click('button', 'Batch summary')")
     sum_ok = await tab.wait("window.__has('of those screened')", 25, "the summary")

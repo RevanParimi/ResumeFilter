@@ -2143,7 +2143,11 @@ async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) 
     except OutcomeRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    services.report_store.add_outcome(rec)
+    # False means the report was erased between the read above and this write
+    # -- a candidate's own DPDP erasure landing mid-call. 404, which by then is
+    # simply true. The org-plane twin folds the same case into its own None.
+    if not services.report_store.add_outcome(rec):
+        raise HTTPException(status_code=404, detail="report not found")
     # Same sink as the evaluation rows, so training joins read one stream.
     services.flywheel.log(_outcome_flywheel_record(rec))
     return _outcome_recorded(rec)

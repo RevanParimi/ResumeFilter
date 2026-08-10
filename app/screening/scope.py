@@ -109,7 +109,12 @@ class OrgScopedAccess:
             org_id=org_id,
             recorded_by_org_user_id=org_user_id,
         )
-        self._reports.add_outcome(record)
+        # `False` means the report was erased between the ownership read above
+        # and this write -- an ordinary DPDP erasure landing mid-click. Same
+        # `None` as "not yours", so the route emits one 404, which by then is
+        # simply true.
+        if not self._reports.add_outcome(record):
+            return None
         return record
 
     def outcomes(

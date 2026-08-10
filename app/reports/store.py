@@ -40,7 +40,7 @@ class SubjectErasedError(RuntimeError):
 class ReportStore(Protocol):
     def save(self, report: Report, *, org_id: Optional[str] = None) -> None: ...
     def get(self, report_id: str) -> Optional[Report]: ...
-    def add_outcome(self, rec: OutcomeRecord) -> None: ...
+    def add_outcome(self, rec: OutcomeRecord) -> bool: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
     def outcomes_for_org(
         self, org_id: str, report_id: str
@@ -105,7 +105,24 @@ class SqlReportStore:
             row = s.get(ReportRow, report_id)
             return Report.model_validate(row.body) if row is not None else None
 
-    def add_outcome(self, rec: OutcomeRecord) -> None:
+    def add_outcome(self, rec: OutcomeRecord) -> bool:
+        """Append one judgment. ``False`` means the report is no longer there.
+
+        Recording an outcome is a READ (may this caller judge this report?)
+        followed by a WRITE, and ``outcomes.report_id`` is a real foreign key.
+        A candidate erasing themselves between the two -- ``DELETE /portal/me``
+        CASCADEs ``candidates -> reports -> outcomes`` -- would otherwise make
+        the INSERT raise, i.e. a 500 on a customer-facing write during an
+        entirely ordinary DPDP operation. Both routes map ``False`` to the same
+        404 they already emit for a report that is not there, which by then is
+        the literal truth.
+
+        The cause is VERIFIED after the rollback rather than assumed from the
+        exception, exactly as ``save()`` does for ``SubjectErasedError``: two
+        other foreign keys hang off this row (``org_id``,
+        ``recorded_by_org_user_id``) and swallowing their failures as "the
+        report vanished" would turn a genuine bug into a quiet 404.
+        """
         with self._session_factory() as s:
             s.add(OutcomeRow(
                 report_id=rec.report_id, claim_id=rec.claim_id,
@@ -115,7 +132,14 @@ class SqlReportStore:
                 org_id=rec.org_id,
                 recorded_by_org_user_id=rec.recorded_by_org_user_id,
             ))
-            s.commit()
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                if s.get(ReportRow, rec.report_id) is None:
+                    return False
+                raise
+            return True
 
     def outcomes(self, report_id: str) -> list[OutcomeRecord]:
         """EVERY outcome on a report, whoever wrote it. The operator's

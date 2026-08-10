@@ -186,6 +186,58 @@ def test_outcomes_for_org_is_scoped_to_the_owner_and_to_its_own_rows(store, fact
     assert store.outcomes_for_org("org-a", "rep_missing") is None
 
 
+def test_add_outcome_refuses_rather_than_crashing_when_the_report_has_gone(
+    store, factory
+):
+    """SELF-REVIEW finding: recording an outcome is a READ (does this org own
+    the report?) followed by a WRITE, and `outcomes.report_id` is a real FK.
+
+    A candidate erasing themselves between the two -- `DELETE /portal/me`
+    CASCADEs `candidates -> reports -> outcomes` -- makes the INSERT fail with
+    an IntegrityError, which is a 500 on a customer-facing write during an
+    entirely ordinary DPDP operation. This is S8.4 Phase B finding (3) one
+    table over: the window is short rather than minutes wide, but a 500 is a
+    500.
+
+    `False` rather than an exception, so both routes map it to the same 404
+    they already emit for a report that is not there -- which by then is the
+    literal truth.
+    """
+    from app.candidates.models import CandidateRow
+    from app.reports.models import ReportRow
+
+    with factory() as s:
+        s.add(CandidateRow(id="cand_race"))
+        s.commit()
+
+    rep = _report(candidate_id="cand_race")
+    store.save(rep)
+    rec = OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.VERIFIED_FABRICATED,
+        notes="they admitted it", recorded_by=OutcomeSource.OPERATOR,
+    )
+
+    # The erasure lands here, between the caller's ownership read and its write.
+    with factory() as s:
+        s.delete(s.get(ReportRow, rep.id))
+        s.commit()
+
+    assert store.add_outcome(rec) is False
+    assert store.outcomes(rep.id) == []
+
+
+def test_add_outcome_returns_true_on_the_ordinary_path(store):
+    """The other direction, so the refusal above cannot be implemented by
+    always refusing."""
+    rep = _report()
+    store.save(rep)
+    assert store.add_outcome(OutcomeRecord(
+        report_id=rep.id, outcome=OutcomeLabel.INCONCLUSIVE,
+        recorded_by=OutcomeSource.OPERATOR,
+    )) is True
+    assert len(store.outcomes(rep.id)) == 1
+
+
 def test_outcomes_for_org_distinguishes_no_outcomes_from_no_report(store, factory):
     """An empty list and None are different answers: "you have judged nothing"
     is not "this is not yours"."""

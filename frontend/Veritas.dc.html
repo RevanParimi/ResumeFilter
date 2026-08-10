@@ -538,6 +538,10 @@
                 <sc-if value="{{ noOutcomes }}" hint-placeholder-val="{{ false }}">
                   <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:12px 0 0 0;">Nothing recorded on this report yet. Judgements are kept in order rather than overwritten — changing your mind later is itself worth knowing.</p>
                 </sc-if>
+
+                <sc-if value="{{ outcomesError }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ uploadErrorBox }}">{{ outcomesErrorText }} Anything already recorded is still there — this is the list that could not be read.</div>
+                </sc-if>
               </div>
             </sc-if>
             </sc-if>
@@ -1886,6 +1890,7 @@ class Component extends DCLogic {
       // against another.
       outcomeNotes: "", outcomeError: null, outcomeBusy: null
     });
+    this._recording = null;
     // Same late-reply guard as the batch reads: two quick clicks must not leave
     // the slower report rendered under the faster one's heading.
     this._viewReport = reportId;
@@ -1911,11 +1916,30 @@ class Component extends DCLogic {
   // people to click through confirms.
   recordOutcome = (label) => () => {
     const reportId = this._viewReport;
-    if (!reportId || this.state.outcomeBusy) return;
+    // The in-flight guard is an INSTANCE FIELD rather than state — but be
+    // precise about why, because the obvious reason is WRONG and was measured
+    // to be wrong. The process driver needs a field because its loop consults
+    // the flag on the tick that starts it, before setState has flushed. A
+    // click handler is different: React flushes discrete events synchronously,
+    // so `state.outcomeBusy` IS already set by the time a second click runs,
+    // and a state-based guard was probed in a real browser and held (two
+    // clicks in one synchronous block still recorded one judgement).
+    //
+    // The field stays because it does not depend on that flushing behaviour
+    // holding — this list is append-only, so a double-record is permanent —
+    // and because it is the same spelling as `_driving` and `_viewReport`
+    // beside it. It is belt-and-braces, not a bug fix, and the check in
+    // scripts/check_ui_screening_browser.py says so.
+    if (!reportId || this._recording) return;
+    this._recording = label;
     this.setState({ outcomeBusy: label, outcomeError: null });
     API.post("/screening/reports/" + reportId + "/outcome",
              { outcome: label, notes: this.state.outcomeNotes }).then(
       () => {
+        // Released whatever happened next, including a navigation away: a
+        // guard that only clears on the path the user stayed on would leave
+        // the next report unable to record anything at all.
+        this._recording = null;
         if (this._viewReport !== reportId) return;
         this.setState({ outcomeBusy: null, outcomeNotes: "" });
         this.load("outcomes",
@@ -1923,6 +1947,7 @@ class Component extends DCLogic {
                   () => this._viewReport === reportId);
       },
       (err) => {
+        this._recording = null;
         if (err && err.kind === "session_lost") return;
         if (this._viewReport !== reportId) return;
         // The notes are NOT cleared on failure: they are the thing that was
@@ -3110,6 +3135,12 @@ class Component extends DCLogic {
       outcomeButtons,
       outcomeError: !!st.outcomeError,
       outcomeErrorText: errorCopy(st.outcomeError),
+      // The RECORD action and the LIST read fail separately and are shown
+      // separately. A failed list used to render nothing at all — no history,
+      // no empty state, no error — which invites recording the same judgement
+      // twice onto an append-only list.
+      outcomesError: !!st.outcomes.error,
+      outcomesErrorText: errorCopy(st.outcomes.error),
       outcomeRows,
       hasOutcomes: outcomeRows.length > 0,
       // NOT `!hasOutcomes`: an empty list and a list that has not arrived are
