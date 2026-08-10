@@ -24,7 +24,7 @@ from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
 from app.reports.models import OutcomeRow, ReportRow
-from app.reports.schema import OutcomeLabel, OutcomeRecord
+from app.reports.schema import OutcomeLabel, OutcomeRecord, OutcomeSource
 from app.schemas.report import Report
 
 
@@ -42,6 +42,9 @@ class ReportStore(Protocol):
     def get(self, report_id: str) -> Optional[Report]: ...
     def add_outcome(self, rec: OutcomeRecord) -> None: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
+    def outcomes_for_org(
+        self, org_id: str, report_id: str
+    ) -> Optional[list[OutcomeRecord]]: ...
     def delete(self, report_id: str) -> bool: ...
     def for_candidate(self, candidate_id: str) -> list[Report]: ...
     def get_for_org(self, org_id: str, report_id: str) -> Optional[Report]: ...
@@ -108,24 +111,60 @@ class SqlReportStore:
                 report_id=rec.report_id, claim_id=rec.claim_id,
                 outcome=rec.outcome.value, notes=rec.notes,
                 recorded_at=as_utc(rec.recorded_at),
+                recorded_by=rec.recorded_by.value,
+                org_id=rec.org_id,
+                recorded_by_org_user_id=rec.recorded_by_org_user_id,
             ))
             s.commit()
 
     def outcomes(self, report_id: str) -> list[OutcomeRecord]:
+        """EVERY outcome on a report, whoever wrote it. The operator's
+        cross-tenant view -- see ``outcomes_for_org`` for the customer's."""
         with self._session_factory() as s:
-            rows = s.execute(
-                select(OutcomeRow)
-                .where(OutcomeRow.report_id == report_id)
-                .order_by(OutcomeRow.id)
-            ).scalars().all()
-            return [
-                OutcomeRecord(
-                    report_id=r.report_id, claim_id=r.claim_id,
-                    outcome=OutcomeLabel(r.outcome), notes=r.notes or "",
-                    recorded_at=as_utc(r.recorded_at),
-                )
-                for r in rows
-            ]
+            return self._outcomes(s, report_id)
+
+    def outcomes_for_org(
+        self, org_id: str, report_id: str
+    ) -> Optional[list[OutcomeRecord]]:
+        """This org's own judgments on a report it commissioned.
+
+        ``None`` for "not yours, or absent" -- one answer, so the route can
+        emit one 404 and another org's report stays indistinguishable from one
+        that does not exist (TENANCY.md §6). An EMPTY LIST is a different fact:
+        the report is yours and you have judged nothing yet.
+
+        The ``org_id`` filter is not redundant with the ownership check above
+        it. A report has exactly one owning org, so this cannot leak across
+        tenants -- but it could leak DOWNWARD: an operator's internal note
+        about a customer's report is written on that same report.
+        """
+        with self._session_factory() as s:
+            row = s.get(ReportRow, report_id)
+            if row is None or row.org_id != org_id:
+                return None
+            return self._outcomes(s, report_id, org_id=org_id)
+
+    @staticmethod
+    def _outcomes(
+        s, report_id: str, *, org_id: Optional[str] = None
+    ) -> list[OutcomeRecord]:
+        """One read, one row->record mapping. Two copies of this is how the
+        provenance fields would end up on one path and not the other."""
+        stmt = select(OutcomeRow).where(OutcomeRow.report_id == report_id)
+        if org_id is not None:
+            stmt = stmt.where(OutcomeRow.org_id == org_id)
+        rows = s.execute(stmt.order_by(OutcomeRow.id)).scalars().all()
+        return [
+            OutcomeRecord(
+                report_id=r.report_id, claim_id=r.claim_id,
+                outcome=OutcomeLabel(r.outcome), notes=r.notes or "",
+                recorded_at=as_utc(r.recorded_at),
+                recorded_by=OutcomeSource(r.recorded_by),
+                org_id=r.org_id,
+                recorded_by_org_user_id=r.recorded_by_org_user_id,
+            )
+            for r in rows
+        ]
 
     def delete(self, report_id: str) -> bool:
         """Delete one report; its outcomes CASCADE in the database."""

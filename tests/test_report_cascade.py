@@ -48,6 +48,10 @@ def _report(store, *, candidate_id: str | None, report_id: str = "rep_cascade_1"
         s.add(OutcomeRow(
             report_id=report_id, claim_id=None, outcome="inconclusive",
             notes="", recorded_at=datetime.now(timezone.utc),
+            # S8.5: NOT NULL with no server default, so a row must state its
+            # own provenance. These tests are about the erasure FKs, and every
+            # outcome that existed before that column did was an operator's.
+            recorded_by="operator",
         ))
         s.commit()
 
