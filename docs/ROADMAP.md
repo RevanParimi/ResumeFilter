@@ -305,14 +305,11 @@
   asked for cursors on `/jobs/{id}/match` and `/talent/search` as well; both
   re-rank per request, so there is no stored key and a cursor would promise a
   stability it cannot keep. They keep `limit` and say so in the schema.
-  **➤ NEXT STEP, IF YOU ARE A NEW SESSION: execute that plan.** Create branch
-  `s84b-screening-surface` off `main`, open
-  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` and work Task 1
-  onward — TDD, commit per task, `pytest -q` green before each commit. Its
-  "Global Constraints" and "Self-review notes" sections are the two to read
-  before touching code. (The full "Next action" bullet further down this file
-  says the same thing; this line is here because this file is long enough that
-  a first read is truncated before reaching it.)
+  **(DONE — that plan was executed, reviewed and merged on 2026-08-09; the
+  screens on top of it were wired on 2026-08-10. This bullet used to say "IF
+  YOU ARE A NEW SESSION: execute that plan" and is retired rather than deleted,
+  because a stale instruction addressed to a new session is worse than no
+  instruction: the live one is the ➤ NEXT STEP at the top of this section.)**
 - **Session 2026-08-06/07 — S8.4 PHASE A (upload ownership) BUILT, REVIEWED and
   MERGED. 1377→1434 green, `smoke_s84a` 23/23 exit 0, all regression smokes
   green (s12, s13, s23, s41, s53 OK · s64 10/10 · s73 18/18 · s81 10/10 ·
@@ -1066,28 +1063,36 @@
   `GET /candidates/{id}/card` (consent-gated per-section drill-in, 200 with per-section
   status, audit-by-reuse). API-first JSON only; no candidate PII, no depth-report
   exposure. Advisory.
-- **Next action:** **S8.4 IS COMPLETE — Phase B was whole-branch REVIEWED
-  (2026-08-09; 6 Important + 4 Minor, all fixed and proven, see the top
-  "Current state" entry) and MERGED to main. 1553 green, `smoke_s84b` 16/16,
-  `smoke_s84a` 23/23, `smoke_s63` re-run green. NOT yet pushed to the public
-  remote — push when the user says so.**
+- **Next action:** **S8.4 IS COMPLETE (both phases merged) and the SCREENING
+  SCREENS ARE WIRED (S8.5, merged 2026-08-10 `eed3d95`). 1553 green; the UI
+  wiring touched no `app/` code. NOT yet pushed to the public remote — push when
+  the user says so.**
   Per the PI-8 re-sequence (S8.2 → S8.4 → UI → integrate → S8.3 → deploy) the
   next work is:
-  (1) **Wire the UI's screening screens to the seven batch routes** — the
-  screening queue screen still renders mock data behind its "sample data"
-  chip, and it is the wedge screen. Re-run the 36/36 contract suite from the
-  wiring session: org signup's "202 always" assertion now meets the
-  deliberate 409, and `POST /comp/estimate` now answers `CompBenchmark`
-  (the central unwrap already handles it). `frontend/api.js` is the seam.
+  (1) **An ORG-PLANE ROUTE FOR RECORDING AN OUTCOME.** Found while wiring the
+  report screen: `POST /report/{report_id}/outcome` is on the **admin** router
+  (`routes.py:2024`), so a customer cannot close the loop on a report they paid
+  for — and that outcome is exactly PI-9's calibration input. The report screen
+  currently states this in prose instead of showing four buttons that 401
+  (UI.md §4.B). This is an `app/` change: it wants its own spec + TDD, and the
+  tenancy question is already answered — an org may record an outcome on a
+  report it owns, which `OrgScopedReads` already decides.
   (2) **Then S8.3** — its named inputs so far: rate limiting (bounded-per-call
   is not bounded-per-caller), the `ret_batch_item_days` sweep, **in-place
-  retry of failed items** (new from the review — the text is retained for a
-  capability S8.3 must ship or the retention loses its justification),
-  observability, and the retention sweeps deferred since S6.4/S7.1.
-  **Deferred out of Phase B, deliberately:** no cross-batch queue
+  retry of failed items** (the text is retained for a capability S8.3 must ship
+  or the retention loses its justification), observability, and the retention
+  sweeps deferred since S6.4/S7.1.
+  **Still unwired, and each for a stated reason** (UI.md §4, status board S8.5):
+  instant check `/evaluate` and the operator console are admin-plane; the
+  interview runner is candidate-plane. All three carry a "sample data" chip.
+  **Deferred out of S8.4 Phase B, deliberately:** no cross-batch queue
   (`SCREENING.md` §8). Phase plans, for reference:
   `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md` and
   `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`.
+  **Verifying the UI after any change to it** (there is no CI for `frontend/`):
+  `node scripts/check_ui_bindings.js` · `python
+  scripts/check_ui_screening_contract.py` · `python
+  scripts/check_ui_screening_browser.py`.
 - **Long-range planning:** the current audit is
   **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
   re-audit, measured not remembered). It **supersedes** the 2026-07-26 vision
