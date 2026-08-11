@@ -215,9 +215,30 @@ class Settings(BaseSettings):
     # An item still 'processing' after this reads as pending again, so a batch
     # interrupted by a redeploy heals itself instead of wedging (spec §4.4).
     screening_claim_timeout_seconds: int = Field(default=900, ge=1)
-    # Unprocessed item text. Declared here, swept by S8.3 -- the window is a
-    # posture, and the honest statement is that nothing deletes on it yet.
+    # Unprocessed item text. Swept since S8.3 Phase B, in CLEAR mode: the row
+    # survives (an org's record of what it screened must outlive the text it
+    # screened) and only `raw_text` is blanked. This is also what bounds the
+    # in-place retry -- past this window a failed item's input is gone.
     ret_batch_item_days: int = Field(default=90, ge=1)
+
+    # --- Retention sweep (PI-8, S8.3 Phase B) ---------------------------------
+    # Both are SHORT windows on pseudonymous operational rows. A rate-limit
+    # counter holds a salted hash of an email beside one of an IP: that is
+    # personal data, not bookkeeping, and it has no value once its window has
+    # closed. `login_state` is abandoned login challenges and sessions that
+    # expired without a logout -- neither is ever consumed, so without a sweep
+    # they live forever.
+    ret_rate_limit_days: int = Field(default=7, ge=1)
+    ret_login_state_days: int = Field(default=7, ge=1)
+    # Bounds ONE invocation per class so the sweep cannot hold locks for
+    # minutes on a large table. The report carries truncated=true rather than
+    # pretending it finished; the operator (or the cron) simply runs it again.
+    sweep_max_rows_per_class: int = Field(default=10_000, ge=1)
+    # Flipped to True in S8.3 Phase B, because the job it was waiting for now
+    # exists. This is what /portal/me reports as `sweep_active`, so it must
+    # never be read from a literal again: the portal would keep telling every
+    # data principal that no mechanical purge runs while the cron ran one.
+    retention_sweep_enabled: bool = True
 
     # --- Rate limiting (PI-8, S8.3 Phase A) -----------------------------------
     # ONE limiter, DB-backed, called from the SERVICE layer (spec §3.1). The

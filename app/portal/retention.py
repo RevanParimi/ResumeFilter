@@ -1,6 +1,14 @@
-"""Pure retention-posture helpers (S6.4). No I/O. The portal surfaces the policy
-window per data class and a computed `retained_until` for the classes it
-materializes; the mechanical purge is deferred to PI-8 (`sweep_active=False`)."""
+"""Pure retention-posture helpers (S6.4, mechanised in S8.3 Phase B). No I/O.
+
+The portal surfaces the policy window per data class and a computed
+`retained_until` for the classes it materializes.
+
+RETENTION_KNOBS is the SINGLE source of the retention promise: the portal prints
+it, and since S8.3 Phase B `app/retention/plan.py` derives the sweeper's targets
+from it. A sweeper carrying its own list of targets would let the two drift, and
+the drift is silent in the worst direction -- the portal would keep promising a
+window that nothing enforces.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +29,15 @@ RETENTION_KNOBS: dict[str, str] = {
     "coding_rounds": "ret_coding_round_days",
     "observed_offers": "ret_observed_offer_days",
     "audit_log": "ret_audit_log_days",
+    # S8.3 Phase B. DISCLOSED BECAUSE THEY ARE ENFORCED: a window we sweep and
+    # do not print is the mirror image of the bug this sprint fixes. Each is
+    # genuinely about the person reading it -- `batch_item_text` is a copy of
+    # their own resume text, `rate_limit_counters` holds a salted hash of their
+    # email beside one of their IP, `login_state` is their abandoned login
+    # attempts and expired sessions.
+    "batch_item_text": "ret_batch_item_days",
+    "rate_limit_counters": "ret_rate_limit_days",
+    "login_state": "ret_login_state_days",
 }
 
 
@@ -47,4 +64,6 @@ def build_retention_policy(
                 retained_until=retained_until(oldest, ttl) if oldest else None,
             )
         )
-    return RetentionPolicy(windows=windows, sweep_active=False)
+    return RetentionPolicy(
+        windows=windows, sweep_active=settings.retention_sweep_enabled
+    )
