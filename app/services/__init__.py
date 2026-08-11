@@ -112,7 +112,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     speech = build_speech(settings)
     interview = build_interview_service(
         settings, candidates=candidates, ledger=ledger, report_store=report_store,
-        verification=verification, llm=llm, speech=speech,
+        verification=verification, llm=llm, speech=speech, metrics=metrics,
     )
     # Auth is built LAST among the stateful services: it resolves every plane's
     # principal, so it needs candidates + ledger already standing.
