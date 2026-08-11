@@ -196,13 +196,26 @@ class CandidateStore:
 
     @staticmethod
     def _refresh_identity(cand: CandidateRow, profile: CandidateProfile) -> None:
-        """Backfill hashes this resume adds; latest non-empty name wins."""
+        """Backfill hashes this resume adds; latest non-empty name wins --
+        UNLESS the name was corrected by a reviewed DPDP request (S8.3 Phase B).
+
+        Without that exception the rule reverts corrections: a subject asks for
+        their name to be fixed, an operator verifies it against an ID and
+        applies it, and the customer's very next upload puts the extractor's
+        guess back -- while `/portal/requests` goes on saying `applied: true`.
+        A human decision about a person's own name outranks an extractor's, and
+        this is the narrowest place to say so.
+        """
         contact = profile.contact
         if contact.email_hash and not cand.email_hash:
             cand.email_hash = contact.email_hash
         if contact.phone_hash and not cand.phone_hash:
             cand.phone_hash = contact.phone_hash
-        if profile.full_name and profile.full_name.value:
+        if (
+            profile.full_name
+            and profile.full_name.value
+            and cand.full_name_corrected_at is None
+        ):
             cand.full_name = profile.full_name.value
         cand.updated_at = _utcnow()
 
@@ -315,6 +328,11 @@ class CandidateStore:
         on, and ``email_hash`` is additionally the portal login credential, so
         changing either is an identity operation rather than a data correction.
 
+        It also PINS the column: `full_name_corrected_at` stops
+        `_refresh_identity` from overwriting a verified correction with the next
+        upload's extracted guess. Without that, the write survives exactly until
+        the customer's next resume for this person.
+
         False means the candidate is gone -- an erasure landing mid-decision.
         """
         with self._session_factory() as session:
@@ -322,6 +340,7 @@ class CandidateStore:
             if row is None:
                 return False
             row.full_name = full_name
+            row.full_name_corrected_at = _utcnow()
             session.commit()
             return True
 

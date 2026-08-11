@@ -219,13 +219,23 @@ def main() -> int:
               and resolved.json().get("applied") is True,
               f"queue={len(queue)} resolve={resolved.status_code}")
 
-        # 7. The corrected name is what /portal/me now shows.
+        # 7. The subject sees the decision AND the identity row actually moved.
+        #    Two checks, because the first version of this was ONE check named
+        #    "reached the candidate row" that only ever looked at the request
+        #    row -- a check claiming more than it makes, which is the shape the
+        #    Phase A review caught twice in this file's sibling.
         after = person.get("/portal/me").json()
-        check("the_correction_reached_the_candidate_row",
+        check("the_subject_sees_the_decision",
               after["requests"][0]["status"] == "resolved"
               and after["requests"][0]["applied"] is True
               and after["requests"][0]["resolved_by"] == "operator_key",
               json.dumps(after["requests"][0])[:200])
+
+        row = admin.get(f"/candidates/{after['candidate_id']}",
+                        headers=ADMIN_H).json()
+        check("the_correction_reached_the_candidate_row",
+              row.get("full_name") == "Asha Rao",
+              f"candidates.full_name={row.get('full_name')!r}")
 
         # 8. Resolving the SAME request again is a 409, not a second decision.
         again = admin.post(f"/admin/requests/{req.get('id')}/resolve",
@@ -276,6 +286,17 @@ def main() -> int:
         check("a_resume_exists_and_was_backdated",
               upload.status_code == 200 and aged >= 1,
               f"upload={upload.status_code} rows_aged={aged}")
+
+        # 11b. THE UPLOAD ABOVE IS THE ONE THAT USED TO REVERT THE CORRECTION.
+        #      `_refresh_identity` is "latest non-empty name wins", so before
+        #      `full_name_corrected_at` existed, this ingest put the extractor's
+        #      spelling back while /portal/requests went on saying applied:true.
+        #      The resume deliberately spells the name the OLD way.
+        still = admin.get(f"/candidates/{cid}", headers=ADMIN_H).json()
+        check("a_later_upload_does_not_revert_the_applied_correction",
+              still.get("full_name") == "Asha Rao",
+              f"candidates.full_name={still.get('full_name')!r} after an upload "
+              f"whose resume says 'Asha R'")
 
         preview = admin.post("/admin/retention/sweep", headers=ADMIN_H,
                              json={}).json()

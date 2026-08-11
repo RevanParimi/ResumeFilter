@@ -69,6 +69,46 @@ def candidate_id(candidates):
         return row.id
 
 
+EMAIL = "asha@example.in"
+
+
+def _ingest_named(candidates, settings, *, email: str, name: str):
+    """One ingest carrying a name and an email, without the extractor.
+
+    Built directly rather than through `extract_profile`, which is async and
+    needs an LLMClient: what is under test is what INGEST does to the identity
+    row, not how a profile was produced.
+    """
+    from app.candidates.hashing import contact_hash
+    from app.candidates.schema import (
+        CandidateProfile, ContactInfo, ExtractedStr, ExtractionResult,
+    )
+
+    profile = CandidateProfile(
+        full_name=ExtractedStr(value=name),
+        contact=ContactInfo(
+            email=ExtractedStr(value=email),
+            email_hash=contact_hash(email, settings.contact_hash_salt),
+        ),
+    )
+    return candidates.ingest(
+        ExtractionResult(profile=profile, method="heuristic"),
+        f"{name}\nEmail: {email}\nSKILLS\nPython\n",
+    )
+
+
+def _link_email(candidates, settings, candidate_id: str, email: str) -> None:
+    """Give the fixture's bare candidate an email_hash, so a later ingest
+    resolves to the SAME person instead of creating a second one."""
+    from app.candidates.hashing import contact_hash
+    from app.candidates.models import CandidateRow
+
+    with candidates._session_factory() as s:
+        row = s.get(CandidateRow, candidate_id)
+        row.email_hash = contact_hash(email, settings.contact_hash_salt)
+        s.commit()
+
+
 def _correction(rights, candidate_id, **over):
     kwargs = dict(
         kind=RequestKind.CORRECTION, field=CorrectionField.FULL_NAME,
@@ -311,6 +351,48 @@ def test_an_APPLIED_correction_NEVER_touches_an_extraction(
                    admin_user_id=None, now=NOW)
     assert candidates.latest_profile(candidate_id) == before
     assert candidates.get_candidate(candidate_id).full_name == "Asha Rao"
+
+
+def test_a_LATER_RESUME_UPLOAD_DOES_NOT_REVERT_AN_APPLIED_CORRECTION(
+    rights, candidate_id, candidates, settings
+):
+    """FOUND BY THE SMOKE, not by the design.
+
+    `_refresh_identity` is documented "latest non-empty name wins", so every
+    ingest overwrites `candidates.full_name` from the extractor. Without a
+    guard, a subject corrects their name, an operator verifies it against an ID
+    and applies it -- and the customer's NEXT upload silently puts the wrong
+    name back, while `/portal/requests` goes on saying `applied: true`.
+
+    That is the declared-but-not-true shape this sprint keeps finding, on the
+    one value a person is most entitled to have right. A human decision about a
+    person's own name outranks an extractor's guess, so an applied correction
+    pins the column.
+    """
+    _link_email(candidates, settings, candidate_id, EMAIL)
+
+    view = _correction(rights, candidate_id)
+    rights.resolve(view.id, status=RequestStatus.RESOLVED, resolution="ID checked",
+                   apply=True, resolved_by=ResolvedBy.OPERATOR_KEY,
+                   admin_user_id=None, now=NOW)
+    assert candidates.get_candidate(candidate_id).full_name == "Asha Rao"
+
+    # The same person's next resume, still spelling the name the old way.
+    out = _ingest_named(candidates, settings, email=EMAIL, name="Asha R")
+    assert out.candidate_id == candidate_id, "the fixture did not resolve to one person"
+
+    assert candidates.get_candidate(candidate_id).full_name == "Asha Rao", (
+        "an extractor's guess overwrote a verified human correction"
+    )
+
+
+def test_an_UNCORRECTED_name_is_still_refreshed_by_an_upload(candidates, settings):
+    """The guard is narrow on purpose: with no correction on the row, "latest
+    non-empty name wins" remains the right rule and is left alone."""
+    first = _ingest_named(candidates, settings, email="fresh@example.in",
+                          name="Asha R")
+    _ingest_named(candidates, settings, email="fresh@example.in", name="Asha Rao")
+    assert candidates.get_candidate(first.candidate_id).full_name == "Asha Rao"
 
 
 # ── the bound ────────────────────────────────────────────────────────────────
