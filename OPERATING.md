@@ -36,6 +36,19 @@ nothing about a client in a loop — and every call bills a model. 400 calls × 
 items = 2000 items an hour per organisation, far above a human driving the UI
 through a 500-resume batch and a hard ceiling on a runaway client.
 
+**It counts calls, not items,** and the check runs *before* the ownership read
+and *before* the claim. So a call that screens nothing — the UI's terminating
+poll, a `process` on a finished batch, a guessed batch id — costs exactly what
+a five-item call costs. That is the price of two properties worth more than the
+accounting: counting after the ownership read would make a refusal on somebody
+else's batch id distinguishable from a refusal on your own, and counting after
+the claim would let a refused call strand the items it had already claimed in
+`processing` until the claim timeout expired. The overhead in practice is one
+no-op call per batch — 101 calls for a 500-resume batch — so 400/hour still
+leaves room for four full 500-resume batches an hour. Both consequences are
+pinned by tests in `tests/test_ratelimit_spend.py`; move the check and they
+fail.
+
 The ASR rule fires **only when audio is present**: a typed interview answer
 costs nothing and must not consume a transcription budget.
 
@@ -103,12 +116,27 @@ information; it goes to the `rate_limited` log line, not to the caller. Telling
 a brute-forcer which of their two axes tripped is telling them which one to
 change.
 
-**The 429 is byte-identical for a registered and an unregistered address**, and
-this is load-bearing: `AUTH.md`'s anti-enumeration rule makes signup and login
-answer `202` for everyone, and a 429 that appeared only for real accounts would
-rebuild that oracle out of status codes. The counter therefore keys on the
+**The 429 does not distinguish a registered address from an unregistered one**,
+and this is load-bearing: `AUTH.md`'s anti-enumeration rule makes signup and
+login answer `202` for everyone, and a 429 that appeared only for real accounts
+would rebuild that oracle out of status codes. The counter therefore keys on the
 **submitted** address and is incremented *before* the has-an-account branch.
-Asserted in `tests/test_ratelimit_auth.py` and in the smoke.
+
+Precisely: same status, same body, same header **names**, no `Set-Cookie` on
+either. Two things legitimately differ and neither is a function of the address
+— `X-Request-ID` is unique per request by design, and `Retry-After` counts down
+within the shared window, so two refusals a second apart differ by a second.
+Asserted in `tests/test_ratelimit_auth.py` (body *and* headers, added by the
+S8.3 review) and in the smoke.
+
+**All three planes share one budget per address.** `bucket_key` is
+`salt | rule | scope | identity`; the plane is not in it, so an address gets one
+`login_request` allowance across the org, candidate and admin routes. That is
+the conservative direction — nobody buys 3× the guesses by rotating planes —
+and the cost is that a person who is both a candidate and an org user shares a
+single 20/hour allowance, which at 20/hour is not a real constraint. Adding a
+per-plane limit later would silently triple the real bound, so the coupling is
+pinned by a test.
 
 **The 60-second resend cooldown keeps its silent `202`**, and the difference is
 deliberate rather than an inconsistency: a cooldown can only be triggered by an

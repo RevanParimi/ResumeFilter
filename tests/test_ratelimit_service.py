@@ -8,7 +8,7 @@ import pytest
 
 from app.core.config import Settings
 from app.ratelimit.models import RateLimitCounterRow
-from app.ratelimit.schema import LimitScope, RateRule
+from app.ratelimit.schema import LimitDecision, LimitScope, RateRule
 from app.ratelimit.service import RateLimited, RateLimiter, build_rate_limiter
 from tests.conftest import make_candidate_store
 
@@ -141,6 +141,28 @@ def test_enforce_raises_with_the_scope_and_the_wait(limiter):
         limiter.enforce(rules, ids, now=NOW)
     assert exc.value.scope == LimitScope.EMAIL
     assert exc.value.retry_after_seconds > 0
+
+
+def test_enforce_raises_on_a_denial_that_carries_NO_scope(limiter):
+    """`enforce` tests `allowed` and nothing else.
+
+    It used to require `decision.scope is not None` as well, so a denial with
+    no scope was silently ALLOWED -- a fail-open one careless change to `check`
+    away, and silent in exactly the way an unbounded OTP endpoint is silent.
+    No caller can construct that decision today, which is precisely why it
+    needed a test rather than a comment: the guard would have gone on looking
+    correct until the day it did not.
+    """
+    limiter.check = lambda *a, **kw: LimitDecision(
+        allowed=False, rule="login_request", scope=None, retry_after_seconds=42
+    )
+    with pytest.raises(RateLimited) as exc:
+        limiter.enforce([], {}, now=NOW)
+    assert exc.value.retry_after_seconds == 42
+    assert exc.value.scope is None
+    # And it must still be printable -- an exception whose __str__ raises turns
+    # a 429 into a 500 in the handler that formats it.
+    assert "login_request" in str(exc.value)
 
 
 def test_rules_for_reads_the_configured_limits(rl_settings, session_factory):

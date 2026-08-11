@@ -39,8 +39,15 @@ class RateLimited(Exception):
     the response body.
     """
 
-    def __init__(self, rule: str, scope: LimitScope, retry_after_seconds: int) -> None:
-        super().__init__(f"rate limited by {rule}/{scope.value}")
+    def __init__(
+        self,
+        rule: str,
+        scope: Optional[LimitScope],
+        retry_after_seconds: int,
+    ) -> None:
+        super().__init__(
+            f"rate limited by {rule}/{scope.value if scope else 'unknown'}"
+        )
         self.rule = rule
         self.scope = scope
         self.retry_after_seconds = retry_after_seconds
@@ -145,9 +152,17 @@ class RateLimiter:
         *,
         now: datetime,
     ) -> None:
-        """:meth:`check`, raising :class:`RateLimited` on a denial."""
+        """:meth:`check`, raising :class:`RateLimited` on a denial.
+
+        The test is `allowed` and NOTHING ELSE. This previously also required
+        `decision.scope is not None`, which made a denial carrying no scope
+        pass silently -- a fail-open reachable by any future change to `check`
+        that forgot to set one, and silent in exactly the way an unbounded OTP
+        endpoint is. `RateLimited` now carries an optional scope instead, so
+        the missing information degrades a log line rather than a bound.
+        """
         decision = self.check(rules, identities, now=now)
-        if not decision.allowed and decision.scope is not None:
+        if not decision.allowed:
             raise RateLimited(
                 decision.rule, decision.scope, decision.retry_after_seconds
             )

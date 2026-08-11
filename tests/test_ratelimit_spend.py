@@ -100,6 +100,62 @@ def test_the_limit_is_checked_before_any_item_is_claimed(
     assert detail["counts"].get("pending", 0) == 1
 
 
+def test_a_process_call_that_does_NO_WORK_still_spends_budget(
+    settings, fake_github, flywheel, genuine_resume
+):
+    """THE DELIBERATE TRADE, pinned so nobody optimises it away by accident.
+
+    `enforce` runs before the ownership read and before the claim, so the
+    limiter counts CALLS, not items. A call on a batch with nothing left to do
+    therefore costs the same as a call that screens five resumes.
+
+    That is the price of two properties that matter more. Counting after the
+    ownership read would make a refusal on somebody else's batch id
+    distinguishable from a refusal on your own -- an ownership oracle. Counting
+    after the claim would let a refused call strand the items it had already
+    claimed in `processing` until the claim timeout expired.
+
+    The wired UI drives until `remaining == 0`, so exactly one no-op call per
+    batch is the normal case: 101 calls for a 500-resume batch at five items
+    each. Anyone who moves this check must accept both consequences knowingly,
+    which is what this test is for.
+    """
+    tuned = settings.model_copy(update={"rate_limit_process_per_hour_per_org": 2})
+    services = make_services(tuned, github=fake_github, flywheel=flywheel)
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        first = c.post(f"/screening/batches/{bid}/process", headers={"X-Org-Key": key})
+        assert first.status_code == 200
+        assert first.json()["remaining"] == 0        # nothing left to do
+        # The UI's terminating poll. It screens nothing and still costs one.
+        assert c.post(f"/screening/batches/{bid}/process",
+                      headers={"X-Org-Key": key}).status_code == 200
+        assert c.post(f"/screening/batches/{bid}/process",
+                      headers={"X-Org-Key": key}).status_code == 429
+
+
+def test_a_guessed_batch_id_is_refused_before_it_can_be_told_apart(
+    settings, fake_github, flywheel
+):
+    """The other half of the same ordering. Because the limit is enforced
+    BEFORE the ownership read, an org that has spent its budget gets the same
+    429 for a batch id that does not exist as for one it owns -- so 404-vs-429
+    cannot be used to probe which ids are real."""
+    tuned = settings.model_copy(update={"rate_limit_process_per_hour_per_org": 1})
+    services = make_services(tuned, github=fake_github, flywheel=flywheel)
+    _, key = _key(services)
+    missing = "ffffffff-0000-0000-0000-000000000000"
+    with _client(services) as c:
+        # Budget intact: an unknown id is an honest 404...
+        assert c.post(f"/screening/batches/{missing}/process",
+                      headers={"X-Org-Key": key}).status_code == 404
+        # ...and that 404 consumed the only call, so everything is now 429,
+        # real ids and invented ones alike.
+        assert c.post(f"/screening/batches/{missing}/process",
+                      headers={"X-Org-Key": key}).status_code == 429
+
+
 def test_an_unlimited_org_is_unaffected_when_the_limiter_is_off(
     settings, fake_github, flywheel, genuine_resume
 ):
