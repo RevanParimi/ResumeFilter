@@ -116,6 +116,115 @@ def test_a_known_and_an_unknown_address_are_refused_IDENTICALLY(
     assert known.json() == unknown.json()
 
 
+def test_the_429_s_HEADERS_do_not_separate_a_known_from_an_unknown_address(
+    settings, capture_path, flywheel
+):
+    """The same rule as the test above, checked one layer lower.
+
+    A body can be identical while a header is not, and a client-visible header
+    that appears only for registered addresses is the same enumeration oracle
+    with extra steps. `Retry-After` is compared loosely on purpose: both
+    refusals are in the same window, so the values differ only by the seconds
+    that elapsed between the two requests -- what must NOT differ is whether
+    the header is there at all, and what other headers ride along.
+    """
+    with _client(_cfg(settings, capture_path), flywheel) as client:
+        client.post("/auth/org/signup", json={
+            "email": "registered@example.com", "organization_name": "Acme Staffing",
+        })
+        client.post("/auth/org/verify", json={
+            "email": "registered@example.com", "code": _code(capture_path),
+        })
+        client.cookies.clear()
+
+        limit = client.app_services.settings.rate_limit_login_per_hour_per_email
+        for _ in range(limit):
+            _login(client, "registered@example.com")
+        for _ in range(limit):
+            _login(client, "nobody@example.com")
+        known = _login(client, "registered@example.com")
+        unknown = _login(client, "nobody@example.com")
+
+    # X-Request-ID is unique per request BY DESIGN and says nothing about the
+    # address; every other header name must match exactly.
+    def names(resp):
+        return {k.lower() for k in resp.headers} - {"x-request-id"}
+
+    assert names(known) == names(unknown)
+    assert "retry-after" in names(known)
+    assert abs(int(known.headers["Retry-After"])
+               - int(unknown.headers["Retry-After"])) <= 5
+    assert known.headers["content-type"] == unknown.headers["content-type"]
+    # No cookie is ever set on a refusal -- a Set-Cookie on one and not the
+    # other would be the loudest possible oracle.
+    assert "set-cookie" not in names(known)
+
+
+# ── the other two planes ─────────────────────────────────────────────────────
+#
+# The OTP surface is eight routes across THREE planes, and every one of them
+# funnels through the same two service methods -- which is the argument for
+# enforcing in the service layer at all. These tests are what make that
+# argument checkable rather than asserted: before the S8.3 review only the org
+# plane was exercised, so "all three planes are limited" was a claim about
+# code structure, not a measured property.
+
+
+def test_the_candidate_plane_is_limited(client):
+    """The candidate plane always sends -- signup and login are the same act
+    there -- so it has no has-an-account branch to accidentally bound it."""
+    limit = client.app_services.settings.rate_limit_login_per_hour_per_email
+    for _ in range(limit):
+        assert client.post("/auth/candidate/login",
+                           json={"email": "c@example.com"}).status_code == 202
+    refused = client.post("/auth/candidate/login", json={"email": "c@example.com"})
+    assert refused.status_code == 429
+    assert refused.json()["detail"] == "rate_limited"
+    assert int(refused.headers["Retry-After"]) > 0
+
+
+def test_the_admin_plane_is_limited(client):
+    """Admin login for an unknown address is a silent no-op (202, nothing
+    sent). It must still COUNT: an endpoint that only counts the work it does
+    is an endpoint an attacker can hammer for free."""
+    limit = client.app_services.settings.rate_limit_login_per_hour_per_email
+    for _ in range(limit):
+        assert client.post("/auth/admin/login",
+                           json={"email": "root@example.com"}).status_code == 202
+    refused = client.post("/auth/admin/login", json={"email": "root@example.com"})
+    assert refused.status_code == 429
+    assert int(refused.headers["Retry-After"]) > 0
+
+
+def test_the_candidate_and_admin_verify_routes_are_limited(client):
+    for path in ("/auth/candidate/verify", "/auth/admin/verify"):
+        limit = client.app_services.settings.rate_limit_verify_per_hour_per_email
+        email = f"v{path.count('/')}{path[6]}@example.com"
+        for _ in range(limit):
+            client.post(path, json={"email": email, "code": "000000"})
+        refused = client.post(path, json={"email": email, "code": "000000"})
+        assert refused.status_code == 429, f"{path} is not limited"
+
+
+def test_the_planes_SHARE_one_budget_per_address(client):
+    """MEASURED in the S8.3 review, and it is worth stating rather than
+    discovering: `bucket_key` is salt|rule|scope|identity, and the PLANE is not
+    in it. So one address has one `login_request` budget across all three
+    planes.
+
+    That is the conservative direction -- the attacker cannot buy three times
+    the guesses by rotating planes -- and the cost is that somebody who is both
+    a candidate and an org user shares a single 20/hour allowance. At 20/hour
+    that is not a real constraint, but a future per-plane limit would silently
+    triple the real bound, so the coupling is pinned here.
+    """
+    limit = client.app_services.settings.rate_limit_login_per_hour_per_email
+    for _ in range(limit):
+        assert _login(client, "both@example.com").status_code == 202
+    assert client.post("/auth/candidate/login",
+                       json={"email": "both@example.com"}).status_code == 429
+
+
 def test_a_second_address_is_unaffected_below_the_ip_limit(client):
     """Proves the email scope is per address and not one global counter."""
     limit = client.app_services.settings.rate_limit_login_per_hour_per_email
