@@ -241,7 +241,8 @@ def main() -> int:
                 len(me["interviews"]) == 2
                 and ANSWER not in str(me["interviews"])     # summaries only
                 and windows["interviews"]["ttl_days"] == 1095
-                and me["retention"]["sweep_active"] is False
+                # TRUE since S8.3 Phase B: these session rows are now swept.
+                and me["retention"]["sweep_active"] is True
             )
 
             # 15. the org's query is in the candidate's own access log, by name

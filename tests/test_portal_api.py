@@ -42,7 +42,9 @@ def test_portal_me_returns_access_view(_setup):
     body = r.json()
     assert body["candidate_id"] == cid
     assert len(body["resumes"]) == 1
-    assert body["retention"]["sweep_active"] is False
+    # TRUE since S8.3 Phase B -- the sweep exists and this value is derived
+    # from retention_sweep_enabled rather than hardcoded.
+    assert body["retention"]["sweep_active"] is True
     assert body["retention"]["windows"]  # posture present
 
 

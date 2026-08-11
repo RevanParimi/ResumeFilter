@@ -40,7 +40,11 @@ class RetentionWindow(BaseModel):
 
 class RetentionPolicy(BaseModel):
     windows: list[RetentionWindow] = Field(default_factory=list)
-    sweep_active: bool = False  # posture surfaced; mechanical purge is PI-8
+    #: Does a mechanical purge actually run? DERIVED from
+    #: settings.retention_sweep_enabled since S8.3 Phase B. The default below is
+    #: the safe answer for a policy built without settings, and is never the
+    #: answer the portal gives -- build_retention_policy always passes one.
+    sweep_active: bool = False
 
 
 class ReportRef(BaseModel):

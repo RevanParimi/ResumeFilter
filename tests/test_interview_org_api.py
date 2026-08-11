@@ -136,4 +136,6 @@ def test_my_data_lists_interviews_as_summaries_with_a_retention_window(wiring):
     windows = {w["data_class"]: w for w in body["retention"]["windows"]}
     assert windows["interviews"]["ttl_days"] == 1095
     assert windows["interviews"]["oldest_item_at"] is not None
-    assert body["retention"]["sweep_active"] is False
+    # TRUE since S8.3 Phase B: the interview session rows this window covers
+    # are now genuinely swept.
+    assert body["retention"]["sweep_active"] is True
