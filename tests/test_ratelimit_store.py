@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import event, insert
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.ratelimit.models import RateLimitCounterRow
 from app.ratelimit.store import RateLimitStore
@@ -139,3 +141,102 @@ def test_the_conditional_update_refuses_a_row_already_at_its_limit(session_facto
         assert store._try_increment(
             session, bucket_key="k", window_start=100, limit=5
         ) is True
+
+
+def test_a_colliding_insert_is_RECOVERED_and_never_escapes_hit(session_factory):
+    """The `except IntegrityError` arm of `hit`, which nothing else reaches.
+
+    The dangerous thing about that arm is not the rollback -- it is what comes
+    AFTER it. `hit` calls `session.commit()` on a session whose failed INSERT
+    was still pending, and if SQLAlchemy did not expunge that pending row on
+    rollback the commit would re-flush it and raise a SECOND IntegrityError,
+    out of `hit`, past every 429 handler, to the client as a 500. A limiter
+    that answers 500 under exactly the concurrency it exists for is worse than
+    no limiter, because the error looks like a bug in the endpoint.
+
+    The collision is planted on the session's OWN connection. A rival on a
+    genuinely separate connection is not constructible on SQLite -- measured
+    during the S8.3 review: an in-memory database shares one connection through
+    StaticPool, and a file database in WAL mode answers `OperationalError:
+    database is locked` rather than letting the rival commit. The
+    IntegrityError arm is therefore the POSTGRES shape of this race, which is
+    the deployment target (prod refuses to boot on SQLite). What this test
+    pins is the recovery, which is dialect-independent.
+    """
+    store = RateLimitStore(session_factory)
+    fired: list[bool] = []
+
+    @event.listens_for(Session, "before_flush")
+    def plant_the_collision(session, flush_context, instances):
+        if fired or not any(
+            isinstance(obj, RateLimitCounterRow) for obj in session.new
+        ):
+            return
+        fired.append(True)
+        session.connection().execute(
+            insert(RateLimitCounterRow.__table__).values(
+                id="rival", bucket_key="k", window_start=100,
+                count=1, expires_at=None,
+            )
+        )
+
+    try:
+        allowed = store.hit(
+            bucket_key="k", window_start=100, limit=3, expires_at=None
+        )
+    finally:
+        event.remove(Session, "before_flush", plant_the_collision)
+
+    assert fired, "the collision never fired; this test proved nothing"
+    assert allowed in (True, False), "hit must answer, not raise"
+
+    # AN ALLOWED HIT IS A COUNTED HIT. Whatever the arm decides, the decision
+    # and the table have to agree -- an arm that simply returned True would
+    # hand out an allowance no counter ever recorded, so the next caller would
+    # be allowed too, and the bucket would never fill.
+    with session_factory() as session:
+        counted = sum(
+            row.count for row in session.query(RateLimitCounterRow)
+            .filter_by(bucket_key="k", window_start=100)
+        )
+    assert counted >= 1 if allowed else counted == 0
+
+
+def test_a_recovered_collision_leaves_no_half_written_row(session_factory):
+    """The rollback in the middle of `hit` must take the whole attempt with it.
+
+    A row left behind by the failed INSERT would be a counter nobody ever
+    increments again -- it holds the bucket at a count that no longer tracks
+    anything, and every later hit in that window would be measured against a
+    number that came from a crash.
+    """
+    store = RateLimitStore(session_factory)
+    fired: list[bool] = []
+
+    @event.listens_for(Session, "before_flush")
+    def plant_the_collision(session, flush_context, instances):
+        if fired or not any(
+            isinstance(obj, RateLimitCounterRow) for obj in session.new
+        ):
+            return
+        fired.append(True)
+        session.connection().execute(
+            insert(RateLimitCounterRow.__table__).values(
+                id="rival", bucket_key="k", window_start=100,
+                count=1, expires_at=None,
+            )
+        )
+
+    try:
+        store.hit(bucket_key="k", window_start=100, limit=3, expires_at=None)
+    finally:
+        event.remove(Session, "before_flush", plant_the_collision)
+
+    with session_factory() as session:
+        rows = session.query(RateLimitCounterRow).all()
+        assert len(rows) <= 1, "the failed INSERT left a duplicate behind"
+        # And the store is still usable afterwards: a session left in a failed
+        # transaction would raise PendingRollbackError on the very next hit.
+        assert store.hit(
+            bucket_key="k", window_start=100, limit=3, expires_at=None
+        ) in (True, False)
