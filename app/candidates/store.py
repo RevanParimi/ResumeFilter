@@ -300,6 +300,31 @@ class CandidateStore:
             session.commit()
             return True
 
+    def apply_correction(self, candidate_id: str, *, full_name: str) -> bool:
+        """Write a REVIEWED correction onto the candidate's own identity row.
+
+        ``full_name`` and nothing else, ever. An ``extractions`` row is a record
+        of what a DOCUMENT said, and rewriting it destroys the evidence the
+        fraud screen is computed from -- on this product that is not
+        hypothetical, because the subject of a correction request is exactly the
+        person with an incentive to edit a claim that got flagged (S8.3 spec
+        §8.2).
+
+        email/phone are refused one layer up, in RightsService, and refused BY
+        NAME: both are hashed into the dedup keys ``_resolve_candidate`` matches
+        on, and ``email_hash`` is additionally the portal login credential, so
+        changing either is an identity operation rather than a data correction.
+
+        False means the candidate is gone -- an erasure landing mid-decision.
+        """
+        with self._session_factory() as session:
+            row = session.get(CandidateRow, candidate_id)
+            if row is None:
+                return False
+            row.full_name = full_name
+            session.commit()
+            return True
+
     def delete_resume(self, resume_id: str) -> bool:
         """DPDP erasure of ONE resume version + its extractions; candidate stays."""
         with self._session_factory() as session:

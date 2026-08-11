@@ -89,6 +89,15 @@ class RateLimiter:
                 RateRule("asr_transcribe", s.rate_limit_asr_per_hour_per_candidate,
                          _HOUR, LimitScope.CANDIDATE),
             ],
+            # S8.3 Phase B. ONE rule over BOTH candidate-plane request writes
+            # (corrections and grievances). The spec sketched a grievance-only
+            # rule; limiting one of two sibling doors is the defect shape this
+            # file's own docstring names, so it is named for what it covers.
+            "request_submit": [
+                RateRule("request_submit",
+                         s.rate_limit_request_per_hour_per_candidate,
+                         _HOUR, LimitScope.CANDIDATE),
+            ],
         }
         return table[name]
 

@@ -311,6 +311,13 @@ rate_limit_verify_per_hour_per_email: 30
 rate_limit_verify_per_hour_per_ip: 200
 rate_limit_process_per_hour_per_org: 400   # x5 items = 2000 items/hour
 rate_limit_asr_per_hour_per_candidate: 60
+# S8.3 Phase B: /portal/corrections AND /portal/grievances share ONE budget.
+# The spec sketched this as rate_limit_grievance_per_hour_per_candidate;
+# limiting one of two sibling writes is this repo's signature defect, so the
+# rule is named for what it covers. Charged BEFORE validation, deliberately:
+# bounding only the successful call leaves an endpoint a stuck client can
+# hammer forever with a body that never validates.
+rate_limit_request_per_hour_per_candidate: 10
 
 # --- Retention sweep (PI-8, S8.3 Phase B) -------------------------------------
 # The eight windows further up stopped being posture-only in this sprint. The
@@ -322,3 +329,11 @@ ret_rate_limit_days: 7                  # hashed email + hashed IP; short on pur
 ret_login_state_days: 7                 # expired challenges + expired sessions
 sweep_max_rows_per_class: 10000         # one invocation's bound; the report says truncated
 retention_sweep_enabled: true           # the job now exists; /portal/me REPORTS this value
+
+# --- DPDP rights (PI-8, S8.3 Phase B) -----------------------------------------
+# A correction is a REVIEWED REQUEST, never a self-service edit: on a fraud
+# screen, a subject write path onto the scored data is an edit box over the
+# evidence. Only full_name is ever auto-applied; email and phone are refused
+# BY NAME, because both are hashed into the dedup keys and email_hash is the
+# portal login credential.
+max_request_note_chars: 2000            # same bound, same reason, as outcome notes
