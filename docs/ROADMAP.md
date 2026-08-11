@@ -11,8 +11,13 @@
 
 - **Session 2026-08-11 (latest) — S8.3 PHASE B BUILT AND GREEN on branch
   `s83b-retention-and-rights`, and S8.3 IS NOW COMPLETE. 1689 → 1804 green,
-  `smoke_s83b` 22/22, 12/12 mutation probes dead.** Phase A merged first
-  (`a57a05d`). Plan:
+  `smoke_s83b` 22/22, **ALL NINETEEN smokes green** (s12, s13, s23, s41, s51,
+  s52, s53, s63, s64, s71, s72, s73, s81, s82, s83a, s83b, s84a, s84b,
+  s85_outcome), 12/12 mutation probes dead.** Phase A merged first (`a57a05d`).
+  The regression set was widened from the nine the last two sessions pinned,
+  because this branch touched the **container** (`Services` gained two fields),
+  the candidate store's identity refresh and `/portal/me` — so the ingest-era
+  smokes were genuinely at risk, not only the recent ones. Plan:
   `docs/superpowers/plans/2026-08-11-s83b-retention-and-rights.md`, 16 tasks,
   TDD with every failing test proven red first. **NOT YET REVIEWED OR MERGED —
   that is the next action.**
@@ -2051,8 +2056,8 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                - new root doc OPERATING.md
     │            [x] PHASE B — retention and rights (branch
     │                `s83b-retention-and-rights`, 16 tasks, 1689 -> 1804 green,
-    │                smoke_s83b 22/22, 12/12 mutants dead). NOT YET REVIEWED OR
-    │                MERGED.
+    │                smoke_s83b 22/22, ALL 19 smokes green, 12/12 mutants
+    │                dead). NOT YET REVIEWED OR MERGED.
     │                plan: 2026-08-11-s83b-retention-and-rights.md
     │                - app/retention/ (plan/schema/sweep) + app/rights/
     │                  (schema/models/store/service) + migrations 0022, 0023
