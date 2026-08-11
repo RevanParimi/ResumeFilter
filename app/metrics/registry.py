@@ -23,13 +23,19 @@ _PREFIX = "veritas_"
 
 #: Counter name -> the metric's help text. A name absent here still renders;
 #: this only supplies HELP, so a new counter is never blocked on documentation.
+#:
+#: EVERY NAME HERE HAS A CALL SITE, and tests/test_metrics.py enforces it.
+#: `llm_calls`, `asr_calls`, `screening_items` and `retention_deleted` were
+#: declared here first and incremented nowhere -- in the same branch that
+#: removed `auth_sessions.ip_hash`'s declared-but-never-populated shape and
+#: named it the sprint's headline finding. They were removed in review rather
+#: than wired: producing them means threading a metrics handle through the
+#: LLMClient and SpeechClient ABCs, three subclasses each, both builders and
+#: every fixture that constructs one, to emit numbers no scraper reads yet.
+#: Phase B adds the name in the same commit as the code that increments it.
 _HELP: Dict[str, str] = {
     "http_requests": "HTTP requests by route template, method and status.",
     "rate_limit_decisions": "Rate-limit decisions by rule, scope and outcome.",
-    "llm_calls": "LLM calls by tier and outcome.",
-    "asr_calls": "Speech-to-text calls by outcome.",
-    "screening_items": "Screening items finished, by outcome.",
-    "retention_deleted": "Rows deleted by the retention sweep, by data class.",
 }
 
 _LabelKey = Tuple[Tuple[str, str], ...]

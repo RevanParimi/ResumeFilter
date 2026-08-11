@@ -141,10 +141,21 @@ Counters are **per-app**, held on the injected `Services` bundle. A module-level
 registry would be shared by every test in the suite and the first
 ordering-dependent assertion would be an unreproducible flake.
 
-`llm_calls`, `asr_calls`, `screening_items` and `retention_deleted` are declared
-in the registry's help table but **have no call site yet** — they land in Phase
-B, where the sweep gives them a reason to be read together. They render nothing
-until then; the document is not lying about a metric that is always zero.
+**The table above is the whole list.** `llm_calls`, `asr_calls`,
+`screening_items` and `retention_deleted` were declared in the registry's help
+table with nothing incrementing them; the S8.3 review removed them rather than
+wiring them, because producing those numbers means threading a metrics handle
+through the `LLMClient` and `SpeechClient` ABCs, three subclasses each, both
+builders and every fixture that constructs one — to emit series no scraper
+reads yet. Phase B adds each name in the same commit as the code that
+increments it, and `tests/test_metrics.py::test_every_declared_metric_has_a_call_site`
+now makes that ordering mandatory rather than remembered.
+
+A declared-inert metric is worse than a missing one: the series is simply
+absent from a scrape, an operator reads absent as "nothing happened", and §7's
+runbook step quietly cannot answer. This is the same shape as
+`auth_sessions.ip_hash` — declared, plumbed, never populated — which is this
+branch's own headline finding.
 
 ## 6. Retry
 

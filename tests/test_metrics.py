@@ -77,6 +77,60 @@ def test_an_empty_registry_renders_an_empty_document():
     assert build_metrics().render() == ""
 
 
+# ── _HELP declares only metrics that exist ───────────────────────────────────
+
+import re  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from app.metrics.registry import _HELP  # noqa: E402
+
+#: `increment("some_name", ...)` anywhere under app/. The registry's own
+#: `def increment(self, name: str, ...)` carries no quote and cannot match.
+_CALL_SITE = re.compile(r"""increment\(\s*["']([a-z_]+)["']""")
+
+
+def _incremented_names() -> set[str]:
+    root = Path(__file__).resolve().parent.parent / "app"
+    return {
+        name
+        for path in root.rglob("*.py")
+        for name in _CALL_SITE.findall(path.read_text(encoding="utf-8"))
+    }
+
+
+def test_every_declared_metric_has_a_call_site():
+    """THE REVIEW FINDING, turned into a rule the next sprint cannot break.
+
+    `llm_calls`, `asr_calls`, `screening_items` and `retention_deleted` were
+    declared here with nothing incrementing them -- in the same branch whose
+    headline finding was that `auth_sessions.ip_hash` had been "declared,
+    plumbed through two layers, and never populated" while the docs described
+    it as implemented. Disclosing the gap in OPERATING.md was better than
+    hiding it and still was not the fix.
+
+    A declared-inert metric is worse than a missing one: a scraper shows the
+    series as absent, an operator reads absent as "nothing happened", and the
+    runbook step that tells them to read it quietly cannot answer.
+
+    Phase B adds `retention_deleted` in the same commit as the sweep that
+    increments it, and this test is what makes that ordering mandatory rather
+    than remembered.
+    """
+    declared = set(_HELP)
+    incremented = _incremented_names()
+    assert declared - incremented == set(), (
+        f"declared in _HELP with no call site: "
+        f"{sorted(declared - incremented)}"
+    )
+
+
+def test_the_call_site_scanner_can_actually_find_something():
+    """Guards the test above from passing because the regex matches nothing --
+    a scanner that finds zero call sites would call any _HELP table clean."""
+    assert "rate_limit_decisions" in _incremented_names()
+    assert "http_requests" in _incremented_names()
+
+
 # ── the route and the counting middleware ────────────────────────────────────
 
 import pytest  # noqa: E402
