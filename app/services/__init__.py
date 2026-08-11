@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy.orm import sessionmaker
+
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.ledger.store import LedgerStore, build_ledger_store
@@ -68,6 +70,14 @@ class Services:
     # every test in the suite and the first ordering-dependent assertion
     # would be an unreproducible flake (S8.3 Phase A).
     metrics: Metrics
+    # THE database, named. Every store in the repo builds its engine from
+    # `candidates_db_url` (measured S8.3 Phase B), so this is not a new engine
+    # -- it is the candidate store's own factory given a name. The retention
+    # sweep needs a session factory rather than a store, because it operates
+    # across eleven data classes owned by seven different stores, and a handler
+    # reaching into `some_store._session_factory` would be reading a private
+    # to say something the container can say plainly.
+    session_factory: sessionmaker
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -157,6 +167,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         screening_scope=build_org_scoped_access(report_store, candidates),
         screening=screening,
         metrics=metrics,
+        session_factory=candidates._session_factory,
     )
 
 

@@ -69,6 +69,8 @@ from app.curation.schema import (
     CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
 )
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
+from app.retention.schema import SweepReport
+from app.retention.sweep import run_sweep
 from app.verification.documents import DocumentParseError
 from app.verification.schema import (
     CLAIM_REF_MAX_CHARS, ClaimEvidence, DocumentFinding, DocumentType,
@@ -2251,6 +2253,43 @@ async def metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(
         _services(request).metrics.render(),
         media_type="text/plain; version=0.0.4",
+    )
+
+
+class SweepRequest(BaseModel):
+    """``dry_run`` DEFAULTS TO TRUE.
+
+    This is the most destructive call in the repo, and defaulting it the other
+    way would make an empty body -- the easiest thing to send by accident, and
+    what a mistyped curl sends -- delete production data. A cron passes
+    ``{"dry_run": false}`` explicitly, which is one word of evidence that
+    somebody meant it.
+    """
+
+    dry_run: bool = True
+
+
+@router.post("/admin/retention/sweep", response_model=SweepReport)
+async def retention_sweep(req: SweepRequest, request: Request) -> SweepReport:
+    """Run (or preview) the retention sweep. Admin plane.
+
+    There is no scheduler in the application, so this route and
+    ``python -m app.retention.sweep`` are the only two ways the sweep ever
+    runs. Both go through ``run_sweep``, so the refusal below cannot be
+    enforced at one door and forgotten at the other.
+    """
+    services = _services(request)
+    if not req.dry_run and not services.settings.retention_sweep_enabled:
+        # 409, not 403: the CONFIGURATION is in the wrong state, and the
+        # operator's fix is a knob rather than a credential. A dry run is still
+        # allowed, because a count is safe and is how they see what would go.
+        raise HTTPException(status_code=409, detail="retention_sweep_disabled")
+    return run_sweep(
+        services.session_factory,
+        services.settings,
+        now=datetime.now(timezone.utc),
+        dry_run=req.dry_run,
+        metrics=services.metrics,
     )
 
 

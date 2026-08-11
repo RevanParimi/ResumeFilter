@@ -371,6 +371,11 @@ def make_services(
         screening_scope=screening_scope,
         screening=screening,
         metrics=metrics,
+        # The SAME factory every store in this fixture shares, exactly as the
+        # production container does it. A separate engine here would give the
+        # retention sweep a different database from the one under test, and the
+        # sweep would truthfully report deleting nothing.
+        session_factory=candidates._session_factory,
     )
 
 

@@ -15,7 +15,10 @@ trusts the destructive call.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import argparse
+import json
+import sys
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import delete, func, select, update
@@ -126,3 +129,55 @@ def run_sweep(
         affected=sum(totals.values()),
     )
     return report
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """``python -m app.retention.sweep [--apply]``.
+
+    A CLI *and* a route, because there is no scheduler: this is the entry point
+    a Railway cron or an operator shell uses. Both go through ``run_sweep`` and
+    both refuse a real run on a disabled config, so the rule cannot be enforced
+    at one door and forgotten at the other -- and a cron is precisely the caller
+    nobody is watching when it goes wrong.
+
+    Deleting takes an explicit ``--apply``, mirroring the route's
+    ``dry_run: true`` default: the safe thing is what you get for free.
+
+    OUTPUT CONTRACT: the report is the LAST line of stdout, and it is JSON.
+    This process shares stdout with the structured log (``configure_logging``
+    points structlog's PrintLoggerFactory there, because the server's access
+    log is read that way), so ``run_sweep``'s own ``retention_sweep`` line
+    lands on stdout first. That makes the stream a sequence of JSON documents
+    rather than one -- fine for ``jq``, and a ``json.loads`` of the whole
+    buffer fails. Nothing logs after the print, so "last line" holds; a test
+    pins it, because an output contract nobody asserts is a comment.
+    """
+    from app.core.config import get_settings
+    from app.core.db import make_engine, make_session_factory
+
+    parser = argparse.ArgumentParser(prog="app.retention.sweep")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="actually delete. Without it this is a dry run, deliberately.",
+    )
+    args = parser.parse_args(argv)
+
+    settings = get_settings()
+    if args.apply and not settings.retention_sweep_enabled:
+        print("retention_sweep_disabled", file=sys.stderr)
+        return 2
+
+    factory = make_session_factory(make_engine(settings.candidates_db_url))
+    report = run_sweep(
+        factory,
+        settings,
+        now=datetime.now(timezone.utc),
+        dry_run=not args.apply,
+    )
+    print(json.dumps(report.model_dump(mode="json")))
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised through main()
+    raise SystemExit(main())
