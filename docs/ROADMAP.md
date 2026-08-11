@@ -137,6 +137,22 @@
   no-op call per batch (101 calls for a 500-resume batch), so **400/hour still
   leaves four full 500-resume batches an hour** — the number stands. Two tests
   pin both consequences; move the check and they fail.
+  **⚠ CARRIED FORWARD — NOT FIXED, and deliberately out of this review's
+  scope.** Two known items, recorded here because a commit message is the one
+  place nobody greps:
+  1. **Six more "byte-identical" claims about 404-vs-absence** live in
+     `SCREENING.md` (3) and `TENANCY.md` (3). All six are **pre-existing on
+     `main`** — this branch adds none of them (`git diff main...HEAD` yields
+     zero) — and they describe S8.4/S8.5 behaviour. They are the same
+     imprecision the review corrected twice in `OPERATING.md`: status and body
+     genuinely match, but `X-Request-ID` differs on every response, so
+     "byte-identical" overstates what is asserted. **Worth a sweep of its own;
+     do not do it inside a feature branch.**
+  2. **`GET /`'s hand-maintained `endpoints` list is still stale** — missing
+     every `/screening/*` route AND `/metrics`. Untouched on purpose: adding
+     entries makes an unmaintained list look maintained. **The real fix is to
+     derive it from `/openapi.json`**, which is generated from the code and is
+     already the authority. Belongs with the `docs/routes.md` idea below.
   **➤ NEXT STEP: merge the branch, then S8.3 Phase B** (retention sweep · DPDP
   correction/rectification · grievance officer).
 - **Session 2026-08-10 — S8.3 PHASE A BUILT AND GREEN on branch
