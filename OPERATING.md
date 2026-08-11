@@ -207,11 +207,15 @@ exactly one door that evaluates an item, and this is not a second one.
 - It is not itself rate-limited: it is one `UPDATE`, and the spend it unlocks
   is bounded by `screening_process` on the call that does the work.
 
-> **The retry window will be bounded by `ret_batch_item_days` (90) once Phase
-> B's retention sweep lands.** After that window an item's input text is gone
-> and it is no longer retryable. That coupling is the whole justification for
+> **The retry window IS bounded by `ret_batch_item_days` (90), since S8.3 Phase
+> B.** The sweep clears `batch_items.raw_text` past that window, so a failed
+> item older than 90 days is no longer retryable and reports as `skipped`
+> rather than `requeued`. That coupling is the whole justification for
 > retaining the text in the first place, and it is stated here and in
-> `SCREENING.md` §7 rather than discovered.
+> `SCREENING.md` §7 rather than discovered. **A capability that silently
+> expires is worse than one that never existed**, which is why it is written in
+> both directions: the retry justifies keeping the text, and the sweep bounds
+> the retry.
 
 ## 7. Runbook
 
@@ -236,15 +240,175 @@ effect on the next request within the current window.
 false` is refused at boot when `env=prod` — the sixth such refusal, alongside
 the missing admin key, prod-on-SQLite, an insecure session cookie, a wildcard
 CORS origin and a capture email provider. An unthrottled OTP endpoint on a
-public host is the same class of thing as a fail-open admin plane.
+public host is the same class of thing as a fail-open admin plane. **S8.3 Phase
+B adds a seventh**: an empty `grievance_officer_email` (§11).
 
 **Clearing counters** (an operator locking themselves out during a demo):
 delete the rows for that bucket from `rate_limit_counters`, or wait out the
-window — `Retry-After` on the refusal says exactly how long. Phase B's sweep
-will retire rows automatically under `ret_rate_limit_days`; until then a new
-window for the same key purges the previous one on write.
+window — `Retry-After` on the refusal says exactly how long. Since Phase B the
+sweep retires those rows under `ret_rate_limit_days` (7); a new window for the
+same key also purges the previous one on write.
 
-## 8. Deliberately not here
+## 9. The retention sweep
+
+Eight retention windows were **posture only** until S8.3 Phase B: `/portal/me`
+printed them and nothing enforced them. Now they are enforced, and three more
+classes joined them.
+
+**The targets are DERIVED from `app/portal/retention.py`'s `RETENTION_KNOBS`** —
+the same table the candidate portal prints. A sweeper carrying its own list
+would let the two drift, and the drift is silent in the worst direction: the
+portal keeps promising a window that nothing enforces.
+`tests/test_retention_plan.py` asserts set equality in both directions.
+
+| data class | knob (default) | table(s) | keyed on | mode |
+|---|---|---|---|---|
+| `resumes` | `ret_resume_days` (1095) | `resumes` | `created_at` | delete |
+| `profile_sources` | `ret_profile_source_days` (1095) | `profile_sources` | `created_at` | delete |
+| `verifications` | `ret_verification_days` (1095) | `verifications` | `created_at` | delete |
+| `interviews` | `ret_interview_session_days` (1095) | `interview_sessions` | `created_at` | delete |
+| `interview_records` | `ret_interview_record_days` (1825) | `interview_records` | `created_at` | delete |
+| `coding_rounds` | `ret_coding_round_days` (1825) | `coding_round_results` | `created_at` | delete |
+| `observed_offers` | `ret_observed_offer_days` (1825) | `observed_offers` | `created_at` | delete |
+| `audit_log` | `ret_audit_log_days` (2555) | `audit_log` | `created_at` | delete |
+| `batch_item_text` | `ret_batch_item_days` (90) | `batch_items` | `created_at` | **clear** `raw_text` |
+| `rate_limit_counters` | `ret_rate_limit_days` (7) | `rate_limit_counters` | `expires_at` | delete |
+| `login_state` | `ret_login_state_days` (7) | `login_challenges` **+** `auth_sessions` | `expires_at` | delete |
+
+**Eleven classes, twelve targets.** `login_state` covers two tables because an
+abandoned login challenge and a session that expired without a logout are the
+same fact to the person they describe.
+
+**`batch_item_text` CLEARS and keeps the row.** An organisation's record of what
+it screened must outlive the text it screened — the same reasoning as
+`batch_items.candidate_id` being `SET NULL`. Its eligibility predicate has a
+second half (`raw_text != ''`), because the column is already empty on every
+successful item and an age-only predicate would report the same rows as
+"cleared" every day forever.
+
+**Deleting cascades at the database.** The sweep issues bulk statements, which
+bypass SQLAlchemy's ORM-level cascade; what carries it is each FK's
+`ON DELETE CASCADE` plus `PRAGMA foreign_keys=ON`. Measured, not assumed —
+sweeping a `resumes` row takes its `extractions` row with it, asserted in
+`tests/test_retention_sweep.py`.
+
+### Running it — there is no scheduler
+
+**Nothing in `app/` runs this on a timer.** If nobody invokes it, nothing is
+deleted. Two doors, one implementation (`run_sweep`):
+
+```bash
+# PREVIEW (the default). Counts, deletes nothing.
+curl -XPOST -H "X-API-Key: $KEY" $HOST/admin/retention/sweep -d '{}'
+
+# DELETE. The explicit flag is the point.
+curl -XPOST -H "X-API-Key: $KEY" $HOST/admin/retention/sweep -d '{"dry_run": false}'
+
+# The cron's / operator shell's door. Same refusals, same report.
+python -m app.retention.sweep            # preview
+python -m app.retention.sweep --apply    # delete
+```
+
+- **`dry_run` defaults to `true`.** This is the most destructive call in the
+  repo, and an empty body is the easiest thing to send by accident.
+- **Dry-run parity is guaranteed by construction**: `affected` is the same COUNT
+  in both modes and only the write is skipped. A preview that disagrees with the
+  action is worse than no preview.
+- **`retention_sweep_enabled: false` refuses a real run** — `409
+  retention_sweep_disabled` at the route, exit code `2` at the CLI. A *dry run*
+  still works, because a count is safe and is how an operator sees what would go
+  before turning the knob on.
+- **`sweep_max_rows_per_class` (10000) bounds one invocation.** The report says
+  `truncated: true` rather than pretending it finished; run it again.
+- **The CLI's report is the LAST line of stdout**, and it is JSON. This process
+  shares stdout with the structured log, so the stream is a sequence of JSON
+  documents — fine for `jq`, and `json.loads` of the whole buffer will raise.
+- `veritas_retention_deleted_total{data_class=...}` counts real runs only. A dry
+  run moves nothing, because counting intentions would make "how much have we
+  deleted" unanswerable.
+
+**`/portal/me`'s `sweep_active` is derived from `retention_sweep_enabled`.** It
+is no longer a literal, and it must never become one again: the portal would
+keep telling every data principal that no mechanical purge runs while the cron
+ran one.
+
+## 10. The DPDP request queue
+
+`data_principal_requests` holds two kinds — `correction` and `grievance` — with
+one lifecycle: filed by the subject, reviewed by an operator, decided with a
+written reason, disclosed back.
+
+| Route | Plane |
+|---|---|
+| `POST /portal/corrections` | candidate |
+| `POST /portal/grievances` | candidate |
+| `GET /portal/requests` | candidate (their own, both kinds) |
+| `GET /admin/requests?status=open` | admin |
+| `POST /admin/requests/{id}/resolve` | admin |
+
+**`status` and `applied` are two facts.** `status` is what the operator decided
+(`resolved` | `rejected`); `applied` is whether that decision changed stored
+data — false for every grievance, false for an `email` correction handled out of
+band, true only when a value moved.
+
+**A CORRECTION NEVER REWRITES AN EXTRACTION.** An `extractions` row records what
+a document said, and the subject of a correction request is exactly the person
+with an incentive to edit a claim that got flagged. A resolved correction may
+touch the candidate's own identity columns and nothing else.
+
+**Only `full_name` is auto-appliable.** `email` and `phone` are refused for
+auto-apply, and the refusal names the consequence: both are hashed into the
+candidate dedup keys, and `email_hash` is additionally the portal login
+credential, so changing either can merge two people's records or move an
+account's login address. `other` names no single stored field. All four can
+still be **resolved** with a written explanation — the mechanism is complete for
+every field; auto-apply is a convenience for the one where it is safe.
+
+**Every decision needs a reason.** A blank `resolution` is a 422, including on a
+rejection: DPDP's mechanism is request-review-decide-**record**-disclose, and a
+refusal the subject cannot act on is the one thing a grievance process must
+never be.
+
+**Resolving twice is a 409, not a 422.** The store's conditional `UPDATE` on
+`status = 'open'` is the guard, so two operators clicking Resolve at the same
+moment produce one decision.
+
+Both the submission and the decision are audited onto the **subject's own**
+`GET /portal/access-log`, with `entity_type="data_principal_request"`. The
+subject is told the *kind* of decider (`operator_key` / `admin_user`), never a
+person's identity.
+
+Submissions are rate-limited by `request_submit` (10/hour per candidate),
+covering **both** candidate writes on one budget. The limit is charged *before*
+validation: a typo costs one of ten complaints an hour, which is the smaller
+harm than an endpoint a stuck client can hammer forever with a body that never
+validates.
+
+## 11. The grievance officer
+
+```yaml
+grievance_officer_name: ""
+grievance_officer_email: ""     # PROD REFUSES TO BOOT when empty
+grievance_officer_phone: ""
+grievance_response_days: 30
+```
+
+**`GET /grievance` is PUBLIC** — it is in `PUBLIC_PATHS`, which is the reviewable
+act that widening that set is meant to be. DPDP requires the mechanism to be
+*published*, and a contact reachable only after login is not reachable by
+someone whose complaint is that they cannot log in. It discloses four
+operator-chosen config fields and reads nothing about any data principal. It is
+also echoed in `MyData.grievance` so the portal shows it in context.
+
+**Prod refuses to boot with an empty officer email** — the seventh refusal. An
+unpublished contact would make `GET /grievance` a 200 that says nothing, which
+is worse than a 404 because it looks answered.
+
+`grievance_response_days` is the promise on that page. Nothing enforces it
+mechanically; it is what an operator has committed to, and `GET
+/admin/requests?status=open` ordered oldest-first is how they keep it.
+
+## 12. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).
 - **Distributed limiting, Redis.** One database is the coordination point until

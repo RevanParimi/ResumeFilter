@@ -458,6 +458,10 @@ GET    /portal/consents      ✅
 POST   /portal/consents      ✅  grant (first-party)
 POST   /portal/consents/{id}/revoke  ✅
 DELETE /portal/me            ✅  erasure. Everything cascades.
+POST   /portal/corrections   ✅  S8.3B: file a correction. REVIEWED, not applied
+POST   /portal/grievances    ✅  S8.3B: file a grievance
+GET    /portal/requests      ✅  S8.3B: the subject's own requests, both kinds
+GET    /grievance            ✅  S8.3B: the published officer. NO AUTH AT ALL
 ```
 
 Plus identity verification (`/portal/verifications*` ✅), document upload
@@ -466,6 +470,26 @@ Plus identity verification (`/portal/verifications*` ✅), document upload
 **Note:** `/portal/me` deliberately exposes reports as **refs only**
 (`{report_id, domain, created_at}`) — the depth-report internals are not
 disclosed to the subject in v0. Don't design a candidate-facing risk score.
+
+**S8.3 Phase B closed the two RFP blockers this section named, at the API. NO
+SCREEN CALLS THEM YET** — an unwired route described as a screen is the
+overclaim shape three branch reviews in a row have caught, so this is a list of
+what is *callable*, not of what is built. What the screens will need to honour:
+
+- A correction is a **request**, never an edit. The UI must not present it as a
+  field the person can change — it is filed, reviewed by an operator, and comes
+  back `resolved` or `rejected` with a written reason. `/portal/me` now carries
+  `requests[]`, so the state is renderable without a second call.
+- `field` is one of `full_name` · `email` · `phone` · `other`. Only `full_name`
+  is ever applied automatically; the other three are resolved by hand, and the
+  422 that says so is worth surfacing verbatim rather than paraphrasing.
+- `POST` on either write can answer **429** (`request_submit`, 10/hour per
+  candidate, shared between the two). Show the `Retry-After`.
+- `/grievance` needs **no credential** and `MyData.grievance` echoes it, so the
+  contact can sit on the login screen as well as inside the portal — which is
+  the point of publishing it: someone who cannot log in still has a route.
+- `/portal/me`'s `retention.sweep_active` is now **true**, and the retention
+  panel should say what that means: windows are enforced, not merely stated.
 
 ### E. Roles / requisitions ✅ (org plane, already reachable)
 
