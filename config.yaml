@@ -337,3 +337,11 @@ retention_sweep_enabled: true           # the job now exists; /portal/me REPORTS
 # BY NAME, because both are hashed into the dedup keys and email_hash is the
 # portal login credential.
 max_request_note_chars: 2000            # same bound, same reason, as outcome notes
+# The PUBLISHED grievance mechanism. GET /grievance is in PUBLIC_PATHS on
+# purpose: a contact reachable only after login is not reachable by someone
+# whose complaint is that they cannot log in. PROD REFUSES TO BOOT with an
+# empty email -- the seventh refusal.
+grievance_officer_name: ""
+grievance_officer_email: ""
+grievance_officer_phone: ""
+grievance_response_days: 30             # the promise made on the public page

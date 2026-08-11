@@ -427,6 +427,16 @@ class Settings(BaseSettings):
     # The same bound and the same reason as max_outcome_notes_chars (S8.5):
     # free text about a named person, typed into an unbounded Text column.
     max_request_note_chars: int = Field(default=2_000, ge=1)
+    # PROD REFUSES TO BOOT with an empty officer email (app/core/boot.py -- the
+    # seventh refusal). DPDP requires the grievance mechanism to be PUBLISHED,
+    # GET /grievance would answer 200 with an empty contact (worse than a 404,
+    # because it looks answered), and every enterprise RFP asks for the officer
+    # by name. A boot failure is the only form of "remember this" that works.
+    grievance_officer_name: str = ""
+    grievance_officer_email: str = ""
+    grievance_officer_phone: str = ""
+    #: The promise made to a data principal on the public page.
+    grievance_response_days: int = Field(default=30, ge=1)
 
     # --- Employer dashboard (PI-5, S5.3): read-only composition over jobs/comp/ledger.
     # Max ranked candidates returned per GET /jobs/{id}/board (passed as run_match limit).

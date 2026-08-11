@@ -125,3 +125,18 @@ class GrievanceContact(BaseModel):
     email: str = ""
     phone: str = ""
     response_days: int = 30
+
+
+def build_grievance_contact(settings) -> GrievanceContact:
+    """Read the published contact off config.
+
+    Blanks when unconfigured, rather than raising: locally the officer is unset
+    and the route must still be honest. Production cannot reach that state --
+    ``verify_launch_config`` refuses to start (the seventh refusal).
+    """
+    return GrievanceContact(
+        name=settings.grievance_officer_name,
+        email=settings.grievance_officer_email,
+        phone=settings.grievance_officer_phone,
+        response_days=settings.grievance_response_days,
+    )

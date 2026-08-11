@@ -51,10 +51,14 @@ def test_prod_on_sqlite_refuses_launch(settings):
 
 
 def test_prod_on_postgres_launches(settings):
+    # S8.3 Phase B: a prod config must now also publish a grievance contact,
+    # so this "sound prod config" case gets one. The refusal itself is tested
+    # further down, in isolation.
     ok = settings.model_copy(update={
         "api_auth_key": SecretStr("a-real-key"),
         "env": "prod",
         "candidates_db_url": "postgresql+psycopg://u:p@h:5432/db",
+        "grievance_officer_email": "dpo@example.com",
     })
     assert verify_launch_config(ok) is None
 
@@ -77,6 +81,9 @@ def _prod(settings, **over):
         "api_auth_key": SecretStr("a-real-key"),
         "env": "prod",
         "candidates_db_url": "postgresql+psycopg://u:p@h:5432/db",
+        # S8.3 Phase B added the SEVENTH refusal, and this helper's whole job is
+        # to satisfy every prior one so each test isolates the refusal it names.
+        "grievance_officer_email": "dpo@example.com",
     }
     base.update(over)
     return settings.model_copy(update=base)
@@ -145,6 +152,39 @@ def test_local_may_disable_rate_limiting(settings):
     ok = settings.model_copy(update={
         "api_auth_key": SecretStr("a-real-key"),
         "rate_limit_enabled": False,
+    })
+    assert verify_launch_config(ok) is None
+
+
+def test_prod_refuses_to_boot_without_a_published_grievance_contact(settings):
+    """The SEVENTH refusal. DPDP requires the grievance mechanism to be
+    PUBLISHED; GET /grievance would answer 200 with an empty contact, which is
+    worse than 404 because it looks answered. It is also the RFP blocker GTM
+    §8.1 names, and a boot failure is the only form of 'remember this' that
+    works."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, grievance_officer_email=""))
+    assert "grievance" in str(exc.value).lower()
+
+
+def test_a_whitespace_grievance_email_is_treated_as_unset(settings):
+    with pytest.raises(LaunchConfigError):
+        verify_launch_config(_prod(settings, grievance_officer_email="   "))
+
+
+def test_a_published_contact_boots(settings):
+    assert verify_launch_config(
+        _prod(settings, grievance_officer_email="dpo@example.com")
+    ) is None
+
+
+def test_the_grievance_refusal_does_NOT_fire_outside_prod(settings):
+    """It sits AFTER boot.py's `if settings.env != "prod": return`, or every
+    local run and the whole test suite would break -- the same placement Phase
+    A's rate-limit refusal needed."""
+    ok = settings.model_copy(update={
+        "api_auth_key": SecretStr("a-real-key"),
+        "grievance_officer_email": "",
     })
     assert verify_launch_config(ok) is None
 
