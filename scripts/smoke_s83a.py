@@ -11,8 +11,13 @@ What a unit test cannot prove and this does:
     and the limit still holds. An in-process limiter passes every other check
     in this file and fails exactly that one -- which is why "counters live in
     the database" was not a matter of taste.
-  * a 429 for a registered and an unregistered address that are byte-identical
-    over the wire, headers included.
+  * a 429 for a registered and an unregistered address that are
+    indistinguishable over the wire -- same status, same body, same header
+    NAMES, no Set-Cookie on either. (Two things differ and neither is a
+    function of the address: X-Request-ID is unique per request by design, and
+    Retry-After counts down inside the shared window. The earlier wording here
+    said "byte-identical ... headers included" while check 4 compared status
+    and body only; the S8.3 review made the check match the claim.)
   * the retry -> process handoff end to end: a genuinely failed item is
     re-queued and the EXISTING process door picks it up.
   * /metrics as an actual HTTP surface: 401 without the admin key, and with it
@@ -173,14 +178,33 @@ def main() -> int:
         # 4. A REGISTERED and an UNREGISTERED address are refused identically.
         #    A 429 that appeared only for registered addresses would rebuild
         #    the enumeration oracle the uniform 202 exists to close.
+        #
+        #    HEADERS TOO, added by the S8.3 review: this file's docstring said
+        #    "headers included" while the check compared status and body only.
+        #    A header present for one address and absent for the other is the
+        #    same oracle, and a smoke that claims a check it does not make is
+        #    the exact shape this sprint reviewed OPERATING.md for.
         unknown = "nobody@agency-z.example"
         for _ in range(LOGIN_LIMIT):
             c1.post("/auth/org/login", json={"email": unknown})
         refused_unknown = c1.post("/auth/org/login", json={"email": unknown})
+
+        # X-Request-ID is unique per request BY DESIGN and carries nothing
+        # about the address; Retry-After counts down inside the shared window,
+        # so two refusals a second apart differ by a second. Everything else
+        # must match exactly.
+        def header_names(resp):
+            return sorted({k.lower() for k in resp.headers} - {"x-request-id"})
+
         check("known_and_unknown_are_refused_identically",
               refused_unknown.status_code == refused.status_code
-              and refused_unknown.json() == refused.json(),
-              f"{refused_unknown.status_code} vs {refused.status_code}")
+              and refused_unknown.json() == refused.json()
+              and header_names(refused_unknown) == header_names(refused)
+              and "set-cookie" not in header_names(refused)
+              and abs(int(refused_unknown.headers["Retry-After"])
+                      - int(refused.headers["Retry-After"])) <= 5,
+              f"{refused_unknown.status_code} vs {refused.status_code}; "
+              f"{header_names(refused_unknown)} vs {header_names(refused)}")
 
         # 5. A third address is unaffected -- the email scope is per address.
         third = c1.post("/auth/org/login", json={"email": "fresh@agency-c.example"})
@@ -267,13 +291,21 @@ def main() -> int:
         check("metrics_is_prometheus_text", ok_text,
               f"{m.status_code} {m.headers.get('content-type')}")
 
+        # `check` prints its detail on PASS as well as on fail, so these two
+        # report what was actually observed. They previously carried
+        # failure-phrased prose, which printed "OK ... not found with a denial"
+        # on a passing run -- a smoke whose own output contradicts its verdict
+        # is the thing a smoke exists to prevent.
         body = m.text
-        check("metrics_carries_the_deny_counter",
-              'decision="denied"' in body and 'rule="login_request"' in body,
-              "veritas_rate_limit_decisions_total not found with a denial")
+        denied = 'decision="denied"' in body and 'rule="login_request"' in body
+        check("metrics_carries_the_deny_counter", denied,
+              "found decision=\"denied\" on rule=\"login_request\"" if denied
+              else "veritas_rate_limit_decisions_total carries no denial")
+        templated = 'route="/screening/batches/{batch_id}"' in body
         check("metrics_labels_by_template_and_leaks_no_batch_id",
-              'route="/screening/batches/{batch_id}"' in body and bid not in body,
-              "a raw id in a label is one series per batch")
+              templated and bid not in body,
+              f'route="/screening/batches/{{batch_id}}" present={templated}, '
+              f"raw batch id present={bid in body}")
     finally:
         try:
             proc.terminate()
