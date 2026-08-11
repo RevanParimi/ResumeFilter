@@ -171,6 +171,35 @@ def test_requests_are_labelled_by_ROUTE_TEMPLATE_not_by_path(client, admin_heade
     assert "aaaaaaaa" not in text and "bbbbbbbb" not in text
 
 
+def test_the_template_label_comes_from_the_request_scope(client, admin_headers):
+    """THE TRIPWIRE for `_route_template`'s one remaining line.
+
+    The S8.3 review deleted a fallback that re-resolved the route by scanning
+    the table, having measured that its successful branch never executes on
+    starlette 1.3.1 -- the router populates `scope["route"]` before the
+    endpoint runs, and BaseHTTPMiddleware shares that dict. Deleting it makes
+    the label depend entirely on that one framework behaviour, so this test
+    exists to fail loudly if an upgrade ever changes it, instead of every label
+    quietly degrading to `__unmatched__` and looking like working code.
+
+    A two-parameter route, deliberately: it cannot be produced by echoing the
+    raw path back.
+    """
+    client.get("/candidates/cand-1/resumes/res-1")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'route="/candidates/{candidate_id}/resumes/{resume_id}"' in text
+    assert "cand-1" not in text and "res-1" not in text
+
+
+def test_a_405_is_still_labelled_by_its_template(client, admin_headers):
+    """A method mismatch never reaches the endpoint, but the router HAS set the
+    route by then (it matches partially to answer 405). Measured, because the
+    deleted fallback's whole premise was that cases like this one needed it."""
+    client.post("/healthz")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'veritas_http_requests_total{method="POST",route="/healthz",status="405"} 1' in text
+
+
 def test_an_unmatched_path_gets_one_shared_label(client, admin_headers):
     client.get("/no/such/thing/1")
     client.get("/no/such/thing/2")

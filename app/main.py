@@ -47,26 +47,28 @@ def _iter_api_routes(routes):
             yield route
 
 
-def _route_template(app: FastAPI, request: Request) -> str:
+def _route_template(request: Request) -> str:
     """The matched route's PATH TEMPLATE, or ``__unmatched__``.
 
-    `request.scope["route"]` is set during routing, but Starlette's
-    BaseHTTPMiddleware does not guarantee the endpoint's scope mutations are
-    visible on the object we hold, so the match is re-resolved here. It is a
-    linear scan of the route table on a path that already logs and hashes --
-    and the alternative is a metric that silently degrades to __unmatched__ for
-    every request, which looks like working code.
-    """
-    from starlette.routing import Match
+    `request.scope["route"]` is set by the router before the endpoint runs, and
+    BaseHTTPMiddleware shares that same scope dict, so it is visible here.
 
-    route = request.scope.get("route")
-    template = getattr(route, "path", None)
-    if template:
-        return template
-    for candidate in _iter_api_routes(app.routes):
-        if candidate.matches(request.scope)[0] == Match.FULL:
-            return candidate.path
-    return "__unmatched__"
+    This originally kept a fallback that re-resolved the match by scanning the
+    route table, on the theory that the scope mutation might not be visible.
+    The S8.3 review MEASURED it (starlette 1.3.1): the scan's successful branch
+    never executes. Matched requests, 405s and 500s all return early because
+    the router sets the route even on a partial match and even when the
+    endpoint raises; 404s, redirects and CORS preflights all reach the scan and
+    find nothing, because nothing FULL-matches those. So the fallback was
+    unreachable defensive code, in a repo that treats declared-but-inert
+    machinery as a defect -- which is this very branch's headline finding.
+
+    What replaces it is a test, not a scan:
+    tests/test_metrics.py::test_the_template_label_comes_from_the_request_scope
+    fails loudly if a Starlette upgrade ever stops populating the scope, rather
+    than letting every label silently degrade to __unmatched__.
+    """
+    return getattr(request.scope.get("route"), "path", None) or "__unmatched__"
 
 
 def create_app(services: Optional[Services] = None) -> FastAPI:
@@ -154,7 +156,7 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             # observability. Anything unmatched collapses to ONE label.
             services = getattr(app.state, "services", None)
             if services is not None:
-                template = _route_template(app, request)
+                template = _route_template(request)
                 services.metrics.increment(
                     "http_requests",
                     route=template,
