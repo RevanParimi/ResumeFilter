@@ -324,7 +324,10 @@ python -m app.retention.sweep --apply    # delete
   still works, because a count is safe and is how an operator sees what would go
   before turning the knob on.
 - **`sweep_max_rows_per_class` (10000) bounds one invocation.** The report says
-  `truncated: true` rather than pretending it finished; run it again.
+  `truncated: true` rather than pretending it finished; run it again. Precisely:
+  it bounds each **target**, and `login_state` is the one class with two, so a
+  single run can move up to 2× the cap for it. The cap exists to bound how long
+  one statement holds locks, which is a per-table property.
 - **The CLI's report is the LAST line of stdout**, and it is JSON. This process
   shares stdout with the structured log, so the stream is a sequence of JSON
   documents — fine for `jq`, and `json.loads` of the whole buffer will raise.
