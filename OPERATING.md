@@ -199,8 +199,11 @@ exactly one door that evaluates an item, and this is not a second one.
   (text is cleared on success) or they failed as `empty_resume` and would fail
   identically. Reporting those as `requeued` would be a promise the next
   `process` call breaks.
-- Another organisation's batch answers **404, never 403**, byte-identically to
-  an unknown id.
+- Another organisation's batch answers **404, never 403**, and is
+  indistinguishable from an unknown id: same status, same body. (`X-Request-ID`
+  differs on every response by design and carries nothing about the batch.
+  Asserted by `smoke_s83a` check 10 and
+  `tests/test_screening_retry.py::test_another_org_gets_404_never_403`.)
 - It is not itself rate-limited: it is one `UPDATE`, and the spend it unlocks
   is bounded by `screening_process` on the call that does the work.
 
