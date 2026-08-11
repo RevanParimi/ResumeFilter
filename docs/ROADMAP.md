@@ -9,7 +9,137 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-10 (latest) — S8.3 PHASE A BUILT AND GREEN on branch
+- **Session 2026-08-11 (latest) — S8.3 PHASE A REVIEWED on branch
+  `s83a-limits-and-metrics`. 8 findings, ALL FIXED. 1665 → 1689, `smoke_s83a`
+  19/19, all nine smokes green, 6 mutation probes planted and all 6 died.
+  STILL NOT MERGED — that is the next action.** Seven review commits on top of
+  the build's thirteen (`cb54a51`…`7199ab5`). Every finding got a failing test
+  first.
+  **⚠ FINDING 1 (Important) — THE FIXTURE WAS MORE CORRECT THAN PRODUCTION, and
+  that is why nothing caught it.** `build_default_services` passed
+  `metrics=metrics` to the auth and screening builders and **not** to
+  `build_interview_service`, so the real container built the ASR limiter with
+  `metrics=None`: `asr_transcribe` was enforced perfectly and **counted
+  nowhere**. `OPERATING.md`'s runbook step 1 — "read the `rule` and `scope`
+  labels to find out which bound they hit" — could not answer for ASR at all.
+  No test could see it because `tests/conftest.py::make_services` wires that
+  limiter's metrics **by hand**. This is the S8.2 lesson ("a fake that cannot
+  enforce an invariant will hide it") pointed at **wiring** rather than at
+  behaviour, and it is a new variant worth remembering: the fixture did not
+  merely fail to enforce the invariant, it **satisfied it independently**, so
+  the production gap was invisible from inside the suite.
+  `tests/test_ratelimit_wiring.py` now builds the **production container** and
+  asserts every limiter shares the container's metrics *and* settings.
+  **⚠ FINDING 2 (Important) — THE KNOWN DEFECT, and the fix was a test, not a
+  choice between two bad options.** `llm_calls`, `asr_calls`, `screening_items`
+  and `retention_deleted` were declared in `_HELP` with no call site — the same
+  declared-but-never-populated shape as `auth_sessions.ip_hash`, which was this
+  branch's own headline finding. **Deleted, not wired**: wiring means threading
+  a metrics handle through the `LLMClient` and `SpeechClient` ABCs, three
+  subclasses each, both builders and every fixture that constructs one, to emit
+  series no scraper reads yet. `retention_deleted` went with the other three —
+  "genuinely coming in Phase B" is exactly the rationalisation that kept
+  `ip_hash` declared for two sprints. The real fix is
+  `test_every_declared_metric_has_a_call_site`, which scans `app/` for
+  `increment("<name>")` and fails on any declared name nothing increments, so
+  **Phase B must add the name in the same commit as the sweep**. A second test
+  proves the scanner can find something, so it cannot pass by matching nothing.
+  **⚠ FINDING 3 (Important) — `_route_template`'s fallback was UNREACHABLE, and
+  the docstring's premise was false.** The build bullet below claims the
+  template is "re-resolved against the route table" because
+  `BaseHTTPMiddleware` may not show the endpoint's scope mutations. **Measured
+  on starlette 1.3.1: it shares the same scope dict**, and the scan's
+  successful branch never executes:
+
+  | request | `scope["route"]` | what happened |
+  |---|---|---|
+  | matched 200 | set | early return |
+  | 405 method mismatch | set | early return (the router matches partially to answer 405) |
+  | 500 from the handler | set | early return (set before the endpoint runs) |
+  | 404 | absent | scan runs, FULL-matches nothing |
+  | 307 redirect | absent | scan runs, FULL-matches nothing |
+  | CORS preflight | absent | scan runs, FULL-matches nothing |
+
+  So every case either returns before the scan or reaches it and finds nothing.
+  That is untested defensive code in the branch that deleted a declared-inert
+  field for being exactly that. **Deleted and replaced with a tripwire, not a
+  scan**: three tests now fail if a Starlette upgrade stops populating the
+  scope, instead of every label silently degrading to `__unmatched__` — which,
+  as the original docstring correctly said, looks exactly like working code.
+  The guard was right; putting it in the runtime instead of the suite was not.
+  **⚠ FINDING 4 (Important) — the sprint's FOURTH RULE had no behavioural
+  test.** `asr_transcribe` appeared once in the suite, inside a list of rule
+  names that resolve — which proves the config table is populated and nothing
+  about whether a transcription is ever refused, on the rule that spends money
+  per second of audio and that the S7.3 review named as the open spend surface.
+  Four tests now cover it; the load-bearing assertion is
+  `len(speech.calls) == 1`, because **a limiter that refuses after the vendor
+  call bounds the response and not the bill**.
+  **⚠ FINDING 5 (Medium) — `enforce` was a latent fail-open.** It tested
+  `not decision.allowed AND decision.scope is not None`, so a denial carrying
+  no scope was silently **allowed**. No caller can construct that decision
+  today, which is precisely why it needed a test rather than a comment: the
+  guard would have gone on looking correct until one change to `check` forgot
+  to set a scope, and the failure mode is an unbounded OTP endpoint that
+  reports nothing. `RateLimited` now takes an `Optional` scope, so missing
+  information degrades a log line instead of a bound.
+  **⚠ FINDING 6 (Medium) — `hit()`'s `IntegrityError` arm had no test, and the
+  risk was not the rollback.** It is the `session.commit()` **after** it: if
+  SQLAlchemy did not expunge the failed INSERT's pending row, that commit would
+  re-flush it and raise a second `IntegrityError` out of `hit`, past every 429
+  handler, to the client as a **500** — a limiter answering 500 under exactly
+  the concurrency it exists for. It does expunge; now proven.
+  **MEASURED, AND IT CONTRADICTED THE ASSUMPTION IN THE STORE'S DOCSTRING: a
+  rival on a genuinely separate connection is NOT CONSTRUCTIBLE ON SQLITE.**
+  In-memory shares one connection through `StaticPool`, and a file database in
+  WAL mode answers `OperationalError: database is locked` rather than letting
+  the rival commit. **The `IntegrityError` arm is the POSTGRES shape of this
+  race** — which is fine, because prod already refuses to boot on SQLite, but
+  it means no SQLite test will ever reach it naturally. The collision is
+  therefore planted on the session's own connection and what is pinned is the
+  **recovery**, which is dialect-independent.
+  **⚠ FINDINGS 7–8 (Minor) — four doc overclaims, in the file the review was
+  warned about and in the smoke beside it.** (a) `OPERATING.md` called the 429
+  "byte-identical" for a registered and an unregistered address; the responses
+  are not — `X-Request-ID` is unique per request and `Retry-After` counts down
+  inside the window — and **neither difference is a function of the address**.
+  Now states what holds: same status, same body, same header names, no
+  `Set-Cookie` on either. (b) `smoke_s83a.py`'s docstring claimed the two 429s
+  matched "headers included" while **check 4 compared `status_code` and
+  `.json()` and never looked at a header** — the same overclaim shape, one file
+  over. The check now makes the comparison the docstring promised. (c) Two
+  smoke checks carried failure-phrased detail strings that `check()` prints on
+  pass as well, so a **passing** run printed
+  `OK metrics_carries_the_deny_counter -- ... not found with a denial`. (d)
+  `BatchItemRow.raw_text`'s comment still said "no path re-queues a failed item
+  TODAY" in the branch that added the retry path.
+  **CHECKED AND SOUND, so the review did not touch them:** the candidate and
+  admin planes and both verify routes **are** limited (they simply had no test
+  — now they do); `login_request`/`login_verify` have exactly one door each
+  (`mint_code` and `verify_code` have a single caller apiece, and all eight
+  routes funnel through `_request_code`/`_verify`); `_client_ip`'s n-th-from-
+  the-right hop arithmetic is correct and a short forged `X-Forwarded-For`
+  cannot bypass it; batch status is **derived**, not stored, so retry cannot
+  leave a stale `complete`; and `OPERATING.md` §6's "it is one `UPDATE`" is
+  literally true — measured at 2 SELECTs and **1** UPDATE for a 40-item retry,
+  because SQLAlchemy batches the row writes into one executemany.
+  **MEASURED AND WORTH KNOWING: all three planes SHARE one budget per address.**
+  `bucket_key` is `salt|rule|scope|identity` and the plane is not in it. That is
+  the conservative direction — nobody buys 3× the guesses by rotating planes —
+  but it was undocumented, and adding a per-plane limit later would **silently
+  triple the real bound**. Now pinned by a test and stated in `OPERATING.md`.
+  **THE `screening_process` ORDERING WAS RIGHT AND STAYS, with the trade now
+  written down.** It counts CALLS, not items, and enforcing before the
+  ownership read and before the claim buys two things worth more than the
+  accounting: counting after the ownership read would make a refusal on
+  somebody else's batch id distinguishable from one on your own, and counting
+  after the claim would strand claimed items in `processing`. Overhead is one
+  no-op call per batch (101 calls for a 500-resume batch), so **400/hour still
+  leaves four full 500-resume batches an hour** — the number stands. Two tests
+  pin both consequences; move the check and they fail.
+  **➤ NEXT STEP: merge the branch, then S8.3 Phase B** (retention sweep · DPDP
+  correction/rectification · grievance officer).
+- **Session 2026-08-10 — S8.3 PHASE A BUILT AND GREEN on branch
   `s83a-limits-and-metrics`. 1586 → 1665, `smoke_s83a` 19/19 on its second
   run, ALL NINE smokes green (s63, s64, s73, s81, s82, s83a, s84a, s84b,
   s85_outcome), and 10/10 mutants dead.** Spec:
@@ -41,8 +171,11 @@
   unregistered address unlimited and a registered one at 429 — the same oracle,
   rebuilt out of status codes. The increment goes **before** that branch;
   a test and the smoke both assert a known and an unknown address are refused
-  **byte-identically**, and the mutation that moves the enforce call below the
-  branch dies naming that test.
+  **indistinguishably** — same status, same body, same header names, no
+  `Set-Cookie` (the 2026-08-11 review corrected "byte-identically", which the
+  responses never were, and made the smoke's check match its own docstring) —
+  and the mutation that moves the enforce call below the branch dies naming
+  that test.
   It sits **after** the provider probe rather than at the very top, which is a
   deliberate deviation from the plan: that probe's own comment explains why it
   must run first, and hoisting a limiter above it would silently reorder a rule
@@ -87,6 +220,10 @@
   the middleware holds, and the failure mode of trusting it is a metric that
   silently degrades to `__unmatched__` for every request — which looks exactly
   like working code.
+  *(↑ CORRECTED BY THE 2026-08-11 REVIEW, finding 3. The premise is false on
+  starlette 1.3.1 — the scope dict IS shared — and the re-resolution scan was
+  measurably unreachable, so it was deleted. The concern was real and is now
+  carried by three tests instead of by dead code.)*
   `GET /metrics` is on the **admin router**, so the credential gate is
   inherited rather than remembered, and `response_model=str` is honest (the
   body IS a string) so `test_every_route_declares_a_response_model` needed no
@@ -125,8 +262,13 @@
   in the registry's help table with NO call site**, recorded as deliberately
   deferred to Phase B rather than silently skipped — they belong beside
   `retention_deleted`, where the sweep gives them a reason to be read together.
+  *(↑ OVERTURNED BY THE 2026-08-11 REVIEW, finding 2. All four were deleted:
+  disclosing a declared-inert metric is not the same as not shipping one, and
+  the branch's own headline finding was this exact shape. A test now enforces
+  that every declared metric has a call site.)*
   **➤ NEXT STEP: review the Phase A branch, then merge, then S8.3 Phase B**
   (retention sweep · DPDP correction/rectification · grievance officer).
+  *(↑ the review happened on 2026-08-11 — see the top bullet.)*
 - **Session 2026-08-10 (later) — THE CUSTOMER CAN NOW CLOSE THE LOOP. Branch
   `s86-org-outcome-route`, nine commits, TDD throughout. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
