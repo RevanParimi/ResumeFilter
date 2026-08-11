@@ -182,9 +182,10 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         # A HAND-MAINTAINED HIGHLIGHTS LIST, not the route table, and it has
         # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5,
         # plus S8.3's `/retry`) appear below, neither does `GET /metrics`, and
-        # neither do S8.3 Phase B's five (`/portal/corrections`,
+        # neither do any of S8.3 Phase B's SEVEN (`/portal/corrections`,
         # `/portal/grievances`, `/portal/requests`, `/grievance`,
-        # `/admin/retention/sweep`, `/admin/requests*`).
+        # `/admin/retention/sweep`, `/admin/requests`,
+        # `/admin/requests/{id}/resolve`).
         # Stated rather than patched, because adding entries would make an
         # unmaintained list look maintained -- the second hand-maintained list
         # is always the one that drifts (the S8.2 review's OPEN_PATHS/

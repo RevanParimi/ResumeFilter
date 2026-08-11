@@ -121,7 +121,7 @@
   **⚠ CARRIED FORWARD, still not fixed** (unchanged from Phase A): the six
   "byte-identical" 404-vs-absence claims in `SCREENING.md` (3) and `TENANCY.md`
   (3), all pre-existing on `main`; and `GET /`'s hand-maintained `endpoints`
-  list, still missing every `/screening/*` route, `/metrics`, and now the four
+  list, still missing every `/screening/*` route, `/metrics`, and now all SEVEN
   S8.3B routes. **The real fix is deriving it from `/openapi.json`.** Adding
   entries by hand would make an unmaintained list look maintained — and this
   branch just fixed two other hand-maintained lists for that reason, which
