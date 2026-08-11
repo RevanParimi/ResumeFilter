@@ -9,7 +9,126 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-11 (latest) — S8.3 PHASE A REVIEWED on branch
+- **Session 2026-08-11 (latest) — S8.3 PHASE B BUILT AND GREEN on branch
+  `s83b-retention-and-rights`, and S8.3 IS NOW COMPLETE. 1689 → 1804 green,
+  `smoke_s83b` 22/22, 12/12 mutation probes dead.** Phase A merged first
+  (`a57a05d`). Plan:
+  `docs/superpowers/plans/2026-08-11-s83b-retention-and-rights.md`, 16 tasks,
+  TDD with every failing test proven red first. **NOT YET REVIEWED OR MERGED —
+  that is the next action.**
+  **The statutory surface exists: the retention promise is now mechanically
+  true, and a data principal can ask for a correction and complain to a named
+  officer.** New packages `app/retention/` and `app/rights/`, migrations `0022`
+  and `0023`, seven routes, and `OPERATING.md` §§9–11.
+  **THE LOAD-BEARING DECISION: `RETENTION_KNOBS` GREW 8 → 11 CLASSES AND STAYS
+  THE SINGLE SOURCE.** The portal prints it and the sweeper derives its targets
+  from it; a guard asserts set equality in both directions. A sweeper carrying
+  its own list would drift, and the drift is silent in the worst direction —
+  the portal keeps promising a window nothing enforces. **Widening it widens
+  what the person is TOLD**, which is the correct direction: `batch_item_text`
+  is a copy of their own resume text, `rate_limit_counters` holds a salted hash
+  of their email beside one of their IP, `login_state` is their abandoned login
+  attempts. `tests/test_portal_retention.py` needed **no edit** — it compares
+  against `set(RETENTION_KNOBS)`, which is what that assertion was always for.
+  **ELEVEN CLASSES, TWELVE TARGETS**: `login_state` covers `login_challenges`
+  and `auth_sessions`, so the guard compares a SET and never a length.
+  **⚠ THE SMOKE FOUND A REAL DEFECT THAT MAKES THE WHOLE CORRECTION MECHANISM
+  A LIE, and no unit test in the plan would have.** `_refresh_identity` is
+  documented *"latest non-empty name wins"*, so **every ingest overwrites
+  `candidates.full_name`**. A subject files a correction, an operator verifies
+  it against an ID and applies it — and the customer's **very next upload for
+  that person silently puts the old spelling back**, while `/portal/requests`
+  goes on reporting `applied: true`. Migration `0023` adds
+  `full_name_corrected_at`; `apply_correction` sets it and `_refresh_identity`
+  honours it. **Narrow on purpose**, and a second test pins the narrowness: with
+  no correction on the row the old rule is still right and is untouched. It does
+  **not** weaken §8.2 — the extraction stays immutable; what stopped is the
+  identity row being re-derived over a human decision.
+  **⚠ AND THE CHECK THAT FOUND IT WAS ITSELF OVERCLAIMING** — the shape the
+  Phase A review caught twice, one file over. `the_correction_reached_the_
+  candidate_row` only ever read the REQUEST row; it is now two checks, one on
+  the request and one on `candidates.full_name` over the wire. **A check whose
+  name claims more than its assertion makes is how this defect hid for an
+  afternoon.**
+  **CLEAR MODE'S PREDICATE HAS TWO HALVES AND THE SECOND IS LOAD-BEARING.**
+  `batch_items.raw_text` is already `""` on every successful item, so an
+  age-only predicate would report those rows as "cleared" **every day forever**
+  — a preview that lies in the direction of looking busy. Pinned from both
+  sides: an already-blank row is uncounted on the FIRST pass, and a second
+  sweep reports 0. The row **survives** (an org's record of what it screened
+  outlives the text), and the Phase A coupling is asserted rather than
+  described: an item inside `ret_batch_item_days` keeps its text, so the retry
+  still has an input.
+  **DRY-RUN PARITY IS BY CONSTRUCTION**, not by discipline: `affected` is the
+  same COUNT in both modes and only the write is skipped. A sweeper whose
+  preview disagrees with its action is worse than one with no preview, because
+  the preview is the entire reason an operator trusts the destructive call.
+  **MEASURED, NOT ASSUMED: the bulk DELETE's cascade.** A bulk statement
+  bypasses SQLAlchemy's ORM-level `cascade="all, delete-orphan"`; what carries
+  it is each FK's `ON DELETE CASCADE` plus `PRAGMA foreign_keys=ON`. Had either
+  been absent, sweeping a resume would have left an **orphaned extraction
+  holding the very text the row was deleted to remove** — and the sweep would
+  have reported success. The test seeds a real extraction and asserts it is
+  gone.
+  **⚠ THE METRIC FORCED A CHANGE TO ITS OWN GUARD.** `retention_deleted` moves
+  N rows at a time, so its call site is `add(...)` — which
+  `test_every_declared_metric_has_a_call_site`'s regex did **not** match.
+  Wiring it without widening the scanner would have left the guard **passing by
+  not looking**, which is precisely the failure that guard exists to prevent.
+  Scanner and call site changed together, and the new assertion is only
+  satisfiable through the `add` arm.
+  **THE SPEC'S GRIEVANCE-ONLY RATE RULE WAS DELIBERATELY BROADENED**, recorded
+  in `config.yaml` rather than slipped: the candidate plane gained **two** new
+  authenticated writes, and limiting one of two sibling doors is this repo's
+  signature defect. It ships as `request_submit`, one budget over both.
+  **The limit is charged BEFORE validation**, with the trade written down: a
+  typo costs one of ten complaints an hour, which is the smaller harm than an
+  endpoint a stuck client can hammer forever with a body that never validates.
+  **TWO HAND-MAINTAINED LISTS CLEANED UP ON THE WAY THROUGH, both the shape
+  this repo keeps finding drifted.** (1) The `RateLimited` → 429 translation was
+  **four byte-identical copies** and this branch was about to add a fifth; it is
+  one `_rate_limited()` now, and the next copy would have been the one that
+  forgot `Retry-After`. (2) `test_ratelimit_wiring.py`'s `LIMITED` tuple was
+  hand-maintained, so the new fourth limiter would have been covered only if
+  somebody remembered to type it there — limited services are now **discovered**
+  off the container, with the named tuple kept as a floor so a service that
+  silently *loses* its limiter still fails.
+  **`SweepTarget.knob` IS A PROPERTY, AND THAT DELETED ONE OF MY OWN PLANNED
+  TESTS.** The plan called for asserting that every target's knob matches the
+  one its data class declares; with the derivation that test **cannot fail**,
+  and a test that cannot fail is the shape this repo keeps catching in its own
+  checks. What is pinned instead is the failure mode the property buys: a target
+  for an undeclared class raises `KeyError` rather than sweeping on a default
+  nobody chose. **A `check()` with `or True` in the smoke was deleted for the
+  same reason** before it ever ran.
+  **THE CLI'S OUTPUT CONTRACT WAS FOUND BY A TEST, NOT DESIGNED.** The first
+  version did `json.loads(stdout)` and raised *"Extra data"*: the process shares
+  stdout with the structured log, so the stream is a **sequence** of JSON
+  documents. `jq` is unaffected; a caller doing `json.loads(output)` is not. The
+  report is now documented and asserted as the **last line**.
+  **The seventh boot refusal** (prod with an empty `grievance_officer_email`)
+  sits after the prod-only early return, and a test asserts it does **not** fire
+  locally — above that line it would break every local run. `_prod()` in
+  `test_boot_config.py` gained the officer email, because that helper's whole
+  job is to satisfy every prior refusal so each test isolates the one it names.
+  **Widening `PUBLIC_PATHS` for `GET /grievance` turned the route-table guard
+  RED and had to be edited deliberately**, which is exactly what that literal
+  list is for.
+  **`Services` gained `session_factory`**, measured first: every store in the
+  repo builds its engine from `candidates_db_url`, so it names the database that
+  already exists rather than opening an eleventh engine — and a handler no
+  longer reaches into `some_store._session_factory`.
+  **⚠ CARRIED FORWARD, still not fixed** (unchanged from Phase A): the six
+  "byte-identical" 404-vs-absence claims in `SCREENING.md` (3) and `TENANCY.md`
+  (3), all pre-existing on `main`; and `GET /`'s hand-maintained `endpoints`
+  list, still missing every `/screening/*` route, `/metrics`, and now the four
+  S8.3B routes. **The real fix is deriving it from `/openapi.json`.** Adding
+  entries by hand would make an unmaintained list look maintained — and this
+  branch just fixed two other hand-maintained lists for that reason, which
+  strengthens rather than weakens the case for doing it properly.
+  **➤ NEXT STEP: review the Phase B branch, then merge. S8.3 is then COMPLETE
+  and the next sprint is S8.6 (deploy).**
+- **Session 2026-08-11 — S8.3 PHASE A REVIEWED on branch
   `s83a-limits-and-metrics`. 8 findings, ALL FIXED. 1665 → 1689, `smoke_s83a`
   19/19, all nine smokes green, 6 mutation probes planted and all 6 died.
   STILL NOT MERGED — that is the next action.** Seven review commits on top of
@@ -1903,7 +2022,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                the design.
     │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
     │                new 409 makes it fail ON PURPOSE (spec §4.7)
-    ├── [~] S8.3  Operating safely — dual-scoped rate limits · metrics ·
+    ├── [x] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
     │            SPEC 2026-08-10, built as TWO BRANCHES from one spec (0.1):
@@ -1930,12 +2049,32 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                - GET /metrics (admin-gated), labelled by route TEMPLATE
     │                - prod refuses to boot with rate_limit_enabled=false (6th)
     │                - new root doc OPERATING.md
-    │            [ ] PHASE B — retention sweep (sweep_active stops being a
-    │                hardcoded False and DERIVES from config; the sweeper's
-    │                targets come from the SAME table as the portal's declared
-    │                windows) · data_principal_requests (correction + grievance,
-    │                one table, `full_name` the only auto-appliable field) ·
-    │                public GET /grievance + a 7th boot refusal · migration 0022
+    │            [x] PHASE B — retention and rights (branch
+    │                `s83b-retention-and-rights`, 16 tasks, 1689 -> 1804 green,
+    │                smoke_s83b 22/22, 12/12 mutants dead). NOT YET REVIEWED OR
+    │                MERGED.
+    │                plan: 2026-08-11-s83b-retention-and-rights.md
+    │                - app/retention/ (plan/schema/sweep) + app/rights/
+    │                  (schema/models/store/service) + migrations 0022, 0023
+    │                - RETENTION_KNOBS 8 -> 11 classes and stays the SINGLE
+    │                  source: the portal prints it, the sweeper reads it, and
+    │                  a guard asserts set equality both ways
+    │                - sweep_active DERIVES from config; it was a hardcoded
+    │                  False telling every data principal that nothing purges
+    │                - CLEAR mode for batch_item_text: the row survives, and
+    │                  the predicate's second half (raw_text != '') is what
+    │                  stops a preview reporting the same rows forever
+    │                - dry-run parity by construction; cap + truncated; the
+    │                  bulk delete's DB-level CASCADE is measured, not assumed
+    │                - POST /admin/retention/sweep (dry by default, 409 when
+    │                  disabled) + python -m app.retention.sweep --apply
+    │                - reviewed correction queue: only full_name auto-applies,
+    │                  email/phone refused BY NAME, extractions never rewritten
+    │                - 0023: an applied correction PINS full_name, or the next
+    │                  upload reverts it (found by the smoke)
+    │                - public GET /grievance + the 7th boot refusal
+    │                - _rate_limited(): four byte-identical 429 copies became
+    │                  one before this added a fifth
     └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the
@@ -1944,10 +2083,13 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
         WHOLE-PLATFORM hardening (all 63 endpoints, all 3 planes) + the first
         UI.  Blockers: gap-analysis v2 §9 (1) migrations-on-boot [DONE S8.1]
         (2) Postgres [DONE S8.1] (3) report-store rewrite [DONE S8.1]
-        (4) candidate self-register (5) org
-        self-onboard (6) retention sweep (7) rate limiting (8) observability
+        (4) candidate self-register [DONE S8.2] (5) org
+        self-onboard [DONE S8.2] (6) retention sweep [DONE S8.3B]
+        (7) rate limiting [DONE S8.3A] (8) observability [DONE S8.3A]
         — PLUS the two DPDP statutory rights (correction, grievance officer),
-        promoted to RFP blockers by the GTM doc §8.
+        promoted to RFP blockers by the GTM doc §8 [BOTH DONE S8.3B].
+        ** WITH S8.3 PHASE B MERGED, EVERY NAMED BLOCKER IS CLOSED and S8.6 is
+        the only sprint left in PI-8. **
         GTM: sell the FRAUD-SCREEN wedge to staffing agencies; ledger off the
         pitch.  See 2026-08-01-veritas-gtm-positioning.md.
         PI-9 = calibration harness, gated on PI-8 landing real orgs.

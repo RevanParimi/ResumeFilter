@@ -1,11 +1,16 @@
-# OPERATING.md — limits, metrics and the runbook
+# OPERATING.md — limits, metrics, retention and the runbook
 
-**Sprint:** S8.3 Phase A (2026-08-10) · **Spec:**
+**Sprint:** S8.3, Phase A (2026-08-10) + Phase B (2026-08-11) · **Spec:**
 `docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md`
 **Audience:** whoever runs this service for a paying customer.
 
-Phase B extends this document with the retention sweep and the data-principal
-request queue. Everything below is live today.
+§§1–7 are Phase A: what is limited, how it is counted, the 429 and the runbook.
+§§8–10 are Phase B: the retention sweep, the DPDP request queue and the
+published grievance officer. §11 is what was deliberately left out of both.
+
+**Everything in this document is live.** Where a section describes something
+that has to be *invoked* rather than something that runs on its own, it says so
+in those words — §8 is the one that does, because there is no scheduler.
 
 ---
 
@@ -241,7 +246,7 @@ false` is refused at boot when `env=prod` — the sixth such refusal, alongside
 the missing admin key, prod-on-SQLite, an insecure session cookie, a wildcard
 CORS origin and a capture email provider. An unthrottled OTP endpoint on a
 public host is the same class of thing as a fail-open admin plane. **S8.3 Phase
-B adds a seventh**: an empty `grievance_officer_email` (§11).
+B adds a seventh**: an empty `grievance_officer_email` (§10).
 
 **Clearing counters** (an operator locking themselves out during a demo):
 delete the rows for that bucket from `rate_limit_counters`, or wait out the
@@ -249,7 +254,7 @@ window — `Retry-After` on the refusal says exactly how long. Since Phase B the
 sweep retires those rows under `ret_rate_limit_days` (7); a new window for the
 same key also purges the previous one on write.
 
-## 9. The retention sweep
+## 8. The retention sweep
 
 Eight retention windows were **posture only** until S8.3 Phase B: `/portal/me`
 printed them and nothing enforced them. Now they are enforced, and three more
@@ -332,7 +337,7 @@ is no longer a literal, and it must never become one again: the portal would
 keep telling every data principal that no mechanical purge runs while the cron
 ran one.
 
-## 10. The DPDP request queue
+## 9. The DPDP request queue
 
 `data_principal_requests` holds two kinds — `correction` and `grievance` — with
 one lifecycle: filed by the subject, reviewed by an operator, decided with a
@@ -384,7 +389,7 @@ validation: a typo costs one of ten complaints an hour, which is the smaller
 harm than an endpoint a stuck client can hammer forever with a body that never
 validates.
 
-## 11. The grievance officer
+## 10. The grievance officer
 
 ```yaml
 grievance_officer_name: ""
@@ -408,7 +413,7 @@ is worse than a 404 because it looks answered.
 mechanically; it is what an operator has committed to, and `GET
 /admin/requests?status=open` ordered oldest-first is how they keep it.
 
-## 12. Deliberately not here
+## 11. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).
 - **Distributed limiting, Redis.** One database is the coordination point until

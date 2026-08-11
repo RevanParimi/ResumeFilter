@@ -250,7 +250,7 @@ resume row needs a candidate and identity resolution needs the extraction.
   that second half a dry run would report the same already-cleared rows every
   day forever. There is still **no scheduler**: `POST /admin/retention/sweep` or
   `python -m app.retention.sweep --apply` is what makes it happen
-  (`OPERATING.md` §9).
+  (`OPERATING.md` §8).
   *(This bullet used to say "declared and NOT yet swept", which was the honest
   statement at the time. It is corrected rather than deleted.)*
 * **Retention BOUNDS the retry, and that coupling is the point.** Past
