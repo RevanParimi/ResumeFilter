@@ -29,6 +29,7 @@ import app.reports.models  # noqa: F401 — populate Base.metadata with report t
 # metadata BEFORE that module is imported. Explicit here, like every other row.
 import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
 import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
+import app.ratelimit.models  # noqa: F401 — populate Base.metadata with the counter table
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow
@@ -37,6 +38,7 @@ from app.core.config import Settings
 from app.core.db import Base, make_engine, make_session_factory
 from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
+from app.metrics.registry import build_metrics
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
 from app.services.github import GitHubRepoRaw, GitHubUserRaw
@@ -237,7 +239,11 @@ def make_services(
     auth=None,
     screening_scope=None,
     screening=None,
+    metrics=None,
 ) -> Services:
+    # Real, per-app, and never disabled here: a fixture that cannot enforce
+    # an invariant will hide it (the S8.2 lesson S8.4 Phase B paid for twice).
+    metrics = metrics or build_metrics()
     candidates = candidates or make_candidate_store()
     github = github or FakeGitHub()
     ledger = ledger or LedgerStore(
@@ -287,11 +293,16 @@ def make_services(
     if interview is None:
         from app.interview.service import InterviewService
         from app.interview.store import InterviewStore
+        from app.ratelimit.service import build_rate_limiter as _build_limiter
         interview = InterviewService(
             InterviewStore(candidates._session_factory, ledger=ledger,
                            settings=settings),
             candidates, ledger, report_store,
-            verification=verification, llm=llm, speech=speech, settings=settings,
+            verification=verification, llm=llm, speech=speech,
+            limiter=_build_limiter(
+                settings, candidates._session_factory, metrics=metrics
+            ),
+            settings=settings,
         )
     # Honour settings.email_provider exactly as build_default_services does.
     # The default is "null", so the suite still proves the REFUSING path
@@ -301,7 +312,8 @@ def make_services(
     if auth is None:
         from app.auth.service import build_auth_service
         auth = build_auth_service(
-            settings, candidates=candidates, ledger=ledger, email=email
+            settings, candidates=candidates, ledger=ledger, email=email,
+            metrics=metrics,
         )
     # Built BEFORE the portal, which composes it for MyData.sessions and
     # for erasing login challenges (they carry no FK and cannot cascade).
@@ -318,6 +330,7 @@ def make_services(
     if screening is None:
         # On the SAME session factory as every other store here, so a batch and
         # the candidate it produces live in one database.
+        from app.ratelimit.service import build_rate_limiter
         from app.screening.ingest import IngestDeps
         from app.screening.service import ScreeningService
         from app.screening.store import ScreeningStore
@@ -330,6 +343,9 @@ def make_services(
             IngestDeps(candidates=candidates, reports=report_store,
                        llm=llm, settings=settings),
             settings=settings,
+            limiter=build_rate_limiter(
+                settings, candidates._session_factory, metrics=metrics
+            ),
         )
     return Services(
         settings=settings,
@@ -354,6 +370,7 @@ def make_services(
         auth=auth,
         screening_scope=screening_scope,
         screening=screening,
+        metrics=metrics,
     )
 
 

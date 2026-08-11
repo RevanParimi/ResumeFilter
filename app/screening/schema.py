@@ -274,3 +274,17 @@ class ProcessResult(BaseModel):
     failed: int = 0
     remaining: int = 0
     status: BatchStatus = BatchStatus.EMPTY
+
+
+class RetryResult(BaseModel):
+    """What one `retry` call re-queued (S8.3 Phase A).
+
+    `skipped` is not padding. An item whose ``raw_text`` is gone cannot be
+    retried -- it either succeeded (text cleared on success) or failed as
+    ``empty_resume`` and would fail identically -- and reporting it as requeued
+    would be a promise the next ``process`` call breaks.
+    """
+
+    batch_id: str
+    requeued: int = 0
+    skipped: int = 0

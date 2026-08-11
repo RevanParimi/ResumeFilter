@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, model_validator
 
 from app import __version__
@@ -25,6 +26,7 @@ from app.auth.schema import (
 from app.auth.service import (
     ChallengeRefused, EmailUnavailableError, RegistrationRefused,
 )
+from app.candidates.hashing import contact_hash
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.pdf import pdf_b64_to_text
@@ -33,6 +35,7 @@ from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
+from app.ratelimit.service import RateLimited
 from app.comp import bands
 from app.comp.schema import (
     CITY_TIERS, ROLE_FAMILIES, CompBandEstimate, CompBenchmark, SeniorityBand,
@@ -81,7 +84,7 @@ from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
 from app.screening.schema import (
-    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage,
+    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
 )
 from app.services import Services
 from app.services.llm import NullLLM
@@ -386,6 +389,40 @@ async def require_any_principal(request: Request) -> Principal:
 
 def _session_cookie(request: Request) -> Optional[str]:
     return request.cookies.get(_services(request).settings.session_cookie_name)
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """The caller's address, or None.
+
+    ``X-Forwarded-For`` is IGNORED unless ``rate_limit_trusted_proxy_hops``
+    says how many proxies sit in front of us. This is the decision that
+    determines whether the per-IP scope is worth anything: the header is
+    entirely attacker-controlled, so trusting it by default would hand every
+    caller a free reset of their own scope, and the limiter would pass its
+    tests while bounding nothing.
+
+    With ``hops = n`` we take the n-th entry FROM THE RIGHT -- the rightmost
+    entries are the ones our own infrastructure appended, and everything to the
+    left of them was supplied by the client.
+    """
+    settings = _services(request).settings
+    hops = settings.rate_limit_trusted_proxy_hops
+    if hops > 0:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if len(parts) >= hops:
+            return parts[-hops]
+    return request.client.host if request.client else None
+
+
+def _client_ip_hash(request: Request) -> Optional[str]:
+    """`_client_ip`, hashed. Nothing downstream ever sees a raw address --
+    the `email_hash`/`phone_hash` precedent (PI-8 §7): store what identifies,
+    never what re-identifies."""
+    ip = _client_ip(request)
+    if not ip:
+        return None
+    return contact_hash(ip, _services(request).settings.contact_hash_salt)
 
 
 # Everything except "/" and /healthz sits behind the admin credential.
@@ -1125,10 +1162,38 @@ async def process_screening_batch(
 
     An item whose claim goes stale becomes claimable again, so a batch
     interrupted by a redeploy heals on the next call rather than wedging.
+
+    Bounded per CALLER too since S8.3: `screening_max_items_per_call` caps one
+    request and says nothing about a client in a loop, and every call bills a
+    model.
     """
-    result = await _services(request).screening.process(
-        org_id, batch_id, engine=request.app.state.engine
-    )
+    try:
+        result = await _services(request).screening.process(
+            org_id, batch_id, engine=request.app.state.engine
+        )
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail="batch not found")
+    return result
+
+
+@org_router.post("/screening/batches/{batch_id}/retry", response_model=RetryResult)
+async def retry_screening_batch(
+    batch_id: str, request: Request, org_id: str = Depends(require_org)
+) -> RetryResult:
+    """Re-queue this batch's failed items, then call `process` as usual.
+
+    It RE-QUEUES; it does not process. There is exactly one door that evaluates
+    an item and this is not a second one -- which is also why an item with no
+    remaining text is reported as `skipped` rather than quietly re-queued: a
+    `requeued` count the next process call cannot honour is a lie.
+    """
+    result = _services(request).screening.retry(org_id, batch_id)
     if result is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return result
@@ -1862,6 +1927,14 @@ async def submit_answer(
             candidate_id, session_id, question_id=req.question_id,
             text=req.text, audio_b64=req.audio_b64, mime=req.mime,
         )
+    except RateLimited as exc:
+        # Audio answers only (S8.3): the ASR path is the S7.3 review's named
+        # spend surface. A typed answer is never refused here.
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except SessionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AnswerTooLargeError as exc:
@@ -2164,6 +2237,23 @@ async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse
     }
 
 
+@router.get("/metrics", response_model=str, response_class=PlainTextResponse)
+async def metrics(request: Request) -> PlainTextResponse:
+    """Prometheus text exposition (S8.3 Phase A).
+
+    On the ADMIN router, so `require_api_key` is inherited rather than
+    remembered and the route-table guard covers it with no edit.
+
+    `response_model=str` is honest -- the body IS a string -- and it keeps
+    tests/test_openapi_contract.py's every-route-declares-a-model rule intact
+    without carving out an exemption for one route.
+    """
+    return PlainTextResponse(
+        _services(request).metrics.render(),
+        media_type="text/plain; version=0.0.4",
+    )
+
+
 @router.get("/domains", response_model=list[DomainInfo])
 async def domains() -> list[DomainInfo]:
     """Registered evaluation domains (FR-9)."""
@@ -2251,7 +2341,18 @@ def _request_code(
             purpose=purpose,
             payload=payload,
             at=datetime.now(timezone.utc),
+            ip_hash=_client_ip_hash(request),
         )
+    except RateLimited as exc:
+        # ONE opaque detail. WHICH rule and WHICH scope refused is operator
+        # information and goes to the log line the limiter already emits --
+        # telling a brute-forcer which of their two axes tripped is telling
+        # them which one to change.
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except EmailUnavailableError as exc:
         # An honest 503 rather than a 202 that leaves someone waiting forever for
         # a code that was never sent (the NullSpeech posture from S7.3).
@@ -2277,7 +2378,14 @@ def _verify(
             code=code,
             at=datetime.now(timezone.utc),
             user_agent=request.headers.get("user-agent"),
+            ip_hash=_client_ip_hash(request),
         )
+    except RateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="rate_limited",
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except RegistrationRefused as exc:
         # The code was RIGHT. This is a registration failure, and reporting it
         # as invalid_code is what locked users out of their own signup.

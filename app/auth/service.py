@@ -27,6 +27,8 @@ from app.candidates.store import CandidateStore
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.ledger.store import LedgerStore
+from app.ratelimit.schema import LimitScope
+from app.ratelimit.service import RateLimiter
 from app.services.email import EmailClient, EmailSendFailed, EmailUnavailable
 
 log = get_logger(__name__)
@@ -88,12 +90,18 @@ class AuthService:
         ledger: LedgerStore,
         *,
         email: EmailClient,
+        limiter: "RateLimiter",
         settings: Optional[Settings] = None,
     ) -> None:
         self._store = store
         self._candidates = candidates
         self._ledger = ledger
         self._email = email
+        # REQUIRED, not optional. A limiter that can be omitted is a limiter
+        # somebody omits, and the failure is silent: the OTP surface would
+        # simply stop being bounded with nothing to notice. Every gate in this
+        # class is enforced here rather than on a route for the same reason.
+        self._limiter = limiter
         self._settings = settings or get_settings()
 
     # -- helpers -------------------------------------------------------------
@@ -140,6 +148,7 @@ class AuthService:
         purpose: LoginPurpose,
         payload: Optional[dict] = None,
         at: datetime,
+        ip_hash: Optional[str] = None,
         rng: Optional[random.Random] = None,
     ) -> bool:
         """Mint and send a login code. Returns True when one was actually sent.
@@ -166,6 +175,24 @@ class AuthService:
             )
 
         email_hash = self._hash_email(email)
+
+        # BEFORE the has-an-account branch below, and that ordering is the
+        # whole point. Counting after it would leave an unregistered address
+        # unlimited while a registered one got a 429 -- which is the
+        # enumeration oracle the uniform 202 exists to close, rebuilt out of
+        # status codes. The counter keys on the SUBMITTED address, whether or
+        # not anybody owns it.
+        #
+        # After the provider probe, deliberately: that probe's own comment
+        # explains why it must run first, and a limiter above it would silently
+        # reorder a rule another sprint reasoned about. Nothing is disclosed by
+        # a 503 that precedes counting -- no code is sent either way.
+        self._limiter.enforce(
+            self._limiter.rules_for("login_request"),
+            {LimitScope.EMAIL: email_hash, LimitScope.IP: ip_hash},
+            now=at,
+        )
+
         scope = ChallengeScope(
             email_hash=email_hash,
             purpose=self._scope_purpose(plane, purpose),
@@ -292,6 +319,16 @@ class AuthService:
     ) -> tuple[str, str, Principal]:
         """Redeem a code and issue a session. Returns (token, csrf, principal)."""
         email_hash = self._hash_email(email)
+
+        # Its OWN rule, with its own window: `login_otp_max_attempts` bounds
+        # guesses against ONE challenge, and an attacker who simply requests a
+        # fresh challenge each time is bounded by nothing without this.
+        self._limiter.enforce(
+            self._limiter.rules_for("login_verify"),
+            {LimitScope.EMAIL: email_hash, LimitScope.IP: ip_hash},
+            now=at,
+        )
+
         live = self._live_scopes(email_hash, plane, purpose)
         if not live:
             raise ChallengeRefused("not_found")
@@ -621,7 +658,9 @@ def build_auth_service(
     candidates: CandidateStore,
     ledger: LedgerStore,
     email: Optional[EmailClient] = None,
+    metrics=None,
 ) -> AuthService:
+    from app.ratelimit.service import build_rate_limiter
     from app.services.email import build_email
 
     settings = settings or get_settings()
@@ -631,5 +670,11 @@ def build_auth_service(
         candidates,
         ledger,
         email=email or build_email(settings),
+        # Built HERE from the session factory already in hand, rather than
+        # taken as an optional argument: there is then no caller who can
+        # construct an unlimited AuthService by forgetting one.
+        limiter=build_rate_limiter(
+            settings, candidates._session_factory, metrics=metrics
+        ),
         settings=settings,
     )

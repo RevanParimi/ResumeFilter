@@ -47,6 +47,30 @@ def _iter_api_routes(routes):
             yield route
 
 
+def _route_template(request: Request) -> str:
+    """The matched route's PATH TEMPLATE, or ``__unmatched__``.
+
+    `request.scope["route"]` is set by the router before the endpoint runs, and
+    BaseHTTPMiddleware shares that same scope dict, so it is visible here.
+
+    This originally kept a fallback that re-resolved the match by scanning the
+    route table, on the theory that the scope mutation might not be visible.
+    The S8.3 review MEASURED it (starlette 1.3.1): the scan's successful branch
+    never executes. Matched requests, 405s and 500s all return early because
+    the router sets the route even on a partial match and even when the
+    endpoint raises; 404s, redirects and CORS preflights all reach the scan and
+    find nothing, because nothing FULL-matches those. So the fallback was
+    unreachable defensive code, in a repo that treats declared-but-inert
+    machinery as a defect -- which is this very branch's headline finding.
+
+    What replaces it is a test, not a scan:
+    tests/test_metrics.py::test_the_template_label_comes_from_the_request_scope
+    fails loudly if a Starlette upgrade ever stops populating the scope, rather
+    than letting every label silently degrade to __unmatched__.
+    """
+    return getattr(request.scope.get("route"), "path", None) or "__unmatched__"
+
+
 def create_app(services: Optional[Services] = None) -> FastAPI:
     """Build the app; pass a Services bundle to inject fakes (tests)."""
 
@@ -118,13 +142,28 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             response.headers["X-Request-ID"] = rid
             return response
         finally:
+            elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
             log.info(
                 "access",
                 method=request.method,
                 path=request.url.path,
                 status=status,
-                duration_ms=round((time.perf_counter() - start) * 1000, 1),
+                duration_ms=elapsed_ms,
             )
+            # Label by the ROUTE TEMPLATE, never the raw path (S8.3 Phase A).
+            # The raw path is one series per batch id, and a scanner walking
+            # random URLs would be an unbounded memory leak dressed as
+            # observability. Anything unmatched collapses to ONE label.
+            services = getattr(app.state, "services", None)
+            if services is not None:
+                template = _route_template(request)
+                services.metrics.increment(
+                    "http_requests",
+                    route=template,
+                    method=request.method,
+                    status=str(status),
+                )
+                services.metrics.observe_duration(template, elapsed_ms)
             structlog.contextvars.clear_contextvars()
 
     @app.exception_handler(Exception)
@@ -141,13 +180,19 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     @app.get("/", response_model=ServiceInfo)
     async def root() -> ServiceInfo:
         # A HAND-MAINTAINED HIGHLIGHTS LIST, not the route table, and it has
-        # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5)
-        # appear below. Stated rather than patched, because adding two entries
-        # would make an unmaintained list look maintained -- the second
-        # hand-maintained list is always the one that drifts (the S8.2 review's
-        # OPEN_PATHS/PUBLIC_PATHS finding). `GET /openapi.json` is generated
-        # from the code and is the authority; making this field derive from it
-        # is the real fix and belongs with the docs/routes.md idea in ROADMAP.
+        # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5,
+        # plus S8.3's `/retry`) appear below, and neither does `GET /metrics`.
+        # Stated rather than patched, because adding entries would make an
+        # unmaintained list look maintained -- the second hand-maintained list
+        # is always the one that drifts (the S8.2 review's OPEN_PATHS/
+        # PUBLIC_PATHS finding). `GET /openapi.json` is generated from the code
+        # and is the authority; making this field derive from it is the real
+        # fix and belongs with the docs/routes.md idea in ROADMAP.
+        #
+        # The S8.3 review widened this note rather than the list: the previous
+        # wording named only the `/screening/*` gap, so a reader could have
+        # concluded /metrics was covered. A comment that describes drift has to
+        # describe all of it or it becomes the next thing that is out of date.
         return ServiceInfo(**{
             "service": "depth-eval-engine",
             "advisory": True,

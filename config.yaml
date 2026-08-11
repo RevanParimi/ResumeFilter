@@ -295,3 +295,19 @@ ret_batch_item_days: 90                 # unprocessed item text; S8.3 sweep inpu
 page_default_limit: 50
 page_max_limit: 200
 materialize_max_candidates: 1000        # bound on POST /features/materialize
+
+# --- Rate limiting (PI-8, S8.3 Phase A) ---------------------------------------
+# ONE DB-backed limiter, called from the service layer. Counters survive a
+# redeploy on purpose: an in-process limiter resets every container start,
+# which is a silent failure of the exact surface it defends.
+# NOTE: rate_limit_default_per_minute from the PI-8 sketch was deliberately
+# DROPPED, not deferred (spec 0.5) -- a blanket limit on unauthenticated POSTs
+# covers exactly the /auth/* routes already limited by name.
+rate_limit_enabled: true              # prod REFUSES to boot with false
+rate_limit_trusted_proxy_hops: 0      # 0 = ignore X-Forwarded-For; Railway: 1
+rate_limit_login_per_hour_per_email: 20
+rate_limit_login_per_hour_per_ip: 100
+rate_limit_verify_per_hour_per_email: 30
+rate_limit_verify_per_hour_per_ip: 200
+rate_limit_process_per_hour_per_org: 400   # x5 items = 2000 items/hour
+rate_limit_asr_per_hour_per_candidate: 60

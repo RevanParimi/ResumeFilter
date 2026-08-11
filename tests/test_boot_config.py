@@ -130,6 +130,32 @@ def test_local_may_use_capture_and_insecure_cookies(settings):
     assert verify_launch_config(ok) is None
 
 
+def test_prod_refuses_to_boot_with_rate_limiting_disabled(settings):
+    """No knob restores fail-open admin auth (S8.1); an unthrottled OTP
+    endpoint on a public host is the same class of thing."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, rate_limit_enabled=False))
+    assert "rate_limit_enabled" in str(exc.value)
+
+
+def test_local_may_disable_rate_limiting(settings):
+    """The refusal is prod-only: local development and the test suite need the
+    switch, and `env` defaults to local so a forgotten variable still lands on
+    the strict side in a real deploy."""
+    ok = settings.model_copy(update={
+        "api_auth_key": SecretStr("a-real-key"),
+        "rate_limit_enabled": False,
+    })
+    assert verify_launch_config(ok) is None
+
+
+def test_rate_limiting_defaults_to_on(settings):
+    """The default has to be the safe one: a deploy that forgets the variable
+    gets a limiter, not an open OTP surface."""
+    assert settings.rate_limit_enabled is True
+    assert settings.rate_limit_trusted_proxy_hops == 0
+
+
 def test_auth_defaults_are_closed(settings):
     """Defaults must be the refusing ones: no origin may call cross-site and no
     email provider is configured until someone says so."""

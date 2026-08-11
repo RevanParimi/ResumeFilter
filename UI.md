@@ -286,6 +286,26 @@ the loudest signal**. Rows must be scannable without opening anything.
 > statuses only, and there is no per-band count without one `summary` call per
 > row.
 
+> **S8.3 Phase A changed two things this screen must handle (2026-08-10).**
+>
+> 1. **A failed row is now genuinely retryable, and there is a route for it.**
+>    `POST /screening/batches/{id}/retry` re-queues *every* `failed` item in the
+>    batch and answers `{requeued, skipped}`. It does **not** process them — the
+>    client still drives `process` afterwards, exactly as it does after upload.
+>    So the sentence this section already carries ("a `failed` row … is not a
+>    verdict about the person") is now backed by an action rather than by good
+>    intentions. `skipped` counts items whose input text is gone; surface it,
+>    because "3 requeued, 1 skipped" is the honest sentence and "4 requeued" is
+>    not.
+> 2. **The driver loop can now receive a `429`.** `POST .../process` is limited
+>    per organisation (400/hour by default), and `POST /auth/*` is limited per
+>    email and per IP. The existing rule — *any* error stops the loop — remains
+>    correct and now has a named case: on a 429 the UI must **stop and show the
+>    wait**, reading the `Retry-After` header rather than retrying. A client
+>    that retries into a limiter is the thing the limiter exists to stop.
+>    `OPERATING.md` §4 has the response shape; the body is one opaque
+>    `rate_limited` on purpose and carries nothing worth branching on.
+
 > **RESOLVED 2026-08-05 (§9 Q3 + Q5) — a batch is a REAL stored object, and
 > processing is CLIENT-DRIVEN.** `screening_batches` + `batch_items` (S8.4
 > Phase B), so a queue can be named, resumed, summarized and paginated.

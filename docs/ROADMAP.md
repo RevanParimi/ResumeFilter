@@ -9,6 +9,282 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-11 (latest) — S8.3 PHASE A REVIEWED on branch
+  `s83a-limits-and-metrics`. 8 findings, ALL FIXED. 1665 → 1689, `smoke_s83a`
+  19/19, all nine smokes green, 6 mutation probes planted and all 6 died.
+  STILL NOT MERGED — that is the next action.** Seven review commits on top of
+  the build's thirteen (`cb54a51`…`7199ab5`). Every finding got a failing test
+  first.
+  **⚠ FINDING 1 (Important) — THE FIXTURE WAS MORE CORRECT THAN PRODUCTION, and
+  that is why nothing caught it.** `build_default_services` passed
+  `metrics=metrics` to the auth and screening builders and **not** to
+  `build_interview_service`, so the real container built the ASR limiter with
+  `metrics=None`: `asr_transcribe` was enforced perfectly and **counted
+  nowhere**. `OPERATING.md`'s runbook step 1 — "read the `rule` and `scope`
+  labels to find out which bound they hit" — could not answer for ASR at all.
+  No test could see it because `tests/conftest.py::make_services` wires that
+  limiter's metrics **by hand**. This is the S8.2 lesson ("a fake that cannot
+  enforce an invariant will hide it") pointed at **wiring** rather than at
+  behaviour, and it is a new variant worth remembering: the fixture did not
+  merely fail to enforce the invariant, it **satisfied it independently**, so
+  the production gap was invisible from inside the suite.
+  `tests/test_ratelimit_wiring.py` now builds the **production container** and
+  asserts every limiter shares the container's metrics *and* settings.
+  **⚠ FINDING 2 (Important) — THE KNOWN DEFECT, and the fix was a test, not a
+  choice between two bad options.** `llm_calls`, `asr_calls`, `screening_items`
+  and `retention_deleted` were declared in `_HELP` with no call site — the same
+  declared-but-never-populated shape as `auth_sessions.ip_hash`, which was this
+  branch's own headline finding. **Deleted, not wired**: wiring means threading
+  a metrics handle through the `LLMClient` and `SpeechClient` ABCs, three
+  subclasses each, both builders and every fixture that constructs one, to emit
+  series no scraper reads yet. `retention_deleted` went with the other three —
+  "genuinely coming in Phase B" is exactly the rationalisation that kept
+  `ip_hash` declared for two sprints. The real fix is
+  `test_every_declared_metric_has_a_call_site`, which scans `app/` for
+  `increment("<name>")` and fails on any declared name nothing increments, so
+  **Phase B must add the name in the same commit as the sweep**. A second test
+  proves the scanner can find something, so it cannot pass by matching nothing.
+  **⚠ FINDING 3 (Important) — `_route_template`'s fallback was UNREACHABLE, and
+  the docstring's premise was false.** The build bullet below claims the
+  template is "re-resolved against the route table" because
+  `BaseHTTPMiddleware` may not show the endpoint's scope mutations. **Measured
+  on starlette 1.3.1: it shares the same scope dict**, and the scan's
+  successful branch never executes:
+
+  | request | `scope["route"]` | what happened |
+  |---|---|---|
+  | matched 200 | set | early return |
+  | 405 method mismatch | set | early return (the router matches partially to answer 405) |
+  | 500 from the handler | set | early return (set before the endpoint runs) |
+  | 404 | absent | scan runs, FULL-matches nothing |
+  | 307 redirect | absent | scan runs, FULL-matches nothing |
+  | CORS preflight | absent | scan runs, FULL-matches nothing |
+
+  So every case either returns before the scan or reaches it and finds nothing.
+  That is untested defensive code in the branch that deleted a declared-inert
+  field for being exactly that. **Deleted and replaced with a tripwire, not a
+  scan**: three tests now fail if a Starlette upgrade stops populating the
+  scope, instead of every label silently degrading to `__unmatched__` — which,
+  as the original docstring correctly said, looks exactly like working code.
+  The guard was right; putting it in the runtime instead of the suite was not.
+  **⚠ FINDING 4 (Important) — the sprint's FOURTH RULE had no behavioural
+  test.** `asr_transcribe` appeared once in the suite, inside a list of rule
+  names that resolve — which proves the config table is populated and nothing
+  about whether a transcription is ever refused, on the rule that spends money
+  per second of audio and that the S7.3 review named as the open spend surface.
+  Four tests now cover it; the load-bearing assertion is
+  `len(speech.calls) == 1`, because **a limiter that refuses after the vendor
+  call bounds the response and not the bill**.
+  **⚠ FINDING 5 (Medium) — `enforce` was a latent fail-open.** It tested
+  `not decision.allowed AND decision.scope is not None`, so a denial carrying
+  no scope was silently **allowed**. No caller can construct that decision
+  today, which is precisely why it needed a test rather than a comment: the
+  guard would have gone on looking correct until one change to `check` forgot
+  to set a scope, and the failure mode is an unbounded OTP endpoint that
+  reports nothing. `RateLimited` now takes an `Optional` scope, so missing
+  information degrades a log line instead of a bound.
+  **⚠ FINDING 6 (Medium) — `hit()`'s `IntegrityError` arm had no test, and the
+  risk was not the rollback.** It is the `session.commit()` **after** it: if
+  SQLAlchemy did not expunge the failed INSERT's pending row, that commit would
+  re-flush it and raise a second `IntegrityError` out of `hit`, past every 429
+  handler, to the client as a **500** — a limiter answering 500 under exactly
+  the concurrency it exists for. It does expunge; now proven.
+  **MEASURED, AND IT CONTRADICTED THE ASSUMPTION IN THE STORE'S DOCSTRING: a
+  rival on a genuinely separate connection is NOT CONSTRUCTIBLE ON SQLITE.**
+  In-memory shares one connection through `StaticPool`, and a file database in
+  WAL mode answers `OperationalError: database is locked` rather than letting
+  the rival commit. **The `IntegrityError` arm is the POSTGRES shape of this
+  race** — which is fine, because prod already refuses to boot on SQLite, but
+  it means no SQLite test will ever reach it naturally. The collision is
+  therefore planted on the session's own connection and what is pinned is the
+  **recovery**, which is dialect-independent.
+  **⚠ FINDINGS 7–8 (Minor) — four doc overclaims, in the file the review was
+  warned about and in the smoke beside it.** (a) `OPERATING.md` called the 429
+  "byte-identical" for a registered and an unregistered address; the responses
+  are not — `X-Request-ID` is unique per request and `Retry-After` counts down
+  inside the window — and **neither difference is a function of the address**.
+  Now states what holds: same status, same body, same header names, no
+  `Set-Cookie` on either. (b) `smoke_s83a.py`'s docstring claimed the two 429s
+  matched "headers included" while **check 4 compared `status_code` and
+  `.json()` and never looked at a header** — the same overclaim shape, one file
+  over. The check now makes the comparison the docstring promised. (c) Two
+  smoke checks carried failure-phrased detail strings that `check()` prints on
+  pass as well, so a **passing** run printed
+  `OK metrics_carries_the_deny_counter -- ... not found with a denial`. (d)
+  `BatchItemRow.raw_text`'s comment still said "no path re-queues a failed item
+  TODAY" in the branch that added the retry path.
+  **CHECKED AND SOUND, so the review did not touch them:** the candidate and
+  admin planes and both verify routes **are** limited (they simply had no test
+  — now they do); `login_request`/`login_verify` have exactly one door each
+  (`mint_code` and `verify_code` have a single caller apiece, and all eight
+  routes funnel through `_request_code`/`_verify`); `_client_ip`'s n-th-from-
+  the-right hop arithmetic is correct and a short forged `X-Forwarded-For`
+  cannot bypass it; batch status is **derived**, not stored, so retry cannot
+  leave a stale `complete`; and `OPERATING.md` §6's "it is one `UPDATE`" is
+  literally true — measured at 2 SELECTs and **1** UPDATE for a 40-item retry,
+  because SQLAlchemy batches the row writes into one executemany.
+  **MEASURED AND WORTH KNOWING: all three planes SHARE one budget per address.**
+  `bucket_key` is `salt|rule|scope|identity` and the plane is not in it. That is
+  the conservative direction — nobody buys 3× the guesses by rotating planes —
+  but it was undocumented, and adding a per-plane limit later would **silently
+  triple the real bound**. Now pinned by a test and stated in `OPERATING.md`.
+  **THE `screening_process` ORDERING WAS RIGHT AND STAYS, with the trade now
+  written down.** It counts CALLS, not items, and enforcing before the
+  ownership read and before the claim buys two things worth more than the
+  accounting: counting after the ownership read would make a refusal on
+  somebody else's batch id distinguishable from one on your own, and counting
+  after the claim would strand claimed items in `processing`. Overhead is one
+  no-op call per batch (101 calls for a 500-resume batch), so **400/hour still
+  leaves four full 500-resume batches an hour** — the number stands. Two tests
+  pin both consequences; move the check and they fail.
+  **⚠ CARRIED FORWARD — NOT FIXED, and deliberately out of this review's
+  scope.** Two known items, recorded here because a commit message is the one
+  place nobody greps:
+  1. **Six more "byte-identical" claims about 404-vs-absence** live in
+     `SCREENING.md` (3) and `TENANCY.md` (3). All six are **pre-existing on
+     `main`** — this branch adds none of them (`git diff main...HEAD` yields
+     zero) — and they describe S8.4/S8.5 behaviour. They are the same
+     imprecision the review corrected twice in `OPERATING.md`: status and body
+     genuinely match, but `X-Request-ID` differs on every response, so
+     "byte-identical" overstates what is asserted. **Worth a sweep of its own;
+     do not do it inside a feature branch.**
+  2. **`GET /`'s hand-maintained `endpoints` list is still stale** — missing
+     every `/screening/*` route AND `/metrics`. Untouched on purpose: adding
+     entries makes an unmaintained list look maintained. **The real fix is to
+     derive it from `/openapi.json`**, which is generated from the code and is
+     already the authority. Belongs with the `docs/routes.md` idea below.
+  **➤ NEXT STEP: merge the branch, then S8.3 Phase B** (retention sweep · DPDP
+  correction/rectification · grievance officer).
+- **Session 2026-08-10 — S8.3 PHASE A BUILT AND GREEN on branch
+  `s83a-limits-and-metrics`. 1586 → 1665, `smoke_s83a` 19/19 on its second
+  run, ALL NINE smokes green (s63, s64, s73, s81, s82, s83a, s84a, s84b,
+  s85_outcome), and 10/10 mutants dead.** Spec:
+  `docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md` (S8.3
+  builds as TWO branches from one spec, the S8.4 shape); plan
+  `docs/superpowers/plans/2026-08-10-s83a-limits-and-metrics.md`, all 13 tasks,
+  TDD with a commit per task. **NOT YET REVIEWED OR MERGED — that is the next
+  action, then Phase B.**
+  **The service can now be run for paying customers on the abuse and spend
+  surface**: a DB-backed dual-scoped limiter (`app/ratelimit/`, migration
+  `0021`), in-place retry of failed batch items, and in-process counters at an
+  admin-gated `GET /metrics`, plus a new root doc `OPERATING.md`.
+  **THE LOAD-BEARING DECISION: the counters live in the DATABASE, and one
+  smoke check is the entire argument.** An in-process limiter resets on every
+  container start and is per-worker — two uvicorn workers silently double every
+  limit — and **both failures pass every unit test**. `smoke_s83a` check 6
+  therefore TERMINATES the server, starts a second one against the same
+  database, and asserts the limit still holds. Nothing else in the suite can
+  tell the two designs apart.
+  **THE LIMITER IS CALLED FROM THE SERVICE LAYER, NEVER FROM A ROUTE**, and
+  the count is not close: the OTP surface is **eight routes across three
+  planes and exactly TWO service methods**. `AuthService`'s own docstring
+  already gave the rule ("Every gate lives here rather than on a route… a rule
+  applied at one entry point and not the other has shipped as a real defect in
+  S7.1, S7.2 and S7.3"), so this sprint followed it rather than re-deriving it.
+  **THE ENUMERATION ORACLE THIS COULD HAVE REBUILT, and where the fix had to
+  go.** `AUTH.md` makes signup and login answer `202` for every address. A
+  limiter that counted *after* the has-an-account branch would leave an
+  unregistered address unlimited and a registered one at 429 — the same oracle,
+  rebuilt out of status codes. The increment goes **before** that branch;
+  a test and the smoke both assert a known and an unknown address are refused
+  **indistinguishably** — same status, same body, same header names, no
+  `Set-Cookie` (the 2026-08-11 review corrected "byte-identically", which the
+  responses never were, and made the smoke's check match its own docstring) —
+  and the mutation that moves the enforce call below the branch dies naming
+  that test.
+  It sits **after** the provider probe rather than at the very top, which is a
+  deliberate deviation from the plan: that probe's own comment explains why it
+  must run first, and hoisting a limiter above it would silently reorder a rule
+  another sprint reasoned about.
+  **`X-Forwarded-For` IS IGNORED unless `rate_limit_trusted_proxy_hops > 0`.**
+  The header is entirely attacker-controlled, so trusting it by default hands
+  every caller a free reset of their own per-IP scope — the limiter would pass
+  every other test in the file while bounding nothing. Default 0 (socket peer);
+  Railway sets 1. The test drives a spray with a *rotating forged* header and
+  asserts it is still refused.
+  **⚠ A DECLARED-INERT COLUMN FOUND BY THE SURVEY, not by a test:**
+  `auth_sessions.ip_hash` existed, was plumbed through `AuthStore.create_session`
+  AND `AuthService.verify_code(ip_hash=...)`, and was **never populated** —
+  `routes.py` did not pass it, so every session row held NULL while PI-8 §7
+  stated "`ip_hash`, never a raw IP" as though implemented. S8.3 needed IP
+  extraction for the limiter anyway; **one helper, two consumers**.
+  **`limiter` IS A REQUIRED CONSTRUCTOR ARGUMENT on all three services, and it
+  earned that within the hour.** Four tests in `test_screening_service.py`
+  build a `ScreeningService` directly and failed loudly at construction. Under
+  an `Optional` default they would have kept passing while silently running
+  **unlimited** — which is the entire failure mode. They now pass the
+  container's own limiter, not a permissive stand-in.
+  **The spend check runs BEFORE the claim** — a bound that runs after the work
+  it bounds is the S8.4 Phase B finding (4) shape, and here it would
+  additionally strand every claimed item in `processing` until the claim
+  timeout, for a call that did nothing. A test asserts `processing=0,
+  pending=1` after a refusal.
+  **Retry RE-QUEUES and does not process**, so there is still exactly one door
+  that evaluates an item. An item whose `raw_text` is gone is reported as
+  `skipped`, never re-queued: `requeued: 1` on an item that cannot run is a
+  promise the next `process` call breaks. `SCREENING.md` §7 has been admitting
+  since S8.4 Phase B that the text was "kept on failure — for a retry path that
+  DOES NOT EXIST YET"; that is now corrected rather than deleted, **and the
+  coupling is stated in both directions**: retaining the text is justified by
+  the retry, and the retry will be bounded by `ret_batch_item_days` once Phase
+  B's sweep lands.
+  **Metrics label by ROUTE TEMPLATE, never the raw path** — one series per
+  batch id would make a URL scanner an unbounded memory leak dressed as
+  observability. The template is **re-resolved against the route table** rather
+  than read off `request.scope["route"]`: `BaseHTTPMiddleware` does not
+  guarantee the endpoint's scope mutations are visible on the request object
+  the middleware holds, and the failure mode of trusting it is a metric that
+  silently degrades to `__unmatched__` for every request — which looks exactly
+  like working code.
+  *(↑ CORRECTED BY THE 2026-08-11 REVIEW, finding 3. The premise is false on
+  starlette 1.3.1 — the scope dict IS shared — and the re-resolution scan was
+  measurably unreachable, so it was deleted. The concern was real and is now
+  carried by three tests instead of by dead code.)*
+  `GET /metrics` is on the **admin router**, so the credential gate is
+  inherited rather than remembered, and `response_model=str` is honest (the
+  body IS a string) so `test_every_route_declares_a_response_model` needed no
+  exemption. **The route-table, org-scope and OpenAPI guards all covered both
+  new routes with no edit**, which is what they were built for.
+  **10/10 MUTANTS DIED — but probe 4 SURVIVED ITS FIRST VERSION, and the reason
+  is this sprint's most useful entry.** The mutation I wrote for "stop counting
+  at the first denial" actually changed which denial *wins*, not whether
+  counting stops. **A probe that does not express the behaviour it names proves
+  nothing** — it is the S8.5 "two of my own contract checks were measuring my
+  assumptions" shape, one layer further in, and the corrected probe (a `break`
+  after the denial) dies immediately.
+  **⚠ TWO OF THE SMOKE'S OWN CHECKS WERE ALSO MEASURING MY ASSUMPTIONS, the
+  same shape a third time.** (1) I asserted three clean logins for an address
+  that had just signed up — **signup and login share the `login_request`
+  budget**, correctly, because both mint and send a code, and counting them
+  separately would double the real bound. The limit drive now uses a fresh
+  address and the shared budget is its own **named check** rather than an
+  arithmetic accident. (2) `POST /ledger/orgs` returns `{org, api_key}` and I
+  read `["id"]` off the envelope; the key comes back from creation and there is
+  no second call to make.
+  **Measured, and it is a finding about the suite rather than the code: NO
+  existing test tripped the new limit.** 1586 → 1649 with the limiter live on
+  the real path and zero fallout — no test in the suite makes more than 20
+  login attempts against one address. The limiter is genuinely reachable
+  (`test_ratelimit_auth.py` gets real 429s); the suite simply never needed that
+  many codes.
+  **`rate_limit_default_per_minute` from the PI-8 config sketch was DROPPED,
+  not deferred**, with the reason written into `config.yaml`: a blanket limit
+  on unauthenticated POSTs covers exactly the `/auth/*` routes already limited
+  by name, and an enforced-nowhere knob costs more than it buys. Prod now
+  refuses to boot with `rate_limit_enabled=false` — the **sixth** boot refusal,
+  and it must sit after `boot.py`'s prod-only early return or every local run
+  breaks.
+  **Three counters (`llm_calls`, `asr_calls`, `screening_items`) are declared
+  in the registry's help table with NO call site**, recorded as deliberately
+  deferred to Phase B rather than silently skipped — they belong beside
+  `retention_deleted`, where the sweep gives them a reason to be read together.
+  *(↑ OVERTURNED BY THE 2026-08-11 REVIEW, finding 2. All four were deleted:
+  disclosing a declared-inert metric is not the same as not shipping one, and
+  the branch's own headline finding was this exact shape. A test now enforces
+  that every declared metric has a call site.)*
+  **➤ NEXT STEP: review the Phase A branch, then merge, then S8.3 Phase B**
+  (retention sweep · DPDP correction/rectification · grievance officer).
+  *(↑ the review happened on 2026-08-11 — see the top bullet.)*
 - **Session 2026-08-10 (later) — THE CUSTOMER CAN NOW CLOSE THE LOOP. Branch
   `s86-org-outcome-route`, nine commits, TDD throughout. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
@@ -1627,9 +1903,39 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                the design.
     │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
     │                new 409 makes it fail ON PURPOSE (spec §4.7)
-    ├── [ ] S8.3  Operating safely — dual-scoped rate limits · metrics ·
+    ├── [~] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
+    │            SPEC 2026-08-10, built as TWO BRANCHES from one spec (0.1):
+    │              spec: 2026-08-10-s83-operating-safely-design.md
+    │            [x] PHASE A — limits and metrics (branch
+    │                `s83a-limits-and-metrics`, 13 tasks, 1586 -> 1665 green,
+    │                smoke_s83a 19/19, all nine smokes green, 10/10 mutants
+    │                dead). NOT YET REVIEWED OR MERGED.
+    │                plan: 2026-08-10-s83a-limits-and-metrics.md
+    │                - app/ratelimit/ (schema/models/store/service) + 0021
+    │                - DB-backed counters, because an in-process limiter resets
+    │                  on redeploy and is per-worker, and BOTH failures pass
+    │                  every unit test. smoke check 6 restarts the server
+    │                  against the same DB -- the only check that can tell.
+    │                - enforced in the SERVICE layer: 8 OTP routes, 2 methods
+    │                - dual-scoped, ALL scopes counted, ANY denial denies
+    │                - counted BEFORE the has-an-account branch, so the 429 is
+    │                  byte-identical for a known and an unknown address
+    │                - X-Forwarded-For IGNORED unless trusted_proxy_hops > 0
+    │                - auth_sessions.ip_hash was declared and NEVER populated;
+    │                  the limiter's IP helper closes it
+    │                - POST /screening/batches/{id}/retry: re-queues, does not
+    │                  process; skips items whose text is gone
+    │                - GET /metrics (admin-gated), labelled by route TEMPLATE
+    │                - prod refuses to boot with rate_limit_enabled=false (6th)
+    │                - new root doc OPERATING.md
+    │            [ ] PHASE B — retention sweep (sweep_active stops being a
+    │                hardcoded False and DERIVES from config; the sweeper's
+    │                targets come from the SAME table as the portal's declared
+    │                windows) · data_principal_requests (correction + grievance,
+    │                one table, `full_name` the only auto-appliable field) ·
+    │                public GET /grievance + a 7th boot refusal · migration 0022
     └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the

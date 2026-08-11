@@ -313,6 +313,45 @@ class ScreeningStore:
                 return False
             return True
 
+    def requeue_failed(
+        self, org_id: str, batch_id: str
+    ) -> Optional[tuple[int, int]]:
+        """Flip this batch's FAILED items back to pending. (requeued, skipped).
+
+        ``None`` when the batch is not this organisation's OR does not exist,
+        so the route answers one 404 for both -- another org's batch must be
+        indistinguishable from one that was never created.
+
+        An item whose ``raw_text`` is empty is SKIPPED: either it succeeded and
+        its text was cleared, or it failed as ``empty_resume`` and would fail
+        identically. The status change is ALL this does; the existing
+        ``process`` call remains the only door that evaluates anything.
+        """
+        with self._session_factory() as s:
+            batch = s.get(ScreeningBatchRow, batch_id)
+            if batch is None or batch.org_id != org_id:
+                return None
+
+            failed = s.execute(
+                select(BatchItemRow).where(
+                    BatchItemRow.batch_id == batch_id,
+                    BatchItemRow.status == ItemStatus.FAILED.value,
+                )
+            ).scalars().all()
+
+            requeued = skipped = 0
+            for row in failed:
+                if not row.raw_text:
+                    skipped += 1
+                    continue
+                row.status = ItemStatus.PENDING.value
+                row.error = None
+                row.claimed_at = None
+                row.processed_at = None
+                requeued += 1
+            s.commit()
+            return requeued, skipped
+
     def delete_batch(self, org_id: str, batch_id: str) -> bool:
         """Delete the batch, its items and their text. Items CASCADE."""
         with self._session_factory() as s:
