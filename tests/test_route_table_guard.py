@@ -13,6 +13,7 @@ extend it.
 from __future__ import annotations
 
 from fastapi.dependencies.utils import get_flat_dependant
+from starlette.routing import Mount
 
 from app.api.routes import (
     PUBLIC_PATHS, require_any_principal, require_api_key, require_candidate,
@@ -22,6 +23,14 @@ from app.main import create_app
 
 #: The ONLY functions permitted to establish a principal.
 RESOLVERS = {require_api_key, require_org, require_candidate, require_any_principal}
+
+#: Mounts are a SECOND way to widen the unauthenticated surface, and until S8.6
+#: nothing watched it. A Mount has no `.methods`, so `_guarded_routes` skips it,
+#: and `include_router` dependencies do not apply to it -- so a mount is
+#: unauthenticated AND invisible to the guard above. PUBLIC_PATHS exists so
+#: that widening the public surface happens in a diff someone reads; this is
+#: the same ritual for the other mechanism.
+MOUNTS: set[str] = set()
 
 
 def _walk(routes, inherited=frozenset()):
@@ -69,6 +78,10 @@ def _guarded_routes(app):
         yield route, path, methods, inherited
 
 
+def _mount_paths(app) -> set[str]:
+    return {r.path for r in app.routes if isinstance(r, Mount)}
+
+
 def test_every_non_public_route_uses_a_sanctioned_resolver(services):
     app = create_app(services)
     checked = list(_guarded_routes(app))
@@ -103,6 +116,25 @@ def test_the_guard_would_catch_a_new_unguarded_route(services):
         if not (_resolvers_on(route, inherited) & RESOLVERS)
     ]
     assert "/totally-unguarded" in unguarded
+
+
+def test_mounts_are_an_explicit_short_list(services):
+    """Every mount is unauthenticated by construction. If one appears here
+    without appearing in MOUNTS, someone added a public surface without saying
+    so."""
+    app = create_app(services)
+    assert _mount_paths(app) == MOUNTS
+
+
+def test_the_guard_would_catch_a_new_mount(services):
+    """A guard nobody has seen fail is a guard nobody knows works -- the reason
+    the fail-open admin gate survived eight PIs and four branch reviews."""
+    from starlette.staticfiles import StaticFiles
+
+    app = create_app(services)
+    app.mount("/sneaky", StaticFiles(directory="."), name="sneaky")
+    assert _mount_paths(app) != MOUNTS
+    assert "/sneaky" in _mount_paths(app)
 
 
 def test_public_paths_is_an_explicit_short_list():
