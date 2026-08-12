@@ -30,7 +30,13 @@ RESOLVERS = {require_api_key, require_org, require_candidate, require_any_princi
 #: unauthenticated AND invisible to the guard above. PUBLIC_PATHS exists so
 #: that widening the public surface happens in a diff someone reads; this is
 #: the same ritual for the other mechanism.
-MOUNTS: set[str] = set()
+MOUNTS: set[str] = {
+    # S8.6. The UI shell, served same-origin. Unauthenticated ON PURPOSE: a
+    # login page reachable only after login is not reachable by the person who
+    # needs it. It serves frontend/ and holds no data-principal information --
+    # tests/test_ui_mount.py pins the root it is given.
+    "/ui",
+}
 
 
 def _walk(routes, inherited=frozenset()):

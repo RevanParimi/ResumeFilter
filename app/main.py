@@ -12,12 +12,14 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.routes import (
@@ -111,6 +113,21 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     app.include_router(candidate_router)
     app.include_router(public_router)
     app.include_router(auth_router)
+
+    # The UI is served BY THIS API, same origin (S8.6 spec 2). Chosen over a
+    # separate static host because it RETIRES an untested posture rather than
+    # shipping one: config.yaml's SameSite=None has never been exercised by any
+    # check in this repo -- the browser check runs both servers on localhost,
+    # which is cross-ORIGIN but same-SITE, with samesite=lax.
+    #
+    # A Mount is NOT an APIRoute: no router dependency applies to it, so this
+    # surface is unauthenticated. That is correct -- the shell has to load
+    # before anyone can log in -- and it is why tests/test_route_table_guard.py
+    # gained MOUNTS in the commit before this one. Widening that set is the
+    # reviewable act, exactly as it is for PUBLIC_PATHS.
+    _ui_dir = Path(__file__).resolve().parents[1] / "frontend"
+    if _ui_dir.is_dir():
+        app.mount("/ui", StaticFiles(directory=_ui_dir), name="ui")
 
     # CORS (S8.2). Fail-CLOSED: with no configured origin the middleware is not
     # installed at all, so nothing cross-site can reach the API. Never "*" —
