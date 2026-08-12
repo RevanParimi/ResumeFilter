@@ -15,6 +15,15 @@ brute-force surface PI-8 itself created -- unthrottled on a public host. And an
 unpublished grievance officer leaves ``GET /grievance`` answering 200 with an
 empty contact, which is worse than a 404 because it looks answered.
 
+S8.6 adds an eighth. ``config.yaml`` ships ``email_provider: "null"``, so a
+prod deploy on the shipped defaults boots clean and then answers 503
+``email_unavailable`` to every signup and login on all three auth planes --
+while ``/healthz`` reports the service healthy. This check asks
+``build_email(settings)`` whether it can actually deliver, rather than
+pattern-matching ``email_provider``, because ``build_email`` also falls back to
+``NullEmail`` for ``provider=smtp`` with an empty host; a string check would
+miss that case and pass a deploy that still 503s every login.
+
 There is deliberately NO ``env`` exemption (spec 0.1). ``env`` DEFAULTS to
 "local", so an env-gated escape would make a safe deploy depend on remembering
 two variables instead of one -- the same fail-open shape, one indirection
@@ -24,6 +33,7 @@ deeper.
 from __future__ import annotations
 
 from app.core.config import Settings
+from app.services.email import build_email
 
 
 class LaunchConfigError(RuntimeError):
@@ -91,4 +101,31 @@ def verify_launch_config(settings: Settings) -> None:
             "answer 200 with an empty contact -- worse than a 404, because it "
             "looks answered. It is also the RFP blocker the GTM analysis names. "
             "Set grievance_officer_email (and the name and phone beside it)."
+        )
+
+    # -- S8.6: the EIGHTH refusal -- a deployment nobody can log into ---------
+    # This ASKS THE BUILDER rather than testing `email_provider`, and that is
+    # the whole design. `build_email` returns NullEmail for provider="smtp"
+    # with an empty host, so a string check would pass that config and the
+    # service would 503 every login anyway -- the rule applied at one entry
+    # point and not the other, which has shipped as a real defect in S7.1,
+    # S7.2, S7.3, S8.4 Phase B and S8.5. `EmailClient.available` already exists
+    # for exactly this question and is False only on NullEmail, so there is one
+    # predicate and no second copy to drift. It opens no socket.
+    #
+    # `capture` is NOT caught here -- it IS available, and its fault is that it
+    # writes OTPs to a file. It keeps its own refusal above, so each check
+    # isolates one fault.
+    if not build_email(settings).available:
+        raise LaunchConfigError(
+            "DEE_ENV=prod with no working email provider "
+            f"(email_provider={settings.email_provider!r}, "
+            f"email_smtp_host={'set' if settings.email_smtp_host else 'EMPTY'}). "
+            "Signup and login on all three planes answer 503 "
+            "email_unavailable, so org self-onboard (PI-8 blocker 5) and "
+            "candidate self-registration (blocker 4) do not work at all -- "
+            "while /healthz reports the service healthy. Set "
+            "email_provider=smtp with email_smtp_host and the DEE_EMAIL_SMTP_* "
+            "credentials. There is no provider that 'works well enough' for a "
+            "login code: it either arrives or the account is unreachable."
         )
