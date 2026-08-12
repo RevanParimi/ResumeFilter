@@ -30,6 +30,7 @@ import app.reports.models  # noqa: F401 — populate Base.metadata with report t
 import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
 import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
 import app.ratelimit.models  # noqa: F401 — populate Base.metadata with the counter table
+import app.rights.models  # noqa: F401 — populate Base.metadata with the request queue
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow

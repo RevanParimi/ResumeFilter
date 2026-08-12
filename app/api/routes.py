@@ -88,7 +88,7 @@ from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
-from app.screening.pagination import InvalidCursor
+from app.screening.pagination import InvalidCursor, clamp_limit
 from app.screening.projection import redact_ingest_response_for_org
 from app.screening.schema import (
     BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
@@ -1710,6 +1710,9 @@ async def portal_submit_correction(
         raise _rate_limited(exc) from exc
     except RequestRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        # The subject erased themselves mid-call. 404, which by then is true.
+        raise HTTPException(status_code=404, detail="candidate not found") from exc
 
 
 @candidate_router.post("/portal/grievances", response_model=RequestView)
@@ -1731,6 +1734,9 @@ async def portal_submit_grievance(
         raise _rate_limited(exc) from exc
     except RequestRefused as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        # The subject erased themselves mid-call. 404, which by then is true.
+        raise HTTPException(status_code=404, detail="candidate not found") from exc
 
 
 @candidate_router.get("/portal/requests", response_model=list[RequestView])
@@ -2365,7 +2371,7 @@ class ResolveRequest(BaseModel):
 async def list_data_principal_requests(
     request: Request,
     status: Optional[RequestStatus] = None,
-    limit: int = 50,
+    limit: Optional[int] = None,
 ) -> list[RequestView]:
     """The operator's queue, OLDEST first -- a complaint that has waited
     longest is the one that should be answered next.
@@ -2373,8 +2379,18 @@ async def list_data_principal_requests(
     Not tenant-scoped, deliberately: an operator handling DPDP requests has to
     see the queue, not one organisation's slice of it. These are requests from
     data principals to the PLATFORM, and no org is a party to them.
+
+    `limit` goes through `clamp_limit`, the same helper every other paged read
+    uses. It took a raw int until the Phase B review: `?limit=-1` reaches
+    SQLite as an UNLIMITED select, so a bound that looked present returned the
+    whole table -- of every data principal's complaints, free text included.
     """
-    return _services(request).rights.list_by_status(status, limit)
+    services = _services(request)
+    try:
+        bounded = clamp_limit(limit, services.settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return services.rights.list_by_status(status, bounded)
 
 
 @router.post("/admin/requests/{request_id}/resolve", response_model=RequestView)

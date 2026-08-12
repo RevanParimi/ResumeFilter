@@ -9,7 +9,73 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-11 (latest) — S8.3 PHASE B BUILT AND GREEN on branch
+- **Session 2026-08-12 (latest) — S8.3 PHASE B REVIEWED on branch
+  `s83b-retention-and-rights`. 5 findings, ALL FIXED.** Every one got a failing
+  test first, and the two that mattered most were **invisible to a green
+  suite**.
+  **⚠ FINDING 1 (Important) — A TEST THAT PASSED IN THE FILE AND FAILED ALONE.**
+  `tests/conftest.py` keeps its own `import app.*.models` block for
+  `Base.metadata.create_all`, and Phase B added `app/rights/models.py` to
+  `alembic/env.py` and **not** to it. The suite stayed green because some
+  earlier test always imported `app.rights.store` first; running one test on
+  its own — what a developer actually does — raised
+  `OperationalError: no such table: data_principal_requests`. **This is the
+  second-hand-maintained-list defect, committed by me, in the same branch whose
+  commit messages congratulate it for fixing two others.** The fix is
+  `tests/test_model_registration.py`, which asserts every `app/**/models.py`
+  declaring a table is registered in **both** files.
+  **That guard immediately found SIX MORE, all pre-existing on `main`:**
+  `alembic/env.py` never imported auth, interview, matching, profile_sources,
+  screening or verification. `upgrade` never reads `target_metadata`, so
+  migrations always ran correctly — but **`alembic revision --autogenerate`
+  compared against a metadata missing six live tables and would have emitted
+  `DROP TABLE` for every one of them.** Fixed here rather than carried
+  forward: six imports, no behaviour change, and a guard whose value depends on
+  the list being complete.
+  **⚠ FINDING 2 (Important) — `?limit=-1` WAS AN UNLIMITED SELECT.**
+  `GET /admin/requests` took a raw `limit: int` and handed it to SQL, while
+  every other paged read in the repo goes through `clamp_limit`
+  (`page_max_limit` 200). SQLite reads a negative LIMIT as **unbounded**, so a
+  bound that looked present returned the whole table — of every data
+  principal's complaints, free text included. Now clamped; over-large caps
+  (a client cannot size its first call correctly), nonsensical 422s.
+  **⚠ FINDING 3 (Medium) — a counter row that no mechanism could ever
+  delete.** `RateLimitStore.hit` took `expires_at: Optional`, and
+  `rate_limit_counters` is the one swept class judged by that column, whose
+  predicate skips NULLs. `hit`'s own housekeeping only retires older windows
+  *of a key that is hit again* — its docstring says the sweep owns the rest —
+  so a NULL row is a salted email hash beside a salted IP hash retained
+  **permanently**, in the sprint whose point is that retention is enforced. No
+  caller can write one today, which is exactly why it is a test and not a
+  comment (Phase A's `enforce` fail-open, same shape). The argument is now
+  REQUIRED; the column stays nullable as a disclosed limit, because a migration
+  buys nothing the type system has already refused.
+  **⚠ FINDING 4 (Medium) — a 500 on a statutory right, during a statutory
+  right.** `submit` reads the candidate and then writes a row with a real FK to
+  it; a `DELETE /portal/me` landing between the two raised `IntegrityError` out
+  to the client. **S8.5's finding one table over.** The store now returns None
+  and both submit routes answer 404 — with the cause **verified after the
+  rollback** rather than assumed, because this row has a second FK and
+  swallowing that as "the subject vanished" would turn a real bug into a quiet
+  404.
+  **⚠ FINDING 5 (Medium) — the authorship column's whole purpose was
+  untested.** `resolved_by` exists to tell a named operator from the shared
+  machine key, and every test *and the smoke* authenticated with `X-API-Key`,
+  which has no human behind it — so the `ADMIN_USER` arm was reachable in
+  production and exercised nowhere. **Checked and SOUND**: a test that logs in
+  through `/auth/admin/verify` proves a real `admin_user_id` lands on the row,
+  and a planted mutation that always records `operator_key` kills it. This is
+  the S8.5 lesson applied to the plane S8.5 did not cover.
+  **CHECKED AND SOUND, so the review did not touch them:** every child FK of
+  every swept table declares `ondelete` (so the sweep cannot abort on an FK
+  violation — the failure mode that would have made it useless in prod); the
+  admin plane is deliberately not tenant-scoped, because these are requests to
+  the PLATFORM and no org is a party; CSRF covers both new POST surfaces
+  through `_accept`; and `GET /portal/requests` is deliberately **not** limited
+  — bounding a person's view of their own complaints is worse than the
+  unbounded read, and `MyData` already embeds unbounded lists.
+  **➤ NEXT STEP: merge, then S8.6 (deploy) — the only sprint left in PI-8.**
+- **Session 2026-08-11 — S8.3 PHASE B BUILT AND GREEN on branch
   `s83b-retention-and-rights`, and S8.3 IS NOW COMPLETE. 1689 → 1804 green,
   `smoke_s83b` 22/22, **ALL NINETEEN smokes green** (s12, s13, s23, s41, s51,
   s52, s53, s63, s64, s71, s72, s73, s81, s82, s83a, s83b, s84a, s84b,
@@ -2080,6 +2146,14 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                - public GET /grievance + the 7th boot refusal
     │                - _rate_limited(): four byte-identical 429 copies became
     │                  one before this added a fifth
+    │                REVIEWED 2026-08-12: 5 findings, all fixed. The two that
+    │                mattered were invisible to a green suite -- a test that
+    │                passed in the file and FAILED ALONE (conftest never
+    │                registered app/rights/models.py), and `?limit=-1` reaching
+    │                SQLite as an UNLIMITED select on the complaints table. The
+    │                registration guard then found SIX pre-existing gaps in
+    │                alembic/env.py that would have made --autogenerate emit
+    │                DROP TABLE for six live tables.
     └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the

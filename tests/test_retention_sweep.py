@@ -250,6 +250,56 @@ def test_the_counter_carries_the_ROW_COUNT_not_one_per_class(session_factory):
     assert metrics.snapshot()[key] == 3
 
 
+def test_a_counter_row_can_never_be_written_without_an_expiry(session_factory):
+    """REVIEW FINDING. `rate_limit_counters` is the ONE swept class whose rows
+    the sweep judges by `expires_at`, and the predicate skips NULLs -- so a row
+    written without one is INVISIBLE TO THE SWEEP FOREVER.
+
+    It is also unreachable by any other cleanup: `RateLimitStore.hit`'s own
+    housekeeping only retires older windows *of a key that is hit again*, and
+    its docstring says so ("the Phase B sweep owns keys that are never seen
+    again"). A NULL row is a salted email hash beside a salted IP hash,
+    retained permanently, in the sprint whose entire point is that retention is
+    now enforced.
+
+    No caller can write one today, which is exactly why this is a test and not
+    a comment -- Phase A's `enforce` fail-open was the same shape. `hit` now
+    REQUIRES the value, so the hole cannot be opened by a future caller.
+    """
+    import inspect
+
+    from app.ratelimit.store import RateLimitStore
+
+    signature = inspect.signature(RateLimitStore.hit)
+    expires = signature.parameters["expires_at"]
+    assert expires.default is inspect.Parameter.empty, (
+        "expires_at must be REQUIRED: a row written without one is retained "
+        "forever, because the sweep's predicate skips NULLs"
+    )
+    assert "Optional" not in str(expires.annotation)
+
+
+def test_the_sweep_genuinely_cannot_see_a_null_expiry(session_factory):
+    """The other half of the finding, as behaviour rather than as a signature:
+    a NULL-expiry row planted directly IS immortal. This is what makes the
+    required argument load-bearing rather than tidy."""
+    from app.ratelimit.models import RateLimitCounterRow
+
+    with session_factory() as s:
+        s.add(RateLimitCounterRow(
+            bucket_key="d" * 64, window_start=0, count=1, expires_at=None,
+        ))
+        s.commit()
+
+    run_sweep(session_factory, _settings(), now=NOW, dry_run=False)
+    with session_factory() as s:
+        survivors = s.execute(select(RateLimitCounterRow)).scalars().all()
+        assert len(survivors) == 1, (
+            "if this ever starts passing with 0, the sweep learned to judge "
+            "NULL expiries and this test should become the assertion of that"
+        )
+
+
 def test_cleared_rows_are_counted_under_the_SAME_name(session_factory):
     """One counter, labelled by class. A separate `retention_cleared` would
     make 'how much moved' a sum an operator has to remember to compute."""

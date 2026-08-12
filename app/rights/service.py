@@ -119,6 +119,13 @@ class RightsService:
             requested_value=requested_value,
             note=note,
         )
+        if view is None:
+            # The subject erased themselves between the read above and the
+            # write -- one statutory right landing mid-exercise of another.
+            # 404, which by then is simply true (the S8.5 posture), rather than
+            # the IntegrityError that reached the client as a 500 before the
+            # Phase B review.
+            raise LookupError(f"unknown candidate: {candidate_id}")
         self._ledger.audit_request_event(
             candidate_id,
             request_id=view.id,

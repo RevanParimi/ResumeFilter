@@ -1,11 +1,19 @@
 """The operator reviews, decides, and is recorded deciding (S8.3 Phase B)."""
 
+import json
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.rights.schema import ResolvedBy
 from tests.conftest import ADMIN_HEADERS, make_services
+
+
+@pytest.fixture
+def capture_path(tmp_path):
+    return tmp_path / "mailbox.jsonl"
 
 
 @pytest.fixture
@@ -164,3 +172,100 @@ def test_the_resolution_appears_in_the_subjects_access_log(_setup):
 def test_an_unknown_status_filter_is_refused_by_the_MODEL(_setup):
     client, _ = _setup
     assert client.get("/admin/requests?status=pending").status_code == 422
+
+
+def test_a_NAMED_OPERATOR_is_recorded_as_a_person_not_as_the_shared_key(
+    settings, capture_path, flywheel
+):
+    """REVIEW GAP. `resolved_by`/`resolved_by_admin_user_id` exist precisely to
+    distinguish a human from the machine credential -- and every test above,
+    and the smoke, authenticates with `X-API-Key`, which has no human behind
+    it. The ADMIN_USER arm was reachable in production (an operator who logged
+    in through /auth/admin/verify has a session carrying admin_user_id) and
+    exercised nowhere.
+
+    If `principal.admin_user_id` were mis-wired, every human decision would be
+    filed as `operator_key` and the column that exists to prevent exactly that
+    confusion would be silently useless. This is the S8.5 lesson -- its smoke
+    had to sign up through a real session to prove a real org_user id lands on
+    the row -- applied to the plane S8.5 did not cover.
+    """
+    cfg = settings.model_copy(update={
+        "email_provider": "capture",
+        "email_capture_path": str(capture_path),
+        "session_cookie_secure": False,
+        "session_cookie_samesite": "lax",
+    })
+    services = make_services(cfg, flywheel=flywheel)
+    # The admin header is for the SETUP calls (creating a candidate and its
+    # key). The resolve below is answered by the SESSION: AuthService.resolve
+    # prefers it when both arrive, which is why CSRF is required there and why
+    # admin_user_id is set at all (S8.2).
+    with TestClient(create_app(services), raise_server_exceptions=False,
+                    headers=ADMIN_HEADERS) as client:
+        _, h = _candidate_with_key(client)
+        submitted = client.post("/portal/grievances", headers=h,
+                                json={"note": "nobody answered"}).json()
+
+        # A NAMED operator, logging in with no shared secret in sight.
+        client.post("/admin/users", json={"email": "op@veritas.in"},
+                    headers=ADMIN_HEADERS)
+        client.post("/auth/admin/login", json={"email": "op@veritas.in"})
+        line = json.loads(
+            capture_path.read_text(encoding="utf-8").splitlines()[-1]
+        )
+        code = re.search(r"\b(\d{6})\b", line["body"]).group(1)
+        csrf = client.post(
+            "/auth/admin/verify", json={"email": "op@veritas.in", "code": code},
+        ).json()["csrf_token"]
+
+        r = client.post(
+            f"/admin/requests/{submitted['id']}/resolve",
+            headers={"X-CSRF-Token": csrf},
+            json={"status": "resolved", "resolution": "called them",
+                  "apply": False},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["resolved_by"] == "admin_user"
+
+        row = services.rights.list_by_status(None, limit=10)[0]
+        assert row.resolved_by is ResolvedBy.ADMIN_USER
+        # And the FK carries WHICH person, which is the whole point of having
+        # two columns rather than one.
+        stored = services.rights._store.get(submitted["id"])
+        assert stored is not None
+        with services.rights._store._session_factory() as s:
+            from app.rights.models import DataPrincipalRequestRow
+
+            saved = s.get(DataPrincipalRequestRow, submitted["id"])
+            assert saved.resolved_by_admin_user_id is not None
+
+
+def test_the_queue_limit_is_CLAMPED_like_every_other_paged_read(_setup):
+    """REVIEW FINDING. Every paged read in this repo goes through
+    `clamp_limit` (page_max_limit = 200); this route took a raw `limit: int`
+    and handed it to SQL.
+
+    `?limit=-1` is the one that matters: SQLite reads a negative LIMIT as
+    UNLIMITED, so a bound that looks present returns the entire table -- on the
+    one table that holds every data principal's complaints, including their
+    free-text notes. `?limit=10000000` is the same read with an honest-looking
+    number.
+    """
+    client, services = _setup
+    _, h = _candidate_with_key(client)
+    for i in range(4):
+        client.post("/portal/grievances", headers=h, json={"note": f"n{i}"})
+
+    assert client.get("/admin/requests?limit=2").status_code == 200
+    assert len(client.get("/admin/requests?limit=2").json()) == 2
+
+    # Over the cap: capped, not refused -- a client asking for too much should
+    # get a page, not an error it cannot size correctly on its first call.
+    huge = client.get(f"/admin/requests?limit={10 ** 7}")
+    assert huge.status_code == 200
+    assert len(huge.json()) <= services.settings.page_max_limit
+
+    # Nonsensical: refused, and NEVER passed through to SQL.
+    assert client.get("/admin/requests?limit=-1").status_code == 422
+    assert client.get("/admin/requests?limit=0").status_code == 422

@@ -39,7 +39,16 @@ class RateLimitCounterRow(Base):
     #: Epoch seconds at which this fixed window opened.
     window_start: Mapped[int] = mapped_column(BigInteger)
     count: Mapped[int] = mapped_column(Integer, default=0)
-    #: When this row stops being useful. The Phase B sweep's access path.
+    #: When this row stops being useful, and the ONLY thing the S8.3 Phase B
+    #: sweep can judge this table by -- its predicate skips NULLs, and `hit`'s
+    #: housekeeping only retires older windows of a key that is hit AGAIN, so a
+    #: NULL row would be retained permanently.
+    #:
+    #: The COLUMN stays nullable (that is what migration 0021 shipped) and the
+    #: invariant is enforced one layer up: `RateLimitStore.hit` REQUIRES the
+    #: value, so no caller can write a row without one. A disclosed limit, not
+    #: an oversight -- making the column NOT NULL means a migration whose only
+    #: benefit is against a case the type system already refuses.
     expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )

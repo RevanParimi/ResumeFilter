@@ -12,8 +12,10 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
@@ -53,7 +55,16 @@ class RightsStore:
         current_value: str,
         requested_value: str,
         note: str,
-    ) -> RequestView:
+    ) -> Optional[RequestView]:
+        """File a request. None means the candidate is gone.
+
+        `candidate_id` is a real FK, so an erasure landing between the caller's
+        read and this INSERT raises rather than returning. The cause is
+        VERIFIED after the rollback rather than assumed from the exception --
+        this row has a second FK (`resolved_by_admin_user_id`) and a primary
+        key, and swallowing either of those as "the subject vanished" would
+        turn a genuine bug into a quiet 404 (the S8.5 `save()` precedent).
+        """
         with self._session_factory() as session:
             row = DataPrincipalRequestRow(
                 candidate_id=candidate_id,
@@ -66,7 +77,13 @@ class RightsStore:
                 note=note,
             )
             session.add(row)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                if session.get(CandidateRow, candidate_id) is None:
+                    return None
+                raise
             return _view(row)
 
     def for_candidate(self, candidate_id: str) -> list[RequestView]:

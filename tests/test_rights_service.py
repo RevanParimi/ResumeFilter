@@ -395,6 +395,48 @@ def test_an_UNCORRECTED_name_is_still_refreshed_by_an_upload(candidates, setting
     assert candidates.get_candidate(first.candidate_id).full_name == "Asha Rao"
 
 
+def test_submitting_as_a_candidate_erased_MID_CALL_is_not_a_500(
+    rights, candidate_id, candidates
+):
+    """S8.5's finding one table over: a customer-facing write during an
+    ordinary erasure.
+
+    `submit` READS the candidate (for current_value) and then WRITES a row with
+    a real FK to it. A `DELETE /portal/me` landing between the two makes the
+    INSERT raise IntegrityError, which no handler catches -- a 500 on the
+    surface a person uses to exercise a statutory right, at the exact moment
+    they are exercising another one.
+
+    The window is narrow (the erasure also kills the credential, so the caller
+    usually 401s first) which is precisely why it needs a test: nobody will hit
+    it by hand, and it is a 500 in the logs when they do.
+    """
+    from app.candidates.models import CandidateRow
+
+    class ErasingStore:
+        """The candidate vanishes between the read and the write."""
+
+        def __init__(self, real):
+            self._real = real
+            self._session_factory = real._session_factory
+
+        def get_candidate(self, cid):
+            out = self._real.get_candidate(cid)
+            with self._session_factory() as s:
+                row = s.get(CandidateRow, cid)
+                if row is not None:
+                    s.delete(row)
+                    s.commit()
+            return out
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    rights._candidates = ErasingStore(candidates)
+    with pytest.raises(LookupError):
+        _correction(rights, candidate_id)
+
+
 # ── the bound ────────────────────────────────────────────────────────────────
 
 
