@@ -94,15 +94,54 @@ because absent is visible.**
 The eighth refusal:
 
 ```
-DEE_ENV=prod with email_provider=null. Signup and login on all three planes
-answer 503 email_unavailable, so org self-onboard (PI-8 blocker 5) and
+DEE_ENV=prod with no working email provider. Signup and login on all three
+planes answer 503 email_unavailable, so org self-onboard (PI-8 blocker 5) and
 candidate self-registration (blocker 4) do not work at all -- while /healthz
-reports the service healthy. Set email_provider=smtp and the four
-DEE_EMAIL_SMTP_* variables. There is no provider that "works well enough" for
-a login code: the code either arrives or the account is unreachable.
+reports the service healthy. Set email_provider=smtp with email_smtp_host and
+the DEE_EMAIL_SMTP_* credentials. There is no provider that "works well
+enough" for a login code: the code either arrives or the account is
+unreachable.
 ```
 
-### 1.1 The consequence, stated because it is the point
+### 1.1 The refusal ASKS THE BUILDER; it does not re-test the provider string
+
+The obvious implementation — `if settings.email_provider == "null": raise` — is
+**wrong, and wrong in this repo's most-repeated way.** `build_email` does not
+key on the provider name alone:
+
+```python
+if settings.email_provider == "smtp" and settings.email_smtp_host:
+    return SMTPEmail(settings)
+...
+return NullEmail(settings)
+```
+
+So `email_provider=smtp` with an **empty `email_smtp_host`** silently returns
+`NullEmail`. A refusal that checked the string would pass that config and the
+deployment would 503 every login anyway — the exact failure the refusal exists
+to prevent, reached through the door the refusal was not watching. That is "a
+rule applied at one entry point and not the other", which has shipped as a real
+defect in S7.1, S7.2, S7.3, S8.4 Phase B and S8.5.
+
+`EmailClient.available` already exists for precisely this question — *"Can this
+client deliver at all?"* — and is `False` only on `NullEmail`. So the refusal is:
+
+```python
+if not build_email(settings).available:
+    raise LaunchConfigError(...)
+```
+
+One predicate, owned by the builder, with no second copy to drift.
+`build_email` opens no socket, so this costs a boot nothing. `capture` is still
+caught by its own earlier refusal (it *is* available, and its problem is that it
+writes OTPs to a file rather than that it cannot deliver), so the two refusals
+stay independent and each isolates one fault.
+
+**A test pins the derivation rather than the string**: `email_provider="smtp"`
+with an empty host must be refused. If someone later "simplifies" this to a
+provider-name check, that test is what fails.
+
+### 1.2 The consequence, stated because it is the point
 
 With `null` and `capture` both refused, **a prod boot now requires real SMTP
 credentials.** That is not a side effect to work around; it is the property. It
@@ -118,7 +157,7 @@ origin is configured* — a conditional refusal is a refusal with a bypass, and
 `boot.py`'s own docstring already rejects that shape ("an env-gated escape would
 make a safe deploy depend on remembering two variables instead of one").
 
-### 1.2 What it costs the existing tests
+### 1.3 What it costs the existing tests
 
 `_prod()` in `tests/test_boot_config.py` exists to satisfy every prior refusal so
 each test isolates the one it names. It gains `email_provider="smtp"` and the
