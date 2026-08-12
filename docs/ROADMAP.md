@@ -9,8 +9,11 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-12 (latest) — S8.3 PHASE B REVIEWED on branch
-  `s83b-retention-and-rights`. 5 findings, ALL FIXED.** Every one got a failing
+- **Session 2026-08-12 (latest) — S8.3 PHASE B REVIEWED AND MERGED. `main` is
+  at `6dfde6c`, 1812 green, `smoke_s83b` 22/22 and `smoke_s83a` 19/19 re-run
+  ON THE MERGE COMMIT, branch deleted. S8.3 IS COMPLETE; S8.6 (deploy) is the
+  only sprint left in PI-8. NOT PUSHED.** The review found 5 findings, ALL
+  FIXED before the merge.** Every one got a failing
   test first, and the two that mattered most were **invisible to a green
   suite**.
   **⚠ FINDING 1 (Important) — A TEST THAT PASSED IN THE FILE AND FAILED ALONE.**
@@ -74,7 +77,13 @@
   through `_accept`; and `GET /portal/requests` is deliberately **not** limited
   — bounding a person's view of their own complaints is worse than the
   unbounded read, and `MyData` already embeds unbounded lists.
-  **➤ NEXT STEP: merge, then S8.6 (deploy) — the only sprint left in PI-8.**
+  **➤ NEXT STEP: S8.6 (deploy) — Railway, HTTPS, prod config, live smoke. It
+  is the ONLY sprint left in PI-8.** Two things it inherits from this sprint
+  and must not forget: prod now refuses to boot without `DEE_GRIEVANCE_OFFICER_
+  EMAIL` (the seventh refusal), and **the retention sweep has no scheduler** —
+  it runs when a Railway cron calls `python -m app.retention.sweep --apply` or
+  an operator posts to `/admin/retention/sweep`. Deploying without wiring that
+  cron ships a portal that promises a purge nobody invokes.
 - **Session 2026-08-11 — S8.3 PHASE B BUILT AND GREEN on branch
   `s83b-retention-and-rights`, and S8.3 IS NOW COMPLETE. 1689 → 1804 green,
   `smoke_s83b` 22/22, **ALL NINETEEN smokes green** (s12, s13, s23, s41, s51,
@@ -2121,9 +2130,9 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                - prod refuses to boot with rate_limit_enabled=false (6th)
     │                - new root doc OPERATING.md
     │            [x] PHASE B — retention and rights (branch
-    │                `s83b-retention-and-rights`, 16 tasks, 1689 -> 1804 green,
+    │                `s83b-retention-and-rights`, 16 tasks, 1689 -> 1812 green,
     │                smoke_s83b 22/22, ALL 19 smokes green, 12/12 mutants
-    │                dead). NOT YET REVIEWED OR MERGED.
+    │                dead). REVIEWED + MERGED 2026-08-12 at `6dfde6c`.
     │                plan: 2026-08-11-s83b-retention-and-rights.md
     │                - app/retention/ (plan/schema/sweep) + app/rights/
     │                  (schema/models/store/service) + migrations 0022, 0023
