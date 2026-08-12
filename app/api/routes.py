@@ -69,6 +69,13 @@ from app.curation.schema import (
     CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
 )
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
+from app.retention.schema import SweepReport
+from app.retention.sweep import run_sweep
+from app.rights.schema import (
+    CorrectionField, GrievanceContact, RequestAlreadyResolved, RequestKind,
+    RequestRefused, RequestStatus, RequestView, ResolvedBy,
+    build_grievance_contact,
+)
 from app.verification.documents import DocumentParseError
 from app.verification.schema import (
     CLAIM_REF_MAX_CHARS, ClaimEvidence, DocumentFinding, DocumentType,
@@ -81,7 +88,7 @@ from app.verification.store import ChallengeError
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
-from app.screening.pagination import InvalidCursor
+from app.screening.pagination import InvalidCursor, clamp_limit
 from app.screening.projection import redact_ingest_response_for_org
 from app.screening.schema import (
     BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
@@ -279,6 +286,11 @@ PUBLIC_PATHS: set[str] = {
     "/auth/org/signup", "/auth/org/login", "/auth/org/verify",
     "/auth/candidate/signup", "/auth/candidate/login", "/auth/candidate/verify",
     "/auth/admin/login", "/auth/admin/verify",
+    # S8.3 Phase B. DPDP requires the grievance mechanism to be PUBLISHED, and
+    # a contact reachable only after login is not reachable by the person whose
+    # complaint is that they cannot log in. It discloses four operator-chosen
+    # fields and reads nothing about any data principal.
+    "/grievance",
 }
 
 
@@ -413,6 +425,26 @@ def _client_ip(request: Request) -> Optional[str]:
         if len(parts) >= hops:
             return parts[-hops]
     return request.client.host if request.client else None
+
+
+def _rate_limited(exc: RateLimited) -> HTTPException:
+    """The ONE translation of a refused bound into HTTP (S8.3).
+
+    It was four byte-identical copies before Phase B was about to add a fifth,
+    which is how "a rule applied at one entry point and not the other" starts.
+    The next copy would be the one that forgets `Retry-After`, and a 429 with
+    no header reads to a client author as "stop forever".
+
+    ONE OPAQUE DETAIL, deliberately. Which rule and which scope refused is
+    operator information and goes to the log line the limiter already emits --
+    telling a brute-forcer which of their two axes tripped is telling them
+    which one to change.
+    """
+    return HTTPException(
+        status_code=429,
+        detail="rate_limited",
+        headers={"Retry-After": str(exc.retry_after_seconds)},
+    )
 
 
 def _client_ip_hash(request: Request) -> Optional[str]:
@@ -1172,11 +1204,7 @@ async def process_screening_batch(
             org_id, batch_id, engine=request.app.state.engine
         )
     except RateLimited as exc:
-        raise HTTPException(
-            status_code=429,
-            detail="rate_limited",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
+        raise _rate_limited(exc) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return result
@@ -1644,6 +1672,82 @@ async def portal_revoke_consent(
     return {"consent_id": consent_id, "revoked": revoked}
 
 
+class CorrectionSubmitRequest(BaseModel):
+    """`field` is the enum, so a field nobody implemented is a 422 from the
+    model before any handler runs."""
+
+    field: CorrectionField
+    requested_value: str = ""
+    note: str = ""
+
+
+class GrievanceSubmitRequest(BaseModel):
+    note: str = ""
+
+
+@candidate_router.post("/portal/corrections", response_model=RequestView)
+async def portal_submit_correction(
+    req: CorrectionSubmitRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> RequestView:
+    """File a correction request. It is REVIEWED, never applied on submission.
+
+    On a fraud-screening platform, a subject write path onto the data the risk
+    score is computed from is an edit box over the evidence (spec 0.3). What
+    DPDP requires is the mechanism, and the mechanism starts here.
+    """
+    try:
+        return _services(request).rights.submit(
+            candidate_id,
+            kind=RequestKind.CORRECTION,
+            field=req.field,
+            requested_value=req.requested_value,
+            note=req.note,
+            now=datetime.now(timezone.utc),
+        )
+    except RateLimited as exc:
+        raise _rate_limited(exc) from exc
+    except RequestRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        # The subject erased themselves mid-call. 404, which by then is true.
+        raise HTTPException(status_code=404, detail="candidate not found") from exc
+
+
+@candidate_router.post("/portal/grievances", response_model=RequestView)
+async def portal_submit_grievance(
+    req: GrievanceSubmitRequest,
+    request: Request,
+    candidate_id: str = Depends(require_candidate),
+) -> RequestView:
+    try:
+        return _services(request).rights.submit(
+            candidate_id,
+            kind=RequestKind.GRIEVANCE,
+            field=None,
+            requested_value="",
+            note=req.note,
+            now=datetime.now(timezone.utc),
+        )
+    except RateLimited as exc:
+        raise _rate_limited(exc) from exc
+    except RequestRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        # The subject erased themselves mid-call. 404, which by then is true.
+        raise HTTPException(status_code=404, detail="candidate not found") from exc
+
+
+@candidate_router.get("/portal/requests", response_model=list[RequestView])
+async def portal_list_requests(
+    request: Request, candidate_id: str = Depends(require_candidate)
+) -> list[RequestView]:
+    """The subject's own requests, both kinds. Cross-candidate isolation is
+    structural: the id comes from the resolver, never from a query param."""
+    return _services(request).rights.for_candidate(candidate_id)
+
+
 @candidate_router.delete("/portal/me", response_model=ErasureResponse)
 async def portal_erase(
     request: Request, candidate_id: str = Depends(require_candidate)
@@ -1930,11 +2034,7 @@ async def submit_answer(
     except RateLimited as exc:
         # Audio answers only (S8.3): the ASR path is the S7.3 review's named
         # spend surface. A typed answer is never refused here.
-        raise HTTPException(
-            status_code=429,
-            detail="rate_limited",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
+        raise _rate_limited(exc) from exc
     except SessionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except AnswerTooLargeError as exc:
@@ -2254,6 +2354,121 @@ async def metrics(request: Request) -> PlainTextResponse:
     )
 
 
+class ResolveRequest(BaseModel):
+    """One operator decision.
+
+    `apply` defaults to FALSE. Recording a decision is the common case and the
+    safe one; writing onto a person's identity row is the exception, and the
+    exception is the one that should have to be asked for.
+    """
+
+    status: RequestStatus
+    resolution: str = ""
+    apply: bool = False
+
+
+@router.get("/admin/requests", response_model=list[RequestView])
+async def list_data_principal_requests(
+    request: Request,
+    status: Optional[RequestStatus] = None,
+    limit: Optional[int] = None,
+) -> list[RequestView]:
+    """The operator's queue, OLDEST first -- a complaint that has waited
+    longest is the one that should be answered next.
+
+    Not tenant-scoped, deliberately: an operator handling DPDP requests has to
+    see the queue, not one organisation's slice of it. These are requests from
+    data principals to the PLATFORM, and no org is a party to them.
+
+    `limit` goes through `clamp_limit`, the same helper every other paged read
+    uses. It took a raw int until the Phase B review: `?limit=-1` reaches
+    SQLite as an UNLIMITED select, so a bound that looked present returned the
+    whole table -- of every data principal's complaints, free text included.
+    """
+    services = _services(request)
+    try:
+        bounded = clamp_limit(limit, services.settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return services.rights.list_by_status(status, bounded)
+
+
+@router.post("/admin/requests/{request_id}/resolve", response_model=RequestView)
+async def resolve_data_principal_request(
+    request_id: str, req: ResolveRequest, request: Request
+) -> RequestView:
+    """Decide one request, and record who decided.
+
+    THREE outcomes, three statuses, picked by exception TYPE and never by
+    matching on message text -- a translation keyed on wording breaks the first
+    time somebody rewords a sentence. The `except` clauses are ordered
+    subclass-first, or the 409 would be unreachable: RequestAlreadyResolved IS
+    a RequestRefused.
+    """
+    services = _services(request)
+    principal = request.state.principal
+    admin_user_id = principal.admin_user_id if principal else None
+    try:
+        return services.rights.resolve(
+            request_id,
+            status=req.status,
+            resolution=req.resolution,
+            apply=req.apply,
+            # A machine key has no human behind it. Recording OPERATOR_KEY
+            # rather than leaving a bare NULL is what keeps "the shared
+            # credential did this" distinguishable from "the admin who did has
+            # since been deleted" (the S8.5 recorded_by argument).
+            resolved_by=(
+                ResolvedBy.ADMIN_USER if admin_user_id else ResolvedBy.OPERATOR_KEY
+            ),
+            admin_user_id=admin_user_id,
+            now=datetime.now(timezone.utc),
+        )
+    except RequestAlreadyResolved as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RequestRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="request not found") from exc
+
+
+class SweepRequest(BaseModel):
+    """``dry_run`` DEFAULTS TO TRUE.
+
+    This is the most destructive call in the repo, and defaulting it the other
+    way would make an empty body -- the easiest thing to send by accident, and
+    what a mistyped curl sends -- delete production data. A cron passes
+    ``{"dry_run": false}`` explicitly, which is one word of evidence that
+    somebody meant it.
+    """
+
+    dry_run: bool = True
+
+
+@router.post("/admin/retention/sweep", response_model=SweepReport)
+async def retention_sweep(req: SweepRequest, request: Request) -> SweepReport:
+    """Run (or preview) the retention sweep. Admin plane.
+
+    There is no scheduler in the application, so this route and
+    ``python -m app.retention.sweep`` are the only two ways the sweep ever
+    runs. Both go through ``run_sweep``, so the refusal below cannot be
+    enforced at one door and forgotten at the other.
+    """
+    services = _services(request)
+    if not req.dry_run and not services.settings.retention_sweep_enabled:
+        # 409, not 403: the CONFIGURATION is in the wrong state, and the
+        # operator's fix is a knob rather than a credential. A dry run is still
+        # allowed, because a count is safe and is how they see what would go.
+        raise HTTPException(status_code=409, detail="retention_sweep_disabled")
+    return run_sweep(
+        services.session_factory,
+        services.settings,
+        now=datetime.now(timezone.utc),
+        dry_run=req.dry_run,
+        metrics=services.metrics,
+    )
+
+
 @router.get("/domains", response_model=list[DomainInfo])
 async def domains() -> list[DomainInfo]:
     """Registered evaluation domains (FR-9)."""
@@ -2264,6 +2479,18 @@ async def domains() -> list[DomainInfo]:
             {"key": d.key, "display_name": d.display_name, "claim_types": d.claim_types}
         )
     return out
+
+
+@public_router.get("/grievance", response_model=GrievanceContact)
+async def grievance(request: Request) -> GrievanceContact:
+    """The published grievance mechanism. PUBLIC by design (spec §9).
+
+    On `public_router` and named in PUBLIC_PATHS, which is the reviewable act
+    that widening that set is meant to be. It discloses four operator-chosen
+    fields and reads nothing about any data principal, and prod refuses to boot
+    with the email unset so this can never be a 200 that says nothing.
+    """
+    return build_grievance_contact(_services(request).settings)
 
 
 @public_router.get("/healthz", response_model=HealthResponse)
@@ -2344,15 +2571,9 @@ def _request_code(
             ip_hash=_client_ip_hash(request),
         )
     except RateLimited as exc:
-        # ONE opaque detail. WHICH rule and WHICH scope refused is operator
-        # information and goes to the log line the limiter already emits --
-        # telling a brute-forcer which of their two axes tripped is telling
-        # them which one to change.
-        raise HTTPException(
-            status_code=429,
-            detail="rate_limited",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
+        # The opaque-detail reasoning that used to live here now lives on
+        # `_rate_limited`, where all five call sites can read it.
+        raise _rate_limited(exc) from exc
     except EmailUnavailableError as exc:
         # An honest 503 rather than a 202 that leaves someone waiting forever for
         # a code that was never sent (the NullSpeech posture from S7.3).
@@ -2381,11 +2602,7 @@ def _verify(
             ip_hash=_client_ip_hash(request),
         )
     except RateLimited as exc:
-        raise HTTPException(
-            status_code=429,
-            detail="rate_limited",
-            headers={"Retry-After": str(exc.retry_after_seconds)},
-        ) from exc
+        raise _rate_limited(exc) from exc
     except RegistrationRefused as exc:
         # The code was RIGHT. This is a registration failure, and reporting it
         # as invalid_code is what locked users out of their own signup.

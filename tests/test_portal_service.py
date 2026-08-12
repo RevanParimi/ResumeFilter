@@ -35,7 +35,9 @@ def test_my_data_composes_reports_as_refs_only(settings):
     assert set(dumped) == {"report_id", "domain", "created_at"}  # no internals
     # retention posture present for every class
     assert {w.data_class for w in md.retention.windows}  # non-empty
-    assert md.retention.sweep_active is False
+    # TRUE since S8.3 Phase B: the sweep exists, so the portal no longer tells
+    # a data principal that no mechanical purge runs.
+    assert md.retention.sweep_active is True
 
 
 def test_my_data_unknown_candidate_raises(settings):

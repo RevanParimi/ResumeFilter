@@ -242,19 +242,24 @@ resume row needs a candidate and identity resolution needs the extraction.
   deletion of the history.)*
 * **`DELETE /screening/batches/{id}` ships in the sprint that creates the
   table** — a real delete path, not a promise of one.
-* **`ret_batch_item_days` (90) is declared and NOT yet swept.** It is S8.3
-  **Phase B** sweep input; Phase A shipped the limiter, the retry and the
-  metrics, and the sweep is the phase after. The honest statement is still that
-  nothing deletes on this window today — a retention window nobody enforces is
-  a posture, and calling it anything else would be the overclaim `TENANCY.md`
-  had six of.
-* **Retention will bound the retry, and that coupling is the point.** Once the
-  Phase B sweep clears `raw_text` past `ret_batch_item_days`, an item older
-  than the window stops being retryable — its input is gone. Retaining the text
-  is justified *by* the retry capability, and the retry is bounded *by* the
-  retention window; neither half stands alone. Stated here and in
-  `OPERATING.md` §6 rather than discovered by a customer whose retry silently
-  reports `skipped: 1`.
+* **`ret_batch_item_days` (90) IS SWEPT, since S8.3 Phase B.** The sweep runs in
+  **CLEAR** mode on this column: `raw_text` is blanked and **the row survives**,
+  because an organisation's record of what it screened must outlive the text it
+  screened — identical reasoning to `batch_items.candidate_id` being `SET NULL`.
+  The eligibility predicate is `created_at < cutoff AND raw_text != ''`; without
+  that second half a dry run would report the same already-cleared rows every
+  day forever. There is still **no scheduler**: `POST /admin/retention/sweep` or
+  `python -m app.retention.sweep --apply` is what makes it happen
+  (`OPERATING.md` §8).
+  *(This bullet used to say "declared and NOT yet swept", which was the honest
+  statement at the time. It is corrected rather than deleted.)*
+* **Retention BOUNDS the retry, and that coupling is the point.** Past
+  `ret_batch_item_days` an item's input text is gone, so it stops being
+  retryable and `POST /screening/batches/{id}/retry` reports it as `skipped`
+  rather than `requeued`. Retaining the text is justified *by* the retry
+  capability, and the retry is bounded *by* the retention window; neither half
+  stands alone. Stated here and in `OPERATING.md` §6 rather than discovered by a
+  customer whose retry silently reports `skipped: 1`.
 
 No new `ConsentPurpose`. Screening an uploaded resume is the organisation's own
 first-party processing of a document it holds.

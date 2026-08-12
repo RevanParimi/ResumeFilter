@@ -19,6 +19,7 @@ from app.auth.schema import SessionView
 from app.interview.schema import InterviewSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
 from app.profile_sources.schema import ProfileSourceSignal
+from app.rights.schema import GrievanceContact, RequestView
 from app.verification.schema import ClaimEvidence, IdentityAssurance
 
 
@@ -40,7 +41,11 @@ class RetentionWindow(BaseModel):
 
 class RetentionPolicy(BaseModel):
     windows: list[RetentionWindow] = Field(default_factory=list)
-    sweep_active: bool = False  # posture surfaced; mechanical purge is PI-8
+    #: Does a mechanical purge actually run? DERIVED from
+    #: settings.retention_sweep_enabled since S8.3 Phase B. The default below is
+    #: the safe answer for a policy built without settings, and is never the
+    #: answer the portal gives -- build_retention_policy always passes one.
+    sweep_active: bool = False
 
 
 class ReportRef(BaseModel):
@@ -92,4 +97,13 @@ class MyData(BaseModel):
     # devices -- a transparency right consistent with the access log. Never
     # the token: SessionView has no field able to carry one.
     sessions: list[SessionView] = Field(default_factory=list)
+    # S8.3 Phase B: the subject's own correction and grievance requests, in the
+    # one view they check hardest. A mechanism whose state the person cannot
+    # see is not a mechanism -- and DPDP's is request, review, decide, record,
+    # DISCLOSE.
+    requests: list[RequestView] = Field(default_factory=list)
+    # Echoed here as well as at the public GET /grievance, so a candidate
+    # reading their own data sees who to complain to without having to know a
+    # separate route exists.
+    grievance: GrievanceContact = Field(default_factory=GrievanceContact)
     retention: RetentionPolicy

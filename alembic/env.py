@@ -16,6 +16,19 @@ import app.features.models  # noqa: F401 — register feature tables on Base.met
 import app.curation.models  # noqa: F401 — register curation table on Base.metadata
 import app.reports.models  # noqa: F401 — register report tables on Base.metadata
 import app.ratelimit.models  # noqa: F401 — register the counter table on Base.metadata
+import app.rights.models  # noqa: F401 — register the request queue on Base.metadata
+# These six were MISSING until S8.3 Phase B's review. `upgrade` never reads
+# target_metadata, so migrations always ran correctly -- but `alembic revision
+# --autogenerate` compared against a metadata that did not contain them, and
+# would happily have emitted DROP TABLE for six live tables. Registration is
+# now enforced by tests/test_model_registration.py against both this file and
+# tests/conftest.py.
+import app.auth.models  # noqa: F401
+import app.interview.models  # noqa: F401
+import app.matching.models  # noqa: F401
+import app.profile_sources.models  # noqa: F401
+import app.screening.models  # noqa: F401
+import app.verification.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.db import Base
 

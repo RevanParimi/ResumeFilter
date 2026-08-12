@@ -15,7 +15,6 @@ interleaved state directly.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -34,12 +33,20 @@ class RateLimitStore:
         bucket_key: str,
         window_start: int,
         limit: int,
-        expires_at: Optional[datetime],
+        expires_at: datetime,
     ) -> bool:
         """Count one event against a bucket. True = allowed.
 
         A refused hit does NOT increment: the count would otherwise climb
         forever under attack, and that number is what the deny metric reports.
+
+        ``expires_at`` is REQUIRED, and that is a retention rule rather than a
+        typing preference. The S8.3 Phase B sweep judges this table by
+        ``expires_at`` and its predicate skips NULLs, while the housekeeping
+        below only retires older windows *of a key that is hit again* -- so a
+        row written without an expiry is invisible to both, permanently. It
+        would be a salted email hash beside a salted IP hash, retained forever,
+        in the sprint whose whole point is that retention is enforced.
         """
         if limit <= 0:
             # Config forbids this (ge=1). Defence in depth, because the path

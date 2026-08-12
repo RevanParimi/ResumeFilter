@@ -9,9 +9,11 @@ here for the same reason: a session cookie sent in the clear, a wildcard CORS
 origin, or a capture email provider each produce a service that *works* while
 being unsafe, which is the failure mode a boot check exists to catch.
 
-S8.3 adds a sixth, on the same argument: a disabled rate limiter serves every
-request perfectly while leaving the OTP endpoints -- the brute-force surface
-PI-8 itself created -- unthrottled on a public host.
+S8.3 adds a sixth and a seventh, on the same argument. A disabled rate limiter
+serves every request perfectly while leaving the OTP endpoints -- the
+brute-force surface PI-8 itself created -- unthrottled on a public host. And an
+unpublished grievance officer leaves ``GET /grievance`` answering 200 with an
+empty contact, which is worse than a 404 because it looks answered.
 
 There is deliberately NO ``env`` exemption (spec 0.1). ``env`` DEFAULTS to
 "local", so an env-gated escape would make a safe deploy depend on remembering
@@ -81,4 +83,12 @@ def verify_launch_config(settings: Settings) -> None:
             "unthrottled on a public host. No knob restores fail-open admin "
             "auth (S8.1); this is the same class of thing. Set "
             "rate_limit_enabled=true."
+        )
+    if not settings.grievance_officer_email.strip():
+        raise LaunchConfigError(
+            "DEE_ENV=prod with an empty grievance_officer_email. DPDP requires "
+            "the grievance mechanism to be PUBLISHED, and GET /grievance would "
+            "answer 200 with an empty contact -- worse than a 404, because it "
+            "looks answered. It is also the RFP blocker the GTM analysis names. "
+            "Set grievance_officer_email (and the name and phone beside it)."
         )

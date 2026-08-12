@@ -18,6 +18,7 @@ from app.portal.retention import build_retention_policy
 from app.portal.schema import (
     AccessLogEntry, ConsentState, ConsentView, MyData, ReportRef,
 )
+from app.rights.schema import build_grievance_contact
 
 
 def _utcnow() -> datetime:
@@ -35,6 +36,7 @@ class PortalService:
         verification=None,
         interview=None,
         auth=None,
+        rights=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._candidates = candidates
@@ -50,6 +52,11 @@ class PortalService:
         # Optional for the same reason (S8.2). It also owns the erasure of
         # login challenges, which carry no FK and so cannot cascade.
         self._auth = auth
+        # Optional for the same reason (S8.3 Phase B): the portal stays
+        # constructible without the rights package, and `requests` is simply
+        # omitted from MyData. It is never the writer -- filing goes through
+        # RightsService, which owns the bound and the audit.
+        self._rights = rights
         self._settings = settings or get_settings()
 
     def my_data(self, candidate_id: str) -> MyData:
@@ -102,6 +109,11 @@ class PortalService:
             if self._auth is not None
             else []
         )
+        requests = (
+            self._rights.for_candidate(candidate_id)
+            if self._rights is not None
+            else []
+        )
         return MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -115,6 +127,8 @@ class PortalService:
             claims=claims,
             interviews=interviews,
             sessions=sessions,
+            requests=requests,
+            grievance=build_grievance_contact(self._settings),
             retention=build_retention_policy(oldest, self._settings),
         )
 
@@ -212,9 +226,10 @@ def build_portal_service(
     verification=None,
     interview=None,
     auth=None,
+    rights=None,
 ) -> PortalService:
     return PortalService(
         candidates, ledger, report_store, profile_sources,
         verification=verification, interview=interview, auth=auth,
-        settings=settings or get_settings(),
+        rights=rights, settings=settings or get_settings(),
     )

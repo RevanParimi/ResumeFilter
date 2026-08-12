@@ -291,7 +291,7 @@ db_migrate_on_boot: true            # `alembic upgrade head` at startup (S8.1)
 screening_max_batch_items: 500          # registration is cheap; a sanity bound
 screening_max_items_per_call: 5         # each item is a full nine-node graph run
 screening_claim_timeout_seconds: 900    # a 'processing' item older than this reads pending
-ret_batch_item_days: 90                 # unprocessed item text; S8.3 sweep input
+ret_batch_item_days: 90                 # item text; SWEPT (cleared) since S8.3 Phase B
 page_default_limit: 50
 page_max_limit: 200
 materialize_max_candidates: 1000        # bound on POST /features/materialize
@@ -311,3 +311,37 @@ rate_limit_verify_per_hour_per_email: 30
 rate_limit_verify_per_hour_per_ip: 200
 rate_limit_process_per_hour_per_org: 400   # x5 items = 2000 items/hour
 rate_limit_asr_per_hour_per_candidate: 60
+# S8.3 Phase B: /portal/corrections AND /portal/grievances share ONE budget.
+# The spec sketched this as rate_limit_grievance_per_hour_per_candidate;
+# limiting one of two sibling writes is this repo's signature defect, so the
+# rule is named for what it covers. Charged BEFORE validation, deliberately:
+# bounding only the successful call leaves an endpoint a stuck client can
+# hammer forever with a body that never validates.
+rate_limit_request_per_hour_per_candidate: 10
+
+# --- Retention sweep (PI-8, S8.3 Phase B) -------------------------------------
+# The eight windows further up stopped being posture-only in this sprint. The
+# sweep's targets are DERIVED from app/portal/retention.py's RETENTION_KNOBS --
+# the same table the candidate portal prints -- so a promise and its enforcement
+# cannot drift apart silently. There is still NO scheduler in the application:
+# the sweep runs when POST /admin/retention/sweep or the CLI invokes it.
+ret_rate_limit_days: 7                  # hashed email + hashed IP; short on purpose
+ret_login_state_days: 7                 # expired challenges + expired sessions
+sweep_max_rows_per_class: 10000         # one invocation's bound; the report says truncated
+retention_sweep_enabled: true           # the job now exists; /portal/me REPORTS this value
+
+# --- DPDP rights (PI-8, S8.3 Phase B) -----------------------------------------
+# A correction is a REVIEWED REQUEST, never a self-service edit: on a fraud
+# screen, a subject write path onto the scored data is an edit box over the
+# evidence. Only full_name is ever auto-applied; email and phone are refused
+# BY NAME, because both are hashed into the dedup keys and email_hash is the
+# portal login credential.
+max_request_note_chars: 2000            # same bound, same reason, as outcome notes
+# The PUBLISHED grievance mechanism. GET /grievance is in PUBLIC_PATHS on
+# purpose: a contact reachable only after login is not reachable by someone
+# whose complaint is that they cannot log in. PROD REFUSES TO BOOT with an
+# empty email -- the seventh refusal.
+grievance_officer_name: ""
+grievance_officer_email: ""
+grievance_officer_phone: ""
+grievance_response_days: 30             # the promise made on the public page

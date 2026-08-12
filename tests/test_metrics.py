@@ -21,6 +21,32 @@ def test_label_sets_are_distinct_series():
     assert len(m.snapshot()) == 2
 
 
+def test_add_accumulates_and_increment_is_add_of_one():
+    m = build_metrics()
+    m.add("retention_deleted", 5, data_class="resumes")
+    m.increment("retention_deleted", data_class="resumes")
+    assert m.snapshot()[("retention_deleted", (("data_class", "resumes"),))] == 6
+
+
+def test_add_refuses_to_move_a_counter_BACKWARDS():
+    """Counters only go up. A negative amount would rewrite a series a scraper
+    has already read as monotonic, and rate() over it would answer nonsense."""
+    import pytest
+
+    m = build_metrics()
+    with pytest.raises(ValueError):
+        m.add("retention_deleted", -1, data_class="resumes")
+
+
+def test_adding_zero_creates_no_series_at_all():
+    """A class that swept nothing must not appear as a `0` line: absent and
+    zero read the same to a human and differently to a scraper, and the honest
+    one here is absent."""
+    m = build_metrics()
+    m.add("retention_deleted", 0, data_class="resumes")
+    assert m.snapshot() == {}
+
+
 def test_two_registries_do_not_share_state():
     """A module-level counter would be shared by every test in the suite, and
     the first ordering-dependent assertion would be an unreproducible flake.
@@ -84,9 +110,15 @@ from pathlib import Path  # noqa: E402
 
 from app.metrics.registry import _HELP  # noqa: E402
 
-#: `increment("some_name", ...)` anywhere under app/. The registry's own
-#: `def increment(self, name: str, ...)` carries no quote and cannot match.
-_CALL_SITE = re.compile(r"""increment\(\s*["']([a-z_]+)["']""")
+#: `increment("some_name", ...)` OR `add("some_name", n, ...)` anywhere under
+#: app/. The registry's own `def increment(self, name: str, ...)` carries no
+#: quote and cannot match.
+#:
+#: The `add` arm is not cosmetic: a counter that moves N at a time is written
+#: that way, and a scanner blind to it would report a declared-inert metric as
+#: clean -- passing by not looking, which is the failure the guard exists to
+#: prevent. S8.3 Phase B's `retention_deleted` is exactly that shape.
+_CALL_SITE = re.compile(r"""(?:increment|add)\(\s*["']([a-z_]+)["']""")
 
 
 def _incremented_names() -> set[str]:
@@ -129,6 +161,15 @@ def test_the_call_site_scanner_can_actually_find_something():
     a scanner that finds zero call sites would call any _HELP table clean."""
     assert "rate_limit_decisions" in _incremented_names()
     assert "http_requests" in _incremented_names()
+
+
+def test_the_call_site_scanner_sees_add_as_well_as_increment():
+    """A counter that moves N at a time is written `add(...)`, so a scanner
+    that only knew `increment(` would call a declared-inert `retention_deleted`
+    clean -- passing BY NOT LOOKING, which is the exact failure the guard above
+    exists to prevent. `retention_deleted` has no `increment` call site
+    anywhere, so this assertion is only satisfiable through the `add` arm."""
+    assert "retention_deleted" in _incremented_names()
 
 
 # ── the route and the counting middleware ────────────────────────────────────

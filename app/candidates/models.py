@@ -44,6 +44,15 @@ class CandidateRow(Base):
     email_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     phone_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     full_name: Mapped[Optional[str]] = mapped_column(Text)
+    # S8.3 Phase B. Set when a REVIEWED DPDP correction wrote `full_name`.
+    # `_refresh_identity` is documented "latest non-empty name wins", so
+    # without this every subsequent upload would put the extractor's guess back
+    # and silently revert a correction an operator verified against an ID --
+    # while the subject's own request went on reading `applied: true`. A human
+    # decision about a person's own name outranks an extractor's.
+    full_name_corrected_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow

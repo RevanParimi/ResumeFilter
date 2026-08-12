@@ -113,6 +113,13 @@ def test_public_paths_is_an_explicit_short_list():
         "/auth/org/signup", "/auth/org/login", "/auth/org/verify",
         "/auth/candidate/signup", "/auth/candidate/login", "/auth/candidate/verify",
         "/auth/admin/login", "/auth/admin/verify",
+        # S8.3 Phase B. The one entry that is not an auth handshake or a doc
+        # page, and it is deliberate: DPDP requires the grievance mechanism to
+        # be PUBLISHED, and a contact reachable only after login is not
+        # reachable by the person whose complaint is that they cannot log in.
+        # It discloses four operator-chosen config fields and reads nothing
+        # about any data principal.
+        "/grievance",
     }
 
 

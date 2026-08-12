@@ -26,7 +26,20 @@ def test_build_policy_covers_every_class_ttl_always_shown():
     assert classes == set(RETENTION_KNOBS)          # every class present as posture
     assert all(w.ttl_days >= 1 for w in policy.windows)
     assert all(w.retained_until is None for w in policy.windows)  # no items
-    assert policy.sweep_active is False
+
+
+def test_sweep_active_is_DERIVED_from_the_config_not_a_literal():
+    """THE POINT OF PHASE B. Until now the portal told every data principal
+    that no mechanical purge runs. A second hardcoded literal is a promise that
+    goes stale the day an operator flips the knob -- and it goes stale in the
+    direction of telling a person nothing is deleted while the cron deletes."""
+    on = build_retention_policy({}, _settings())
+    off = build_retention_policy(
+        {}, Settings(_env_file=None, openrouter_api_key="",
+                     retention_sweep_enabled=False)
+    )
+    assert on.sweep_active is True          # config.yaml ships it enabled
+    assert off.sweep_active is False
 
 
 def test_build_policy_computes_retained_until_where_oldest_known():

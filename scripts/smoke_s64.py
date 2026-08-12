@@ -75,8 +75,11 @@ def main() -> int:
             # 2. /portal/me — access view + retention posture, reports are refs
             me = c.get("/portal/me", headers=ch).json()
             checks["me_profile_resumes"] = me["candidate_id"] == cid and len(me["resumes"]) == 1
+            # sweep_active is TRUE since S8.3 Phase B -- the mechanical purge
+            # exists, and this value is derived from retention_sweep_enabled
+            # rather than the literal it was when this smoke was written.
             checks["me_retention_posture"] = (
-                me["retention"]["sweep_active"] is False and bool(me["retention"]["windows"])
+                me["retention"]["sweep_active"] is True and bool(me["retention"]["windows"])
             )
 
             # 3. org submits + reads under consent

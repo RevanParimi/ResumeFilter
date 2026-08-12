@@ -11,7 +11,10 @@ def test_retention_window_and_policy_shapes():
     w = RetentionWindow(data_class="resumes", ttl_days=1095,
                         oldest_item_at=None, retained_until=None)
     p = RetentionPolicy(windows=[w])
-    assert p.sweep_active is False           # honest: posture only, no purge
+    # The MODEL DEFAULT, not the portal's answer: this constructs the policy
+    # directly with no Settings. What /portal/me reports is derived from
+    # retention_sweep_enabled (S8.3 Phase B) -- see test_portal_retention.py.
+    assert p.sweep_active is False
     assert p.windows[0].data_class == "resumes"
 
 

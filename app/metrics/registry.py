@@ -36,6 +36,13 @@ _PREFIX = "veritas_"
 _HELP: Dict[str, str] = {
     "http_requests": "HTTP requests by route template, method and status.",
     "rate_limit_decisions": "Rate-limit decisions by rule, scope and outcome.",
+    # S8.3 Phase B, added in the same commit as the sweep that increments it --
+    # which is the ordering the test above makes mandatory rather than
+    # remembered. It moves N at a time, so its call site is `add`, not
+    # `increment`, and the scanner knows both spellings.
+    "retention_deleted": (
+        "Rows deleted or cleared by the retention sweep, by data class."
+    ),
 }
 
 _LabelKey = Tuple[Tuple[str, str], ...]
@@ -53,10 +60,27 @@ class Metrics:
         self._duration_count: Dict[str, int] = defaultdict(int)
         self._lock = Lock()
 
-    def increment(self, name: str, **labels: str) -> None:
+    def add(self, name: str, amount: int, **labels: str) -> None:
+        """Move a counter by ``amount``.
+
+        A counter only ever goes up, so a negative amount is a caller bug and is
+        refused rather than quietly rewriting a series a scraper has already
+        read as monotonic -- ``rate()`` over that would answer nonsense.
+
+        Zero creates NO series. A data class that swept nothing must not appear
+        as a ``0`` line: absent and zero read the same to a human and
+        differently to a scraper, and absent is the honest one here.
+        """
+        if amount < 0:
+            raise ValueError("a counter cannot decrease")
+        if amount == 0:
+            return
         key = (name, tuple(sorted((k, str(v)) for k, v in labels.items())))
         with self._lock:
-            self._counters[key] += 1
+            self._counters[key] += amount
+
+    def increment(self, name: str, **labels: str) -> None:
+        self.add(name, 1, **labels)
 
     def observe_duration(self, route: str, ms: float) -> None:
         with self._lock:

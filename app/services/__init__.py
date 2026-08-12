@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from sqlalchemy.orm import sessionmaker
+
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.ledger.store import LedgerStore, build_ledger_store
@@ -34,6 +36,7 @@ if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycl
     from app.matching.store import JobStore
     from app.portal.service import PortalService
     from app.profile_sources.service import ProfileSourceService
+    from app.rights.service import RightsService
     from app.verification.service import VerificationService
 
 
@@ -64,10 +67,23 @@ class Services:
     # reach an unscoped batch read, and what is not on the container cannot be
     # reached from a handler.
     screening: ScreeningService
+    # The DPDP request queue (S8.3 Phase B). On the container rather than
+    # inside the portal because BOTH planes reach it: the subject files and
+    # reads, the operator lists and decides, and one service owning both keeps
+    # the rules from being enforced at one door and forgotten at the other.
+    rights: RightsService
     # Per-app, never a module global: a shared registry would be written by
     # every test in the suite and the first ordering-dependent assertion
     # would be an unreproducible flake (S8.3 Phase A).
     metrics: Metrics
+    # THE database, named. Every store in the repo builds its engine from
+    # `candidates_db_url` (measured S8.3 Phase B), so this is not a new engine
+    # -- it is the candidate store's own factory given a name. The retention
+    # sweep needs a session factory rather than a store, because it operates
+    # across eleven data classes owned by seven different stores, and a handler
+    # reaching into `some_store._session_factory` would be reading a private
+    # to say something the container can say plainly.
+    session_factory: sessionmaker
 
 
 def build_default_services(settings: Optional[Settings] = None) -> Services:
@@ -82,6 +98,9 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
     from app.matching.store import build_job_store
     from app.portal.service import build_portal_service
     from app.profile_sources.service import build_profile_source_service
+    from app.ratelimit.service import build_rate_limiter
+    from app.rights.service import build_rights_service
+    from app.rights.store import build_rights_store
     from app.verification.service import build_verification_service
 
     settings = settings or get_settings()
@@ -129,6 +148,19 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         ),
         metrics=metrics,
     )
+    # metrics=metrics is NOT optional here. Phase A's headline finding was a
+    # builder that passed it to two limiters and not the third, so one rule was
+    # enforced perfectly and counted nowhere; tests/test_ratelimit_wiring.py
+    # builds this container and asserts every limiter shares its metrics.
+    rights = build_rights_service(
+        settings,
+        store=build_rights_store(settings, candidates._session_factory),
+        candidates=candidates,
+        ledger=ledger,
+        limiter=build_rate_limiter(
+            settings, candidates._session_factory, metrics=metrics
+        ),
+    )
     return Services(
         settings=settings,
         llm=llm,
@@ -149,6 +181,7 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
             settings, candidates=candidates, ledger=ledger,
             report_store=report_store, profile_sources=profile_sources,
             verification=verification, interview=interview, auth=auth,
+            rights=rights,
         ),
         verification=verification,
         interview=interview,
@@ -156,7 +189,9 @@ def build_default_services(settings: Optional[Settings] = None) -> Services:
         auth=auth,
         screening_scope=build_org_scoped_access(report_store, candidates),
         screening=screening,
+        rights=rights,
         metrics=metrics,
+        session_factory=candidates._session_factory,
     )
 
 

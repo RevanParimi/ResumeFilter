@@ -215,9 +215,30 @@ class Settings(BaseSettings):
     # An item still 'processing' after this reads as pending again, so a batch
     # interrupted by a redeploy heals itself instead of wedging (spec §4.4).
     screening_claim_timeout_seconds: int = Field(default=900, ge=1)
-    # Unprocessed item text. Declared here, swept by S8.3 -- the window is a
-    # posture, and the honest statement is that nothing deletes on it yet.
+    # Unprocessed item text. Swept since S8.3 Phase B, in CLEAR mode: the row
+    # survives (an org's record of what it screened must outlive the text it
+    # screened) and only `raw_text` is blanked. This is also what bounds the
+    # in-place retry -- past this window a failed item's input is gone.
     ret_batch_item_days: int = Field(default=90, ge=1)
+
+    # --- Retention sweep (PI-8, S8.3 Phase B) ---------------------------------
+    # Both are SHORT windows on pseudonymous operational rows. A rate-limit
+    # counter holds a salted hash of an email beside one of an IP: that is
+    # personal data, not bookkeeping, and it has no value once its window has
+    # closed. `login_state` is abandoned login challenges and sessions that
+    # expired without a logout -- neither is ever consumed, so without a sweep
+    # they live forever.
+    ret_rate_limit_days: int = Field(default=7, ge=1)
+    ret_login_state_days: int = Field(default=7, ge=1)
+    # Bounds ONE invocation per class so the sweep cannot hold locks for
+    # minutes on a large table. The report carries truncated=true rather than
+    # pretending it finished; the operator (or the cron) simply runs it again.
+    sweep_max_rows_per_class: int = Field(default=10_000, ge=1)
+    # Flipped to True in S8.3 Phase B, because the job it was waiting for now
+    # exists. This is what /portal/me reports as `sweep_active`, so it must
+    # never be read from a literal again: the portal would keep telling every
+    # data principal that no mechanical purge runs while the cron ran one.
+    retention_sweep_enabled: bool = True
 
     # --- Rate limiting (PI-8, S8.3 Phase A) -----------------------------------
     # ONE limiter, DB-backed, called from the SERVICE layer (spec §3.1). The
@@ -241,6 +262,14 @@ class Settings(BaseSettings):
     # loop. Bounded per CALL is not bounded per CALLER.
     rate_limit_process_per_hour_per_org: int = Field(default=400, ge=1)
     rate_limit_asr_per_hour_per_candidate: int = Field(default=60, ge=1)
+    # S8.3 Phase B. NOTE THE NAME: the spec's §10 sketch called this
+    # rate_limit_grievance_per_hour_per_candidate, and it is deliberately
+    # broader here. The candidate plane gained TWO new authenticated writes,
+    # not one, and limiting the grievance while leaving the correction
+    # unlimited is precisely the "a rule applied at one entry point and not the
+    # other" defect this repo has shipped in S7.1, S7.2, S7.3 and S8.4 Phase B.
+    # One rule, one shared budget, named for what it covers.
+    rate_limit_request_per_hour_per_candidate: int = Field(default=10, ge=1)
 
     # --- Cursor pagination (PI-8, S8.4 Phase B) -------------------------------
     page_default_limit: int = Field(default=50, ge=1)
@@ -390,6 +419,24 @@ class Settings(BaseSettings):
     comp_lead_years: float = Field(default=9.0, ge=0.0)
     comp_benchmark_tolerance: float = Field(default=0.10, ge=0.0)
     comp_bands_path: str | None = None   # optional operator-supplied static table
+
+    # --- DPDP rights (PI-8, S8.3 Phase B) -------------------------------------
+    # A correction is a REVIEWED REQUEST, never a self-service edit (spec 0.3):
+    # on a fraud screen, a subject write path onto the scored data is an edit
+    # box over the evidence. Only full_name is ever auto-applied.
+    # The same bound and the same reason as max_outcome_notes_chars (S8.5):
+    # free text about a named person, typed into an unbounded Text column.
+    max_request_note_chars: int = Field(default=2_000, ge=1)
+    # PROD REFUSES TO BOOT with an empty officer email (app/core/boot.py -- the
+    # seventh refusal). DPDP requires the grievance mechanism to be PUBLISHED,
+    # GET /grievance would answer 200 with an empty contact (worse than a 404,
+    # because it looks answered), and every enterprise RFP asks for the officer
+    # by name. A boot failure is the only form of "remember this" that works.
+    grievance_officer_name: str = ""
+    grievance_officer_email: str = ""
+    grievance_officer_phone: str = ""
+    #: The promise made to a data principal on the public page.
+    grievance_response_days: int = Field(default=30, ge=1)
 
     # --- Employer dashboard (PI-5, S5.3): read-only composition over jobs/comp/ledger.
     # Max ranked candidates returned per GET /jobs/{id}/board (passed as run_match limit).
