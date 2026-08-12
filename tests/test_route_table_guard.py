@@ -79,7 +79,14 @@ def _guarded_routes(app):
 
 
 def _mount_paths(app) -> set[str]:
-    return {r.path for r in app.routes if isinstance(r, Mount)}
+    """Walks the way _guarded_routes does, NOT a flat scan of app.routes.
+
+    APIRouter inherits .mount() from Starlette's Router, so a mount inside an
+    included router sits behind the same _IncludedRouter wrapper that made a
+    naive scan miss 54 of this app's 63 routes. A guard whose whole claim is
+    "no mount widens the public surface silently" cannot have one silent path.
+    """
+    return {r.path for r, _ in _walk(app.routes) if isinstance(r, Mount)}
 
 
 def test_every_non_public_route_uses_a_sanctioned_resolver(services):
@@ -135,6 +142,27 @@ def test_the_guard_would_catch_a_new_mount(services):
     app.mount("/sneaky", StaticFiles(directory="."), name="sneaky")
     assert _mount_paths(app) != MOUNTS
     assert "/sneaky" in _mount_paths(app)
+
+
+def test_the_guard_catches_nested_mounts_inside_included_routers(services):
+    """Mounts inside an included router were invisible to a flat scan of
+    app.routes, just like 54 of this app's 63 routes are. A guard that misses
+    them cannot claim "no mount widens the public surface silently".
+
+    This test verifies the nested case survives include_router, so the guard
+    built on _walk (not a flat scan) is complete.
+    """
+    from fastapi import APIRouter
+    from starlette.staticfiles import StaticFiles
+
+    app = create_app(services)
+    router = APIRouter()
+    router.mount("/nested-sneaky", StaticFiles(directory="."), name="nested")
+    app.include_router(router)
+
+    # The nested mount should be visible to _walk but would have been invisible
+    # to a flat scan of app.routes.
+    assert "/nested-sneaky" in _mount_paths(app)
 
 
 def test_public_paths_is_an_explicit_short_list():
