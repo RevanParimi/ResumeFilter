@@ -82,10 +82,20 @@
   the smoke.
   **➤ NEXT STEP: REVIEW THE BRANCH, then merge.** Nothing is on `main`. Every
   branch review since S7.1 has found a real defect and the last two found
-  defects invisible to a green suite. After the merge, PI-8 is COMPLETE and the
-  only thing left is the user-gated go-live (`DEPLOY.md`) — **including the
-  Railway cron for the retention sweep, without which the portal promises a
-  purge nobody invokes** — and then PI-9 (calibration harness).
+  defects invisible to a green suite.
+  **Run `/code-review ultra main` — the BASE ARGUMENT IS LOAD-BEARING.** With
+  no base it defaults to `origin/main`, which is **56 commits behind** (S8.4b,
+  S8.5, S8.3a and S8.3b are all merged locally and unpushed), producing a
+  123-file / 21,733-line diff that exceeds the reviewer's 12,000-line ceiling.
+  Against local `main` it is 32 files / 4,354 lines.
+  **THEN S8.7 (src layout), and in that order.** The restructure moves every
+  file in `app/`; doing it first would turn S8.6's review diff into "everything
+  moved, plus some logic", which is unreviewable — and doing it after the merge
+  keeps the move a pure rename a reviewer can verify at a glance.
+  After that, PI-8 is COMPLETE and the only thing left is the user-gated
+  go-live (`DEPLOY.md`) — **including the Railway cron for the retention sweep,
+  without which the portal promises a purge nobody invokes** — then PI-9
+  (calibration harness).
 - **Session 2026-08-12 — S8.3 PHASE B REVIEWED AND MERGED. `main` is
   at `6dfde6c`, 1812 green, `smoke_s83b` 22/22 and `smoke_s83a` 19/19 re-run
   ON THE MERGE COMMIT, branch deleted. S8.3 IS COMPLETE; S8.6 (deploy) is the
@@ -2260,6 +2270,35 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │              database -- the cron's most likely first encounter
     │            - CI builds the image for the first time ever (push only)
     │            - SMTPEmail delivered for the first time since it was written
+    ├── [ ] S8.7  SRC LAYOUT — a standard repository, and NO behaviour change
+    │            USER-REQUESTED 2026-08-13. The motivation is REVIEWABILITY:
+    │            S8.6's diff was 4,354 lines of which 2,711 were docs prose,
+    │            so a reviewer spends most of its budget on markdown. With a
+    │            src/ layout, `/code-review ultra src/` targets the core code
+    │            and nothing else.
+    │            THE CONTRACT: pure move. 1848 tests green before and after,
+    │            all 20 smokes green, ZERO logic edits in the same commit as a
+    │            move -- so `git log --follow` and a reviewer can both tell a
+    │            rename from a change.
+    │            CHEAPER THAN IT LOOKS, measured: the package KEEPS the name
+    │            `app`, so all 1,299 `from app.` imports across 367 files are
+    │            untouched. app/ -> src/app/ and the real work is six places:
+    │              - pyproject.toml: [tool.hatch...].packages + pythonpath
+    │              - Dockerfile: COPY app ./app (and test_image_contents' FLOOR)
+    │              - tests/test_deploy_doc.py reads app/core/boot.py by path
+    │              - tests/test_model_registration.py globs app/**/models.py
+    │              - app/core/migrate.py:29  ROOT = parents[2] -> parents[3]
+    │              - app/main.py:165  _ui_dir = parents[1] -> parents[2]
+    │            ⚠ THE LAST TWO FAIL SILENTLY. `_ui_dir.is_dir()` means a wrong
+    │            depth SKIPS the mount -- no error, just a UI that 404s. Both
+    │            are covered (test_ui_mount, test_image_contents), which is why
+    │            this sprint is safe to do mechanically and NOT before S8.6 is
+    │            reviewed and merged.
+    │            OPEN DECISION for the spec: rename the package `app` ->
+    │            `veritas` at the same time? It is 1,299 mechanical edits the
+    │            suite verifies, and doing it later means paying the
+    │            disruption twice. Recommend deciding it in the spec, not mid-
+    │            build.
     └── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
              The checklist is DEPLOY.md; the blocking non-technical item is
              the IBM IP / outside-activity check (GTM §8.3). Also still open:
