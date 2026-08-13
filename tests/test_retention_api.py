@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
-from app.core.db import Base, make_engine
+from app.core.migrate import upgrade_to_head
 from app.main import create_app
 from app.retention.sweep import main
 
@@ -72,16 +72,26 @@ def test_a_DRY_RUN_still_works_when_the_sweep_is_disabled(services, admin_header
 
 @pytest.fixture
 def cli_env(monkeypatch, tmp_path):
-    """A migrated-shaped database and a settings cache that does not leak.
+    """An ACTUALLY migrated database and a settings cache that does not leak.
 
     `get_settings` is lru_cached, so without the clears the CLI would read a
     Settings built by whichever test ran first -- and the disabled-sweep test
     would pass or fail on ordering rather than on behaviour.
+
+    S8.6: this used to say "migrated-SHAPED" and build the schema with
+    `Base.metadata.create_all`, which produces every table and no
+    `alembic_version` row. The CLI now refuses a database whose revision it
+    cannot match against head, so the distinction the old docstring was careful
+    to draw became a real one. Running the migrations is the honest fix rather
+    than exempting the fixture: production provisions this database exactly one
+    way -- migrate-on-boot -- and a fixture that provisions it another way is
+    how a suite goes green over a schema no deployment will ever have.
     """
     url = f"sqlite:///{tmp_path.as_posix()}/cli.db"
-    Base.metadata.create_all(make_engine(url))
     monkeypatch.setenv("DEE_CANDIDATES_DB_URL", url)
     monkeypatch.setenv("DEE_API_AUTH_KEY", "k" * 32)
+    get_settings.cache_clear()
+    upgrade_to_head(get_settings())
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
