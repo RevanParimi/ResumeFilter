@@ -12,9 +12,12 @@ they race the same migration. SQLite serializes writes already.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from alembic import command
 from alembic.config import Config
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 
 from app.core.config import Settings
@@ -34,6 +37,26 @@ def _alembic_config(url: str) -> Config:
     cfg.set_main_option("script_location", str(ROOT / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url)
     return cfg
+
+
+def revision_state(settings: Settings) -> tuple[Optional[str], Optional[str]]:
+    """``(revision the database is at, head revision)``.
+
+    ``None`` for the first means the database has no ``alembic_version`` table
+    at all -- it was never migrated. Added in S8.6 for the retention CLI, which
+    is the one entry point that runs against a database NOTHING in the process
+    has migrated: the web service migrates on boot, a Railway cron is a
+    separate container that can start first.
+    """
+    cfg = _alembic_config(settings.candidates_db_url)
+    head = ScriptDirectory.from_config(cfg).get_current_head()
+    engine = make_engine(settings.candidates_db_url)
+    try:
+        with engine.connect() as conn:
+            current = MigrationContext.configure(conn).get_current_revision()
+    finally:
+        engine.dispose()
+    return current, head
 
 
 def upgrade_to_head(settings: Settings) -> None:

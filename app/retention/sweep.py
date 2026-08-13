@@ -164,6 +164,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     """
     from app.core.config import get_settings
     from app.core.db import make_engine, make_session_factory
+    from app.core.migrate import revision_state
 
     parser = argparse.ArgumentParser(prog="app.retention.sweep")
     parser.add_argument(
@@ -177,6 +178,30 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.apply and not settings.retention_sweep_enabled:
         print("retention_sweep_disabled", file=sys.stderr)
         return 2
+
+    # S8.6, FOUND BY RUNNING IT: against a database that had never been
+    # migrated this printed a forty-line SQLAlchemy traceback and exited 1.
+    # This process deliberately does not migrate -- a sweeper must not run DDL
+    # -- but it is the ONE door that can meet an unmigrated database: the web
+    # service migrates on boot, while a Railway cron is a separate container
+    # that can start first, or run against what a half-finished deploy left.
+    # An operator reading a cron log at 3am gets a sentence.
+    #
+    # Not duplicated on the admin route, and that is a considered exception to
+    # this repo's own "a rule enforced at one door and forgotten at the other"
+    # lesson: the route is only reachable through a booted app, and an app
+    # booted on an unmigrated database fails at its first query on any plane,
+    # not just this one. The asymmetry is in the DOORS, not in the rule.
+    current, head = revision_state(settings)
+    if current != head:
+        print(
+            "retention_sweep_refused: the database is not migrated (schema is "
+            f"at {current or 'no revision at all'}, head is {head}). Nothing "
+            "was read or deleted. The web service applies migrations on boot; "
+            "run it, or `alembic upgrade head`, before this cron.",
+            file=sys.stderr,
+        )
+        return 3
 
     factory = make_session_factory(make_engine(settings.candidates_db_url))
     report = run_sweep(
