@@ -172,6 +172,13 @@ restart on failure. The image runs as a non-root user and binds `${PORT}`.
 3. Set every variable in §2.
 4. Deploy. Watch the logs for `startup_complete`; a `LaunchConfigError` names
    the exact refusal and the exact variable.
+
+   **A boot that stops at `Waiting for application startup` and never says
+   anything else is an unreachable database**, not a slow one — measured by
+   `scripts/smoke_s86.py`. The driver's connect has no timeout, so a wrong
+   `DEE_CANDIDATES_DB_URL` hangs the lifespan instead of raising, and the
+   healthcheck eventually restarts the container into the same hang. Check the
+   URL and the plugin before looking anywhere else.
 5. Check `GET /healthz`, then `GET /` — the endpoints list is derived from the
    live route table, so it is a true inventory of what is running.
 6. Wire the cron from §5.
