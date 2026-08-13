@@ -94,10 +94,11 @@
   **➤ NEXT STEP: S8.7 (src layout), and the OWED REVIEW of `8ae08cb..6991173`
   before that code is built on.**
   **On the review command: the BASE ARGUMENT IS LOAD-BEARING.** With no base
-  `/code-review ultra` defaults to `origin/main`, which is **57 commits
+  `/code-review ultra` defaults to `origin/main`, which is **~76 commits
   behind** (S8.4b, S8.5, S8.3a, S8.3b and now S8.6 are all merged locally and
-  unpushed), producing a 123-file / 21,733-line diff that exceeds the
-  reviewer's 12,000-line ceiling. S8.6 alone is 32 files / 4,354 lines.
+  unpushed), producing a diff well past the reviewer's 12,000-line ceiling —
+  it was already 123 files / 21,733 lines before S8.6 merged. S8.6 alone is 32
+  files / 4,354 lines, which is why the range above is the thing to pass.
   **Do S8.7 AFTER the review, not before.** The restructure moves every file in
   `app/`, so running it first turns the owed review's diff into "everything
   moved, plus some logic" — unreviewable, and the exact problem the src/ layout
@@ -106,7 +107,7 @@
   (`DEPLOY.md`) — **including the Railway cron for the retention sweep, without
   which the portal promises a purge nobody invokes** — and then PI-9
   (calibration harness).
-  **`main` is 57 commits ahead of a PUBLIC remote** (`RevanParimi/ResumeFilter`,
+  **`main` is ~76 commits ahead of a PUBLIC remote** (`RevanParimi/ResumeFilter`,
   last pushed 2026-08-07 at S8.4a). Five completed sprints exist only on this
   machine. Pushing is the user's call and nothing here does it.
 - **Session 2026-08-12 — S8.3 PHASE B REVIEWED AND MERGED. `main` is
