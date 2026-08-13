@@ -14,12 +14,16 @@
   passing and `smoke_s86` 27/27 · `smoke_s83b` 22/22 · `smoke_s85_outcome`
   21/21 all re-run ON THE MERGE COMMIT. NOT PUSHED.**
   **⚠ MERGED WITHOUT AN INDEPENDENT REVIEW, on the user's explicit
-  instruction, and the review is still OWED.** Every branch review since S7.1
-  has found a real defect; the last two found defects invisible to a green
-  suite. It is still targetable — the pre-merge `main` was `8ae08cb`, so the
-  range is **`8ae08cb..6991173`**. Recorded because `main...s86-production-shape`
-  is empty now and the range is the only way left to express it. The branch ref
-  was kept, not deleted, for the same reason.
+  instruction.** A self-review pass afterwards **found one real defect**, fixed
+  and merged at `51079da` (1848 → 1850): **the `/ui` mount was publishing
+  `frontend/PLAN.md` and `UI-SPEC.md` unauthenticated** — the blind spot
+  directly inside the guard this sprint added to make mounts reviewable, which
+  pinned the mount's ROOT and never its CONTENTS. Docs moved to `docs/ui/`.
+  **An INDEPENDENT review is still worth running** — every branch review since
+  S7.1 found something the authoring session missed, and this one just
+  demonstrated the point. Target the range **`8ae08cb..HEAD`** (`8ae08cb` was
+  the pre-merge `main`); `main...s86-production-shape` is empty after a merge,
+  so a range is the only way to express it. Branch refs are deleted.
   Everything below describes what that merge contains.
   1812 → 1848 passing, **ALL TWENTY smokes green**
   (s12, s13, s23, s41, s51, s52, s53, s63, s64, s71, s72, s73, s81, s82, s83a,
@@ -107,9 +111,16 @@
   (`DEPLOY.md`) — **including the Railway cron for the retention sweep, without
   which the portal promises a purge nobody invokes** — and then PI-9
   (calibration harness).
-  **`main` is ~76 commits ahead of a PUBLIC remote** (`RevanParimi/ResumeFilter`,
+  **`main` is ~80 commits ahead of a PUBLIC remote** (`RevanParimi/ResumeFilter`,
   last pushed 2026-08-07 at S8.4a). Five completed sprints exist only on this
   machine. Pushing is the user's call and nothing here does it.
+  **BRANCH HYGIENE, done 2026-08-13:** `s86-production-shape`,
+  `s86-review-fixes`, `m1-production-hardening` and `s83a-limits-and-metrics`
+  were all merged and are deleted. **`s84-dev-login-echo` survives with ONE
+  unmerged commit** — a demo server plus a *local-only login-code echo*
+  touching `app/auth/service.py` and `app/core/boot.py`. Left alone
+  deliberately: deleting it loses work, and merging something that echoes login
+  codes needs a review first. It is the only branch left.
 - **Session 2026-08-12 — S8.3 PHASE B REVIEWED AND MERGED. `main` is
   at `6dfde6c`, 1812 green, `smoke_s83b` 22/22 and `smoke_s83a` 19/19 re-run
   ON THE MERGE COMMIT, branch deleted. S8.3 IS COMPLETE; S8.6 (deploy) is the
