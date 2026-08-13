@@ -116,9 +116,10 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
 
     # The UI is served BY THIS API, same origin (S8.6 spec 2). Chosen over a
     # separate static host because it RETIRES an untested posture rather than
-    # shipping one: config.yaml's SameSite=None has never been exercised by any
+    # shipping one: config.yaml's SameSite=None had never been exercised by any
     # check in this repo -- the browser check runs both servers on localhost,
-    # which is cross-ORIGIN but same-SITE, with samesite=lax.
+    # which is cross-ORIGIN but same-SITE, with samesite=lax. This mount is why
+    # the shipped default could then MOVE to lax (tests/test_cookie_posture.py).
     #
     # A Mount is NOT an APIRoute: no router dependency applies to it, so this
     # surface is unauthenticated. That is correct -- the shell has to load

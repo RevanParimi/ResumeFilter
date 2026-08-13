@@ -68,9 +68,11 @@ def verify_launch_config(settings: Settings) -> None:
     if not settings.session_cookie_secure:
         raise LaunchConfigError(
             "DEE_ENV=prod with session_cookie_secure=false. The session cookie "
-            "would travel in the clear, and SameSite=None (required, because "
-            "the UI is separately hosted) is rejected by every browser without "
-            "Secure. Set session_cookie_secure=true and serve over HTTPS."
+            "travels over the public internet in prod, so this would ship a "
+            "live session token in the clear. (S8.6 moved the shipped SameSite "
+            "from none to lax now that the UI is same-origin; the refusal does "
+            "not depend on that — Secure is required either way.) Set "
+            "session_cookie_secure=true and serve over HTTPS."
         )
     if "*" in settings.cors_allowed_origins:
         raise LaunchConfigError(

@@ -471,12 +471,15 @@ class Settings(BaseSettings):
     # two orders below the idle window, so it cannot change a timeout decision.
     session_last_seen_write_seconds: int = Field(default=60, ge=0)
     session_cookie_name: str = "dee_session"
-    # SameSite=None is REQUIRED, not chosen: the UI is separately hosted, so every
-    # request is cross-site and Lax would drop the cookie entirely. None mandates
-    # Secure, which mandates HTTPS — so `false` is for localhost only, and prod
-    # refuses to boot with it (app/core/boot.py).
+    # Secure is required regardless of SameSite: the session cookie travels
+    # over the public internet in prod, so `false` would ship it in the clear.
+    # `false` is for localhost only, and prod refuses to boot with it
+    # (app/core/boot.py).
     session_cookie_secure: bool = True
-    session_cookie_samesite: Literal["none", "lax", "strict"] = "none"
+    #: S8.6: `lax`, because the UI is now served BY this API (same origin).
+    #: `none` remains valid for a separately-hosted UI and still mandates
+    #: Secure, which prod still refuses to have false.
+    session_cookie_samesite: Literal["none", "lax", "strict"] = "lax"
     csrf_cookie_name: str = "dee_csrf"
     csrf_token_bytes: int = Field(default=32, ge=16)
     login_otp_length: int = Field(default=6, ge=4, le=10)

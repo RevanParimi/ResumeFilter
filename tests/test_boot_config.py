@@ -97,8 +97,13 @@ def _prod(settings, **over):
 
 
 def test_prod_refuses_insecure_session_cookie(settings):
-    """SameSite=None requires Secure in every browser, and a session cookie over
-    plain HTTP is a session token in the clear."""
+    """A session cookie over plain HTTP is a session token in the clear.
+
+    S8.6: this used to be justified by "SameSite=None mandates Secure". The UI
+    is same-origin now and the shipped SameSite is `lax`, which browsers accept
+    without Secure — so the refusal outlived its original reason and is kept on
+    the transport argument alone.
+    """
     with pytest.raises(LaunchConfigError) as exc:
         verify_launch_config(_prod(settings, session_cookie_secure=False))
     assert "session_cookie_secure" in str(exc.value)
@@ -205,9 +210,14 @@ def test_rate_limiting_defaults_to_on(settings):
 
 def test_auth_defaults_are_closed(settings):
     """Defaults must be the refusing ones: no origin may call cross-site and no
-    email provider is configured until someone says so."""
+    email provider is configured until someone says so.
+
+    S8.6 moved `session_cookie_samesite` from `none` to `lax`, which belongs in
+    this test rather than beside it: `lax` is the STRICTER of the two, so the
+    "defaults refuse" property this test exists for got stronger, not weaker.
+    """
     assert settings.session_cookie_secure is True
-    assert settings.session_cookie_samesite == "none"
+    assert settings.session_cookie_samesite == "lax"
     assert settings.cors_allowed_origins == []
     assert settings.email_provider == "null"
 

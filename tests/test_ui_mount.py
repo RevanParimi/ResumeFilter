@@ -3,8 +3,9 @@
 Same-origin was chosen by the user over a separate static service. It does not
 ship an untested posture -- it RETIRES one: the browser check has always run
 both servers on localhost (cross-ORIGIN but same-SITE) with samesite=lax and
-secure=false, so config.yaml's shipped SameSite=None has never been exercised
-anywhere.
+secure=false, so config.yaml's SameSite=None had never been exercised anywhere.
+The next commit acts on that -- the shipped default is now `lax`, the posture
+every check already runs (tests/test_cookie_posture.py).
 """
 
 from __future__ import annotations

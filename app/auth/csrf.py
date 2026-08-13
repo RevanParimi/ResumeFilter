@@ -1,9 +1,12 @@
 """Double-submit CSRF tokens (S8.2). Pure.
 
-SameSite=None is required rather than chosen -- the UI is separately hosted
-(PI-8 decision 0.1), so every request is cross-site and Lax would drop the
-cookie entirely. That is precisely why this layer is non-optional here rather
-than belt-and-braces: the browser is not filtering anything for us.
+The UI is same-origin now (S8.6 spec 2.3): the shipped `session_cookie_samesite`
+is `lax`, not `none`, and Lax already blocks cross-site POST. The naive read is
+that this layer is now redundant -- it is not. It stays because it is built,
+tested and free; because Lax is a browser-side control and the server must not
+delegate its only defence to the client's correctness; and because removing it
+is a large change to the authenticated write path of every plane. See
+tests/test_cookie_posture.py for the pin.
 """
 
 from __future__ import annotations
