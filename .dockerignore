@@ -1,3 +1,8 @@
+# Build context exclusions. NOTE: this file can cancel a COPY in the Dockerfile
+# -- exclude `frontend/` here and the /ui mount serves 404s from an image that
+# looks correctly built. tests/test_image_contents.py reads BOTH lists and
+# fails if an entry here shadows a COPY there.
+
 .git
 .github
 .venv
@@ -9,6 +14,20 @@ __pycache__
 .chroma
 data/
 .env
+.env.railway
 docs/
 tests/
 *.md
+
+# S8.6 -----------------------------------------------------------------------
+# scripts/ is dev + smoke tooling and does not belong in a runtime image. The
+# one thing in there anyone might want in prod -- the retention sweep -- is not
+# in there: it is `python -m app.retention.sweep`, inside the COPYed package,
+# which is what lets the Railway cron call it (DEPLOY.md).
+scripts/
+
+# Fixture input for scripts/check_ui_screening_browser.py. Resumes -- even
+# invented ones -- have no business in a production image, and it is 650KB of
+# PNG that nothing serves.
+frontend/uploads/
+frontend/.thumbnail

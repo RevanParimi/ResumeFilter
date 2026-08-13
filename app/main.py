@@ -12,12 +12,14 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.routes import (
@@ -45,6 +47,42 @@ def _iter_api_routes(routes):
             yield from _iter_api_routes(original.routes)
         elif isinstance(route, APIRoute):
             yield route
+
+
+#: FastAPI's own documentation surface, plus "/" itself. Excluded from the
+#: advertised list because they describe the API rather than being part of it,
+#: and a caller reading this list is already at "/".
+_UNADVERTISED_PATHS = frozenset(
+    {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json", "/"}
+)
+
+
+def _advertised_endpoints(app: FastAPI) -> list[str]:
+    """The `endpoints` field of ``GET /``, DERIVED from the live route table.
+
+    This field was hand-maintained for eight PIs and was carried as a known
+    drift through S8.3 Phase A, Phase B and S8.5 -- each time correctly,
+    because typing the missing entries in would make an unmaintained list look
+    maintained. The real fix, named in the note this replaces, is derivation.
+
+    Mounts are excluded, and for free: ``_iter_api_routes`` yields only
+    APIRoutes, and a static UI directory is not an API entry point. HEAD and
+    OPTIONS are excluded because Starlette adds them to every GET -- keeping
+    them would triple the list with entries no caller writes by hand, and a
+    list that reads as noise is what would push the next person back to a
+    literal. The admin plane is INCLUDED: it always was, and hiding it would be
+    obscurity on a plane that is already credential-gated, while making the
+    list wrong again.
+    """
+    seen: set[str] = set()
+    for route in _iter_api_routes(app.routes):
+        if route.path in _UNADVERTISED_PATHS:
+            continue
+        for method in route.methods or ():
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            seen.add(f"{method} {route.path}")
+    return sorted(seen, key=lambda e: (e.split(" ", 1)[1], e))
 
 
 def _route_template(request: Request) -> str:
@@ -111,6 +149,22 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     app.include_router(candidate_router)
     app.include_router(public_router)
     app.include_router(auth_router)
+
+    # The UI is served BY THIS API, same origin (S8.6 spec 2). Chosen over a
+    # separate static host because it RETIRES an untested posture rather than
+    # shipping one: config.yaml's SameSite=None had never been exercised by any
+    # check in this repo -- the browser check runs both servers on localhost,
+    # which is cross-ORIGIN but same-SITE, with samesite=lax. This mount is why
+    # the shipped default could then MOVE to lax (tests/test_cookie_posture.py).
+    #
+    # A Mount is NOT an APIRoute: no router dependency applies to it, so this
+    # surface is unauthenticated. That is correct -- the shell has to load
+    # before anyone can log in -- and it is why tests/test_route_table_guard.py
+    # gained MOUNTS in the commit before this one. Widening that set is the
+    # reviewable act, exactly as it is for PUBLIC_PATHS.
+    _ui_dir = Path(__file__).resolve().parents[1] / "frontend"
+    if _ui_dir.is_dir():
+        app.mount("/ui", StaticFiles(directory=_ui_dir), name="ui")
 
     # CORS (S8.2). Fail-CLOSED: with no configured origin the middleware is not
     # installed at all, so nothing cross-site can reach the API. Never "*" —
@@ -179,74 +233,14 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
 
     @app.get("/", response_model=ServiceInfo)
     async def root() -> ServiceInfo:
-        # A HAND-MAINTAINED HIGHLIGHTS LIST, not the route table, and it has
-        # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5,
-        # plus S8.3's `/retry`) appear below, neither does `GET /metrics`, and
-        # neither do any of S8.3 Phase B's SEVEN (`/portal/corrections`,
-        # `/portal/grievances`, `/portal/requests`, `/grievance`,
-        # `/admin/retention/sweep`, `/admin/requests`,
-        # `/admin/requests/{id}/resolve`).
-        # Stated rather than patched, because adding entries would make an
-        # unmaintained list look maintained -- the second hand-maintained list
-        # is always the one that drifts (the S8.2 review's OPEN_PATHS/
-        # PUBLIC_PATHS finding). `GET /openapi.json` is generated from the code
-        # and is the authority; making this field derive from it is the real
-        # fix and belongs with the docs/routes.md idea in ROADMAP.
-        #
-        # The S8.3 review widened this note rather than the list: the previous
-        # wording named only the `/screening/*` gap, so a reader could have
-        # concluded /metrics was covered. A comment that describes drift has to
-        # describe all of it or it becomes the next thing that is out of date --
-        # so Phase B widened it again rather than letting it go stale twice.
-        # (Phase B DID fix two other hand-maintained lists this sprint, the 429
-        # translation and test_ratelimit_wiring's LIMITED tuple. This one is
-        # left alone because the fix is derivation, not typing; the other two
-        # had no such option.)
         return ServiceInfo(**{
             "service": "depth-eval-engine",
             "advisory": True,
             "human_review_required": True,
-            "endpoints": [
-                "POST /evaluate",
-                "POST /candidates",
-                "GET /candidates/{id}",
-                "GET /candidates/{id}/resumes",
-                "GET /candidates/{id}/reports",
-                "DELETE /candidates/{id}",
-                "DELETE /candidates/{id}/resumes/{resume_id}",
-                "POST /candidates/{id}/sources/github",
-                "GET /candidates/{id}/sources",
-                "POST /candidates/{id}/auth-key",
-                "GET /portal/me",
-                "GET /portal/access-log",
-                "GET /portal/consents",
-                "POST /portal/consents",
-                "POST /portal/consents/{id}/revoke",
-                "DELETE /portal/me",
-                "GET /report/{id}",
-                "POST /report/{id}/outcome",
-                "GET /report/{id}/outcomes",
-                "GET /domains",
-                "GET /healthz",
-                "POST /ledger/orgs",
-                "GET /ledger/orgs",
-                "POST /ledger/orgs/{id}/api-key",
-                "DELETE /ledger/orgs/{id}",
-                "POST /ledger/candidates/{id}/consent",
-                "POST /ledger/consent/{id}/revoke",
-                "GET /ledger/candidates/{id}/consent",
-                "POST /ledger/records",
-                "POST /ledger/records/{id}/events",
-                "GET /ledger/candidates/{id}/records",
-                "POST /ledger/coding-rounds",
-                "GET /ledger/candidates/{id}/coding-rounds",
-                "GET /ledger/candidates/{id}/reputation",
-                "POST /ledger/orgs/{id}/reliability",
-                "POST /talent/search",
-                "GET /dashboard/overview",
-                "GET /jobs/{id}/board",
-                "GET /candidates/{id}/card",
-            ],
+            # DERIVED (S8.6). Carried as a known drift through S8.3 Phase A,
+            # Phase B and S8.5 -- see _advertised_endpoints for why patching
+            # the literal was refused three times before it was replaced.
+            "endpoints": _advertised_endpoints(app),
         })
 
     # OpenAPI: give every route the handler's own name as its operation_id.

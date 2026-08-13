@@ -302,6 +302,12 @@ sweeping a `resumes` row takes its `extractions` row with it, asserted in
 **Nothing in `app/` runs this on a timer.** If nobody invokes it, nothing is
 deleted. Two doors, one implementation (`run_sweep`):
 
+> **Deploying? `DEPLOY.md` §5 is the cron.** Shipping this service without
+> wiring one means the portal keeps telling every data principal that eleven
+> classes of their data are purged on a schedule while nothing ever invokes the
+> purge. S8.6 made that a named step in the go-live checklist rather than
+> something an operator has to infer from this section.
+
 ```bash
 # PREVIEW (the default). Counts, deletes nothing.
 curl -XPOST -H "X-API-Key: $KEY" $HOST/admin/retention/sweep -d '{}'
@@ -426,6 +432,8 @@ mechanically; it is what an operator has committed to, and `GET
   the `/auth/*` routes that §1 already limits by name, and an enforced-nowhere
   knob costs more than it buys.
 - **Alerting.** `/metrics` is scrapeable; wiring a scraper and thresholds is a
-  deploy-time concern (S8.6).
+  deploy-time concern. **S8.6 did not deploy** — it made the system correct to
+  deploy and stopped there, so this is still open and now belongs to the
+  user-gated go-live in `DEPLOY.md`, not to a sprint.
 - **A per-item retry counter.** A permanently-broken item fails identically
   each time at the organisation's own cost, and that cost is already bounded.

@@ -59,6 +59,9 @@ def test_prod_on_postgres_launches(settings):
         "env": "prod",
         "candidates_db_url": "postgresql+psycopg://u:p@h:5432/db",
         "grievance_officer_email": "dpo@example.com",
+        # S8.6: a prod config must now also be able to DELIVER a login code.
+        "email_provider": "smtp",
+        "email_smtp_host": "smtp.example.com",
     })
     assert verify_launch_config(ok) is None
 
@@ -84,14 +87,23 @@ def _prod(settings, **over):
         # S8.3 Phase B added the SEVENTH refusal, and this helper's whole job is
         # to satisfy every prior one so each test isolates the refusal it names.
         "grievance_officer_email": "dpo@example.com",
+        # S8.6 added the EIGHTH refusal, and this helper's whole job is to
+        # satisfy every prior one so each test isolates the refusal it names.
+        "email_provider": "smtp",
+        "email_smtp_host": "smtp.example.com",
     }
     base.update(over)
     return settings.model_copy(update=base)
 
 
 def test_prod_refuses_insecure_session_cookie(settings):
-    """SameSite=None requires Secure in every browser, and a session cookie over
-    plain HTTP is a session token in the clear."""
+    """A session cookie over plain HTTP is a session token in the clear.
+
+    S8.6: this used to be justified by "SameSite=None mandates Secure". The UI
+    is same-origin now and the shipped SameSite is `lax`, which browsers accept
+    without Secure — so the refusal outlived its original reason and is kept on
+    the transport argument alone.
+    """
     with pytest.raises(LaunchConfigError) as exc:
         verify_launch_config(_prod(settings, session_cookie_secure=False))
     assert "session_cookie_secure" in str(exc.value)
@@ -198,8 +210,51 @@ def test_rate_limiting_defaults_to_on(settings):
 
 def test_auth_defaults_are_closed(settings):
     """Defaults must be the refusing ones: no origin may call cross-site and no
-    email provider is configured until someone says so."""
+    email provider is configured until someone says so.
+
+    S8.6 moved `session_cookie_samesite` from `none` to `lax`, which belongs in
+    this test rather than beside it: `lax` is the STRICTER of the two, so the
+    "defaults refuse" property this test exists for got stronger, not weaker.
+    """
     assert settings.session_cookie_secure is True
-    assert settings.session_cookie_samesite == "none"
+    assert settings.session_cookie_samesite == "lax"
     assert settings.cors_allowed_origins == []
     assert settings.email_provider == "null"
+
+
+# ── S8.6: the EIGHTH refusal — a prod deployment nobody can log into ─────────
+# Prod boots today with email_provider=null and then answers 503
+# email_unavailable to every signup and login on all three planes, while
+# /healthz reports the service healthy. Blockers 4 and 5 are dead on arrival.
+
+
+def test_prod_refuses_a_provider_that_cannot_deliver(settings):
+    """config.yaml ships email_provider=null, so this is the DEFAULT prod
+    misconfiguration, not an exotic one."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, email_provider="null"))
+    assert "email" in str(exc.value).lower()
+
+
+def test_prod_refuses_smtp_with_no_host(settings):
+    """THE POINT OF DERIVING THE CHECK. build_email returns NullEmail for
+    provider=smtp with an empty host, so a refusal that tested the provider
+    STRING would pass this config and the deployment would 503 every login
+    anyway -- the failure reached through the door the guard was not watching.
+    If someone 'simplifies' the refusal to `provider == "null"`, this is what
+    fails."""
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(
+            _prod(settings, email_provider="smtp", email_smtp_host="")
+        )
+    assert "email" in str(exc.value).lower()
+
+
+def test_local_does_not_require_an_email_provider(settings):
+    """config.yaml ships email_provider=null. Above the prod-only early return
+    this refusal would break every local run and every test in this suite."""
+    ok = settings.model_copy(update={
+        "api_auth_key": SecretStr("a-real-key"),
+        "email_provider": "null",
+    })
+    assert verify_launch_config(ok) is None

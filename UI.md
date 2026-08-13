@@ -209,9 +209,16 @@ current}`. Never a token. Good "signed-in devices" screen on both planes.
 ### 3.4 One thing the operator must do for you
 
 CORS is **fail-closed and server-side**: the API refuses all cross-origin calls
-until the UI's exact origin is added to `cors_allowed_origins`. Wildcards are
-refused at boot in prod. Tell whoever deploys the API the UI's origin, or every
-call fails in the browser while working fine in Postman.
+until an exact origin is added to `cors_allowed_origins`. Wildcards are refused
+at boot in prod.
+
+**S8.6: the shipped UI no longer needs an entry.** It is served by the API
+itself at `/ui`, so its calls are same-origin and CORS does not apply to them —
+a deployment can leave `cors_allowed_origins` empty and the UI still works.
+Third-party integrations calling this API from a browser still need their exact
+origin listed, and the prod wildcard refusal is unchanged. If you host the UI
+separately instead, you are back to the old rule: list its origin, and set
+`session_cookie_samesite=none`.
 
 ## 4. The screens
 
