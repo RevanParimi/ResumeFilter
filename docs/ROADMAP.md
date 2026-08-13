@@ -9,7 +9,84 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-12 (latest) — S8.3 PHASE B REVIEWED AND MERGED. `main` is
+- **Session 2026-08-13 (latest) — S8.6 BUILT AND GREEN on branch
+  `s86-production-shape`. 1812 → 1848 passing, **ALL TWENTY smokes green**
+  (s12, s13, s23, s41, s51, s52, s53, s63, s64, s71, s72, s73, s81, s82, s83a,
+  s83b, s84a, s84b, s85_outcome, s86 27/27), browser check 19/19, contract
+  31/31, bindings 402/402. NOT REVIEWED, NOT MERGED, NOT PUSHED. NOTHING WAS
+  DEPLOYED: no Railway project, service, database, domain or variable exists
+  that did not exist before the branch.** Plan:
+  `docs/superpowers/plans/2026-08-12-s86-production-shape.md`, 15 tasks, TDD
+  with every failing test seen red first.
+  **THE DEPLOY SPRINT STOPPED BEING A DEPLOY, and that was decided before any
+  code.** There are zero customers. A running host buys nothing and costs
+  money, credentials and a public attack surface; the user gates go-live. So
+  S8.6 shipped the system that is *correct to deploy* plus `DEPLOY.md`, the
+  checklist a human runs later. The status board entry is renamed
+  **Production shape**, and go-live is now an unscheduled user-gated line with
+  no sprint ID, because it is not a sprint.
+  **⚠ THE EIGHTH REFUSAL HAD TO ASK THE BUILDER, NOT THE PROVIDER STRING.**
+  `config.yaml` ships `email_provider: "null"`, so a prod deploy on the shipped
+  defaults booted clean and then answered 503 `email_unavailable` to every
+  signup and login on all three planes — while `/healthz` reported healthy.
+  Blockers 4 and 5 were dead on arrival. The check calls
+  `build_email(settings).available`, because `build_email` **also** returns
+  `NullEmail` for `provider="smtp"` with an empty host: a string check would
+  have passed that config and shipped the same 503.
+  **⚠ THE ROUTE-TABLE GUARD COULD NOT SEE MOUNTS AT ALL**, and serving the UI
+  would have opened its first invisible hole. A `Mount` has no `.methods`, so
+  the guard skipped it, and `include_router` dependencies do not apply to it —
+  unauthenticated *and* invisible. `MOUNTS` was added **in the commit before**
+  the mount existed. Then `_mount_paths` had to learn the same recursion
+  `_walk` uses: `APIRouter` inherits `.mount()`, so a mount inside an included
+  router sits behind the `_IncludedRouter` wrapper that already hides 54 of 63
+  routes from a flat scan.
+  **⚠ THE "TESTED CROSS-ORIGIN POSTURE" WAS CROSS-ORIGIN BUT SAME-SITE.** The
+  browser check ran two servers on `localhost`; SameSite ignores the PORT, so a
+  Lax cookie was sent and CORS applied — while `config.yaml`'s shipped
+  `SameSite=None` was exercised by **nothing, anywhere**. Its docstring called
+  that "the posture the UI ships in". Reaching for "we tested it" without
+  checking *which property* the test pinned. Retired from both ends: the UI is
+  same-origin at `/ui` and the shipped default is now `lax`. CSRF is
+  deliberately KEPT and a test pins the reason, because "Lax blocks cross-site
+  POST" is exactly the argument that would delete it.
+  **⚠ THE IMAGE NEVER CONTAINED THE UI.** `frontend/` was absent from the
+  Dockerfile — invisible while nothing served it, a blank page the moment the
+  mount landed, and a container that reports itself healthy while 404ing every
+  page, because a missing `StaticFiles` directory is not a boot error. The
+  guard derives the static root from the LIVE APP. A fourth test the plan did
+  not have reads `.dockerignore` too: it can cancel a COPY, and two
+  hand-maintained lists that must agree is the shape of every drift this repo
+  has found.
+  **⚠ THE CRON'S OWN DOOR DIED WITH A TRACEBACK.** `python -m
+  app.retention.sweep` against a never-migrated database exited 1 with forty
+  lines of SQLAlchemy — the Railway cron's most likely first encounter, since
+  it is a separate container that can start before the web service. Now exit 3
+  with one sentence. **This also found a fixture that was less honest than
+  production**: `cli_env` called itself "migrated-SHAPED" and used
+  `create_all`, so it had every table and no `alembic_version`; fixed by
+  migrating, not by exempting it.
+  **⚠ AND A SMOKE CHECK THAT PASSED FOR THE WRONG REASON.** `smoke_s86`'s
+  check 1 asserted `code != 0 and "LaunchConfigError" not in out` to prove a
+  correct prod config gets *past* all eight refusals. Measured: against a dead
+  Postgres the process does not fail, it **hangs** (the driver's connect has no
+  timeout), so `code != 0` held only because the harness killed it. That
+  evidence would have passed against a process that booted cleanly and served
+  traffic. It now requires uvicorn's own "Waiting for application startup"
+  marker. The hang is an operator fact and `DEPLOY.md` §6 says so.
+  **OTHER WORK:** `GET /` derives its endpoints list at last (stale since
+  S8.3, carried three times with correct reasoning — patching it would make an
+  unmaintained list look maintained); CI builds the image for the first time
+  ever, on push only, because this machine has no Docker; and **SMTPEmail
+  delivered for the first time since it was written** to a 60-line SMTP sink in
+  the smoke.
+  **➤ NEXT STEP: REVIEW THE BRANCH, then merge.** Nothing is on `main`. Every
+  branch review since S7.1 has found a real defect and the last two found
+  defects invisible to a green suite. After the merge, PI-8 is COMPLETE and the
+  only thing left is the user-gated go-live (`DEPLOY.md`) — **including the
+  Railway cron for the retention sweep, without which the portal promises a
+  purge nobody invokes** — and then PI-9 (calibration harness).
+- **Session 2026-08-12 — S8.3 PHASE B REVIEWED AND MERGED. `main` is
   at `6dfde6c`, 1812 green, `smoke_s83b` 22/22 and `smoke_s83a` 19/19 re-run
   ON THE MERGE COMMIT, branch deleted. S8.3 IS COMPLETE; S8.6 (deploy) is the
   only sprint left in PI-8. NOT PUSHED.** The review found 5 findings, ALL
@@ -2163,7 +2240,30 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                registration guard then found SIX pre-existing gaps in
     │                alembic/env.py that would have made --autogenerate emit
     │                DROP TABLE for six live tables.
-    └── [ ] S8.6  DEPLOY / launch — Railway, HTTPS, prod config, live smoke
+    ├── [x] S8.6  PRODUCTION SHAPE — correct to deploy, and NOT deployed
+    │            RENAMED from "DEPLOY / launch" in the sprint itself. Zero
+    │            customers, so a running host buys nothing and costs money,
+    │            credentials and an attack surface; the user gates go-live.
+    │            The sprint's output is a correct system plus the checklist a
+    │            human runs later (DEPLOY.md). NO cloud resource was created.
+    │            - the 8th boot refusal: prod cannot boot unable to send mail,
+    │              and it asks build_email() rather than the provider STRING,
+    │              because provider=smtp with an empty host returns NullEmail
+    │            - the UI is served same-origin at /ui, so SameSite=None was
+    │              retired for lax -- and the route-table guard gained MOUNTS
+    │              first, because a Mount is not an APIRoute and would have
+    │              been the guard's first invisible hole
+    │            - the image never contained frontend/; .dockerignore can
+    │              cancel a COPY, so a guard now reads BOTH lists
+    │            - GET / derives its endpoints list at last (stale since S8.3)
+    │            - the retention CLI died with a traceback on an unmigrated
+    │              database -- the cron's most likely first encounter
+    │            - CI builds the image for the first time ever (push only)
+    │            - SMTPEmail delivered for the first time since it was written
+    └── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
+             The checklist is DEPLOY.md; the blocking non-technical item is
+             the IBM IP / outside-activity check (GTM §8.3). Also still open:
+             alerting thresholds on /metrics.
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the
         order moved. S8.3 still precedes the deploy, which is now last, so the
@@ -2198,6 +2298,46 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 
 ## Session log
 
+- **2026-08-13** — **S8.6 built: the production shape, and nothing deployed.
+  Branch `s86-production-shape`, 12 commits, TDD. 1812 → 1848 green, all
+  twenty smokes green (`smoke_s86` 27/27, twice in a row), browser 19/19 ·
+  contract 31/31 · bindings 402/402. Not reviewed, not merged, not pushed. No
+  cloud resource created.** The deploy sprint deliberately stopped being a
+  deploy — zero customers, the user gates go-live — so the output is a correct
+  system plus `DEPLOY.md`.
+  **What this session established, beyond the checklist:**
+  1. **A boot refusal must ask the BUILDER, not the config string.**
+     `provider="smtp"` with an empty host silently returns `NullEmail`, so
+     checking `email_provider` would have passed the exact config that 503s
+     every login. `EmailClient.available` already existed for that question —
+     one predicate, no second copy to drift.
+  2. **A `Mount` is a second way to widen the unauthenticated surface, and the
+     route-table guard could not see it.** No `.methods`, so the guard skipped
+     it; no inherited router dependency, so it is unauthenticated. The guard
+     was widened *before* the mount existed, and then had to learn the
+     `_IncludedRouter` recursion, because `APIRouter` inherits `.mount()`.
+  3. **"We tested it" is not the same as "the test pinned that property."**
+     Two localhost servers on different ports are cross-ORIGIN but same-SITE,
+     so the browser check exercised Lax + CORS and never once exercised the
+     shipped `SameSite=None`. The docstring claiming otherwise had been true of
+     nothing since it was written.
+  4. **A hand-maintained list drifts even when the drift is a comment about
+     the drift.** `GET /`'s endpoints array was carried three times with
+     correct reasoning; the third carry named `/metrics` only because the
+     second reader might have assumed it covered. Derivation ended it — reusing
+     the walker already in the file, since a flat scan sees 9 of 63 routes.
+  5. **`.dockerignore` can cancel a `COPY`.** Two hand-maintained lists that
+     must agree, which is the shape of every drift this repo has found, and
+     nothing read both until now.
+  6. **The failure a cron sees is part of the contract.** The sweep's own
+     entry point exited 1 with a traceback on an unmigrated database. Exit 3
+     and a sentence cost fifteen lines; finding it cost running the thing once.
+  7. **A check can pass for the wrong reason and look identical to one that
+     passes.** `code != 0` proved a process died — but it died because the
+     harness killed it after a hang, not because anything was verified.
+     Positive evidence (uvicorn's own startup marker) is the fix, and the same
+     lesson retired a poll-based UI check in favour of a MutationObserver
+     latch after it failed once at random.
 - **2026-08-10 (later)** — **The outcome loop is closed. Branch
   `s86-org-outcome-route`, nine commits, TDD. 1553 → 1586 green,
   `smoke_s85_outcome` 21/21 first run, `smoke_s84a` 23/23 + `smoke_s84b` 16/16
