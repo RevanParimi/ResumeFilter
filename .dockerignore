@@ -26,8 +26,12 @@ tests/
 # which is what lets the Railway cron call it (DEPLOY.md).
 scripts/
 
-# Fixture input for scripts/check_ui_screening_browser.py. Resumes -- even
-# invented ones -- have no business in a production image, and it is 650KB of
-# PNG that nothing serves.
+# A 659KB paste screenshot from the 2026-08-03 UI session. Already gitignored,
+# so it is local-only -- but the /ui mount serves whatever sits in frontend/,
+# so without this line a developer's stray pastes are public on their machine.
+#
+# CORRECTED IN REVIEW: this comment used to claim the directory was fixture
+# input for scripts/check_ui_screening_browser.py. It is not -- that script
+# builds its fixtures in a scratch directory and never reads this one. The
+# claim came from the S8.6 plan and was copied without checking.
 frontend/uploads/
-frontend/.thumbnail
