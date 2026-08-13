@@ -9,8 +9,19 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-13 (latest) — S8.6 BUILT AND GREEN on branch
-  `s86-production-shape`. 1812 → 1848 passing, **ALL TWENTY smokes green**
+- **Session 2026-08-13 (latest) — S8.6 BUILT AND MERGED. `main` is at
+  `6991173`; PI-8's last sprint is done, so **PI-8 IS COMPLETE**. 1812 → 1848
+  passing and `smoke_s86` 27/27 · `smoke_s83b` 22/22 · `smoke_s85_outcome`
+  21/21 all re-run ON THE MERGE COMMIT. NOT PUSHED.**
+  **⚠ MERGED WITHOUT AN INDEPENDENT REVIEW, on the user's explicit
+  instruction, and the review is still OWED.** Every branch review since S7.1
+  has found a real defect; the last two found defects invisible to a green
+  suite. It is still targetable — the pre-merge `main` was `8ae08cb`, so the
+  range is **`8ae08cb..6991173`**. Recorded because `main...s86-production-shape`
+  is empty now and the range is the only way left to express it. The branch ref
+  was kept, not deleted, for the same reason.
+  Everything below describes what that merge contains.
+  1812 → 1848 passing, **ALL TWENTY smokes green**
   (s12, s13, s23, s41, s51, s52, s53, s63, s64, s71, s72, s73, s81, s82, s83a,
   s83b, s84a, s84b, s85_outcome, s86 27/27), browser check 19/19, contract
   31/31, bindings 402/402. NOT REVIEWED, NOT MERGED, NOT PUSHED. NOTHING WAS
@@ -80,22 +91,24 @@
   ever, on push only, because this machine has no Docker; and **SMTPEmail
   delivered for the first time since it was written** to a 60-line SMTP sink in
   the smoke.
-  **➤ NEXT STEP: REVIEW THE BRANCH, then merge.** Nothing is on `main`. Every
-  branch review since S7.1 has found a real defect and the last two found
-  defects invisible to a green suite.
-  **Run `/code-review ultra main` — the BASE ARGUMENT IS LOAD-BEARING.** With
-  no base it defaults to `origin/main`, which is **56 commits behind** (S8.4b,
-  S8.5, S8.3a and S8.3b are all merged locally and unpushed), producing a
-  123-file / 21,733-line diff that exceeds the reviewer's 12,000-line ceiling.
-  Against local `main` it is 32 files / 4,354 lines.
-  **THEN S8.7 (src layout), and in that order.** The restructure moves every
-  file in `app/`; doing it first would turn S8.6's review diff into "everything
-  moved, plus some logic", which is unreviewable — and doing it after the merge
-  keeps the move a pure rename a reviewer can verify at a glance.
-  After that, PI-8 is COMPLETE and the only thing left is the user-gated
-  go-live (`DEPLOY.md`) — **including the Railway cron for the retention sweep,
-  without which the portal promises a purge nobody invokes** — then PI-9
+  **➤ NEXT STEP: S8.7 (src layout), and the OWED REVIEW of `8ae08cb..6991173`
+  before that code is built on.**
+  **On the review command: the BASE ARGUMENT IS LOAD-BEARING.** With no base
+  `/code-review ultra` defaults to `origin/main`, which is **57 commits
+  behind** (S8.4b, S8.5, S8.3a, S8.3b and now S8.6 are all merged locally and
+  unpushed), producing a 123-file / 21,733-line diff that exceeds the
+  reviewer's 12,000-line ceiling. S8.6 alone is 32 files / 4,354 lines.
+  **Do S8.7 AFTER the review, not before.** The restructure moves every file in
+  `app/`, so running it first turns the owed review's diff into "everything
+  moved, plus some logic" — unreviewable, and the exact problem the src/ layout
+  exists to prevent.
+  After that the only things left in PI-8 are the user-gated go-live
+  (`DEPLOY.md`) — **including the Railway cron for the retention sweep, without
+  which the portal promises a purge nobody invokes** — and then PI-9
   (calibration harness).
+  **`main` is 57 commits ahead of a PUBLIC remote** (`RevanParimi/ResumeFilter`,
+  last pushed 2026-08-07 at S8.4a). Five completed sprints exist only on this
+  machine. Pushing is the user's call and nothing here does it.
 - **Session 2026-08-12 — S8.3 PHASE B REVIEWED AND MERGED. `main` is
   at `6dfde6c`, 1812 green, `smoke_s83b` 22/22 and `smoke_s83a` 19/19 re-run
   ON THE MERGE COMMIT, branch deleted. S8.3 IS COMPLETE; S8.6 (deploy) is the
