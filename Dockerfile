@@ -21,6 +21,12 @@ COPY config.yaml .
 # Alembic ships in the image: the app migrates itself on boot (PI-8 blocker 1).
 COPY alembic ./alembic
 COPY alembic.ini .
+# The UI is served by this API at /ui (S8.6). Without this the mount exists and
+# every page is a 404 -- and nothing in the app would say why, because a
+# missing StaticFiles directory is not a boot error. tests/
+# test_image_contents.py derives this requirement from the LIVE APP, so moving
+# the directory fails a test rather than shipping a blank container.
+COPY frontend ./frontend
 
 # Non-root; /srv/app/data holds sqlite + flywheel (mount a volume in prod).
 RUN useradd --create-home appuser \
