@@ -10,8 +10,11 @@
 ## ▶ Current state
 
 - **Session 2026-08-14 (latest) — THE OWED S8.6 REVIEW, PARTLY RUN. TWO MORE
-  REAL DEFECTS, both fixed on `s86-review-fixes-2`. 1850 → 1852 passing,
-  `smoke_s86` 27/27. NOT MERGED, NOT PUSHED. Nothing deployed.**
+  REAL DEFECTS, both fixed and MERGED at `6f19d32`. 1850 → 1852 passing,
+  `smoke_s86` 27/27. NOT PUSHED. Nothing deployed.** The merge tree is
+  byte-identical to the tested branch tip (`git diff s86-review-fixes-2 HEAD`
+  is empty — `main` never moved), so the evidence above is the merge commit's,
+  not just the branch's.
   **⚠ `/code-review ultra` NEVER LAUNCHED** — it returned "You've hit your
   session limit" before dispatching, so nothing was billed and there are no
   cloud findings. The local `max` fallback fanned out to ten angles and **nine
