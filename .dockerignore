@@ -35,3 +35,10 @@ scripts/
 # builds its fixtures in a scratch directory and never reads this one. The
 # claim came from the S8.6 plan and was copied without checking.
 frontend/uploads/
+
+# REVIEW FIX: the design tool's 18KB preview blob. Same argument as the line
+# above, and it was missed for the same reason the `*.md` guard was -- each
+# entry here names one file somebody happened to notice. The mount itself now
+# refuses anything outside app.main.UI_ASSETS, so exposure is closed at the
+# server; these two lines only keep the artefacts out of the IMAGE.
+frontend/.thumbnail

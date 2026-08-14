@@ -9,7 +9,58 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-13 (latest) — S8.6 BUILT AND MERGED. `main` is at
+- **Session 2026-08-14 (latest) — THE OWED S8.6 REVIEW, PARTLY RUN. TWO MORE
+  REAL DEFECTS, both fixed on `s86-review-fixes-2`. 1850 → 1852 passing,
+  `smoke_s86` 27/27. NOT MERGED, NOT PUSHED. Nothing deployed.**
+  **⚠ `/code-review ultra` NEVER LAUNCHED** — it returned "You've hit your
+  session limit" before dispatching, so nothing was billed and there are no
+  cloud findings. The local `max` fallback fanned out to ten angles and **nine
+  died mid-flight** on the same limit, including every correctness angle. One
+  survived (simplification). The correctness pass was therefore done by hand
+  over the diff, which is small where it counts: ~290 lines of production code
+  across six files against ~2,800 lines of docs prose. **THE RANGE
+  `8ae08cb..d577390` IS STILL INTACT AND STILL WORTH AN ULTRA PASS** — this
+  branch changes `app/main.py`, so run it against that range, not `HEAD`.
+  **⚠ FINDING 1 — THE `/ui` MOUNT WAS STILL PUBLISHING, AND THE GUARD THAT WAS
+  ADDED TO STOP IT ONLY LOOKED AT `*.md`.** Measured over the wire at 200:
+  `Veritas v1 (Broadsheet).dc.html` (42KB), `.thumbnail` (18KB),
+  `uploads/pasted-*.png` (659KB). **This is the previous fix's own shape, one
+  file over.** That fix moved `PLAN.md` out because it described the rejected
+  design direction — and left **the rejected design itself** downloadable. Two
+  of the three offenders are GITIGNORED, which is the whole lesson:
+  `StaticFiles` reads the filesystem, so git's opinion of a file has no bearing
+  on whether it is public, and a tree-level lint is either blind to them or
+  fails on every machine that has run the design tool. Fixed at the SERVER:
+  `_AllowlistedStaticFiles` refuses anything whose first path segment is not in
+  `app.main.UI_ASSETS`. A denylist can only name what somebody already thought
+  of; this is the third time that has cost this repo something.
+  **⚠ FINDING 2 — EVERY `/ui/*` REQUEST WAS FILED AS `__unmatched__`.**
+  `Mount.matches()` returns a child scope of `app_root_path`, `endpoint`,
+  `path_params`, `root_path` — **no `route`** (only `Route` sets it), so
+  `_route_template` had nothing to label a mounted request with. Measured:
+  572.9ms of 581.6ms total duration sat under `__unmatched__`, at status 200.
+  That bucket exists to collapse requests matching NOTHING — scanner noise and
+  404s — into one series, and the go-live alerting thresholds on `/metrics` are
+  still an OPEN item, so they would have been set against a series dominated by
+  ordinary UI success. Fixed with `_LabelledMount`; the label is `/ui/{path}`
+  from `Mount.path_format`, bounded at one series.
+  **It also falsified a docstring in the same file.** `_route_template` argued
+  404s reach `__unmatched__` "because nothing FULL-matches those" — S8.6 made
+  that false in the commit that mounted the UI, since `/ui/*` returns
+  `Match.FULL` and *still* arrived unlabelled, by a different mechanism.
+  Corrected in place.
+  **FINDING 3 (minor, NOT fixed):** `frontend/api.js` justifies
+  `credentials:"include"` by the `?api=` cross-origin override, but the same
+  sprint shipped `samesite=lax`, which stops the session cookie riding a
+  genuinely cross-SITE request. `UI.md` §3 states the real rule (host
+  separately ⇒ set `samesite=none`); the api.js comment does not.
+  **CHECKED AND CLEAN:** alembic has ONE head, so `revision_state`'s
+  `get_current_head()` cannot raise; `build_email` opens no socket at boot;
+  the rate limiter is per-endpoint, not middleware, so static assets burn no
+  quota; and `email_capture_path` defaults to `""` with every script writing
+  its mailbox to a scratch dir, so captured OTPs were never under `frontend/`.
+  **➤ NEXT STEP: decide on merging this branch, then S8.7 (src layout).**
+- **Session 2026-08-13 — S8.6 BUILT AND MERGED. `main` is at
   `6991173`; PI-8's last sprint is done, so **PI-8 IS COMPLETE**. 1812 → 1848
   passing and `smoke_s86` 27/27 · `smoke_s83b` 22/22 · `smoke_s85_outcome`
   21/21 all re-run ON THE MERGE COMMIT. NOT PUSHED.**

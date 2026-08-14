@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from starlette.routing import Mount
 
-from app.main import create_app
+from app.main import UI_ASSETS, create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -38,41 +38,66 @@ def test_the_mount_root_is_the_frontend_directory(services):
     assert Path(mounts[0].app.directory).resolve() == (ROOT / "frontend").resolve()
 
 
-#: Filenames the mount is allowed to expose that are not runtime assets.
-#: `_ds/` is a VENDORED third-party design-system bundle; its readmes describe
-#: the bundle, not veritas, and editing a vendored tree to satisfy our own rule
-#: buys nothing. Everything else under frontend/ is served to the public
-#: internet the moment this deploys.
-_VENDORED = "_ds"
+def test_the_mount_serves_only_the_allowlist(services):
+    """FOUND IN THE SECOND REVIEW, and it is the FIRST fix's own shape one file
+    over. That fix moved `PLAN.md` and `UI-SPEC.md` out and left a guard that
+    globs `*.md` -- a denylist of one extension, which can only name what
+    somebody already thought of. Three files walked straight past it, measured
+    over the wire at 200:
 
+      * `Veritas v1 (Broadsheet).dc.html` (42KB) -- the design direction
+        `docs/ui/PLAN.md` records as REJECTED ("reads like a PDF"). The first
+        fix relocated the document DESCRIBING the rejected design and left the
+        rejected design itself served.
+      * `.thumbnail` (18KB) and `uploads/*.png` (659KB) -- gitignored
+        design-tool droppings. Gitignore is not a mount rule: `StaticFiles`
+        reads the filesystem, so an ignored file is served exactly like a
+        tracked one, and these two come BACK every time the design tool runs.
 
-def test_the_mount_serves_no_internal_documentation(services):
-    """FOUND IN REVIEW, after the merge. The guard one file over was widened to
-    say "a mount is an unauthenticated surface" -- and then nobody checked WHAT
-    this one exposes.
+    So the rule is an allowlist rather than a list of known-bad paths. Adding a
+    UI asset is now a reviewable act -- the same argument this repo already
+    applies to PUBLIC_PATHS and MOUNTS.
 
-    `StaticFiles` serves the whole directory, so `frontend/PLAN.md` and
-    `frontend/UI-SPEC.md` answered 200 to anyone at `/ui/PLAN.md`: the tenancy
-    model, the roadmap decisions, the rejected design direction and a
-    screen-by-screen inventory of what is and is not built.
-
-    Not sensitive in the credentials sense, and that is not the bar -- the bar
-    is that the public surface is INTENTIONAL. They live in docs/ui/ now.
-
-    Deliberately a check on the DIRECTORY, not on two paths: `.dockerignore`'s
-    `*.md` does not match a nested path (Go filepath.Match, `*` does not cross
-    a separator), so the container would have shipped them even though the
-    ignore file looks like it covers markdown. Moving them out is a fix that
-    does not depend on anyone reading that subtlety correctly.
+    Asserted over the WIRE against whatever is on this disk right now, not as a
+    property of the tracked tree: two of the three offenders are gitignored, so
+    a tree assertion would either be blind to them or fail on every machine that
+    has run the design tool. What has to be true is that the server refuses
+    them.
     """
-    stray = [
-        p.name for p in (ROOT / "frontend").rglob("*.md")
-        if _VENDORED not in p.parts
-    ]
-    assert stray == [], (
-        f"{stray} sit inside the served directory and would be public. "
-        "Documentation belongs in docs/, not in the static mount."
+    root = ROOT / "frontend"
+    client = TestClient(create_app(services))
+    served = []
+    for p in root.rglob("*"):
+        rel = p.relative_to(root)
+        if not p.is_file() or rel.parts[0] in UI_ASSETS:
+            continue
+        if client.get("/ui/" + rel.as_posix()).status_code == 200:
+            served.append(rel.as_posix())
+    assert served == [], (
+        f"{served} are being served to the public internet. Either add the "
+        "top-level name to app.main.UI_ASSETS -- deliberately, in a diff "
+        "somebody reads -- or move the file out of frontend/."
     )
+
+
+def test_the_allowlist_is_enforced_by_THE_SERVER_not_just_the_tree(services):
+    """The check above can only see files that exist when the suite runs. This
+    one pins the RULE.
+
+    A file dropped into `frontend/` after the last test run is served anyway --
+    that is exactly how `.thumbnail` and `uploads/` got there -- so the refusal
+    has to live in the mount, not in a lint. Written against a file that is in
+    no directory listing anyone has reviewed, so it proves the server's
+    behaviour rather than today's contents.
+    """
+    stray = ROOT / "frontend" / "not-an-asset.txt"
+    stray.write_text("secret-ish", encoding="utf-8")
+    try:
+        client = TestClient(create_app(services))
+        assert client.get("/ui/not-an-asset.txt").status_code == 404
+        assert client.get("/ui/api.js").status_code == 200
+    finally:
+        stray.unlink()
 
 
 def test_the_documentation_really_is_unreachable(services):
