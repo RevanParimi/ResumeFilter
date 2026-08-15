@@ -20,7 +20,7 @@ here. A runbook that lists a variable the code ignores is worse than no runbook.
 
 | Claim | Proven by | Where |
 |---|---|---|
-| The app boots, serves and refuses correctly | 1843 unit tests + 20 smoke scripts | local, every sprint |
+| The app boots, serves and refuses correctly | 1854 unit tests + 20 smoke scripts | local, every sprint |
 | The image **builds** and contains the app | the `image` job | GitHub Actions, **on push only** |
 | Migrations run up/down/up on Postgres | the `postgres` job | GitHub Actions |
 | The app runs **on Railway** | nothing | — |
@@ -28,6 +28,23 @@ here. A runbook that lists a variable the code ignores is worse than no runbook.
 The development machine has **no Docker and no psql** (measured). The image is
 therefore unproven until something is pushed and the `image` job runs. Push
 first; do not learn about a broken `COPY` from a failed deploy.
+
+**S8.7 raised the stakes on that sentence.** The package moved to `src/app/`,
+and the image now depends on two things nothing local can execute:
+
+- `COPY src/app ./src/app` — the image **mirrors** the repository layout rather
+  than flattening it back to `./app`. Flattening would leave
+  `src/app/core/migrate.py`'s `parents[3]` resolving to `/srv` instead of
+  `/srv/app`, so `alembic.ini` is not found and migrate-on-boot fails **at
+  runtime, after the container reports itself started**.
+- `ENV PYTHONPATH=/srv/app/src` — without it `uvicorn app.main:app` cannot
+  import anything. `CMD` and `railway.json`'s `startCommand` are unchanged and
+  still say `app.main:app`.
+
+`tests/test_image_contents.py` proves the Dockerfile and `.dockerignore` agree
+about `src/app`, and `tests/test_src_layout.py` proves the package resolves
+from `src/` locally. **Neither proves the container imports.** Only the `image`
+CI job does, and it has not run since S8.4a.
 
 ---
 
@@ -128,7 +145,7 @@ middleware is not installed at all.
 ## 5. The retention cron — **do not skip this**
 
 **The retention sweep has no scheduler.** There is no worker and no in-process
-timer anywhere in `app/`, deliberately: with N replicas an in-process timer
+timer anywhere in `src/app/`, deliberately: with N replicas an in-process timer
 would run the most destructive operation in the repo N times concurrently,
 inside a web worker where a long `DELETE` competes with request handling.
 

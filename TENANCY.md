@@ -45,7 +45,7 @@ organisation and asserting the resume survives unowned.
 **There IS an HTTP route that triggers this**, and an earlier draft of this
 document said there was not — twice, in §8 and §9, which is why the smoke
 originally skipped it. `DELETE /ledger/orgs/{org_id}`
-(`app/api/routes.py:671`) calls `LedgerStore.delete_organization`, which does
+(`src/app/api/routes.py:671`) calls `LedgerStore.delete_organization`, which does
 `session.delete(OrganizationRow)`: exactly the deletion the `SET NULL` contract
 is about, reachable today with an admin key. `smoke_s84a` now exercises it end
 to end. Without these the mistake would be silent until the first offboarding.
@@ -111,7 +111,7 @@ the cross-customer resume-farm signal — a genuine product advantage — outrig
 There is exactly one home for the ownership fact: the upload row. "The
 candidates my org has ever screened" is not stored anywhere — it is derived by
 joining through `resumes` (`org_owns_candidate`, `for_candidate_and_org` in
-`app/candidates/store.py` / `app/reports/store.py`). The cost is a join per
+`src/app/candidates/store.py` / `src/app/reports/store.py`). The cost is a join per
 query; the benefit is that there is no second copy of "who owns this" that can
 drift from the first. A `candidates.org_id` column would have been exactly that
 second copy, and it would have been wrong the moment two orgs uploaded the same
@@ -142,7 +142,7 @@ enforced by remembering to enforce it will be forgotten at the second door.** A
 tenancy rule spread across org-plane routes is exactly that shape by
 construction, so org handlers get no option to forget it:
 
-1. **A scoped facade — `app/screening/scope.py`, `OrgScopedAccess`.** Every
+1. **A scoped facade — `src/app/screening/scope.py`, `OrgScopedAccess`.** Every
    method takes `org_id` as its *first* argument, there is no unscoped read
    **on this object**, and both report-returning methods (`.report`,
    `.reports_for_candidate`) redact (§6) before returning, so a handler cannot
@@ -174,11 +174,11 @@ construction, so org handlers get no option to forget it:
    read.
 
    **S8.4 Phase B added a SECOND sanctioned door and emptied the allowlist.**
-   `app/screening/service.py`, `ScreeningService`, is the batch equivalent:
+   `src/app/screening/service.py`, `ScreeningService`, is the batch equivalent:
    every method takes `org_id` first, and the batch **store** is deliberately
    **not an attribute of `Services` at all** — a handler cannot forget to scope
    a read it has no way to perform. Separately, extracting the ingest core into
-   `app/screening/ingest.py` moved all five formerly-allowlisted lines out of
+   `src/app/screening/ingest.py` moved all five formerly-allowlisted lines out of
    `routes.py`, so `ALLOWLISTED_LINES` is now **empty**, pinned by
    `test_the_guard_has_no_exemptions`. Be precise about what that buys: those
    five lines were being waved through anyway, so the guard did not become
@@ -256,7 +256,7 @@ somebody else both answer `404` so neither can be probed for.
 **The precedent is S6.4's, not S7.1's** — worth naming exactly, because the
 org-plane verification route does the opposite:
 `GET /verification/candidates/{id}/assurance` answers `403` on a consent failure
-and `404` on a lookup failure (`app/api/routes.py:1284-1287`), which does
+and `404` on a lookup failure (`src/app/api/routes.py:1284-1287`), which does
 distinguish "exists but you may not" from "does not exist". That is defensible
 there — consent is a fact the org already knows it lacks — but it is not the
 rule this document is stating, and citing it as though it were would tell a
@@ -268,7 +268,7 @@ future reader the opposite of §6.
 organisation is allowed to learn *that* a near-duplicate exists and *how
 similar* it is — that is the fraud signal — never *whose* it is.
 
-`app/screening/projection.py` holds the **one** place that stripping happens:
+`src/app/screening/projection.py` holds the **one** place that stripping happens:
 `_stripped_matches`, which nulls `candidate_id`/`resume_id` on every match and
 leaves everything else (`similarity`, the band, the count) untouched. Every
 org-facing reader goes through it, directly or via one of two callers:
@@ -346,7 +346,7 @@ customer**, which is why they are named here rather than left to be
 rediscovered: `POST /jobs/{req_id}/match` and `GET /jobs/{req_id}/board` are
 both `@org_router`, and the ranking underneath them reads
 `features.vectors_for_view(...)` with **no org filter**
-(`app/matching/store.py:188`), returning `candidate_id`s drawn from the whole
+(`src/app/matching/store.py:188`), returning `candidate_id`s drawn from the whole
 platform. This is pre-existing S5.1 marketplace design, not an S8.4 regression,
 and it does not leak anything §7 redacts — but it means the org plane has more
 than one cross-corpus data surface, and only the screening one is scoped by this
@@ -356,7 +356,7 @@ the same open decision as `/talent/search`, and it should be taken once, for all
 three.
 
 Also out of scope, by the same spec section: a worker/queue/scheduler (no
-background execution exists anywhere in `app/` yet — that is S8.3's), rate
+background execution exists anywhere in `src/app/` yet — that is S8.3's), rate
 limiting, row-level security or a tenant-per-schema database (this sprint is
 application-level scoping with a structural guard; if the hosting posture ever
 demands database-level isolation, this is the layer it replaces, not one it

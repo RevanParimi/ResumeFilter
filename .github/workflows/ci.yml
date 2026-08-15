@@ -36,6 +36,14 @@ jobs:
           --health-timeout 5s --health-retries 5
     env:
       DEE_TEST_DB_URL: postgresql+psycopg://postgres:postgres@localhost:5432/veritas_test
+      # S8.7: the package moved to src/app/. `pytest` gets there through
+      # pyproject's `pythonpath`, but the migrations step below is a bare
+      # `python -` heredoc -- no pytest, and CI never installs the project, so
+      # its sys.path[0] is the repo root and `alembic/env.py`'s `import
+      # app.candidates.models` would raise ModuleNotFoundError. Nothing local
+      # can catch this: the suite resolves `app` a different way, and CI has
+      # not run since S8.4a.
+      PYTHONPATH: src
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

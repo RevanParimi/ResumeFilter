@@ -12,9 +12,9 @@ S4.1 defines *what features exist and how each is computed from one candidate's
 point-in-time snapshot*. It does **not** persist feature values (S4.2), serve
 them over HTTP (S4.3), or join labels/outcomes (S4.4).
 
-## Model (`app/features/`)
+## Model (`src/app/features/`)
 
-Pure package, LLM-free, hand-testable — mirrors `app/domains/`.
+Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
 
 - **`FeatureSpec`** (`schema.py`) — serializable metadata for one feature:
   `name` (`<namespace>.<snake_case>`), integer `version`, `dtype`
@@ -76,7 +76,7 @@ new erasure path; after `delete_candidate`, `build_context` returns `None`.
 ## Adding a feature
 
 Drop a `@register_feature(...)`-decorated pure function into the right
-`app/features/definitions/` module (imported by `definitions/__init__.py`). Keep
+`src/app/features/definitions/` module (imported by `definitions/__init__.py`). Keep
 it deterministic and `None`-safe on absent input. **Bump `version`** whenever the
 computation changes — old and new coexist in the registry, and views pin exact
 versions, so historical materializations stay reproducible.

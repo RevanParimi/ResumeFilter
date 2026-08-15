@@ -121,7 +121,7 @@ queue read-model, so it cannot hold on one path and lapse on the other.
 |---|---|
 | batch upload (500 files) | 🔜 — today `POST /candidates` is one at a time, admin-only. S8.4 Phase B adds an org-plane batch upload that **registers** items without evaluating them |
 | batch as a stored object | 🔜 — nothing in the schema has it. S8.4 Phase B adds `screening_batches` + `batch_items` |
-| live ingest progress | 🔜 — **poll `GET /screening/batches/{id}`; the client also drives the work** via a bounded `POST .../process`. There is no worker in `app/`, so "live progress" is the UI's loop, not a server push. Design for partial results — which this screen already does |
+| live ingest progress | 🔜 — **poll `GET /screening/batches/{id}`; the client also drives the work** via a bounded `POST .../process`. There is no worker in `src/app/`, so "live progress" is the UI's loop, not a server push. Design for partial results — which this screen already does |
 | `GET /domains` | ⚠️ **admin router — an org session gets 401.** The two domains (`data_eng`, `genai`) are correctly hard-coded in the UI today. |
 
 ---

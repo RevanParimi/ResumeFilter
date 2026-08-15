@@ -53,7 +53,7 @@ cannot do. **Widening `PUBLIC_PATHS` is the reviewable act.**
 
 > **Adding a route?** Depend on one of the four resolvers. If your route is
 > genuinely pre-authentication (a new login surface), add its path to
-> `PUBLIC_PATHS` in `app/api/routes.py` — deliberately, in a diff someone reads.
+> `PUBLIC_PATHS` in `src/app/api/routes.py` — deliberately, in a diff someone reads.
 > `tests/test_api_auth_gate.py` imports that same set, so the two never drift.
 
 ## 3. Sessions
@@ -101,7 +101,7 @@ check.
 
 ## 5. Login: email OTP, no passwords
 
-Pure mechanics are **reused** from `app/verification/otp.py`; the table is not.
+Pure mechanics are **reused** from `src/app/verification/otp.py`; the table is not.
 `login_challenges` is scoped to **`email_hash` + `purpose` + `plane`** — a limit
 scoped to a row the flow re-mints limits nothing (S7.1's own review finding),
 and one address can legitimately be both a candidate and an org user.
@@ -168,7 +168,7 @@ fusing them would repeat S7.2's two-ladders mistake.
 
 ## 8. Email seam
 
-`app/services/email.py`, shaped like `llm.py`/`speech.py`:
+`src/app/services/email.py`, shaped like `llm.py`/`speech.py`:
 
 - **`NullEmail` refuses** → `503 email_unavailable`. Nothing silently degrades.
 - **`CaptureEmail` writes JSON lines** to `email_capture_path`, selected only by

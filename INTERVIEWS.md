@@ -1,6 +1,6 @@
 # INTERVIEWS.md — AI interview delivery (S7.3)
 
-Peer of `VERIFICATION.md`. What `app/interview/` is, why it is shaped this way,
+Peer of `VERIFICATION.md`. What `src/app/interview/` is, why it is shaped this way,
 and which lines are load-bearing. Design record:
 `docs/superpowers/specs/2026-07-31-s73-ai-interview-delivery-design.md`.
 
@@ -21,7 +21,7 @@ not settle. Before S7.3 nobody ever asked them.
 |---|---|---|
 | `probe` | the candidate's latest `Report` — flagged claims first, then deferred, then the rest | the engine already decided these claims were unsettled |
 | `profile` | deterministic templates over the candidate's own experience and skills | always available; needs no LLM and no report |
-| `domain` | `DomainModel.interview_seed_questions()` | keeps domain knowledge in `app/domains/`, per the repo's standing rule |
+| `domain` | `DomainModel.interview_seed_questions()` | keeps domain knowledge in `src/app/domains/`, per the repo's standing rule |
 
 A probe question carries the verdict's `missing_signals` as its
 `expected_signals`. That is the load-bearing link to scoring: **the scorer knows
@@ -66,9 +66,9 @@ ask.
   `attempts` is that count, so retakes cannot be hidden. An abandoned session is
   not an attempt at anything and stays in the portal only.
 
-## 4. The speech seam (`app/services/speech.py`)
+## 4. The speech seam (`src/app/services/speech.py`)
 
-Shaped like `app/services/llm.py`: `SpeechClient` (ABC) · `OpenRouterSpeech`
+Shaped like `src/app/services/llm.py`: `SpeechClient` (ABC) · `OpenRouterSpeech`
 (live, `asr_model`, OpenAI-wire `input_audio`) · `NullSpeech` (refuses) ·
 `build_speech`.
 

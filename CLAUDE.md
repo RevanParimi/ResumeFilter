@@ -25,7 +25,7 @@ work continues across many chat sessions.
 - DPDP: first-party data only, consent objects + delete paths on new tables.
 - Config: tunables in `config.yaml`, secrets only in `.env` (`DEE_*` prefix).
 - DB: SQLAlchemy + Alembic on SQLite, written Postgres-shaped.
-- Domain knowledge goes in `app/domains/` via `@register_domain`; the graph
+- Domain knowledge goes in `src/app/domains/` via `@register_domain`; the graph
   never imports a concrete domain.
 - Each sprint ends with a local smoke run (uvicorn + scripted HTTP calls on
   fixture resumes), not just unit tests.

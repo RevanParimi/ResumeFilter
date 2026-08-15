@@ -1,6 +1,6 @@
 # MATCHING.md — demand side: job requisitions + role-conditioned matching (PI-5)
 
-The demand-side subsystem (`app/matching/`). An organization describes a role as
+The demand-side subsystem (`src/app/matching/`). An organization describes a role as
 a **job requisition**; the platform compiles it into a **role-conditioned
 ranking** over the already-materialized candidate pool (PI-4 `ml_feature_vectors`)
 and returns an advisory, explainable shortlist. Peer of `LEDGER.md` /
@@ -11,15 +11,15 @@ missing or consent-withheld value **drops its term, never the candidate**.
 
 ## S5.1 — job requisition schema + match-ranking
 
-### Layering (mirrors `app/ledger/`)
+### Layering (mirrors `src/app/ledger/`)
 
 | Unit | File | Role |
 |---|---|---|
-| Contracts | `app/matching/schema.py` | Pydantic models + StrEnums (pure) |
-| Pure engine | `app/matching/match.py` | compile + skill/location + `match` (no I/O, no clock) |
-| ORM | `app/matching/models.py` | `JobRequisitionRow` |
-| Store | `app/matching/store.py` | `JobStore`: CRUD + `run_match` orchestrator |
-| HTTP | `app/api/routes.py` (`org_router`) | `POST/GET/PATCH /jobs`, `POST /jobs/{id}/match` |
+| Contracts | `src/app/matching/schema.py` | Pydantic models + StrEnums (pure) |
+| Pure engine | `src/app/matching/match.py` | compile + skill/location + `match` (no I/O, no clock) |
+| ORM | `src/app/matching/models.py` | `JobRequisitionRow` |
+| Store | `src/app/matching/store.py` | `JobStore`: CRUD + `run_match` orchestrator |
+| HTTP | `src/app/api/routes.py` (`org_router`) | `POST/GET/PATCH /jobs`, `POST /jobs/{id}/match` |
 
 ### The requisition (`JobRequisitionInput` → stored `JobRequisition`)
 
@@ -41,7 +41,7 @@ that **at least one skill** (must-have or nice-to-have) is required:
 A requisition compiles into an S4.3 `RankingSpec` of **soft terms**; the engine
 computes two **job-relative synthetic values** (`match.skill_coverage`,
 `match.location_fit`), injects them into a copy of each `FeatureVector`, and
-reuses `app/features/ranking.py`'s `score()` — so renormalization, `coverage`,
+reuses `src/app/features/ranking.py`'s `score()` — so renormalization, `coverage`,
 and per-feature `Contribution` explainability come for free.
 
 | Term | Direction | Default weight | Present when |
