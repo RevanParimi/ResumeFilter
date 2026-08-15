@@ -9,7 +9,71 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-14 (latest) — THE OWED S8.6 REVIEW, PARTLY RUN. TWO MORE
+- **Session 2026-08-15 (latest) — S8.7 BUILT: `app/` → `src/app/`, a PURE
+  MOVE. 1852 → 1854 passing (the two new guards), ALL TWENTY SMOKES GREEN,
+  bindings 402/402 · contract 31/31 · browser 19/19. On branch
+  `s87-src-layout`, NOT MERGED, NOT PUSHED. Nothing deployed.**
+  Spec `docs/superpowers/specs/2026-08-15-s87-src-layout-design.md`, plan
+  `docs/superpowers/plans/2026-08-15-s87-src-layout.md`.
+  **THE OPEN DECISION IS SETTLED: the package KEEPS the name `app`.** The user
+  declined the `veritas` rename. It buys nothing for the sprint's stated goal —
+  `/code-review ultra src/` scopes identically either way — and the "pay the
+  disruption twice" argument does not survive inspection, because the rename is
+  *cheaper* after this move than before it. So 1,489 import statements across
+  368 files are untouched, and the diff is nine files rather than every Python
+  file in a sprint whose whole justification is reviewable diffs.
+  **THE ROADMAP'S OWN TOUCHPOINT LIST WAS AN UNDERCOUNT — six listed, nine
+  real — and all three extras fail SILENTLY.**
+  **⚠ EXTRA 1 — `tests/test_metrics.py`'s METRIC-NAME SCAN WOULD HAVE GONE
+  VACUOUS.** `root = parent.parent / "app"` was absent from the list. `rglob`
+  over a directory that no longer exists yields nothing, so
+  `test_every_declared_metric_has_a_call_site` keeps passing while checking
+  **nothing at all** — the guard that caught four declared-inert metrics in
+  S8.3a would simply have stopped working, without ever going red. Its own
+  backstop (`test_the_call_site_scanner_can_actually_find_something`) is what
+  makes this a red test instead of a hole.
+  **⚠ EXTRA 2 — `tests/test_model_registration.py` BUILDS A DOTTED NAME FROM A
+  PATH.** Only the `rglob` base is obvious; `rel = path.relative_to(ROOT)` is
+  the one that bites, emitting `src.app.rights.models` — matching nothing in
+  either import list, so every module reads as missing.
+  **⚠ EXTRA 3 — THE CI POSTGRES JOB WOULD HAVE FAILED ON THE NEXT PUSH, AND NO
+  LOCAL RUN COULD SEE IT.** Its "migrations up/down/up" step is a bare
+  `python -` heredoc: no pytest, so pyproject's `pythonpath` does not apply,
+  and CI installs only `requirements.txt`, **which declares no project**
+  (verified — the only matching line is a comment). `sys.path[0]` is the repo
+  root, which no longer holds `app/`, so `alembic/env.py`'s `import
+  app.candidates.models` raises. Locally invisible because the venv's editable
+  `.pth` puts `<repo>/src` on `sys.path` for **every** process; both sides
+  measured. Fixed with `PYTHONPATH: src` on the job. **This is the third time a
+  path fact was true in one execution context and false in another** — and CI
+  has not run since S8.4a, so nothing would have contradicted it until a push.
+  **THE IMAGE MIRRORS THE REPO RATHER THAN FLATTENING.** `COPY src/app ./app`
+  was the tempting one-liner — the container keeps its shape and needs no
+  `PYTHONPATH` at all — and it would leave `migrate.py`'s `parents[3]` at
+  `/srv` instead of `/srv/app`: `alembic.ini` not found, **at runtime, after
+  the container reports itself started**. Same failure class as S8.6's missing
+  `frontend/`. So the image is `/srv/app/src/app/...` with
+  `ENV PYTHONPATH=/srv/app/src`, and `CMD`/`railway.json` still say
+  `app.main:app`, byte-identical.
+  **THE COMMIT DISCIPLINE HELD, and cost one deliberately red commit.**
+  `3049119` is `git mv` alone — 169 renames, zero other entries, and the tree
+  does **not** import at that commit (measured: `pytest -q` dies in conftest
+  with `No module named 'app'`). Verified afterwards that `git log --follow
+  src/app/core/migrate.py` still traces back to its S8.1 creation.
+  **NOT PROVEN, said plainly:** the container. This machine has no Docker and
+  the `image` job is push-only, so the mirrored `COPY` and the `PYTHONPATH` are
+  both **unexecuted**. `tests/test_image_contents.py` proves the Dockerfile and
+  `.dockerignore` agree about `src/app`; it does not prove the container
+  imports. `DEPLOY.md` §0 now says so.
+  **➤ NEXT STEP: merge `s87-src-layout`, then the only things left in PI-8 are
+  the user-gated go-live (`DEPLOY.md`, including the Railway cron) and the
+  still-owed ULTRA review.**
+  **On that review: S8.7 did NOT cost it.** The range `8ae08cb..6f19d32` is
+  fixed, so its diff is frozen and commits landing after it cannot disturb it.
+  The roadmap's earlier "do S8.7 after the review" caution applies only to a
+  review invoked with **no base**, which diffs against `origin/main` (~80
+  commits behind) and blows the 12,000-line ceiling regardless. Pass the range.
+- **Session 2026-08-14 — THE OWED S8.6 REVIEW, PARTLY RUN. TWO MORE
   REAL DEFECTS, both fixed and MERGED at `6f19d32`. 1850 → 1852 passing,
   `smoke_s86` 27/27. NOT PUSHED. Nothing deployed.** The merge tree is
   byte-identical to the tested branch tip (`git diff s86-review-fixes-2 HEAD`
@@ -2349,7 +2413,33 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │              database -- the cron's most likely first encounter
     │            - CI builds the image for the first time ever (push only)
     │            - SMTPEmail delivered for the first time since it was written
-    ├── [ ] S8.7  SRC LAYOUT — a standard repository, and NO behaviour change
+    ├── [x] S8.7  SRC LAYOUT — a standard repository, and NO behaviour change
+    │            BUILT 2026-08-15 on `s87-src-layout`. 1852 -> 1854 passing
+    │            (the two new guards), 20/20 smokes, bindings 402 · contract
+    │            31 · browser 19. NOT merged, NOT pushed, nothing deployed.
+    │            The package KEEPS the name `app` (user declined the veritas
+    │            rename), so 1,489 imports across 368 files are untouched and
+    │            the diff is nine files, not every .py in the repo.
+    │            - THE LIST BELOW WAS AN UNDERCOUNT: six listed, nine real,
+    │              and all three extras fail SILENTLY
+    │            - test_metrics.py's metric-name scan would have gone VACUOUS
+    │              -- rglob over a directory that no longer exists yields
+    │              nothing and the test passes while checking nothing
+    │            - test_model_registration.py builds a DOTTED NAME from a
+    │              path; relative_to(ROOT) would emit src.app.rights.models
+    │            - the CI postgres job would have failed on the next push: its
+    │              migrations step is a bare `python -` heredoc, so pythonpath
+    │              does not apply and CI installs no project. Invisible
+    │              locally, because the venv's editable .pth puts <repo>/src on
+    │              sys.path for every process
+    │            - the image MIRRORS the repo (COPY src/app ./src/app +
+    │              PYTHONPATH=/srv/app/src). Flattening to ./app would put
+    │              migrate.py's parents[3] at /srv, so alembic.ini is missing
+    │              at RUNTIME, after the container reports itself started
+    │            - the pure-move commit is deliberately RED and says so
+    │            - NOT PROVEN: the container. No Docker here, image job is
+    │              push-only, so the COPY and the PYTHONPATH are unexecuted
+    │            ORIGINAL SPRINT NOTE FOLLOWS:
     │            USER-REQUESTED 2026-08-13. The motivation is REVIEWABILITY:
     │            S8.6's diff was 4,354 lines of which 2,711 were docs prose,
     │            so a reviewer spends most of its budget on markdown. With a
