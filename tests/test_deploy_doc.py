@@ -61,7 +61,7 @@ def test_the_refusal_list_here_matches_the_code():
     both tests above passing while the checklist silently stopped being
     sufficient -- which is the exact failure they exist to prevent.
     """
-    source = (ROOT / "app" / "core" / "boot.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "app" / "core" / "boot.py").read_text(encoding="utf-8")
     read = {
         m for m in re.findall(r"settings\.([a-z_][a-z0-9_]*)", source)
         if m in Settings.model_fields

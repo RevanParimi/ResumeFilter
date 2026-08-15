@@ -41,12 +41,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["src/app"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-pythonpath = ["."]
+# S8.7: "src" for the package. "." STAYS and is load-bearing --
+# tests/test_report_data_migration.py imports scripts.migrate_reports_into_main_db.
+# Resolving here rather than requiring an install keeps CI's existing
+# `pip install -r requirements.txt && pytest -q` working with no new step.
+pythonpath = [".", "src"]
 
 [tool.uv]
 # uv resolves from the [project] table above; dev deps via: uv sync --extra dev

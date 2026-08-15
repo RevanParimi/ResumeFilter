@@ -246,7 +246,12 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     # is what served the rejected v1 design and a paste screenshot to anyone who
     # asked, and what filed every UI load as `__unmatched__`. Appending the
     # route directly is the only way to supply a Mount subclass.
-    _ui_dir = Path(__file__).resolve().parents[1] / "frontend"
+    # S8.7: parents[1] -> parents[2], because the package moved to src/app/.
+    # <repo>/src/app/main.py -> parents[2] = <repo>; /srv/app/src/app/main.py ->
+    # /srv/app. The `is_dir()` below means a WRONG depth does not raise -- it
+    # silently skips the mount and every UI page 404s. tests/test_ui_mount.py is
+    # what turns that into a red test.
+    _ui_dir = Path(__file__).resolve().parents[2] / "frontend"
     if _ui_dir.is_dir():
         app.routes.append(
             _LabelledMount(

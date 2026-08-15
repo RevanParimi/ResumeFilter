@@ -32,13 +32,20 @@ _IMPORT = re.compile(
 
 
 def _modules_on_disk() -> set[str]:
-    """Every `app/**/models.py` that actually declares a table."""
+    """Every `src/app/**/models.py` that actually declares a table.
+
+    S8.7: the base for BOTH the glob and the dotted name is `src/`, not the
+    repository root. Only the first is obvious -- leaving `relative_to(ROOT)`
+    in place yields `src.app.rights.models`, which matches nothing in either
+    import list, so every module reads as missing.
+    """
     out: set[str] = set()
-    for path in (ROOT / "app").rglob("models.py"):
+    src = ROOT / "src"
+    for path in (src / "app").rglob("models.py"):
         text = path.read_text(encoding="utf-8")
         if "__tablename__" not in text:
             continue
-        rel = path.relative_to(ROOT).with_suffix("")
+        rel = path.relative_to(src).with_suffix("")
         out.add(".".join(rel.parts))
     return out
 
