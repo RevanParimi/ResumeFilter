@@ -10,14 +10,20 @@
  * (see the session's contract run), not remembered.
  *
  *   1. credentials:"include" on EVERY call, including GETs. The session is a
- *      cookie and the UI is on a different origin; without it nothing
- *      authenticates and the failure looks like a mysterious 401.
+ *      cookie; without it nothing authenticates and the failure looks like a
+ *      mysterious 401. S8.6 made the shipped UI same-origin, where
+ *      "same-origin" would also suffice -- "include" STAYS because ?api= still
+ *      points this client at another origin on demand, and a credentials mode
+ *      that is correct only for the default deployment is a bug waiting for
+ *      the first person who uses the override.
  *   2. X-CSRF-Token on every unsafe method, read from the dee_csrf cookie AT
  *      CALL TIME. Not cached at login: a re-login rotates it, and a stale token
  *      fails closed with a 403 that looks like an auth bug.
  *   3. 401 means the session died — expired (12h), idle (2h), revoked, or the
- *      account was erased. Redirect to login; NEVER retry. There is no rate
- *      limiting server-side yet (S8.3), so a retry loop is not caught anywhere.
+ *      account was erased. Redirect to login; NEVER retry. S8.3 shipped the
+ *      server-side limiter this once said was missing, so a retry loop is now
+ *      caught — by locking the user out of the login endpoint they are being
+ *      redirected to. The rule got MORE important, not less.
  *   4. 403 has two unrelated meanings and the UI must fork on them. Both detail
  *      strings are measured:
  *        "missing or invalid CSRF token"          -> app/api/routes.py
@@ -29,7 +35,17 @@
 (function (global) {
   "use strict";
 
-  var DEFAULT_BASE = "http://localhost:8000";
+  /* S8.6: the UI is served BY the API at /ui (same origin), so the default is
+   * the page's own origin -- "" makes every call relative. The ?api= and
+   * localStorage overrides and their precedence are UNCHANGED: they exist so a
+   * base URL is never invisible, and a UI loaded from one API that silently
+   * talked to a different one because of a stale localStorage entry is
+   * precisely the failure that precedence was written about.
+   *
+   * "" is falsy, which is why base() caches on `cachedBase !== null` and not on
+   * truthiness -- with a loose check the default base would re-resolve on every
+   * single call. */
+  var DEFAULT_BASE = "";
   var STORAGE_KEY = "veritas_api_base";
   var CSRF_COOKIE = "dee_csrf";
   var SAFE = { GET: 1, HEAD: 1, OPTIONS: 1 };
@@ -150,13 +166,24 @@
       .fetch(base() + path, init)
       .catch(function (netErr) {
         // A CORS rejection and a dead server are indistinguishable here by
-        // design (the browser withholds the detail), so say both.
+        // design (the browser withholds the detail), so say both -- but only
+        // when CORS can actually be the cause. S8.6: with the same-origin
+        // default base() is "", which would have printed "the API at ." and
+        // sent the reader hunting through DEE_CORS_ALLOWED_ORIGINS for a
+        // variable that is irrelevant to a same-origin call. An error message
+        // that misnames the cause costs more than one that says less.
+        var target = base();
+        var where = target || "this page's own origin";
+        var hint = target
+          ? " Check it is running and that this origin is in DEE_CORS_ALLOWED_ORIGINS."
+          : " Check the server is running.";
         throw ApiError(
           0,
           "Could not reach the API at " +
-            base() +
-            ". Check it is running and that this origin is in " +
-            "DEE_CORS_ALLOWED_ORIGINS. (" +
+            where +
+            "." +
+            hint +
+            " (" +
             (netErr && netErr.message ? netErr.message : "network error") +
             ")",
           "network"

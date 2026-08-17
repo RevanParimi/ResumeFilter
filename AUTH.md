@@ -79,9 +79,16 @@ non-null. Not a polymorphic `subject_type`+`subject_id`: a polymorphic id
 | `dee_session` | **yes** | XSS must not be able to read the session token |
 | `dee_csrf` | **no** | the browser client has to read it to echo `X-CSRF-Token` |
 
-`Secure` + `SameSite=None` in any deployed environment, because the UI is
-separately hosted and every request is cross-site. `false` is for localhost
-only, and **prod refuses to boot with it**.
+`Secure` + `SameSite=Lax` in any deployed environment (S8.6). The UI is served
+by this API at `/ui`, so requests are same-origin and `None` is no longer
+required; `none` stays a permitted value for a separately-hosted UI. **`Secure`
+is required either way** — the cookie crosses the public internet — so `false`
+is for localhost only and **prod refuses to boot with it**.
+
+**CSRF is kept even though Lax already blocks cross-site POST.** Lax is a
+browser-side control, and the server must not make the client's correctness its
+only defence. `tests/test_cookie_posture.py` pins that reasoning, because "Lax
+makes CSRF redundant" is exactly the argument that would delete this layer.
 
 **The CSRF exemption keys on `Principal.via`, never on "was a header present".**
 Otherwise a browser carrying a session cookie plus an attacker-supplied

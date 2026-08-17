@@ -157,29 +157,16 @@ docker run -p 8000:8000 --env-file .env -v dee_data:/srv/app/data depth-eval-eng
 
 ## Deploy
 
-The image is **deploy-ready and not yet deployed** — the public deploy waits
-until the UI exists and is integrated (PI-8 sequencing, decided 2026-08-01).
-`railway.json` is committed so the deploy itself is one command when that time
-comes.
+The image is **deploy-ready and not yet deployed**, on purpose: there are zero
+customers, and the user decides when that changes. `railway.json` is committed
+so the deploy itself is one command when it does.
 
-Required environment (secrets never go in `config.yaml`):
-
-| Variable | Value |
-|---|---|
-| `DEE_API_AUTH_KEY` | generated per environment, e.g. `openssl rand -hex 32`. **Never reuse a smoke or test key.** |
-| `DEE_CANDIDATES_DB_URL` | `postgresql+psycopg://…` — Postgres, not SQLite (the app refuses `prod` on SQLite) |
-| `DEE_ENV` | `prod` |
-| `DEE_LOG_JSON` | `true` |
-| `DEE_VECTORSTORE_BACKEND` | `memory` unless a Chroma volume is mounted — its `PersistentClient` can hang on some hosts, and grounding is best-effort |
+**See [`DEPLOY.md`](DEPLOY.md)** — the go-live checklist. All eight boot
+refusals with the variable that satisfies each, every `DEE_` variable, the
+proxy setting that looks like an attack when it is wrong, and **the retention
+cron, which nothing else schedules**.
 
 The container migrates itself on boot; no separate migration step is needed.
-
-**One-time, only for a deployment that predates S8.1** and still has a
-`data/reports.db`:
-
-```bash
-python scripts/migrate_reports_into_main_db.py --old-db ./data/reports.db
-```
 
 It imports reports and outcomes into the main database, and reports-and-drops
 any report whose candidate was already erased — those are orphans the old

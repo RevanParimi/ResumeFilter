@@ -12,12 +12,16 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match, Mount
+from starlette.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.routes import (
@@ -47,6 +51,102 @@ def _iter_api_routes(routes):
             yield route
 
 
+#: FastAPI's own documentation surface, plus "/" itself. Excluded from the
+#: advertised list because they describe the API rather than being part of it,
+#: and a caller reading this list is already at "/".
+_UNADVERTISED_PATHS = frozenset(
+    {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json", "/"}
+)
+
+
+def _advertised_endpoints(app: FastAPI) -> list[str]:
+    """The `endpoints` field of ``GET /``, DERIVED from the live route table.
+
+    This field was hand-maintained for eight PIs and was carried as a known
+    drift through S8.3 Phase A, Phase B and S8.5 -- each time correctly,
+    because typing the missing entries in would make an unmaintained list look
+    maintained. The real fix, named in the note this replaces, is derivation.
+
+    Mounts are excluded, and for free: ``_iter_api_routes`` yields only
+    APIRoutes, and a static UI directory is not an API entry point. HEAD and
+    OPTIONS are excluded because Starlette adds them to every GET -- keeping
+    them would triple the list with entries no caller writes by hand, and a
+    list that reads as noise is what would push the next person back to a
+    literal. The admin plane is INCLUDED: it always was, and hiding it would be
+    obscurity on a plane that is already credential-gated, while making the
+    list wrong again.
+    """
+    seen: set[str] = set()
+    for route in _iter_api_routes(app.routes):
+        if route.path in _UNADVERTISED_PATHS:
+            continue
+        for method in route.methods or ():
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            seen.add(f"{method} {route.path}")
+    return sorted(seen, key=lambda e: (e.split(" ", 1)[1], e))
+
+
+#: Every TOP-LEVEL name under `frontend/` the `/ui` mount may expose. An
+#: ALLOWLIST, because the first attempt at this was a denylist of one file
+#: extension and three files walked past it -- the rejected v1 design document,
+#: a design-tool thumbnail and a 659KB paste screenshot, all answering 200.
+#:
+#: Two of those three are GITIGNORED, which is the point: `StaticFiles` reads
+#: the filesystem, so git's opinion of a file has no bearing on whether it is
+#: public. `_ds` is a vendored third-party design-system bundle and goes in
+#: whole -- its readmes describe the bundle, not veritas, and editing a
+#: vendored tree to satisfy our own rule buys nothing.
+UI_ASSETS = frozenset({"api.js", "support.js", "Veritas.dc.html", "_ds"})
+
+
+class _AllowlistedStaticFiles(StaticFiles):
+    """``StaticFiles`` that serves only :data:`UI_ASSETS`.
+
+    The refusal belongs HERE rather than in a test over the directory, because
+    the directory is not what answers requests: anything dropped into
+    `frontend/` after the last test run is served immediately, which is how the
+    thumbnail and the screenshot got out. A test can only observe that; the
+    mount can prevent it.
+
+    Matched on the FIRST path segment so `_ds/` and any future asset directory
+    work without listing every file, and so a traversal attempt cannot smuggle
+    an allowed name into a later segment. Starlette normalises and confines the
+    path before this runs -- that defence is still its job, not ours.
+    """
+
+    async def get_response(self, path: str, scope):
+        # Starlette builds `path` with os.path.join, so it is backslashed on
+        # Windows and forward-slashed elsewhere; normalise before splitting or
+        # this allows everything on one platform and nothing on the other.
+        top = path.replace("\\", "/").split("/", 1)[0]
+        if top not in UI_ASSETS:
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
+class _LabelledMount(Mount):
+    """A ``Mount`` that puts itself in the child scope, so metrics can name it.
+
+    MEASURED on starlette 1.3.1: ``Mount.matches`` returns a child scope of
+    ``app_root_path``, ``endpoint``, ``path_params`` and ``root_path`` -- no
+    ``route``. Only ``Route`` sets that key. So a mounted request arrived at
+    `_route_template` with nothing to label it and collapsed into
+    ``__unmatched__``, the bucket that exists for requests which matched
+    NOTHING, while answering 200.
+
+    Left alone, the highest-volume traffic a deployment has would have been
+    filed as scanner noise, under the series the go-live alerting thresholds
+    get set against.
+    """
+
+    def matches(self, scope):
+        match, child_scope = super().matches(scope)
+        if match is not Match.NONE:
+            child_scope["route"] = self
+        return match, child_scope
+
+
 def _route_template(request: Request) -> str:
     """The matched route's PATH TEMPLATE, or ``__unmatched__``.
 
@@ -59,16 +159,33 @@ def _route_template(request: Request) -> str:
     never executes. Matched requests, 405s and 500s all return early because
     the router sets the route even on a partial match and even when the
     endpoint raises; 404s, redirects and CORS preflights all reach the scan and
-    find nothing, because nothing FULL-matches those. So the fallback was
-    unreachable defensive code, in a repo that treats declared-but-inert
-    machinery as a defect -- which is this very branch's headline finding.
+    find nothing. So the fallback was unreachable defensive code, in a repo that
+    treats declared-but-inert machinery as a defect.
 
-    What replaces it is a test, not a scan:
+    CORRECTED IN REVIEW (S8.6): that paragraph used to explain those cases by
+    saying nothing FULL-matches them, and S8.6 made it false in the same commit
+    that mounted the UI. A `/ui/*` request DOES return ``Match.FULL`` and still
+    arrived here unlabelled, because a Mount sets no ``route`` at all -- a
+    different mechanism with the same symptom. `_LabelledMount` is what fixes
+    it; the reason 404s land in ``__unmatched__`` is simply that no route
+    matched them.
+
+    What replaces the scan is a test, not more code:
     tests/test_metrics.py::test_the_template_label_comes_from_the_request_scope
     fails loudly if a Starlette upgrade ever stops populating the scope, rather
     than letting every label silently degrade to __unmatched__.
+
+    `path_format` before `path` because they are the SAME string for every
+    APIRoute (both come from the declared template) and differ only for a
+    Mount, whose `path` is the bare prefix `/ui` while its `path_format` is
+    `/ui/{path}` -- the bounded, one-series shape every other label here has.
     """
-    return getattr(request.scope.get("route"), "path", None) or "__unmatched__"
+    route = request.scope.get("route")
+    return (
+        getattr(route, "path_format", None)
+        or getattr(route, "path", None)
+        or "__unmatched__"
+    )
 
 
 def create_app(services: Optional[Services] = None) -> FastAPI:
@@ -111,6 +228,31 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     app.include_router(candidate_router)
     app.include_router(public_router)
     app.include_router(auth_router)
+
+    # The UI is served BY THIS API, same origin (S8.6 spec 2). Chosen over a
+    # separate static host because it RETIRES an untested posture rather than
+    # shipping one: config.yaml's SameSite=None had never been exercised by any
+    # check in this repo -- the browser check runs both servers on localhost,
+    # which is cross-ORIGIN but same-SITE, with samesite=lax. This mount is why
+    # the shipped default could then MOVE to lax (tests/test_cookie_posture.py).
+    #
+    # A Mount is NOT an APIRoute: no router dependency applies to it, so this
+    # surface is unauthenticated. That is correct -- the shell has to load
+    # before anyone can log in -- and it is why tests/test_route_table_guard.py
+    # gained MOUNTS in the commit before this one. Widening that set is the
+    # reviewable act, exactly as it is for PUBLIC_PATHS.
+    # REVIEW FIX: an allowlisted StaticFiles, and a Mount that labels itself.
+    # `app.mount()` would build a plain Mount around a plain StaticFiles, which
+    # is what served the rejected v1 design and a paste screenshot to anyone who
+    # asked, and what filed every UI load as `__unmatched__`. Appending the
+    # route directly is the only way to supply a Mount subclass.
+    _ui_dir = Path(__file__).resolve().parents[1] / "frontend"
+    if _ui_dir.is_dir():
+        app.routes.append(
+            _LabelledMount(
+                "/ui", app=_AllowlistedStaticFiles(directory=_ui_dir), name="ui"
+            )
+        )
 
     # CORS (S8.2). Fail-CLOSED: with no configured origin the middleware is not
     # installed at all, so nothing cross-site can reach the API. Never "*" —
@@ -179,74 +321,14 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
 
     @app.get("/", response_model=ServiceInfo)
     async def root() -> ServiceInfo:
-        # A HAND-MAINTAINED HIGHLIGHTS LIST, not the route table, and it has
-        # drifted: none of the org-plane `/screening/*` routes (S8.4 A+B, S8.5,
-        # plus S8.3's `/retry`) appear below, neither does `GET /metrics`, and
-        # neither do any of S8.3 Phase B's SEVEN (`/portal/corrections`,
-        # `/portal/grievances`, `/portal/requests`, `/grievance`,
-        # `/admin/retention/sweep`, `/admin/requests`,
-        # `/admin/requests/{id}/resolve`).
-        # Stated rather than patched, because adding entries would make an
-        # unmaintained list look maintained -- the second hand-maintained list
-        # is always the one that drifts (the S8.2 review's OPEN_PATHS/
-        # PUBLIC_PATHS finding). `GET /openapi.json` is generated from the code
-        # and is the authority; making this field derive from it is the real
-        # fix and belongs with the docs/routes.md idea in ROADMAP.
-        #
-        # The S8.3 review widened this note rather than the list: the previous
-        # wording named only the `/screening/*` gap, so a reader could have
-        # concluded /metrics was covered. A comment that describes drift has to
-        # describe all of it or it becomes the next thing that is out of date --
-        # so Phase B widened it again rather than letting it go stale twice.
-        # (Phase B DID fix two other hand-maintained lists this sprint, the 429
-        # translation and test_ratelimit_wiring's LIMITED tuple. This one is
-        # left alone because the fix is derivation, not typing; the other two
-        # had no such option.)
         return ServiceInfo(**{
             "service": "depth-eval-engine",
             "advisory": True,
             "human_review_required": True,
-            "endpoints": [
-                "POST /evaluate",
-                "POST /candidates",
-                "GET /candidates/{id}",
-                "GET /candidates/{id}/resumes",
-                "GET /candidates/{id}/reports",
-                "DELETE /candidates/{id}",
-                "DELETE /candidates/{id}/resumes/{resume_id}",
-                "POST /candidates/{id}/sources/github",
-                "GET /candidates/{id}/sources",
-                "POST /candidates/{id}/auth-key",
-                "GET /portal/me",
-                "GET /portal/access-log",
-                "GET /portal/consents",
-                "POST /portal/consents",
-                "POST /portal/consents/{id}/revoke",
-                "DELETE /portal/me",
-                "GET /report/{id}",
-                "POST /report/{id}/outcome",
-                "GET /report/{id}/outcomes",
-                "GET /domains",
-                "GET /healthz",
-                "POST /ledger/orgs",
-                "GET /ledger/orgs",
-                "POST /ledger/orgs/{id}/api-key",
-                "DELETE /ledger/orgs/{id}",
-                "POST /ledger/candidates/{id}/consent",
-                "POST /ledger/consent/{id}/revoke",
-                "GET /ledger/candidates/{id}/consent",
-                "POST /ledger/records",
-                "POST /ledger/records/{id}/events",
-                "GET /ledger/candidates/{id}/records",
-                "POST /ledger/coding-rounds",
-                "GET /ledger/candidates/{id}/coding-rounds",
-                "GET /ledger/candidates/{id}/reputation",
-                "POST /ledger/orgs/{id}/reliability",
-                "POST /talent/search",
-                "GET /dashboard/overview",
-                "GET /jobs/{id}/board",
-                "GET /candidates/{id}/card",
-            ],
+            # DERIVED (S8.6). Carried as a known drift through S8.3 Phase A,
+            # Phase B and S8.5 -- see _advertised_endpoints for why patching
+            # the literal was refused three times before it was replaced.
+            "endpoints": _advertised_endpoints(app),
         })
 
     # OpenAPI: give every route the handler's own name as its operation_id.

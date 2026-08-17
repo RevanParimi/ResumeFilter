@@ -21,7 +21,11 @@ accents, Space Grotesk / Manrope / JetBrains Mono, LinkedIn-tight density
 (13px body, 8-10px radii, 30px avatars).
 Full light + dark theming via CSS custom properties on the root wrapper
 (DARK / LIGHT token maps in the logic class) — every surface reads var(--*).
-Previous version kept at `Veritas v1 (Broadsheet).dc.html`.
+Previous version kept at `docs/ui/Veritas v1 (Broadsheet).dc.html`. It moved out
+of `frontend/` in the S8.6 review: that directory is served to the public
+internet at `/ui`, so a rejected design was downloadable by anyone. The mount
+now refuses anything outside `app.main.UI_ASSETS`, but a design archive has no
+business in a runtime asset directory either way.
 
 ## Phase 1 — shell + wedge  ✅ DONE
 1. App shell: nav, org switcher, advisory banner, session/API state.

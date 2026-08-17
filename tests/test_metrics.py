@@ -241,6 +241,37 @@ def test_a_405_is_still_labelled_by_its_template(client, admin_headers):
     assert 'veritas_http_requests_total{method="POST",route="/healthz",status="405"} 1' in text
 
 
+def test_a_static_asset_is_labelled_by_its_MOUNT_not_as_unmatched(
+    client, admin_headers
+):
+    """FOUND IN REVIEW of S8.6, and invisible to every test above.
+
+    `Mount.matches()` returns a child scope carrying only `app_root_path`,
+    `endpoint`, `path_params` and `root_path` -- MEASURED on starlette 1.3.1.
+    Only `Route` sets `route`. So every `/ui/*` request reached
+    `_route_template` with nothing to label it and fell into `__unmatched__`
+    while answering 200.
+
+    That is the wrong bucket in the way that costs something. `__unmatched__`
+    exists to collapse requests that matched NOTHING -- scanner noise and 404s
+    -- into one series, and ROADMAP still lists the go-live alerting thresholds
+    on /metrics as open. The UI is the highest-volume traffic a deployment has
+    (every page load pulls the shell, api.js, support.js and the design
+    bundle), so those thresholds would have been set against a series dominated
+    by ordinary success. Measured before the fix: 572.9ms of 581.6ms total
+    duration sat under `__unmatched__`.
+
+    The label is bounded for the same reason every other label here is:
+    `Mount.path_format` is already `/ui/{path}`, one series no matter how many
+    assets exist.
+    """
+    client.get("/ui/api.js")
+    text = client.get("/metrics", headers=admin_headers).text
+    assert 'route="/ui/{path}"' in text
+    assert 'route="__unmatched__",status="200"' not in text
+    assert "api.js" not in text
+
+
 def test_an_unmatched_path_gets_one_shared_label(client, admin_headers):
     client.get("/no/such/thing/1")
     client.get("/no/such/thing/2")

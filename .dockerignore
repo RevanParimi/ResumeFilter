@@ -1,3 +1,8 @@
+# Build context exclusions. NOTE: this file can cancel a COPY in the Dockerfile
+# -- exclude `frontend/` here and the /ui mount serves 404s from an image that
+# looks correctly built. tests/test_image_contents.py reads BOTH lists and
+# fails if an entry here shadows a COPY there.
+
 .git
 .github
 .venv
@@ -9,6 +14,31 @@ __pycache__
 .chroma
 data/
 .env
+.env.railway
 docs/
 tests/
 *.md
+
+# S8.6 -----------------------------------------------------------------------
+# scripts/ is dev + smoke tooling and does not belong in a runtime image. The
+# one thing in there anyone might want in prod -- the retention sweep -- is not
+# in there: it is `python -m app.retention.sweep`, inside the COPYed package,
+# which is what lets the Railway cron call it (DEPLOY.md).
+scripts/
+
+# A 659KB paste screenshot from the 2026-08-03 UI session. Already gitignored,
+# so it is local-only -- but the /ui mount serves whatever sits in frontend/,
+# so without this line a developer's stray pastes are public on their machine.
+#
+# CORRECTED IN REVIEW: this comment used to claim the directory was fixture
+# input for scripts/check_ui_screening_browser.py. It is not -- that script
+# builds its fixtures in a scratch directory and never reads this one. The
+# claim came from the S8.6 plan and was copied without checking.
+frontend/uploads/
+
+# REVIEW FIX: the design tool's 18KB preview blob. Same argument as the line
+# above, and it was missed for the same reason the `*.md` guard was -- each
+# entry here names one file somebody happened to notice. The mount itself now
+# refuses anything outside app.main.UI_ASSETS, so exposure is closed at the
+# server; these two lines only keep the artefacts out of the IMAGE.
+frontend/.thumbnail

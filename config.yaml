@@ -258,10 +258,11 @@ session_idle_timeout_minutes: 120
 session_token_bytes: 32
 session_last_seen_write_seconds: 60  # throttles a per-request write
 session_cookie_name: "dee_session"
-# SameSite=None is required (the UI is separately hosted) and mandates Secure.
-# false is for localhost ONLY -- prod refuses to boot with it.
+# Secure is required regardless of SameSite: the session cookie travels over
+# the public internet in prod. false is for localhost ONLY -- prod refuses to
+# boot with it.
 session_cookie_secure: true
-session_cookie_samesite: "none"     # none | lax | strict
+session_cookie_samesite: "lax"      # none | lax | strict — S8.6: the UI is same-origin
 csrf_cookie_name: "dee_csrf"
 csrf_token_bytes: 32
 login_otp_length: 6

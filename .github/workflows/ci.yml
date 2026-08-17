@@ -62,3 +62,56 @@ jobs:
       # Every store gets a throwaway schema (tests/conftest.py), so the suite is
       # as isolated on Postgres as it is on in-memory SQLite.
       - run: pytest -q
+
+  # S8.6. NOTHING had ever built this Dockerfile -- not CI, and not the
+  # development machine, which has no docker installed. This job is therefore
+  # the ONLY place the image is proven, and it only runs when something is
+  # pushed. Said out loud rather than assumed away: until a push happens, the
+  # image is unproven and DEPLOY.md says so.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: docker build -t veritas:ci .
+
+      # tests/test_image_contents.py proves the Dockerfile MENTIONS the UI and
+      # that .dockerignore does not cancel it. Only a real build proves the
+      # file arrived -- the two lists can both be right and a stray wildcard
+      # still drop it.
+      - name: the UI shipped
+        run: docker run --rm veritas:ci test -f /srv/app/frontend/api.js
+
+      # The Railway cron's door, in the container it will actually run in, on
+      # the database state it is most likely to meet: none. Before S8.6 this
+      # printed a forty-line traceback; a cron log nobody reads at 3am is the
+      # worst possible place for one.
+      - name: the cron door refuses an unmigrated database (exit 3, no traceback)
+        run: |
+          code=0
+          out=$(docker run --rm \
+                  -e DEE_API_AUTH_KEY=ci-not-a-real-key \
+                  -e DEE_VECTORSTORE_BACKEND=memory \
+                  veritas:ci python -m app.retention.sweep --apply 2>&1) || code=$?
+          echo "$out"
+          test "$code" = "3" || { echo "::error::expected exit 3, got $code"; exit 1; }
+          case "$out" in
+            *Traceback*) echo "::error::a traceback reached the cron log"; exit 1;;
+          esac
+
+      # The cheapest proof that the image holds a working APPLICATION and not
+      # just a working `pip install`: migrate (which imports every model and
+      # needs alembic/ to have shipped), then run the retention CLI in preview,
+      # which imports the whole graph and writes nothing. One container, because
+      # the sqlite file does not survive between two `docker run`s.
+      - name: the app migrates and previews inside the image
+        run: |
+          docker run --rm \
+            -e DEE_API_AUTH_KEY=ci-not-a-real-key \
+            -e DEE_VECTORSTORE_BACKEND=memory \
+            veritas:ci sh -c 'python -c "
+          from app.core.config import get_settings
+          from app.core.migrate import upgrade_to_head
+          upgrade_to_head(get_settings())" >/dev/null && python -m app.retention.sweep' \
+          | tail -1 \
+          | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); assert d['dry_run'] is True, d; print('preview OK')"

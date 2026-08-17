@@ -158,8 +158,9 @@ def main() -> int:
         "DEE_OPENROUTER_API_KEY": "",
         "DEE_API_AUTH_KEY": ADMIN,
         # Capture email, and cookies a plain-HTTP client will actually keep.
-        # Secure+SameSite=None is correct for the deployed UI and wrong for
-        # localhost; prod refuses to BOOT in this configuration.
+        # S8.6: samesite here now MATCHES the shipped default (lax, since the UI
+        # is same-origin); only `secure` still differs, because this smoke talks
+        # plain HTTP to localhost. Prod refuses to BOOT with secure=false.
         "DEE_EMAIL_PROVIDER": "capture",
         "DEE_EMAIL_CAPTURE_PATH": mailbox.as_posix(),
         "DEE_SESSION_COOKIE_SECURE": "false",

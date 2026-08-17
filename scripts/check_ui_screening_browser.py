@@ -17,12 +17,24 @@ Two things it watches that no assertion of mine spells out:
     tells the user in prose that rows hold no names; that has to be true of
     what is rendered, not only of what was fetched.
 
-Both hosts are `localhost` ON PURPOSE. SameSite ignores the PORT, so
-localhost:5174 and localhost:8096 are the same SITE (a Lax cookie is sent) and
-different ORIGINS (CORS still applies) — which is the posture the UI ships in.
-Serving the page from 127.0.0.1 instead would make it cross-site, the cookie
-would be dropped, and everything would 401 for a reason that looks nothing
-like the cause. That trap cost the 2026-08-02 session an afternoon.
+S8.6: THE PAGE IS NOW LOADED FROM THE API ITSELF, at `/ui/Veritas.dc.html`
+with no `?api=`. That is the posture the UI ships in, and this is the only
+check anywhere that exercises it — `frontend/api.js` is outside pytest and
+outside CI, so its same-origin default is proven here or nowhere.
+
+This replaces a second `http.server` on localhost:5174 whose docstring claimed
+*that* was "the posture the UI ships in". It never was, in either direction:
+both hosts were localhost, and SameSite ignores the PORT, so the arrangement
+was cross-ORIGIN but same-SITE — a Lax cookie was sent, CORS applied, and
+`config.yaml`'s shipped `SameSite=None` was exercised by nothing, anywhere.
+S8.6 retired that gap from both ends: the UI is same-origin and the shipped
+default is now `lax`.
+
+The old localhost-vs-127.0.0.1 trap that cost the 2026-08-02 session an
+afternoon is gone with the second server — one origin cannot be cross-site
+with itself — but the hostname still matters for a different reason: uvicorn
+binds `localhost`, so the page must be fetched as `localhost` too, or it is a
+different origin and every call is cross-site again.
 
 Requires Chrome and internet (the dc runtime pulls React from unpkg).
 
@@ -51,10 +63,11 @@ CHROME_CANDIDATES = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ]
 API_PORT = 8096
-UI_PORT = 5174
 CDP_PORT = 9422
-UI_ORIGIN = f"http://localhost:{UI_PORT}"
+#: The UI is served BY the API now (S8.6), so there is one origin and no
+#: separate UI port.
 API_BASE = f"http://localhost:{API_PORT}"
+UI_URL = f"{API_BASE}/ui/Veritas.dc.html"
 ADMIN = "ui-browser-admin-key"
 
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -243,10 +256,31 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
 
     await tab.js("window.__type('input[placeholder*=\\\"intake\\\"]', 'Wipro DE — August intake', 0)")
     await asyncio.sleep(0.2)
+
+    # LATCH the driver's banner before starting it, instead of polling for it.
+    # "Screening from this browser" exists only WHILE work is in flight, and
+    # with three fixture resumes under NullLLM that window is short -- S8.6
+    # made it shorter still, because a same-origin call skips the CORS
+    # preflight round trip. A 0.35s poll missed it once in two runs here, which
+    # is a check that fails at random: worse than a weaker one, because the
+    # next person cannot tell a flake from a regression. The MutationObserver
+    # cannot miss it -- it fires on the render that shows the text.
+    await tab.js("""
+        window.__sawDriver = false;
+        window.__driverWatch = new MutationObserver(() => {
+          if (document.body.innerText.includes('Screening from this browser')) {
+            window.__sawDriver = true;
+          }
+        });
+        window.__driverWatch.observe(document.body, {
+          subtree: true, childList: true, characterData: true,
+        });
+        true
+    """)
     await tab.js("window.__click('button', 'Register batch and start screening')")
 
     # ── 5. The driver runs, in the browser, to completion ───────────────────
-    started = await tab.wait("window.__has('Screening from this browser')", 30, "the driver to start")
+    started = await tab.wait("window.__sawDriver", 30, "the driver to start")
     finished = await tab.wait("window.__has('Nothing left to screen')", 180, "the driver to finish")
     check("the_process_driver_runs_in_the_browser_and_finishes", started and finished,
           f"started={started} finished={finished}")
@@ -457,8 +491,13 @@ async def main() -> int:
         "DEE_API_AUTH_KEY": ADMIN,
         "DEE_EMAIL_PROVIDER": "capture",
         "DEE_EMAIL_CAPTURE_PATH": mailbox.as_posix(),
-        "DEE_CORS_ALLOWED_ORIGINS": json.dumps([UI_ORIGIN]),
+        # No DEE_CORS_ALLOWED_ORIGINS: there is no cross-origin caller left.
+        # Leaving it EMPTY is part of what this check now proves -- CORS is
+        # fail-closed, so if any of these calls were still cross-origin the
+        # browser would block them and the run would fail loudly.
         "DEE_SESSION_COOKIE_SECURE": "false",
+        # The SHIPPED default since S8.6, not a test-only convenience. Set
+        # explicitly anyway, so this file states the posture it is exercising.
         "DEE_SESSION_COOKIE_SAMESITE": "lax",
     })
 
@@ -466,11 +505,6 @@ async def main() -> int:
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "localhost",
          "--port", str(API_PORT)],
         env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
-    static = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(UI_PORT), "--bind", "localhost",
-         "--directory", str(ROOT / "frontend")],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     profile = tempfile.mkdtemp()
     chrome = subprocess.Popen([
@@ -492,7 +526,7 @@ async def main() -> int:
         else:
             print("API never became healthy")
             return 1
-        check("api_and_static_server_are_up", True)
+        check("the_api_is_up_and_is_also_the_ui_host", True)
 
         ws_url, tabs = None, []
         for _ in range(60):
@@ -519,12 +553,14 @@ async def main() -> int:
             await tab.send("Runtime.enable")
             await tab.send("Page.enable")
             await tab.send("DOM.enable")
-            await tab.send("Page.navigate", {
-                "url": f"{UI_ORIGIN}/Veritas.dc.html?api={API_BASE}"})
+            # NO ?api=. The whole point is that api.js's same-origin default
+            # resolves to the page's own origin -- pass the override here and
+            # the default would never be exercised at all.
+            await tab.send("Page.navigate", {"url": UI_URL})
             await asyncio.sleep(2)
             await run(tab, mailbox, files, api)
     finally:
-        for p in (chrome, static, api_proc):
+        for p in (chrome, api_proc):
             p.terminate()
         api.close()
 
