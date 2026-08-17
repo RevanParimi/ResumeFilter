@@ -9,10 +9,14 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-15 (latest) — S8.7 BUILT: `app/` → `src/app/`, a PURE
-  MOVE. 1852 → 1854 passing (the two new guards), ALL TWENTY SMOKES GREEN,
-  bindings 402/402 · contract 31/31 · browser 19/19. On branch
-  `s87-src-layout`, NOT MERGED, NOT PUSHED. Nothing deployed.**
+- **Session 2026-08-15/17 (latest) — S8.7 BUILT AND MERGED: `app/` →
+  `src/app/`, a PURE MOVE. `main` is at `d0d8b56`. 1852 → 1854 passing (the
+  two new guards), ALL TWENTY SMOKES GREEN, bindings 402/402 · contract 31/31
+  · browser 19/19. NOT PUSHED. Nothing deployed.**
+  The suite and the smokes were re-run **ON THE MERGE COMMIT**, and
+  `git diff s87-src-layout HEAD` is empty — `main` never moved while the
+  branch was built, so the merge tree is byte-identical to the tested tip and
+  the evidence above is the merge's, not just the branch's.
   Spec `docs/superpowers/specs/2026-08-15-s87-src-layout-design.md`, plan
   `docs/superpowers/plans/2026-08-15-s87-src-layout.md`.
   **THE OPEN DECISION IS SETTLED: the package KEEPS the name `app`.** The user
@@ -65,9 +69,13 @@
   both **unexecuted**. `tests/test_image_contents.py` proves the Dockerfile and
   `.dockerignore` agree about `src/app`; it does not prove the container
   imports. `DEPLOY.md` §0 now says so.
-  **➤ NEXT STEP: merge `s87-src-layout`, then the only things left in PI-8 are
-  the user-gated go-live (`DEPLOY.md`, including the Railway cron) and the
-  still-owed ULTRA review.**
+  **➤ NEXT STEP: the only things left in PI-8 are the user-gated go-live
+  (`DEPLOY.md`, including the Railway cron for the retention sweep) and the
+  still-owed ULTRA review. After that, PI-9 (calibration harness).**
+  **BRANCH HYGIENE:** `s87-src-layout` merged and deleted. `s84-dev-login-echo`
+  still survives with ONE unmerged commit (a local-only login-code echo), left
+  alone for the same reason as before — merging something that echoes login
+  codes needs a review first. It is again the only branch left.
   **On that review: S8.7 did NOT cost it.** The range `8ae08cb..6f19d32` is
   fixed, so its diff is frozen and commits landing after it cannot disturb it.
   The roadmap's earlier "do S8.7 after the review" caution applies only to a
@@ -2414,7 +2422,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            - CI builds the image for the first time ever (push only)
     │            - SMTPEmail delivered for the first time since it was written
     ├── [x] S8.7  SRC LAYOUT — a standard repository, and NO behaviour change
-    │            BUILT 2026-08-15 on `s87-src-layout`. 1852 -> 1854 passing
+    │            BUILT + MERGED 2026-08-17 at `d0d8b56`. 1852 -> 1854 passing
     │            (the two new guards), 20/20 smokes, bindings 402 · contract
     │            31 · browser 19. NOT merged, NOT pushed, nothing deployed.
     │            The package KEEPS the name `app` (user declined the veritas
