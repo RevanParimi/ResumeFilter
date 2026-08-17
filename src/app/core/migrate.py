@@ -26,7 +26,12 @@ from app.core.logging import get_logger
 
 log = get_logger("migrate")
 
-ROOT = Path(__file__).resolve().parents[2]
+# S8.7: the package moved to src/app/, so this file is one level deeper.
+#   repo:  <repo>/src/app/core/migrate.py  -> parents[3] = <repo>
+#   image: /srv/app/src/app/core/migrate.py -> parents[3] = /srv/app
+# Both hold alembic.ini, because the Dockerfile MIRRORS the repo layout rather
+# than flattening it -- see the COPY line there for why that matters.
+ROOT = Path(__file__).resolve().parents[3]
 
 #: Arbitrary but FIXED -- every process must ask for the same lock.
 _MIGRATION_LOCK_KEY = 81_000_001

@@ -6,7 +6,7 @@ peer of resume extractions. The signal is **advisory evidence** — never a
 score, never a gate, never auto-anything. Depth-eval scoring and verdicts are
 untouched.
 
-S6.1 shipped the reusable `app/profile_sources/` spine plus its first adapter,
+S6.1 shipped the reusable `src/app/profile_sources/` spine plus its first adapter,
 **GitHub**. S6.2 adds the second adapter, **LinkedIn export** — the candidate's
 own "Get a copy of your data" ZIP, uploaded base64 over the API (no network, no
 LLM, no scraping). Both adapters share the same pure `parse → to_signal →
@@ -29,12 +29,12 @@ to_signal(raw, settings, *, fetched_at)  → ProfileSourceSignal   (PURE, no I/O
 ProfileSourceStore.save_signal(...)      → profile_sources row   (CASCADE)
 ```
 
-- **`GitHubClient.gather_user_signal`** (`app/services/github.py`) — fetches
+- **`GitHubClient.gather_user_signal`** (`src/app/services/github.py`) — fetches
   `/users/{login}` + `/users/{login}/repos` (bounded by `ps_github_repo_limit`)
   and per-repo `/languages` for the top `ps_github_language_repos` recent
   non-fork repos. Any failure (404 / rate-limit / network) returns
   `available=False` + a warning — it **never raises**. Public data only.
-- **`to_signal`** (`app/profile_sources/github.py`) — pure transform. Aggregates
+- **`to_signal`** (`src/app/profile_sources/github.py`) — pure transform. Aggregates
   per-language bytes across the candidate's non-fork repos, maps each language to
   the S1.4 skill taxonomy (`normalize_skill`; unknown languages are kept with
   `canonical=None`), and derives a bounded, evidence-monotone confidence
@@ -42,7 +42,7 @@ ProfileSourceStore.save_signal(...)      → profile_sources row   (CASCADE)
   language-fetch window contribute their primary language at
   `PRIMARY_LANGUAGE_NOMINAL_BYTES`. An unavailable raw becomes a
   `method="unavailable"` signal (empty skills, warnings copied).
-- **`ProfileSourceStore`** (`app/profile_sources/store.py`) — append-only on the
+- **`ProfileSourceStore`** (`src/app/profile_sources/store.py`) — append-only on the
   candidates DB (one row per fetch → history for point-in-time later),
   newest-first reads, `latest_for_source`. No delete path: rows CASCADE with the
   candidate.
@@ -81,7 +81,7 @@ ProfileSourceStore.save_signal(...)      → profile_sources row    (CASCADE)
   `POST /candidates/{id}/sources/linkedin` as `{"export_b64": ...}`. There is
   no network call and no LLM anywhere in this path — everything downstream of
   the decode is pure, offline parsing.
-- **`parse_linkedin_export`** (`app/profile_sources/linkedin.py`) — pure,
+- **`parse_linkedin_export`** (`src/app/profile_sources/linkedin.py`) — pure,
   tolerant ZIP/CSV reader. Recognizes `Skills.csv` / `Positions.csv` /
   `Education.csv` / `Profile.csv` / `Certifications.csv` / `Languages.csv` by
   case-insensitive basename (tolerating a nested export directory), accepts
@@ -90,7 +90,7 @@ ProfileSourceStore.save_signal(...)      → profile_sources row    (CASCADE)
   skipped, not the whole section. A non-ZIP payload or a ZIP with none of the
   known CSVs yields `available=False` + a warning rather than raising. Row
   count per CSV is capped by `ps_linkedin_max_rows`.
-- **`to_signal`** (`app/profile_sources/linkedin.py`) — pure transform.
+- **`to_signal`** (`src/app/profile_sources/linkedin.py`) — pure transform.
   Self-reported `Skills.csv` entries are treated as **claims**: each is mapped
   to the S1.4 taxonomy (`normalize_skill`; unknown terms kept with
   `canonical=None`) at a conservative base confidence

@@ -122,7 +122,13 @@ _CALL_SITE = re.compile(r"""(?:increment|add)\(\s*["']([a-z_]+)["']""")
 
 
 def _incremented_names() -> set[str]:
-    root = Path(__file__).resolve().parent.parent / "app"
+    # S8.7: `src/app`, not `app`. This one was absent from the roadmap's
+    # touchpoint list, and it is the dangerous kind of miss: rglob over a
+    # directory that no longer exists yields NOTHING, so the two tests below
+    # pass VACUOUSLY -- the scan stops checking metric names entirely without
+    # ever going red. test_the_call_site_scanner_can_actually_find_something is
+    # the backstop, and it is why this was caught rather than shipped.
+    root = Path(__file__).resolve().parent.parent / "src" / "app"
     return {
         name
         for path in root.rglob("*.py")

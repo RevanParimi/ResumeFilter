@@ -63,9 +63,9 @@ so its reports carry `resume_farm: null`.
 
 ## S2.1 — AI-generated-resume signals (`ai_signals` node)
 
-[app/fabrication/ai_text.py](app/fabrication/ai_text.py) ·
-[app/graph/nodes/ai_signals.py](app/graph/nodes/ai_signals.py) ·
-contracts in [app/schemas/fabrication.py](app/schemas/fabrication.py)
+[app/fabrication/ai_text.py](src/app/fabrication/ai_text.py) ·
+[app/graph/nodes/ai_signals.py](src/app/graph/nodes/ai_signals.py) ·
+contracts in [app/schemas/fabrication.py](src/app/schemas/fabrication.py)
 
 AI-assisted resume *writing* is common and legitimate — the band is
 stylistic context for a reviewer, not an accusation. Four deterministic
@@ -88,7 +88,7 @@ run (non-fired ones count 0.0) and derives confidence from coverage:
 nothing on no key / garbage output. Deterministic and LLM pairs are fused
 confidence-weighted (same math as plausibility's `_fuse`).
 
-**Banding** ([band_for](app/fabrication/ai_text.py)) is where the
+**Banding** ([band_for](src/app/fabrication/ai_text.py)) is where the
 conservatism is structural:
 
 ```
@@ -111,8 +111,8 @@ Config: `ai_likely_threshold`, `ai_possible_threshold`, `ai_min_confidence`,
 
 ## S2.2 — Cross-field forensics (`cross_field` node)
 
-[app/fabrication/cross_field.py](app/fabrication/cross_field.py) ·
-[app/graph/nodes/cross_field.py](app/graph/nodes/cross_field.py)
+[app/fabrication/cross_field.py](src/app/fabrication/cross_field.py) ·
+[app/graph/nodes/cross_field.py](src/app/graph/nodes/cross_field.py)
 
 Checks the extracted `CandidateProfile` against *itself* — pure date and
 structure math, **no LLM by design**. The node uses the profile POST
@@ -154,8 +154,8 @@ reasoning, advisory=true}` → `Report.cross_field`; summary note only on
 
 ## S2.3 — Resume-farm detection (API layer, MinHash)
 
-[app/fabrication/similarity.py](app/fabrication/similarity.py) ·
-[app/candidates/store.py](app/candidates/store.py) (`save_fingerprint`,
+[app/fabrication/similarity.py](src/app/fabrication/similarity.py) ·
+[app/candidates/store.py](src/app/candidates/store.py) (`save_fingerprint`,
 `similar_resumes`) · migration
 [0002_resume_fingerprints](alembic/versions/0002_resume_fingerprints.py)
 
@@ -205,7 +205,7 @@ similar_resumes(fp, exclude_candidate_id, threshold=rf_similar_threshold,
 Linear scan is deliberate at SQLite scale (signatures are small int lists);
 LSH banding is the flagged optimization if the corpus ever outgrows it.
 
-### Banding ([assess_resume_farm](app/fabrication/similarity.py))
+### Banding ([assess_resume_farm](src/app/fabrication/similarity.py))
 
 ```
 text too short to fingerprint                        → INSUFFICIENT_DATA
@@ -243,9 +243,9 @@ legitimate.
 
 ## S2.4 — Unified fabrication_risk (calibration stage)
 
-[app/fabrication/risk.py](app/fabrication/risk.py) ·
-[app/graph/nodes/scoring.py](app/graph/nodes/scoring.py) ·
-contracts in [app/schemas/fabrication.py](app/schemas/fabrication.py)
+[app/fabrication/risk.py](src/app/fabrication/risk.py) ·
+[app/graph/nodes/scoring.py](src/app/graph/nodes/scoring.py) ·
+contracts in [app/schemas/fabrication.py](src/app/schemas/fabrication.py)
 
 Fuses `ai_generation ⊕ cross_field ⊕ resume_farm` into one advisory
 `fabrication_risk` — a single number and band for a reviewer who doesn't
@@ -290,7 +290,7 @@ single subsystem can never assert; it always lands INSUFFICIENT_DATA.**
 That is deliberate: a unified score is only meaningful once it is actually
 uniting more than one signal.
 
-**Banding** ([band_for_risk](app/fabrication/risk.py)):
+**Banding** ([band_for_risk](src/app/fabrication/risk.py)):
 
 ```
 confidence < fr_min_confidence (0.50)                     → INSUFFICIENT_DATA

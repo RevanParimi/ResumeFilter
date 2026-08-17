@@ -317,7 +317,7 @@ the loudest signal**. Rows must be scannable without opening anything.
 > processing is CLIENT-DRIVEN.** `screening_batches` + `batch_items` (S8.4
 > Phase B), so a queue can be named, resumed, summarized and paginated.
 >
-> There is no worker, no scheduler and no `BackgroundTasks` anywhere in `app/` —
+> There is no worker, no scheduler and no `BackgroundTasks` anywhere in `src/app/` —
 > `POST /candidates` awaits the whole nine-node graph inline — so 500 resumes in
 > one request is not physically possible. Upload therefore only *registers*
 > items (a row insert, fast), and a bounded `POST /screening/batches/{id}/process`
@@ -606,7 +606,7 @@ answer is also recorded inline in the section it governs.
 | 2 | Move the wedge path to the org plane, or add equivalents? | **Add** org-plane routes; the admin routes stay as the operator's cross-tenant view. | §2 |
 | 3 | Is a batch a real stored object? | **Yes** — `screening_batches` + `batch_items`. Status is **derived at read time**, never stored. | §4.A |
 | 4 | How much of the depth report does the org see? | **All of it**, including `verdicts[]`, `missing_signals` and `probes[]`. One redaction: `resume_farm.matches[]` loses identity, keeps similarity — applied in a single shared projection. | §4.B |
-| 5 | Ingest feedback — poll, or a status endpoint? | **Both, and the client drives the work.** Upload registers items; a bounded `process` call does a few at a time; the UI polls batch progress. There is no worker anywhere in `app/`. | §4.A |
+| 5 | Ingest feedback — poll, or a status endpoint? | **Both, and the client drives the work.** Upload registers items; a bounded `process` call does a few at a time; the UI polls batch progress. There is no worker anywhere in `src/app/`. | §4.A |
 
 **One consequence worth carrying into design:** Q1 and Q3 together mean the
 screening queue is "my batches", not "the candidate universe" — so an org that

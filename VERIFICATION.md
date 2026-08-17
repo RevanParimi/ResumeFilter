@@ -5,7 +5,7 @@ Design records:
 `docs/superpowers/specs/2026-07-31-s71-identity-verification-design.md` (spine)
 · `docs/superpowers/specs/2026-07-31-s72-document-forensics-design.md` (claims).
 
-`app/verification/` answers **two** questions, and keeps them apart on purpose:
+`src/app/verification/` answers **two** questions, and keeps them apart on purpose:
 
 | Subject | Question | Ladder | Roll-up |
 |---|---|---|---|
@@ -72,7 +72,7 @@ Two further properties fall out of the design:
 
 ## 3. The assurance ladder
 
-A code constant (`app/verification/schema.py`), never a config tunable —
+A code constant (`src/app/verification/schema.py`), never a config tunable —
 changing it is a reviewed schema decision, same stance as `InterviewStage` and
 `ConsentPurpose`.
 
@@ -349,7 +349,7 @@ No LLM and no network. The checks are structural and arithmetic, so the "every
 LLM step needs a deterministic fallback" convention is satisfied by having no
 LLM at all (the S6.2/S6.3 precedent).
 
-`parse_document` decodes base64, reads a PDF via `app/core/pdf.py`
+`parse_document` decodes base64, reads a PDF via `src/app/core/pdf.py`
 (`pdf_b64_to_document`, which unlike the text-only helper keeps metadata) or
 falls back to a UTF-8 text body — a pasted letter is still assessable, and
 refusing it would push candidates toward worse workarounds. It returns text,

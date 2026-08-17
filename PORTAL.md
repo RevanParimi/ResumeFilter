@@ -5,7 +5,7 @@ DPDP data-principal right the platform already had the data for — access,
 transparency, consent control, erasure — was previously reachable only through
 the **admin** plane (an operator acting on the candidate's behalf). S6.4 adds a
 **candidate auth plane** (mirroring the org plane from `LEDGER.md`) and a thin
-`app/portal/` composition layer exposing those rights first-party. No new
+`src/app/portal/` composition layer exposing those rights first-party. No new
 evaluation, no LLM, no scoring: this is data access and consent self-service,
 not a new signal. It changes no verdict, depth, or score.
 
@@ -14,12 +14,12 @@ not a new signal. It changes no verdict, depth, or score.
 A candidate authenticates with a minted key, exactly like an org authenticates
 with `X-Org-Key`:
 
-- **`X-Candidate-Key`** header → `require_candidate` (`app/api/routes.py`)
+- **`X-Candidate-Key`** header → `require_candidate` (`src/app/api/routes.py`)
   resolves it to a `candidate_id` via `CandidateStore.authenticate_candidate`,
   or raises **401**. Unlike the admin `X-API-Key` (optional/shared-secret) and
   like the org plane, this is *always* enforced — the portal is the data
   principal's private surface, not an operator convenience.
-- **`candidate_router`** (`app/api/routes.py`) — a dependency-free `APIRouter`,
+- **`candidate_router`** (`src/app/api/routes.py`) — a dependency-free `APIRouter`,
   a peer of `router` (admin) and `org_router`, included in the app alongside
   them. No route on it accepts the admin key, and no route on it names another
   candidate — every handler takes only `candidate_id: str = Depends(require_candidate)`.
@@ -31,7 +31,7 @@ candidate's behalf:
 
 - **`POST /candidates/{candidate_id}/auth-key`** (admin plane, `X-API-Key`) →
   **200** `{candidate_id, access_key}` · **404** unknown candidate.
-- `CandidateStore.issue_access_key(candidate_id)` (`app/candidates/store.py`)
+- `CandidateStore.issue_access_key(candidate_id)` (`src/app/candidates/store.py`)
   — mints a fresh `secrets.token_urlsafe(candidate_access_key_bytes)` token,
   stores only its **sha256 hash** (`_hash_access_key`, the same approach
   `LedgerStore` uses for org keys) on a `CandidateCredentialRow`, and returns
@@ -217,7 +217,7 @@ never merged. `VERIFICATION.md` §11 explains why that is load-bearing.
 ## Retention posture
 
 `GET /portal/me` surfaces `MyData.retention: RetentionPolicy`
-(`app/portal/schema.py`, `app/portal/retention.py` — pure, no I/O):
+(`src/app/portal/schema.py`, `src/app/portal/retention.py` — pure, no I/O):
 
 - **Every** data class always appears as a `RetentionWindow`, with its
   `ttl_days` (the policy) shown regardless of whether the candidate has data
@@ -238,7 +238,7 @@ never merged. `VERIFICATION.md` §11 explains why that is load-bearing.
   sweep is cheap in isolation but would strand an un-triggered function if
   built now. The mechanical purge job lands with PI-8's scheduler work.
 
-Config knobs (`config.yaml` / `app/core/config.py`), all illustrative
+Config knobs (`config.yaml` / `src/app/core/config.py`), all illustrative
 retention windows — **not enforced deletion** (no sweep this sprint; they
 parametrize the surfaced `retained_until` only):
 
@@ -328,7 +328,7 @@ Added by S7.2 (contracts in `VERIFICATION.md`):
 
 ## Architecture (for reference)
 
-Mirrors `app/dashboard/` (`DASHBOARD.md`): a pure `app/portal/` package that
+Mirrors `src/app/dashboard/` (`DASHBOARD.md`): a pure `src/app/portal/` package that
 owns no tables/state, composing `CandidateStore` + `LedgerStore` +
 `ProfileSourceService` + `ReportStore`:
 
@@ -340,7 +340,7 @@ owns no tables/state, composing `CandidateStore` + `LedgerStore` +
 - **`service.py`** — `PortalService`: `my_data`, `access_log`, `consents`,
   `grant`, `revoke`; `build_portal_service` (cycle-safe builder, the
   S4.3/S5.1/S5.2/S5.3/S6.3 pattern).
-- **`Services.portal`** wired in `app/services/…` (function-local build +
+- **`Services.portal`** wired in `src/app/services/…` (function-local build +
   `TYPE_CHECKING` import), sharing the already-built `candidates`, `ledger`,
   `report_store`, and `profile_sources` instances — no new DB connections.
   Since S7.1 it also receives the `verification` service (built **before** the
@@ -348,7 +348,7 @@ owns no tables/state, composing `CandidateStore` + `LedgerStore` +
   collaborator, used only to populate `MyData.identity` and (since S7.2)
   `MyData.claims`.
 
-Small store additions this sprint (`app/ledger/store.py`, nothing existing
+Small store additions this sprint (`src/app/ledger/store.py`, nothing existing
 changed): `consents_for_candidate(candidate_id)` — all grants for a candidate
 (active + revoked + expired), ordered by `granted_at`, a raw read like
 `records_for_candidate` with no consent gate (it is the candidate's own

@@ -237,7 +237,7 @@ see [FABRICATION.md](FABRICATION.md)).
 
 Inference runs through **OpenRouter** (OpenAI-compatible API), so any model it
 fronts is reachable by id. Models are config-driven (never hardcoded) and chosen
-by tier in [app/services/llm.py](app/services/llm.py):
+by tier in [app/services/llm.py](src/app/services/llm.py):
 
 | Tier | Used by | Default model |
 |------|---------|---------------|
@@ -255,12 +255,12 @@ of them there, or per-deploy via the matching `DEE_MODEL_*` env var (e.g. point
 ## Adding a new domain (the M2 path)
 
 The LangGraph core has **zero** domain-specific logic — all of it lives behind
-the [`DomainModel`](app/domains/base.py) interface.
-[app/domains/data_eng.py](app/domains/data_eng.py) is the proof: the second
+the [`DomainModel`](src/app/domains/base.py) interface.
+[app/domains/data_eng.py](src/app/domains/data_eng.py) is the proof: the second
 domain landed as one module with zero graph changes. To add, say, a cloud-infra
 domain:
 
-1. Create `app/domains/cloud_infra.py`:
+1. Create `src/app/domains/cloud_infra.py`:
 
    ```python
    from app.domains.base import DomainModel, Rule, register_domain
@@ -281,15 +281,15 @@ domain:
        def probe_guidance(self) -> str: ...
    ```
 
-2. Register it by importing it from [app/domains/__init__.py](app/domains/__init__.py).
+2. Register it by importing it from [app/domains/__init__.py](src/app/domains/__init__.py).
 
 3. Call the API with `"domain": "cloud_infra"`. Nothing in the graph changes.
 
 A rule is a small, deterministic coherence check. The shared
-[`SignalRule`](app/domains/rules.py) lets you express one as "which expected
+[`SignalRule`](src/app/domains/rules.py) lets you express one as "which expected
 signals are present, and what's the domain-specific tell?" — see the seed rules
-in [genai.py](app/domains/genai.py) (fine-tuning, RAG, multi-agent) and
-[data_eng.py](app/domains/data_eng.py) (ETL, streaming, warehouse).
+in [genai.py](src/app/domains/genai.py) (fine-tuning, RAG, multi-agent) and
+[data_eng.py](src/app/domains/data_eng.py) (ETL, streaming, warehouse).
 
 ---
 
@@ -319,7 +319,7 @@ the mechanical purge job is not built yet.
 ## Flywheel
 
 Every `(claim → probe → verdict → outcome?)` record is appended to a pluggable
-store ([app/services/flywheel.py](app/services/flywheel.py), JSONL by default)
+store ([app/services/flywheel.py](src/app/services/flywheel.py), JSONL by default)
 with an open `outcome` field. Human reviewers close the loop through
 `POST /report/{id}/outcome`; each judgment lands in both the report store and
 the flywheel (`record_type: "outcome"`), so one stream joins evaluations to
@@ -330,7 +330,7 @@ ground truth for future calibration/training.
 ## Project layout
 
 ```
-app/
+src/app/
   main.py                create_app(): middleware, error handler, lifespan
   api/routes.py          evaluate · candidates (upload/read/DPDP-delete)
                          · report · outcomes · domains · healthz

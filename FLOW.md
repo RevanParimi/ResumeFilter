@@ -26,23 +26,23 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                      │
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  API LAYER          app/main.py  create_app(): request-id middleware,        │
+│  API LAYER          src/app/main.py  create_app(): request-id middleware,        │
 │                     access logs, generic 500s, optional API-key auth         │
-│                     app/api/routes.py → caps, domain pre-check, engine,      │
+│                     src/app/api/routes.py → caps, domain pre-check, engine,      │
 │                     ReportStore persistence, outcome endpoints (advisory)    │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                      │ EvaluationEngine.evaluate(...)
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  ENGINE             app/graph/build.py                                       │
+│  ENGINE             src/app/graph/build.py                                       │
 │   • build_graph(services) → compiled LangGraph (linear)                      │
 │   • holds one Services bundle + the active domain registry                   │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                      │ ainvoke(EvaluationState)
                                      │
-   EvaluationState (app/graph/state.py) ── threaded through every node ──┐
+   EvaluationState (src/app/graph/state.py) ── threaded through every node ──┐
                                      │                                    │
 ┌────────────────────────────────────────────────────────────────────────┼────┐
-│  LANGGRAPH PIPELINE  (app/graph/nodes/*)        each node returns a partial   │
+│  LANGGRAPH PIPELINE  (src/app/graph/nodes/*)        each node returns a partial   │
 │                                                  dict merged into the state    │
 │                                                                                │
 │  ① ingest ──► ⑴ ai_signals ──► ⑵ cross_field ──► ② claim_extraction ──►        │
@@ -85,7 +85,7 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
    get_domain("genai") → rules_for(claim), extraction/plausibility/probe prompts
 
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  CORE (cross-cutting)   app/core/                                             │
+│  CORE (cross-cutting)   src/app/core/                                             │
 │   config.py      env-driven Settings (DEE_*): models, thresholds, paths       │
 │   calibration.py classify() + aggregate_depth()  ← conservative decision math │
 │   logging.py     structlog (JSON/console), routes stdlib deps                 │
@@ -118,7 +118,7 @@ depth-eval-engine/
 ├── README.md                    ← run + add-a-domain guide
 ├── FLOW.md                      ← architecture + node logic + decision factors
 │
-├── app/
+├── src/app/
 │   │
 │   ├── main.py                  ← FastAPI app + lifespan (builds EvaluationEngine once)
 │   │
@@ -278,11 +278,11 @@ the conservative decision lives in exactly one place.
 
 ## 0. Entry
 
-`POST /evaluate` → [routes.py](app/api/routes.py) builds an `EvaluationState`
-([state.py](app/graph/state.py)) and calls `EvaluationEngine.evaluate()`
-([build.py](app/graph/build.py)). The engine `ainvoke`s a compiled LangGraph.
+`POST /evaluate` → [routes.py](src/app/api/routes.py) builds an `EvaluationState`
+([state.py](src/app/graph/state.py)) and calls `EvaluationEngine.evaluate()`
+([build.py](src/app/graph/build.py)). The engine `ainvoke`s a compiled LangGraph.
 
-The graph is a **linear chain** (no branches), wired in [build.py](app/graph/build.py#L34):
+The graph is a **linear chain** (no branches), wired in [build.py](src/app/graph/build.py#L34):
 
 ```
 START → ingest → ai_signals → cross_field → claim_extraction → provenance
@@ -308,7 +308,7 @@ deterministic path. This is why the test suite is fully offline.
 
 ---
 
-## 1. ingest — [ingest.py](app/graph/nodes/ingest.py)
+## 1. ingest — [ingest.py](src/app/graph/nodes/ingest.py)
 
 **In:** `raw_resume_text` *or* `resume_pdf_b64`, plus optional `github_url` / `portfolio_url`.
 **Logic:**
@@ -320,7 +320,7 @@ deterministic path. This is why the test suite is fully offline.
 
 ---
 
-## 1a. ai_signals — [ai_signals.py](app/graph/nodes/ai_signals.py)  *(S2.1, advisory)*
+## 1a. ai_signals — [ai_signals.py](src/app/graph/nodes/ai_signals.py)  *(S2.1, advisory)*
 
 Stylometry over the raw resume text: four deterministic detectors (template
 phrases, uniform bullets, metric saturation, symmetric structure) fused with
@@ -329,7 +329,7 @@ an optional confidence-capped LLM pass on the `parsing` tier. Produces
 Report. **Never touches claims, scores, or bands.** Full detector math,
 banding rules, and config knobs (`ai_*`): [FABRICATION.md](FABRICATION.md).
 
-## 1b. cross_field — [cross_field.py](app/graph/nodes/cross_field.py)  *(S2.2, advisory)*
+## 1b. cross_field — [cross_field.py](src/app/graph/nodes/cross_field.py)  *(S2.2, advisory)*
 
 Deterministic timeline/coherence forensics over the extracted
 `CandidateProfile` — **no LLM**. Uses `state.candidate_profile` when POST
@@ -340,7 +340,7 @@ Deterministic timeline/coherence forensics over the extracted
 
 ---
 
-## 2. claim_extraction — [claim_extraction.py](app/graph/nodes/claim_extraction.py)
+## 2. claim_extraction — [claim_extraction.py](src/app/graph/nodes/claim_extraction.py)
 
 Turns prose into **atomic, typed, checkable claims**.
 
@@ -348,7 +348,7 @@ Turns prose into **atomic, typed, checkable claims**.
 `extraction_guidance()`; expects JSON `{candidate_context, claims:[…]}`. Each claim →
 `{text, claim_type, specificity, external_anchor?}`.
 
-**Fallback path (heuristic, runs if LLM returns nothing):** [_heuristic_extract](app/graph/nodes/claim_extraction.py#L61)
+**Fallback path (heuristic, runs if LLM returns nothing):** [_heuristic_extract](src/app/graph/nodes/claim_extraction.py#L61)
 - Split résumé into lines; drop lines < 12 chars.
 - Strip URLs out of the prose *before* classifying (so `.../rag-bot` in a URL
   doesn't get mistaken for a RAG claim).
@@ -365,7 +365,7 @@ Turns prose into **atomic, typed, checkable claims**.
 
 ---
 
-## 3. provenance — [provenance.py](app/graph/nodes/provenance.py)
+## 3. provenance — [provenance.py](src/app/graph/nodes/provenance.py)
 
 Grounds **only anchored claims** against **first-party** GitHub repos (no scraping).
 
@@ -382,11 +382,11 @@ Grounds **only anchored claims** against **first-party** GitHub repos (no scrapi
 
 ---
 
-## 4. plausibility — THE CORE — [plausibility.py](app/graph/nodes/plausibility.py)
+## 4. plausibility — THE CORE — [plausibility.py](src/app/graph/nodes/plausibility.py)
 
 For **each claim**, fuse two independent signals into one `(coherence, confidence)`.
 
-### (a) Rule registry — deterministic ([genai.py `_SignalRule.evaluate`](app/domains/genai.py#L65))
+### (a) Rule registry — deterministic ([genai.py `_SignalRule.evaluate`](src/app/domains/genai.py#L65))
 For each rule whose `claim_types` match the claim:
 - Build a haystack = claim text + excerpt + context notes + provenance.
 - Each expected **signal category** (e.g. for fine_tuning: `dataset_source_and_size`,
@@ -395,7 +395,7 @@ For each rule whose `claim_types` match the claim:
 - **`coherence = 0.30 + 0.55 * fraction`** → range 0.30 (nothing) … 0.85 (all signals).
 - VAGUE specificity → `coherence -= 0.12`.
 - **Contradiction override ('tell')** via a detector, e.g.
-  [_finetune_contradiction](app/domains/genai.py#L140):
+  [_finetune_contradiction](src/app/domains/genai.py#L140):
   - Claims fine-tuning a **closed model** (gpt-4/claude/gemini) with no open model named →
     `coherence -= 0.35`, force a high-confidence flag.
   - Employer is `services_firm`/`unknown` **and** no compute named (gpu/a100/lora/cluster) →
@@ -412,7 +412,7 @@ For each rule whose `claim_types` match the claim:
 - `confidence` is **capped at 0.85** (`_LLM_MAX_CONFIDENCE`) so one model pass can't dominate.
 - Any error / no key → returns `None` (contributes nothing; rules still drive).
 
-### Fusion — [_fuse](app/graph/nodes/plausibility.py#L27)
+### Fusion — [_fuse](src/app/graph/nodes/plausibility.py#L27)
 Confidence-weighted across all `(coherence, confidence)` pairs (rules + LLM):
 
 ```
@@ -429,7 +429,7 @@ are attached as supporting/contradicting `Evidence` (weight 0.4; "does not exist
 
 ---
 
-## 5. probe_generation — [probe_generation.py](app/graph/nodes/probe_generation.py)
+## 5. probe_generation — [probe_generation.py](src/app/graph/nodes/probe_generation.py)
 
 Only claims with **`coherence_score < flag_coherence_threshold` (default 0.35)** get
 LLM-crafted probes (`reasoning` tier), scoped to that claim's `missing_signals`.
@@ -440,11 +440,11 @@ Coherent claims are skipped (no wasted calls). LLM error → keep the rule-seede
 
 ---
 
-## 6. scoring — [scoring.py](app/graph/nodes/scoring.py) → [calibration.py](app/core/calibration.py)
+## 6. scoring — [scoring.py](src/app/graph/nodes/scoring.py) → [calibration.py](src/app/core/calibration.py)
 
 No new judgment — applies the **conservative classifier** to each verdict.
 
-### Per-claim status — [classify](app/core/calibration.py#L17)
+### Per-claim status — [classify](src/app/core/calibration.py#L17)
 In order:
 1. no evidence → **UNVERIFIED**
 2. `confidence < defer_confidence_threshold` (0.50) → **DEFER** (not sure enough to say anything)
@@ -455,13 +455,13 @@ In order:
 > A claim is flagged **only** when it's clearly incoherent *and* we're confident.
 > Every uncertain case defers to a human. False positives are the existential risk.
 
-### Aggregate — [aggregate_depth](app/core/calibration.py#L43)
+### Aggregate — [aggregate_depth](src/app/core/calibration.py#L43)
 - `depth_score` = confidence-weighted mean of per-claim coherence.
 - `overall_confidence` = mean confidence.
 - If `overall_confidence < 0.50` → band = **INSUFFICIENT_SIGNAL** (don't pretend to rate).
 - Else band by depth: ≥0.80 **DEEP**, ≥0.60 **SOLID**, ≥0.40 **EMERGING**, else **SUPERFICIAL**.
 
-### Unified fabrication risk (S2.4) — [risk.py](app/fabrication/risk.py)
+### Unified fabrication risk (S2.4) — [risk.py](src/app/fabrication/risk.py)
 After the depth aggregate, scoring fuses whatever PI-2 assessments are on the
 state (`ai_generation`, `cross_field`, `resume_farm`) into one advisory
 `fabrication_risk` band — the fusion lives here because this *is* the
@@ -474,7 +474,7 @@ banding in [FABRICATION.md](FABRICATION.md).
 
 ---
 
-## 7. report — [report.py](app/graph/nodes/report.py)
+## 7. report — [report.py](src/app/graph/nodes/report.py)
 
 Assembles the advisory `Report` and feeds the flywheel.
 
@@ -501,7 +501,7 @@ Assembles the advisory `Report` and feeds the flywheel.
 
 ---
 
-## 8. The outcome loop — [report_store.py](app/services/report_store.py) + [routes.py](app/api/routes.py)
+## 8. The outcome loop — [report_store.py](src/app/services/report_store.py) + [routes.py](src/app/api/routes.py)
 
 Reports are persisted in SQLite (`reports` table, full JSON body; WAL). A human
 reviewer closes the loop after the screen/interview:
@@ -520,7 +520,7 @@ POST /screening/reports/{id}/outcome   same body, 404 (never 403) if not yours
 GET  /screening/reports/{id}/outcomes  THIS org's own judgments, oldest first
 ```
 
-Both doors validate through one constructor (`app/reports/outcomes.py`), which
+Both doors validate through one constructor (`src/app/reports/outcomes.py`), which
 owns all three rules — the claim must belong to the report, `notes` must fit
 `max_outcome_notes_chars`, and the record must state its own provenance
 (`recorded_by` ∈ `operator | organization`, plus `org_id` and, when a human
@@ -542,11 +542,11 @@ typed beside a candidate's name has no business in it. The notes stay in
 ## Cross-cutting
 
 - **Domain-agnostic core:** no node imports `genai`. They call `get_domain(state.domain)`
-  ([base.py](app/domains/base.py)) for rules + prompt fragments. New domain = one module
+  ([base.py](src/app/domains/base.py)) for rules + prompt fragments. New domain = one module
   + `@register_domain`, zero graph changes (constraint #1).
-- **Tiered LLM** ([llm.py](app/services/llm.py)): `parsing`→FAST, `reasoning`→REASONING,
+- **Tiered LLM** ([llm.py](src/app/services/llm.py)): `parsing`→FAST, `reasoning`→REASONING,
   `reasoning_hard`→override, `bulk`→BULK. All via OpenRouter (OpenAI-wire-compatible).
-  Resolution is config-driven in [config.py `model_for_tier`](app/core/config.py).
+  Resolution is config-driven in [config.py `model_for_tier`](src/app/core/config.py).
 - **Explainability:** every verdict carries `evidence[]` + `reasoning` + `missing_signals`
   + `probes`. No bare "fake/real" label exists in the schema (constraint #2).
 - **Calibration knobs** are all in `config.yaml` (`flag_*`, `defer_*`) — tune without code.
@@ -555,7 +555,7 @@ typed beside a candidate's name has no business in it. The notes stay in
 
 ## Configuration & Decision Factors
 
-Two layers ([config.py](app/core/config.py)):
+Two layers ([config.py](src/app/core/config.py)):
 - **`config.yaml`** — all non-sensitive tunables (models, thresholds, paths).
   Committed to git, reviewable, keys = field names (no prefix).
 - **`.env`** — secrets ONLY (API keys/tokens), `DEE_`-prefixed, never committed.
@@ -630,12 +630,12 @@ YAML key (env override = `DEE_<KEY>`):
 
 | Constant | Value | Location |
 |---|---|---|
-| Rule coherence base / slope | `0.30 + 0.55·fraction` | [genai.py](app/domains/genai.py#L85) |
-| Vague-specificity penalty | `−0.12` | [genai.py](app/domains/genai.py#L87) |
-| Rule confidence | `0.45 + 0.40·decisiveness` | [genai.py](app/domains/genai.py#L108) |
-| Closed-model 'tell' penalty | `−0.35` (confidence pinned ≥0.85) | [genai.py](app/domains/genai.py#L146) |
-| LLM confidence cap | `0.85` | [plausibility.py](app/graph/nodes/plausibility.py#L24) |
-| Depth bands | DEEP≥0.80, SOLID≥0.60, EMERGING≥0.40, else SUPERFICIAL | [calibration.py](app/core/calibration.py#L63) |
+| Rule coherence base / slope | `0.30 + 0.55·fraction` | [genai.py](src/app/domains/genai.py#L85) |
+| Vague-specificity penalty | `−0.12` | [genai.py](src/app/domains/genai.py#L87) |
+| Rule confidence | `0.45 + 0.40·decisiveness` | [genai.py](src/app/domains/genai.py#L108) |
+| Closed-model 'tell' penalty | `−0.35` (confidence pinned ≥0.85) | [genai.py](src/app/domains/genai.py#L146) |
+| LLM confidence cap | `0.85` | [plausibility.py](src/app/graph/nodes/plausibility.py#L24) |
+| Depth bands | DEEP≥0.80, SOLID≥0.60, EMERGING≥0.40, else SUPERFICIAL | [calibration.py](src/app/core/calibration.py#L63) |
 
 ---
 

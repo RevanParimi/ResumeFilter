@@ -11,12 +11,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# S8.7: the package lives at src/app/ and this image MIRRORS that layout rather
+# than flattening it back to ./app. Flattening was the tempting one-liner --
+# the container keeps its shape and needs no PYTHONPATH at all -- and it would
+# leave app/core/migrate.py's parents[3] resolving to /srv instead of /srv/app,
+# so alembic.ini is not found and migrate-on-boot fails at RUNTIME, after the
+# container has already reported itself started. Same failure class as the
+# frontend/ COPY below. Its own ENV rather than a line in the block above,
+# because a comment inside a continuation is a parser subtlety and nothing on
+# this machine can build a Dockerfile to prove it either way.
+ENV PYTHONPATH=/srv/app/src
+
 WORKDIR /srv/app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app ./app
+COPY src/app ./src/app
 COPY config.yaml .
 # Alembic ships in the image: the app migrates itself on boot (PI-8 blocker 1).
 COPY alembic ./alembic

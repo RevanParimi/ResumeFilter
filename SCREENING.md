@@ -21,7 +21,7 @@ bounded call the client drives.
 
 **Why not evaluate on upload?** Because it is not physically possible.
 Measured, not assumed: there is **no worker, no scheduler and no
-`BackgroundTasks` anywhere in `app/`**, and `POST /candidates` awaits the whole
+`BackgroundTasks` anywhere in `src/app/`**, and `POST /candidates` awaits the whole
 nine-node graph inline. 500 resumes in one request is a request that times out.
 
 **Rejected: a background worker.** It would need a queue, a supervisor and
@@ -98,7 +98,7 @@ support view.
 and the sequence of judgments is precisely what a calibration harness wants to
 look at. Rejected: upsert on (report, claim, org).
 
-**Both doors share one constructor** — `app/reports/outcomes.build_outcome` —
+**Both doors share one constructor** — `src/app/reports/outcomes.build_outcome` —
 which owns all three rules: the claim must belong to the report, `notes` must
 fit `max_outcome_notes_chars` (2000), and the record must state its own
 provenance. A rule enforced at one entry point and forgotten at the second is
@@ -273,7 +273,7 @@ ever written about them, in the database.
 Two decisions that follow from that:
 
 * **The flywheel record carries the label, never the note.**
-  `app/services/flywheel.py` is an append-only JSONL with **no erasure path**,
+  `src/app/services/flywheel.py` is an append-only JSONL with **no erasure path**,
   so free text a human typed beside a candidate's name has no business in it.
   The label is the training signal; the prose never was. Changed at BOTH doors
   in one commit, because fixing the customer's and leaving the operator's is

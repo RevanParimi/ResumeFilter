@@ -13,18 +13,18 @@ ranks, or rejects — it informs a human. No LLM (deterministic arithmetic).
 
 | Concern | Where | Why |
 |---|---|---|
-| The observed-offer **record** | `app/ledger/` (`observed_offers` table, `submit_observed_offer`, `observed_offers_for_comp`, migration `0009`) | Consent-gated, candidate-linked, audited, DPDP-swept — same machinery as interview records / coding rounds. |
-| The comp **intelligence** | `app/comp/` (`schema.py`, `bands.py`, `estimate.py`, `service.py`) | Pure, table-driven math + role resolution. Reads offers *via* `LedgerStore`; owns no tables. |
+| The observed-offer **record** | `src/app/ledger/` (`observed_offers` table, `submit_observed_offer`, `observed_offers_for_comp`, migration `0009`) | Consent-gated, candidate-linked, audited, DPDP-swept — same machinery as interview records / coding rounds. |
+| The comp **intelligence** | `src/app/comp/` (`schema.py`, `bands.py`, `estimate.py`, `service.py`) | Pure, table-driven math + role resolution. Reads offers *via* `LedgerStore`; owns no tables. |
 
-**Layering:** `app/ledger/` never imports `app/comp/`. The comp vocabulary
-(`SeniorityBand`, `ROLE_FAMILIES`, `CITY_TIERS`) lives in `app/comp/schema.py`;
+**Layering:** `src/app/ledger/` never imports `src/app/comp/`. The comp vocabulary
+(`SeniorityBand`, `ROLE_FAMILIES`, `CITY_TIERS`) lives in `src/app/comp/schema.py`;
 `observed_offers` stores `role_family`/`seniority`/`city_tier` as plain strings,
 validated at the API boundary (`routes.py`). `Services.comp` is wired
 import-cycle-safe (TYPE_CHECKING + function-local build, the S4.3/S5.1 pattern).
 
-## The static prior (`app/comp/bands.py`)
+## The static prior (`src/app/comp/bands.py`)
 
-An **illustrative, license-clean seed table** (mirrors `app/candidates/normalize/`
+An **illustrative, license-clean seed table** (mirrors `src/app/candidates/normalize/`
 static tables): per-role metro-mid fixed CTC (INR) scaled by seniority and
 city-tier multipliers, with a spread and a variable fraction. It is **not**
 scraped or licensed — hand-authored, order-of-magnitude priors for the IT launch
@@ -41,7 +41,7 @@ vertical, and is the **deterministic no-observed fallback**.
     `comp_mid_years`/`comp_senior_years`/`comp_lead_years` (2/5/9); overridable.
   - `city_tier`: `location_tiers[0]`; remote/unknown → `metro` baseline.
 
-## The blend (`app/comp/estimate.py`)
+## The blend (`src/app/comp/estimate.py`)
 
 `reputation.py`-style shrinkage toward the prior, **all on a total-CTC basis**
 (observed offers carry total; the static cell's fixed figures are grossed up by

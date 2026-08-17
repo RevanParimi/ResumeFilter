@@ -34,8 +34,11 @@ from app.main import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 
-#: Paths the image must contain no matter what any config says.
-FLOOR = {"app", "config.yaml", "alembic.ini"}
+#: Paths the image must contain no matter what any config says. S8.7 moved the
+#: package, and `src/app` rather than `app` is deliberate: the image mirrors the
+#: repo layout, because a flattened `COPY src/app ./app` puts migrate.py's
+#: parents[3] at /srv instead of /srv/app.
+FLOOR = {"src/app", "config.yaml", "alembic.ini"}
 
 
 def _copied_sources() -> set[str]:

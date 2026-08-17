@@ -7,7 +7,7 @@ about this one candidate, given what they've consented to" — without adding
 any new state, tables, or consent path of its own. Peer of `MATCHING.md` /
 `COMP.md` / `LEDGER.md`.
 
-**API-first, JSON only.** There is no server-rendered UI here — `app/dashboard/`
+**API-first, JSON only.** There is no server-rendered UI here — `src/app/dashboard/`
 is a pure composition layer (`DashboardService`) that assembles already-audited
 reads from `JobStore`, `CompService`, and `LedgerStore` into three render-ready
 contracts. It owns no tables and holds no state.
@@ -127,10 +127,10 @@ the one that raises.
   the org plane never sees first-party contact data, only ledger-derived,
   consent-gated signals and the candidate's own opt-in canonical skills (via
   the match).
-- **No depth `Report` (`app/schemas/report.py`) is ever surfaced.** The
+- **No depth `Report` (`src/app/schemas/report.py`) is ever surfaced.** The
   fabrication-defense depth score is a platform-internal signal
   (`FABRICATION.md`) — it is deliberately absent from `RequisitionBoard` and
-  `CandidateCard`. This is enforced by omission: nothing in `app/dashboard/`
+  `CandidateCard`. This is enforced by omission: nothing in `src/app/dashboard/`
   imports `Report` or reads `ReportStore` directly.
 - **Audit rows, by endpoint:**
   - `overview` writes **no** audit rows — it's a read-only summary derived

@@ -27,7 +27,13 @@ from datetime import datetime
 
 from sqlalchemy import select
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# S8.7: the package moved to src/app/, so the repository root is no longer an
+# importable location -- this now points one level deeper. Under pytest the
+# import resolves through pyproject's `pythonpath` regardless, which is exactly
+# why a stale value here would have gone unnoticed.
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+)
 
 from app.candidates.models import CandidateRow  # noqa: E402
 from app.core.config import get_settings  # noqa: E402

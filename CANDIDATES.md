@@ -11,7 +11,7 @@ the code; file refs are clickable.
 ## Module layout
 
 ```
-app/
+src/app/
 ├── core/
 │   ├── config.py          Settings: contact_hash_salt, candidates_db_url
 │   └── db.py              ★ shared SQLAlchemy foundation (S1.2)
@@ -61,7 +61,7 @@ scripts/
         │
         ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ EXTRACTOR             app/candidates/extractor.py               │
+│ EXTRACTOR             src/app/candidates/extractor.py               │
 │                                                                   │
 │   primary:  LLM (tier "parsing") → JSON profile + verbatim       │
 │             excerpts re-located in the text → character spans     │
@@ -81,7 +81,7 @@ scripts/
                                │   .warnings: list[str]
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ HASHING               app/candidates/hashing.py                 │
+│ HASHING               src/app/candidates/hashing.py                 │
 │   email → lower/strip ─┐                                         │
 │   phone → +91-normal  ─┼→ sha256(salt + ":" + value)             │
 │                        │   salt = contact_hash_salt (config.yaml,│
@@ -91,7 +91,7 @@ scripts/
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│ STORE                 app/candidates/store.py                   │
+│ STORE                 src/app/candidates/store.py                   │
 │   CandidateStore.ingest(result, resume_text)                     │
 │     1. resolve identity by hash (tree below)                     │
 │     2. backfill missing hashes; latest non-empty name wins       │
@@ -225,7 +225,7 @@ erase it on request.
 ## Public surface
 
 ```
-app/candidates/store.py
+src/app/candidates/store.py
 ├── build_candidate_store(settings?) → CandidateStore    # NO create_all —
 │                                                        # schema is Alembic's
 └── CandidateStore(session_factory)
@@ -243,7 +243,7 @@ app/candidates/store.py
                                                   # only, same algo only
 ```
 
-## HTTP surface (S1.3) — [app/api/routes.py](app/api/routes.py)
+## HTTP surface (S1.3) — [app/api/routes.py](src/app/api/routes.py)
 
 | Endpoint | What it does |
 |---|---|

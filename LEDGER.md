@@ -18,7 +18,7 @@ candidates — `candidates_db_url`):
 | `evaluation_events` | append-only detail per record (scores, notes) | CASCADE |
 | `audit_log` | append-only audit of every mutation | candidate-linked rows CASCADE; org-only rows survive |
 
-**Consent model** (`app/ledger/consent.py`, pure):
+**Consent model** (`src/app/ledger/consent.py`, pure):
 - Purpose-scoped: one purpose per grant — `ledger_write` (org may submit
   records) or `ledger_read` (org may query history; enforced in S3.2). Two
   further purposes were added later by the verification spine — see
@@ -33,7 +33,7 @@ candidates — `candidates_db_url`):
 - Erasure trumps everything: `CandidateStore.delete_candidate` cascades away
   grants, records, events, and candidate-linked audit rows.
 
-**Write-time gate** (`app/ledger/store.py`): `submit_interview_record` raises
+**Write-time gate** (`src/app/ledger/store.py`): `submit_interview_record` raises
 `ConsentError` without an active `ledger_write` grant and stamps the record
 with the authorizing `consent_id`. Every mutation writes its `audit_log` row
 in the same transaction. Actor model pre-auth (S3.2 adds org API keys):
@@ -115,7 +115,7 @@ DB/metadata root; CASCADE FKs to `candidates`, `organizations`, `consent_grants`
 **Consent:** reuses `ledger_write` (submit) / `ledger_read` (query) — one consent
 object per candidate, no coding-specific purposes.
 
-**Store** (`app/ledger/store.py`), mirroring interview records:
+**Store** (`src/app/ledger/store.py`), mirroring interview records:
 - `submit_coding_round` — write-consent gated (`ConsentError` → 403), stamps the
   authorizing `consent_id`, audits `coding_round.submit` (actor `org`) in-txn.
 - `query_coding_rounds_for_org` — query-time `ledger_read` enforcement; audits
@@ -144,7 +144,7 @@ A **derived read**, not a new record type — no graph node, no `Report` field,
 no LLM. Standing guarantee holds: it never changes a verdict/depth score and is
 **never a rejection signal**; nothing auto-rejects.
 
-**Model** (`app/ledger/reputation.py`, pure — the `app/fabrication/risk.py`
+**Model** (`src/app/ledger/reputation.py`, pure — the `src/app/fabrication/risk.py`
 pattern): each interview record and each *normalizable* coding round is one
 fractional-success observation in `[0,1]`.
 - Interview outcome → value (code constant, not config): `hired 1.0 · offer 0.9
@@ -170,7 +170,7 @@ per-org identities.
 **Consent:** reuses `ledger_read` — a reputation query is a strictly-less-
 granular read of the same records.
 
-**Store** (`app/ledger/store.py`):
+**Store** (`src/app/ledger/store.py`):
 - `reputation_for_org` — query-time `ledger_read` enforcement; reads the
   candidate's interview records + coding rounds, builds the per-org reliability
   map, aggregates, and audits **every** attempt allowed/denied as
@@ -206,7 +206,7 @@ ranking/search or in the depth `Report`.
 
 ## S7.1 — two purposes added by the verification spine
 
-`ConsentPurpose` (`app/ledger/schema.py`) is the platform-wide consent
+`ConsentPurpose` (`src/app/ledger/schema.py`) is the platform-wide consent
 taxonomy, so PI-7's verification spine extends it here rather than inventing a
 parallel mechanism. The full current vocabulary:
 
@@ -249,9 +249,9 @@ and it stays shut. A test pins the distinction: an org holding
 `verification_read` and nothing else is still refused the interview endpoint
 (`test_a_verification_read_grant_does_not_unlock_interviews`).
 
-**Nothing in `app/ledger/` reads the three purposes added by PI-7.** They are
-enforced in `app/verification/` and (for `interview_read`)
-`app/interview/store.py`, which import the ledger for consent checking and
+**Nothing in `src/app/ledger/` reads the three purposes added by PI-7.** They are
+enforced in `src/app/verification/` and (for `interview_read`)
+`src/app/interview/store.py`, which import the ledger for consent checking and
 audit; the ledger never imports either (the same layering rule S5.2 established
 for comp). `VerificationStore` reuses
 `LedgerStore._grants_for` / `_audit` and `consent.check_consent` /

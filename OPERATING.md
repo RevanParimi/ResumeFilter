@@ -260,7 +260,7 @@ Eight retention windows were **posture only** until S8.3 Phase B: `/portal/me`
 printed them and nothing enforced them. Now they are enforced, and three more
 classes joined them.
 
-**The targets are DERIVED from `app/portal/retention.py`'s `RETENTION_KNOBS`** —
+**The targets are DERIVED from `src/app/portal/retention.py`'s `RETENTION_KNOBS`** —
 the same table the candidate portal prints. A sweeper carrying its own list
 would let the two drift, and the drift is silent in the worst direction: the
 portal keeps promising a window that nothing enforces.
@@ -299,7 +299,7 @@ sweeping a `resumes` row takes its `extractions` row with it, asserted in
 
 ### Running it — there is no scheduler
 
-**Nothing in `app/` runs this on a timer.** If nobody invokes it, nothing is
+**Nothing in `src/app/` runs this on a timer.** If nobody invokes it, nothing is
 deleted. Two doors, one implementation (`run_sweep`):
 
 > **Deploying? `DEPLOY.md` §5 is the cron.** Shipping this service without
