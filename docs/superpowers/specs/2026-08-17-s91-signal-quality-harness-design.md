@@ -162,13 +162,23 @@ Naming every measured signal explicitly, because "the 12 registered features"
 is ambiguous about the counts — several are structural tallies rather than
 scores, and Brier is undefined on anything not constrained to `[0,1]`:
 
+**Corrected against the real field names** (2026-08-17, while planning): an
+earlier draft of this table listed eight signals and treated `ai_generation` and
+`cross_field` as band-only. Both carry a `[0,1]` score of their own —
+`AIGenerationAssessment.likelihood` and `CrossFieldAssessment.score` — so both
+support AUC and Brier, not merely lift. Twelve signals:
+
 | Signal (from the Report body) | Kind | AUC | Brier | Lift | Available today |
 |---|---|---|---|---|---|
 | `fabrication_risk.score` | FRAUD | ✓ | ✓ | — | yes |
 | `fabrication_risk.band` | FRAUD | — | — | ✓ | yes |
+| `ai_generation.likelihood` | FRAUD | ✓ | ✓ | — | yes |
 | `ai_generation.band` | FRAUD | — | — | ✓ | yes |
-| `resume_farm.band` | FRAUD | — | — | ✓ | yes |
+| `cross_field.score` | FRAUD | ✓ | ✓ | — | yes |
+| `cross_field.band` | FRAUD | — | — | ✓ | yes |
 | `cross_field` major-finding count | FRAUD | ✓ | — | ✓ | yes |
+| `resume_farm.score` | FRAUD | ✓ | ✓ | — | yes |
+| `resume_farm.band` | FRAUD | — | — | ✓ | yes |
 | `depth_score` | HIRE | ✓ | ✓ | — | **no** |
 | `depth_band` | HIRE | — | — | ✓ | **no** |
 | `overall_confidence` | HIRE | ✓ | ✓ | — | **no** |
@@ -201,6 +211,21 @@ to infer it from an empty object.
 
 Excluded rows are excluded from `n`, so the §5 sample refusal counts *real*
 labels and not rows.
+
+**Only report-level outcomes count.** `OutcomeRecord.claim_id` is nullable and
+its docstring is explicit: `claim_id=None` means the judgment applies to the
+whole report. Every signal measured here is report-level
+(`fabrication_risk.score` scores a resume, not a claim), so a per-claim outcome
+is a judgment about a *different object* and rows with a non-null `claim_id` are
+excluded. Scoring a whole-report signal against a single claim's verdict is
+§4.1's category error one column over.
+
+**One label per report — the earliest qualifying one.** A report can carry
+several outcomes, including contradictory ones from different orgs. The harness
+takes the earliest qualifying record rather than the best, worst, or most
+recent, for two reasons: it is the judgment made closest to the prediction, and
+it is the only rule that does not change a historical measurement when somebody
+records a new outcome later. `n` counts reports, never rows.
 
 ### 4.3 Operator self-labels are excluded by default
 
