@@ -113,3 +113,35 @@ def calibration_curve(
         observed = sum(1 for _, lab in bucket if lab) / len(bucket)
         out.append((lower, upper, len(bucket), mean_pred, observed))
     return out
+
+
+def lift_by_band(
+    bands: Sequence[str], labels: Sequence[bool]
+) -> list[tuple[str, int, float, Optional[float]]]:
+    """Positive rate per band against the overall base rate.
+
+    Returns ``(band, n, positive_rate, lift)`` ordered by band NAME, not by
+    rate: a stable order is what makes two runs diffable, and the natural
+    ordinal order of a band enum is not knowable here (this module imports
+    nothing from ``app/``).
+
+    ``lift`` is ``None`` when the base rate is 0 -- returning 0.0 would read as
+    "this band underperforms" when the truth is that nothing was positive
+    anywhere.
+    """
+    if len(bands) != len(labels):
+        raise ValueError(f"length mismatch: {len(bands)} bands, {len(labels)} labels")
+    if not bands:
+        raise ValueError("lift_by_band requires at least one observation")
+
+    base = sum(1 for x in labels if x) / len(labels)
+    grouped: dict[str, list[bool]] = {}
+    for band, lab in zip(bands, labels):
+        grouped.setdefault(band, []).append(lab)
+
+    out: list[tuple[str, int, float, Optional[float]]] = []
+    for band in sorted(grouped):
+        members = grouped[band]
+        rate = sum(1 for x in members if x) / len(members)
+        out.append((band, len(members), rate, (rate / base) if base > 0 else None))
+    return out

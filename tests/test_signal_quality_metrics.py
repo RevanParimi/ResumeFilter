@@ -6,6 +6,7 @@ from app.signal_quality.metrics import (
     average_ranks,
     brier,
     calibration_curve,
+    lift_by_band,
 )
 
 
@@ -98,3 +99,31 @@ def test_score_of_exactly_one_lands_in_the_last_bin():
     sample is worse than a wrong one."""
     curve = calibration_curve([1.0], [True], bins=4)
     assert [b[2] for b in curve] == [0, 0, 0, 1]
+
+
+def test_lift_is_band_rate_over_base_rate():
+    """4 samples, 2 positive -> base rate 0.5.
+    'high': 2 samples both positive -> rate 1.0, lift 2.0
+    'low':  2 samples none positive -> rate 0.0, lift 0.0"""
+    rows = lift_by_band(
+        ["high", "high", "low", "low"], [True, True, False, False]
+    )
+    assert rows == [("high", 2, 1.0, 2.0), ("low", 2, 0.0, 0.0)]
+
+
+def test_bands_are_ordered_by_name_for_stable_output():
+    rows = lift_by_band(["z", "a"], [True, False])
+    assert [r[0] for r in rows] == ["a", "z"]
+
+
+def test_lift_is_none_when_the_base_rate_is_zero():
+    """Division by zero has no useful answer here, and 0.0 would read as
+    'this band underperforms' when nothing was positive anywhere."""
+    rows = lift_by_band(["a", "b"], [False, False])
+    assert [r[3] for r in rows] == [None, None]
+    assert [r[2] for r in rows] == [0.0, 0.0]
+
+
+def test_lift_refuses_mismatched_lengths():
+    with pytest.raises(ValueError):
+        lift_by_band(["a"], [True, False])
