@@ -101,6 +101,15 @@ def test_score_of_exactly_one_lands_in_the_last_bin():
     assert [b[2] for b in curve] == [0, 0, 0, 1]
 
 
+def test_exact_tenths_land_in_the_right_bin_at_the_default_width():
+    """bins=4 has an exact binary width and hides this. bins=10 does not:
+    0.3/0.1 is 2.9999999999999996, so int() of it lands a tenth one bin low.
+    This test pins the fix: use int(s * bins) not int(s / width)."""
+    scores = [0.05, 0.3, 0.6, 0.7, 0.95]
+    curve = calibration_curve(scores, [False, True, False, True, True], bins=10)
+    assert [b[2] for b in curve] == [1, 0, 0, 1, 0, 0, 1, 1, 0, 1]
+
+
 def test_lift_is_band_rate_over_base_rate():
     """4 samples, 2 positive -> base rate 0.5.
     'high': 2 samples both positive -> rate 1.0, lift 2.0

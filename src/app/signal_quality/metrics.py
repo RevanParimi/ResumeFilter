@@ -94,10 +94,9 @@ def calibration_curve(
     if bins < 1:
         raise ValueError("bins must be >= 1")
 
-    width = 1.0 / bins
     buckets: list[list[tuple[float, bool]]] = [[] for _ in range(bins)]
     for s, lab in zip(scores, labels):
-        idx = int(s / width)
+        idx = int(s * bins)
         # A score of exactly 1.0 computes to idx == bins. Half-open bins would
         # drop it, and a silently discarded sample is worse than a wrong one.
         idx = min(max(idx, 0), bins - 1)
@@ -105,7 +104,7 @@ def calibration_curve(
 
     out: list[tuple[float, float, int, Optional[float], Optional[float]]] = []
     for i, bucket in enumerate(buckets):
-        lower, upper = i * width, (i + 1) * width
+        lower, upper = i / bins, (i + 1) / bins
         if not bucket:
             out.append((lower, upper, 0, None, None))
             continue
