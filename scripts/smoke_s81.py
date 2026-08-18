@@ -28,10 +28,11 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
+
+from _smoke import base_env, boot_until_exit, uvicorn_argv, wait_healthy
 
 PORT = 8081
 BASE = f"http://127.0.0.1:{PORT}"
@@ -49,47 +50,15 @@ Python, PyTorch, Spark
 """
 
 
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
-
-
-def _base_env(scratch: Path, url: str) -> dict:
-    env = os.environ.copy()
-    env.update({
-        "DEE_CANDIDATES_DB_URL": url,
-        "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
-        # Chroma init can hang on some machines; the smoke stays bounded.
-        "DEE_VECTORSTORE_BACKEND": "memory",
-        # Pinned EMPTY on purpose: this smoke's claim is that the no-key path
-        # works end to end, and a developer with a real key in .env would
-        # otherwise ship live calls from a test run.
-        "DEE_OPENROUTER_API_KEY": "",
-    })
-    return env
-
 
 def _boot_without_admin_key(scratch: Path) -> bool:
     """The boot refusal, seen the way an operator sees it: as an exit code."""
-    env = _base_env(scratch, "sqlite:///" + (scratch / "refuse.db").as_posix())
+    env = base_env(scratch, "sqlite:///" + (scratch / "refuse.db").as_posix())
     env["DEE_API_AUTH_KEY"] = ""
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app",
-         "--host", "127.0.0.1", "--port", str(PORT + 1)],
-        env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    try:
-        out = proc.communicate(timeout=60)[0]
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        return False  # it stayed up: the guard did not fire
-    return proc.returncode != 0 and "DEE_API_AUTH_KEY" in out
+    code, out = boot_until_exit(uvicorn_argv(PORT + 1), env, timeout=60)
+    # `> 0`, not `!= 0`: boot_until_exit reports a process still alive at the
+    # deadline as -1, and a server that STAYED UP is the guard not firing.
+    return code > 0 and "DEE_API_AUTH_KEY" in out
 
 
 def main() -> int:
@@ -100,7 +69,7 @@ def main() -> int:
     )
     print(f"unmigrated scratch DB: {url}")
 
-    env = _base_env(scratch, url)
+    env = base_env(scratch, url)
     env["DEE_API_AUTH_KEY"] = ADMIN
     admin_h = {"X-API-Key": ADMIN}
     checks: dict[str, bool] = {}
@@ -111,7 +80,7 @@ def main() -> int:
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
             # 1. THE blocker-1 check: it migrated its own empty database.
-            checks["boots_and_migrates_from_empty"] = _wait_healthy(c)
+            checks["boots_and_migrates_from_empty"] = wait_healthy(c)
             if not checks["boots_and_migrates_from_empty"]:
                 print("server did not become healthy")
                 return 1

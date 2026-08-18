@@ -9,11 +9,9 @@ Run from the repo root: python scripts/smoke_s44.py
 """
 
 import importlib.util
-import os
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -32,6 +30,8 @@ from app.ledger.schema import ConsentPurpose, InterviewOutcome, InterviewStage
 from app.ledger.store import build_ledger_store
 from app.reports.store import build_report_store
 
+from _smoke import base_env, wait_healthy
+
 PORT = 8044
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -43,15 +43,6 @@ RESUMES = {
 }
 
 
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            time.sleep(0.5)
-    return False
-
 
 def main() -> int:
     scratch = Path(tempfile.mkdtemp())
@@ -62,7 +53,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,
@@ -78,7 +69,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy")
                 return 1
             for tag, text in RESUMES.items():

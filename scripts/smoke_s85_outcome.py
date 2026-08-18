@@ -35,16 +35,19 @@ Run from repo root:   python scripts/smoke_s85_outcome.py
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("smoke_s85_outcome")
 PORT = 8085
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -68,23 +71,7 @@ SKILLS
 Java, Spring, PostgreSQL
 """
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -123,7 +110,7 @@ def main() -> int:
     print(f"scratch DB: {url}")
     print(f"mailbox:    {mailbox}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": flywheel.as_posix(),
@@ -166,8 +153,8 @@ def main() -> int:
 
     try:
         boot = _client()
-        booted = _wait_healthy(boot)
-        check("healthz", booted)
+        booted = wait_healthy(boot)
+        S.check("healthz", booted)
         if not booted:
             print("server did not become healthy")
             return 1
@@ -176,22 +163,22 @@ def main() -> int:
 
         org_a = signup_and_verify("ops@agency-a.example", "Agency A")
         org_b = signup_and_verify("ops@agency-b.example", "Agency B")
-        check("org_a_session", org_a is not None)
-        check("org_b_session", org_b is not None)
+        S.check("org_a_session", org_a is not None)
+        S.check("org_b_session", org_b is not None)
         if org_a is None or org_b is None:
             print("aborting: an org could not onboard")
             return 1
 
         up = org_a.post("/screening/candidates",
                         {"resume_text": GENUINE, "domain": "genai"})
-        check("org_a_upload", up.status_code == 200,
+        S.check("org_a_upload", up.status_code == 200,
               up.text if up.status_code != 200 else "")
         body = up.json()
         report_id, candidate_id = body["report"]["id"], body["candidate_id"]
 
         # 1. Nothing recorded yet -- and that is an empty LIST, not a 404.
         empty = org_a.get(f"/screening/reports/{report_id}/outcomes")
-        check("empty_before_any_judgment",
+        S.check("empty_before_any_judgment",
               empty.status_code == 200 and empty.json()["outcomes"] == [],
               f"{empty.status_code} {empty.text[:120]}")
 
@@ -203,22 +190,22 @@ def main() -> int:
             {"outcome": "verified_fabricated",
              "notes": "the employer had never heard of them"},
         )
-        check("org_records_an_outcome", rec.status_code == 200,
+        S.check("org_records_an_outcome", rec.status_code == 200,
               rec.text if rec.status_code != 200 else "")
 
         listed = org_a.get(f"/screening/reports/{report_id}/outcomes")
         rows = listed.json().get("outcomes", []) if listed.status_code == 200 else []
-        check("org_reads_it_back",
+        S.check("org_reads_it_back",
               len(rows) == 1 and rows[0]["outcome"] == "verified_fabricated",
               f"{listed.status_code} {listed.text[:160]}")
 
         # 3. THE HUMAN. Every unit test in this sprint uses X-Org-Key, which is
         #    a MACHINE credential with no human behind it -- so this is the only
         #    place the org_user attribution is exercised at all.
-        check("a_human_is_attributed",
+        S.check("a_human_is_attributed",
               bool(rows) and bool(rows[0].get("recorded_by_org_user_id")),
               f"recorded_by_org_user_id={rows[0].get('recorded_by_org_user_id') if rows else None}")
-        check("and_the_org_is_too",
+        S.check("and_the_org_is_too",
               bool(rows) and rows[0].get("org_id") == org_a.org_id
               and rows[0].get("recorded_by") == "organization",
               f"org_id={rows[0].get('org_id') if rows else None}")
@@ -228,19 +215,19 @@ def main() -> int:
         if claim_id:
             ok = org_a.post(f"/screening/reports/{report_id}/outcome",
                             {"outcome": "candidate_clarified", "claim_id": claim_id})
-            check("claim_level_outcome", ok.status_code == 200,
+            S.check("claim_level_outcome", ok.status_code == 200,
                   ok.text if ok.status_code != 200 else "")
         else:
-            check("claim_level_outcome", False, "the report carried no verdicts")
+            S.check("claim_level_outcome", False, "the report carried no verdicts")
         bad = org_a.post(f"/screening/reports/{report_id}/outcome",
                          {"outcome": "verified_genuine", "claim_id": "clm_not_there"})
-        check("unknown_claim_422", bad.status_code == 422,
+        S.check("unknown_claim_422", bad.status_code == 422,
               f"got {bad.status_code} {bad.text[:120]}")
 
         # 6. The notes cap, at the customer's door.
         over = org_a.post(f"/screening/reports/{report_id}/outcome",
                           {"outcome": "inconclusive", "notes": "x" * 2001})
-        check("notes_cap_422",
+        S.check("notes_cap_422",
               over.status_code == 422 and "max_outcome_notes_chars" in over.text,
               f"got {over.status_code} {over.text[:120]}")
 
@@ -250,13 +237,13 @@ def main() -> int:
                             {"outcome": "verified_genuine"})
         absent = org_b.post("/screening/reports/no-such-report/outcome",
                             {"outcome": "verified_genuine"})
-        check("cross_org_write_404", theirs.status_code == 404,
+        S.check("cross_org_write_404", theirs.status_code == 404,
               f"got {theirs.status_code}")
-        check("cross_org_write_404_matches_absent",
+        S.check("cross_org_write_404_matches_absent",
               absent.status_code == 404 and theirs.text == absent.text,
               f"theirs={theirs.status_code} absent={absent.status_code}")
         theirs_get = org_b.get(f"/screening/reports/{report_id}/outcomes")
-        check("cross_org_read_404", theirs_get.status_code == 404,
+        S.check("cross_org_read_404", theirs_get.status_code == 404,
               f"got {theirs_get.status_code}")
 
         # 10-11. THE DOWNWARD LEAK, which is the one this route could plausibly
@@ -267,12 +254,12 @@ def main() -> int:
         adm = admin.post(f"/report/{report_id}/outcome",
                          json={"outcome": "inconclusive", "notes": note},
                          headers=ADMIN_H)
-        check("operator_can_still_record", adm.status_code == 200,
+        S.check("operator_can_still_record", adm.status_code == 200,
               adm.text if adm.status_code != 200 else "")
         mine = org_a.get(f"/screening/reports/{report_id}/outcomes").text
         everything = admin.get(f"/report/{report_id}/outcomes",
                                headers=ADMIN_H).json()["outcomes"]
-        check("operator_note_invisible_to_the_customer",
+        S.check("operator_note_invisible_to_the_customer",
               note not in mine and any(note == o["notes"] for o in everything),
               f"customer_sees={len(json.loads(mine)['outcomes'])} operator_sees={len(everything)}")
 
@@ -281,7 +268,7 @@ def main() -> int:
                             json={"resume_text": OTHER, "domain": "genai"},
                             headers=ADMIN_H)
         adm_report = (adm_up.json().get("report") or {}).get("id")
-        check("unowned_report_is_404_for_an_org",
+        S.check("unowned_report_is_404_for_an_org",
               org_a.post(f"/screening/reports/{adm_report}/outcome",
                          {"outcome": "verified_genuine"}).status_code == 404)
 
@@ -292,7 +279,7 @@ def main() -> int:
             for line in flywheel.read_text(encoding="utf-8").splitlines()
             if '"record_type": "outcome"' in line
         ] if flywheel.exists() else []
-        check("flywheel_has_the_label_and_provenance_not_the_note",
+        S.check("flywheel_has_the_label_and_provenance_not_the_note",
               bool(wheel)
               and all("notes" not in r for r in wheel)
               and any(r.get("recorded_by") == "organization" for r in wheel)
@@ -302,10 +289,10 @@ def main() -> int:
         # 14-15. DPDP: erasure destroys the judgment through the real FKs,
         #        with nobody remembering to (outcomes -> reports -> candidates).
         erased = admin.delete(f"/candidates/{candidate_id}", headers=ADMIN_H)
-        check("candidate_erased", erased.status_code in (200, 204),
+        S.check("candidate_erased", erased.status_code in (200, 204),
               f"got {erased.status_code} {erased.text[:120]}")
         gone = admin.get(f"/report/{report_id}/outcomes", headers=ADMIN_H)
-        check("erasure_destroys_the_judgment", gone.status_code == 404,
+        S.check("erasure_destroys_the_judgment", gone.status_code == 404,
               f"got {gone.status_code} {gone.text[:120]}")
     finally:
         proc.terminate()
@@ -316,11 +303,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    failed = [n for n, ok, _ in CHECKS if not ok]
-    print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} OK")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-    return 1 if failed else 0
+    return S.summary()
 
 
 if __name__ == "__main__":

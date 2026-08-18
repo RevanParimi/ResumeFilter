@@ -30,8 +30,8 @@ What a unit test cannot prove and this does:
 Run from repo root:   python scripts/smoke_s86.py
 """
 
+import contextlib
 import json
-import os
 import re
 import socket
 import subprocess
@@ -43,6 +43,13 @@ from pathlib import Path
 
 import httpx
 
+
+from _smoke import (
+    Smoke, base_env, boot_until_exit, client, uvicorn_argv, wait_healthy,
+)
+
+
+S = Smoke("smoke_s86")
 ROOT = Path(__file__).resolve().parents[1]
 
 #: Distinct from every other smoke's port so two can run at once.
@@ -53,26 +60,7 @@ BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-s86-admin-key"
 ADMIN_H = {"X-API-Key": ADMIN}
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
-
-
-# ── part 1: the eight refusals, as process exits ─────────────────────────────
 
 
 def _prod_env(**over: str) -> dict:
@@ -85,39 +73,21 @@ def _prod_env(**over: str) -> dict:
     the refusal under test, never having opened a socket. That ordering is
     load-bearing for this whole section, so check 1 asserts it directly.
     """
-    env = os.environ.copy()
-    env.update({
-        "DEE_OPENROUTER_API_KEY": "",
-        "DEE_VECTORSTORE_BACKEND": "memory",
+    prod = {
         "DEE_ENV": "prod",
         "DEE_API_AUTH_KEY": ADMIN,
-        "DEE_CANDIDATES_DB_URL": "postgresql+psycopg://u:p@127.0.0.1:1/nope",
         "DEE_SESSION_COOKIE_SECURE": "true",
         "DEE_CORS_ALLOWED_ORIGINS": "[]",
         "DEE_EMAIL_PROVIDER": "smtp",
         "DEE_EMAIL_SMTP_HOST": "127.0.0.1",
         "DEE_RATE_LIMIT_ENABLED": "true",
         "DEE_GRIEVANCE_OFFICER_EMAIL": "dpo@example.com",
-    })
-    env.update(over)
-    return env
-
-
-def _boot(env: dict, timeout: float = 90.0) -> tuple[int, str]:
-    """Start uvicorn, wait for it to DIE, return (exit code, combined output)."""
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app",
-         "--host", "127.0.0.1", "--port", str(REFUSAL_PORT)],
-        cwd=ROOT, env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-    )
-    try:
-        out, _ = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        out, _ = proc.communicate()
-        return -1, out
-    return proc.returncode, out
+    }
+    # merged, not `**prod, **over`: a caller overriding one of these -- which
+    # is the whole point of the REFUSALS table -- is a duplicate keyword and a
+    # TypeError, not an override.
+    prod.update(over)
+    return base_env(None, "postgresql+psycopg://u:p@127.0.0.1:1/nope", **prod)
 
 
 #: One variable flipped per case. A config with TWO faults that exits proves
@@ -153,16 +123,16 @@ def _run_refusal_checks() -> None:
     # "Waiting for application startup" marker -- proof the lifespan RAN, which
     # is where verify_launch_config lives -- and a timeout is the expected
     # outcome rather than an accident.
-    code, out = _boot(_prod_env(), timeout=30.0)
-    check("refusals_run_before_any_db_connection",
+    code, out = boot_until_exit(uvicorn_argv(REFUSAL_PORT), _prod_env(), timeout=30.0, cwd=ROOT)
+    S.check("refusals_run_before_any_db_connection",
           "Waiting for application startup" in out
           and "LaunchConfigError" not in out
           and code != 0,
           detail=f"exit={code} (-1 = hung on the dead DB, which is the point)")
 
     for name, override, needle in REFUSALS:
-        code, out = _boot(_prod_env(**override))
-        check(f"refusal_{name}_exits_the_process",
+        code, out = boot_until_exit(uvicorn_argv(REFUSAL_PORT), _prod_env(**override), cwd=ROOT)
+        S.check(f"refusal_{name}_exits_the_process",
               code != 0 and needle.lower() in out.lower(),
               detail=f"exit={code}")
 
@@ -278,12 +248,13 @@ def main() -> int:
         DEE_EMAIL_FROM="veritas@example.com",
     )
 
-    opened: list[httpx.Client] = []
+    stack = contextlib.ExitStack()
 
     def _client(**kw) -> httpx.Client:
-        c = httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5), **kw)
-        opened.append(c)
-        return c
+        """Closed by the ExitStack, not by a hand-rolled list and a bare
+        `except Exception: pass` -- which swallowed exactly the close errors
+        worth seeing."""
+        return stack.enter_context(client(BASE, **kw))
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)],
@@ -291,8 +262,8 @@ def main() -> int:
     )
     try:
         api = _client(headers=ADMIN_H)
-        booted = _wait_healthy(api)
-        check("healthz", booted)
+        booted = wait_healthy(api)
+        S.check("healthz", booted)
         if not booted:
             print("server did not become healthy")
             return 1
@@ -300,29 +271,29 @@ def main() -> int:
         # A COMPLETE login over a REAL SMTP conversation.
         email = "delivery.test@example.in"
         r = api.post("/auth/candidate/signup", json={"email": email})
-        check("signup_accepted", r.status_code == 202, detail=str(r.status_code))
+        S.check("signup_accepted", r.status_code == 202, detail=str(r.status_code))
 
         for _ in range(60):
             if sink.messages:
                 break
             time.sleep(0.25)
-        check("smtp_sink_received_a_message", bool(sink.messages),
+        S.check("smtp_sink_received_a_message", bool(sink.messages),
               detail=f"{len(sink.messages)} message(s)")
 
         delivered = sink.messages[-1] if sink.messages else ""
         code_match = re.search(r"\b(\d{6})\b", delivered)
-        check("the_delivered_message_contains_a_usable_code",
+        S.check("the_delivered_message_contains_a_usable_code",
               code_match is not None)
         # The envelope is part of the delivery, not decoration: a message that
         # arrives addressed to nobody is not a delivered login code.
-        check("the_delivered_message_is_addressed_to_the_signup",
+        S.check("the_delivered_message_is_addressed_to_the_signup",
               email in delivered and "veritas@example.com" in delivered)
 
         if code_match is not None:
             person = _client()
             r = person.post("/auth/candidate/verify",
                             json={"email": email, "code": code_match.group(1)})
-            check("verify_with_the_delivered_code_establishes_a_session",
+            S.check("verify_with_the_delivered_code_establishes_a_session",
                   r.status_code == 200 and "dee_session" in r.cookies,
                   detail=str(r.status_code))
 
@@ -330,34 +301,34 @@ def main() -> int:
 
         # The UI is served BY THE API, same origin -- the posture that ships.
         r = api.get("/ui/api.js")
-        check("the_ui_is_served_same_origin",
+        S.check("the_ui_is_served_same_origin",
               r.status_code == 200 and "veritas" in r.text[:400].lower(),
               detail=str(r.status_code))
 
         # It must not require a credential: a login page behind a login is
         # unreachable by the person who needs it.
         anon = _client()
-        check("the_ui_needs_no_credential",
+        S.check("the_ui_needs_no_credential",
               anon.get("/ui/api.js").status_code == 200)
 
         # api.js must carry the same-origin DEFAULT into the container, not
         # just into the repo. Task 5 has no pytest coverage at all.
-        check("the_served_api_js_defaults_to_its_own_origin",
+        S.check("the_served_api_js_defaults_to_its_own_origin",
               'var DEFAULT_BASE = "";' in r.text,
               detail="localhost default would break a deployed UI")
 
         # GET / no longer advertises a hand-maintained list (S8.6 section 6).
         listed = " ".join(api.get("/").json()["endpoints"])
-        check("root_advertises_the_screening_surface", "/screening/batches" in listed)
-        check("root_advertises_metrics", "/metrics" in listed)
-        check("root_advertises_the_phase_b_rights_routes",
+        S.check("root_advertises_the_screening_surface", "/screening/batches" in listed)
+        S.check("root_advertises_metrics", "/metrics" in listed)
+        S.check("root_advertises_the_phase_b_rights_routes",
               "/portal/grievances" in listed and "/admin/requests" in listed)
-        check("root_does_not_advertise_the_static_mount", "/ui" not in listed)
+        S.check("root_does_not_advertise_the_static_mount", "/ui" not in listed)
 
         # /metrics is admin-gated and labels by route TEMPLATE.
         m = api.get("/metrics")
-        check("metrics_responds", m.status_code == 200, detail=str(m.status_code))
-        check("metrics_labels_by_route_template",
+        S.check("metrics_responds", m.status_code == 200, detail=str(m.status_code))
+        S.check("metrics_labels_by_route_template",
               "veritas_http_requests_total" in m.text)
 
         # The retention CLI -- the door the Railway cron calls -- against the
@@ -366,11 +337,11 @@ def main() -> int:
             [sys.executable, "-m", "app.retention.sweep"],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=300,
         )
-        check("retention_cli_previews_cleanly", cli.returncode == 0,
+        S.check("retention_cli_previews_cleanly", cli.returncode == 0,
               detail=cli.stderr[-200:])
         if cli.returncode == 0:
             report = json.loads(cli.stdout.strip().splitlines()[-1])
-            check("retention_report_is_the_last_line_and_is_a_dry_run",
+            S.check("retention_report_is_the_last_line_and_is_a_dry_run",
                   report.get("dry_run") is True)
 
         # And the refusal that keeps a cron log readable: a database nothing
@@ -383,7 +354,7 @@ def main() -> int:
             [sys.executable, "-m", "app.retention.sweep", "--apply"],
             cwd=ROOT, env=fresh, capture_output=True, text=True, timeout=300,
         )
-        check("retention_cli_refuses_an_unmigrated_database",
+        S.check("retention_cli_refuses_an_unmigrated_database",
               cold.returncode == 3 and "Traceback" not in cold.stderr,
               detail=f"exit={cold.returncode}")
     finally:
@@ -393,17 +364,9 @@ def main() -> int:
         except Exception:
             pass
         sink.stop()
-        for c in opened:
-            try:
-                c.close()
-            except Exception:
-                pass
+        stack.close()
 
-    failed = [n for n, ok, _ in CHECKS if not ok]
-    print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} OK")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-    return 1 if failed else 0
+    return S.summary()
 
 
 if __name__ == "__main__":

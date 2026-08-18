@@ -8,7 +8,6 @@ without one (heuristic floor + rule-driven eval). Run from the repo root:
     python scripts/smoke_s13.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -18,6 +17,8 @@ from pathlib import Path
 import httpx
 from alembic import command
 from alembic.config import Config
+
+from _smoke import base_env
 
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8013
@@ -33,7 +34,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update(
         {
             "DEE_API_AUTH_KEY": ADMIN,

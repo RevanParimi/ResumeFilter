@@ -9,7 +9,6 @@ Run from the repo root:
     python scripts/smoke_s24.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -19,6 +18,10 @@ from pathlib import Path
 import httpx
 from alembic import command
 from alembic.config import Config
+
+from _smoke import Smoke, base_env
+
+S = Smoke("smoke_s24")
 
 FARM_A = Path("tests/fixtures/farm_genai_resume_a.txt")
 FARM_B = Path("tests/fixtures/farm_genai_resume_b.txt")
@@ -36,7 +39,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update(
         {
             "DEE_API_AUTH_KEY": ADMIN,
@@ -51,12 +54,6 @@ def main() -> int:
         [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)],
         env=env,
     )
-    checks: list[tuple[str, bool]] = []
-
-    def check(name: str, ok: bool, detail: str = "") -> None:
-        checks.append((name, ok))
-        print(f"{'OK  ' if ok else 'FAIL'} {name}{(' — ' + detail) if detail else ''}")
-
     try:
         with httpx.Client(base_url=BASE, headers={"X-API-Key": ADMIN}, timeout=httpx.Timeout(600, connect=5)) as c:
             for _ in range(60):
@@ -75,31 +72,31 @@ def main() -> int:
 
             first = c.post("/candidates", json={"resume_text": text_a, "domain": "genai"}).json()
             risk_a = (first.get("report") or {}).get("fabrication_risk") or {}
-            check("upload A carries fabrication_risk", bool(risk_a), f"band={risk_a.get('band')}")
+            S.check("upload A carries fabrication_risk", bool(risk_a), f"band={risk_a.get('band')}")
 
             second = c.post("/candidates", json={"resume_text": text_b, "domain": "genai"}).json()
             rep_b = second.get("report") or {}
             risk_b = rep_b.get("fabrication_risk") or {}
             comp_ids = [x.get("id") for x in risk_b.get("components", [])]
-            check(
+            S.check(
                 "farm copy B fuses to moderate/elevated",
                 risk_b.get("band") in ("moderate", "elevated"),
                 f"band={risk_b.get('band')} score={risk_b.get('score')}",
             )
-            check("farm copy B includes resume_farm component", "resume_farm" in comp_ids, str(comp_ids))
-            check("assessment is advisory", risk_b.get("advisory") is True)
-            check(
+            S.check("farm copy B includes resume_farm component", "resume_farm" in comp_ids, str(comp_ids))
+            S.check("assessment is advisory", risk_b.get("advisory") is True)
+            S.check(
                 "summary carries the fused advisory note",
                 "Unified fabrication risk" in rep_b.get("summary", ""),
             )
-            check(
+            S.check(
                 "report still advisory + human-review",
                 rep_b.get("advisory") is True and rep_b.get("human_review_required") is True,
             )
 
             genuine = c.post("/candidates", json={"resume_text": text_g, "domain": "genai"}).json()
             risk_g = (genuine.get("report") or {}).get("fabrication_risk") or {}
-            check(
+            S.check(
                 "genuine resume fuses low (or insufficient)",
                 risk_g.get("band") in ("low", "insufficient_data"),
                 f"band={risk_g.get('band')}",
@@ -108,9 +105,9 @@ def main() -> int:
             adhoc = c.post("/evaluate", json={"resume_text": text_g, "domain": "genai"}).json()
             risk_e = adhoc.get("fabrication_risk") or {}
             ids_e = [x.get("id") for x in risk_e.get("components", [])]
-            check("POST /evaluate carries fabrication_risk", bool(risk_e), f"band={risk_e.get('band')}")
-            check("POST /evaluate has no resume_farm component", "resume_farm" not in ids_e, str(ids_e))
-            check(
+            S.check("POST /evaluate carries fabrication_risk", bool(risk_e), f"band={risk_e.get('band')}")
+            S.check("POST /evaluate has no resume_farm component", "resume_farm" not in ids_e, str(ids_e))
+            S.check(
                 "report still carries a depth band",
                 (genuine.get("report") or {}).get("depth_band") is not None,
             )
@@ -118,9 +115,7 @@ def main() -> int:
         proc.terminate()
         proc.wait(timeout=30)
 
-    ok = sum(1 for _, x in checks if x)
-    print(f"\n{ok}/{len(checks)} checks OK")
-    return 0 if ok == len(checks) else 1
+    return S.summary()
 
 
 if __name__ == "__main__":

@@ -7,17 +7,17 @@ LLM. Run from repo root: python scripts/smoke_s63.py
 
 import base64
 import io
-import os
 import subprocess
 import sys
 import tempfile
-import time
 import zipfile
 from pathlib import Path
 
 import httpx
 from alembic import command
 from alembic.config import Config
+
+from _smoke import base_env, wait_healthy
 
 PORT = 8063
 BASE = f"http://127.0.0.1:{PORT}"
@@ -33,15 +33,6 @@ def _export_b64() -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            time.sleep(0.5)
-    return False
-
 
 def main() -> int:
     scratch = Path(tempfile.mkdtemp())
@@ -51,7 +42,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),
@@ -73,7 +64,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(60, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy")
                 return 1
 

@@ -34,16 +34,19 @@ Run from repo root:   python scripts/check_ui_screening_contract.py
 
 import base64
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("check_ui_screening_contract")
 PORT = 8095
 BASE = f"http://127.0.0.1:{PORT}"
 UI_ORIGIN = "http://localhost:5173"
@@ -62,12 +65,7 @@ UI_ITEM_INDEX_RE = re.compile(r"^item (\d+):\s*(.*)$")
 # would let the input accept text the API refuses.
 UI_NOTES_MAX = 2000
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
 
 
 def _resume(name: str, email: str) -> str:
@@ -113,16 +111,6 @@ def minimal_pdf_b64(lines: list[str]) -> str:
     )
     return base64.b64encode(bytes(out)).decode()
 
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -175,7 +163,7 @@ def run_checks(mailbox: Path) -> None:
         "Access-Control-Request-Method": "POST",
         "Access-Control-Request-Headers": "content-type,x-csrf-token",
     })
-    check("preflight_allows_the_ui_origin",
+    S.check("preflight_allows_the_ui_origin",
           pre.status_code in (200, 204)
           and pre.headers.get("access-control-allow-origin") == UI_ORIGIN
           and pre.headers.get("access-control-allow-credentials") == "true",
@@ -185,19 +173,19 @@ def run_checks(mailbox: Path) -> None:
     email = "delivery@sampoorna.example"
     signup = b.post("/auth/org/signup", {"email": email, "organization_name": "Sampoorna Staffing"})
     verified = b.post("/auth/org/verify", {"email": email, "code": _code_for(mailbox, email)})
-    check("signup_and_verify_set_both_cookies",
+    S.check("signup_and_verify_set_both_cookies",
           signup.status_code == 202 and verified.status_code == 200
           and bool(b.c.cookies.get("dee_session")) and bool(b.c.cookies.get("dee_csrf")),
           f"signup={signup.status_code} verify={verified.status_code}")
 
     me = b.get("/auth/me")
-    check("auth_me_on_the_cookie_alone",
+    S.check("auth_me_on_the_cookie_alone",
           me.status_code == 200 and me.json()["kind"] == "org",
           f"{me.status_code} {me.text[:80]}")
 
     # ── 3. The first screen a new customer ever sees ────────────────────────
     empty = b.get("/screening/batches")
-    check("a_new_org_sees_an_empty_batch_page_not_an_error",
+    S.check("a_new_org_sees_an_empty_batch_page_not_an_error",
           empty.status_code == 200 and empty.json()["batches"] == []
           and empty.json()["next_cursor"] is None,
           f"{empty.status_code} {empty.text[:80]}")
@@ -207,7 +195,7 @@ def run_checks(mailbox: Path) -> None:
                    {"name": "no csrf", "domain": "genai",
                     "items": [{"resume_text": _resume("Test", "t@example.in")}]},
                    csrf=False)
-    check("a_post_without_the_csrf_header_is_403",
+    S.check("a_post_without_the_csrf_header_is_403",
           naked.status_code == 403 and "csrf" in naked.text.lower(),
           f"{naked.status_code} {naked.text[:90]}")
 
@@ -236,7 +224,7 @@ def run_checks(mailbox: Path) -> None:
     })
     ok_reg = reg.status_code == 200
     batch = reg.json() if ok_reg else {}
-    check("register_accepts_text_and_pdf_and_evaluates_nothing",
+    S.check("register_accepts_text_and_pdf_and_evaluates_nothing",
           ok_reg and batch["counts"]["pending"] == 7 and batch["counts"]["done"] == 0
           and batch["status"] == "pending",
           f"{reg.status_code} {reg.text[:120] if not ok_reg else batch['counts']}")
@@ -257,14 +245,14 @@ def run_checks(mailbox: Path) -> None:
         if not got["remaining"]:
             break
     bounded = all("error" not in c and c["processed"] + c["failed"] <= 5 for c in calls)
-    check("the_process_loop_is_bounded_and_terminates",
+    S.check("the_process_loop_is_bounded_and_terminates",
           bounded and len(calls) >= 2 and calls[0]["remaining"] > 0
           and calls[-1].get("remaining") == 0,
           f"{len(calls)} calls, remaining per call="
           f"{[c.get('remaining') for c in calls]}")
 
     detail = b.get(f"/screening/batches/{bid}").json()
-    check("derived_progress_is_terminal_after_the_loop",
+    S.check("derived_progress_is_terminal_after_the_loop",
           detail["counts"]["pending"] == 0 and detail["counts"]["processing"] == 0
           and detail["status"] == "partial",
           f"counts={detail['counts']} status={detail['status']}")
@@ -273,7 +261,7 @@ def run_checks(mailbox: Path) -> None:
     qres = b.get(f"/screening/batches/{bid}/queue")
     rows = qres.json()["rows"]
     scores = [r["risk_score"] if r["risk_score"] is not None else -1.0 for r in rows]
-    check("queue_rows_are_ranked_and_each_carries_a_reason",
+    S.check("queue_rows_are_ranked_and_each_carries_a_reason",
           scores == sorted(scores, reverse=True) and all(r["reason"] for r in rows),
           f"scores={scores}")
 
@@ -282,10 +270,10 @@ def run_checks(mailbox: Path) -> None:
     leaked = [n for n in ("Priya Nandakumar", "Kavya Iyer", "Arjun Rao",
                           "priya.n@example.in", "kavya.iyer@example.in")
               if n in raw_queue]
-    check("a_queue_row_carries_no_persons_name", not leaked, f"leaked={leaked}")
+    S.check("a_queue_row_carries_no_persons_name", not leaked, f"leaked={leaked}")
 
     failed = [r for r in rows if r["status"] == "failed"]
-    check("a_failed_row_carries_a_code_not_a_verdict",
+    S.check("a_failed_row_carries_a_code_not_a_verdict",
           len(failed) == 1 and failed[0]["error"] == "empty_resume"
           and failed[0]["risk_score"] is None
           and failed[0]["reason"].startswith("could not be screened"),
@@ -295,13 +283,13 @@ def run_checks(mailbox: Path) -> None:
     sres = b.get(f"/screening/batches/{bid}/summary")
     summary = sres.json()
     known = {"ai_generation", "cross_field", "resume_farm"}
-    check("summary_signal_ids_are_the_three_the_ui_can_label",
+    S.check("summary_signal_ids_are_the_three_the_ui_can_label",
           sres.status_code == 200
           and {s["signal"] for s in summary["top_signals"]} <= known
           and summary["n_screened"] == sum(summary["by_risk_band"].values()),
           f"signals={[s['signal'] for s in summary['top_signals']]} "
           f"n_screened={summary['n_screened']} bands={summary['by_risk_band']}")
-    check("the_summary_carries_no_names_or_ids_beyond_its_own_batch",
+    S.check("the_summary_carries_no_names_or_ids_beyond_its_own_batch",
           not any(n in sres.text for n in ("Priya", "Kavya", "Arjun", "can_", "rep_"))
           and summary["batch_id"] == bid,
           "counts and enum members only")
@@ -311,7 +299,7 @@ def run_checks(mailbox: Path) -> None:
     p2 = b.get(f"/screening/batches/{bid}/queue?limit=2&cursor={p1['next_cursor']}").json()
     ids1 = {r["item_id"] for r in p1["rows"]}
     ids2 = {r["item_id"] for r in p2["rows"]}
-    check("cursor_paging_returns_disjoint_pages",
+    S.check("cursor_paging_returns_disjoint_pages",
           len(p1["rows"]) == 2 and bool(p1["next_cursor"]) and ids2 and not (ids1 & ids2),
           f"page1={len(ids1)} page2={len(ids2)} overlap={ids1 & ids2}")
 
@@ -336,7 +324,7 @@ def run_checks(mailbox: Path) -> None:
         label: b.get(f"/screening/batches/{bid}/queue?cursor={value}").status_code
         for label, value in forgeries.items()
     }
-    check("every_forged_cursor_shape_is_422_not_500",
+    S.check("every_forged_cursor_shape_is_422_not_500",
           set(got.values()) == {422}, f"{got}")
 
     # ── 10. The report drill-in ─────────────────────────────────────────────
@@ -344,7 +332,7 @@ def run_checks(mailbox: Path) -> None:
     rep = b.get(f"/screening/reports/{drillable[0]['report_id']}")
     body = rep.json()
     fab = body.get("fabrication_risk") or {}
-    check("report_drill_in_returns_the_full_report",
+    S.check("report_drill_in_returns_the_full_report",
           rep.status_code == 200 and "verdicts" in body and "components" in fab
           and body["advisory"] is True and body["human_review_required"] is True,
           f"{rep.status_code} verdicts={len(body.get('verdicts', []))} "
@@ -352,7 +340,7 @@ def run_checks(mailbox: Path) -> None:
 
     farm = body.get("resume_farm") or {}
     matches = farm.get("matches", [])
-    check("farm_matches_keep_similarity_and_lose_identity",
+    S.check("farm_matches_keep_similarity_and_lose_identity",
           all(m["candidate_id"] is None and m["resume_id"] is None
               and m["similarity"] is not None for m in matches),
           f"{len(matches)} matches, ids present: "
@@ -367,12 +355,12 @@ def run_checks(mailbox: Path) -> None:
         ],
     })
     parsed = UI_ITEM_INDEX_RE.match(str(corrupt.json().get("detail", "")))
-    check("a_corrupt_pdf_names_an_item_index_the_ui_can_translate",
+    S.check("a_corrupt_pdf_names_an_item_index_the_ui_can_translate",
           corrupt.status_code == 422 and parsed is not None and parsed.group(1) == "1",
           f"{corrupt.status_code} detail={corrupt.json().get('detail')!r}")
 
     still_empty = b.get("/screening/batches").json()["batches"]
-    check("a_refused_registration_leaves_nothing_behind",
+    S.check("a_refused_registration_leaves_nothing_behind",
           all(x["name"] != "corrupt" for x in still_empty),
           f"{[x['name'] for x in still_empty]}")
 
@@ -381,7 +369,7 @@ def run_checks(mailbox: Path) -> None:
         "items": [{"resume_text": "x"} for _ in range(501)],
     })
     cap_msg = str(over.json().get("detail", ""))
-    check("an_over_cap_batch_names_the_cap_the_ui_shows_verbatim",
+    S.check("an_over_cap_batch_names_the_cap_the_ui_shows_verbatim",
           over.status_code == 422 and re.search(r"\b\d+\b", cap_msg) is not None
           and "at most" in cap_msg,
           f"{over.status_code} {cap_msg!r}")
@@ -392,7 +380,7 @@ def run_checks(mailbox: Path) -> None:
         "items": [{"resume_text": _resume("Meera S", "meera@example.in")}],
     })
     listing = b.get("/screening/batches").json()["batches"]
-    check("the_batch_list_is_newest_first",
+    S.check("the_batch_list_is_newest_first",
           second.status_code == 200 and listing[0]["id"] == second.json()["id"],
           f"first={listing[0]['name']!r} of {[x['name'] for x in listing]}")
 
@@ -404,7 +392,7 @@ def run_checks(mailbox: Path) -> None:
     theirs = other.get(f"/screening/batches/{bid}")
     theirs_q = other.get(f"/screening/batches/{bid}/queue")
     absent = other.get("/screening/batches/bat_doesnotexist")
-    check("another_orgs_batch_is_404_byte_for_byte_like_absence",
+    S.check("another_orgs_batch_is_404_byte_for_byte_like_absence",
           theirs.status_code == 404 and theirs_q.status_code == 404
           and theirs.text == absent.text,
           f"{theirs.status_code}/{theirs_q.status_code} body_matches={theirs.text == absent.text}")
@@ -418,25 +406,25 @@ def run_checks(mailbox: Path) -> None:
     report_id = drillable[0]["report_id"]
     admin_door = b.post(f"/report/{report_id}/outcome",
                         {"outcome": "verified_genuine"})
-    check("the_operators_outcome_route_is_still_401_from_an_org_session",
+    S.check("the_operators_outcome_route_is_still_401_from_an_org_session",
           admin_door.status_code == 401,
           f"{admin_door.status_code} {admin_door.text[:80]}")
 
     empty = b.get(f"/screening/reports/{report_id}/outcomes")
-    check("an_unjudged_report_lists_an_empty_array_not_a_404",
+    S.check("an_unjudged_report_lists_an_empty_array_not_a_404",
           empty.status_code == 200 and empty.json()["outcomes"] == [],
           f"{empty.status_code} {empty.text[:80]}")
 
     no_csrf = b.post(f"/screening/reports/{report_id}/outcome",
                      {"outcome": "verified_genuine"}, csrf=False)
-    check("recording_an_outcome_needs_csrf",
+    S.check("recording_an_outcome_needs_csrf",
           no_csrf.status_code == 403,
           f"{no_csrf.status_code} {no_csrf.text[:80]}")
 
     rec = b.post(f"/screening/reports/{report_id}/outcome",
                  {"outcome": "verified_fabricated",
                   "notes": "The employer had never heard of them."})
-    check("an_org_session_can_record_an_outcome",
+    S.check("an_org_session_can_record_an_outcome",
           rec.status_code == 200 and rec.json()["outcome"] == "verified_fabricated",
           f"{rec.status_code} {rec.text[:120]}")
 
@@ -444,7 +432,7 @@ def run_checks(mailbox: Path) -> None:
     # blank row rather than an error, which is the failure this exists to catch.
     listed = b.get(f"/screening/reports/{report_id}/outcomes")
     row = (listed.json().get("outcomes") or [{}])[0]
-    check("an_outcome_row_carries_every_field_the_screen_reads",
+    S.check("an_outcome_row_carries_every_field_the_screen_reads",
           listed.status_code == 200
           and all(k in row for k in
                   ("outcome", "notes", "recorded_at", "recorded_by", "claim_id")),
@@ -454,7 +442,7 @@ def run_checks(mailbox: Path) -> None:
     # overwritten, and that sentence has to be true.
     b.post(f"/screening/reports/{report_id}/outcome", {"outcome": "inconclusive"})
     again = b.get(f"/screening/reports/{report_id}/outcomes").json()["outcomes"]
-    check("outcomes_append_rather_than_overwrite",
+    S.check("outcomes_append_rather_than_overwrite",
           [o["outcome"] for o in again]
           == ["verified_fabricated", "inconclusive"],
           f"{[o['outcome'] for o in again]}")
@@ -463,7 +451,7 @@ def run_checks(mailbox: Path) -> None:
     # the courtesy would be trusting itself.
     over = b.post(f"/screening/reports/{report_id}/outcome",
                   {"outcome": "inconclusive", "notes": "x" * (UI_NOTES_MAX + 1)})
-    check("the_notes_cap_the_input_advertises_is_the_one_the_api_enforces",
+    S.check("the_notes_cap_the_input_advertises_is_the_one_the_api_enforces",
           over.status_code == 422 and str(UI_NOTES_MAX) in over.text,
           f"{over.status_code} {over.text[:100]}")
 
@@ -471,7 +459,7 @@ def run_checks(mailbox: Path) -> None:
     no_csrf = b.delete(f"/screening/batches/{bid}", csrf=False)
     gone = b.delete(f"/screening/batches/{bid}")
     after = b.get(f"/screening/batches/{bid}")
-    check("delete_needs_csrf_and_then_really_deletes",
+    S.check("delete_needs_csrf_and_then_really_deletes",
           no_csrf.status_code == 403 and gone.status_code == 200
           and gone.json()["deleted"] is True and after.status_code == 404,
           f"no_csrf={no_csrf.status_code} delete={gone.status_code} after={after.status_code}")
@@ -492,7 +480,7 @@ def main() -> int:
     cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "head")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -517,18 +505,16 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(60, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("server never became healthy")
                 return 1
-        check("healthz", True)
+        S.check("healthz", True)
         run_checks(mailbox)
     finally:
         proc.terminate()
         proc.wait(timeout=15)
 
-    passed = sum(1 for _, ok, _ in CHECKS if ok)
-    print(f"\n{passed}/{len(CHECKS)} OK")
-    return 0 if passed == len(CHECKS) else 1
+    return S.summary()
 
 
 if __name__ == "__main__":

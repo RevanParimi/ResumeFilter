@@ -35,16 +35,19 @@ Run from repo root:   python scripts/smoke_s84b.py
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("smoke_s84b")
 PORT = 8086
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -72,23 +75,7 @@ def _resume(email: str, note: str = "") -> str:
 FARM_A = (FIXTURES / "farm_genai_resume_a.txt").read_text(encoding="utf-8")
 FARM_B = (FIXTURES / "farm_genai_resume_b.txt").read_text(encoding="utf-8")
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -139,7 +126,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
 
     org_a, key_a = onboard("ops@agency-a.example", "Agency A")
     org_b, key_b = onboard("ops@agency-b.example", "Agency B")
-    check("two_orgs_with_their_own_keys", bool(org_a and org_b and key_a != key_b))
+    S.check("two_orgs_with_their_own_keys", bool(org_a and org_b and key_a != key_b))
 
     # ── 2. Registration is evaluation-free ──────────────────────────────────
     before = len(c.get("/candidates", headers=ADMIN_H).json())
@@ -153,10 +140,10 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     })
     batch = reg.json()
     if reg.status_code != 200:
-        check("registration_is_evaluation_free", False, f"{reg.status_code} {reg.text[:200]}")
+        S.check("registration_is_evaluation_free", False, f"{reg.status_code} {reg.text[:200]}")
         return
     after = len(c.get("/candidates", headers=ADMIN_H).json())
-    check("registration_is_evaluation_free",
+    S.check("registration_is_evaluation_free",
           reg.status_code == 200 and batch["counts"]["pending"] == 3
           and batch["status"] == "pending" and after == before,
           f"candidates {before} -> {after}")
@@ -164,7 +151,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
 
     # ── 3. Processing is bounded ────────────────────────────────────────────
     first = c.post(f"/screening/batches/{bid}/process", headers=key_a).json()
-    check("processing_is_bounded_and_resumable",
+    S.check("processing_is_bounded_and_resumable",
           first["processed"] + first["failed"] <= 5 and first["remaining"] >= 0,
           f"processed={first['processed']} failed={first['failed']} "
           f"remaining={first['remaining']}")
@@ -172,7 +159,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
 
     # ── 4. Progress is derived, not stored ──────────────────────────────────
     detail = c.get(f"/screening/batches/{bid}", headers=key_a).json()
-    check("derived_progress_reaches_a_terminal_status",
+    S.check("derived_progress_reaches_a_terminal_status",
           detail["counts"]["pending"] == 0 and detail["counts"]["processing"] == 0
           and detail["status"] == "partial",
           f"counts={detail['counts']} status={detail['status']}")
@@ -181,13 +168,13 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     rows = c.get(f"/screening/batches/{bid}/queue", headers=key_a).json()["rows"]
     failed = [r for r in rows if r["status"] == "failed"]
     done = [r for r in rows if r["status"] == "done"]
-    check("a_failed_item_does_not_stop_the_batch",
+    S.check("a_failed_item_does_not_stop_the_batch",
           len(failed) == 1 and failed[0]["error"] == "empty_resume" and len(done) == 2,
           f"done={len(done)} failed={len(failed)} err={failed[0]['error'] if failed else None}")
 
     # ── 6. The queue is ranked, and every row explains itself ───────────────
     scores = [r["risk_score"] if r["risk_score"] is not None else -1.0 for r in rows]
-    check("queue_is_ranked_riskiest_first_with_reasons",
+    S.check("queue_is_ranked_riskiest_first_with_reasons",
           scores == sorted(scores, reverse=True) and all(r["reason"] for r in rows),
           f"scores={scores}")
 
@@ -206,7 +193,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     _drain(c, key_a, mine["id"])
     farm_page = c.get(f"/screening/batches/{mine['id']}/queue", headers=key_a)
     farm_row = farm_page.json()["rows"][0]
-    check("queue_row_carries_no_match_identities",
+    S.check("queue_row_carries_no_match_identities",
           "matches" not in farm_page.text
           and farm_row["signals"] is not None
           and farm_row["signals"]["farm_corpus_size"] >= 1,
@@ -218,7 +205,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     body = summary.text
     leaks = [k for k in ("candidate_id", "resume_id", "report_id", "reasoning")
              if k in body]
-    check("summary_is_counts_only",
+    S.check("summary_is_counts_only",
           summary.status_code == 200 and not leaks
           and summary.json()["n_screened"] == 2,
           f"leaked={leaks}")
@@ -228,7 +215,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     p2 = c.get(f"/screening/batches/{bid}/queue?cursor={p1['next_cursor']}",
                headers=key_a).json()
     ids = [r["item_id"] for r in p1["rows"] + p2["rows"]]
-    check("cursor_paging_covers_every_row_once",
+    S.check("cursor_paging_covers_every_row_once",
           bool(p1["next_cursor"]) and len(ids) == len(set(ids)) == 3,
           f"ids={len(ids)} unique={len(set(ids))}")
 
@@ -246,7 +233,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
         gone = getattr(c, method)(missing, headers=key_b)
         if got.status_code != 404 or got.text != gone.text:
             mismatched.append(f"{method.upper()} {theirs} -> {got.status_code}")
-    check("cross_org_404_matches_absence", not mismatched, str(mismatched))
+    S.check("cross_org_404_matches_absence", not mismatched, str(mismatched))
 
     # ── 11. A stolen cursor reaches none of the minting org's rows ──────────
     # NOT "returns nothing": org B has a batch of its own by this point, and a
@@ -258,14 +245,14 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     stolen = c.get("/screening/batches?limit=1", headers=key_a).json()["next_cursor"]
     replayed = c.get(f"/screening/batches?cursor={stolen}", headers=key_b).json()
     b_ids = {b["id"] for b in replayed["batches"]}
-    check("a_stolen_cursor_reaches_none_of_the_other_orgs_rows",
+    S.check("a_stolen_cursor_reaches_none_of_the_other_orgs_rows",
           bool(stolen) and not (a_ids & b_ids) and len(a_ids) >= 2,
           f"A owns {len(a_ids)}, B saw {sorted(b_ids)} with A's cursor")
 
     # ── 12. Delete really deletes ───────────────────────────────────────────
     gone = c.delete(f"/screening/batches/{bid}", headers=key_a)
     after_delete = c.get(f"/screening/batches/{bid}", headers=key_a)
-    check("delete_removes_the_batch",
+    S.check("delete_removes_the_batch",
           gone.status_code == 200 and gone.json()["deleted"] is True
           and after_delete.status_code == 404)
 
@@ -276,7 +263,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     pre = c.get(f"/jobs/{req_id}/board", headers=key_a).json()
     run = c.post("/features/materialize", headers=ADMIN_H, json={})
     post = c.get(f"/jobs/{req_id}/board", headers=key_a).json()
-    check("materialization_un_breaks_the_board",
+    S.check("materialization_un_breaks_the_board",
           pre["match"]["reason"] == "no_materialized_candidates"
           and run.status_code == 200 and run.json()["materialized"] >= 1
           and post["match"]["pool_size"] >= 1
@@ -288,7 +275,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     est = c.post("/comp/estimate", headers=key_a, json={
         "title": "Senior Backend Engineer", "years_experience": 7,
     }).json()
-    check("comp_estimate_returns_a_benchmark",
+    S.check("comp_estimate_returns_a_benchmark",
           "estimate" in est and est["requisition_band"] is None
           and est["position"] is None and est["delta_pct"] is None)
 
@@ -296,7 +283,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     dup = c.post("/auth/org/signup",
                  json={"email": "someone@agency-a.example",
                        "organization_name": "AGENCY A"})
-    check("a_case_variant_org_name_is_409_at_signup",
+    S.check("a_case_variant_org_name_is_409_at_signup",
           dup.status_code == 409 and dup.json()["detail"] == "organization_name_taken",
           f"{dup.status_code} {dup.text[:60]}")
 
@@ -314,7 +301,7 @@ def main() -> int:
     cfg.set_main_option("sqlalchemy.url", url)
     command.upgrade(cfg, "head")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -339,18 +326,16 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("server never became healthy")
                 return 1
-            check("healthz", True)
+            S.check("healthz", True)
             run_checks(c, mailbox)
     finally:
         proc.terminate()
         proc.wait(timeout=15)
 
-    passed = sum(1 for _, ok, _ in CHECKS if ok)
-    print(f"\n{passed}/{len(CHECKS)} OK")
-    return 0 if passed == len(CHECKS) else 1
+    return S.summary()
 
 
 if __name__ == "__main__":
