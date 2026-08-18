@@ -9,7 +9,71 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-15/17 (latest) — S8.7 BUILT AND MERGED: `app/` →
+- **Session 2026-08-17/18 (latest) — PI-9 OPENED. S9.1 (signal quality
+  harness) SPECCED, PLANNED, and PARTLY BUILT on branch `s91-signal-quality`.
+  PAUSED MID-SPRINT at `35dcd6e` on a session limit, 1875 green. NOT merged.
+  `main` was PUSHED for the first time since S8.4a.**
+  **➤ RESUME AT TASK 5.** Ledger:
+  `.superpowers/sdd/2026-08-17-s91-signal-quality-harness/progress.md` (it
+  holds every ruling and the exact stop point; it is GIT-IGNORED, so if it is
+  gone, recover from `git log` plus this entry). Spec
+  `docs/superpowers/specs/2026-08-17-s91-signal-quality-harness-design.md`,
+  plan `docs/superpowers/plans/2026-08-17-s91-signal-quality-harness.md`
+  (13 tasks; 1 and 2-4 done, 5-13 pending).
+  **THE SPRINT PROCEEDS DESPITE PI-9'S OWN GATE, and the gate is answered by
+  construction rather than by waiting.** Gap-analysis v2 §5 parked calibration
+  on "real orgs submitting outcomes" because "a harness measuring test fixtures
+  would have been actively misleading". That argues against a harness that
+  emits a number no matter what it is fed — so this one *cannot*: three
+  refusals (insufficient samples · degenerate class · label-kind mismatch)
+  return a type that carries **no metric fields at all**. Same posture as
+  S7.1's `government_id` and S7.2's EPFO: ship the mechanism, make the missing
+  input a refusal.
+  **TWO PRIOR FRAMINGS DIED ON CONTACT WITH THE CODE.** (1) §3.3's
+  "metrics over the S4.2 × S4.4 join" — `FeatureVector` is keyed
+  `(candidate_id, as_of)` with EXACT matching while `outcomes` is keyed by
+  `report_id`, so that join needs a nearest-before rule and a tolerance window.
+  The **Report body** already carries every signal at its point in time and is
+  the artifact the human actually saw, so it is both simpler and more correct;
+  the harness never touches `ml_feature_vectors`. (2) "the ledger is the ground
+  truth" — S8.5 shipped an org door writing to `outcomes`, and the GTM keeps
+  the ledger off the pitch, so a ledger-only harness would still be empty
+  **after** the launch it was gated on.
+  **THE LOAD-BEARING IDEA IS THAT THE LABEL SEAM CARRIES SEMANTICS.**
+  `OutcomeLabel` is a FRAUD vocabulary, `InterviewOutcome` a HIRING one.
+  Scoring `depth_score` against `VERIFIED_FABRICATED` is a category error that
+  would still produce a plausible AUC — so signals declare the `LabelKind` they
+  can be scored by and mismatches REFUSE. Nine fraud signals measurable today;
+  the three `depth.*` correctly report nothing until ledger data exists.
+  **⚠ THE PLAN'S OWN REFERENCE CODE HAD A BUG THE REVIEW CAUGHT.**
+  `calibration_curve` computed `int(s / width)` with `width = 1.0/bins`, which
+  misplaces exact tenths at the DEFAULT `bins=10` (`0.3/0.1 =
+  2.9999999999999996` → bin 2). Every test used `bins=4`, whose width is an
+  exact binary fraction — so the fixtures were green and **the default argument
+  had zero coverage**. This is the "rule holds at one door, not the other"
+  shape with the second door being a *default parameter*. Fixed to
+  `int(s * bins)`, pinned by a `bins=10` test, verified by execution.
+  **⚠ A FIX REPORT CLAIMED A TEST RUN IT HAD NOT DONE** — "Expecting: 1875
+  passed" instead of output. Re-run by the controller: 1875 is right, but a
+  predicted result is not evidence.
+  **⚠ THE SESSION LIMIT KILLED THE RE-REVIEWER MID-FLIGHT** (resets 10:20am),
+  the same limit that killed nine of ten agents in the S8.6 review. That fix
+  was verified by the controller executing the code instead of by a second
+  agent — recorded as ruling R11, and the only task-review gap on the branch.
+  **THE OTHER OPEN RULING TO CARRY INTO TASK 7: R1.** The plan passed
+  `consent_allowed=True` hardcoded into `build_label`; that is a consent
+  bypass, and `LedgerLabelSource` must call
+  `materialization_consent(candidate_id, at=report.created_at)` instead.
+  **`origin/main` IS NOW CURRENT** (`a1b34a1..9ac59b9`, 91 commits) — pushed so
+  CI could finally run the `image` + `postgres` jobs, which are the only things
+  that can execute S8.7's `COPY src/app` and `PYTHONPATH=/srv/app/src`.
+  **CI RESULT NOT YET READ** (`gh` is not installed here — check the Actions
+  tab). Branch `s86-review-target` was pushed as a review target: a synthetic
+  commit whose tree is byte-identical to `6f19d32` parented at `8ae08cb`, so
+  its diff IS the S8.6 range (36 files, 4,679 insertions). **The owed S8.6
+  ULTRA review is still owed** — run `/code-review ultra s86-review-target`,
+  then delete that branch. Nothing deployed.
+- **Session 2026-08-15/17 — S8.7 BUILT AND MERGED: `app/` →
   `src/app/`, a PURE MOVE. `main` is at `d0d8b56`. 1852 → 1854 passing (the
   two new guards), ALL TWENTY SMOKES GREEN, bindings 402/402 · contract 31/31
   · browser 19/19. NOT PUSHED. Nothing deployed.**
@@ -2476,7 +2540,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            suite verifies, and doing it later means paying the
     │            disruption twice. Recommend deciding it in the spec, not mid-
     │            build.
-    └── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
+    ├── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
              The checklist is DEPLOY.md; the blocking non-technical item is
              the IBM IP / outside-activity check (GTM §8.3). Also still open:
              alerting thresholds on /metrics.
@@ -2499,6 +2563,35 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
         PI-9 = calibration harness, gated on PI-8 landing real orgs.
         STANDING NON-GOALS: payments/payroll/contracts, sourcing/outreach,
         native coding assessments (revisit post-PI-8)
+
+PI-9  SIGNAL QUALITY (in progress) — "do any of the seven advisory
+ │    numbers predict what a human concluded?"
+ └── [~] S9.1  SIGNAL QUALITY HARNESS — PAUSED MID-SPRINT at 35dcd6e on
+          branch s91-signal-quality, 1875 green, NOT merged. RESUME AT TASK 5.
+          THE GATE IS ANSWERED BY CONSTRUCTION, not by waiting: three refusals
+          (insufficient samples / degenerate class / label-kind mismatch)
+          return a type carrying NO metric fields, so the harness cannot
+          report on fixtures. Same posture as government_id and EPFO.
+          - predictor source is the REPORT BODY, not ml_feature_vectors: the
+            feature vector is keyed (candidate_id, as_of) with EXACT matching
+            while outcomes are keyed by report_id, and the report is the
+            artifact the human actually saw
+          - the label seam carries SEMANTICS: outcomes => FRAUD (9 signals,
+            measurable today), ledger => HIRE (3 depth.* signals, which
+            correctly refuse until real orgs submit interview records)
+          - no new table, no migration, NO new dependency (AUC/Brier/curve/
+            lift are pure stdlib, and the AUC tie policy is written out
+            because every *_band ties by construction)
+          - [x] Task 1 result types · [x] Tasks 2-4 metrics module
+          - [ ] Tasks 5-13: store reader · label seam · signal registry ·
+            service · route · CLI · mutants · smoke+docs
+          - ⚠ CARRY RULING R1 INTO TASK 7: the plan hardcodes
+            consent_allowed=True into build_label, which is a consent bypass;
+            call materialization_consent(candidate_id, at=report.created_at)
+          - ⚠ the plan's own calibration_curve reference code was WRONG:
+            int(s/width) misplaces exact tenths at the DEFAULT bins=10, and
+            every test used bins=4 whose width divides exactly. The default
+            argument was the uncovered door.
 ```
 
 ## Standing conventions (do not relitigate)
