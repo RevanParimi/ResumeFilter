@@ -13,9 +13,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi.testclient import TestClient
-from starlette.routing import Mount
 
 from app.main import UI_ASSETS, create_app
+from tests.test_route_table_guard import _mounts
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -33,7 +33,7 @@ def test_the_ui_is_served_without_authentication(services):
 def test_the_mount_root_is_the_frontend_directory(services):
     """Starlette owns traversal defence; the root we hand it is ours."""
     app = create_app(services)
-    mounts = [r for r in app.routes if isinstance(r, Mount) and r.path == "/ui"]
+    mounts = [m for m in _mounts(app) if m.path == "/ui"]
     assert len(mounts) == 1
     assert Path(mounts[0].app.directory).resolve() == (ROOT / "frontend").resolve()
 

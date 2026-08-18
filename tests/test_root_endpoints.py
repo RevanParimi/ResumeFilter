@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from app.main import _unadvertised_paths, create_app
 
 DOC_PATHS = {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 
@@ -108,3 +108,23 @@ def test_every_advertised_path_actually_answers(services):
                 continue
             resp = client.request(method, path)
             assert resp.status_code != 404, f"{entry} is advertised and 404s"
+
+
+def test_the_exclusions_follow_THE_APP_not_a_hand_copied_literal(services):
+    """Renaming the documentation surface must not strand a stale exclusion.
+
+    ``DOC_PATHS`` above stays a literal ON PURPOSE -- this file's job is to
+    assert consequences, and a second derivation agreeing with the first by
+    construction proves nothing. The set inside `app.main` is the opposite
+    case: it was four paths copied by hand out of `PUBLIC_PATHS`, a fourth
+    transcription of one list, sitting one line away from the hand-maintained
+    list whose eight-PI drift is the defect this whole endpoint exists to fix.
+
+    Nothing observable breaks today -- see the note on `_unadvertised_paths`,
+    the doc routes are already excluded by TYPE -- which is exactly why it
+    needed a test rather than a reader noticing.
+    """
+    app = create_app(services)
+    app.docs_url = "/internal-docs"
+    assert "/internal-docs" in _unadvertised_paths(app)
+    assert "/" in _unadvertised_paths(app)

@@ -51,12 +51,39 @@ def _iter_api_routes(routes):
             yield route
 
 
-#: FastAPI's own documentation surface, plus "/" itself. Excluded from the
-#: advertised list because they describe the API rather than being part of it,
-#: and a caller reading this list is already at "/".
-_UNADVERTISED_PATHS = frozenset(
-    {"/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json", "/"}
-)
+def _unadvertised_paths(app: FastAPI) -> frozenset[str]:
+    """FastAPI's own documentation surface, plus "/" itself: the paths ``GET /``
+    must never list, because they describe the API rather than being part of
+    it and a caller reading the list is already at "/".
+
+    DERIVED FROM THE APP, not typed out, for the same reason as the list it
+    filters. The literal that stood here transcribed four paths out of
+    ``PUBLIC_PATHS`` by hand -- a fourth copy of one list, planted one line
+    away from the hand-maintained list whose eight-PI drift is the defect this
+    endpoint was rewritten to fix. Read off ``app`` these follow a rename or a
+    ``docs_url=None`` on their own.
+
+    AND NOTE WHAT ACTUALLY DOES THE WORK. FastAPI registers its docs surface
+    with ``add_route``, which builds a starlette ``Route``; ``_iter_api_routes``
+    yields only ``APIRoute``. So all four doc paths are already excluded BY
+    TYPE and never reach this set -- measured, not assumed -- and "/" is the
+    only entry that filters anything today. Kept as a belt because derivation
+    made it free to keep, and because the type filter is FastAPI's private
+    choice rather than a promise to us.
+    """
+    return frozenset(
+        {"/"}
+        | {
+            url
+            for url in (
+                app.docs_url,
+                app.redoc_url,
+                app.openapi_url,
+                app.swagger_ui_oauth2_redirect_url,
+            )
+            if url
+        }
+    )
 
 
 def _advertised_endpoints(app: FastAPI) -> list[str]:
@@ -76,9 +103,10 @@ def _advertised_endpoints(app: FastAPI) -> list[str]:
     obscurity on a plane that is already credential-gated, while making the
     list wrong again.
     """
+    unadvertised = _unadvertised_paths(app)
     seen: set[str] = set()
     for route in _iter_api_routes(app.routes):
-        if route.path in _UNADVERTISED_PATHS:
+        if route.path in unadvertised:
             continue
         for method in route.methods or ():
             if method in {"HEAD", "OPTIONS"}:
