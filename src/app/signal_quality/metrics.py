@@ -58,3 +58,58 @@ def auc(scores: Sequence[float], labels: Sequence[bool]) -> float:
     ranks = average_ranks(scores)
     rank_sum = sum(r for r, lab in zip(ranks, labels) if lab)
     return (rank_sum - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
+
+
+def brier(scores: Sequence[float], labels: Sequence[bool]) -> float:
+    """Mean squared error against the 0/1 label. Lower is better.
+
+    Only meaningful for a score already constrained to [0,1] -- which every
+    signal routed here is, by its own ``Field(ge=0.0, le=1.0)``. An unbounded
+    count has no Brier score, and ``signals.py`` is what stops one being asked
+    for.
+    """
+    if len(scores) != len(labels):
+        raise ValueError(f"length mismatch: {len(scores)} scores, {len(labels)} labels")
+    if not scores:
+        raise ValueError("brier requires at least one observation")
+    return sum((s - (1.0 if lab else 0.0)) ** 2 for s, lab in zip(scores, labels)) / len(scores)
+
+
+def calibration_curve(
+    scores: Sequence[float], labels: Sequence[bool], *, bins: int = 10
+) -> list[tuple[float, float, int, Optional[float], Optional[float]]]:
+    """Reliability curve over fixed-width bins.
+
+    Returns ``(lower, upper, n, mean_predicted, observed_rate)`` per bin --
+    plain tuples, because this module imports nothing from ``app/``, including
+    our own schema. The service maps these onto ``CalibrationBin``.
+
+    AN EMPTY BIN REPORTS ``None``, NOT ``0.0``. Zero is a real observed rate
+    meaning "none of these were positive"; an empty bin means "nothing was
+    predicted here". Collapsing them draws a point on a chart where no data
+    exists. No smoothing and no interpolation for the same reason.
+    """
+    if len(scores) != len(labels):
+        raise ValueError(f"length mismatch: {len(scores)} scores, {len(labels)} labels")
+    if bins < 1:
+        raise ValueError("bins must be >= 1")
+
+    width = 1.0 / bins
+    buckets: list[list[tuple[float, bool]]] = [[] for _ in range(bins)]
+    for s, lab in zip(scores, labels):
+        idx = int(s / width)
+        # A score of exactly 1.0 computes to idx == bins. Half-open bins would
+        # drop it, and a silently discarded sample is worse than a wrong one.
+        idx = min(max(idx, 0), bins - 1)
+        buckets[idx].append((s, lab))
+
+    out: list[tuple[float, float, int, Optional[float], Optional[float]]] = []
+    for i, bucket in enumerate(buckets):
+        lower, upper = i * width, (i + 1) * width
+        if not bucket:
+            out.append((lower, upper, 0, None, None))
+            continue
+        mean_pred = sum(s for s, _ in bucket) / len(bucket)
+        observed = sum(1 for _, lab in bucket if lab) / len(bucket)
+        out.append((lower, upper, len(bucket), mean_pred, observed))
+    return out

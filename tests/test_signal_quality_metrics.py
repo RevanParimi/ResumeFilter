@@ -1,6 +1,12 @@
 import pytest
 
-from app.signal_quality.metrics import DegenerateClass, auc, average_ranks
+from app.signal_quality.metrics import (
+    DegenerateClass,
+    auc,
+    average_ranks,
+    brier,
+    calibration_curve,
+)
 
 
 def test_average_ranks_are_1_based_and_average_ties():
@@ -50,3 +56,45 @@ def test_auc_refuses_a_degenerate_class():
 def test_auc_refuses_mismatched_lengths():
     with pytest.raises(ValueError):
         auc([0.1, 0.2], [True])
+
+
+def test_brier_is_mean_squared_error():
+    assert brier([0.0, 1.0], [False, True]) == 0.0
+    assert brier([1.0, 0.0], [False, True]) == 1.0
+    assert brier([0.5, 0.5], [False, True]) == 0.25
+    # (0.2-0)^2 + (0.6-1)^2 = 0.04 + 0.16 = 0.20, over 2 -> 0.10
+    assert brier([0.2, 0.6], [False, True]) == pytest.approx(0.10)
+
+
+def test_brier_refuses_mismatched_lengths():
+    with pytest.raises(ValueError):
+        brier([0.1], [True, False])
+
+
+def test_calibration_curve_bins_are_half_open_and_carry_n():
+    # 4 bins of width 0.25. Scores 0.1 | 0.3 | 0.6, 0.7 | (none)
+    curve = calibration_curve(
+        [0.1, 0.3, 0.6, 0.7], [False, True, True, True], bins=4
+    )
+    assert len(curve) == 4
+    assert [b[2] for b in curve] == [1, 1, 2, 0]
+    assert curve[0][:2] == (0.0, 0.25)
+    # bin 2 holds 0.6 and 0.7 -> mean predicted 0.65, both positive -> 1.0
+    assert curve[2][3] == pytest.approx(0.65)
+    assert curve[2][4] == pytest.approx(1.0)
+
+
+def test_an_empty_bin_reports_none_not_zero():
+    """An empty bin is NOT a bin whose observed rate is 0. Reporting 0.0
+    would draw a point on a reliability chart where no data exists."""
+    curve = calibration_curve([0.1], [True], bins=4)
+    assert curve[3][2] == 0
+    assert curve[3][3] is None
+    assert curve[3][4] is None
+
+
+def test_score_of_exactly_one_lands_in_the_last_bin():
+    """Half-open bins would drop 1.0 entirely, and a silently discarded
+    sample is worse than a wrong one."""
+    curve = calibration_curve([1.0], [True], bins=4)
+    assert [b[2] for b in curve] == [0, 0, 0, 1]
