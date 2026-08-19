@@ -31,10 +31,24 @@ BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
 
 # Three resumes with distinct emails (no identity merge) and different experience.
+#
+# THE ROLE LINES CARRY NO BULLET, and that is load-bearing rather than style.
+# `extractor._experience` skips any line matching `_BULLET` -- under a bullet
+# a dated line is a DUTY, not a role -- so the bulleted form yielded ZERO
+# experience entries and `candidate.years_experience` came back None for all
+# three. Until the S8.6 review that was invisible: this file inherited a real
+# DEE_OPENROUTER_API_KEY, the LLM extractor read the bullets fine, and the
+# docstring above said LLM-free about a run that was billing a vendor.
+#
+# Measured on the deterministic path: 2013 -> ~13.6 yrs, 2019 -> ~7.6, 2023
+# -> ~3.6, so the `>= 6` filter narrows to exactly the two seniors and the
+# ranking has a real numeric to order by. With the key pinned and the bullets
+# still in place, FOUR of the eight checks below failed and the other four
+# were passing on insertion order over three None-valued candidates.
 RESUMES = {
-    "sr": ("Sr Dev\nEmail: sr@example.com\nEXPERIENCE\n- Engineer, Acme (2013 - Present)\nSKILLS\nPython\n"),
-    "mid": ("Mid Dev\nEmail: mid@example.com\nEXPERIENCE\n- Engineer, Acme (2019 - Present)\nSKILLS\nPython\n"),
-    "jr": ("Jr Dev\nEmail: jr@example.com\nEXPERIENCE\n- Engineer, Acme (2023 - Present)\nSKILLS\nPython\n"),
+    "sr": ("Sr Dev\nEmail: sr@example.com\nEXPERIENCE\nEngineer, Acme (2013 - Present)\nSKILLS\nPython\n"),
+    "mid": ("Mid Dev\nEmail: mid@example.com\nEXPERIENCE\nEngineer, Acme (2019 - Present)\nSKILLS\nPython\n"),
+    "jr": ("Jr Dev\nEmail: jr@example.com\nEXPERIENCE\nEngineer, Acme (2023 - Present)\nSKILLS\nPython\n"),
 }
 
 
@@ -48,21 +62,8 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    # KNOWN RED, AND DELIBERATELY SO -- do not "fix" this by restoring the key.
-    #
-    # `base_env()` pins DEE_OPENROUTER_API_KEY empty. Until the S8.6 review this
-    # smoke inherited the developer's REAL key here, so the ingestion below ran
-    # against a live vendor and 5 of its 8 checks were calibrated to LLM output.
-    # The ranking half one screen down has ALWAYS built its Settings with
-    # `openrouter_api_key=""`, so this file pinned the key on one door and left
-    # the other open -- this repo's recurring bug shape, one more time.
-    #
-    # With both doors closed, "top has a contribution" and "filter narrows to
-    # the two most experienced" FAIL: the heuristic extractor yields a different
-    # profile for these fixtures than the LLM did. The deterministic fallback
-    # exists and runs (CLAUDE.md requires it); what is missing is assertions
-    # calibrated to it. Re-tuning them is a PI-4 judgement call about what S4.3
-    # should claim, not a harness change, so it is left for its owner.
+    # base_env() pins DEE_OPENROUTER_API_KEY empty -- what the docstring above
+    # has always claimed and what this file did not enforce until S8.6.
     env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
