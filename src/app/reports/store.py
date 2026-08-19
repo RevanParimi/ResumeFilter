@@ -42,6 +42,7 @@ class ReportStore(Protocol):
     def get(self, report_id: str) -> Optional[Report]: ...
     def add_outcome(self, rec: OutcomeRecord) -> bool: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
+    def report_level_outcomes(self) -> list[tuple[Report, OutcomeRecord]]: ...
     def outcomes_for_org(
         self, org_id: str, report_id: str
     ) -> Optional[list[OutcomeRecord]]: ...
@@ -178,17 +179,57 @@ class SqlReportStore:
         if org_id is not None:
             stmt = stmt.where(OutcomeRow.org_id == org_id)
         rows = s.execute(stmt.order_by(OutcomeRow.id)).scalars().all()
-        return [
-            OutcomeRecord(
-                report_id=r.report_id, claim_id=r.claim_id,
-                outcome=OutcomeLabel(r.outcome), notes=r.notes or "",
-                recorded_at=as_utc(r.recorded_at),
-                recorded_by=OutcomeSource(r.recorded_by),
-                org_id=r.org_id,
-                recorded_by_org_user_id=r.recorded_by_org_user_id,
-            )
-            for r in rows
-        ]
+        return [SqlReportStore._to_record(r) for r in rows]
+
+    @staticmethod
+    def _to_record(r: OutcomeRow) -> OutcomeRecord:
+        """The ONE row->record mapping, called by every reader on this class.
+
+        Extracted when ``report_level_outcomes`` became the third caller. The
+        comment above has warned since S8.5 that two copies is how the
+        provenance fields end up on one path and not the other; a third copy
+        would have been the first chance for that to actually happen.
+        """
+        return OutcomeRecord(
+            report_id=r.report_id, claim_id=r.claim_id,
+            outcome=OutcomeLabel(r.outcome), notes=r.notes or "",
+            recorded_at=as_utc(r.recorded_at),
+            recorded_by=OutcomeSource(r.recorded_by),
+            org_id=r.org_id,
+            recorded_by_org_user_id=r.recorded_by_org_user_id,
+        )
+
+    def report_level_outcomes(self) -> list[tuple[Report, OutcomeRecord]]:
+        """Every report-level outcome joined to the report it judges.
+
+        ADMIN PLANE ONLY -- cross-tenant by construction. There is deliberately
+        no org-scoped variant: a per-org "how well does the screen work" is a
+        different question with its own sample-size problem, and the org-plane
+        reader above (``outcomes_for_org``) stays report-scoped.
+
+        ``claim_id IS NULL`` only. A per-claim outcome judges ONE CLAIM, and
+        every signal S9.1 measures is report-level, so scoring a whole-report
+        number against a single claim's verdict is a category error. The filter
+        lives here so that rule has one home rather than one per label source.
+        It is a per-ROW filter, not per-report: a report judged as a whole AND
+        claim-by-claim is the normal case once a reviewer works through it.
+
+        Ordered by ``(report_id, recorded_at, id)``. The ``id`` tiebreak is
+        what makes a caller's "earliest outcome wins" deterministic when two
+        rows share a timestamp -- which a same-second double submit produces,
+        and without it SQLite may return either first.
+        """
+        with self._session_factory() as s:
+            rows = s.execute(
+                select(ReportRow, OutcomeRow)
+                .join(OutcomeRow, OutcomeRow.report_id == ReportRow.id)
+                .where(OutcomeRow.claim_id.is_(None))
+                .order_by(OutcomeRow.report_id, OutcomeRow.recorded_at, OutcomeRow.id)
+            ).all()
+            return [
+                (Report.model_validate(rep.body), SqlReportStore._to_record(out))
+                for rep, out in rows
+            ]
 
     def delete(self, report_id: str) -> bool:
         """Delete one report; its outcomes CASCADE in the database."""
