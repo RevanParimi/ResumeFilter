@@ -6,11 +6,9 @@ filter that narrows the pool, and proof the consent-withheld candidates are rank
 python scripts/smoke_s43.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +24,8 @@ from app.features.store import build_feature_store
 from app.ledger.store import build_ledger_store
 from app.reports.store import build_report_store
 
+from _smoke import base_env, wait_healthy
+
 PORT = 8043
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -38,15 +38,6 @@ RESUMES = {
 }
 
 
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            time.sleep(0.5)
-    return False
-
 
 def main() -> int:
     scratch = Path(tempfile.mkdtemp())
@@ -57,7 +48,22 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    # KNOWN RED, AND DELIBERATELY SO -- do not "fix" this by restoring the key.
+    #
+    # `base_env()` pins DEE_OPENROUTER_API_KEY empty. Until the S8.6 review this
+    # smoke inherited the developer's REAL key here, so the ingestion below ran
+    # against a live vendor and 5 of its 8 checks were calibrated to LLM output.
+    # The ranking half one screen down has ALWAYS built its Settings with
+    # `openrouter_api_key=""`, so this file pinned the key on one door and left
+    # the other open -- this repo's recurring bug shape, one more time.
+    #
+    # With both doors closed, "top has a contribution" and "filter narrows to
+    # the two most experienced" FAIL: the heuristic extractor yields a different
+    # profile for these fixtures than the LLM did. The deterministic fallback
+    # exists and runs (CLAUDE.md requires it); what is missing is assertions
+    # calibrated to it. Re-tuning them is a PI-4 judgement call about what S4.3
+    # should claim, not a harness change, so it is left for its owner.
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,
@@ -73,7 +79,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy")
                 return 1
             for tag, text in RESUMES.items():
@@ -103,7 +109,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy (2nd boot)")
                 return 1
 

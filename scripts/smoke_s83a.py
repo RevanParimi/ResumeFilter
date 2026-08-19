@@ -32,16 +32,19 @@ Run from repo root:   python scripts/smoke_s83a.py
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("smoke_s83a")
 PORT = 8083
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -57,23 +60,7 @@ _LINES = (FIXTURES / "genuine_genai_resume.txt").read_text(
 ).splitlines()
 GENUINE = "\n".join([_LINES[0], "Email: priya.nair@example.in"] + _LINES[1:])
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -91,7 +78,7 @@ def main() -> int:
     flywheel = scratch / "flywheel.jsonl"
     print(f"scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": flywheel.as_posix(),
@@ -124,8 +111,8 @@ def main() -> int:
     proc = _serve()
     try:
         boot = _client()
-        booted = _wait_healthy(boot)
-        check("healthz", booted)
+        booted = wait_healthy(boot)
+        S.check("healthz", booted)
         if not booted:
             print("server did not become healthy")
             return 1
@@ -140,7 +127,7 @@ def main() -> int:
             "/auth/org/verify",
             json={"email": known, "code": _code_for(mailbox, known)},
         )
-        check("org_onboards", signup.status_code == 202 and verified.status_code == 200,
+        S.check("org_onboards", signup.status_code == 202 and verified.status_code == 200,
               f"{signup.status_code}/{verified.status_code}")
 
         c1 = _client()
@@ -151,9 +138,9 @@ def main() -> int:
         allowed = [c1.post("/auth/org/login", json={"email": driver}).status_code
                    for _ in range(LOGIN_LIMIT)]
         refused_driver = c1.post("/auth/org/login", json={"email": driver})
-        check("login_allowed_up_to_the_limit", allowed == [202] * LOGIN_LIMIT,
+        S.check("login_allowed_up_to_the_limit", allowed == [202] * LOGIN_LIMIT,
               str(allowed))
-        check("login_refused_past_the_limit", refused_driver.status_code == 429,
+        S.check("login_refused_past_the_limit", refused_driver.status_code == 429,
               f"got {refused_driver.status_code} {refused_driver.text[:120]}")
 
         # SIGNUP AND LOGIN SHARE ONE BUDGET, and that is correct rather than
@@ -165,14 +152,14 @@ def main() -> int:
         shared = [c1.post("/auth/org/login", json={"email": known}).status_code
                   for _ in range(LOGIN_LIMIT - spent_by_signup)]
         refused = c1.post("/auth/org/login", json={"email": known})
-        check("signup_and_login_share_one_budget",
+        S.check("signup_and_login_share_one_budget",
               shared == [202] * (LOGIN_LIMIT - spent_by_signup)
               and refused.status_code == 429,
               f"{shared} then {refused.status_code}")
 
         # 3. Retry-After is usable.
         retry_after = refused.headers.get("Retry-After", "")
-        check("retry_after_header_is_a_positive_number",
+        S.check("retry_after_header_is_a_positive_number",
               retry_after.isdigit() and int(retry_after) > 0, f"got {retry_after!r}")
 
         # 4. A REGISTERED and an UNREGISTERED address are refused identically.
@@ -196,7 +183,7 @@ def main() -> int:
         def header_names(resp):
             return sorted({k.lower() for k in resp.headers} - {"x-request-id"})
 
-        check("known_and_unknown_are_refused_identically",
+        S.check("known_and_unknown_are_refused_identically",
               refused_unknown.status_code == refused.status_code
               and refused_unknown.json() == refused.json()
               and header_names(refused_unknown) == header_names(refused)
@@ -208,7 +195,7 @@ def main() -> int:
 
         # 5. A third address is unaffected -- the email scope is per address.
         third = c1.post("/auth/org/login", json={"email": "fresh@agency-c.example"})
-        check("a_fresh_address_is_unaffected", third.status_code == 202,
+        S.check("a_fresh_address_is_unaffected", third.status_code == 202,
               f"got {third.status_code}")
 
         # ── 6. THE CHECK NO UNIT TEST CAN REACH ──────────────────────────────
@@ -219,11 +206,11 @@ def main() -> int:
         proc.wait(timeout=30)
         proc = _serve()
         c2 = _client()
-        if not _wait_healthy(c2):
-            check("survives_a_restart", False, "second server never became healthy")
+        if not wait_healthy(c2):
+            S.check("survives_a_restart", False, "second server never became healthy")
         else:
             after_restart = c2.post("/auth/org/login", json={"email": known})
-            check("survives_a_restart", after_restart.status_code == 429,
+            S.check("survives_a_restart", after_restart.status_code == 429,
                   f"got {after_restart.status_code} -- an in-process counter "
                   "would have reset here")
 
@@ -233,7 +220,7 @@ def main() -> int:
         # Detail only on FAILURE: the success body carries a live api_key, and
         # a smoke that prints credentials to stdout is a smoke whose output
         # cannot be pasted into an issue.
-        check("org_created_for_screening", org.status_code == 200,
+        S.check("org_created_for_screening", org.status_code == 200,
               org.text[:160] if org.status_code != 200 else "")
         # OrgCreateResponse is {org: Organization, api_key: str} -- the key comes
         # back from creation; there is no second call to make.
@@ -243,7 +230,7 @@ def main() -> int:
             "name": "Q3", "domain": "genai",
             "items": [{"resume_text": GENUINE}, {"resume_text": "   "}],
         })
-        check("batch_registered", made.status_code == 200,
+        S.check("batch_registered", made.status_code == 200,
               made.text[:160] if made.status_code != 200 else "")
         bid = made.json()["id"]
 
@@ -253,16 +240,16 @@ def main() -> int:
                 break
         detail = admin.get(f"/screening/batches/{bid}", headers=org_h).json()
         failed_n = detail["counts"].get("failed", 0)
-        check("a_blank_resume_fails_its_own_item", failed_n >= 1,
+        S.check("a_blank_resume_fails_its_own_item", failed_n >= 1,
               f"counts={detail['counts']}")
 
         retried = admin.post(f"/screening/batches/{bid}/retry", headers=org_h)
-        check("retry_requeues_the_failed_item",
+        S.check("retry_requeues_the_failed_item",
               retried.status_code == 200 and retried.json()["requeued"] == failed_n,
               f"{retried.status_code} {retried.text[:160]}")
 
         after = admin.get(f"/screening/batches/{bid}", headers=org_h).json()
-        check("a_requeued_item_reads_as_pending_again",
+        S.check("a_requeued_item_reads_as_pending_again",
               after["counts"].get("pending", 0) >= failed_n,
               f"counts={after['counts']}")
 
@@ -275,20 +262,20 @@ def main() -> int:
             "/screening/batches/00000000-0000-0000-0000-000000000000/retry",
             headers={"X-Org-Key": key2},
         )
-        check("retry_is_404_never_403_and_identical_to_an_unknown_id",
+        S.check("retry_is_404_never_403_and_identical_to_an_unknown_id",
               theirs.status_code == nosuch.status_code == 404
               and theirs.json() == nosuch.json(),
               f"{theirs.status_code}/{nosuch.status_code}")
 
         # 11-13. /metrics as a real HTTP surface.
         unauth = _client().get("/metrics")
-        check("metrics_requires_the_admin_credential", unauth.status_code == 401,
+        S.check("metrics_requires_the_admin_credential", unauth.status_code == 401,
               f"got {unauth.status_code}")
 
         m = admin.get("/metrics", headers=ADMIN_H)
         ok_text = (m.status_code == 200
                    and m.headers.get("content-type", "").startswith("text/plain"))
-        check("metrics_is_prometheus_text", ok_text,
+        S.check("metrics_is_prometheus_text", ok_text,
               f"{m.status_code} {m.headers.get('content-type')}")
 
         # `check` prints its detail on PASS as well as on fail, so these two
@@ -298,11 +285,11 @@ def main() -> int:
         # is the thing a smoke exists to prevent.
         body = m.text
         denied = 'decision="denied"' in body and 'rule="login_request"' in body
-        check("metrics_carries_the_deny_counter", denied,
+        S.check("metrics_carries_the_deny_counter", denied,
               "found decision=\"denied\" on rule=\"login_request\"" if denied
               else "veritas_rate_limit_decisions_total carries no denial")
         templated = 'route="/screening/batches/{batch_id}"' in body
-        check("metrics_labels_by_template_and_leaks_no_batch_id",
+        S.check("metrics_labels_by_template_and_leaks_no_batch_id",
               templated and bid not in body,
               f'route="/screening/batches/{{batch_id}}" present={templated}, '
               f"raw batch id present={bid in body}")
@@ -318,11 +305,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    failed = [n for n, ok, _ in CHECKS if not ok]
-    print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} OK")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-    return 1 if failed else 0
+    return S.summary()
 
 
 if __name__ == "__main__":

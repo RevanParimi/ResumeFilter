@@ -8,11 +8,9 @@ DPDP erasure tipping the aggregate back below k. Run from the repo root:
 python scripts/smoke_s52.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,20 +18,13 @@ import httpx
 from alembic import command
 from alembic.config import Config
 
+from _smoke import base_env, wait_healthy
+
 PORT = 8052
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
 OFFERED_AT = datetime(2026, 7, 20, tzinfo=timezone.utc).isoformat()
 
-
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            time.sleep(0.5)
-    return False
 
 
 def _make_candidate(c, admin_h, tag: str) -> str:
@@ -72,7 +63,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,
@@ -88,7 +79,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy")
                 return 1
 

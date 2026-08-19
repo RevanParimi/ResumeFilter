@@ -36,16 +36,19 @@ Run from repo root:   python scripts/smoke_s84a.py
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("smoke_s84a")
 PORT = 8084
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -84,23 +87,7 @@ SKILLS
 Java, Spring, PostgreSQL
 """
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -147,7 +134,7 @@ def main() -> int:
     print(f"scratch DB: {url}")
     print(f"mailbox:    {mailbox}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -199,8 +186,8 @@ def main() -> int:
 
     try:
         boot_client = _client()
-        booted = _wait_healthy(boot_client)
-        check("healthz", booted)
+        booted = wait_healthy(boot_client)
+        S.check("healthz", booted)
         if not booted:
             print("server did not become healthy")
             return 1
@@ -209,7 +196,7 @@ def main() -> int:
 
         # 1-3. Org A onboards end to end, no operator involved.
         org_a = signup_and_verify("ops@agency-a.example", "Agency A")
-        check("org_a_session", org_a is not None)
+        S.check("org_a_session", org_a is not None)
         if org_a is None:
             print("aborting: org A could not onboard")
             return 1
@@ -221,17 +208,17 @@ def main() -> int:
             f"{BASE}/auth/org/signup",
             json={"email": "ops@agency-b.example", "organization_name": "Agency A"},
         )
-        check(
+        S.check(
             "taken_name_409",
             taken.status_code == 409
             and taken.json().get("detail") == "organization_name_taken",
             f"got {taken.status_code} {taken.text}",
         )
-        check("taken_name_sends_no_code", _sent(mailbox) == before)
+        S.check("taken_name_sends_no_code", _sent(mailbox) == before)
 
         # 6. Org B onboards under its own name.
         org_b = signup_and_verify("ops@agency-b.example", "Agency B")
-        check("org_b_session", org_b is not None)
+        S.check("org_b_session", org_b is not None)
         if org_b is None:
             print("aborting: org B could not onboard")
             return 1
@@ -240,11 +227,11 @@ def main() -> int:
         up_a = org_a.post(
             "/screening/candidates", {"resume_text": GENUINE, "domain": "genai"}
         )
-        check("org_a_upload", up_a.status_code == 200, up_a.text if up_a.status_code != 200 else "")
+        S.check("org_a_upload", up_a.status_code == 200, up_a.text if up_a.status_code != 200 else "")
         up_a_body = up_a.json()
         report_id_a = up_a_body["report"]["id"]
         candidate_id = up_a_body["candidate_id"]
-        check(
+        S.check(
             "org_a_reads_own_report",
             org_a.get(f"/screening/reports/{report_id_a}").status_code == 200,
         )
@@ -252,8 +239,8 @@ def main() -> int:
         # 9-10. THE ISOLATION: Org B cannot read it, and cannot tell it exists.
         theirs = org_b.get(f"/screening/reports/{report_id_a}")
         absent = org_b.get("/screening/reports/no-such-report")
-        check("cross_org_read_404", theirs.status_code == 404)
-        check(
+        S.check("cross_org_read_404", theirs.status_code == 404)
+        S.check(
             "cross_org_read_404_matches_absent",
             # Assert the absent side's status too: without it this check leans
             # entirely on the one above for its floor, and two identical 500s
@@ -266,8 +253,8 @@ def main() -> int:
         up_b = org_b.post(
             "/screening/candidates", {"resume_text": GENUINE_V2, "domain": "genai"}
         )
-        check("org_b_upload", up_b.status_code == 200, up_b.text if up_b.status_code != 200 else "")
-        check(
+        S.check("org_b_upload", up_b.status_code == 200, up_b.text if up_b.status_code != 200 else "")
+        S.check(
             "candidate_deduplicated",
             up_b.json().get("candidate_id") == candidate_id,
             f"a={candidate_id} b={up_b.json().get('candidate_id')}",
@@ -275,7 +262,7 @@ def main() -> int:
         reports_a = org_a.get(f"/screening/candidates/{candidate_id}/reports")
         reports_b = org_b.get(f"/screening/candidates/{candidate_id}/reports")
         report_id_b = (up_b.json().get("report") or {}).get("id")
-        check(
+        S.check(
             "each_org_sees_only_its_own_report",
             reports_a.status_code == 200 and reports_b.status_code == 200
             and [r["id"] for r in reports_a.json()] == [report_id_a]
@@ -300,7 +287,7 @@ def main() -> int:
         # never fires and `None.get(...)` would raise -- turning a named FAIL
         # into a traceback in exactly the state these checks exist to catch.
         farm_matches = (farm_report.get("resume_farm") or {}).get("matches", [])
-        check(
+        S.check(
             "farm_matches_redacted_on_get",
             bool(farm_matches)
             and all(
@@ -319,8 +306,8 @@ def main() -> int:
         #        Critical leak found and fixed during this sprint.
         org_c = signup_and_verify("ops@agency-c.example", "Agency C")
         org_d = signup_and_verify("ops@agency-d.example", "Agency D")
-        check("org_c_session", org_c is not None)
-        check("org_d_session", org_d is not None)
+        S.check("org_c_session", org_c is not None)
+        S.check("org_d_session", org_d is not None)
         if org_c is not None and org_d is not None:
             org_c.post(
                 "/screening/candidates", {"resume_text": FARM_A, "domain": "genai"}
@@ -334,7 +321,7 @@ def main() -> int:
                 ((cross_body.get("report") or {}).get("resume_farm") or {})
                 .get("matches", [])
             )
-            check(
+            S.check(
                 "cross_org_upload_top_level_redacted",
                 bool(top_matches)
                 and all(
@@ -344,7 +331,7 @@ def main() -> int:
                 ),
                 f"matches={top_matches}",
             )
-            check(
+            S.check(
                 "cross_org_upload_embedded_report_redacted",
                 bool(embedded_matches)
                 and all(
@@ -355,19 +342,19 @@ def main() -> int:
                 f"matches={embedded_matches}",
             )
         else:
-            check("cross_org_upload_top_level_redacted", False, "org C/D did not onboard")
-            check("cross_org_upload_embedded_report_redacted", False, "org C/D did not onboard")
+            S.check("cross_org_upload_top_level_redacted", False, "org C/D did not onboard")
+            S.check("cross_org_upload_embedded_report_redacted", False, "org C/D did not onboard")
 
         # 16-17. Admin uploads stay unowned: readable by the operator plane,
         #        invisible on the org plane.
         adm = admin.post("/candidates", json={"resume_text": OTHER, "domain": "genai"}, headers=ADMIN_H)
-        check("admin_upload", adm.status_code == 200, adm.text if adm.status_code != 200 else "")
+        S.check("admin_upload", adm.status_code == 200, adm.text if adm.status_code != 200 else "")
         report_id_adm = (adm.json().get("report") or {}).get("id")
-        check(
+        S.check(
             "admin_still_reads_its_own",
             admin.get(f"/report/{report_id_adm}", headers=ADMIN_H).status_code == 200,
         )
-        check(
+        S.check(
             "admin_upload_invisible_to_orgs",
             org_a.get(f"/screening/reports/{report_id_adm}").status_code == 404,
         )
@@ -389,13 +376,13 @@ def main() -> int:
         #        earlier check's session valid.
         cand_before = admin.get(f"/candidates/{candidate_id}", headers=ADMIN_H)
         killed = admin.delete(f"/ledger/orgs/{org_b.org_id}", headers=ADMIN_H)
-        check(
+        S.check(
             "org_offboarded",
             killed.status_code == 200,
             killed.text if killed.status_code != 200 else "",
         )
         cand_after = admin.get(f"/candidates/{candidate_id}", headers=ADMIN_H)
-        check(
+        S.check(
             "offboarding_leaves_the_person_intact",
             cand_before.status_code == 200 and cand_after.status_code == 200,
             f"before={cand_before.status_code} after={cand_after.status_code}",
@@ -403,7 +390,7 @@ def main() -> int:
         # The report org B commissioned survives the org that paid for it, and
         # is now unowned -- readable by the operator, invisible to every org.
         # A CASCADE typo makes this a 404 and fails the check.
-        check(
+        S.check(
             "offboarded_orgs_report_survives_unowned",
             admin.get(f"/report/{report_id_b}", headers=ADMIN_H).status_code == 200
             and org_a.get(f"/screening/reports/{report_id_b}").status_code == 404,
@@ -418,11 +405,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    failed = [n for n, ok, _ in CHECKS if not ok]
-    print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} OK")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-    return 1 if failed else 0
+    return S.summary()
 
 
 if __name__ == "__main__":

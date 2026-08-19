@@ -29,18 +29,21 @@ Run from repo root:   python scripts/smoke_s83b.py
 """
 
 import json
-import os
 import re
 import sqlite3
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
 
+
+from _smoke import Smoke, base_env, wait_healthy
+
+
+S = Smoke("smoke_s83b")
 PORT = 8085
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
@@ -51,23 +54,7 @@ OFFICER_EMAIL = "dpo@veritas.example"
 #: tests/test_config_ratelimit.py; this file is about the wire.
 REQUEST_LIMIT = 3
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}")
-
-
-def _wait_healthy(c: httpx.Client) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -113,7 +100,7 @@ def main() -> int:
     flywheel = scratch / "flywheel.jsonl"
     print(f"scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": flywheel.as_posix(),
@@ -144,8 +131,8 @@ def main() -> int:
     )
     try:
         boot = _client()
-        booted = _wait_healthy(boot)
-        check("healthz", booted)
+        booted = wait_healthy(boot)
+        S.check("healthz", booted)
         if not booted:
             print("server did not become healthy")
             return 1
@@ -163,7 +150,7 @@ def main() -> int:
             and g.json().get("email") == OFFICER_EMAIL
             and g.json().get("response_days") >= 1
         )
-        check("grievance_contact_is_public", published,
+        S.check("grievance_contact_is_public", published,
               f"{g.status_code} {g.text[:120]}")
 
         # 2. A candidate signs up through a REAL SESSION (cookie + CSRF), which
@@ -175,7 +162,7 @@ def main() -> int:
         vr = person.post("/auth/candidate/verify",
                          json={"email": subject, "code": _code_for(mailbox, subject)})
         csrf = person.cookies.get("dee_csrf")
-        check("candidate_signs_up_with_a_session",
+        S.check("candidate_signs_up_with_a_session",
               su.status_code == 202 and vr.status_code == 200 and bool(csrf),
               f"{su.status_code}/{vr.status_code} csrf={bool(csrf)}")
         session_h = {"X-CSRF-Token": csrf or ""}
@@ -185,7 +172,7 @@ def main() -> int:
                             json={"field": "full_name",
                                   "requested_value": "Asha Rao"})
         req = filed.json() if filed.status_code == 200 else {}
-        check("correction_is_filed_over_a_session",
+        S.check("correction_is_filed_over_a_session",
               filed.status_code == 200 and req.get("status") == "open"
               and req.get("applied") is False,
               f"{filed.status_code} {filed.text[:160]}")
@@ -193,7 +180,7 @@ def main() -> int:
         # 4. It is visible to the SUBJECT, in both places they would look.
         listed = person.get("/portal/requests").json()
         me = person.get("/portal/me").json()
-        check("subject_sees_their_own_request",
+        S.check("subject_sees_their_own_request",
               [r["id"] for r in listed] == [req.get("id")]
               and [r["id"] for r in me.get("requests", [])] == [req.get("id")],
               f"{len(listed)} at /portal/requests, "
@@ -203,7 +190,7 @@ def main() -> int:
         #    applied to the handling of their own complaint.
         log = person.get("/portal/access-log").json()
         in_log = [e for e in log if e["entity_type"] == "data_principal_request"]
-        check("submission_is_in_the_subjects_access_log",
+        S.check("submission_is_in_the_subjects_access_log",
               [e["action"] for e in in_log] == ["request.submit"],
               str([e["action"] for e in in_log]))
 
@@ -214,7 +201,7 @@ def main() -> int:
                               json={"status": "resolved",
                                     "resolution": "verified against the ID",
                                     "apply": True})
-        check("operator_lists_and_applies",
+        S.check("operator_lists_and_applies",
               len(queue) == 1 and resolved.status_code == 200
               and resolved.json().get("applied") is True,
               f"queue={len(queue)} resolve={resolved.status_code}")
@@ -225,7 +212,7 @@ def main() -> int:
         #    row -- a check claiming more than it makes, which is the shape the
         #    Phase A review caught twice in this file's sibling.
         after = person.get("/portal/me").json()
-        check("the_subject_sees_the_decision",
+        S.check("the_subject_sees_the_decision",
               after["requests"][0]["status"] == "resolved"
               and after["requests"][0]["applied"] is True
               and after["requests"][0]["resolved_by"] == "operator_key",
@@ -233,7 +220,7 @@ def main() -> int:
 
         row = admin.get(f"/candidates/{after['candidate_id']}",
                         headers=ADMIN_H).json()
-        check("the_correction_reached_the_candidate_row",
+        S.check("the_correction_reached_the_candidate_row",
               row.get("full_name") == "Asha Rao",
               f"candidates.full_name={row.get('full_name')!r}")
 
@@ -242,7 +229,7 @@ def main() -> int:
                            headers=ADMIN_H,
                            json={"status": "resolved", "resolution": "oops",
                                  "apply": True})
-        check("a_second_decision_is_409", again.status_code == 409,
+        S.check("a_second_decision_is_409", again.status_code == 409,
               f"got {again.status_code}")
 
         # 9. An EMAIL correction is refused for auto-apply, naming its reason.
@@ -255,7 +242,7 @@ def main() -> int:
                                    "apply": True})
         names_it = (refused.status_code == 422
                     and "login" in refused.text.lower())
-        check("email_auto_apply_is_refused_naming_its_reason", names_it,
+        S.check("email_auto_apply_is_refused_naming_its_reason", names_it,
               f"{refused.status_code} {refused.text[:160]}")
 
         # 10. The candidate request budget, over the wire. Two are already
@@ -268,7 +255,7 @@ def main() -> int:
         ]
         over = person.post("/portal/grievances", headers=session_h,
                            json={"note": "one too many"})
-        check("corrections_and_grievances_share_one_budget",
+        S.check("corrections_and_grievances_share_one_budget",
               allowed == [200] * (REQUEST_LIMIT - spent)
               and over.status_code == 429
               and over.headers.get("Retry-After", "").isdigit(),
@@ -283,7 +270,7 @@ def main() -> int:
             "evaluate": False,
         })
         aged = _age_rows(db, cid, days=4000)
-        check("a_resume_exists_and_was_backdated",
+        S.check("a_resume_exists_and_was_backdated",
               upload.status_code == 200 and aged >= 1,
               f"upload={upload.status_code} rows_aged={aged}")
 
@@ -293,7 +280,7 @@ def main() -> int:
         #      spelling back while /portal/requests went on saying applied:true.
         #      The resume deliberately spells the name the OLD way.
         still = admin.get(f"/candidates/{cid}", headers=ADMIN_H).json()
-        check("a_later_upload_does_not_revert_the_applied_correction",
+        S.check("a_later_upload_does_not_revert_the_applied_correction",
               still.get("full_name") == "Asha Rao",
               f"candidates.full_name={still.get('full_name')!r} after an upload "
               f"whose resume says 'Asha R'")
@@ -308,10 +295,10 @@ def main() -> int:
             and [(c["data_class"], c["affected"]) for c in preview["by_class"]]
             == [(c["data_class"], c["affected"]) for c in real["by_class"]]
         )
-        check("dry_run_counts_exactly_what_the_real_run_deletes", parity,
+        S.check("dry_run_counts_exactly_what_the_real_run_deletes", parity,
               f"preview resumes={_affected(preview, 'resumes')} "
               f"real resumes={_affected(real, 'resumes')}")
-        check("the_sweep_actually_had_something_to_do",
+        S.check("the_sweep_actually_had_something_to_do",
               _affected(preview, "resumes") >= 1,
               f"resumes={_affected(preview, 'resumes')}")
 
@@ -319,19 +306,19 @@ def main() -> int:
         #     merely reported.
         third = admin.post("/admin/retention/sweep", headers=ADMIN_H,
                            json={"dry_run": False}).json()
-        check("a_second_run_finds_the_rows_already_gone",
+        S.check("a_second_run_finds_the_rows_already_gone",
               _affected(third, "resumes") == 0,
               f"resumes={_affected(third, 'resumes')}")
 
         # 13. The portal's promise now matches the machine.
-        check("sweep_active_is_true_in_the_portal",
+        S.check("sweep_active_is_true_in_the_portal",
               person.get("/portal/me").json()["retention"]["sweep_active"] is True)
 
         # 14. And the counter records what went.
         m = admin.get("/metrics", headers=ADMIN_H)
         counted = 'veritas_retention_deleted_total' in m.text and \
                   'data_class="resumes"' in m.text
-        check("metrics_carries_the_retention_counter", counted,
+        S.check("metrics_carries_the_retention_counter", counted,
               'found veritas_retention_deleted_total{data_class="resumes"}'
               if counted else "the counter is absent from /metrics")
 
@@ -347,15 +334,15 @@ def main() -> int:
             env=env_off,
         )
         off = _client()
-        if not _wait_healthy(off):
-            check("server_restarts_with_the_sweep_disabled", False, "never healthy")
+        if not wait_healthy(off):
+            S.check("server_restarts_with_the_sweep_disabled", False, "never healthy")
         else:
-            check("server_restarts_with_the_sweep_disabled", True)
+            S.check("server_restarts_with_the_sweep_disabled", True)
             refused_run = off.post("/admin/retention/sweep", headers=ADMIN_H,
                                    json={"dry_run": False})
             still_previews = off.post("/admin/retention/sweep", headers=ADMIN_H,
                                       json={})
-            check("a_disabled_sweep_refuses_409_but_still_previews",
+            S.check("a_disabled_sweep_refuses_409_but_still_previews",
                   refused_run.status_code == 409
                   and refused_run.json().get("detail") == "retention_sweep_disabled"
                   and still_previews.status_code == 200,
@@ -365,7 +352,7 @@ def main() -> int:
             # process. That is worth stating -- it is the same argument as
             # Phase A's check 6, one table over.
             me_off = person.get("/portal/me")
-            check("sweep_active_reads_FALSE_when_the_knob_is_off",
+            S.check("sweep_active_reads_FALSE_when_the_knob_is_off",
                   me_off.status_code == 200
                   and me_off.json()["retention"]["sweep_active"] is False,
                   f"{me_off.status_code} "
@@ -382,11 +369,7 @@ def main() -> int:
             except Exception:
                 pass
 
-    failed = [n for n, ok, _ in CHECKS if not ok]
-    print(f"\n{len(CHECKS) - len(failed)}/{len(CHECKS)} OK")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-    return 1 if failed else 0
+    return S.summary()
 
 
 if __name__ == "__main__":
