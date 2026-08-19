@@ -300,8 +300,22 @@ def main() -> int:
         # ── part 3: the UI, the derived root list, metrics, the CLI ──────────
 
         # The UI is served BY THE API, same origin -- the posture that ships.
+        #
+        # THE ENTRY POINT, not an asset. This check used to fetch /ui/api.js
+        # and pass, which proved a JavaScript file was reachable rather than
+        # that the UI loads -- and `/ui`, the URL DEPLOY.md step 7 tells an
+        # operator to open, was answering 404 the whole time. Asking for the
+        # thing a human asks for is the difference.
+        # follow_redirects, because `/ui` 307s to `/ui/` and httpx does NOT
+        # follow by default -- unlike TestClient, which is why the pytest
+        # version of this check needed no flag and this one does.
+        entry = api.get("/ui", follow_redirects=True)
+        S.check("the_ui_entry_point_is_served_same_origin",
+              entry.status_code == 200 and "veritas" in entry.text.lower()
+              and "api.js" in entry.text,
+              detail=str(entry.status_code))
         r = api.get("/ui/api.js")
-        S.check("the_ui_is_served_same_origin",
+        S.check("the_ui_assets_are_served_beside_it",
               r.status_code == 200 and "veritas" in r.text[:400].lower(),
               detail=str(r.status_code))
 
