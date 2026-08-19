@@ -44,6 +44,36 @@
   dated role lines written as bullets, which is a common resume shape. That is
   an S1.1 call with a wide blast radius, deliberately not made inside a smoke
   fix.
+  **THE CORRECTNESS PASS WAS RUN BY HAND (2026-08-19) AND FOUND ONE, ON THE
+  GO-LIVE PATH.** `/code-review ultra` was rejected a FIFTH time -- not on
+  quota this time but on SIZE: with `main` 25 commits ahead, the diff it
+  computed was 273 files / 13,058 lines against a 500-file / 8,000-line
+  ceiling. The real S8.6 diff is 36 files / 4,832 lines (1,737 code, 3,095
+  docs), reachable from the new `s86-review-base` branch at the fork point
+  `8ae08cb`. So the pass was done by reading, over ~340 lines of production
+  code.
+  **DEPLOY.md step 7 sent the operator to a 404.** It says "Sign up through
+  the UI at `/ui`"; measured, `/ui` 307s to `/ui/` which answered **404** --
+  StaticFiles runs html=False with no index.html (the design tool emits
+  `Veritas.dc.html`) and the allowlist keys on the first path segment, which
+  Starlette hands over as `"."` for a directory. **No document anywhere named
+  the working URL.** Fixed at `13edb33`: `/ui/` serves the entry document by
+  NAME rather than via html=True, which would have started serving an
+  index.html out of any future subdirectory -- a second public-surface rule
+  nobody wrote. DEPLOY.md is deliberately UNCHANGED: the fix makes its
+  existing instruction true instead of rewriting the runbook to match a broken
+  surface.
+  **IT SURVIVED FOUR REVIEW PASSES BECAUSE EVERY CHECK FETCHED AN ASSET** --
+  the smoke's `the_ui_is_served_same_origin`, `test_ui_mount`'s
+  unauthenticated-access test and the CI image job all asked for `api.js`.
+  Proving a JavaScript file is reachable is not proving the UI loads. That is
+  S8.6's own review lesson 7 recurring **inside the fix written for it**. The
+  new guard reads its paths OUT OF DEPLOY.md, so rewording step 7 moves the
+  test with it. 1991 -> 1996 green, `smoke_s86` 27/27 -> 28/28.
+  **Also pinned: the trailing slash is load-bearing.** The shell references its
+  script relatively (`src="./api.js"`), so from `/ui/` that resolves to
+  `/ui/api.js` and from `/ui` it would resolve to `/api.js`, which is not
+  mounted.
   **BRANCH HYGIENE:** `s86-review-fixes`, `s43-offline-assertions` and
   `s91-signal-quality` merged and deleted. **`s86-review-target` SURVIVES ON
   PURPOSE** — it is the frozen diff the owed ultra review targets, and deleting
