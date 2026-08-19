@@ -127,6 +127,14 @@ def _advertised_endpoints(app: FastAPI) -> list[str]:
 #: vendored tree to satisfy our own rule buys nothing.
 UI_ASSETS = frozenset({"api.js", "support.js", "Veritas.dc.html", "_ds"})
 
+#: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open
+#: `/ui`, and until this existed that redirected to `/ui/` and 404'd: there is
+#: no `index.html` (the design tool emits `Veritas.dc.html`) and StaticFiles
+#: runs with html=False. Named here rather than renaming the file, because the
+#: filename is the design tool's output and renaming it on every regeneration
+#: is the kind of manual step that stops happening.
+UI_ENTRY = "Veritas.dc.html"
+
 
 class _AllowlistedStaticFiles(StaticFiles):
     """``StaticFiles`` that serves only :data:`UI_ASSETS`.
@@ -144,6 +152,14 @@ class _AllowlistedStaticFiles(StaticFiles):
     """
 
     async def get_response(self, path: str, scope):
+        # The DIRECTORY ITSELF, which Starlette normalises to ".", is the URL a
+        # human is told to open. Serving the entry document here rather than
+        # setting html=True keeps the allowlist as the only rule that decides
+        # what is public -- html=True would also start serving an index.html
+        # out of any future subdirectory, which is a second rule nobody wrote.
+        if path == ".":
+            path = UI_ENTRY
+
         # Starlette builds `path` with os.path.join, so it is backslashed on
         # Windows and forward-slashed elsewhere; normalise before splitting or
         # this allows everything on one platform and nothing on the other.

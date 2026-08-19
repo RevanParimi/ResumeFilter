@@ -83,3 +83,35 @@ def test_the_checklist_names_the_ibm_check():
     """It has no better home, and it is materially worse retrofitted after a
     customer signs (GTM section 8.3)."""
     assert "IBM" in DOC.read_text(encoding="utf-8")
+
+
+def test_every_ui_path_the_runbook_names_actually_loads(services):
+    """A runbook that sends an operator to a 404 is the same defect as one
+    naming a variable the code does not read -- this file's own premise, one
+    column over.
+
+    FOUND BY HAND, AFTER FOUR REVIEW PASSES MISSED IT. Step 7 said "Sign up
+    through the UI at `/ui`", and `/ui` redirected to `/ui/` which answered
+    404. Nothing caught it because every check on that mount fetched an ASSET:
+    the smoke, tests/test_ui_mount.py's access test and the CI image job all
+    asked for `api.js`. Proving a JavaScript file is reachable is not proving
+    the UI loads.
+
+    The paths are READ OUT OF THE DOC rather than hardcoded, so rewording step
+    7 to name a different URL moves this test with it instead of leaving it
+    pinned to a string the runbook no longer contains.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    paths = sorted(set(re.findall(r"`(/ui[^`\s]*)`", DOC.read_text(encoding="utf-8"))))
+    assert paths, "DEPLOY.md names no /ui path -- this guard would pass vacuously"
+
+    client = TestClient(create_app(services))
+    for path in paths:
+        resp = client.get(path)
+        assert resp.status_code == 200, (
+            f"DEPLOY.md tells the operator to open {path}, which answers "
+            f"{resp.status_code}"
+        )

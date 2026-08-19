@@ -118,3 +118,57 @@ def test_the_ui_mount_does_not_shadow_the_api(services):
     # the thing this test exists to check.
     with TestClient(create_app(services)) as client:
         assert client.get("/healthz").status_code == 200
+
+
+def test_the_documented_entry_point_actually_loads(services):
+    """DEPLOY.md step 7 tells the operator to open `/ui`. It 404'd.
+
+    FOUND IN THE HAND-RUN CORRECTNESS PASS, and it survived four review passes
+    because every check on this mount fetched an ASSET: the smoke, this file's
+    own unauthenticated-access test and the CI image job all asked for
+    `api.js`, which proves a JavaScript file is reachable and not that the UI
+    loads. `/ui/` returned 404 for two independent reasons -- StaticFiles runs
+    with html=False and there is no index.html, and the allowlist keys on the
+    first path segment, which Starlette hands over as "." for a directory.
+
+    Asserted through the redirect, because `/ui` is the string a human is told
+    to type and a 307 to a 404 is still a 404 to them.
+    """
+    client = TestClient(create_app(services))
+    resp = client.get("/ui")
+    assert resp.status_code == 200, "DEPLOY.md step 7 tells operators to open /ui"
+    assert "veritas" in resp.text.lower()
+    # Not just "some HTML": the shell that will actually talk to the API.
+    assert "api.js" in resp.text
+
+
+def test_the_entry_point_keeps_its_trailing_slash(services):
+    """LOAD-BEARING, and the reason this is served at `/ui/` rather than `/ui`.
+
+    The document references its script RELATIVELY (`src="./api.js"`). From
+    `/ui/` that resolves to `/ui/api.js`; from `/ui` it would resolve to
+    `/api.js`, which is not mounted -- the shell would load and then fail to
+    find the only file that talks to the API. Starlette's redirect is what
+    makes the documented URL correct, so it is pinned rather than assumed.
+    """
+    client = TestClient(create_app(services), follow_redirects=False)
+    resp = client.get("/ui")
+    assert resp.status_code == 307
+    assert resp.headers["location"].endswith("/ui/")
+    assert 'src="./api.js"' in client.get("/ui/").text
+
+
+def test_the_entry_document_is_itself_allowlisted(services):
+    """The index is served BY NAME, so it has to be a name the allowlist
+    already permits -- otherwise the two rules disagree and the fix would
+    depend on which one runs first."""
+    from app.main import UI_ENTRY
+    assert UI_ENTRY in UI_ASSETS
+
+
+def test_serving_the_index_does_not_weaken_the_allowlist(services):
+    """The directory case is the ONLY thing that changed. A traversal that
+    normalises to a bare "." must not become a way to ask for anything else."""
+    client = TestClient(create_app(services))
+    assert client.get("/ui/not-an-asset.txt").status_code == 404
+    assert client.get("/ui/_ds").status_code == 404      # a directory, not a file
