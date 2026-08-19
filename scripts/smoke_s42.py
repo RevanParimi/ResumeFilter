@@ -5,7 +5,6 @@ rows), then opens the stores directly to materialize, persist, and export.
 LLM-free. Run from the repo root: python scripts/smoke_s42.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -25,6 +24,8 @@ from app.features.materialize import materialize_candidate
 from app.features.store import build_feature_store
 from app.ledger.store import build_ledger_store
 from app.reports.store import build_report_store
+
+from _smoke import base_env
 
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8042
@@ -46,7 +47,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,

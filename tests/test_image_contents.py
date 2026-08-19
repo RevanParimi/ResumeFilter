@@ -28,9 +28,8 @@ import configparser
 import re
 from pathlib import Path
 
-from starlette.routing import Mount
-
 from app.main import create_app
+from tests.test_route_table_guard import _mounts
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -74,9 +73,9 @@ def test_the_static_mount_root_is_copied(services):
     fails without anyone remembering to edit a list."""
     app = create_app(services)
     roots = {
-        Path(r.app.directory).resolve().relative_to(ROOT).as_posix()
-        for r in app.routes
-        if isinstance(r, Mount) and hasattr(r.app, "directory")
+        Path(m.app.directory).resolve().relative_to(ROOT).as_posix()
+        for m in _mounts(app)
+        if hasattr(m.app, "directory")
     }
     assert roots, "no static mount found -- this guard would pass vacuously"
     assert roots <= _copied_sources(), (

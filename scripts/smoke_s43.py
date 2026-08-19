@@ -6,11 +6,9 @@ filter that narrows the pool, and proof the consent-withheld candidates are rank
 python scripts/smoke_s43.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,26 +24,33 @@ from app.features.store import build_feature_store
 from app.ledger.store import build_ledger_store
 from app.reports.store import build_report_store
 
+from _smoke import base_env, wait_healthy
+
 PORT = 8043
 BASE = f"http://127.0.0.1:{PORT}"
 ADMIN = "smoke-admin-key"
 
 # Three resumes with distinct emails (no identity merge) and different experience.
+#
+# THE ROLE LINES CARRY NO BULLET, and that is load-bearing rather than style.
+# `extractor._experience` skips any line matching `_BULLET` -- under a bullet
+# a dated line is a DUTY, not a role -- so the bulleted form yielded ZERO
+# experience entries and `candidate.years_experience` came back None for all
+# three. Until the S8.6 review that was invisible: this file inherited a real
+# DEE_OPENROUTER_API_KEY, the LLM extractor read the bullets fine, and the
+# docstring above said LLM-free about a run that was billing a vendor.
+#
+# Measured on the deterministic path: 2013 -> ~13.6 yrs, 2019 -> ~7.6, 2023
+# -> ~3.6, so the `>= 6` filter narrows to exactly the two seniors and the
+# ranking has a real numeric to order by. With the key pinned and the bullets
+# still in place, FOUR of the eight checks below failed and the other four
+# were passing on insertion order over three None-valued candidates.
 RESUMES = {
-    "sr": ("Sr Dev\nEmail: sr@example.com\nEXPERIENCE\n- Engineer, Acme (2013 - Present)\nSKILLS\nPython\n"),
-    "mid": ("Mid Dev\nEmail: mid@example.com\nEXPERIENCE\n- Engineer, Acme (2019 - Present)\nSKILLS\nPython\n"),
-    "jr": ("Jr Dev\nEmail: jr@example.com\nEXPERIENCE\n- Engineer, Acme (2023 - Present)\nSKILLS\nPython\n"),
+    "sr": ("Sr Dev\nEmail: sr@example.com\nEXPERIENCE\nEngineer, Acme (2013 - Present)\nSKILLS\nPython\n"),
+    "mid": ("Mid Dev\nEmail: mid@example.com\nEXPERIENCE\nEngineer, Acme (2019 - Present)\nSKILLS\nPython\n"),
+    "jr": ("Jr Dev\nEmail: jr@example.com\nEXPERIENCE\nEngineer, Acme (2023 - Present)\nSKILLS\nPython\n"),
 }
 
-
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            time.sleep(0.5)
-    return False
 
 
 def main() -> int:
@@ -57,7 +62,9 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    # base_env() pins DEE_OPENROUTER_API_KEY empty -- what the docstring above
+    # has always claimed and what this file did not enforce until S8.6.
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,
@@ -73,7 +80,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy")
                 return 1
             for tag, text in RESUMES.items():
@@ -103,7 +110,7 @@ def main() -> int:
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(180, connect=5)) as c:
-            if not _wait_healthy(c):
+            if not wait_healthy(c):
                 print("FAIL server never became healthy (2nd boot)")
                 return 1
 

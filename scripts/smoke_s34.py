@@ -10,7 +10,6 @@ heuristic extraction with no API key. Run from the repo root:
     python scripts/smoke_s34.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -20,6 +19,8 @@ from pathlib import Path
 import httpx
 from alembic import command
 from alembic.config import Config
+
+from _smoke import base_env
 
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8034
@@ -36,7 +37,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),

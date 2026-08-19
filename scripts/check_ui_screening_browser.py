@@ -55,6 +55,11 @@ from pathlib import Path
 import httpx
 import websockets
 
+
+from _smoke import Smoke, base_env
+
+
+S = Smoke("check_ui_screening_browser")
 ROOT = Path(__file__).resolve().parent.parent
 CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
@@ -73,12 +78,7 @@ ADMIN = "ui-browser-admin-key"
 FIXTURES = ROOT / "tests" / "fixtures"
 GENUINE = (FIXTURES / "genuine_genai_resume.txt").read_text(encoding="utf-8")
 
-CHECKS: list[tuple[str, bool, str]] = []
 
-
-def check(name: str, ok: bool, detail: str = "") -> None:
-    CHECKS.append((name, bool(ok), detail))
-    print(f"{'OK  ' if ok else 'FAIL'} {name}{(' -- ' + detail) if detail else ''}", flush=True)
 
 
 def _resume(name: str, email: str) -> str:
@@ -210,7 +210,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
 
     # ── 1. It boots, and boots to the login screen ──────────────────────────
     ok = await tab.wait("window.__has('Sign in') || window.__has('Send code')", 60, "login screen")
-    check("the_app_mounts_and_shows_login", ok, (await tab.text())[:70].replace("\n", " | "))
+    S.check("the_app_mounts_and_shows_login", ok, (await tab.text())[:70].replace("\n", " | "))
     if not ok:
         return
 
@@ -235,12 +235,12 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     await asyncio.sleep(0.3)
     await tab.js("window.__click('button', 'Verify and continue')")
     landed = await tab.wait("window.__has('Screening queue')", 30, "the queue")
-    check("signup_verify_and_landing_on_the_queue", got_otp and landed,
+    S.check("signup_verify_and_landing_on_the_queue", got_otp and landed,
           f"otp_screen={got_otp} landed={landed}")
 
     # ── 3. The first screen a new customer ever sees ────────────────────────
     empty = await tab.wait("window.__has('Nothing screened yet')", 20, "the empty state")
-    check("a_brand_new_org_sees_an_empty_queue_not_an_error", empty,
+    S.check("a_brand_new_org_sees_an_empty_queue_not_an_error", empty,
           "renders 'Nothing screened yet'")
 
     # ── 4. Upload: the real file picker, through the real FileReader ────────
@@ -251,7 +251,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
         await tab.send("DOM.setFileInputFiles", {"files": files, "objectId": box})
     await asyncio.sleep(0.6)
     listed = await tab.js("window.__has('files ready') || window.__has('file ready')")
-    check("the_file_picker_lists_what_was_chosen", bool(box) and bool(listed),
+    S.check("the_file_picker_lists_what_was_chosen", bool(box) and bool(listed),
           f"input_found={bool(box)} listed={bool(listed)}")
 
     await tab.js("window.__type('input[placeholder*=\\\"intake\\\"]', 'Wipro DE — August intake', 0)")
@@ -282,7 +282,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     # ── 5. The driver runs, in the browser, to completion ───────────────────
     started = await tab.wait("window.__sawDriver", 30, "the driver to start")
     finished = await tab.wait("window.__has('Nothing left to screen')", 180, "the driver to finish")
-    check("the_process_driver_runs_in_the_browser_and_finishes", started and finished,
+    S.check("the_process_driver_runs_in_the_browser_and_finishes", started and finished,
           f"started={started} finished={finished}")
 
     # ── 6. What the queue actually renders ──────────────────────────────────
@@ -291,14 +291,14 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     # case-sensitive check reads them as absent.
     body = (await tab.text()).lower()
     rows = await tab.js(ROW_SELECTOR + ".length")
-    check("the_queue_renders_a_row_per_resume_with_its_reason",
+    S.check("the_queue_renders_a_row_per_resume_with_its_reason",
           rows == len(files)
           and ("fabrication risk" in body or "insufficient signal" in body)
           and "loudest signal" in body,
           f"{rows} rows for {len(files)} files")
 
     leaked = [n for n in ("priya nandakumar", "arjun rao", "kavya iyer") if n in body]
-    check("no_candidate_name_is_rendered_on_the_queue", not leaked, f"leaked={leaked}")
+    S.check("no_candidate_name_is_rendered_on_the_queue", not leaked, f"leaked={leaked}")
 
     # The header's band counts must be the WHOLE batch's, from /summary — so
     # they are read back through a SEPARATE machine credential rather than by
@@ -314,7 +314,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
         "elevated": bands.get("elevated", 0), "moderate": bands.get("moderate", 0),
         "low": bands.get("low", 0), "insufficient": bands.get("insufficient_data", 0),
     }
-    check("the_header_counts_match_the_summary_endpoint", shown == expected,
+    S.check("the_header_counts_match_the_summary_endpoint", shown == expected,
           f"shown={shown} api={expected}")
 
     # ── 7. Drill in to the report ───────────────────────────────────────────
@@ -323,16 +323,16 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     report_body = (await tab.text()).lower()
     named = any(n in report_body for n in ("priya nandakumar", "arjun rao", "kavya iyer",
                                            "name not extracted"))
-    check("the_report_opens_and_names_the_person_the_queue_would_not", opened and named,
+    S.check("the_report_opens_and_names_the_person_the_queue_would_not", opened and named,
           f"opened={opened} named={named}")
-    check("the_report_shows_claim_level_reasoning", "claim by claim" in report_body
+    S.check("the_report_shows_claim_level_reasoning", "claim by claim" in report_body
           and ("missing signals" in report_body or "nothing to reason about" in report_body))
     # ── 7b. THE LOOP CLOSES, by clicking (S8.5) ─────────────────────────────
     # The four buttons this file used to assert were ABSENT. They are back
     # because POST /screening/reports/{id}/outcome landed on the org plane,
     # and the check inverted with them: a screen that says an action exists
     # has to perform it.
-    check("the_four_outcome_buttons_are_present_and_the_prose_no_longer_apologises",
+    S.check("the_four_outcome_buttons_are_present_and_the_prose_no_longer_apologises",
           bool(await tab.js("!!window.__q('button', 'Verified genuine')"))
           and bool(await tab.js("!!window.__q('button', 'Verified fabricated')"))
           and bool(await tab.js("!!window.__q('button', 'Candidate clarified')"))
@@ -367,7 +367,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
             f"/screening/reports/{r['report_id']}/outcomes"
         ).json()["outcomes"]
     ]
-    check("clicking_an_outcome_records_it_and_the_history_renders",
+    S.check("clicking_an_outcome_records_it_and_the_history_renders",
           bool(recorded) and len(stored) == 1
           and stored[0]["outcome"] == "verified_fabricated"
           and stored[0]["notes"].startswith("Called the listed manager")
@@ -381,7 +381,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
         ".find(x => (x.placeholder || '').startsWith('What did you find out'));"
         " return i ? i.value : null; })()"
     )
-    check("the_notes_box_is_cleared_after_a_successful_record",
+    S.check("the_notes_box_is_cleared_after_a_successful_record",
           still_typed == "", f"value={still_typed!r}")
 
     # Two clicks in one synchronous block must leave ONE judgement, because
@@ -411,7 +411,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
             f"/screening/reports/{r['report_id']}/outcomes"
         ).json()["outcomes"]
     ]
-    check("two_clicks_in_one_tick_record_exactly_one_judgement",
+    S.check("two_clicks_in_one_tick_record_exactly_one_judgement",
           len(swept) == 2,
           f"{len(swept)} total after 1 deliberate + 2 same-tick clicks: "
           f"{[o['outcome'] for o in swept]}")
@@ -420,7 +420,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     await tab.js("window.__click('button', 'Batch summary')")
     sum_ok = await tab.wait("window.__has('of those screened')", 25, "the summary")
     sum_body = (await tab.text()).lower()
-    check("the_summary_renders_bands_and_signals_from_the_api", sum_ok
+    S.check("the_summary_renders_bands_and_signals_from_the_api", sum_ok
           and "loudest" in sum_body
           and not any(n in sum_body for n in ("priya", "arjun", "kavya")),
           "counts and enum members only")
@@ -430,7 +430,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     # matches before the fetch resolves, which made this check race the load.
     list_ok = await tab.wait("window.__has('Your batches')", 25, "the batches screen")
     named_batch = await tab.wait("window.__has('Wipro DE')", 25, "the batch row")
-    check("the_batches_screen_lists_the_batch_that_was_just_uploaded",
+    S.check("the_batches_screen_lists_the_batch_that_was_just_uploaded",
           list_ok and bool(named_batch),
           f"listed={list_ok} named={bool(named_batch)} "
           f"untitled={bool(await tab.js('window.__has(\"Untitled batch\")'))} "
@@ -442,12 +442,12 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     await tab.js("window.__click('button', 'Delete batch')")
     emptied = await tab.wait("window.__has('No batches yet')", 25, "the emptied list")
     gone = api.get(f"/screening/batches/{bid}").status_code
-    check("delete_is_two_step_and_removes_the_batch_server_side",
+    S.check("delete_is_two_step_and_removes_the_batch_server_side",
           armed and emptied and gone == 404,
           f"armed={armed} emptied={emptied} api_after={gone}")
 
     # ── 10. Nothing threw, the whole way through ────────────────────────────
-    check("no_console_errors_or_uncaught_exceptions", not tab.console,
+    S.check("no_console_errors_or_uncaught_exceptions", not tab.console,
           "; ".join(tab.console[:3]) if tab.console else "clean")
 
 
@@ -482,7 +482,7 @@ async def main() -> int:
     ]))
     files = [str(p) for p in sorted(uploads.iterdir())]
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -526,7 +526,7 @@ async def main() -> int:
         else:
             print("API never became healthy")
             return 1
-        check("the_api_is_up_and_is_also_the_ui_host", True)
+        S.check("the_api_is_up_and_is_also_the_ui_host", True)
 
         ws_url, tabs = None, []
         for _ in range(60):
@@ -564,9 +564,7 @@ async def main() -> int:
             p.terminate()
         api.close()
 
-    passed = sum(1 for _, ok, _ in CHECKS if ok)
-    print(f"\n{passed}/{len(CHECKS)} OK")
-    return 0 if passed == len(CHECKS) else 1
+    return S.summary()
 
 
 def _org_client(admin: httpx.Client) -> httpx.Client:

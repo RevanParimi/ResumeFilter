@@ -27,15 +27,15 @@ Run from repo root:   python scripts/smoke_s82.py
 """
 
 import json
-import os
 import re
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import httpx
+
+from _smoke import base_env, wait_healthy
 
 PORT = 8082
 BASE = f"http://127.0.0.1:{PORT}"
@@ -54,16 +54,6 @@ SKILLS
 Python, PyTorch, Spark
 """
 
-
-def _wait_healthy(c) -> bool:
-    for _ in range(60):
-        try:
-            if c.get("/healthz").status_code == 200:
-                return True
-        except httpx.TransportError:
-            pass
-        time.sleep(0.5)
-    return False
 
 
 def _code_for(mailbox: Path, email: str) -> str:
@@ -95,7 +85,7 @@ def main() -> int:
     print(f"scratch DB: {url}")
     print(f"mailbox:    {mailbox}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
@@ -126,7 +116,7 @@ def main() -> int:
              httpx.Client(base_url=BASE, timeout=timeout) as cand2, \
              httpx.Client(base_url=BASE, timeout=timeout) as admin:
 
-            checks["boots"] = _wait_healthy(org)
+            checks["boots"] = wait_healthy(org)
             if not checks["boots"]:
                 print("server did not become healthy")
                 return 1

@@ -12,14 +12,20 @@ extend it.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from fastapi import APIRouter, FastAPI
 from fastapi.dependencies.utils import get_flat_dependant
 from starlette.routing import Mount
+from starlette.staticfiles import StaticFiles
 
 from app.api.routes import (
     PUBLIC_PATHS, require_any_principal, require_api_key, require_candidate,
     require_org,
 )
 from app.main import create_app
+
+ROOT = Path(__file__).resolve().parents[1]
 
 #: The ONLY functions permitted to establish a principal.
 RESOLVERS = {require_api_key, require_org, require_candidate, require_any_principal}
@@ -84,15 +90,28 @@ def _guarded_routes(app):
         yield route, path, methods, inherited
 
 
-def _mount_paths(app) -> set[str]:
-    """Walks the way _guarded_routes does, NOT a flat scan of app.routes.
+def _mounts(app) -> list[Mount]:
+    """Every Mount on the app. Walks the way _guarded_routes does, NOT a flat
+    scan of app.routes.
 
     APIRouter inherits .mount() from Starlette's Router, so a mount inside an
     included router sits behind the same _IncludedRouter wrapper that made a
     naive scan miss 54 of this app's 63 routes. A guard whose whole claim is
     "no mount widens the public surface silently" cannot have one silent path.
+
+    THE ONE mount-discovery idiom for the suite. It returns the Mount objects
+    rather than their paths because the two other files that need them read
+    `.app.directory` off the object -- and each had grown its own flat scan,
+    the exact shape this docstring calls broken, in the same branch that wrote
+    this docstring. tests/test_image_contents.py and tests/test_ui_mount.py
+    import it, the way test_openapi_contract and test_org_scope_guard already
+    import `_walk`.
     """
-    return {r.path for r, _ in _walk(app.routes) if isinstance(r, Mount)}
+    return [r for r, _ in _walk(app.routes) if isinstance(r, Mount)]
+
+
+def _mount_paths(app) -> set[str]:
+    return {m.path for m in _mounts(app)}
 
 
 def test_every_non_public_route_uses_a_sanctioned_resolver(services):
@@ -209,3 +228,22 @@ def test_the_session_lifecycle_routes_are_session_only(services):
     for route, path, _, inherited in _guarded_routes(app):
         if require_any_principal in _resolvers_on(route, inherited):
             assert path in allowed, f"{path} must not use require_any_principal"
+
+
+def test_mount_discovery_sees_a_mount_inside_an_included_router():
+    """The reason :func:`_mounts` exists, made EXECUTABLE rather than asserted
+    in a docstring -- and the reason two other files may not hand-roll it.
+
+    ``APIRouter`` inherits ``.mount()`` from Starlette's ``Router``, so a
+    nested mount sits behind the same ``_IncludedRouter`` wrapper that hides
+    the 54 routes ``_walk`` was written for. Measured on FastAPI 0.138: the
+    flat scan finds ZERO mounts in the app below. A guard written that way
+    reports a clean public surface for an app that just grew a public one.
+    """
+    inner = APIRouter()
+    inner.mount("/nested", StaticFiles(directory=str(ROOT / "frontend")), name="n")
+    app = FastAPI()
+    app.include_router(inner)
+
+    assert [r for r in app.routes if isinstance(r, Mount)] == []
+    assert {m.path for m in _mounts(app)} == {"/nested"}

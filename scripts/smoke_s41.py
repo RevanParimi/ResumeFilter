@@ -8,7 +8,6 @@ extraction, no API key). Run from the repo root:
     python scripts/smoke_s41.py
 """
 
-import os
 import subprocess
 import sys
 import tempfile
@@ -26,6 +25,8 @@ from app.features.context import build_context
 from app.ledger.store import build_ledger_store
 from app.reports.store import build_report_store
 
+from _smoke import base_env
+
 FIXTURE = Path("tests/fixtures/full_profile_resume.txt")
 PORT = 8041
 BASE = f"http://127.0.0.1:{PORT}"
@@ -42,7 +43,7 @@ def main() -> int:
     command.upgrade(cfg, "head")
     print(f"migrated scratch DB: {url}")
 
-    env = os.environ.copy()
+    env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
         "DEE_REPORT_DB_PATH": reports,
