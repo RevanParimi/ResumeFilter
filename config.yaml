@@ -346,3 +346,12 @@ grievance_officer_name: ""
 grievance_officer_email: ""
 grievance_officer_phone: ""
 grievance_response_days: 30             # the promise made on the public page
+
+# --- Signal quality harness (PI-9, S9.1) --------------------------------------
+# Does any advisory number predict what a human concluded? The harness REFUSES
+# to answer below this many usable labels rather than reporting a number
+# computed from a handful of rows -- which is the objection that gated PI-9 in
+# the first place. Advisory analysis only: nothing here changes a score, a band
+# or a threshold.
+min_signal_quality_samples: 30          # usable labels per signal, or it refuses
+signal_quality_curve_bins: 10           # reliability-curve bins; empty bins report null
