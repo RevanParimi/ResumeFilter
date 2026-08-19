@@ -422,6 +422,36 @@ is worse than a 404 because it looks answered.
 mechanically; it is what an operator has committed to, and `GET
 /admin/requests?status=open` ordered oldest-first is how they keep it.
 
+## 10a. The signal-quality harness (PI-9, S9.1)
+
+Does any advisory number predict what a human concluded? Full treatment in
+`SIGNALS.md`; the operational surface is:
+
+```bash
+# the route -- admin plane, no org variant (cross-tenant by construction)
+curl -H "X-API-Key: $KEY" "$HOST/admin/signal-quality?source=outcomes"
+
+# the CLI -- same shape as the retention sweep, and for the same reason:
+# there is no scheduler anywhere in app/, so this is invocable, never a daemon
+python -m app.signal_quality.report --source outcomes
+```
+
+**Exit codes**, because a cron is the caller nobody is watching when it goes
+wrong: `0` ran and printed the report as the LAST line of stdout as JSON; `3`
+the database is not migrated -- one sentence on stderr, no traceback, and
+nothing was read. Same treatment the retention sweep got in S8.6, applied here
+from the start rather than after an operator found it.
+
+**Expect refusals, and read them as the tool working.** Below
+`min_signal_quality_samples` (default 30), on a one-class sample, or for a
+signal this label source cannot score, the signal reports why and carries no
+numbers at all. Every `depth.*` signal refuses against the default `outcomes`
+source today and will until real organisations submit ledger interview records
+-- that is the honest state, not a fault.
+
+**It changes nothing.** No score, no band, no threshold, no decision. Advisory
+analysis only.
+
 ## 11. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).
@@ -437,3 +467,6 @@ mechanically; it is what an operator has committed to, and `GET
   user-gated go-live in `DEPLOY.md`, not to a sprint.
 - **A per-item retry counter.** A permanently-broken item fails identically
   each time at the organisation's own cost, and that cost is already bounded.
+- **Any action taken on a signal-quality measurement.** The harness measures;
+  acting on what it measures is a human decision, and calibration stays
+  conservative and advisory (§10a, `SIGNALS.md`).

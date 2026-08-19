@@ -9,7 +9,112 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-15/17 (latest) — S8.7 BUILT AND MERGED: `app/` →
+- **Session 2026-08-18/19 (latest) — S9.1 COMPLETE, and the S8.6 review fixes
+  merged. `main` carries both. 1854 → 1989 passing, `smoke_s91` 15/15,
+  `smoke_s43` 8/8, 15/15 mutants dead. Nothing deployed.**
+  **THE OWED ULTRA REVIEW IS STILL OWED, and has now failed FOUR times** on
+  "You've hit your session limit" (2026-08-14, twice on 08-18, once on 08-19).
+  Across roughly forty angle-agent launches, **ONE has ever produced output** —
+  the Reuse angle on 08-18. Target `s86-review-target`; S8.6 remains
+  **unreviewed for correctness**, and retrying costs quota without result.
+  **THE ONE SURVIVING ANGLE'S 8 FINDINGS ARE ALL FIXED AND MERGED.**
+  Two were silent-failure shapes: `_UNADVERTISED_PATHS` hand-copied four doc
+  paths out of `PUBLIC_PATHS` (now derived from `app.docs_url` et al — and
+  four of its five entries were **already dead**, because FastAPI registers
+  docs with `add_route`, a starlette `Route`, while `_iter_api_routes` filters
+  on `APIRoute`); and two test files hand-rolled a flat Mount scan **in the
+  same branch that added `_mount_paths()`**, whose docstring calls flat scans
+  broken — measured, a mount nested in an included router is seen ZERO times.
+  The other six became `scripts/_smoke.py`, the one smoke harness: `Smoke`
+  (was 8 copies), `wait_healthy` (21), `base_env` (33), `client` (33),
+  `uvicorn_argv` (~30), `boot_until_exit` (2). A drift guard over all 35
+  scripts fails if anyone re-rolls one.
+  **AND THE SHARED `base_env` CAUGHT A SMOKE BILLING A LIVE VENDOR.**
+  `smoke_s43`'s docstring has said "LLM-free" since S4.3; it inherited the real
+  `DEE_OPENROUTER_API_KEY` from `.env` and logged `"llm": "OpenRouterLLM"` on
+  `main`. Its ranking half had ALWAYS built `Settings(openrouter_api_key="")`
+  itself — the key was pinned on one door and not the other, this repo's
+  signature defect once more. With both doors closed, 4 of 8 checks failed and
+  the other 4 were passing on INSERTION ORDER over three candidates whose
+  `years_experience` was None. Cause: one character per fixture —
+  `extractor._experience` skips `_BULLET` lines because under a bullet a dated
+  line is a DUTY, so `- Engineer, Acme (2013 - Present)` yielded zero entries.
+  De-bulleted, all eight assertions are real and green.
+  **STILL OPEN, and now a product decision:** the heuristic extractor ignores
+  dated role lines written as bullets, which is a common resume shape. That is
+  an S1.1 call with a wide blast radius, deliberately not made inside a smoke
+  fix.
+  **➤ NEXT STEP: the ultra review on `s86-review-target` (user-triggered), then
+  S9.2. PI-8's remainder is unchanged — the user-gated go-live in `DEPLOY.md`
+  including the Railway cron, plus alerting thresholds on `/metrics`. CI has
+  still never been read: `main` was pushed for the `image` and `postgres` jobs
+  and `gh` is not installed here.**
+
+- **Session 2026-08-17/18 — PI-9 OPENED. S9.1 (signal quality
+  harness) SPECCED, PLANNED, and PARTLY BUILT on branch `s91-signal-quality`.
+  PAUSED MID-SPRINT at `35dcd6e` on a session limit, 1875 green. NOT merged.
+  `main` was PUSHED for the first time since S8.4a.**
+  **➤ RESUME AT TASK 5.** Ledger:
+  `.superpowers/sdd/2026-08-17-s91-signal-quality-harness/progress.md` (it
+  holds every ruling and the exact stop point; it is GIT-IGNORED, so if it is
+  gone, recover from `git log` plus this entry). Spec
+  `docs/superpowers/specs/2026-08-17-s91-signal-quality-harness-design.md`,
+  plan `docs/superpowers/plans/2026-08-17-s91-signal-quality-harness.md`
+  (13 tasks; 1 and 2-4 done, 5-13 pending).
+  **THE SPRINT PROCEEDS DESPITE PI-9'S OWN GATE, and the gate is answered by
+  construction rather than by waiting.** Gap-analysis v2 §5 parked calibration
+  on "real orgs submitting outcomes" because "a harness measuring test fixtures
+  would have been actively misleading". That argues against a harness that
+  emits a number no matter what it is fed — so this one *cannot*: three
+  refusals (insufficient samples · degenerate class · label-kind mismatch)
+  return a type that carries **no metric fields at all**. Same posture as
+  S7.1's `government_id` and S7.2's EPFO: ship the mechanism, make the missing
+  input a refusal.
+  **TWO PRIOR FRAMINGS DIED ON CONTACT WITH THE CODE.** (1) §3.3's
+  "metrics over the S4.2 × S4.4 join" — `FeatureVector` is keyed
+  `(candidate_id, as_of)` with EXACT matching while `outcomes` is keyed by
+  `report_id`, so that join needs a nearest-before rule and a tolerance window.
+  The **Report body** already carries every signal at its point in time and is
+  the artifact the human actually saw, so it is both simpler and more correct;
+  the harness never touches `ml_feature_vectors`. (2) "the ledger is the ground
+  truth" — S8.5 shipped an org door writing to `outcomes`, and the GTM keeps
+  the ledger off the pitch, so a ledger-only harness would still be empty
+  **after** the launch it was gated on.
+  **THE LOAD-BEARING IDEA IS THAT THE LABEL SEAM CARRIES SEMANTICS.**
+  `OutcomeLabel` is a FRAUD vocabulary, `InterviewOutcome` a HIRING one.
+  Scoring `depth_score` against `VERIFIED_FABRICATED` is a category error that
+  would still produce a plausible AUC — so signals declare the `LabelKind` they
+  can be scored by and mismatches REFUSE. Nine fraud signals measurable today;
+  the three `depth.*` correctly report nothing until ledger data exists.
+  **⚠ THE PLAN'S OWN REFERENCE CODE HAD A BUG THE REVIEW CAUGHT.**
+  `calibration_curve` computed `int(s / width)` with `width = 1.0/bins`, which
+  misplaces exact tenths at the DEFAULT `bins=10` (`0.3/0.1 =
+  2.9999999999999996` → bin 2). Every test used `bins=4`, whose width is an
+  exact binary fraction — so the fixtures were green and **the default argument
+  had zero coverage**. This is the "rule holds at one door, not the other"
+  shape with the second door being a *default parameter*. Fixed to
+  `int(s * bins)`, pinned by a `bins=10` test, verified by execution.
+  **⚠ A FIX REPORT CLAIMED A TEST RUN IT HAD NOT DONE** — "Expecting: 1875
+  passed" instead of output. Re-run by the controller: 1875 is right, but a
+  predicted result is not evidence.
+  **⚠ THE SESSION LIMIT KILLED THE RE-REVIEWER MID-FLIGHT** (resets 10:20am),
+  the same limit that killed nine of ten agents in the S8.6 review. That fix
+  was verified by the controller executing the code instead of by a second
+  agent — recorded as ruling R11, and the only task-review gap on the branch.
+  **THE OTHER OPEN RULING TO CARRY INTO TASK 7: R1.** The plan passed
+  `consent_allowed=True` hardcoded into `build_label`; that is a consent
+  bypass, and `LedgerLabelSource` must call
+  `materialization_consent(candidate_id, at=report.created_at)` instead.
+  **`origin/main` IS NOW CURRENT** (`a1b34a1..9ac59b9`, 91 commits) — pushed so
+  CI could finally run the `image` + `postgres` jobs, which are the only things
+  that can execute S8.7's `COPY src/app` and `PYTHONPATH=/srv/app/src`.
+  **CI RESULT NOT YET READ** (`gh` is not installed here — check the Actions
+  tab). Branch `s86-review-target` was pushed as a review target: a synthetic
+  commit whose tree is byte-identical to `6f19d32` parented at `8ae08cb`, so
+  its diff IS the S8.6 range (36 files, 4,679 insertions). **The owed S8.6
+  ULTRA review is still owed** — run `/code-review ultra s86-review-target`,
+  then delete that branch. Nothing deployed.
+- **Session 2026-08-15/17 — S8.7 BUILT AND MERGED: `app/` →
   `src/app/`, a PURE MOVE. `main` is at `d0d8b56`. 1852 → 1854 passing (the
   two new guards), ALL TWENTY SMOKES GREEN, bindings 402/402 · contract 31/31
   · browser 19/19. NOT PUSHED. Nothing deployed.**
@@ -2476,7 +2581,7 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │            suite verifies, and doing it later means paying the
     │            disruption twice. Recommend deciding it in the spec, not mid-
     │            build.
-    └── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
+    ├── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
              The checklist is DEPLOY.md; the blocking non-technical item is
              the IBM IP / outside-activity check (GTM §8.3). Also still open:
              alerting thresholds on /metrics.
@@ -2499,6 +2604,57 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
         PI-9 = calibration harness, gated on PI-8 landing real orgs.
         STANDING NON-GOALS: payments/payroll/contracts, sourcing/outreach,
         native coding assessments (revisit post-PI-8)
+
+PI-9  SIGNAL QUALITY — "do any of the seven advisory
+ │    numbers predict what a human concluded?"
+ └── [x] S9.1  SIGNAL QUALITY HARNESS — COMPLETE. 1989 green, smoke_s91
+          15/15, 15/15 mutants dead. SIGNALS.md written.
+          THE GATE IS ANSWERED BY CONSTRUCTION, not by waiting: three refusals
+          (insufficient samples / degenerate class / label-kind mismatch)
+          return a type carrying NO metric fields, so the harness cannot
+          report on fixtures. Same posture as government_id and EPFO.
+          - predictor source is the REPORT BODY, not ml_feature_vectors: the
+            feature vector is keyed (candidate_id, as_of) with EXACT matching
+            while outcomes are keyed by report_id, and the report is the
+            artifact the human actually saw
+          - the label seam carries SEMANTICS: outcomes => FRAUD (9 signals,
+            measurable today), ledger => HIRE (3 depth.* signals, which
+            correctly refuse until real orgs submit interview records)
+          - no new table, no migration, NO new dependency (AUC/Brier/curve/
+            lift are pure stdlib, and the AUC tie policy is written out
+            because every *_band ties by construction)
+          - [x] 1 result types · [x] 2-4 metrics · [x] 5 store reader ·
+            [x] 6 label seam · [x] 7 ledger source · [x] 8 registry ·
+            [x] 9 service+refusals · [x] 10 route+knob · [x] 11 CLI ·
+            [x] 12 mutants · [x] 13 smoke+docs
+          - RULING R1 APPLIED AND PINNED BY MUTATION: the plan hardcoded
+            consent_allowed=True into build_label, a real consent bypass in
+            the one place PI-9 touches consented data. Now
+            materialization_consent(cid, at=report.created_at); restoring the
+            constant turns 2 tests red. Consent is read AT THE REPORT'S OWN
+            MOMENT, not "now" -- a grant beginning after the report did not
+            authorize reading that subject when the prediction was made.
+          - ⚠ THE PLAN'S REFERENCE CODE WAS WRONG SIX TIMES, every one caught
+            by EXECUTION and none by reading: calibration_curve's int(s/width)
+            at the DEFAULT bins=10 (every test used bins=4, whose width
+            divides exactly -- the uncovered door was a default argument);
+            fixtures report_store/candidate_id that do not exist;
+            OutcomeSource.ORG (it is ORGANIZATION); record_interview (it is
+            submit_interview_record); SqlCandidateStore (it is CandidateStore);
+            Population(reports_considered=...) (no such field). TREAT PLAN
+            SNIPPETS AS INTENT, NEVER AS RUNNABLE.
+          - the kind-mismatch refusal is checked BEFORE the sample floor: a
+            depth signal on a fraud source is not "nearly measurable", and
+            insufficient_samples would invite collecting more of a label that
+            can never score it
+          - the no-traceback claim is asserted in a REAL SUBPROCESS: in-process
+            a logging handler bound to a previous test's captured stream emits
+            its own "--- Logging error --- Traceback", so the in-process
+            version reads pytest's plumbing. It failed in-file and passed
+            alone, which is the tell.
+          - the mutation harness is COMMITTED (scripts/mutate_s91.py), unlike
+            S8.3's and S8.5's hand-run passes: a count nobody can re-derive is
+            a claim, not evidence
 ```
 
 ## Standing conventions (do not relitigate)
@@ -2513,6 +2669,47 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
 - LLM provider: OpenRouter + Qwen tiers (see `config.yaml`).
 
 ## Session log
+
+- **2026-08-19** — **S9.1 finished (Tasks 5-13) and the S8.6 review fixes
+  merged. 1854 → 1989 green, `smoke_s91` 15/15, `smoke_s43` 8/8, 15/15 mutants
+  dead, `check_ui_screening_contract` 31/31. Nothing deployed.**
+  **What this session established, beyond the checklist:**
+  1. **A shared helper is how an invariant becomes testable.** The key pin
+     lived in 34 copies and had gone missing from five smokes over five
+     sprints. Consolidating it into `scripts/_smoke.py` immediately found a
+     SIXTH — `smoke_s43`, whose docstring claimed "LLM-free" while it billed
+     OpenRouter. An invariant in 34 places is an invariant nothing can test.
+  2. **Half its checks were passing on insertion order.** Once the key was
+     pinned, three `smoke_s43` checks that had always been green turned out to
+     be ordering over three None-valued candidates. A green check is not
+     evidence that the thing it names is true.
+  3. **The plan's own reference code was wrong SIX times, and execution caught
+     every one.** Two non-existent fixtures, three misspelled APIs, one
+     non-existent model field — plus the `calibration_curve` default-argument
+     bug found before the pause. Plan snippets are intent, never runnable.
+  4. **Order the refusals by what they invite the reader to do.** The
+     kind-mismatch check runs before the sample floor, because
+     "insufficient_samples" on a depth signal scored by fraud labels would
+     invite someone to go and collect more of a label that can never score it.
+  5. **Some claims cannot be asserted in-process.** The CLI's "no traceback on
+     stderr" failed in its file and passed alone: a logging handler bound to a
+     previous test's captured stream emits its own `--- Logging error ---
+     Traceback`. The assertion was reading pytest's plumbing. It needs a real
+     subprocess, which is how the retention CLI already asserts the same claim.
+  6. **A mutation count nobody can re-derive is a claim, not evidence.** S8.3's
+     12/12 and S8.5's 10/10 were hand-run and survive only as numbers in this
+     file. S9.1's harness is committed as `scripts/mutate_s91.py`, and 15/15
+     die.
+  7. **`git stash` is unusable in this repo.** `stash -u` fails on `.claude/`
+     with a OneDrive permission error, leaves the tree dirty anyway, and the
+     next `checkout` silently carries the changes across — so a before/after
+     measurement runs twice against the SAME code and reports IDENTICAL for
+     free. Compare implementations in one process instead.
+  8. **The ultra review has now died on the session limit four times**, roughly
+     forty angle-agents for one surviving output. Recorded so nobody re-spends
+     the quota expecting a different result; S8.6 is still unreviewed for
+     correctness.
+
 
 - **2026-08-13** — **S8.6 built: the production shape, and nothing deployed.
   Branch `s86-production-shape`, 12 commits, TDD. 1812 → 1848 green, all

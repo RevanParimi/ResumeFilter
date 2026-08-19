@@ -452,6 +452,15 @@ class Settings(BaseSettings):
     # a salary and a UAN. A paragraph of reviewer reasoning fits; a pasted
     # document does not.
     max_outcome_notes_chars: int = Field(default=2_000, ge=1)
+
+    # --- Signal quality harness (PI-9, S9.1) --------------------------------
+    # The sample floor below which the harness refuses rather than reports. 30
+    # is a convention, not a derivation -- it is roughly where a proportion's
+    # confidence interval stops spanning most of [0,1] -- and it is a KNOB
+    # precisely because the right value is an empirical question this repo has
+    # no data to answer yet. A literal would make it unanswerable.
+    min_signal_quality_samples: int = Field(default=30, ge=1)
+    signal_quality_curve_bins: int = Field(default=10, ge=1)
     # Shared-secret admin gate (FR-15). SECRET → env/.env only, never YAML.
     # Empty is NOT "auth disabled" — since S8.1 it is the MOST refusing state:
     # require_api_key 401s everything and verify_launch_config refuses to boot.
