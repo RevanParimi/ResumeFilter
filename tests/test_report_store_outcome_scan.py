@@ -131,3 +131,25 @@ def test_the_order_is_deterministic_when_two_outcomes_share_a_timestamp(store):
     assert [o.outcome for _, o in first[0]] == [
         OutcomeLabel.VERIFIED_GENUINE, OutcomeLabel.VERIFIED_FABRICATED,
     ]
+
+
+def test_all_reports_with_candidates_skips_ad_hoc_reports():
+    """POST /evaluate reports carry candidate_id=None: there is no subject to
+    join a ledger row to, so the ledger label source must never see them."""
+    from app.candidates.extractor import heuristic_profile
+    from app.candidates.schema import ExtractionResult
+
+    cs = make_candidate_store()
+    store = SqlReportStore(cs._session_factory)
+    resume = "Jane Rao\nML Engineer\nSkills: Python\nEmail: jane@example.com\n"
+    cid = cs.ingest(
+        ExtractionResult(profile=heuristic_profile(resume), method="heuristic"),
+        resume_text=resume,
+    ).candidate_id
+
+    now = datetime.now(timezone.utc)
+    store.save(Report(domain="genai", candidate_id=cid, created_at=now))
+    store.save(Report(domain="genai", candidate_id=None, created_at=now))
+
+    got = store.all_reports_with_candidates()
+    assert len(got) == 1 and got[0].candidate_id == cid

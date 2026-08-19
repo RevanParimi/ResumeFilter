@@ -43,6 +43,7 @@ class ReportStore(Protocol):
     def add_outcome(self, rec: OutcomeRecord) -> bool: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
     def report_level_outcomes(self) -> list[tuple[Report, OutcomeRecord]]: ...
+    def all_reports_with_candidates(self) -> list[Report]: ...
     def outcomes_for_org(
         self, org_id: str, report_id: str
     ) -> Optional[list[OutcomeRecord]]: ...
@@ -230,6 +231,22 @@ class SqlReportStore:
                 (Report.model_validate(rep.body), SqlReportStore._to_record(out))
                 for rep, out in rows
             ]
+
+    def all_reports_with_candidates(self) -> list[Report]:
+        """Every stored report attached to a candidate, oldest first.
+
+        Ad-hoc ``POST /evaluate`` reports carry ``candidate_id=None`` and are
+        excluded: there is no subject to join a ledger row to. Admin plane
+        only, cross-tenant by construction.
+        """
+        with self._session_factory() as s:
+            rows = s.execute(
+                select(ReportRow)
+                .where(ReportRow.candidate_id.is_not(None))
+                .order_by(ReportRow.created_at, ReportRow.id)
+            ).scalars().all()
+            return [Report.model_validate(r.body) for r in rows]
+
 
     def delete(self, report_id: str) -> bool:
         """Delete one report; its outcomes CASCADE in the database."""

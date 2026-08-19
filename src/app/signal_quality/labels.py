@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Protocol
 
+from app.features.training import build_label
 from app.ledger.consent import as_utc
 from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
@@ -110,3 +111,58 @@ class OutcomesLabelSource:
                     report=report, positive=positive, labeled_at=recorded_at
                 )
         return list(chosen.values())
+
+
+class LedgerLabelSource:
+    """Hiring outcomes from the PI-3 ledger, via S4.4's ``build_label``.
+
+    ``build_label`` IS NOT EDITED BY THIS SPRINT. It is pure, consent-gated,
+    audited and leakage-free, and already answers exactly the question this
+    source needs; wrapping it keeps ONE implementation of the strict-after rule
+    rather than a second that agrees today.
+
+    Expected to return NOTHING until real organisations submit interview
+    records. That is the honest day-one state and the reason every ``depth.*``
+    signal refuses.
+
+    CONSENT IS READ, NOT ASSUMED (ruling R1). The plan passed
+    ``consent_allowed=True`` as a constant; that is a bypass, and this is the
+    one place in PI-9 that touches consented data. The decision is taken at
+    ``report.created_at`` rather than "now", because a grant that began after
+    the report was written did not authorize reading that subject at the moment
+    the prediction was made.
+
+    One consent read per report, deliberately un-cached: the decision is
+    time-scoped, so two reports on the same candidate at different moments can
+    legitimately differ. ``materialization_consent`` also AUDITS each call,
+    which is correct -- a consent check on a data principal is an auditable
+    event even when the caller is a metrics job -- but it does mean the audit
+    log grows with harness runs.
+    """
+
+    name = "ledger"
+    kind = LabelKind.HIRE
+
+    def __init__(self, report_store, ledger_store) -> None:
+        self._reports = report_store
+        self._ledger = ledger_store
+
+    def labeled(self) -> list[LabeledReport]:
+        out: list[LabeledReport] = []
+        for report in self._reports.all_reports_with_candidates():
+            cid = report.candidate_id
+            if cid is None:
+                continue
+            decision = self._ledger.materialization_consent(cid, at=report.created_at)
+            label = build_label(
+                as_of=report.created_at,
+                interview_records=self._ledger.records_for_candidate(cid),
+                coding_rounds=self._ledger.coding_rounds_for_candidate(cid),
+                consent_allowed=decision.allowed,
+            )
+            if not label.observed or label.withheld or label.event_at is None:
+                continue
+            out.append(LabeledReport(
+                report=report, positive=bool(label.hired), labeled_at=label.event_at,
+            ))
+        return out
