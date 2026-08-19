@@ -44,6 +44,13 @@
   dated role lines written as bullets, which is a common resume shape. That is
   an S1.1 call with a wide blast radius, deliberately not made inside a smoke
   fix.
+  **BRANCH HYGIENE:** `s86-review-fixes`, `s43-offline-assertions` and
+  `s91-signal-quality` merged and deleted. **`s86-review-target` SURVIVES ON
+  PURPOSE** — it is the frozen diff the owed ultra review targets, and deleting
+  it would take the review with it. `s84-dev-login-echo` still carries its one
+  unmerged commit (a local-only login-code echo), left alone for the same
+  reason as before: merging something that echoes login codes needs a review
+  first.
   **➤ NEXT STEP: the ultra review on `s86-review-target` (user-triggered), then
   S9.2. PI-8's remainder is unchanged — the user-gated go-live in `DEPLOY.md`
   including the Railway cron, plus alerting thresholds on `/metrics`. CI has
