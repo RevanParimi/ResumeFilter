@@ -50,6 +50,10 @@ _PHONEISH = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{8,}\d)(?!\d)")
 _BULLETISH = re.compile(r"^[-•*·]\s*")
 _EDU_HEADER = re.compile(r"education|academic|qualification", re.IGNORECASE)
 _SKILL_HEADER = re.compile(r"skill|technolog|competenc|tech stack", re.IGNORECASE)
+#: Plan ruling R10: a delimited list ("Python, SQL, Pandas", "Title | City")
+#: is content, never a header. No SECTION_ALIASES entry contains any of these
+#: ("licenses & certifications" uses "&", which stays allowed).
+_LIST_DELIMITERS = ",;|·"
 
 
 def is_header_shaped(line: str) -> bool:
@@ -58,6 +62,8 @@ def is_header_shaped(line: str) -> bool:
     if not s or len(s) > 48:
         return False
     if _YEAR.search(s) or "@" in s:
+        return False
+    if any(ch in s for ch in _LIST_DELIMITERS):
         return False
     words = s.split()
     if not 1 <= len(words) <= 5:

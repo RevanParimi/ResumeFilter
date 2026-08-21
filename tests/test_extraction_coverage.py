@@ -101,6 +101,23 @@ def test_academic_lines_are_not_counted_as_roles():
     assert not looks_academic("Senior Data Engineer, Acme Analytics (2019 - Present)")
 
 
+def test_header_shaped_rejects_delimited_lists():
+    """Controller ruling R10 (review of tasks 4/5): a comma-, semicolon-,
+    pipe-, or middle-dot-delimited line is content (a skills list, an inline
+    "Title | City" identity line), never a section header. No entry in
+    SECTION_ALIASES contains any of these four characters, so rejecting them
+    costs nothing real -- a header literally written "Skills, Tools" would be
+    misread as content, but that is bounded; the systematic false negative
+    it replaces (Finding 1: a bare skills list stealing itself out of its own
+    section) is not."""
+    assert not is_header_shaped("Python, SQL, Pandas")
+    assert not is_header_shaped("Python | SQL | Pandas")
+    assert not is_header_shaped("Python; SQL; Pandas")
+    assert not is_header_shaped("Python · SQL · Pandas")
+    # "&" stays allowed -- SECTION_ALIASES has "licenses & certifications".
+    assert is_header_shaped("Licenses & Certifications")
+
+
 from app.candidates.coverage import assess_coverage
 from app.candidates.schema import CandidateProfile, ContactInfo, EducationEntry, ExperienceEntry, ExtractedStr, SkillItem
 
@@ -227,3 +244,101 @@ def test_gaps_are_capped_and_say_so():
     cov = assess_coverage(text, _profile(), min_chars=50, max_gaps=3)
     assert len(cov.gaps) == 3
     assert cov.truncated is True
+
+
+def test_education_not_extracted_fires_on_real_evidence():
+    """Positive-fire coverage for check 2 (review finding 2): real academic
+    evidence in the text, paired with a genuinely empty profile.education."""
+    text = """Anita Rao
+anita@example.com
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        skills=[SkillItem(name="Python")],
+        education=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "education_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "education_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "education"
+
+
+def test_skills_not_extracted_fires_on_a_bare_comma_list():
+    """Positive-fire coverage for check 3, and the regression test for the
+    reviewer's Finding 1. Before R10, "Python, SQL, Pandas" read as
+    header-shaped itself: it opened its own (empty-content) block, stealing
+    the text out from under the SKILLS block, so skill_content was always
+    empty and check 3 could never fire -- assess_coverage reported
+    `complete` on a resume with a populated skills section and an empty
+    profile.skills. This test fails against that bug and passes once
+    is_header_shaped() rejects comma-delimited lines."""
+    text = """Anita Rao
+anita@example.com
+
+SKILLS
+Python, SQL, Pandas
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "skills_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "skills_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "skills"
+
+
+def test_contact_not_extracted_fires_on_real_evidence():
+    """Positive-fire coverage for check 4: real email/phone text, paired
+    with a genuinely empty profile.contact."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # contact deliberately left at its default (empty) -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "contact_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "contact_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "contact"
+
+
+def test_unrecognized_skills_header_fires_via_header_fallback():
+    """R3's gate has two doors in: dated/academic evidence in the block's
+    content, or the header itself reading as a skills section. A bare tools
+    list carries neither a year nor a degree word, so evidence alone would
+    never catch a skills-shaped section under a name the extractor does not
+    recognize -- this isolates that second door: the block's content has no
+    dated or academic line at all."""
+    text = (
+        "Priya Sharma\n"
+        "priya@example.com\n"
+        "\n"
+        "TECH STACK\n"
+        "Python, SQL, Pandas\n"
+    )
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "section_unrecognized" in ids
+    hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
+    assert hint.severity is GapSeverity.MINOR
+    assert hint.header == "TECH STACK"
