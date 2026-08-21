@@ -186,6 +186,48 @@ Campus placement portal built with Django
     assert cov.gaps == []
 
 
+def test_academic_dated_lines_are_not_role_evidence():
+    """A line that carries a degree word AND two dates ("B.Tech ... (2015 -
+    2019)") is education evidence, not an unclaimed role -- regression guard
+    for the `and not looks_academic(line)` filter on role_lines. Without it,
+    a genuinely empty profile.experience here would misfire
+    experience_not_extracted on a resume that never claimed a role at all."""
+    text = """Priya Sharma
+priya@example.com
+
+B.Tech in Computer Science, VIT Vellore (2015 - 2019)
+
+SKILLS
+Python, SQL
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # experience deliberately empty -- must NOT read as a dropped role
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "experience_not_extracted" not in {g.id for g in cov.gaps}
+
+
+def test_minor_only_gaps_produce_minor_gaps_band_not_complete():
+    """A profile with only a MINOR gap (an unrecognized header, nothing
+    actually dropped) must report MINOR_GAPS, never COMPLETE -- regression
+    guard for the `elif kept:` branch that decides the band. Same fixture as
+    test_unrecognized_header_is_minor_when_nothing_was_dropped, which checks
+    the gap's own shape; this checks the aggregate band it must produce."""
+    text = BULLETED.replace("EXPERIENCE", "PROFESSIONAL SUMMARY")
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.MINOR_GAPS
+    assert all(g.severity is GapSeverity.MINOR for g in cov.gaps)
+
+
 def test_unrecognized_header_is_minor_when_nothing_was_dropped():
     # R5: the brief's fixture paired an empty `experience=[]` with a name
     # that claims nothing was dropped, so experience_not_extracted fired
