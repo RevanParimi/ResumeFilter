@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from app.core.logging import get_logger
 from app.graph.state import EvaluationState
+from app.schemas.extraction import CoverageBand
 from app.schemas.fabrication import AILikelihoodBand, ConsistencyBand, DuplicationBand, FabricationRiskBand, FindingSeverity
 from app.schemas.report import Report, VerdictStatus
 from app.services import Services
@@ -65,6 +66,15 @@ def make_report_node(services: Services):
                 f"the reviewer; it never changes the depth evaluation and is "
                 f"never a rejection signal."
             )
+        cov = state.extraction_coverage
+        if cov is not None and cov.band is CoverageBand.MAJOR_GAPS:
+            fields = sorted({g.field for g in cov.gaps if g.field})
+            summary += (
+                f" Extraction coverage: parts of this resume could not be read — "
+                f"{', '.join(fields) or 'some sections'} appear in the document but "
+                f"were not extracted, so checks over those fields report "
+                f"insufficient data for a reason about the PARSER, not the candidate."
+            )
 
         rep = Report(
             id=f"rep_{state.evaluation_id.split('_', 1)[-1]}",
@@ -83,6 +93,7 @@ def make_report_node(services: Services):
             cross_field=state.cross_field,
             resume_farm=state.resume_farm,
             fabrication_risk=state.fabrication_risk,
+            extraction_coverage=state.extraction_coverage,
         )
 
         # Flywheel: one record per claim, outcome left open for later feedback.

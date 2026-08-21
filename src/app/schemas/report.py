@@ -19,6 +19,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.claims import CandidateContext
+from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, FabricationRiskAssessment, ResumeFarmAssessment
 
 
@@ -126,3 +127,8 @@ class Report(BaseModel):
     # rejection signal. None for pre-S2.4 stored reports and runs where nothing
     # was assessed.
     fabrication_risk: Optional[FabricationRiskAssessment] = None
+
+    # S9.2: did the extractor read what the resume says? ADVISORY, and a
+    # statement about the PARSER, never about the candidate. None for every
+    # report written before S9.2 and for ad-hoc runs with no profile.
+    extraction_coverage: Optional[ExtractionCoverage] = None

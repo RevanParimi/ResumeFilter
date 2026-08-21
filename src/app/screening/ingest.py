@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Optional
 from app.candidates.store import CandidateStore, MatchedOn
 from app.core.config import Settings
 from app.reports.store import ReportStore, SubjectErasedError
+from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.services.llm import LLMClient
@@ -77,6 +78,9 @@ class IngestResult:
     extraction_method: str
     report: Optional[Report]
     resume_farm: ResumeFarmAssessment
+    # S9.2: computed at ingest (both extraction doors), so bulk imports
+    # (evaluate=False) still see it -- same reason resume_farm is here.
+    extraction_coverage: ExtractionCoverage
 
 
 async def ingest_resume(
@@ -140,6 +144,7 @@ async def ingest_resume(
         report = await engine.evaluate(
             resume_text=text, domain=domain,
             candidate_profile=result.profile, resume_farm=farm,
+            extraction_coverage=result.coverage,
         )
         report.candidate_id = outcome.candidate_id
         # DPDP: a derived report must not outlive the erasure of its subject.
@@ -164,4 +169,5 @@ async def ingest_resume(
         extraction_method=result.method,
         report=report,
         resume_farm=farm,
+        extraction_coverage=result.coverage,
     )
