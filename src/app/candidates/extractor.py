@@ -71,12 +71,28 @@ def _line_span(start: int, line: str) -> SourceSpan:
     return SourceSpan(start=start, end=start + len(line), text=line)
 
 
-_HEADER_DECORATION = re.compile(r"\([^)]*\)|[_\-–—=~]{2,}")
+_HEADER_DASH_DECORATION = re.compile(r"[_\-–—=~]{2,}")
+_HEADER_PAREN = re.compile(r"\([^)]*\)")
 
 
 def _header_key(line: str) -> str:
-    """Section-header lookup key: decoration and punctuation removed (S9.2)."""
-    s = _HEADER_DECORATION.sub("", line)
+    """Section-header lookup key: decoration and punctuation removed (S9.2).
+
+    Parenthetical stripping is bounded (S9.2 I1 review): applied only when
+    the remainder -- the line with its parenthetical content removed -- is
+    ALL-CAPS, or nothing but the parenthetical remains. Without the bound,
+    "Technologies (Python, Django, PostgreSQL)" -- a Title-Case body line
+    under PROJECTS -- strips to "Technologies", which normalizes to the
+    "technologies" skills alias and gets silently consumed as a SKILLS
+    header, deleting the technology list and re-parenting everything after
+    it into skills. "WORK EXPERIENCE (5 YEARS)" must still resolve: its
+    remainder ("WORK EXPERIENCE") is ALL-CAPS, so stripping still applies.
+    """
+    s = _HEADER_DASH_DECORATION.sub("", line)
+    without_parens = _HEADER_PAREN.sub("", s)
+    remainder = " ".join(without_parens.split()).strip(" :.-–—")
+    if not remainder or remainder.isupper():
+        s = without_parens
     return " ".join(s.split()).strip(" :.-–—").lower()
 
 
