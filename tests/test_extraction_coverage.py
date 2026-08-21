@@ -27,3 +27,13 @@ def test_gap_defaults_to_minor():
     gap = CoverageGap(id="section_unrecognized", detail="header 'Career History' not recognized")
     assert gap.severity is GapSeverity.MINOR
     assert gap.field is None
+
+
+from app.core.config import Settings
+
+
+def test_coverage_knobs_have_conservative_defaults():
+    s = Settings(_env_file=None)
+    assert s.coverage_min_chars == 200
+    assert s.coverage_max_header_chars == 60
+    assert s.coverage_max_gaps == 20
