@@ -88,14 +88,43 @@ def normalized_header(line: str) -> str:
     return " ".join(s.split()).strip(" :.-–—").lower()
 
 
+def _is_strong_header_signal(line: str, aliases: dict[str, str]) -> bool:
+    """A second gate on top of is_header_shaped() (S9.2 C1/I3 review).
+
+    is_header_shaped() alone also accepts short Title-Case content lines
+    with no year and no list delimiter -- a single bullet item ("- Python"),
+    a lone degree-name line ("B.Tech Computer Science") -- and each one
+    silently opened its own EMPTY block, stealing the real section's
+    content out from under its real header. A line only OPENS a block when
+    it also carries a strong signal that it IS a header: ALL-CAPS, a
+    trailing colon in the source line, or a name the extractor itself
+    recognizes.
+    """
+    stripped = _BULLETISH.sub("", line).strip()
+    if not stripped:
+        return False
+    if stripped.isupper():
+        return True
+    if stripped.endswith(":"):
+        return True
+    return normalized_header(line) in aliases
+
+
 def blocks(text: str) -> list[tuple[Optional[str], list[str]]]:
-    """[(header or None, [content lines])]. The first block's header is None."""
+    """[(header or None, [content lines])]. The first block's header is None.
+
+    A line only opens a new block when it is header-SHAPED (is_header_shaped,
+    the precondition) AND carries a strong header SIGNAL
+    (_is_strong_header_signal). Shape alone is not enough -- see the review
+    note on _is_strong_header_signal.
+    """
     out: list[tuple[Optional[str], list[str]]] = [(None, [])]
+    aliases = known_aliases()
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
-        if is_header_shaped(line):
+        if is_header_shaped(line) and _is_strong_header_signal(line, aliases):
             out.append((line, []))
         else:
             out[-1][1].append(line)

@@ -75,16 +75,22 @@ def test_header_shaped_accepts_real_headers_and_rejects_content():
 def test_blocks_groups_content_under_its_header():
     text = "Priya Sharma\n\nCAREER HISTORY\n- Engineer, Acme (2015 - 2019)\n"
     got = blocks(text)
-    # "Priya Sharma" IS header-shaped (short, title-cased, undated) -- the same
-    # blind spot the module docstring names: an identity line reads exactly
-    # like a section header to this crude a detector. blocks() is a mechanical
-    # splitter (plan ruling R4) and does not special-case it; the empty block
-    # it opens is harmless because R3's evidence gate on section_unrecognized
-    # is what keeps a bare name line from ever becoming assess_coverage() noise.
-    assert got[0] == (None, [])
-    assert got[1] == ("Priya Sharma", [])
-    assert got[2][0] == "CAREER HISTORY"
-    assert got[2][1] == ["- Engineer, Acme (2015 - 2019)"]
+    # "Priya Sharma" IS header-shaped (short, title-cased, undated) -- the
+    # same blind spot the module docstring names: an identity line reads
+    # exactly like a section header to this crude a detector. Pre-C1/I3, shape
+    # alone was enough to open a block, and the empty block "Priya Sharma"
+    # opened was only harmless because R3's evidence gate on
+    # section_unrecognized happened to keep a bare name line from becoming
+    # assess_coverage() noise -- but the SAME shape-only rule also let a
+    # single skill bullet or a bare degree line open its own empty block and
+    # steal real content out from under its real header (S9.2 C1/I3 review).
+    # blocks() now additionally requires a strong header SIGNAL (ALL-CAPS, a
+    # trailing colon, or a known alias) before shape is trusted to open a
+    # block, so "Priya Sharma" -- title-cased but no such signal -- stays
+    # content instead.
+    assert got[0] == (None, ["Priya Sharma"])
+    assert got[1][0] == "CAREER HISTORY"
+    assert got[1][1] == ["- Engineer, Acme (2015 - 2019)"]
 
 
 def test_dated_role_needs_two_points_or_a_present_marker():
@@ -266,9 +272,11 @@ def test_header_quote_is_bounded():
     # header-shaped at all (is_header_shaped caps at 5 words), so no block
     # ever opens under it and no gap ever carries a `header` -- the
     # assertion loop below ran zero times. Build a header that IS
-    # header-shaped (3 words, title-cased) but longer than max_header_chars,
-    # over a block with a dated line so R3's evidence gate actually opens.
-    long_header = "Professional Journey History"
+    # header-shaped (3 words) AND ALL-CAPS -- so it also clears the C1/I3
+    # strong-header-signal gate blocks() now requires -- but longer than
+    # max_header_chars, over a block with a dated line so R3's evidence gate
+    # actually opens.
+    long_header = "PROFESSIONAL JOURNEY HISTORY"
     assert len(long_header) > 20  # longer than the max_header_chars used below
     text = (
         "Priya Sharma\n"
@@ -288,9 +296,13 @@ def test_gaps_are_capped_and_say_so():
     # R5: the brief's "Section N" / "content N" blocks carry no dated or
     # academic evidence, so under R3's gate none of them produced a gap and
     # the cap was never reached. Give each block a dated content line so
-    # every one of the 30 blocks trips section_unrecognized.
+    # every one of the 30 blocks trips section_unrecognized. "Section N:"
+    # (trailing colon) rather than "Section N", so each still clears the
+    # C1/I3 strong-header-signal gate blocks() now requires -- a bare
+    # "Section N" is Title-Case with no such signal and would no longer open
+    # its own block at all.
     text = BULLETED + "\n" + "\n".join(
-        f"Section {i}\ncontent {i} role (2019 - 2020)" for i in range(30)
+        f"Section {i}:\ncontent {i} role (2019 - 2020)" for i in range(30)
     )
     cov = assess_coverage(text, _profile(), min_chars=50, max_gaps=3)
     assert len(cov.gaps) == 3
@@ -393,6 +405,110 @@ def test_unrecognized_skills_header_fires_via_header_fallback():
     hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
     assert hint.severity is GapSeverity.MINOR
     assert hint.header == "TECH STACK"
+
+
+from app.candidates.extractor import heuristic_profile
+
+
+def test_bulleted_skills_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """C1 (S9.2 final review): is_header_shaped('- Python') is True (the
+    bullet is stripped first), so each bulleted skill line opened its OWN
+    empty block -- the real KEY SKILLS block ended with content == [] and
+    check 3's `and content` guard skipped it. Measured before the fix:
+    skills=[] (extractor doesn't recognize "KEY SKILLS", unrelated to this
+    fix), coverage band=complete, gaps=[]."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+KEY SKILLS
+- Python
+- Java
+- Kubernetes
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    p = heuristic_profile(text)
+    assert p.skills == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "skills_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_unbulleted_skills_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """Same defect, no bullets -- each bare Title-Case skill line ("Python")
+    is header-shaped on its own too, so it opens its own empty block
+    instead of landing as content under KEY SKILLS."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+KEY SKILLS
+Python
+Java
+Kubernetes
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    p = heuristic_profile(text)
+    assert p.skills == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "skills_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_education_lines_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """Same defect pointed at check 2: 'B.Tech Computer Science' (no comma,
+    no year) is itself header-shaped and opens its own empty block, so
+    looks_academic() never sees it as content under ACADEMIC CREDENTIALS
+    (not a recognized SECTION_ALIASES entry) and check 2 stays silent."""
+    text = """Rahul Verma
+rahul@example.com  +91 98765 43210
+
+ACADEMIC CREDENTIALS
+B.Tech Computer Science
+VIT Vellore
+
+SKILLS
+Python, SQL
+"""
+    p = heuristic_profile(text)
+    assert p.education == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "education_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_fresher_education_layout_does_not_falsely_report_dropped_experience():
+    """I3 (S9.2 final review), same root cause as the three checks above
+    pointing the other way: with 'B.Tech Computer Science' wrongly promoted
+    to its own header block (a header that does not match _EDU_HEADER,
+    since it names no degree-section word), the NEXT line -- 'VIT Vellore |
+    2019 - 2023', two year tokens, no degree word -- lands in that same
+    wrong block and reads as an unclaimed ROLE instead of an
+    institution/date line under EDUCATION. A fresher with no work history
+    at all was told the parser dropped a job that never existed."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech Computer Science
+VIT Vellore | 2019 - 2023
+
+SKILLS
+Python, SQL, Pandas
+
+PROJECTS
+Campus placement portal built with Django
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # experience deliberately empty -- a genuine fresher, nothing to drop
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "experience_not_extracted" not in {g.id for g in cov.gaps}
 
 
 import json
