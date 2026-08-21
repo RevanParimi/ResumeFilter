@@ -49,7 +49,8 @@ _PHONE = re.compile(r"(?:\+?91[-\s]?)?0?[6-9]\d{4}[-\s]?\d{5}\b")
 _URL = re.compile(r"https?://[^\s)>\]]+")
 _DEGREE = re.compile(
     r"\b(b\.?\s?tech|m\.?\s?tech|b\.?e\b|m\.?e\b|b\.?sc|m\.?sc|bca|mca|mba|"
-    r"ph\.?d|b\.?com|m\.?com|diploma)\b",
+    r"bba|b\.?a\b|m\.?a\b|ph\.?d|b\.?com|m\.?com|diploma|"
+    r"bachelors?|masters?)\b",
     re.IGNORECASE,
 )
 _GRADE = re.compile(

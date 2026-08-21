@@ -24,6 +24,7 @@ SHAPES = Path(__file__).parent / "fixtures" / "shapes"
 
 BULLETED_ROLES = (SHAPES / "bulleted_roles.txt").read_text(encoding="utf-8")
 CAREER_HISTORY = (SHAPES / "career_history_header.txt").read_text(encoding="utf-8")
+SPELLED_OUT_DEGREES = (SHAPES / "spelled_out_degrees.txt").read_text(encoding="utf-8")
 
 
 def test_bulleted_role_lines_are_extracted_as_roles():
@@ -76,4 +77,25 @@ def test_experience_headers_real_resumes_use(header):
 def test_career_history_header_shape_now_reports_complete_coverage():
     p = heuristic_profile(CAREER_HISTORY)
     cov = assess_coverage(CAREER_HISTORY, p, min_chars=50)
+    assert cov.band is not CoverageBand.MAJOR_GAPS
+
+
+def test_spelled_out_degrees_are_extracted():
+    p = heuristic_profile(SPELLED_OUT_DEGREES)
+    assert len(p.education) == 2
+    assert "Bachelor" in (p.education[0].degree or "")
+    assert p.education[0].institution == "VIT Vellore"
+
+
+def test_bba_and_ba_are_degrees():
+    text = SPELLED_OUT_DEGREES.replace(
+        "Bachelor of Technology in Computer Science", "BBA in Marketing"
+    )
+    p = heuristic_profile(text)
+    assert len(p.education) == 2
+
+
+def test_spelled_out_degrees_shape_now_reports_complete_coverage():
+    p = heuristic_profile(SPELLED_OUT_DEGREES)
+    cov = assess_coverage(SPELLED_OUT_DEGREES, p, min_chars=50)
     assert cov.band is not CoverageBand.MAJOR_GAPS
