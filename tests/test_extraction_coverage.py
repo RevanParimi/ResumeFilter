@@ -342,3 +342,40 @@ def test_unrecognized_skills_header_fires_via_header_fallback():
     hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
     assert hint.severity is GapSeverity.MINOR
     assert hint.header == "TECH STACK"
+
+
+import json
+
+from app.candidates.extractor import extract_profile
+from app.services.llm import NullLLM
+from tests.conftest import FakeLLM
+
+
+@pytest.mark.asyncio
+async def test_both_extraction_paths_are_measured_by_the_same_instrument():
+    """The LLM path drops things too, and _is_empty is an ALL-of check that
+    waves a partial LLM profile straight through. A rule applied at one door and
+    not the other is this repo's signature defect (S7.1, S7.2, S7.3, S8.4a)."""
+    settings = Settings(_env_file=None, openrouter_api_key="")
+
+    heuristic = await extract_profile(BULLETED, llm=NullLLM(settings), settings=settings)
+
+    # An LLM that returns a plausible profile with NO experience at all.
+    payload = json.dumps({
+        "full_name": {"value": "Priya Sharma", "confidence": 0.9, "source_excerpt": "Priya Sharma"},
+        "contact": {"email": {"value": "priya@example.com", "confidence": 0.9,
+                              "source_excerpt": "priya@example.com"}},
+        "education": [{"degree": "B.Tech", "institution": "IIT Delhi", "confidence": 0.8,
+                       "source_excerpt": "B.Tech"}],
+        "skills": [{"name": "Python", "confidence": 0.8, "source_excerpt": "Python"}],
+        "experience": [],
+    })
+    llm_result = await extract_profile(
+        BULLETED, llm=FakeLLM({"RESUME:": payload}, settings), settings=settings
+    )
+
+    assert llm_result.method == "llm"
+    assert heuristic.coverage.band is CoverageBand.MAJOR_GAPS
+    assert llm_result.coverage.band is CoverageBand.MAJOR_GAPS
+    assert "experience_not_extracted" in {g.id for g in heuristic.coverage.gaps}
+    assert "experience_not_extracted" in {g.id for g in llm_result.coverage.gaps}

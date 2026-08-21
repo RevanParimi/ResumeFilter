@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from app.candidates import hashing
+from app.candidates.coverage import assess_coverage
 from app.candidates.dates import date_points, has_date_range, parse_date_range
 from app.candidates.normalize import normalize_profile
 from app.candidates.normalize.location import find_city, parse_notice_period
@@ -572,6 +573,15 @@ async def extract_profile(
         profile = heuristic_profile(resume_text)
         method = "heuristic"
     normalize_profile(profile)  # S1.4: same enrichment for both paths
+    # S9.2: measured HERE -- after both doors (LLM / heuristic) have already
+    # converged on `profile` -- so one instrument covers both paths.
+    coverage = assess_coverage(
+        resume_text,
+        profile,
+        min_chars=settings.coverage_min_chars,
+        max_header_chars=settings.coverage_max_header_chars,
+        max_gaps=settings.coverage_max_gaps,
+    )
     hashing.apply_contact_hashes(profile, settings.contact_hash_salt)
     log.info(
         "profile_extracted",
@@ -579,5 +589,6 @@ async def extract_profile(
         education=len(profile.education),
         experience=len(profile.experience),
         skills=len(profile.skills),
+        coverage=coverage.band.value,
     )
-    return ExtractionResult(profile=profile, method=method, warnings=warnings)
+    return ExtractionResult(profile=profile, method=method, warnings=warnings, coverage=coverage)
