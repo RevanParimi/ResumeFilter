@@ -381,6 +381,55 @@ B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
     assert gap.field == "contact"
 
 
+def test_contact_not_extracted_does_not_fire_on_a_bare_year_range():
+    """I2 (S9.2 final review): _PHONEISH's {8,} class-length bound let an
+    8-digit year range clear it -- _PHONEISH.search('Owned the 2019 - 2021
+    migration') matched '2019 - 2021'. An agency-forwarded resume with the
+    contact line stripped (this product's own input shape) has role/skill/
+    education content but no phone or email; it must report the parser
+    dropped the contact fields, not manufacture false contact evidence out
+    of a role's date range."""
+    text = """Senior Data Engineer
+
+EXPERIENCE
+Owned the 2019 - 2021 migration of the reporting stack to Snowflake
+Delivered the 2021 - 2023 rebuild of the customer data platform
+
+SKILLS
+Python, SQL, Pandas
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+        # contact deliberately left empty -- there is no real contact text here
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "contact_not_extracted" not in {g.id for g in cov.gaps}
+
+
+def test_contact_not_extracted_still_fires_on_a_bare_ten_digit_mobile():
+    """The other direction I2 must not break: a bare 10-digit mobile number
+    (no country code, no separators) has 10 digits and must still count as
+    contact evidence."""
+    text = """Anita Rao
+9876543210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # contact deliberately left at its default (empty) -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "contact_not_extracted" in {g.id for g in cov.gaps}
+
+
 def test_unrecognized_skills_header_fires_via_header_fallback():
     """R3's gate has two doors in: dated/academic evidence in the block's
     content, or the header itself reading as a skills section. A bare tools

@@ -47,6 +47,7 @@ _DEGREE_WORDS = (
 _GRADEISH = re.compile(r"\b(?:cgpa|gpa|percentage|marks)\b|\d{2,3}(?:\.\d+)?\s*%", re.IGNORECASE)
 _EMAILISH = re.compile(r"[^\s@]+@[^\s@]+\.[A-Za-z]{2,}")
 _PHONEISH = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{8,}\d)(?!\d)")
+_PHONE_MIN_DIGITS = 10
 _BULLETISH = re.compile(r"^[-•*·]\s*")
 _EDU_HEADER = re.compile(r"education|academic|qualification", re.IGNORECASE)
 _SKILL_HEADER = re.compile(r"skill|technolog|competenc|tech stack", re.IGNORECASE)
@@ -145,6 +146,22 @@ def looks_dated_role(line: str) -> bool:
     return len(years) == 1 and bool(_PRESENT.search(line))
 
 
+def looks_like_phone(text: str) -> bool:
+    """A phone-shaped token with at least _PHONE_MIN_DIGITS real digits.
+
+    _PHONEISH's {8,} bound is a bound on the character CLASS length, which
+    counts spaces/dashes/parens as well as digits -- so a bare year range
+    ("2019 - 2021", 8 digits) cleared it (S9.2 I2 review). Requiring 10+
+    actual digit characters in the matched token rejects any bare year
+    range while keeping a 10-digit Indian mobile or an internationally
+    prefixed number like "+91 98765 43210" (12 digits).
+    """
+    return any(
+        sum(ch.isdigit() for ch in m.group(0)) >= _PHONE_MIN_DIGITS
+        for m in _PHONEISH.finditer(text)
+    )
+
+
 def known_aliases() -> dict[str, str]:
     """alias -> section, from the shared declaration (R1)."""
     return {a: s for s, aliases in SECTION_ALIASES.items() for a in aliases}
@@ -220,7 +237,7 @@ def assess_coverage(
         ))
 
     # 4. contact -----------------------------------------------------------
-    has_contact_text = bool(_EMAILISH.search(text) or _PHONEISH.search(text))
+    has_contact_text = bool(_EMAILISH.search(text) or looks_like_phone(text))
     if has_contact_text and profile.contact.email is None and profile.contact.phone is None:
         gaps.append(CoverageGap(
             id="contact_not_extracted",
