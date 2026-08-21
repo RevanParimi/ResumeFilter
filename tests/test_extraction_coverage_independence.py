@@ -22,15 +22,36 @@ ALLOWED_APP_IMPORTS = {
 }
 
 
-def _imported_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _check_imports(tree: ast.AST) -> set[str]:
+    """Ruling R12: relative imports are BANNED outright, not resolved.
+
+    Without this, 'from . import extractor' has node.module=None and is
+    silently dropped by the `and node.module` guard below, while
+    'from .extractor import heuristic_profile' lands in `found` as the bare
+    name 'extractor' -- which matches neither FORBIDDEN (an absolute dotted
+    name) nor the "app."-prefix filter in test_coverage_imports_no_other_app_module.
+    Both forbidden forms would pass both guards silently, and a relative
+    import is the idiomatic (editor-autosuggested) form for reaching a
+    sibling module in the same package. coverage.py has no legitimate
+    relative import, so a blanket ban is simpler and safer than writing
+    resolution logic for what a relative import would actually point to.
+    """
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             found.update(a.name for a in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            found.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, (
+                f"relative import (level={node.level}, module={node.module!r}) "
+                f"forbidden -- ruling R12: absolute imports only"
+            )
+            if node.module:
+                found.add(node.module)
     return found
+
+
+def _imported_modules(path: Path) -> set[str]:
+    return _check_imports(ast.parse(path.read_text(encoding="utf-8")))
 
 
 def test_coverage_does_not_import_the_extractor_or_its_date_parser():
@@ -45,6 +66,19 @@ def test_coverage_does_not_import_the_extractor_or_its_date_parser():
 def test_coverage_imports_no_other_app_module():
     app_imports = {m for m in _imported_modules(COVERAGE_PY) if m.startswith("app.")}
     assert app_imports <= ALLOWED_APP_IMPORTS, f"unexpected app imports: {app_imports - ALLOWED_APP_IMPORTS}"
+
+
+def test_relative_import_of_the_extractor_cannot_dodge_the_guard():
+    """Ruling R12, the non-vacuous half of the ban: proves the level check
+    actually rejects both escape-hatch forms identified in review --
+    'from . import extractor' (module=None) and 'from .extractor import x'
+    (module='extractor', matching neither FORBIDDEN nor the app.-prefix
+    filter). Asserted against a parsed source STRING, never a real file, so
+    this test can never leave a broken module behind."""
+    with pytest.raises(AssertionError):
+        _check_imports(ast.parse("from . import extractor\n"))
+    with pytest.raises(AssertionError):
+        _check_imports(ast.parse("from .extractor import heuristic_profile\n"))
 
 
 def test_coverage_still_fires_when_the_extractor_is_blind():
