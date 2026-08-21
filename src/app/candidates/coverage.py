@@ -25,7 +25,14 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from app.candidates.schema import CandidateProfile
 from app.candidates.sections import SECTION_ALIASES
+from app.schemas.extraction import (
+    CoverageBand,
+    CoverageGap,
+    ExtractionCoverage,
+    GapSeverity,
+)
 
 #: Our own year scanner. Deliberately not app.candidates.dates.date_points.
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
@@ -41,6 +48,8 @@ _GRADEISH = re.compile(r"\b(?:cgpa|gpa|percentage|marks)\b|\d{2,3}(?:\.\d+)?\s*%
 _EMAILISH = re.compile(r"[^\s@]+@[^\s@]+\.[A-Za-z]{2,}")
 _PHONEISH = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{8,}\d)(?!\d)")
 _BULLETISH = re.compile(r"^[-•*·]\s*")
+_EDU_HEADER = re.compile(r"education|academic|qualification", re.IGNORECASE)
+_SKILL_HEADER = re.compile(r"skill|technolog|competenc|tech stack", re.IGNORECASE)
 
 
 def is_header_shaped(line: str) -> bool:
@@ -104,3 +113,122 @@ def looks_dated_role(line: str) -> bool:
 def known_aliases() -> dict[str, str]:
     """alias -> section, from the shared declaration (R1)."""
     return {a: s for s, aliases in SECTION_ALIASES.items() for a in aliases}
+
+
+def assess_coverage(
+    text: str,
+    profile: CandidateProfile,
+    *,
+    min_chars: int = 200,
+    max_header_chars: int = 60,
+    max_gaps: int = 20,
+) -> ExtractionCoverage:
+    """Compare the resume text with what was extracted from it.
+
+    Every check fires on EMPTY, never on 'fewer than expected' (spec 3.3):
+    telling one role spanning two lines from two roles needs a magic ratio, and
+    a false positive there accuses a correct extraction.
+    """
+    if len((text or "").strip()) < min_chars:
+        return ExtractionCoverage()  # refusal: no band, no gaps, nothing to read
+
+    parsed = blocks(text)
+    aliases = known_aliases()
+    gaps: list[CoverageGap] = []
+
+    # 1. experience --------------------------------------------------------
+    role_lines = [
+        line
+        for header, content in parsed
+        for line in content
+        if not (header and _EDU_HEADER.search(header))
+        and looks_dated_role(line)
+        and not looks_academic(line)
+    ]
+    if role_lines and not profile.experience:
+        gaps.append(CoverageGap(
+            id="experience_not_extracted",
+            detail=(
+                f"the resume has {len(role_lines)} dated role-shaped line(s) but no "
+                f"experience entry was extracted"
+            ),
+            severity=GapSeverity.MAJOR,
+            field="experience",
+        ))
+
+    # 2. education ---------------------------------------------------------
+    edu_lines = [
+        line for _, content in parsed for line in content if looks_academic(line)
+    ]
+    if edu_lines and not profile.education:
+        gaps.append(CoverageGap(
+            id="education_not_extracted",
+            detail=(
+                f"the resume has {len(edu_lines)} degree- or grade-bearing line(s) but "
+                f"no education entry was extracted"
+            ),
+            severity=GapSeverity.MAJOR,
+            field="education",
+        ))
+
+    # 3. skills ------------------------------------------------------------
+    skill_content = [
+        content for header, content in parsed
+        if header and _SKILL_HEADER.search(header) and content
+    ]
+    if skill_content and not profile.skills:
+        gaps.append(CoverageGap(
+            id="skills_not_extracted",
+            detail="the resume has a populated skills section but no skill was extracted",
+            severity=GapSeverity.MAJOR,
+            field="skills",
+        ))
+
+    # 4. contact -----------------------------------------------------------
+    has_contact_text = bool(_EMAILISH.search(text) or _PHONEISH.search(text))
+    if has_contact_text and profile.contact.email is None and profile.contact.phone is None:
+        gaps.append(CoverageGap(
+            id="contact_not_extracted",
+            detail="the resume carries an email or phone but neither was extracted",
+            severity=GapSeverity.MAJOR,
+            field="contact",
+        ))
+
+    # 5. unrecognized headers (a HINT, not a detector -- see the docstring) --
+    # R3: gated on evidence. Without this, EVERY resume's identity line reads
+    # as header-shaped (see test_blocks_groups_content_under_its_header), so
+    # an ungated version of this check fires on almost every resume and
+    # COMPLETE becomes unreachable. A block only counts as a hint if it also
+    # carries the kind of evidence the other checks look for: a dated-role or
+    # academic content line, or a header that itself reads as a skills
+    # section (skills lines carry neither dates nor degree words, so they
+    # need the header-pattern fallback).
+    for header, content in parsed:
+        if header is None or not content:
+            continue
+        if normalized_header(header) in aliases:
+            continue
+        has_role_or_academic_evidence = any(
+            looks_dated_role(line) or looks_academic(line) for line in content
+        )
+        looks_like_skills_header = bool(_SKILL_HEADER.search(header))
+        if not (has_role_or_academic_evidence or looks_like_skills_header):
+            continue
+        gaps.append(CoverageGap(
+            id="section_unrecognized",
+            detail="a section header the extractor does not recognize",
+            severity=GapSeverity.MINOR,
+            header=header.strip()[:max_header_chars],
+        ))
+
+    truncated = len(gaps) > max_gaps
+    kept = gaps[:max_gaps]
+    if any(g.severity is GapSeverity.MAJOR for g in kept):
+        band = CoverageBand.MAJOR_GAPS
+    elif kept:
+        band = CoverageBand.MINOR_GAPS
+    else:
+        band = CoverageBand.COMPLETE
+    return ExtractionCoverage(
+        band=band, gaps=kept, checks_run=5, truncated=truncated, advisory=True
+    )

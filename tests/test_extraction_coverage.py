@@ -99,3 +99,131 @@ def test_academic_lines_are_not_counted_as_roles():
     assert looks_academic("Bachelor of Technology, VIT Vellore, 2015")
     assert looks_academic("CGPA: 8.6/10")
     assert not looks_academic("Senior Data Engineer, Acme Analytics (2019 - Present)")
+
+
+from app.candidates.coverage import assess_coverage
+from app.candidates.schema import CandidateProfile, ContactInfo, EducationEntry, ExperienceEntry, ExtractedStr, SkillItem
+
+BULLETED = """Priya Sharma
+Senior Data Engineer | Bengaluru
+priya@example.com  +91 98765 43210
+
+EXPERIENCE
+- Senior Data Engineer, Acme Analytics (2019 - Present)
+- Data Engineer, Foo Systems (2015 - 2019)
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
+"""
+
+
+def _profile(**kw) -> CandidateProfile:
+    return CandidateProfile(**kw)
+
+
+def test_short_text_refuses_and_carries_no_gaps():
+    """The refusal is the design. An empty-looking clean result would be a lie."""
+    cov = assess_coverage("Priya Sharma\npriya@example.com", _profile(), min_chars=200)
+    assert cov.band is CoverageBand.INSUFFICIENT_DATA
+    assert cov.gaps == []
+    assert cov.checks_run == 0
+
+
+def test_dropped_experience_is_a_major_gap():
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )  # experience deliberately empty -- the measured defect
+    cov = assess_coverage(BULLETED, profile, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    ids = {g.id for g in cov.gaps}
+    assert "experience_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "experience_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "experience"
+
+
+def test_a_genuine_fresher_reports_complete():
+    """No work history is not a gap. This is the false positive that would
+    make the whole instrument untrustworthy, so it gets its own test."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+
+SKILLS
+Python, SQL, Pandas
+
+PROJECTS
+Campus placement portal built with Django
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
+
+
+def test_unrecognized_header_is_minor_when_nothing_was_dropped():
+    # R5: the brief's fixture paired an empty `experience=[]` with a name
+    # that claims nothing was dropped, so experience_not_extracted fired
+    # alongside the hint this test is named for. Under R3's evidence gate,
+    # "CAREER HISTORY"'s two dated bullet lines are real experience
+    # evidence, so a genuinely empty profile.experience here is itself the
+    # measured defect from test_dropped_experience_is_a_major_gap, not an
+    # isolated MINOR case. Give the profile a real experience entry so the
+    # only gap left is the unrecognized-header hint.
+    text = BULLETED.replace("EXPERIENCE", "CAREER HISTORY")
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "section_unrecognized" in ids
+    hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
+    assert hint.severity is GapSeverity.MINOR
+    assert hint.header == "CAREER HISTORY"
+
+
+def test_header_quote_is_bounded():
+    # R5: the brief's 21-word header ("Career " + "History " * 20) is not
+    # header-shaped at all (is_header_shaped caps at 5 words), so no block
+    # ever opens under it and no gap ever carries a `header` -- the
+    # assertion loop below ran zero times. Build a header that IS
+    # header-shaped (3 words, title-cased) but longer than max_header_chars,
+    # over a block with a dated line so R3's evidence gate actually opens.
+    long_header = "Professional Journey History"
+    assert len(long_header) > 20  # longer than the max_header_chars used below
+    text = (
+        "Priya Sharma\n"
+        "priya@example.com\n"
+        "\n"
+        f"{long_header}\n"
+        "Led the platform team (2019 - Present)\n"
+    )
+    cov = assess_coverage(text, _profile(), min_chars=50, max_header_chars=20)
+    quoted_headers = [gap.header for gap in cov.gaps if gap.header is not None]
+    assert quoted_headers, "expected at least one gap to carry a header"
+    for header in quoted_headers:
+        assert len(header) <= 20
+
+
+def test_gaps_are_capped_and_say_so():
+    # R5: the brief's "Section N" / "content N" blocks carry no dated or
+    # academic evidence, so under R3's gate none of them produced a gap and
+    # the cap was never reached. Give each block a dated content line so
+    # every one of the 30 blocks trips section_unrecognized.
+    text = BULLETED + "\n" + "\n".join(
+        f"Section {i}\ncontent {i} role (2019 - 2020)" for i in range(30)
+    )
+    cov = assess_coverage(text, _profile(), min_chars=50, max_gaps=3)
+    assert len(cov.gaps) == 3
+    assert cov.truncated is True
