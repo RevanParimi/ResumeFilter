@@ -25,6 +25,7 @@ SHAPES = Path(__file__).parent / "fixtures" / "shapes"
 BULLETED_ROLES = (SHAPES / "bulleted_roles.txt").read_text(encoding="utf-8")
 CAREER_HISTORY = (SHAPES / "career_history_header.txt").read_text(encoding="utf-8")
 SPELLED_OUT_DEGREES = (SHAPES / "spelled_out_degrees.txt").read_text(encoding="utf-8")
+LABELLED_SKILLS = (SHAPES / "labelled_skills.txt").read_text(encoding="utf-8")
 
 
 def test_bulleted_role_lines_are_extracted_as_roles():
@@ -98,4 +99,27 @@ def test_bba_and_ba_are_degrees():
 def test_spelled_out_degrees_shape_now_reports_complete_coverage():
     p = heuristic_profile(SPELLED_OUT_DEGREES)
     cov = assess_coverage(SPELLED_OUT_DEGREES, p, min_chars=50)
+    assert cov.band is not CoverageBand.MAJOR_GAPS
+
+
+def test_skill_category_labels_are_dropped():
+    p = heuristic_profile(LABELLED_SKILLS)
+    names = [s.name for s in p.skills]
+    assert "Python" in names
+    assert "PostgreSQL" in names
+    assert not any(":" in n for n in names), f"category label survived: {names}"
+
+
+def test_a_colon_inside_a_single_skill_is_not_a_label():
+    """Only a SHORT leading label before the first comma is a category."""
+    text = LABELLED_SKILLS.replace(
+        "Programming Languages: Python, Java, Go", "Python, Java, Go"
+    )
+    p = heuristic_profile(text)
+    assert "Python" in [s.name for s in p.skills]
+
+
+def test_labelled_skills_shape_now_reports_complete_coverage():
+    p = heuristic_profile(LABELLED_SKILLS)
+    cov = assess_coverage(LABELLED_SKILLS, p, min_chars=50)
     assert cov.band is not CoverageBand.MAJOR_GAPS

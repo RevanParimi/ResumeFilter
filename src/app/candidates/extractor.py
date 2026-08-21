@@ -58,6 +58,7 @@ _GRADE = re.compile(
 )
 _PERCENT = re.compile(r"(\d{2,3}(?:\.\d+)?)\s*%")
 _BULLET = re.compile(r"^[-•*·]\s*")
+_SKILL_LABEL = re.compile(r"^[A-Za-z][A-Za-z /&+-]{0,29}:\s*")
 
 _SENIORITY_HINTS: tuple[tuple[str, str], ...] = (
     ("principal", "staff"), ("staff", "staff"), ("lead", "senior"),
@@ -300,6 +301,10 @@ def _skills(lines: list[tuple[int, str]]) -> list[SkillItem]:
     seen: set[str] = set()
     for start, line in lines:
         content = _BULLET.sub("", line)
+        # "Programming Languages: Python, Java" -- the label is a CATEGORY, not
+        # a skill, and left in place it also poisons S1.4 normalization and
+        # floods S6.3's curation queue with terms that can never map (S9.2).
+        content = _SKILL_LABEL.sub("", content)
         for part in re.split(r"[,;·|]", content):
             name = part.strip().rstrip(".")
             if not 1 < len(name) <= 40 or name.lower() in seen:
