@@ -37,3 +37,21 @@ def test_coverage_knobs_have_conservative_defaults():
     assert s.coverage_min_chars == 200
     assert s.coverage_max_header_chars == 60
     assert s.coverage_max_gaps == 20
+
+
+import pytest
+from pydantic import ValidationError
+
+
+def test_coverage_max_gaps_rejects_zero():
+    """coverage_max_gaps=0 would produce a refusal-shaped lie: an empty gaps
+    list with truncated=True, indistinguishable from a clean assessment."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, coverage_max_gaps=0)
+
+
+def test_coverage_min_chars_rejects_negative():
+    """A negative coverage_min_chars disables the refusal this sprint is
+    built on -- every document would clear the floor."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, coverage_min_chars=-1)

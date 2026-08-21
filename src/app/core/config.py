@@ -361,9 +361,9 @@ class Settings(BaseSettings):
     # a gap is a statement about the PARSER, never about the candidate, and it
     # feeds no score. Below coverage_min_chars the assessment REFUSES rather
     # than reporting a clean result on a document too short to judge.
-    coverage_min_chars: int = 200
-    coverage_max_header_chars: int = 60
-    coverage_max_gaps: int = 20
+    coverage_min_chars: int = Field(default=200, ge=1)
+    coverage_max_header_chars: int = Field(default=60, ge=1)
+    coverage_max_gaps: int = Field(default=20, ge=1)
 
     # --- Evaluation ledger (PI-3, S3.1): schema + DPDP consent model -----------
     # The ledger shares candidates_db_url (one metadata root, one Alembic env).
