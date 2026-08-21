@@ -332,6 +332,39 @@ try to "fix" them:
 - **`bs` and `ms` are not in the degree pattern.** They match `MS Office`
   and `MS SQL Server`.
 
+**Known limits.** This instrument is deliberately narrower than it might
+look, and both limits below are load-bearing design choices, not bugs to be
+quietly closed later:
+
+- **Total drops only, never "fewer than expected" (spec §3.3).** Every check
+  fires on a field that is entirely empty. A *partial* loss — three roles on
+  the resume, two extracted — produces no gap at all, because telling "one
+  role spanning two lines" from "two roles, one dropped" needs a ratio with
+  a magic constant, and a false positive there accuses a correct extraction
+  of being wrong. This is why `tests/test_coverage_shape_matrix.py`'s
+  "undated role + dated achievements" row reports `major_gaps` even though
+  the extractor's 0-entry result is *correct* (C2): coverage cannot tell
+  "the extractor correctly declined to fabricate a role" from "the extractor
+  dropped a role", because both look identical from the outside — a
+  dated-shaped line with nothing in `profile.experience`. Revisiting §3.3 to
+  add an undercount heuristic is a later sprint's argument, not this one's.
+- **`Key Skills` (Title-Case) over a bare, one-per-line list still reports
+  `complete` despite a fully dropped skills section.** NEW-1's fourth door
+  (`_is_strong_header_signal`, `src/app/candidates/coverage.py`) promotes a
+  Title-Case header to a real block only when the very next non-empty line
+  is *not itself* header-shaped — that is what lets "Tech Stack" over a
+  comma list open a block without also reopening I3 (a degree line
+  promoted to a header, burying the dated line under it as an unclaimed
+  role) or C1 (a bulleted skills list read as a chain of one-line headers).
+  A bare list of single Title-Case words — "Python" / "Java" / "Kubernetes",
+  one per line, no bullets, no commas — is itself header-shaped by every
+  measure `is_header_shaped` uses, so the door stays shut and `Key Skills`
+  never opens a block. `tests/test_coverage_shape_matrix.py`'s
+  `key_skills_bare_list` row asserts this *actual* behavior (`complete`,
+  `skills == []`) with a comment marking it a known gap, not a desired one.
+  A narrower predicate that also caught this shape was not found without
+  reopening I3 or C1; closing it is future work, not this fix wave's.
+
 ## Config knobs
 
 | Key | Where | Default | Notes |

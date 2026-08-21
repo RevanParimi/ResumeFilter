@@ -1,0 +1,8 @@
+Anita Rao
+anita@example.com  +91 98765 43210
+
+Tech Stack
+Python, Django, PostgreSQL
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10

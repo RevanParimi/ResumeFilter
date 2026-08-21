@@ -1,0 +1,10 @@
+Priya Sharma
+priya@example.com
+
+PROJECTS
+Placement Portal
+Technologies (Python, Django, PostgreSQL)
+Built for 4000 students
+
+SKILLS
+Go, Rust
