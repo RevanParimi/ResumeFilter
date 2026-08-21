@@ -36,6 +36,7 @@ from app.candidates.schema import (
     SkillItem,
     SourceSpan,
 )
+from app.candidates.sections import SECTION_ALIASES
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.services.llm import LLMClient
@@ -56,19 +57,6 @@ _GRADE = re.compile(
 _PERCENT = re.compile(r"(\d{2,3}(?:\.\d+)?)\s*%")
 _BULLET = re.compile(r"^[-•*·]\s*")
 
-_SECTION_ALIASES: dict[str, tuple[str, ...]] = {
-    "education": ("education", "academics", "academic background", "qualifications"),
-    "experience": (
-        "experience", "work experience", "professional experience",
-        "employment", "employment history", "work history",
-    ),
-    "skills": ("skills", "technical skills", "core skills", "skill set", "technologies"),
-    "projects": ("projects", "personal projects", "key projects", "academic projects"),
-    "certifications": (
-        "certifications", "certificates", "licenses",
-        "licenses & certifications", "courses & certifications",
-    ),
-}
 _SENIORITY_HINTS: tuple[tuple[str, str], ...] = (
     ("principal", "staff"), ("staff", "staff"), ("lead", "senior"),
     ("senior", "senior"), ("sr.", "senior"), ("junior", "junior"),
@@ -85,7 +73,7 @@ def _split_sections(text: str) -> dict[str, list[tuple[int, str]]]:
     Content before any recognized header lands in pseudo-section 'header'."""
     alias_to_section = {
         alias: section
-        for section, aliases in _SECTION_ALIASES.items()
+        for section, aliases in SECTION_ALIASES.items()
         for alias in aliases
     }
     sections: dict[str, list[tuple[int, str]]] = {"header": []}
