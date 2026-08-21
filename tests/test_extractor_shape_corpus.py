@@ -55,6 +55,32 @@ B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
     assert len(p.experience) == 1
 
 
+def test_all_bulleted_dated_achievement_lines_do_not_fabricate_roles():
+    """C2 (S9.2 final review): `all_dated_are_bullets` only asked whether
+    every DATED line in the section was bulleted -- a section whose role
+    line carries no date, but whose achievement bullets carry year ranges,
+    satisfied that on its own and every duty became a fabricated job with
+    employer=None. Measured on the pre-fix code: two entries,
+    title='Led the' and title='Delivered the', employer=None. Inventing a
+    role is worse than missing one (the same argument that keeps
+    "professional summary" off SECTION_ALIASES, R13) -- experience must stay
+    empty here, not populate itself with garbage titles."""
+    text = """Priya Sharma
+priya@example.com
+
+WORK EXPERIENCE
+Acme Analytics - Senior Data Engineer
+Bengaluru, India
+- Led the 2019 - 2021 migration of the reporting stack to Snowflake
+- Delivered the 2021 - 2023 rebuild of the customer data platform
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
+"""
+    p = heuristic_profile(text)
+    assert p.experience == []
+
+
 def test_bulleted_shape_now_reports_complete_coverage():
     p = heuristic_profile(BULLETED_ROLES)
     cov = assess_coverage(BULLETED_ROLES, p, min_chars=50)

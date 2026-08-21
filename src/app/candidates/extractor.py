@@ -18,7 +18,7 @@ from typing import Optional
 
 from app.candidates import hashing
 from app.candidates.coverage import assess_coverage
-from app.candidates.dates import date_points, has_date_range, parse_date_range
+from app.candidates.dates import date_points, date_spans, has_date_range, parse_date_range
 from app.candidates.normalize import normalize_profile
 from app.candidates.normalize.location import find_city, parse_notice_period
 from app.candidates.schema import (
@@ -248,19 +248,63 @@ def _education(lines: list[tuple[int, str]]) -> list[EducationEntry]:
     return entries
 
 
+_PRESENT_MARKER = re.compile(
+    r"\b(?:present|current|till date|to date|ongoing|now)\b", re.IGNORECASE
+)
+_ROLE_TAIL_PUNCT = " \t\r\n-–—|,.()[]:;"
+
+
+def _looks_like_role(content: str) -> bool:
+    """A bulleted dated line only opens a new employment entry when it reads
+    like a role line (title, employer, dates), not an achievement bullet
+    that happens to mention a year range (S9.2 fix 1, C2 review: measured
+    "Led the 2019 - 2021 migration of the reporting stack to Snowflake"
+    fabricating title='Led the', employer=None).
+
+    Both must hold:
+      * the head (text before the FIRST date token) is non-empty and short
+        (<=6 words) -- role titles and "Title, Employer" phrases are short;
+        an achievement sentence with a leading verb phrase before its date
+        can still be short ("Led the ...") so this alone is not enough; and
+      * nothing meaningful trails the LAST date token -- a role's dates sit
+        at the end of the line, often "(2019 - Present)", while a duty
+        bullet's dates sit mid-sentence with the sentence continuing after
+        ("... the 2019 - 2021 migration of the reporting stack to
+        Snowflake"). Trailing "present"/"current"-style markers and
+        punctuation/parens don't count as "meaningful".
+    """
+    spans = date_spans(content)
+    if not spans:
+        return False
+    head = content[: spans[0][0]].strip().rstrip("—–-|,(").strip()
+    if not head or len(head.split()) > 6:
+        return False
+    tail = content[spans[-1][1] :]
+    tail = _PRESENT_MARKER.sub("", tail)
+    return not tail.strip(_ROLE_TAIL_PUNCT)
+
+
 def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
     entries: list[ExperienceEntry] = []
     dated = [(s, l) for s, l in lines if has_date_range(_BULLET.sub("", l))]
     # A duty list under a role ALWAYS has an unbulleted dated line above it. So
     # when every dated line in this section is bulleted, there is no role line
-    # for them to be duties OF -- they are the roles (S9.2).
+    # for them to be duties OF -- they are the roles (S9.2). But a role line
+    # carrying no date of its own (e.g. "Acme Analytics - Senior Data
+    # Engineer" with the dates only on its achievement bullets) ALSO makes
+    # every dated line bulleted -- so a bulleted dated line must additionally
+    # look like a role (_looks_like_role) before it is trusted to open one
+    # (S9.2 fix 1, C2 review).
     all_dated_are_bullets = bool(dated) and all(_BULLET.match(l) for _, l in dated)
     for start, line in lines:
         content = _BULLET.sub("", line)
         if not has_date_range(content):
             continue
-        if _BULLET.match(line) and not all_dated_are_bullets:
-            continue  # a duty under a role
+        if _BULLET.match(line):
+            if not all_dated_are_bullets:
+                continue  # a duty under a role
+            if not _looks_like_role(content):
+                continue  # an achievement bullet, not a role (C2)
         head = content[: date_points(content)[0][0]].strip().rstrip("—–-|,(").strip()
         title = employer = None
         if " at " in head.lower():
