@@ -89,7 +89,9 @@ def normalized_header(line: str) -> str:
     return " ".join(s.split()).strip(" :.-–—").lower()
 
 
-def _is_strong_header_signal(line: str, aliases: dict[str, str]) -> bool:
+def _is_strong_header_signal(
+    line: str, aliases: dict[str, str], next_line: Optional[str] = None
+) -> bool:
     """A second gate on top of is_header_shaped() (S9.2 C1/I3 review).
 
     is_header_shaped() alone also accepts short Title-Case content lines
@@ -98,8 +100,35 @@ def _is_strong_header_signal(line: str, aliases: dict[str, str]) -> bool:
     silently opened its own EMPTY block, stealing the real section's
     content out from under its real header. A line only OPENS a block when
     it also carries a strong signal that it IS a header: ALL-CAPS, a
-    trailing colon in the source line, or a name the extractor itself
-    recognizes.
+    trailing colon in the source line, a name the extractor itself
+    recognizes, or (see the fourth door below) a bare list sitting under it.
+
+    NEW-1 (S9.2 final review fix-wave regression): the three doors above
+    left a Title-Case, unaliased header with no trailing colon -- "Tech
+    Stack" over "Python, Django, PostgreSQL" -- opening no block at all, so
+    checks 3 and 5 went silent under it. Measured: skills=[], band=complete,
+    gaps=[] on a resume whose skills section was entirely dropped -- the
+    exact failure this module exists to catch, back under a narrower
+    trigger.
+
+    Fourth door: a header-shaped Title-Case line counts as a header when the
+    very next non-empty line is NOT itself header-shaped. A run of
+    same-shape lines is a LIST, not a series of headers -- "- Python" / "-
+    Java" / "- Kubernetes" under KEY SKILLS must stay a list (C1), and
+    "Academic Credentials" / "B.Tech Computer Science" / "VIT Vellore" must
+    stay unpromoted (I3), because each line's successor is itself
+    header-shaped. The door also does not open when the next line, though
+    not header-shaped, is a dated-role or academic CONTINUATION of the
+    current line's own record rather than an unrelated list item -- "B.Tech
+    Computer Science" over "VIT Vellore | 2019 - 2023" must not promote the
+    degree line to a header, because that would hide it from check 2 and
+    make the dated line under it misread as an unclaimed role (I3's exact
+    original shape). One sub-case this does NOT fix, deliberately: "Key
+    Skills" (Title-Case) over a bare one-per-line list ("Python" / "Java" /
+    "Kubernetes") -- the next line IS itself header-shaped, so the door
+    stays closed and check 3 stays silent there. See CANDIDATES.md's
+    "Known limits" for why that is left as a recorded gap, not contorted
+    away.
     """
     stripped = _BULLETISH.sub("", line).strip()
     if not stripped:
@@ -108,7 +137,11 @@ def _is_strong_header_signal(line: str, aliases: dict[str, str]) -> bool:
         return True
     if stripped.endswith(":"):
         return True
-    return normalized_header(line) in aliases
+    if normalized_header(line) in aliases:
+        return True
+    if next_line is None or is_header_shaped(next_line):
+        return False
+    return not (looks_dated_role(next_line) or looks_academic(next_line))
 
 
 def blocks(text: str) -> list[tuple[Optional[str], list[str]]]:
@@ -121,11 +154,10 @@ def blocks(text: str) -> list[tuple[Optional[str], list[str]]]:
     """
     out: list[tuple[Optional[str], list[str]]] = [(None, [])]
     aliases = known_aliases()
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if is_header_shaped(line) and _is_strong_header_signal(line, aliases):
+    lines = [raw.strip() for raw in text.splitlines() if raw.strip()]
+    for i, line in enumerate(lines):
+        next_line = lines[i + 1] if i + 1 < len(lines) else None
+        if is_header_shaped(line) and _is_strong_header_signal(line, aliases, next_line):
             out.append((line, []))
         else:
             out[-1][1].append(line)

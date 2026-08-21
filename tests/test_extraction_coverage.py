@@ -93,6 +93,64 @@ def test_blocks_groups_content_under_its_header():
     assert got[1][1] == ["- Engineer, Acme (2015 - 2019)"]
 
 
+def test_title_case_header_followed_by_a_bare_list_is_a_header():
+    """NEW-1 (S9.2 final review fix-wave regression): _is_strong_header_signal
+    only opened a block for ALL-CAPS, a trailing colon, or a known alias, so
+    a Title-Case unaliased header like "Tech Stack" was not a block at all --
+    both check 3 (skills_not_extracted) and check 5 (section_unrecognized)
+    went silent under it. Measured on the pre-fix code: skills=[],
+    band=COMPLETE, gaps=[] on a resume whose entire skills section was
+    dropped -- the exact failure mode this module exists to catch, reachable
+    through a narrower door. Fix: a Title-Case header-shaped line counts as
+    a header when the very next non-empty line is NOT itself header-shaped
+    -- a run of same-shape lines is a list, not a series of headers."""
+    text = "Priya Sharma\n\nTech Stack\nPython, Django, PostgreSQL\n"
+    got = blocks(text)
+    assert got[0] == (None, ["Priya Sharma"])
+    assert got[1] == ("Tech Stack", ["Python, Django, PostgreSQL"])
+
+
+def test_title_case_header_run_of_same_shape_lines_stays_a_list():
+    """The other half of NEW-1's fix, guarded: KEY SKILLS's bulleted items
+    are each individually header-shaped ("- Python" strips to "Python",
+    short and Title-Case), so a naive "next line isn't a header" rule would
+    promote every one of them too. It must not -- a RUN of same-shape lines
+    is a list, not a series of headers (C1 stays closed)."""
+    text = "KEY SKILLS\n- Python\n- Java\n- Kubernetes\n"
+    got = blocks(text)
+    assert len(got) == 2
+    assert got[1][0] == "KEY SKILLS"
+    assert got[1][1] == ["- Python", "- Java", "- Kubernetes"]
+
+
+def test_title_case_header_door_does_not_reopen_i3():
+    """The fourth door must not repromote a real academic content line just
+    because the line under it fails is_header_shaped for an unrelated reason
+    (carrying a year). "B.Tech Computer Science" followed by "VIT Vellore |
+    2019 - 2023" is not header-shaped (it has a year), but it is NOT a bare
+    list item either -- it is a dated continuation of the SAME record, and
+    promoting the line above would hide it from check 2 and reintroduce I3
+    (S9.2 final review): the next line would then read as an unclaimed role
+    under the wrong block. The door must stay closed here."""
+    text = "EDUCATION\nB.Tech Computer Science\nVIT Vellore | 2019 - 2023\n"
+    got = blocks(text)
+    assert len(got) == 2
+    assert got[1][0] == "EDUCATION"
+    assert got[1][1] == ["B.Tech Computer Science", "VIT Vellore | 2019 - 2023"]
+
+
+def test_title_case_header_followed_by_another_title_case_header_stays_unpromoted():
+    """Known-limit validation (table row 3 of the NEW-1 fix brief): "Academic
+    Credentials" is followed by "B.Tech Computer Science", which is itself
+    header-shaped (short, Title-Case, no year, no delimiter) -- so the door
+    stays closed and NEITHER line is promoted. I3 stays closed for this
+    shape too, by the same mechanism as C1: a run of header-shaped lines is
+    read as content, not as a chain of headers."""
+    text = "Academic Credentials\nB.Tech Computer Science\nVIT Vellore\n"
+    got = blocks(text)
+    assert got == [(None, ["Academic Credentials", "B.Tech Computer Science", "VIT Vellore"])]
+
+
 def test_dated_role_needs_two_points_or_a_present_marker():
     assert looks_dated_role("Senior Data Engineer, Acme Analytics (2019 - Present)")
     assert looks_dated_role("- Data Engineer, Foo Systems (2015 - 2019)")
@@ -357,6 +415,32 @@ Python, SQL, Pandas
     gap = next(g for g in cov.gaps if g.id == "skills_not_extracted")
     assert gap.severity is GapSeverity.MAJOR
     assert gap.field == "skills"
+
+
+def test_skills_not_extracted_fires_under_a_title_case_tech_stack_header():
+    """NEW-1 (S9.2 final review fix-wave regression), at the assess_coverage
+    level: "Tech Stack" is Title-Case, not ALL-CAPS, has no trailing colon,
+    and is not a known alias -- so before the fourth door it opened no block
+    at all and check 3 stayed silent. Measured on the pre-fix code:
+    skills=[], band=COMPLETE, gaps=[]."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+Tech Stack
+Python, Django, PostgreSQL
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    ids = {g.id for g in cov.gaps}
+    assert "skills_not_extracted" in ids
 
 
 def test_contact_not_extracted_fires_on_real_evidence():
