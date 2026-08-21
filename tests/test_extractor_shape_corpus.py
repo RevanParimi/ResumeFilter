@@ -81,6 +81,58 @@ B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
     assert p.experience == []
 
 
+@pytest.mark.parametrize("line,is_role", [
+    ("- Senior Data Engineer, Acme Analytics (2019 - Present)", True),
+    ("- Senior Software Engineer II, Tata Consultancy Services (2019 - Present)", True),
+    ("- Senior Software Engineer, Larsen and Toubro Infotech (2020 - Present)", True),
+    ("- Data Engineer, Foo Systems (2015 - 2019)", True),
+    ("- Principal Engineer at Flipkart Internet Private Limited, Jan 2018 - Mar 2021", True),
+    ("- Led the 2019 - 2021 migration of the reporting stack to Snowflake", False),
+    ("- Delivered the 2021 - 2023 rebuild of the customer data platform", False),
+])
+def test_looks_like_role_uses_trailing_text_not_word_count(line, is_role):
+    """NEW-2 (S9.2 final review fix-wave regression): `_looks_like_role`'s
+    `len(head.split()) > 6` word cap silently dropped a bulleted role line
+    whenever its "Title, Employer" head ran past six words -- multi-word
+    employer names ("Tata Consultancy Services", "Larsen and Toubro
+    Infotech", "Flipkart Internet Private Limited") are the norm in this
+    product's stated market, and the cap rejected all three of them here
+    even though each line's dates sit cleanly at the end. The word count is
+    the wrong axis: a role line's dates END the line, while an achievement
+    sentence continues past them -- that trailing-text emptiness, not word
+    count, is what must decide it. Measured on the pre-fix code: only the
+    Acme/Foo/Led/Delivered rows land correctly; the TCS, Larsen and
+    Flipkart rows (7-word heads) come back as achievement bullets (0
+    entries) instead of roles."""
+    text = f"""Priya Sharma
+priya@example.com
+
+EXPERIENCE
+{line}
+"""
+    p = heuristic_profile(text)
+    assert len(p.experience) == (1 if is_role else 0), line
+
+
+def test_long_bulleted_role_heads_are_extracted_as_roles():
+    """The measured repro from the NEW-2 finding: a two-role bulleted
+    EXPERIENCE section where BOTH roles have multi-word employer names
+    (TCS, Larsen and Toubro) must extract as 2 entries, not 1 with the
+    first silently dropped."""
+    text = """Priya Sharma
+priya@example.com
+
+WORK EXPERIENCE
+- Senior Software Engineer II, Tata Consultancy Services (2019 - Present)
+- Data Engineer, Foo Systems (2015 - 2019)
+"""
+    p = heuristic_profile(text)
+    assert len(p.experience) == 2
+    assert p.experience[0].title == "Senior Software Engineer II"
+    assert p.experience[0].employer == "Tata Consultancy Services"
+    assert p.experience[1].employer == "Foo Systems"
+
+
 def test_bulleted_shape_now_reports_complete_coverage():
     p = heuristic_profile(BULLETED_ROLES)
     cov = assess_coverage(BULLETED_ROLES, p, min_chars=50)

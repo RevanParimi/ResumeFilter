@@ -277,23 +277,28 @@ def _looks_like_role(content: str) -> bool:
     "Led the 2019 - 2021 migration of the reporting stack to Snowflake"
     fabricating title='Led the', employer=None).
 
-    Both must hold:
-      * the head (text before the FIRST date token) is non-empty and short
-        (<=6 words) -- role titles and "Title, Employer" phrases are short;
-        an achievement sentence with a leading verb phrase before its date
-        can still be short ("Led the ...") so this alone is not enough; and
-      * nothing meaningful trails the LAST date token -- a role's dates sit
-        at the end of the line, often "(2019 - Present)", while a duty
-        bullet's dates sit mid-sentence with the sentence continuing after
-        ("... the 2019 - 2021 migration of the reporting stack to
-        Snowflake"). Trailing "present"/"current"-style markers and
-        punctuation/parens don't count as "meaningful".
+    A role line's dates sit at the END of the line ("Title, Employer (2019 -
+    Present)"), while an achievement sentence's dates sit mid-sentence with
+    the sentence continuing after them ("... the 2019 - 2021 migration of
+    the reporting stack to Snowflake"). So the position of the LAST date
+    token, not the word count of the head, is the discriminator: nothing
+    meaningful may trail it. Trailing "present"/"current"-style markers and
+    punctuation/parens don't count as "meaningful".
+
+    An earlier fix wave also capped the head at <=6 words, reasoning that
+    role titles and "Title, Employer" phrases are short. Measured regression
+    (S9.2 final review fix-wave, NEW-2): multi-word employer names are the
+    norm in this product's stated market -- "Tata Consultancy Services",
+    "Larsen and Toubro Infotech", "Flipkart Internet Private Limited" -- and
+    the cap silently dropped every one of those roles even though their
+    dates sat cleanly at the end. The cap is gone; only a non-empty head is
+    still required.
     """
     spans = date_spans(content)
     if not spans:
         return False
     head = content[: spans[0][0]].strip().rstrip("—–-|,(").strip()
-    if not head or len(head.split()) > 6:
+    if not head:
         return False
     tail = content[spans[-1][1] :]
     tail = _PRESENT_MARKER.sub("", tail)
