@@ -258,6 +258,76 @@ The engine and graph stay candidate-blind: the route passes the extracted
 profile + farm assessment *into* `evaluate(...)` and stamps
 `report.candidate_id` *after* — the graph never resolves identity.
 
+## Extraction coverage (S9.2)
+
+`src/app/candidates/coverage.py` — `assess_coverage(text, profile)` — is an
+advisory assessment that compares the raw resume text against the extracted
+`CandidateProfile` and reports where the text evidently states something the
+profile does not carry. It is a statement about **the parser, never about the
+candidate**, and it feeds no score, band, threshold or verdict — see
+`ExtractionCoverage` in
+[src/app/schemas/extraction.py](src/app/schemas/extraction.py).
+
+**Why it exists.** Every signal veritas emits — depth score, fabrication
+risk, the FABRICATION.md checks — is derived from `CandidateProfile`. When
+the extractor silently drops a section, every downstream check runs
+correctly over an empty list and honestly reports insufficient data. That
+leaves the operator unable to tell *"this candidate has no work history"* (a
+fresher) from *"the parser dropped it"* (a senior hire nobody actually
+screened) — and for a fraud screen those are opposite conclusions.
+
+**The five measured shapes** that motivated the sprint. Each was run against
+`main` at `016f91f`, before the S9.2 fixes:
+
+| Shape | Before |
+|---|---|
+| roles written as bullets, e.g. `- Senior Data Engineer, Acme Analytics (2019 - Present)` | 0 experience entries |
+| the same resume with bullets removed | 2 entries |
+| header reads `CAREER HISTORY` instead of `EXPERIENCE` | 0 entries |
+| `Bachelor of Technology in Computer Science, VIT Vellore, 2015` | 0 education entries |
+| `Programming Languages: Python, Java, Go` | a skill named `"Programming Languages: Python"` |
+
+All five now extract correctly and report `complete`.
+
+**The independence rule, and why it is load-bearing.** `coverage.py` must
+not detect evidence with the extractor's own code. An instrument sharing the
+extractor's eyes is blind exactly where the extractor is: point the
+education check at `_DEGREE` and widening `_DEGREE` silently switches the
+check off, while leaving it narrow makes the check agree there was nothing
+there. Either way it reports `complete` on the exact resume it exists to
+catch. `tests/test_extraction_coverage_independence.py` enforces the import
+allow-list, including a ban on relative imports — `from . import extractor`
+parses to `module=None` and would otherwise slip through the guard.
+
+**The bands.** `insufficient_data` — below `coverage_min_chars` — is a
+refusal, and it carries **no gaps at all**; `complete`; `minor_gaps`
+(informational only); `major_gaps` (a field the text evidently describes is
+entirely absent). A refusal carries no gaps deliberately, so a measurement
+that could not be taken never reads as one that came back clean.
+
+**The five checks**, each firing only when its field is **entirely empty**,
+never on "fewer than expected": `experience_not_extracted`,
+`education_not_extracted`, `skills_not_extracted`, `contact_not_extracted`,
+`section_unrecognized` (a MINOR hint, evidence-gated so it does not fire on
+every resume's name line).
+
+**Where it is computed.** Once, inside `extract_profile`, after the LLM and
+heuristic paths have already converged on `profile` — so one instrument
+measures both doors. `_is_empty` is an all-of check, so an LLM profile
+carrying a name, an email and zero experience never falls back to the
+heuristic path, and would otherwise go unmeasured.
+
+**Two deliberate non-additions**, both worth recording because someone will
+try to "fix" them:
+
+- **`professional summary` is not an experience alias.** It is prose in most
+  resumes, and `_experience` opens an entry for any dated line in its
+  section — treating it as an experience header would manufacture a
+  fabricated job with no employer. Missing a role is an honest, bounded gap
+  that coverage now reports; inventing one is not.
+- **`bs` and `ms` are not in the degree pattern.** They match `MS Office`
+  and `MS SQL Server`.
+
 ## Config knobs
 
 | Key | Where | Default | Notes |

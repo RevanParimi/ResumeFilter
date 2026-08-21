@@ -95,6 +95,11 @@ float to make it fit. Both look like measurements.
 The rule: a `[0,1]` score gets AUC and Brier; a band ordinal gets lift only;
 an unbounded count gets AUC and lift but never Brier.
 
+None of this filters on extraction coverage (S9.2, CANDIDATES.md): a report
+whose extraction had `major_gaps` is scored here on a profile with holes,
+same as any other. That confound is deliberately out of scope for S9.2 — it
+is a later sprint's argument, not this one's.
+
 ### An absent assessment is `None`, never `0.0`
 
 Pre-S2.x stored reports and ad-hoc `POST /evaluate` runs carry no fabrication
