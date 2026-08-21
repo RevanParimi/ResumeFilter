@@ -111,12 +111,31 @@ def test_skill_category_labels_are_dropped():
 
 
 def test_a_colon_inside_a_single_skill_is_not_a_label():
-    """Only a SHORT leading label before the first comma is a category."""
+    """Only a SHORT leading label before the first comma is a category.
+
+    "Python: 5 years, Java: 3 years" is per-skill proficiency annotation, a
+    common Indian-resume shape -- TWO colons, not one, so R15's label rule
+    must not fire and "Python" must survive somewhere in the output rather
+    than being deleted as if it were a category name."""
     text = LABELLED_SKILLS.replace(
-        "Programming Languages: Python, Java, Go", "Python, Java, Go"
+        "Programming Languages: Python, Java, Go", "Python: 5 years, Java: 3 years"
     )
     p = heuristic_profile(text)
-    assert "Python" in [s.name for s in p.skills]
+    names = [s.name for s in p.skills]
+    assert any("Python" in n for n in names), f"Python lost entirely: {names}"
+
+
+def test_a_single_skill_with_one_colon_and_no_second_item_keeps_its_text():
+    """"C++: advanced" has exactly one colon but only ONE item after it (no
+    comma), so it fails R15's "at least two comma-separated items" half too --
+    it is not a category either. The accepted cost: it survives ugly, as one
+    skill literally named "C++: advanced", rather than being destroyed."""
+    text = LABELLED_SKILLS.replace(
+        "Programming Languages: Python, Java, Go", "C++: advanced"
+    )
+    p = heuristic_profile(text)
+    names = [s.name for s in p.skills]
+    assert "C++: advanced" in names, f"C++ lost: {names}"
 
 
 def test_labelled_skills_shape_now_reports_complete_coverage():

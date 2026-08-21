@@ -296,15 +296,34 @@ def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
     return entries
 
 
+def _strip_skill_label(content: str) -> str:
+    """"Programming Languages: Python, Java" -- the label is a CATEGORY, not a
+    skill, and left in place it also poisons S1.4 normalization and floods
+    S6.3's curation queue with terms that can never map (S9.2).
+
+    But "Python: 5 years" is a per-skill proficiency annotation, a common
+    Indian-resume shape, and "Python:" is the skill's own NAME -- stripping it
+    destroys the skill rather than a category. Ruling R15: strip only when the
+    line has exactly ONE colon AND at least two comma-separated items follow
+    it (a real category introduces a list). Two colons ("Python: 5 years,
+    Java: 3 years") or one item after the colon ("C++: advanced") are left
+    alone -- the latter survives ugly as a single skill named "C++: advanced",
+    which keeps the skill name instead of deleting it."""
+    if content.count(":") != 1:
+        return content
+    after = content.split(":", 1)[1]
+    items = [p for p in after.split(",") if p.strip()]
+    if len(items) < 2:
+        return content
+    return _SKILL_LABEL.sub("", content)
+
+
 def _skills(lines: list[tuple[int, str]]) -> list[SkillItem]:
     items: list[SkillItem] = []
     seen: set[str] = set()
     for start, line in lines:
         content = _BULLET.sub("", line)
-        # "Programming Languages: Python, Java" -- the label is a CATEGORY, not
-        # a skill, and left in place it also poisons S1.4 normalization and
-        # floods S6.3's curation queue with terms that can never map (S9.2).
-        content = _SKILL_LABEL.sub("", content)
+        content = _strip_skill_label(content)
         for part in re.split(r"[,;·|]", content):
             name = part.strip().rstrip(".")
             if not 1 < len(name) <= 40 or name.lower() in seen:
