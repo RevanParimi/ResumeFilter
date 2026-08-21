@@ -190,12 +190,21 @@ def test_unrecognized_header_is_minor_when_nothing_was_dropped():
     # R5: the brief's fixture paired an empty `experience=[]` with a name
     # that claims nothing was dropped, so experience_not_extracted fired
     # alongside the hint this test is named for. Under R3's evidence gate,
-    # "CAREER HISTORY"'s two dated bullet lines are real experience
-    # evidence, so a genuinely empty profile.experience here is itself the
-    # measured defect from test_dropped_experience_is_a_major_gap, not an
-    # isolated MINOR case. Give the profile a real experience entry so the
-    # only gap left is the unrecognized-header hint.
-    text = BULLETED.replace("EXPERIENCE", "CAREER HISTORY")
+    # a header's two dated bullet lines are real experience evidence, so a
+    # genuinely empty profile.experience here is itself the measured defect
+    # from test_dropped_experience_is_a_major_gap, not an isolated MINOR
+    # case. Give the profile a real experience entry so the only gap left is
+    # the unrecognized-header hint.
+    #
+    # S9.2 Task 9 (ruling R13) added "career history" to SECTION_ALIASES, so
+    # it no longer demonstrates an unrecognized header -- swapped for
+    # "PROFESSIONAL SUMMARY", which R13 deliberately keeps OFF that list (a
+    # "Professional Summary" is prose, and _experience would otherwise turn a
+    # summary sentence with a date range into a fabricated job). This text is
+    # exactly the shape R13's cost-if-wrong describes, and confirms the
+    # extractor correctly leaves it as an unrecognized MINOR hint rather than
+    # swallowing it into experience.
+    text = BULLETED.replace("EXPERIENCE", "PROFESSIONAL SUMMARY")
     profile = _profile(
         contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
         education=[EducationEntry(degree="B.Tech")],
@@ -207,7 +216,7 @@ def test_unrecognized_header_is_minor_when_nothing_was_dropped():
     assert "section_unrecognized" in ids
     hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
     assert hint.severity is GapSeverity.MINOR
-    assert hint.header == "CAREER HISTORY"
+    assert hint.header == "PROFESSIONAL SUMMARY"
 
 
 def test_header_quote_is_bounded():

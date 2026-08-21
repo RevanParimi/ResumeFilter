@@ -13,6 +13,18 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "experience": (
         "experience", "work experience", "professional experience",
         "employment", "employment history", "work history",
+        "career history", "employment details", "organizational experience",
+        "organisational experience", "work summary",
+        # NOT "professional summary" (S9.2 ruling R13, deliberate): in the
+        # overwhelming majority of resumes a "Professional Summary" section is
+        # prose near the top, not employment history -- and _experience opens
+        # an entry for any line in the recognized section carrying a date
+        # range, so a summary sentence mentioning "2015 - 2023" would
+        # manufacture a fabricated job with no employer. Missing a role is a
+        # bounded, honest gap (and the coverage instrument built in S9.2
+        # Tasks 4-5 reports it as experience_not_extracted); inventing one is
+        # not, and this sprint exists to stop the extractor being silently
+        # wrong. Do not add it back.
     ),
     "skills": ("skills", "technical skills", "core skills", "skill set", "technologies"),
     "projects": ("projects", "personal projects", "key projects", "academic projects"),

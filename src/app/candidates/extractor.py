@@ -69,6 +69,15 @@ def _line_span(start: int, line: str) -> SourceSpan:
     return SourceSpan(start=start, end=start + len(line), text=line)
 
 
+_HEADER_DECORATION = re.compile(r"\([^)]*\)|[_\-–—=~]{2,}")
+
+
+def _header_key(line: str) -> str:
+    """Section-header lookup key: decoration and punctuation removed (S9.2)."""
+    s = _HEADER_DECORATION.sub("", line)
+    return " ".join(s.split()).strip(" :.-–—").lower()
+
+
 def _split_sections(text: str) -> dict[str, list[tuple[int, str]]]:
     """Map section → [(char_offset_of_stripped_line, stripped_line)].
     Content before any recognized header lands in pseudo-section 'header'."""
@@ -83,7 +92,7 @@ def _split_sections(text: str) -> dict[str, list[tuple[int, str]]]:
     for raw in text.splitlines(keepends=True):
         line = raw.strip()
         if line:
-            key = line.rstrip(":").strip().lower()
+            key = _header_key(line)
             if key in alias_to_section:
                 current = alias_to_section[key]
                 sections.setdefault(current, [])

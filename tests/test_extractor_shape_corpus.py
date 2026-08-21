@@ -14,6 +14,8 @@ to end.
 
 from pathlib import Path
 
+import pytest
+
 from app.candidates.coverage import assess_coverage
 from app.candidates.extractor import heuristic_profile
 from app.schemas.extraction import CoverageBand
@@ -21,6 +23,7 @@ from app.schemas.extraction import CoverageBand
 SHAPES = Path(__file__).parent / "fixtures" / "shapes"
 
 BULLETED_ROLES = (SHAPES / "bulleted_roles.txt").read_text(encoding="utf-8")
+CAREER_HISTORY = (SHAPES / "career_history_header.txt").read_text(encoding="utf-8")
 
 
 def test_bulleted_role_lines_are_extracted_as_roles():
@@ -53,4 +56,24 @@ B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
 def test_bulleted_shape_now_reports_complete_coverage():
     p = heuristic_profile(BULLETED_ROLES)
     cov = assess_coverage(BULLETED_ROLES, p, min_chars=50)
+    assert cov.band is not CoverageBand.MAJOR_GAPS
+
+
+@pytest.mark.parametrize("header", [
+    "CAREER HISTORY",
+    "Employment Details",
+    "ORGANIZATIONAL EXPERIENCE",
+    "WORK EXPERIENCE (5 YEARS)",
+    "Experience ------",
+    "Work History:",
+])
+def test_experience_headers_real_resumes_use(header):
+    text = BULLETED_ROLES.replace("EXPERIENCE", header)
+    p = heuristic_profile(text)
+    assert len(p.experience) == 2, f"header {header!r} lost the experience section"
+
+
+def test_career_history_header_shape_now_reports_complete_coverage():
+    p = heuristic_profile(CAREER_HISTORY)
+    cov = assess_coverage(CAREER_HISTORY, p, min_chars=50)
     assert cov.band is not CoverageBand.MAJOR_GAPS
