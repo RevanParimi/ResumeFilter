@@ -55,12 +55,13 @@ def main() -> int:
     # reclaim rather than fighting that race.
     scratch = Path(tempfile.mkdtemp())
     url = f"sqlite:///{(scratch / 's92.db').as_posix()}"
-    # coverage_min_chars defaults to 200; two of the four fixture shapes are
-    # just under that (measured: labelled_skills 193, spelled_out_degrees
-    # 195), same as tests/test_extractor_shape_corpus.py's min_chars=50.
-    # Without lowering it here, those two would report insufficient_data
-    # (a refusal) rather than complete, and "no_major_gap_after_the_fixes"
-    # would pass trivially -- a check passing for the wrong reason.
+    # coverage_min_chars defaults to 200. All four fixture shapes now clear
+    # that (labelled_skills and spelled_out_degrees were lengthened past 200
+    # chars in the S9.2 final review fix wave, minor 3 -- they used to sit
+    # just under it at 193/195), but the override is kept anyway, matching
+    # tests/test_extractor_shape_corpus.py's min_chars=50: it costs nothing
+    # and keeps this smoke from silently depending on fixture file length
+    # again.
     env = base_env(scratch, url, DEE_API_AUTH_KEY=ADMIN, DEE_COVERAGE_MIN_CHARS="50")
     proc = subprocess.Popen(uvicorn_argv(PORT), env=env, cwd=str(ROOT))
     try:

@@ -287,7 +287,11 @@ screened) — and for a fraud screen those are opposite conclusions.
 | `Bachelor of Technology in Computer Science, VIT Vellore, 2015` | 0 education entries |
 | `Programming Languages: Python, Java, Go` | a skill named `"Programming Languages: Python"` |
 
-All five now extract correctly and report `complete`.
+All five now extract correctly and report `complete` at production defaults
+(`coverage_min_chars: 200`) — the fixture files behind the two shortest
+shapes (labelled skills, spelled-out degrees) were lengthened past 200
+characters during the S9.2 final review fix wave so this claim is what is
+actually under test, not an artifact of tests overriding the knob to 50.
 
 **The independence rule, and why it is load-bearing.** `coverage.py` must
 not detect evidence with the extractor's own code. An instrument sharing the

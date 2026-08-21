@@ -456,6 +456,38 @@ def test_unrecognized_skills_header_fires_via_header_fallback():
     assert hint.header == "TECH STACK"
 
 
+def test_unrecognized_header_with_no_evidence_does_not_fire():
+    """S9.2 final review, minor 4 (mutation gap): R3's evidence gate --
+    `if not (has_role_or_academic_evidence or looks_like_skills_header):
+    continue` -- had no mutant proving a test would catch its removal
+    (scripts/mutate_s92.py "R3: evidence gate disabled" survived until this
+    test was added). An unrecognized header whose content carries no
+    dated-role, academic, or skills-shaped evidence (a hobbies list, here)
+    must NOT produce a section_unrecognized gap -- an ungated version fires
+    on almost every resume's incidental short sections and COMPLETE becomes
+    unreachable, exactly the module docstring's own warning."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+
+SKILLS
+Python, SQL
+
+HOBBIES
+Reading, Chess, Cricket
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
+
+
 from app.candidates.extractor import heuristic_profile
 
 

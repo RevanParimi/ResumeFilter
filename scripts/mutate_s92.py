@@ -27,6 +27,18 @@ target moved under later rulings in this same sprint:
 A new mutant for R10 (`_LIST_DELIMITERS` in `is_header_shaped`) is also added,
 per the controller's instruction that both rulings added since the brief was
 written need their own mutants.
+
+S9.2 final review (2026-08-20/21) fix wave adds three more mutants that the
+review named as gaps in this file:
+
+  * "skills: fire even when entries exist" -- check 3's own analogue of the
+    "experience"/"education" fire-even-when-entries-exist mutants above,
+    which this file had for every OTHER check but not this one.
+  * "R3: evidence gate disabled" -- the section_unrecognized evidence gate
+    the module docstring calls load-bearing (an ungated check makes COMPLETE
+    unreachable) had no mutant proving a test would catch its removal.
+  * "fix3: _DEGREE widening reverted" -- Task 10's spelled-out-degree
+    alternation ("bachelors?|masters?") had no mutant, unlike fix1/fix2/fix4.
 """
 
 import pathlib, subprocess, sys
@@ -77,6 +89,15 @@ MUTANTS = [
   "        content = _strip_skill_label(content)", "        pass"),
  ("R15: a single-item colon-annotated skill loses its guard", E,
   "    if len(items) < 2:", "    if len(items) < 1:"),
+ ("skills: fire even when entries exist", C,
+  "    if skill_content and not profile.skills:", "    if skill_content:"),
+ ("R3: evidence gate disabled", C,
+  "        if not (has_role_or_academic_evidence or looks_like_skills_header):",
+  "        if False:"),
+ ("fix3: _DEGREE widening reverted", E,
+  "    r\"bba|b\\.?a\\b|m\\.?a\\b|ph\\.?d|b\\.?com|m\\.?com|diploma|\"\n"
+  "    r\"bachelors?|masters?)\\b\",",
+  "    r\"bba|b\\.?a\\b|m\\.?a\\b|ph\\.?d|b\\.?com|m\\.?com|diploma)\\b\","),
 ]
 
 SUITE = [

@@ -84,7 +84,11 @@ B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
 def test_bulleted_shape_now_reports_complete_coverage():
     p = heuristic_profile(BULLETED_ROLES)
     cov = assess_coverage(BULLETED_ROLES, p, min_chars=50)
-    assert cov.band is not CoverageBand.MAJOR_GAPS
+    # Exact band, not `is not MAJOR_GAPS` (S9.2 final review minor 2): that
+    # weaker assertion would also pass on a refusal (INSUFFICIENT_DATA),
+    # which carries no gaps and is not the claim this test makes.
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
 
 
 @pytest.mark.parametrize("header", [
@@ -104,7 +108,9 @@ def test_experience_headers_real_resumes_use(header):
 def test_career_history_header_shape_now_reports_complete_coverage():
     p = heuristic_profile(CAREER_HISTORY)
     cov = assess_coverage(CAREER_HISTORY, p, min_chars=50)
-    assert cov.band is not CoverageBand.MAJOR_GAPS
+    # Exact band, not `is not MAJOR_GAPS` (S9.2 final review minor 2).
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
 
 
 def test_spelled_out_degrees_are_extracted():
@@ -125,7 +131,9 @@ def test_bba_and_ba_are_degrees():
 def test_spelled_out_degrees_shape_now_reports_complete_coverage():
     p = heuristic_profile(SPELLED_OUT_DEGREES)
     cov = assess_coverage(SPELLED_OUT_DEGREES, p, min_chars=50)
-    assert cov.band is not CoverageBand.MAJOR_GAPS
+    # Exact band, not `is not MAJOR_GAPS` (S9.2 final review minor 2).
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
 
 
 def test_skill_category_labels_are_dropped():
@@ -164,7 +172,18 @@ def test_a_single_skill_with_one_colon_and_no_second_item_keeps_its_text():
     assert "C++: advanced" in names, f"C++ lost: {names}"
 
 
-def test_labelled_skills_shape_now_reports_complete_coverage():
-    p = heuristic_profile(LABELLED_SKILLS)
-    cov = assess_coverage(LABELLED_SKILLS, p, min_chars=50)
-    assert cov.band is not CoverageBand.MAJOR_GAPS
+# S9.2 final review, minor 1:
+# test_labelled_skills_shape_now_reports_complete_coverage (the coverage-band
+# counterpart of the three tests above) is DELETED rather than fixed, not
+# just tightened. Unlike bulleted_roles/career_history/spelled_out_degrees,
+# _skills() splits "Programming Languages: Python, Java, Go" on its commas
+# regardless of whether _strip_skill_label() runs -- with the strip
+# neutered it just produces mangled (not missing) skill items. So
+# skill_content and profile.skills are BOTH always non-empty for this
+# fixture, check 3 (`skill_content and not profile.skills`) can never fire
+# either way, and no band assertion on this exact shape -- exact or not --
+# can fail against the fix4 defect it would claim to guard. Real regression
+# coverage for fix 4 already exists: test_skill_category_labels_are_dropped
+# above (extraction correctness) and the "fix4"/"R15" mutants in
+# scripts/mutate_s92.py, which mutate _skills() itself and are killed by
+# that same test. A test that cannot fail is worse than no test.

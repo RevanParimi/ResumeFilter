@@ -6,4 +6,4 @@ Bachelor of Technology in Computer Science, VIT Vellore, 2015
 Master of Business Administration, IIM Bangalore, 2019
 
 SKILLS
-Python, SQL
+Python, SQL, Git, Docker, REST APIs
