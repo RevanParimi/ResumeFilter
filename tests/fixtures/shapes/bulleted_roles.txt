@@ -1,0 +1,10 @@
+Priya Sharma
+Senior Data Engineer | Bengaluru
+priya@example.com  +91 98765 43210
+
+EXPERIENCE
+- Senior Data Engineer, Acme Analytics (2019 - Present)
+- Data Engineer, Foo Systems (2015 - 2019)
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10

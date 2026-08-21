@@ -355,7 +355,16 @@ from tests.conftest import FakeLLM
 async def test_both_extraction_paths_are_measured_by_the_same_instrument():
     """The LLM path drops things too, and _is_empty is an ALL-of check that
     waves a partial LLM profile straight through. A rule applied at one door and
-    not the other is this repo's signature defect (S7.1, S7.2, S7.3, S8.4a)."""
+    not the other is this repo's signature defect (S7.1, S7.2, S7.3, S8.4a).
+
+    S9.2 Task 8 fixed BULLETED's own defect (an all-bulleted EXPERIENCE section
+    now extracts as roles, not zero entries), so the heuristic side of this
+    comparison no longer shows a gap on this text -- correctly. That divergence
+    is now the stronger proof: the SAME instrument, called on the SAME resume
+    text, reports COMPLETE for the path that actually extracted the experience
+    and MAJOR_GAPS for the path whose payload dropped it, which only happens if
+    both doors are genuinely, independently measured rather than one hard-wired
+    to the other."""
     settings = Settings(_env_file=None, openrouter_api_key="")
 
     heuristic = await extract_profile(BULLETED, llm=NullLLM(settings), settings=settings)
@@ -375,7 +384,7 @@ async def test_both_extraction_paths_are_measured_by_the_same_instrument():
     )
 
     assert llm_result.method == "llm"
-    assert heuristic.coverage.band is CoverageBand.MAJOR_GAPS
+    assert heuristic.coverage.band is CoverageBand.COMPLETE
+    assert "experience_not_extracted" not in {g.id for g in heuristic.coverage.gaps}
     assert llm_result.coverage.band is CoverageBand.MAJOR_GAPS
-    assert "experience_not_extracted" in {g.id for g in heuristic.coverage.gaps}
     assert "experience_not_extracted" in {g.id for g in llm_result.coverage.gaps}

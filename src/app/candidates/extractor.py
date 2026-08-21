@@ -239,12 +239,18 @@ def _education(lines: list[tuple[int, str]]) -> list[EducationEntry]:
 
 def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
     entries: list[ExperienceEntry] = []
+    dated = [(s, l) for s, l in lines if has_date_range(_BULLET.sub("", l))]
+    # A duty list under a role ALWAYS has an unbulleted dated line above it. So
+    # when every dated line in this section is bulleted, there is no role line
+    # for them to be duties OF -- they are the roles (S9.2).
+    all_dated_are_bullets = bool(dated) and all(_BULLET.match(l) for _, l in dated)
     for start, line in lines:
         content = _BULLET.sub("", line)
-        # Only dated, non-bullet lines open an entry; bullets are duties.
-        if _BULLET.match(line) or not has_date_range(content):
+        if not has_date_range(content):
             continue
-        head = content[: date_points(content)[0][0]].strip().rstrip("—–-|,").strip()
+        if _BULLET.match(line) and not all_dated_are_bullets:
+            continue  # a duty under a role
+        head = content[: date_points(content)[0][0]].strip().rstrip("—–-|,(").strip()
         title = employer = None
         if " at " in head.lower():
             i = head.lower().rindex(" at ")
