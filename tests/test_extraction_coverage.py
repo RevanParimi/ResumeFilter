@@ -1,0 +1,722 @@
+"""S9.2 extraction coverage: what the resume says that the profile does not carry."""
+
+from app.schemas.extraction import (
+    CoverageBand,
+    CoverageGap,
+    ExtractionCoverage,
+    GapSeverity,
+)
+
+
+def test_default_assessment_is_a_refusal():
+    """The default must be 'we could not say', never 'we looked and it was clean'.
+
+    Same posture as CrossFieldAssessment, whose band defaults to
+    INSUFFICIENT_DATA -- a result that could not be taken must not read as a
+    result that came back fine.
+    """
+    cov = ExtractionCoverage()
+    assert cov.band is CoverageBand.INSUFFICIENT_DATA
+    assert cov.gaps == []
+    assert cov.checks_run == 0
+    assert cov.truncated is False
+    assert cov.advisory is True
+
+
+def test_gap_defaults_to_minor():
+    gap = CoverageGap(id="section_unrecognized", detail="header 'Career History' not recognized")
+    assert gap.severity is GapSeverity.MINOR
+    assert gap.field is None
+
+
+from app.core.config import Settings
+
+
+def test_coverage_knobs_have_conservative_defaults():
+    s = Settings(_env_file=None)
+    assert s.coverage_min_chars == 200
+    assert s.coverage_max_header_chars == 60
+    assert s.coverage_max_gaps == 20
+
+
+import pytest
+from pydantic import ValidationError
+
+
+def test_coverage_max_gaps_rejects_zero():
+    """coverage_max_gaps=0 would produce a refusal-shaped lie: an empty gaps
+    list with truncated=True, indistinguishable from a clean assessment."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, coverage_max_gaps=0)
+
+
+def test_coverage_min_chars_rejects_negative():
+    """A negative coverage_min_chars disables the refusal this sprint is
+    built on -- every document would clear the floor."""
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, coverage_min_chars=-1)
+
+
+from app.candidates.coverage import blocks, is_header_shaped, looks_academic, looks_dated_role
+
+
+def test_header_shaped_accepts_real_headers_and_rejects_content():
+    assert is_header_shaped("EXPERIENCE")
+    assert is_header_shaped("Career History")
+    assert is_header_shaped("Work Experience:")
+    # Content lines are not headers.
+    assert not is_header_shaped("- Senior Data Engineer, Acme Analytics (2019 - Present)")
+    assert not is_header_shaped("priya@example.com")
+    assert not is_header_shaped(
+        "Built the ingestion pipeline handling four million events a day for the team"
+    )
+
+
+def test_blocks_groups_content_under_its_header():
+    text = "Priya Sharma\n\nCAREER HISTORY\n- Engineer, Acme (2015 - 2019)\n"
+    got = blocks(text)
+    # "Priya Sharma" IS header-shaped (short, title-cased, undated) -- the
+    # same blind spot the module docstring names: an identity line reads
+    # exactly like a section header to this crude a detector. Pre-C1/I3, shape
+    # alone was enough to open a block, and the empty block "Priya Sharma"
+    # opened was only harmless because R3's evidence gate on
+    # section_unrecognized happened to keep a bare name line from becoming
+    # assess_coverage() noise -- but the SAME shape-only rule also let a
+    # single skill bullet or a bare degree line open its own empty block and
+    # steal real content out from under its real header (S9.2 C1/I3 review).
+    # blocks() now additionally requires a strong header SIGNAL (ALL-CAPS, a
+    # trailing colon, or a known alias) before shape is trusted to open a
+    # block, so "Priya Sharma" -- title-cased but no such signal -- stays
+    # content instead.
+    assert got[0] == (None, ["Priya Sharma"])
+    assert got[1][0] == "CAREER HISTORY"
+    assert got[1][1] == ["- Engineer, Acme (2015 - 2019)"]
+
+
+def test_title_case_header_followed_by_a_bare_list_is_a_header():
+    """NEW-1 (S9.2 final review fix-wave regression): _is_strong_header_signal
+    only opened a block for ALL-CAPS, a trailing colon, or a known alias, so
+    a Title-Case unaliased header like "Tech Stack" was not a block at all --
+    both check 3 (skills_not_extracted) and check 5 (section_unrecognized)
+    went silent under it. Measured on the pre-fix code: skills=[],
+    band=COMPLETE, gaps=[] on a resume whose entire skills section was
+    dropped -- the exact failure mode this module exists to catch, reachable
+    through a narrower door. Fix: a Title-Case header-shaped line counts as
+    a header when the very next non-empty line is NOT itself header-shaped
+    -- a run of same-shape lines is a list, not a series of headers."""
+    text = "Priya Sharma\n\nTech Stack\nPython, Django, PostgreSQL\n"
+    got = blocks(text)
+    assert got[0] == (None, ["Priya Sharma"])
+    assert got[1] == ("Tech Stack", ["Python, Django, PostgreSQL"])
+
+
+def test_title_case_header_run_of_same_shape_lines_stays_a_list():
+    """The other half of NEW-1's fix, guarded: KEY SKILLS's bulleted items
+    are each individually header-shaped ("- Python" strips to "Python",
+    short and Title-Case), so a naive "next line isn't a header" rule would
+    promote every one of them too. It must not -- a RUN of same-shape lines
+    is a list, not a series of headers (C1 stays closed)."""
+    text = "KEY SKILLS\n- Python\n- Java\n- Kubernetes\n"
+    got = blocks(text)
+    assert len(got) == 2
+    assert got[1][0] == "KEY SKILLS"
+    assert got[1][1] == ["- Python", "- Java", "- Kubernetes"]
+
+
+def test_title_case_header_door_does_not_reopen_i3():
+    """The fourth door must not repromote a real academic content line just
+    because the line under it fails is_header_shaped for an unrelated reason
+    (carrying a year). "B.Tech Computer Science" followed by "VIT Vellore |
+    2019 - 2023" is not header-shaped (it has a year), but it is NOT a bare
+    list item either -- it is a dated continuation of the SAME record, and
+    promoting the line above would hide it from check 2 and reintroduce I3
+    (S9.2 final review): the next line would then read as an unclaimed role
+    under the wrong block. The door must stay closed here."""
+    text = "EDUCATION\nB.Tech Computer Science\nVIT Vellore | 2019 - 2023\n"
+    got = blocks(text)
+    assert len(got) == 2
+    assert got[1][0] == "EDUCATION"
+    assert got[1][1] == ["B.Tech Computer Science", "VIT Vellore | 2019 - 2023"]
+
+
+def test_title_case_header_followed_by_another_title_case_header_stays_unpromoted():
+    """Known-limit validation (table row 3 of the NEW-1 fix brief): "Academic
+    Credentials" is followed by "B.Tech Computer Science", which is itself
+    header-shaped (short, Title-Case, no year, no delimiter) -- so the door
+    stays closed and NEITHER line is promoted. I3 stays closed for this
+    shape too, by the same mechanism as C1: a run of header-shaped lines is
+    read as content, not as a chain of headers."""
+    text = "Academic Credentials\nB.Tech Computer Science\nVIT Vellore\n"
+    got = blocks(text)
+    assert got == [(None, ["Academic Credentials", "B.Tech Computer Science", "VIT Vellore"])]
+
+
+def test_dated_role_needs_two_points_or_a_present_marker():
+    assert looks_dated_role("Senior Data Engineer, Acme Analytics (2019 - Present)")
+    assert looks_dated_role("- Data Engineer, Foo Systems (2015 - 2019)")
+    assert not looks_dated_role("Data Engineer, Foo Systems")
+    assert not looks_dated_role("Shipped 2019 revenue dashboards")  # one year, no range
+
+
+def test_academic_lines_are_not_counted_as_roles():
+    assert looks_academic("B.Tech in Computer Science, NIT Trichy, 2014 - 2018")
+    assert looks_academic("Bachelor of Technology, VIT Vellore, 2015")
+    assert looks_academic("CGPA: 8.6/10")
+    assert not looks_academic("Senior Data Engineer, Acme Analytics (2019 - Present)")
+
+
+def test_header_shaped_rejects_delimited_lists():
+    """Controller ruling R10 (review of tasks 4/5): a comma-, semicolon-,
+    pipe-, or middle-dot-delimited line is content (a skills list, an inline
+    "Title | City" identity line), never a section header. No entry in
+    SECTION_ALIASES contains any of these four characters, so rejecting them
+    costs nothing real -- a header literally written "Skills, Tools" would be
+    misread as content, but that is bounded; the systematic false negative
+    it replaces (Finding 1: a bare skills list stealing itself out of its own
+    section) is not."""
+    assert not is_header_shaped("Python, SQL, Pandas")
+    assert not is_header_shaped("Python | SQL | Pandas")
+    assert not is_header_shaped("Python; SQL; Pandas")
+    assert not is_header_shaped("Python · SQL · Pandas")
+    # "&" stays allowed -- SECTION_ALIASES has "licenses & certifications".
+    assert is_header_shaped("Licenses & Certifications")
+
+
+from app.candidates.coverage import assess_coverage
+from app.candidates.schema import CandidateProfile, ContactInfo, EducationEntry, ExperienceEntry, ExtractedStr, SkillItem
+
+BULLETED = """Priya Sharma
+Senior Data Engineer | Bengaluru
+priya@example.com  +91 98765 43210
+
+EXPERIENCE
+- Senior Data Engineer, Acme Analytics (2019 - Present)
+- Data Engineer, Foo Systems (2015 - 2019)
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10
+"""
+
+
+def _profile(**kw) -> CandidateProfile:
+    return CandidateProfile(**kw)
+
+
+def test_short_text_refuses_and_carries_no_gaps():
+    """The refusal is the design. An empty-looking clean result would be a lie."""
+    cov = assess_coverage("Priya Sharma\npriya@example.com", _profile(), min_chars=200)
+    assert cov.band is CoverageBand.INSUFFICIENT_DATA
+    assert cov.gaps == []
+    assert cov.checks_run == 0
+
+
+def test_dropped_experience_is_a_major_gap():
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )  # experience deliberately empty -- the measured defect
+    cov = assess_coverage(BULLETED, profile, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    ids = {g.id for g in cov.gaps}
+    assert "experience_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "experience_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "experience"
+
+
+def test_a_genuine_fresher_reports_complete():
+    """No work history is not a gap. This is the false positive that would
+    make the whole instrument untrustworthy, so it gets its own test."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+
+SKILLS
+Python, SQL, Pandas
+
+PROJECTS
+Campus placement portal built with Django
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
+
+
+def test_academic_dated_lines_are_not_role_evidence():
+    """A line that carries a degree word AND two dates ("B.Tech ... (2015 -
+    2019)") is education evidence, not an unclaimed role -- regression guard
+    for the `and not looks_academic(line)` filter on role_lines. Without it,
+    a genuinely empty profile.experience here would misfire
+    experience_not_extracted on a resume that never claimed a role at all."""
+    text = """Priya Sharma
+priya@example.com
+
+B.Tech in Computer Science, VIT Vellore (2015 - 2019)
+
+SKILLS
+Python, SQL
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # experience deliberately empty -- must NOT read as a dropped role
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "experience_not_extracted" not in {g.id for g in cov.gaps}
+
+
+def test_minor_only_gaps_produce_minor_gaps_band_not_complete():
+    """A profile with only a MINOR gap (an unrecognized header, nothing
+    actually dropped) must report MINOR_GAPS, never COMPLETE -- regression
+    guard for the `elif kept:` branch that decides the band. Same fixture as
+    test_unrecognized_header_is_minor_when_nothing_was_dropped, which checks
+    the gap's own shape; this checks the aggregate band it must produce."""
+    text = BULLETED.replace("EXPERIENCE", "PROFESSIONAL SUMMARY")
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.MINOR_GAPS
+    assert all(g.severity is GapSeverity.MINOR for g in cov.gaps)
+
+
+def test_unrecognized_header_is_minor_when_nothing_was_dropped():
+    # R5: the brief's fixture paired an empty `experience=[]` with a name
+    # that claims nothing was dropped, so experience_not_extracted fired
+    # alongside the hint this test is named for. Under R3's evidence gate,
+    # a header's two dated bullet lines are real experience evidence, so a
+    # genuinely empty profile.experience here is itself the measured defect
+    # from test_dropped_experience_is_a_major_gap, not an isolated MINOR
+    # case. Give the profile a real experience entry so the only gap left is
+    # the unrecognized-header hint.
+    #
+    # S9.2 Task 9 (ruling R13) added "career history" to SECTION_ALIASES, so
+    # it no longer demonstrates an unrecognized header -- swapped for
+    # "PROFESSIONAL SUMMARY", which R13 deliberately keeps OFF that list (a
+    # "Professional Summary" is prose, and _experience would otherwise turn a
+    # summary sentence with a date range into a fabricated job). This text is
+    # exactly the shape R13's cost-if-wrong describes, and confirms the
+    # extractor correctly leaves it as an unrecognized MINOR hint rather than
+    # swallowing it into experience.
+    text = BULLETED.replace("EXPERIENCE", "PROFESSIONAL SUMMARY")
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "section_unrecognized" in ids
+    hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
+    assert hint.severity is GapSeverity.MINOR
+    assert hint.header == "PROFESSIONAL SUMMARY"
+
+
+def test_header_quote_is_bounded():
+    # R5: the brief's 21-word header ("Career " + "History " * 20) is not
+    # header-shaped at all (is_header_shaped caps at 5 words), so no block
+    # ever opens under it and no gap ever carries a `header` -- the
+    # assertion loop below ran zero times. Build a header that IS
+    # header-shaped (3 words) AND ALL-CAPS -- so it also clears the C1/I3
+    # strong-header-signal gate blocks() now requires -- but longer than
+    # max_header_chars, over a block with a dated line so R3's evidence gate
+    # actually opens.
+    long_header = "PROFESSIONAL JOURNEY HISTORY"
+    assert len(long_header) > 20  # longer than the max_header_chars used below
+    text = (
+        "Priya Sharma\n"
+        "priya@example.com\n"
+        "\n"
+        f"{long_header}\n"
+        "Led the platform team (2019 - Present)\n"
+    )
+    cov = assess_coverage(text, _profile(), min_chars=50, max_header_chars=20)
+    quoted_headers = [gap.header for gap in cov.gaps if gap.header is not None]
+    assert quoted_headers, "expected at least one gap to carry a header"
+    for header in quoted_headers:
+        assert len(header) <= 20
+
+
+def test_gaps_are_capped_and_say_so():
+    # R5: the brief's "Section N" / "content N" blocks carry no dated or
+    # academic evidence, so under R3's gate none of them produced a gap and
+    # the cap was never reached. Give each block a dated content line so
+    # every one of the 30 blocks trips section_unrecognized. "Section N:"
+    # (trailing colon) rather than "Section N", so each still clears the
+    # C1/I3 strong-header-signal gate blocks() now requires -- a bare
+    # "Section N" is Title-Case with no such signal and would no longer open
+    # its own block at all.
+    text = BULLETED + "\n" + "\n".join(
+        f"Section {i}:\ncontent {i} role (2019 - 2020)" for i in range(30)
+    )
+    cov = assess_coverage(text, _profile(), min_chars=50, max_gaps=3)
+    assert len(cov.gaps) == 3
+    assert cov.truncated is True
+
+
+def test_education_not_extracted_fires_on_real_evidence():
+    """Positive-fire coverage for check 2 (review finding 2): real academic
+    evidence in the text, paired with a genuinely empty profile.education."""
+    text = """Anita Rao
+anita@example.com
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        skills=[SkillItem(name="Python")],
+        education=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "education_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "education_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "education"
+
+
+def test_skills_not_extracted_fires_on_a_bare_comma_list():
+    """Positive-fire coverage for check 3, and the regression test for the
+    reviewer's Finding 1. Before R10, "Python, SQL, Pandas" read as
+    header-shaped itself: it opened its own (empty-content) block, stealing
+    the text out from under the SKILLS block, so skill_content was always
+    empty and check 3 could never fire -- assess_coverage reported
+    `complete` on a resume with a populated skills section and an empty
+    profile.skills. This test fails against that bug and passes once
+    is_header_shaped() rejects comma-delimited lines."""
+    text = """Anita Rao
+anita@example.com
+
+SKILLS
+Python, SQL, Pandas
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "skills_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "skills_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "skills"
+
+
+def test_skills_not_extracted_fires_under_a_title_case_tech_stack_header():
+    """NEW-1 (S9.2 final review fix-wave regression), at the assess_coverage
+    level: "Tech Stack" is Title-Case, not ALL-CAPS, has no trailing colon,
+    and is not a known alias -- so before the fourth door it opened no block
+    at all and check 3 stayed silent. Measured on the pre-fix code:
+    skills=[], band=COMPLETE, gaps=[]."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+Tech Stack
+Python, Django, PostgreSQL
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[],  # deliberately empty -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    ids = {g.id for g in cov.gaps}
+    assert "skills_not_extracted" in ids
+
+
+def test_contact_not_extracted_fires_on_real_evidence():
+    """Positive-fire coverage for check 4: real email/phone text, paired
+    with a genuinely empty profile.contact."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # contact deliberately left at its default (empty) -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "contact_not_extracted" in ids
+    gap = next(g for g in cov.gaps if g.id == "contact_not_extracted")
+    assert gap.severity is GapSeverity.MAJOR
+    assert gap.field == "contact"
+
+
+def test_contact_not_extracted_does_not_fire_on_a_bare_year_range():
+    """I2 (S9.2 final review): _PHONEISH's {8,} class-length bound let an
+    8-digit year range clear it -- _PHONEISH.search('Owned the 2019 - 2021
+    migration') matched '2019 - 2021'. An agency-forwarded resume with the
+    contact line stripped (this product's own input shape) has role/skill/
+    education content but no phone or email; it must report the parser
+    dropped the contact fields, not manufacture false contact evidence out
+    of a role's date range."""
+    text = """Senior Data Engineer
+
+EXPERIENCE
+Owned the 2019 - 2021 migration of the reporting stack to Snowflake
+Delivered the 2021 - 2023 rebuild of the customer data platform
+
+SKILLS
+Python, SQL, Pandas
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        experience=[ExperienceEntry(title="Senior Data Engineer", employer="Acme Analytics")],
+        # contact deliberately left empty -- there is no real contact text here
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "contact_not_extracted" not in {g.id for g in cov.gaps}
+
+
+def test_contact_not_extracted_still_fires_on_a_bare_ten_digit_mobile():
+    """The other direction I2 must not break: a bare 10-digit mobile number
+    (no country code, no separators) has 10 digits and must still count as
+    contact evidence."""
+    text = """Anita Rao
+9876543210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    profile = _profile(
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # contact deliberately left at its default (empty) -- the check under test
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "contact_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_unrecognized_skills_header_fires_via_header_fallback():
+    """R3's gate has two doors in: dated/academic evidence in the block's
+    content, or the header itself reading as a skills section. A bare tools
+    list carries neither a year nor a degree word, so evidence alone would
+    never catch a skills-shaped section under a name the extractor does not
+    recognize -- this isolates that second door: the block's content has no
+    dated or academic line at all."""
+    text = (
+        "Priya Sharma\n"
+        "priya@example.com\n"
+        "\n"
+        "TECH STACK\n"
+        "Python, SQL, Pandas\n"
+    )
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="priya@example.com")),
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    ids = {g.id for g in cov.gaps}
+    assert "section_unrecognized" in ids
+    hint = next(g for g in cov.gaps if g.id == "section_unrecognized")
+    assert hint.severity is GapSeverity.MINOR
+    assert hint.header == "TECH STACK"
+
+
+def test_unrecognized_header_with_no_evidence_does_not_fire():
+    """S9.2 final review, minor 4 (mutation gap): R3's evidence gate --
+    `if not (has_role_or_academic_evidence or looks_like_skills_header):
+    continue` -- had no mutant proving a test would catch its removal
+    (scripts/mutate_s92.py "R3: evidence gate disabled" survived until this
+    test was added). An unrecognized header whose content carries no
+    dated-role, academic, or skills-shaped evidence (a hobbies list, here)
+    must NOT produce a section_unrecognized gap -- an ungated version fires
+    on almost every resume's incidental short sections and COMPLETE becomes
+    unreachable, exactly the module docstring's own warning."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+
+SKILLS
+Python, SQL
+
+HOBBIES
+Reading, Chess, Cricket
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert cov.band is CoverageBand.COMPLETE
+    assert cov.gaps == []
+
+
+from app.candidates.extractor import heuristic_profile
+
+
+def test_bulleted_skills_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """C1 (S9.2 final review): is_header_shaped('- Python') is True (the
+    bullet is stripped first), so each bulleted skill line opened its OWN
+    empty block -- the real KEY SKILLS block ended with content == [] and
+    check 3's `and content` guard skipped it. Measured before the fix:
+    skills=[] (extractor doesn't recognize "KEY SKILLS", unrelated to this
+    fix), coverage band=complete, gaps=[]."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+KEY SKILLS
+- Python
+- Java
+- Kubernetes
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    p = heuristic_profile(text)
+    assert p.skills == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "skills_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_unbulleted_skills_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """Same defect, no bullets -- each bare Title-Case skill line ("Python")
+    is header-shaped on its own too, so it opens its own empty block
+    instead of landing as content under KEY SKILLS."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+KEY SKILLS
+Python
+Java
+Kubernetes
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2019 - 2023, CGPA: 8.1/10
+"""
+    p = heuristic_profile(text)
+    assert p.skills == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "skills_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_education_lines_under_an_unrecognized_header_are_not_lost_to_coverage():
+    """Same defect pointed at check 2: 'B.Tech Computer Science' (no comma,
+    no year) is itself header-shaped and opens its own empty block, so
+    looks_academic() never sees it as content under ACADEMIC CREDENTIALS
+    (not a recognized SECTION_ALIASES entry) and check 2 stays silent."""
+    text = """Rahul Verma
+rahul@example.com  +91 98765 43210
+
+ACADEMIC CREDENTIALS
+B.Tech Computer Science
+VIT Vellore
+
+SKILLS
+Python, SQL
+"""
+    p = heuristic_profile(text)
+    assert p.education == []
+    cov = assess_coverage(text, p, min_chars=50)
+    assert cov.band is CoverageBand.MAJOR_GAPS
+    assert "education_not_extracted" in {g.id for g in cov.gaps}
+
+
+def test_fresher_education_layout_does_not_falsely_report_dropped_experience():
+    """I3 (S9.2 final review), same root cause as the three checks above
+    pointing the other way: with 'B.Tech Computer Science' wrongly promoted
+    to its own header block (a header that does not match _EDU_HEADER,
+    since it names no degree-section word), the NEXT line -- 'VIT Vellore |
+    2019 - 2023', two year tokens, no degree word -- lands in that same
+    wrong block and reads as an unclaimed ROLE instead of an
+    institution/date line under EDUCATION. A fresher with no work history
+    at all was told the parser dropped a job that never existed."""
+    text = """Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech Computer Science
+VIT Vellore | 2019 - 2023
+
+SKILLS
+Python, SQL, Pandas
+
+PROJECTS
+Campus placement portal built with Django
+"""
+    profile = _profile(
+        contact=ContactInfo(email=ExtractedStr(value="anita@example.com")),
+        education=[EducationEntry(degree="B.Tech")],
+        skills=[SkillItem(name="Python")],
+        # experience deliberately empty -- a genuine fresher, nothing to drop
+    )
+    cov = assess_coverage(text, profile, min_chars=50)
+    assert "experience_not_extracted" not in {g.id for g in cov.gaps}
+
+
+import json
+
+from app.candidates.extractor import extract_profile
+from app.services.llm import NullLLM
+from tests.conftest import FakeLLM
+
+
+@pytest.mark.asyncio
+async def test_both_extraction_paths_are_measured_by_the_same_instrument():
+    """The LLM path drops things too, and _is_empty is an ALL-of check that
+    waves a partial LLM profile straight through. A rule applied at one door and
+    not the other is this repo's signature defect (S7.1, S7.2, S7.3, S8.4a).
+
+    S9.2 Task 8 fixed BULLETED's own defect (an all-bulleted EXPERIENCE section
+    now extracts as roles, not zero entries), so the heuristic side of this
+    comparison no longer shows a gap on this text -- correctly. That divergence
+    is now the stronger proof: the SAME instrument, called on the SAME resume
+    text, reports COMPLETE for the path that actually extracted the experience
+    and MAJOR_GAPS for the path whose payload dropped it, which only happens if
+    both doors are genuinely, independently measured rather than one hard-wired
+    to the other."""
+    settings = Settings(_env_file=None, openrouter_api_key="")
+
+    heuristic = await extract_profile(BULLETED, llm=NullLLM(settings), settings=settings)
+
+    # An LLM that returns a plausible profile with NO experience at all.
+    payload = json.dumps({
+        "full_name": {"value": "Priya Sharma", "confidence": 0.9, "source_excerpt": "Priya Sharma"},
+        "contact": {"email": {"value": "priya@example.com", "confidence": 0.9,
+                              "source_excerpt": "priya@example.com"}},
+        "education": [{"degree": "B.Tech", "institution": "IIT Delhi", "confidence": 0.8,
+                       "source_excerpt": "B.Tech"}],
+        "skills": [{"name": "Python", "confidence": 0.8, "source_excerpt": "Python"}],
+        "experience": [],
+    })
+    llm_result = await extract_profile(
+        BULLETED, llm=FakeLLM({"RESUME:": payload}, settings), settings=settings
+    )
+
+    assert llm_result.method == "llm"
+    assert heuristic.coverage.band is CoverageBand.COMPLETE
+    assert "experience_not_extracted" not in {g.id for g in heuristic.coverage.gaps}
+    assert llm_result.coverage.band is CoverageBand.MAJOR_GAPS
+    assert "experience_not_extracted" in {g.id for g in llm_result.coverage.gaps}

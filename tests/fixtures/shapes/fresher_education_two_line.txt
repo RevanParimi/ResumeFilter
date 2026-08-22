@@ -1,0 +1,12 @@
+Anita Rao
+anita@example.com  +91 98765 43210
+
+EDUCATION
+B.Tech Computer Science
+VIT Vellore | 2019 - 2023
+
+SKILLS
+Python, SQL, Pandas
+
+PROJECTS
+Campus placement portal built with Django

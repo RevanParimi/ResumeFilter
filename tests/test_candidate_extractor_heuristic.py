@@ -85,3 +85,48 @@ def test_unstructured_resume_degrades_gracefully(full_resume):
     p = heuristic_profile("Reach me at someone@example.com or +91 98765 43210")
     assert p.contact.email is not None
     assert p.education == [] and p.experience == []
+
+
+def test_parenthetical_body_line_does_not_become_a_section_header():
+    """I1 (S9.2 final review): _HEADER_DECORATION stripped `(...)` before the
+    alias lookup unconditionally, so a body line shaped "<alias> (...)" --
+    e.g. "Technologies (Python, Django, PostgreSQL)" under PROJECTS, which
+    normalizes to the "technologies" skills alias once its parenthetical is
+    stripped -- was silently consumed as a SKILLS header and never stored.
+    Measured before the fix: projects=['Placement Portal'] (the technology
+    list deleted), skills=['Built for 4000 students', 'Go', 'Rust'] (the
+    project description re-parented into skills)."""
+    text = """Priya Sharma
+priya@example.com
+
+PROJECTS
+Placement Portal
+Technologies (Python, Django, PostgreSQL)
+Built for 4000 students
+
+SKILLS
+Go, Rust
+"""
+    p = heuristic_profile(text)
+    names = [prj.name for prj in p.projects]
+    assert names == [
+        "Placement Portal",
+        "Technologies (Python, Django, PostgreSQL)",
+        "Built for 4000 students",
+    ]
+    assert [s.name for s in p.skills] == ["Go", "Rust"]
+
+
+def test_all_caps_parenthetical_header_still_resolves():
+    """The other direction I1 must not break: "WORK EXPERIENCE (5 YEARS)"
+    must still strip its parenthetical and resolve to the experience alias
+    -- the fix bounds when stripping applies, it does not remove it."""
+    text = """Priya Sharma
+priya@example.com
+
+WORK EXPERIENCE (5 YEARS)
+Senior Data Engineer, Acme Analytics (2019 - Present)
+"""
+    p = heuristic_profile(text)
+    assert len(p.experience) == 1
+    assert p.experience[0].employer == "Acme Analytics"

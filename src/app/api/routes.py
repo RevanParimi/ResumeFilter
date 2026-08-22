@@ -88,6 +88,7 @@ from app.verification.service import (
     DestinationError, DocumentTooLargeError, MethodNotPermittedError,
 )
 from app.verification.store import ChallengeError
+from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
@@ -564,6 +565,9 @@ class CandidateCreateResponse(BaseModel):
     # S2.3: cross-candidate near-duplicate signals, computed at ingest so bulk
     # imports (evaluate=False) still see them. Advisory, like everything else.
     resume_farm: Optional[ResumeFarmAssessment] = None
+    # S9.2: computed at ingest so bulk imports (evaluate=False) still see it,
+    # for the same reason resume_farm is here.
+    extraction_coverage: Optional[ExtractionCoverage] = None
 
 
 async def _ingest_one(
@@ -623,6 +627,7 @@ async def _ingest_one(
         extraction_method=result.extraction_method,
         report=result.report,
         resume_farm=result.resume_farm,
+        extraction_coverage=result.extraction_coverage,
     )
 
 

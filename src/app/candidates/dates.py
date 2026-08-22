@@ -24,8 +24,14 @@ _YEAR = re.compile(r"\b((?:19|20)\d{2})\b")
 _PRESENT = re.compile(r"\b(present|current|till date|ongoing|now)\b", re.IGNORECASE)
 
 
-def date_points(text: str) -> list[tuple[int, str]]:
-    """All (position, 'YYYY-MM'|'YYYY') date tokens, in order of appearance."""
+def date_spans(text: str) -> list[tuple[int, int, str]]:
+    """All (start, end, 'YYYY-MM'|'YYYY') date tokens, in order of appearance.
+
+    Superset of date_points() that also carries the match's END offset, which
+    date_points() drops -- extractor.py's role-vs-duty check (S9.2 fix 1, C2
+    review) needs the end of the LAST date token to see what, if anything,
+    trails it in the line.
+    """
     found: list[tuple[int, int, str]] = []  # (start, end, value)
     for m in _MONTH_YEAR.finditer(text):
         month = _MONTHS[m.group(1).lower()[:3]]
@@ -37,7 +43,12 @@ def date_points(text: str) -> list[tuple[int, str]]:
         if not any(s <= m.start() < e for s, e in covered):
             found.append((m.start(), m.end(), m.group(1)))
     found.sort()
-    return [(s, v) for s, _, v in found]
+    return found
+
+
+def date_points(text: str) -> list[tuple[int, str]]:
+    """All (position, 'YYYY-MM'|'YYYY') date tokens, in order of appearance."""
+    return [(s, v) for s, _, v in date_spans(text)]
 
 
 def parse_date_range(text: str) -> DateRange:

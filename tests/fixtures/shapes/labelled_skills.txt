@@ -1,0 +1,10 @@
+Rahul Verma
+rahul@example.com  +91 98765 43210
+
+TECHNICAL SKILLS
+Programming Languages: Python, Java, Go
+Databases: PostgreSQL, MongoDB
+Cloud Platforms: AWS, Azure, GCP
+
+EDUCATION
+B.Tech in Computer Science, VIT Vellore, 2015

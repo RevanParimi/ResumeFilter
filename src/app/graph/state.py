@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
 from app.schemas.claims import CandidateContext, Claim
+from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import AIGenerationAssessment, CrossFieldAssessment, FabricationRiskAssessment, ResumeFarmAssessment
 from app.schemas.report import CoherenceVerdict, DepthBand, Report
 
@@ -43,6 +44,9 @@ class EvaluationState(BaseModel):
     # the graph deliberately sees neither, so this arrives as an input.
     # None => not assessed (ad-hoc POST /evaluate runs).
     resume_farm: Optional[ResumeFarmAssessment] = None
+    # S9.2: extraction coverage, computed in extract_profile (both doors) and
+    # handed in the way resume_farm is -- the graph never re-derives it.
+    extraction_coverage: Optional[ExtractionCoverage] = None
 
     # --- ingest ---------------------------------------------------------------
     resume_text: Optional[str] = None  # normalized, parsed text

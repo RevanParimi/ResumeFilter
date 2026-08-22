@@ -13,6 +13,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.extraction import ExtractionCoverage
+
 
 class SourceSpan(BaseModel):
     """Character range in the normalized resume text a value was lifted from."""
@@ -170,3 +172,7 @@ class ExtractionResult(BaseModel):
     profile: CandidateProfile
     method: Literal["llm", "heuristic"]
     warnings: list[str] = Field(default_factory=list)
+    #: S9.2: did the extractor read what the resume says? Computed HERE rather
+    #: than in either path, so the LLM and heuristic doors are measured by one
+    #: instrument. Defaults to a refusal.
+    coverage: ExtractionCoverage = Field(default_factory=ExtractionCoverage)

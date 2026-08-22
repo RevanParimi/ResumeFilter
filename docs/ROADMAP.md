@@ -9,7 +9,83 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-18/19 (latest) — S9.1 COMPLETE, and the S8.6 review fixes
+- **Session 2026-08-20/21 (latest) — S9.2 (EXTRACTION COVERAGE) BUILT, REVIEWED
+  AND REGRESSION-FIXED on branch `s92-extraction-coverage`. NOT MERGED, not
+  pushed, nothing deployed. 1996 → 2080 passing, 21/21 mutants dead,
+  `smoke_s92` 17/17, tree clean.**
+  Spec `docs/superpowers/specs/2026-08-20-s92-extraction-coverage-design.md`,
+  plan `docs/superpowers/plans/2026-08-20-s92-extraction-coverage.md` (14 tasks,
+  all done), executed subagent-driven with a per-task review loop.
+  **THE SPRINT ASKS THE QUESTION UNDERNEATH S9.1'S.** S9.1 asked whether the
+  advisory numbers predict a human's judgment. This one asks whether they were
+  computed from the resume **or from a hole where the resume used to be** —
+  `src/app/candidates/coverage.py`, an advisory instrument comparing raw text to
+  the extracted profile, plus `Report.extraction_coverage` (no migration:
+  `ReportRow.body` is JSON).
+  **FIVE SHAPES WERE MEASURED BROKEN BEFORE A LINE WAS WRITTEN**, and all are
+  now closed: roles written as bullets → 0 experience entries; a `CAREER
+  HISTORY` header → 0; a spelled-out `Bachelor of Technology` → 0 education; and
+  `Programming Languages: Python, Java, Go` → a skill literally named
+  `"Programming Languages: Python"`.
+  **THE SYSTEM WAS BEHAVING CORRECTLY, WHICH WAS THE PROBLEM.** `cross_field`
+  gates every check on having dated entries and honestly says
+  `insufficient_data`; fusion excludes insufficient components rather than
+  scoring them zero. So a dropped section made the headline fabrication number
+  **quieter, not louder**, and the operator could not tell a fresher from a
+  senior hire nobody screened. Six readers of `profile.experience` ran vacuously.
+  **THE INSTRUMENT DOES NOT SHARE THE EXTRACTOR'S EYES**, enforced by an AST
+  guard, because an evidence detector imported from the code being measured is
+  blind exactly where that code is. Point the education check at `_DEGREE` and
+  widening `_DEGREE` silently switches the check off.
+  **SIXTEEN RULINGS were made mid-flight; the ones that changed the product:**
+  R10 (a line containing `,;|·` is not a header — without it a bare skills list
+  was stolen into a phantom header and the instrument reported `complete` on a
+  resume whose skills were dropped) · R13 (`professional summary` is NOT an
+  experience alias: `_experience` opens an entry for any dated line in its
+  section, so prose reading "2015 - 2023" would manufacture a job with no
+  employer — inventing a role is worse than missing one) · R14 (`bs`/`ms`
+  dropped from the degree pattern; they match `MS Office` and `MS SQL Server` —
+  **the implementer was right and the spec is still wrong**) · R15 (the skill
+  label strip was DELETING real skill names: `Python: 5 years` → `5 years`).
+  **THE FINAL WHOLE-BRANCH REVIEW RETURNED NOT MERGE-READY, AND WAS RIGHT.**
+  Two Criticals: the bulleted-roles fix **fabricated employment entries** from
+  dated achievement bullets under an undated role line (`'Led the'`,
+  `'Delivered the'`, employer `None`) — R13's own argument arriving through the
+  other door — and `blocks()` promoted single-token content lines to headers, so
+  `KEY SKILLS` with one skill per line reported `complete`. Plus a false
+  `contact_not_extracted` on anonymised resumes, because `_PHONEISH` matched
+  `2019 - 2021` as a phone number.
+  **THEN THE FIX WAVE INTRODUCED TWO MORE**, both caught by the scoped
+  re-review: the tightened header gate blinded checks 3 and 5 on Title-Case
+  headers (`Tech Stack` → `complete`), and a 6-word cap on role heads **silently
+  dropped `Tata Consultancy Services` and `Larsen and Toubro Infotech`** — real
+  roles lost, in an Indian-market product, invisible because §3.3 fires check 1
+  only on a TOTAL drop.
+  **THE RECURRING CAUSE, THREE TIMES: A PREDICATE CHANGE BROKE A SHAPE NO TEST
+  COVERED.** Every coverage fixture put its evidence on lines carrying a comma
+  or a year — exactly where the header predicate correctly returns False — so
+  the suite never entered the region where the instrument was blind. That is
+  S8.6's "every check fetched an asset, never the page" in a new sprint. The
+  answer is `tests/test_coverage_shape_matrix.py`: a table-driven corpus of
+  every shape S9.2 discovered, so the next predicate change must satisfy all of
+  them at once.
+  **FIVE VACUOUS TESTS WERE FOUND AND KILLED** across the sprint, including one
+  named and documented for the exact property it did not test.
+  **THE INSTRUMENT DECLARES ITS OWN LIMITS** (CANDIDATES.md "Known limits"):
+  coverage detects TOTAL drops only, so a partial loss produces no gap; and
+  `Key Skills` over a bare one-per-line list still reports `complete`.
+  Contorting the predicate to catch it reopens the other two.
+  **➤ NEXT STEP: the user's merge decision on `s92-extraction-coverage`.** Then
+  the still-owed ultra review on `s86-review-target` (user-triggered; six
+  session-limit failures now). PI-8's remainder is unchanged — the user-gated
+  go-live in `DEPLOY.md` including the Railway cron, plus alerting thresholds on
+  `/metrics`, the only unbuilt technical item on the board. CI has still never
+  been read. **Open for the next session:** six of the thirteen shape fixtures
+  are under `coverage_min_chars: 200`, so the matrix exercises them only with
+  the knob lowered (R16, deferred); and spec §5.3 still lists `bs`/`ms`, which
+  R14 deliberately did not ship.
+
+- **Session 2026-08-18/19 — S9.1 COMPLETE, and the S8.6 review fixes
   merged. `main` carries both. 1854 → 1989 passing, `smoke_s91` 15/15,
   `smoke_s43` 8/8, 15/15 mutants dead. Nothing deployed.**
   **THE OWED ULTRA REVIEW IS STILL OWED, and has now failed FOUR times** on
@@ -2692,6 +2768,33 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
           - the mutation harness is COMMITTED (scripts/mutate_s91.py), unlike
             S8.3's and S8.5's hand-run passes: a count nobody can re-derive is
             a claim, not evidence
+ └── [~] S9.2  EXTRACTION COVERAGE — built + reviewed + regression-fixed on
+          branch `s92-extraction-coverage`, AWAITING THE MERGE DECISION.
+          2080 passing, 21/21 mutants dead, smoke_s92 17/17.
+          Asks the question underneath S9.1's: were the advisory numbers
+          computed from the resume, or from a hole where it used to be?
+          - src/app/candidates/coverage.py: five checks, four bands, and a
+            refusal that carries NO gaps; computed ONCE inside extract_profile
+            so the LLM and heuristic doors share one instrument
+          - Report.extraction_coverage — NO migration (ReportRow.body is JSON)
+          - the instrument may not import the extractor's eyes, enforced by an
+            AST guard incl. a ban on relative imports
+          - four measured extractor defects closed: bulleted roles, unknown
+            section headers, spelled-out degrees, labelled skill lines
+          - ⚠ TWO CRITICALS FROM THE FINAL REVIEW, both real: the bulleted-roles
+            fix FABRICATED jobs from achievement bullets, and blocks() promoted
+            content lines to headers so a dropped skills section read `complete`
+          - ⚠ THE FIX WAVE THEN ADDED TWO MORE, caught by the scoped re-review:
+            Title-Case headers went blind, and a 6-word cap silently dropped
+            `Tata Consultancy Services`
+          - the cause all three times was a PREDICATE CHANGE BREAKING A SHAPE NO
+            TEST COVERED => tests/test_coverage_shape_matrix.py, a table-driven
+            corpus of every shape the sprint found
+          - FIVE vacuous tests found and killed
+          - CANDIDATES.md "Known limits" states what it CANNOT see: partial
+            drops (§3.3 is total-drops-only), and `Key Skills` over a bare list
+          - OPEN: six shape fixtures sit under coverage_min_chars=200 (R16);
+            spec §5.3 still lists `bs`/`ms`, which R14 deliberately did not ship
 ```
 
 ## Standing conventions (do not relitigate)

@@ -258,6 +258,113 @@ The engine and graph stay candidate-blind: the route passes the extracted
 profile + farm assessment *into* `evaluate(...)` and stamps
 `report.candidate_id` *after* — the graph never resolves identity.
 
+## Extraction coverage (S9.2)
+
+`src/app/candidates/coverage.py` — `assess_coverage(text, profile)` — is an
+advisory assessment that compares the raw resume text against the extracted
+`CandidateProfile` and reports where the text evidently states something the
+profile does not carry. It is a statement about **the parser, never about the
+candidate**, and it feeds no score, band, threshold or verdict — see
+`ExtractionCoverage` in
+[src/app/schemas/extraction.py](src/app/schemas/extraction.py).
+
+**Why it exists.** Every signal veritas emits — depth score, fabrication
+risk, the FABRICATION.md checks — is derived from `CandidateProfile`. When
+the extractor silently drops a section, every downstream check runs
+correctly over an empty list and honestly reports insufficient data. That
+leaves the operator unable to tell *"this candidate has no work history"* (a
+fresher) from *"the parser dropped it"* (a senior hire nobody actually
+screened) — and for a fraud screen those are opposite conclusions.
+
+**The five measured shapes** that motivated the sprint. Each was run against
+`main` at `016f91f`, before the S9.2 fixes:
+
+| Shape | Before |
+|---|---|
+| roles written as bullets, e.g. `- Senior Data Engineer, Acme Analytics (2019 - Present)` | 0 experience entries |
+| the same resume with bullets removed | 2 entries |
+| header reads `CAREER HISTORY` instead of `EXPERIENCE` | 0 entries |
+| `Bachelor of Technology in Computer Science, VIT Vellore, 2015` | 0 education entries |
+| `Programming Languages: Python, Java, Go` | a skill named `"Programming Languages: Python"` |
+
+All five now extract correctly and report `complete` at production defaults
+(`coverage_min_chars: 200`) — the fixture files behind the two shortest
+shapes (labelled skills, spelled-out degrees) were lengthened past 200
+characters during the S9.2 final review fix wave so this claim is what is
+actually under test, not an artifact of tests overriding the knob to 50.
+
+**The independence rule, and why it is load-bearing.** `coverage.py` must
+not detect evidence with the extractor's own code. An instrument sharing the
+extractor's eyes is blind exactly where the extractor is: point the
+education check at `_DEGREE` and widening `_DEGREE` silently switches the
+check off, while leaving it narrow makes the check agree there was nothing
+there. Either way it reports `complete` on the exact resume it exists to
+catch. `tests/test_extraction_coverage_independence.py` enforces the import
+allow-list, including a ban on relative imports — `from . import extractor`
+parses to `module=None` and would otherwise slip through the guard.
+
+**The bands.** `insufficient_data` — below `coverage_min_chars` — is a
+refusal, and it carries **no gaps at all**; `complete`; `minor_gaps`
+(informational only); `major_gaps` (a field the text evidently describes is
+entirely absent). A refusal carries no gaps deliberately, so a measurement
+that could not be taken never reads as one that came back clean.
+
+**The five checks**, each firing only when its field is **entirely empty**,
+never on "fewer than expected": `experience_not_extracted`,
+`education_not_extracted`, `skills_not_extracted`, `contact_not_extracted`,
+`section_unrecognized` (a MINOR hint, evidence-gated so it does not fire on
+every resume's name line).
+
+**Where it is computed.** Once, inside `extract_profile`, after the LLM and
+heuristic paths have already converged on `profile` — so one instrument
+measures both doors. `_is_empty` is an all-of check, so an LLM profile
+carrying a name, an email and zero experience never falls back to the
+heuristic path, and would otherwise go unmeasured.
+
+**Two deliberate non-additions**, both worth recording because someone will
+try to "fix" them:
+
+- **`professional summary` is not an experience alias.** It is prose in most
+  resumes, and `_experience` opens an entry for any dated line in its
+  section — treating it as an experience header would manufacture a
+  fabricated job with no employer. Missing a role is an honest, bounded gap
+  that coverage now reports; inventing one is not.
+- **`bs` and `ms` are not in the degree pattern.** They match `MS Office`
+  and `MS SQL Server`.
+
+**Known limits.** This instrument is deliberately narrower than it might
+look, and both limits below are load-bearing design choices, not bugs to be
+quietly closed later:
+
+- **Total drops only, never "fewer than expected" (spec §3.3).** Every check
+  fires on a field that is entirely empty. A *partial* loss — three roles on
+  the resume, two extracted — produces no gap at all, because telling "one
+  role spanning two lines" from "two roles, one dropped" needs a ratio with
+  a magic constant, and a false positive there accuses a correct extraction
+  of being wrong. This is why `tests/test_coverage_shape_matrix.py`'s
+  "undated role + dated achievements" row reports `major_gaps` even though
+  the extractor's 0-entry result is *correct* (C2): coverage cannot tell
+  "the extractor correctly declined to fabricate a role" from "the extractor
+  dropped a role", because both look identical from the outside — a
+  dated-shaped line with nothing in `profile.experience`. Revisiting §3.3 to
+  add an undercount heuristic is a later sprint's argument, not this one's.
+- **`Key Skills` (Title-Case) over a bare, one-per-line list still reports
+  `complete` despite a fully dropped skills section.** NEW-1's fourth door
+  (`_is_strong_header_signal`, `src/app/candidates/coverage.py`) promotes a
+  Title-Case header to a real block only when the very next non-empty line
+  is *not itself* header-shaped — that is what lets "Tech Stack" over a
+  comma list open a block without also reopening I3 (a degree line
+  promoted to a header, burying the dated line under it as an unclaimed
+  role) or C1 (a bulleted skills list read as a chain of one-line headers).
+  A bare list of single Title-Case words — "Python" / "Java" / "Kubernetes",
+  one per line, no bullets, no commas — is itself header-shaped by every
+  measure `is_header_shaped` uses, so the door stays shut and `Key Skills`
+  never opens a block. `tests/test_coverage_shape_matrix.py`'s
+  `key_skills_bare_list` row asserts this *actual* behavior (`complete`,
+  `skills == []`) with a comment marking it a known gap, not a desired one.
+  A narrower predicate that also caught this shape was not found without
+  reopening I3 or C1; closing it is future work, not this fix wave's.
+
 ## Config knobs
 
 | Key | Where | Default | Notes |

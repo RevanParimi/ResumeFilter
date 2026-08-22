@@ -356,6 +356,15 @@ class Settings(BaseSettings):
     fr_weight_cross_field: float = Field(default=1.0, ge=0.0)
     fr_weight_farm: float = Field(default=1.0, ge=0.0)
 
+    # --- Signal quality (PI-9, S9.2): extraction coverage ----------------------
+    # Does the extracted profile carry what the resume evidently says? ADVISORY:
+    # a gap is a statement about the PARSER, never about the candidate, and it
+    # feeds no score. Below coverage_min_chars the assessment REFUSES rather
+    # than reporting a clean result on a document too short to judge.
+    coverage_min_chars: int = Field(default=200, ge=1)
+    coverage_max_header_chars: int = Field(default=60, ge=1)
+    coverage_max_gaps: int = Field(default=20, ge=1)
+
     # --- Evaluation ledger (PI-3, S3.1): schema + DPDP consent model -----------
     # The ledger shares candidates_db_url (one metadata root, one Alembic env).
     # Grants created without an explicit expiry get this TTL — DPDP forbids

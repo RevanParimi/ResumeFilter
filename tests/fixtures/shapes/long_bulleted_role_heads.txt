@@ -1,0 +1,10 @@
+Priya Sharma
+Senior Data Engineer | Bengaluru
+priya@example.com  +91 98765 43210
+
+WORK EXPERIENCE
+- Senior Software Engineer II, Tata Consultancy Services (2019 - Present)
+- Senior Software Engineer, Larsen and Toubro Infotech (2020 - Present)
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10

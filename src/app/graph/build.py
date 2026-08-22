@@ -17,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 import app.domains  # noqa: F401  (registers domains on import)
 from app.candidates.schema import CandidateProfile
 from app.core.logging import get_logger
+from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.graph.nodes import (
     make_ai_signals_node,
@@ -79,6 +80,7 @@ class EvaluationEngine:
         domain: str = "genai",
         candidate_profile: Optional[CandidateProfile] = None,
         resume_farm: Optional[ResumeFarmAssessment] = None,
+        extraction_coverage: Optional[ExtractionCoverage] = None,
     ) -> Report:
         initial = EvaluationState(
             domain=domain,
@@ -88,6 +90,7 @@ class EvaluationEngine:
             portfolio_url=portfolio_url,
             candidate_profile=candidate_profile,
             resume_farm=resume_farm,
+            extraction_coverage=extraction_coverage,
         )
         result = await self.graph.ainvoke(initial)
         # LangGraph returns the final state (dict-like or model depending on version).

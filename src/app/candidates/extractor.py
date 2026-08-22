@@ -17,7 +17,8 @@ import re
 from typing import Optional
 
 from app.candidates import hashing
-from app.candidates.dates import date_points, has_date_range, parse_date_range
+from app.candidates.coverage import assess_coverage
+from app.candidates.dates import date_points, date_spans, has_date_range, parse_date_range
 from app.candidates.normalize import normalize_profile
 from app.candidates.normalize.location import find_city, parse_notice_period
 from app.candidates.schema import (
@@ -36,6 +37,7 @@ from app.candidates.schema import (
     SkillItem,
     SourceSpan,
 )
+from app.candidates.sections import SECTION_ALIASES
 from app.core.config import Settings
 from app.core.logging import get_logger
 from app.services.llm import LLMClient
@@ -47,7 +49,8 @@ _PHONE = re.compile(r"(?:\+?91[-\s]?)?0?[6-9]\d{4}[-\s]?\d{5}\b")
 _URL = re.compile(r"https?://[^\s)>\]]+")
 _DEGREE = re.compile(
     r"\b(b\.?\s?tech|m\.?\s?tech|b\.?e\b|m\.?e\b|b\.?sc|m\.?sc|bca|mca|mba|"
-    r"ph\.?d|b\.?com|m\.?com|diploma)\b",
+    r"bba|b\.?a\b|m\.?a\b|ph\.?d|b\.?com|m\.?com|diploma|"
+    r"bachelors?|masters?)\b",
     re.IGNORECASE,
 )
 _GRADE = re.compile(
@@ -55,20 +58,8 @@ _GRADE = re.compile(
 )
 _PERCENT = re.compile(r"(\d{2,3}(?:\.\d+)?)\s*%")
 _BULLET = re.compile(r"^[-•*·]\s*")
+_SKILL_LABEL = re.compile(r"^[A-Za-z][A-Za-z /&+-]{0,29}:\s*")
 
-_SECTION_ALIASES: dict[str, tuple[str, ...]] = {
-    "education": ("education", "academics", "academic background", "qualifications"),
-    "experience": (
-        "experience", "work experience", "professional experience",
-        "employment", "employment history", "work history",
-    ),
-    "skills": ("skills", "technical skills", "core skills", "skill set", "technologies"),
-    "projects": ("projects", "personal projects", "key projects", "academic projects"),
-    "certifications": (
-        "certifications", "certificates", "licenses",
-        "licenses & certifications", "courses & certifications",
-    ),
-}
 _SENIORITY_HINTS: tuple[tuple[str, str], ...] = (
     ("principal", "staff"), ("staff", "staff"), ("lead", "senior"),
     ("senior", "senior"), ("sr.", "senior"), ("junior", "junior"),
@@ -80,12 +71,37 @@ def _line_span(start: int, line: str) -> SourceSpan:
     return SourceSpan(start=start, end=start + len(line), text=line)
 
 
+_HEADER_DASH_DECORATION = re.compile(r"[_\-–—=~]{2,}")
+_HEADER_PAREN = re.compile(r"\([^)]*\)")
+
+
+def _header_key(line: str) -> str:
+    """Section-header lookup key: decoration and punctuation removed (S9.2).
+
+    Parenthetical stripping is bounded (S9.2 I1 review): applied only when
+    the remainder -- the line with its parenthetical content removed -- is
+    ALL-CAPS, or nothing but the parenthetical remains. Without the bound,
+    "Technologies (Python, Django, PostgreSQL)" -- a Title-Case body line
+    under PROJECTS -- strips to "Technologies", which normalizes to the
+    "technologies" skills alias and gets silently consumed as a SKILLS
+    header, deleting the technology list and re-parenting everything after
+    it into skills. "WORK EXPERIENCE (5 YEARS)" must still resolve: its
+    remainder ("WORK EXPERIENCE") is ALL-CAPS, so stripping still applies.
+    """
+    s = _HEADER_DASH_DECORATION.sub("", line)
+    without_parens = _HEADER_PAREN.sub("", s)
+    remainder = " ".join(without_parens.split()).strip(" :.-–—")
+    if not remainder or remainder.isupper():
+        s = without_parens
+    return " ".join(s.split()).strip(" :.-–—").lower()
+
+
 def _split_sections(text: str) -> dict[str, list[tuple[int, str]]]:
     """Map section → [(char_offset_of_stripped_line, stripped_line)].
     Content before any recognized header lands in pseudo-section 'header'."""
     alias_to_section = {
         alias: section
-        for section, aliases in _SECTION_ALIASES.items()
+        for section, aliases in SECTION_ALIASES.items()
         for alias in aliases
     }
     sections: dict[str, list[tuple[int, str]]] = {"header": []}
@@ -94,7 +110,7 @@ def _split_sections(text: str) -> dict[str, list[tuple[int, str]]]:
     for raw in text.splitlines(keepends=True):
         line = raw.strip()
         if line:
-            key = line.rstrip(":").strip().lower()
+            key = _header_key(line)
             if key in alias_to_section:
                 current = alias_to_section[key]
                 sections.setdefault(current, [])
@@ -248,14 +264,69 @@ def _education(lines: list[tuple[int, str]]) -> list[EducationEntry]:
     return entries
 
 
+_PRESENT_MARKER = re.compile(
+    r"\b(?:present|current|till date|to date|ongoing|now)\b", re.IGNORECASE
+)
+_ROLE_TAIL_PUNCT = " \t\r\n-–—|,.()[]:;"
+
+
+def _looks_like_role(content: str) -> bool:
+    """A bulleted dated line only opens a new employment entry when it reads
+    like a role line (title, employer, dates), not an achievement bullet
+    that happens to mention a year range (S9.2 fix 1, C2 review: measured
+    "Led the 2019 - 2021 migration of the reporting stack to Snowflake"
+    fabricating title='Led the', employer=None).
+
+    A role line's dates sit at the END of the line ("Title, Employer (2019 -
+    Present)"), while an achievement sentence's dates sit mid-sentence with
+    the sentence continuing after them ("... the 2019 - 2021 migration of
+    the reporting stack to Snowflake"). So the position of the LAST date
+    token, not the word count of the head, is the discriminator: nothing
+    meaningful may trail it. Trailing "present"/"current"-style markers and
+    punctuation/parens don't count as "meaningful".
+
+    An earlier fix wave also capped the head at <=6 words, reasoning that
+    role titles and "Title, Employer" phrases are short. Measured regression
+    (S9.2 final review fix-wave, NEW-2): multi-word employer names are the
+    norm in this product's stated market -- "Tata Consultancy Services",
+    "Larsen and Toubro Infotech", "Flipkart Internet Private Limited" -- and
+    the cap silently dropped every one of those roles even though their
+    dates sat cleanly at the end. The cap is gone; only a non-empty head is
+    still required.
+    """
+    spans = date_spans(content)
+    if not spans:
+        return False
+    head = content[: spans[0][0]].strip().rstrip("—–-|,(").strip()
+    if not head:
+        return False
+    tail = content[spans[-1][1] :]
+    tail = _PRESENT_MARKER.sub("", tail)
+    return not tail.strip(_ROLE_TAIL_PUNCT)
+
+
 def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
     entries: list[ExperienceEntry] = []
+    dated = [(s, l) for s, l in lines if has_date_range(_BULLET.sub("", l))]
+    # A duty list under a role ALWAYS has an unbulleted dated line above it. So
+    # when every dated line in this section is bulleted, there is no role line
+    # for them to be duties OF -- they are the roles (S9.2). But a role line
+    # carrying no date of its own (e.g. "Acme Analytics - Senior Data
+    # Engineer" with the dates only on its achievement bullets) ALSO makes
+    # every dated line bulleted -- so a bulleted dated line must additionally
+    # look like a role (_looks_like_role) before it is trusted to open one
+    # (S9.2 fix 1, C2 review).
+    all_dated_are_bullets = bool(dated) and all(_BULLET.match(l) for _, l in dated)
     for start, line in lines:
         content = _BULLET.sub("", line)
-        # Only dated, non-bullet lines open an entry; bullets are duties.
-        if _BULLET.match(line) or not has_date_range(content):
+        if not has_date_range(content):
             continue
-        head = content[: date_points(content)[0][0]].strip().rstrip("—–-|,").strip()
+        if _BULLET.match(line):
+            if not all_dated_are_bullets:
+                continue  # a duty under a role
+            if not _looks_like_role(content):
+                continue  # an achievement bullet, not a role (C2)
+        head = content[: date_points(content)[0][0]].strip().rstrip("—–-|,(").strip()
         title = employer = None
         if " at " in head.lower():
             i = head.lower().rindex(" at ")
@@ -290,11 +361,34 @@ def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
     return entries
 
 
+def _strip_skill_label(content: str) -> str:
+    """"Programming Languages: Python, Java" -- the label is a CATEGORY, not a
+    skill, and left in place it also poisons S1.4 normalization and floods
+    S6.3's curation queue with terms that can never map (S9.2).
+
+    But "Python: 5 years" is a per-skill proficiency annotation, a common
+    Indian-resume shape, and "Python:" is the skill's own NAME -- stripping it
+    destroys the skill rather than a category. Ruling R15: strip only when the
+    line has exactly ONE colon AND at least two comma-separated items follow
+    it (a real category introduces a list). Two colons ("Python: 5 years,
+    Java: 3 years") or one item after the colon ("C++: advanced") are left
+    alone -- the latter survives ugly as a single skill named "C++: advanced",
+    which keeps the skill name instead of deleting it."""
+    if content.count(":") != 1:
+        return content
+    after = content.split(":", 1)[1]
+    items = [p for p in after.split(",") if p.strip()]
+    if len(items) < 2:
+        return content
+    return _SKILL_LABEL.sub("", content)
+
+
 def _skills(lines: list[tuple[int, str]]) -> list[SkillItem]:
     items: list[SkillItem] = []
     seen: set[str] = set()
     for start, line in lines:
         content = _BULLET.sub("", line)
+        content = _strip_skill_label(content)
         for part in re.split(r"[,;·|]", content):
             name = part.strip().rstrip(".")
             if not 1 < len(name) <= 40 or name.lower() in seen:
@@ -584,6 +678,15 @@ async def extract_profile(
         profile = heuristic_profile(resume_text)
         method = "heuristic"
     normalize_profile(profile)  # S1.4: same enrichment for both paths
+    # S9.2: measured HERE -- after both doors (LLM / heuristic) have already
+    # converged on `profile` -- so one instrument covers both paths.
+    coverage = assess_coverage(
+        resume_text,
+        profile,
+        min_chars=settings.coverage_min_chars,
+        max_header_chars=settings.coverage_max_header_chars,
+        max_gaps=settings.coverage_max_gaps,
+    )
     hashing.apply_contact_hashes(profile, settings.contact_hash_salt)
     log.info(
         "profile_extracted",
@@ -591,5 +694,6 @@ async def extract_profile(
         education=len(profile.education),
         experience=len(profile.experience),
         skills=len(profile.skills),
+        coverage=coverage.band.value,
     )
-    return ExtractionResult(profile=profile, method=method, warnings=warnings)
+    return ExtractionResult(profile=profile, method=method, warnings=warnings, coverage=coverage)

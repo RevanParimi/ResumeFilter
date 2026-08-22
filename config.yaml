@@ -121,6 +121,11 @@ fr_weight_ai: 1.0                # per-subsystem fusion weights (x component con
 fr_weight_cross_field: 1.0       # NOTE: weights scale the mean term only — weight 0 does
 fr_weight_farm: 1.0              # NOT mute a subsystem (max term/coverage still count)
 
+# --- Signal quality (PI-9, S9.2): extraction coverage ---
+coverage_min_chars: 200          # below this -> band "insufficient_data", no gaps
+coverage_max_header_chars: 60    # bound on the one quoted resume line
+coverage_max_gaps: 20            # cap; `truncated` says so when it bites
+
 # --- Evaluation ledger (PI-3) — S3.1 schema + DPDP consent ---------------------
 # Consent grants are purpose-scoped, org-scoped, revocable, and ALWAYS expire:
 # grants created without an explicit expiry get this TTL (days). No perpetual

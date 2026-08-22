@@ -1,0 +1,11 @@
+Priya Sharma
+priya@example.com
+
+WORK EXPERIENCE
+Acme Analytics - Senior Data Engineer
+Bengaluru, India
+- Led the 2019 - 2021 migration of the reporting stack to Snowflake
+- Delivered the 2021 - 2023 rebuild of the customer data platform
+
+EDUCATION
+B.Tech in Computer Science, IIT Delhi, CGPA: 8.6/10

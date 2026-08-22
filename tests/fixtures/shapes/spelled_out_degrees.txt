@@ -1,0 +1,9 @@
+Rahul Verma
+rahul@example.com  +91 98765 43210
+
+EDUCATION
+Bachelor of Technology in Computer Science, VIT Vellore, 2015
+Master of Business Administration, IIM Bangalore, 2019
+
+SKILLS
+Python, SQL, Git, Docker, REST APIs
