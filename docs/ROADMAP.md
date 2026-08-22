@@ -9,9 +9,54 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-20/21 (latest) — S9.2 (EXTRACTION COVERAGE) BUILT, REVIEWED
-  AND REGRESSION-FIXED on branch `s92-extraction-coverage`. NOT MERGED, not
-  pushed, nothing deployed. 1996 → 2080 passing, 21/21 mutants dead,
+- **Session 2026-08-22 (latest) — S9.2 MERGED to `main` at `2ad59f8`; PI-9's
+  second sprint is closed. 2080 passing on the MERGED result, `smoke_s92`
+  17/17, branch deleted. `main` is 33 commits ahead of `origin/main` and
+  NOTHING IS DEPLOYED.**
+  The merge was a clean fast-forward — `main` had not moved since the branch
+  point — and the suite was re-run ON THE MERGE COMMIT, not just the branch.
+  **THE UI'S REMAINING WORK WAS MEASURED, NOT ASSUMED, AND HAS NO BLOCKER.**
+  Five screens are unwired, not three: `MOCK_SCREENS` in
+  `frontend/Veritas.dc.html` names `evaluate`, `interview`, `adminorgs`,
+  `adminusers`, `curation` — the board's "operator console" is three of them.
+  A throwaway probe drove every one of their routes over real HTTP in the
+  BROWSER's posture (session cookie + `X-CSRF-Token` + `Origin`) and got
+  **12/12**: `require_api_key` has been session-capable since S8.2, so an
+  operator cookie satisfies the admin gate and no new backend work is owed.
+  The candidate-plane interview runner answers too — `POST /portal/interviews`
+  returns a 422 that NAMES what the screen must do first ("only 2 question(s)
+  available; 3 required. Add a resume or run a depth evaluation first").
+  **THE BOARD'S "RE-RUN THE 36/36 CONTRACT SUITE" ITEM IS STALE.** No such
+  script exists or ever existed — `git log --diff-filter=A` over
+  `scripts/check_ui*` returns exactly three files, all still present. Its
+  successor `check_ui_screening_contract.py` is **31/31 green**, bindings are
+  **402/402**, and the org-signup 409 that was supposed to break it is handled
+  (`frontend/api.js:143` maps it to `kind:"conflict"`) and covered by
+  `tests/test_auth_org_name_taken.py`. The item can be struck, not worked.
+  **⚠ ONE REAL GAP FOUND, AND IT IS S9.2'S OWN QUESTION ONE DOOR LATER.**
+  `POST /evaluate` returns `extraction_coverage: null` — STRUCTURALLY, because
+  `routes.py:521` calls `engine.evaluate(...)` without the argument the
+  screening door passes at `screening/ingest.py:147`. `cross_field` falls back
+  to `heuristic_profile(text)` (nodes/cross_field.py:31), the very extractor
+  S9.2 fixed, so the instrument APPLIES to this path — it is simply not wired
+  to it. Measured on the repo's own `tests/fixtures/genuine_genai_resume.txt`
+  (976 chars): the heuristic profile is **0 experience, 0 education, 0 skills**;
+  `cross_field` and `fabrication_risk` both honestly answer `insufficient_data`
+  with zero findings; depth still reports **deep 0.81**; and `assess_coverage`
+  on that same text+profile pair says **`major_gaps` /
+  `education_not_extracted`** — the caveat the operator never sees. This is the
+  repo's signature defect shape (a rule at one entry point and not the other)
+  and it lands on the INSTANT CHECK screen, the fraud-screen wedge's fastest
+  demo path. Wiring that screen to `/evaluate` as-is ships a headline
+  fabrication number that reads empty with no explanation. **Decide the scope
+  before wiring it, not during.**
+  **➤ NEXT: wire the five screens + local testing including the UI. GO-LIVE
+  MOVES TO LAST** by the user's call this session — it happens only after local
+  testing is finished, UI included.
+
+- **Session 2026-08-20/21 — S9.2 (EXTRACTION COVERAGE) BUILT, REVIEWED
+  AND REGRESSION-FIXED on branch `s92-extraction-coverage`. (MERGED the next
+  session; see above.) Not pushed, nothing deployed. 1996 → 2080 passing, 21/21 mutants dead,
   `smoke_s92` 17/17, tree clean.**
   Spec `docs/superpowers/specs/2026-08-20-s92-extraction-coverage-design.md`,
   plan `docs/superpowers/plans/2026-08-20-s92-extraction-coverage.md` (14 tasks,
@@ -2532,6 +2577,27 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                runner — /evaluate STAYS admin past S8.4 by decision
     │                (candidate-less, so no owner to stamp); operator console is
     │                admin by nature; interview runner is candidate-plane
+    │                MEASURED 2026-08-22, NO BLOCKER. It is FIVE screens, not
+    │                three: MOCK_SCREENS names evaluate · interview · adminorgs
+    │                · adminusers · curation ("operator console" is the middle
+    │                three). Every route they need already answers a BROWSER
+    │                -posture session (cookie + X-CSRF-Token + Origin) -- 12/12
+    │                on a throwaway probe -- because require_api_key has been
+    │                session-capable since S8.2, so an operator cookie clears
+    │                the admin gate with no new backend work:
+    │                  adminusers  GET  /admin/users              200
+    │                  adminorgs   GET/POST /ledger/orgs           200
+    │                  curation    GET  /curation/skills/unmapped  200
+    │                  evaluate    POST /evaluate                  200
+    │                  interview   GET  /portal/interviews         200
+    │                              POST /portal/interviews         422 that
+    │                              NAMES the precondition ("Add a resume or run
+    │                              a depth evaluation first") -- the screen has
+    │                              to show that, not an error box.
+    │                ⚠ SCOPE DECISION OWED BEFORE WIRING INSTANT CHECK:
+    │                /evaluate returns extraction_coverage: null (see S9.2's
+    │                open items), so that screen's fabrication number reads
+    │                empty with no caveat.
     │            [x] AN ORG-PLANE ROUTE FOR RECORDING AN OUTCOME — DONE
     │                2026-08-10 on branch s86-org-outcome-route (spec + plan +
     │                TDD, 9 commits). 1553→1586 green, smoke_s85_outcome 21/21,
@@ -2556,8 +2622,17 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     │                it needed no edit. A THIRD writer to `outcomes` — the S8.1
     │                one-off importer — was caught by the full suite, not by
     │                the design.
-    │            [ ] re-run the 36/36 contract suite after S8.4 — org signup's
-    │                new 409 makes it fail ON PURPOSE (spec §4.7)
+    │            [x] STRUCK 2026-08-22 — "re-run the 36/36 contract suite" was
+    │                an item against a script that does not exist and never
+    │                did: `git log --diff-filter=A -- scripts/check_ui*`
+    │                returns exactly three files, all still present. Its
+    │                successor check_ui_screening_contract.py is 31/31 GREEN
+    │                and bindings are 402/402 (both re-run on the merge). The
+    │                409 it was supposed to break on is HANDLED --
+    │                frontend/api.js:143 maps it to kind:"conflict" and
+    │                errorCopy prints the API's own detail -- and pinned by
+    │                tests/test_auth_org_name_taken.py +
+    │                test_org_name_case_insensitive.py.
     ├── [x] S8.3  Operating safely — dual-scoped rate limits · metrics ·
     │            retention sweep · DPDP correction + grievance officer
     │            ** MOVED AFTER THE UI; still lands BEFORE the deploy **
@@ -2697,7 +2772,11 @@ VERITAS — TALENT INTELLIGENCE PLATFORM  (Indian-market Mercor, trust layer fir
     ├── [ ] GO-LIVE — unscheduled, USER-GATED. Not a sprint and has no ID.
              The checklist is DEPLOY.md; the blocking non-technical item is
              the IBM IP / outside-activity check (GTM §8.3). Also still open:
-             alerting thresholds on /metrics.
+             alerting thresholds on /metrics, and the Railway cron for the
+             retention sweep (the sweep still has no scheduler).
+             SEQUENCED LAST BY THE USER, 2026-08-22: go-live happens only
+             after local testing is finished, THE UI INCLUDED. Wiring the five
+             remaining screens comes first.
         EXECUTION ORDER (user, 2026-08-02): S8.1 ✓ → S8.2 ✓ → S8.4 → UI →
         integrate → S8.3 → deploy. Sprint IDs are stable identifiers; only the
         order moved. S8.3 still precedes the deploy, which is now last, so the
@@ -2768,9 +2847,9 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
           - the mutation harness is COMMITTED (scripts/mutate_s91.py), unlike
             S8.3's and S8.5's hand-run passes: a count nobody can re-derive is
             a claim, not evidence
- └── [~] S9.2  EXTRACTION COVERAGE — built + reviewed + regression-fixed on
-          branch `s92-extraction-coverage`, AWAITING THE MERGE DECISION.
-          2080 passing, 21/21 mutants dead, smoke_s92 17/17.
+ └── [x] S9.2  EXTRACTION COVERAGE — MERGED 2026-08-22 at `2ad59f8`, branch
+          deleted. Clean fast-forward; 2080 passing RE-RUN ON THE MERGE
+          COMMIT, 21/21 mutants dead, smoke_s92 17/17.
           Asks the question underneath S9.1's: were the advisory numbers
           computed from the resume, or from a hole where it used to be?
           - src/app/candidates/coverage.py: five checks, four bands, and a
@@ -2795,6 +2874,16 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             drops (§3.3 is total-drops-only), and `Key Skills` over a bare list
           - OPEN: six shape fixtures sit under coverage_min_chars=200 (R16);
             spec §5.3 still lists `bs`/`ms`, which R14 deliberately did not ship
+          - ⚠ OPEN, FOUND 2026-08-22: THE INSTRUMENT NEVER REACHES `/evaluate`.
+            routes.py:521 calls engine.evaluate() without extraction_coverage,
+            so that door returns `extraction_coverage: null` structurally, while
+            screening/ingest.py:147 passes it. cross_field falls back to
+            heuristic_profile() -- the extractor S9.2 fixed -- so coverage
+            APPLIES here and is simply unwired. Measured on
+            genuine_genai_resume.txt: profile 0/0/0, cross_field and
+            fabrication_risk both `insufficient_data`, depth `deep 0.81`, and
+            assess_coverage says `major_gaps / education_not_extracted`.
+            The Instant check screen is the one that wires to this route.
 ```
 
 ## Standing conventions (do not relitigate)
