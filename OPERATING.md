@@ -452,6 +452,53 @@ source today and will until real organisations submit ledger interview records
 **It changes nothing.** No score, no band, no threshold, no decision. Advisory
 analysis only.
 
+## 10b. Dependencies: the lock, and the refresh ritual
+
+`requirements.txt` is the **lock** — every direct dependency pinned with `==`.
+`pyproject.toml` declares the **ranges the app supports**. CI
+(`.github/workflows/ci.yml`) and the production image (`Dockerfile`) both
+install the lock, so CI, a developer machine and a shipped container are the
+same three things.
+
+**Why it is pinned.** Every entry was an unbounded `>=` until 2026-08-24, when
+FastAPI 0.141 deleted `fastapi.dependencies.utils.get_flat_dependant`. CI
+resolved 0.141.1 while the development machine had 0.138.0, and five test
+modules failed at **collection** time in CI while 2086 tests were green
+locally. Local green proved nothing about CI. The same unbounded resolution
+reached the `Dockerfile`, which meant two image builds a week apart could ship
+different frameworks into production.
+
+**An unrefreshed pin is its own risk.** A frozen dependency stops receiving
+security patches, so this is a ritual with a cadence, not a one-time act:
+
+```bash
+# 1. relax the pin(s) you want to move -- one, or all of them
+# 2. resolve
+pip install -U -r requirements.txt
+# 3. the suite must be green
+pytest -q
+# 4. plus the smokes covering whatever the upgrade touches
+python scripts/smoke_s92.py
+# 5. re-pin to exactly what step 2 resolved, in a commit that changes
+#    NOTHING else -- so `git log` shows the upgrade as its own reviewable act
+```
+
+`tests/test_requirements_pinned.py` fails the build if a pin goes unbounded,
+drifts outside pyproject's range, loses an extra (`uvicorn[standard]`,
+`psycopg[binary]` — both change what is installed), or if the two files stop
+describing the same dependency set. It found a real defect on its first run:
+`sqlalchemy`, `alembic` and `psycopg` were in `requirements.txt` and **missing
+from `pyproject.toml`**, so `pip install -e .` built an app that could not
+import — sqlalchemy alone is imported by 31 modules under `src/app`.
+
+**Known limit.** Only the 18 **direct** dependencies are pinned; transitive
+packages still float. A full `pip freeze` lock would close that too, at the
+cost of a file nobody can hand-edit. This is the deliberate middle.
+
+**Already proven, not yet taken:** the full suite is green under
+`fastapi==0.141.1` (measured before the pin landed), so that bump is low-risk
+whenever someone wants to run the ritual above.
+
 ## 11. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).
