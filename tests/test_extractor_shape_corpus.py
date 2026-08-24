@@ -239,3 +239,24 @@ def test_a_single_skill_with_one_colon_and_no_second_item_keeps_its_text():
 # above (extraction correctness) and the "fix4"/"R15" mutants in
 # scripts/mutate_s92.py, which mutate _skills() itself and are killed by
 # that same test. A test that cannot fail is worse than no test.
+
+
+EDUCATION_PROSE = (SHAPES / "education_prose_not_a_degree.txt").read_text(encoding="utf-8")
+
+
+def test_prose_in_an_education_section_does_not_become_a_degree():
+    r"""`_DEGREE` spelled the two-letter abbreviations with an OPTIONAL dot
+    (`b\.?e\b`), so the bare words "be" and "me" matched and every prose line
+    under EDUCATION became an EducationEntry whose `degree` was the sentence.
+
+    This fixture carries ONE real degree and two ordinary sentences, so it
+    pins both directions at once: the real degree survives, the prose does not
+    become two phantom credentials.
+    """
+    p = heuristic_profile(EDUCATION_PROSE)
+    assert len(p.education) == 1, [e.degree for e in p.education]
+    assert p.education[0].degree == "B.Tech"
+    assert p.education[0].institution == "NIT Trichy"
+    # And the instrument agrees nothing was dropped.
+    cov = assess_coverage(EDUCATION_PROSE, p, min_chars=50)
+    assert cov.band is CoverageBand.COMPLETE

@@ -130,3 +130,47 @@ Senior Data Engineer, Acme Analytics (2019 - Present)
     p = heuristic_profile(text)
     assert len(p.experience) == 1
     assert p.experience[0].employer == "Acme Analytics"
+
+
+def _edu(section_lines: str):
+    """Heuristic profile for a resume whose EDUCATION section is `section_lines`."""
+    return heuristic_profile(
+        "Priya Nair\n\nEXPERIENCE\n"
+        "Senior Data Engineer, Acme Analytics (2019 - Present)\n\n"
+        f"EDUCATION\n{section_lines}\n"
+    ).education
+
+
+def test_an_english_word_in_the_education_section_is_not_a_degree():
+    r"""`_DEGREE` spelled the two-letter abbreviations `b\.?e\b`, so the DOT was
+    optional and the bare English words "be", "me", "ma" and "ba" each matched.
+
+    A prose line in an education section then became an EducationEntry whose
+    `degree` was the whole sentence -- the extractor inventing a credential
+    nobody claimed. S9.2's ruling R13 settled the principle for roles
+    ("inventing one is worse than missing one"); this is the same call for
+    degrees, and R14 already dropped `bs`/`ms` for matching "MS Office".
+    """
+    assert _edu("This programme will be announced later") == []
+    assert _edu("Please contact me for transcripts") == []
+    assert _edu("Completed ma jor coursework") == []
+    assert _edu("Covered ba sic statistics") == []
+
+
+def test_real_two_letter_degrees_still_extract_dotted_or_not():
+    """The fix must not cost the degrees themselves. `BE` and `ME` (Bachelor /
+    Master of Engineering) and `BA` / `MA` are ordinary on Indian resumes,
+    written with dots or without -- so the dotless forms stay legal in
+    UPPERCASE, which is what separates the degree `BE` from the word `be`.
+    """
+    for line, degree in [
+        ("B.E in Information Technology, COEP, 2025", "B.E"),
+        ("BE in Information Technology, COEP, 2025", "BE"),
+        ("M.A in Economics, JNU, 2013", "M.A"),
+        ("MA in Economics, JNU, 2013", "MA"),
+        ("ME in Mechanical Engineering, VJTI, 2011", "ME"),
+        ("BA in English, Fergusson College, 2009", "BA"),
+    ]:
+        got = _edu(line)
+        assert len(got) == 1, f"{line!r} produced {len(got)} entries"
+        assert got[0].degree == degree, f"{line!r} -> {got[0].degree!r}"

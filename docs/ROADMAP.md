@@ -2884,15 +2884,25 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             and now pinned: boundaries ALONE still admit `www.b.com`, `mba.com`
             and `mca@example.com`, because there a host label or mailbox name IS
             the degree token. genuine_genai_resume.txt now reports `complete`.
-          - ⚠ NEW, OPEN, SAME BUG CLASS ONE MODULE OVER: the EXTRACTOR's
-            `_DEGREE` spells this `b\.?e`, which matches the bare English word
-            "be". Measured: an education section containing "This programme will
-            be announced later" yields an education entry whose degree is that
-            whole sentence. Narrower than the coverage bug (it fires only inside
-            a recognised education section) but real. NOT fixed with the
-            coverage bug on purpose -- editing the extractor changes what is
-            EXTRACTED, not merely what is flagged, and that wants its own
-            TDD pass and its own shape-corpus row.
+          - ✅ FIXED 2026-08-24 on `s93-extractor-degree-word-boundary`, SAME
+            BUG CLASS ONE MODULE OVER: the EXTRACTOR's `_DEGREE` spelled the
+            two-letter abbreviations `b\.?e` -- an OPTIONAL dot -- so the bare
+            English words "be", "me", "ma" AND "ba" all matched. Measured: an
+            education section containing "This programme will be announced
+            later" yielded an education entry whose degree was that whole
+            sentence. The extractor was INVENTING a credential nobody claimed,
+            which R13 already settled as the worse failure.
+            THE REPAIR IS A CASE SPLIT, NOT A REQUIRED DOT, and that choice is
+            the finding: `BE`, `ME`, `BA`, `MA` are ordinary degrees on Indian
+            resumes, so requiring the dot (the obvious fix, and the one R14 took
+            for `bs`/`ms`) would have cost real degrees in this product's own
+            market. Dotted forms stay case-insensitive; dotless forms are legal
+            only in UPPERCASE -- which is exactly what separates the degree `BE`
+            from the word `be`. Blast radius was bounded first: `_DEGREE` has
+            exactly TWO call sites, both inside `_education()`.
+            2083 -> 2086 green, smoke_s92 17/17, smoke_s91 15/15, 3/3 mutants
+            dead, new corpus fixture `education_prose_not_a_degree` carrying one
+            real degree and two sentences so it pins BOTH directions at once.
           - (superseded, kept for the record) FOUND 2026-08-24: `looks_academic`
             SUBSTRING-MATCHED
             `b.com` INSIDE `github.com`. coverage.py:42 _DEGREE_WORDS is checked
