@@ -1,0 +1,16 @@
+Arjun Rao
+Email: arjun.rao@example.in
+Phone: +91 91234 56789
+Pune, Maharashtra
+
+Education
+
+B.E in Information Technology, College of Engineering Pune, 2025
+CGPA: 8.1/10
+
+Academic Projects
+
+Built a Streamlit dashboard over a 40,000-row sales dataset with a scikit-learn forecast model.
+
+Technical Skills
+Python, SQL, Pandas, scikit-learn, Git

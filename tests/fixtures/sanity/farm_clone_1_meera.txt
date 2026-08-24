@@ -1,0 +1,21 @@
+Meera Sundaram
+Email: meera.s@example.in
+Phone: +91 98111 22233
+Bengaluru, Karnataka | Notice period: 60 days
+
+Work Experience
+
+Senior Machine Learning Engineer, Tata Consultancy Services (Jan 2021 - Present)
+- Fine-tuned Llama-3-8B with QLoRA on a 25,000-example support-ticket dataset; eval F1 improved from 0.71 to 0.84 on a held-out test set.
+- Built a production RAG system with recursive chunking (512 tokens, 64 overlap); retrieval recall@10 of 0.92, p95 latency under 800ms.
+
+Machine Learning Engineer, Infosys Limited (Jun 2018 - Dec 2020)
+- Designed a multi-agent LangGraph supervisor orchestrating a planner and tool-calling agents with retry and timeout fallbacks.
+
+Education
+
+B.Tech in Computer Science, National Institute of Technology Surathkal, 2018
+CGPA: 8.6/10
+
+Technical Skills
+Python, PyTorch, LangGraph, PostgreSQL, Docker, AWS

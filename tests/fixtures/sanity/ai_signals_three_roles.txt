@@ -1,0 +1,29 @@
+Rohit Deshpande
+Email: rohit.deshpande@example.in
+Phone: +91 99887 76655
+Hyderabad, Telangana | Notice period: 30 days
+
+Work Experience
+
+Lead Data Engineer, Larsen and Toubro Infotech (Mar 2022 - Present)
+- Spearheaded the design of a scalable data platform leveraging cutting-edge technologies to drive business outcomes.
+- Orchestrated cross-functional collaboration to deliver robust, end-to-end pipelines aligned with strategic objectives.
+- Championed a culture of data excellence, empowering stakeholders to unlock actionable insights at scale.
+
+Senior Data Engineer, Tech Mahindra (Apr 2019 - Feb 2022)
+- Architected best-in-class ingestion frameworks that seamlessly integrated disparate enterprise data sources.
+- Optimised mission-critical workflows, delivering significant improvements in throughput and reliability.
+- Partnered with leadership to operationalise a governance framework spanning the full data lifecycle.
+
+Data Engineer, Wipro Limited (Jul 2016 - Mar 2019)
+- Engineered comprehensive ETL solutions utilising industry-leading tooling and methodologies.
+- Facilitated the migration of legacy systems to a modern cloud-native architecture with measurable impact.
+- Drove continuous improvement initiatives that elevated overall data quality and team velocity.
+
+Education
+
+B.Tech in Computer Science, Jawaharlal Nehru Technological University, 2016
+CGPA: 7.9/10
+
+Technical Skills
+Python, Spark, Airflow, Snowflake, Kafka, Terraform, AWS

@@ -42,9 +42,11 @@
   to it. Measured on the repo's own `tests/fixtures/genuine_genai_resume.txt`
   (976 chars): the heuristic profile is **0 experience, 0 education, 0 skills**;
   `cross_field` and `fabrication_risk` both honestly answer `insufficient_data`
-  with zero findings; depth still reports **deep 0.81**; and `assess_coverage`
-  on that same text+profile pair says **`major_gaps` /
-  `education_not_extracted`** — the caveat the operator never sees. This is the
+  with zero findings; depth still reports **deep 0.81**. (CORRECTED 08-24: the
+  `major_gaps / education_not_extracted` first reported here was a FALSE
+  POSITIVE from the `b.com`-in-`github.com` bug below, not a dropped degree.
+  The `/evaluate` gap itself stands — that door returns null coverage
+  regardless.) This is the
   repo's signature defect shape (a rule at one entry point and not the other)
   and it lands on the INSTANT CHECK screen, the fraud-screen wedge's fastest
   demo path. Wiring that screen to `/evaluate` as-is ships a headline
@@ -2874,6 +2876,17 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             drops (§3.3 is total-drops-only), and `Key Skills` over a bare list
           - OPEN: six shape fixtures sit under coverage_min_chars=200 (R16);
             spec §5.3 still lists `bs`/`ms`, which R14 deliberately did not ship
+          - ⚠ OPEN, FOUND 2026-08-24: `looks_academic` SUBSTRING-MATCHES
+            `b.com` INSIDE `github.com`. coverage.py:42 _DEGREE_WORDS is checked
+            with `w in low`, so ANY resume carrying a GitHub link counts as
+            carrying a "degree-bearing line" and raises a FALSE
+            `education_not_extracted` whenever education is genuinely absent.
+            This is what actually produced the `major_gaps` reported against
+            genuine_genai_resume.txt on 08-22 -- that resume has no degree line
+            at all, so the gap was spurious, not a dropped section. A
+            tech-hiring product in which most resumes carry a GitHub URL is the
+            worst possible place for this. Fix needs word-boundary matching, and
+            the shape corpus needs a github.com fixture to pin it.
           - ⚠ OPEN, FOUND 2026-08-22: THE INSTRUMENT NEVER REACHES `/evaluate`.
             routes.py:521 calls engine.evaluate() without extraction_coverage,
             so that door returns `extraction_coverage: null` structurally, while
