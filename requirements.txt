@@ -1,40 +1,72 @@
 # depth-eval-engine — runtime + test dependencies (pip install -r requirements.txt)
 # Python 3.11+ required.
+#
+# ── EXACTLY PINNED, ON PURPOSE (2026-08-24) ───────────────────────────────────
+# This file is the LOCK. `pyproject.toml` declares the ranges the app SUPPORTS;
+# this file declares the versions it is PROVEN against, and it is what both CI
+# (.github/workflows/ci.yml) and the production image (Dockerfile) install.
+#
+# WHY. Every entry here was an unbounded `>=` until FastAPI 0.141 deleted
+# `fastapi.dependencies.utils.get_flat_dependant`. CI resolved 0.141.1 while
+# this machine had 0.138.0, so five test modules failed at COLLECTION time in CI
+# while 2086 tests were green locally -- local green proved nothing about CI.
+# The same unbounded resolution reached the Dockerfile, which means two image
+# builds a week apart could ship different frameworks into production. Pinning
+# makes CI, local and the image the same three things.
+#
+# THE REFRESH RITUAL (do NOT let these rot -- an unpatched pin is its own risk):
+#   1. relax the pin(s) you want to move, or all of them
+#   2. pip install -U -r requirements.txt
+#   3. pytest -q                     <- must be green
+#   4. run the smokes you touched    <- e.g. python scripts/smoke_s92.py
+#   5. re-pin to whatever step 2 resolved, in ONE commit that changes nothing
+#      else, so `git log` shows the upgrade as its own reviewable act
+# tests/test_requirements_pinned.py fails the build if a pin goes unbounded or
+# stops satisfying pyproject's range, so the two files cannot drift apart.
+#
+# KNOWN LIMIT: these are the 18 DIRECT dependencies. Transitive packages still
+# float. A full `pip freeze` lock would close that too, at the cost of a file
+# nobody can hand-edit; this is the deliberate middle.
+#
+# NOTE: fastapi 0.141.1 is ALREADY PROVEN GREEN here (full suite, 2086 passed,
+# run against it before this pin landed), so that upgrade is low-risk whenever
+# you want it. It is left for a deliberate bump rather than bundled into the
+# CI fix that discovered the problem.
 
 # --- Orchestration ---
-langgraph>=0.2.0
-langchain-core>=0.3.0
+langgraph==1.2.6
+langchain-core==1.4.8
 
 # --- API ---
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
 
 # --- Vector store ---
-chromadb>=0.5.0
+chromadb==1.5.9
 
 # --- Relational store (candidates; ledger/features later) ---
-sqlalchemy>=2.0
-alembic>=1.13
+sqlalchemy==2.0.51
+alembic==1.18.5
 # Postgres driver (S8.1 cutover). SQLite stays the dev/test default: the offline
 # suite must run on a clean checkout with no database service.
-psycopg[binary]>=3.1
+psycopg[binary]==3.3.4
 
 # --- Models / validation / config ---
-pydantic>=2.7.0
-pydantic-settings>=2.3.0
-pyyaml>=6.0          # YAML config source for Settings
+pydantic==2.13.4
+pydantic-settings==2.14.2
+pyyaml==6.0.3          # YAML config source for Settings
 
 # --- LLM (OpenRouter via the OpenAI-compatible SDK) ---
-openai>=1.40.0
+openai==2.43.0
 
 # --- IO ---
-httpx>=0.27.0
-pypdf>=4.2.0
+httpx==0.28.1
+pypdf==6.13.3
 
 # --- Logging ---
-structlog>=24.1.0
+structlog==26.1.0
 
 # --- Tests ---
-pytest>=8.2.0
-pytest-asyncio>=0.23.0
-respx>=0.21.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
+respx==0.23.1

@@ -16,6 +16,15 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     # Vector store
     "chromadb>=0.5.0",
+    # Relational store. These were MISSING here while requirements.txt carried
+    # them, so `pip install -e .` built an app that could not import: sqlalchemy
+    # alone is imported by 31 modules under src/app. Found 2026-08-24 by
+    # tests/test_requirements_pinned.py on its first run. psycopg has no direct
+    # import anywhere -- SQLAlchemy loads it from the `postgresql+psycopg://`
+    # URL -- which is exactly why nothing else noticed it was undeclared.
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
     # Models / validation / config
     "pydantic>=2.7.0",
     "pydantic-settings>=2.3.0",
