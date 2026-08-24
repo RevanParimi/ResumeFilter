@@ -47,10 +47,26 @@ log = get_logger("candidates.extractor")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE = re.compile(r"(?:\+?91[-\s]?)?0?[6-9]\d{4}[-\s]?\d{5}\b")
 _URL = re.compile(r"https?://[^\s)>\]]+")
+#: THE TWO-LETTER ABBREVIATIONS ARE CASE-SPLIT, and that is the whole point of
+#: how this is spelled. They used to read `b\.?e\b` -- an OPTIONAL dot -- so the
+#: bare English words "be", "me", "ma" and "ba" each matched, and any prose line
+#: inside an education section became an EducationEntry whose `degree` was the
+#: entire sentence ("This programme will be announced later"). The extractor was
+#: inventing a credential nobody claimed, which ruling R13 settled as the worse
+#: failure, and R14 already dropped `bs`/`ms` for the same class of collision
+#: with "MS Office".
+#:
+#: Dotted forms stay case-insensitive (`B.E`, `b.e`). Dotless forms are legal
+#: only in UPPERCASE, which is exactly what separates the degree `BE` from the
+#: word `be` -- and `BE`/`ME`/`BA`/`MA` are ordinary on Indian resumes, so
+#: requiring the dot outright would have cost real degrees.
 _DEGREE = re.compile(
-    r"\b(b\.?\s?tech|m\.?\s?tech|b\.?e\b|m\.?e\b|b\.?sc|m\.?sc|bca|mca|mba|"
-    r"bba|b\.?a\b|m\.?a\b|ph\.?d|b\.?com|m\.?com|diploma|"
-    r"bachelors?|masters?)\b",
+    r"\b(b\.?\s?tech|m\.?\s?tech|b\.?sc|m\.?sc|bca|mca|mba|"
+    r"bba|ph\.?d|b\.?com|m\.?com|diploma|"
+    r"bachelors?|masters?"
+    r"|b\.e|m\.e|b\.a|m\.a"
+    r"|(?-i:BE|ME|BA|MA)"
+    r")\b",
     re.IGNORECASE,
 )
 _GRADE = re.compile(

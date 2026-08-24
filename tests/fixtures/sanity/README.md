@@ -78,10 +78,18 @@ explicit link/email strip, and a required dot on the two-letter abbreviations
 `test_a_url_is_never_a_degree_bearing_line`, its English-word sibling, and the
 `github_link_no_education` row of the shape matrix. 3/3 mutants dead.
 
-STILL OPEN, same bug class, different module: the EXTRACTOR's own `_DEGREE`
-spells this `b\.?e`, which matches the bare word "be". A line in an education
-section reading "This programme will be announced later" becomes an education
-entry whose degree is that whole sentence. Narrower than the coverage bug (it
-only fires inside a recognised education section) but real, and not fixed here
-— changing the extractor changes what gets EXTRACTED, not just what gets
-flagged.
+ALSO FIXED, same bug class one module over: the EXTRACTOR's own `_DEGREE`
+spelled the two-letter abbreviations `b\.?e` — an OPTIONAL dot — so the bare
+words "be", "me", "ma" and "ba" all matched, and a line in an education section
+reading "This programme will be announced later" became an education entry
+whose degree was that whole sentence. The extractor was inventing a credential
+nobody claimed.
+
+The repair is a CASE SPLIT rather than a required dot, because `BE`, `ME`, `BA`
+and `MA` are ordinary degrees on Indian resumes and requiring the dot would
+have cost them: dotted forms stay case-insensitive (`B.E`, `b.e`), dotless
+forms are legal only in UPPERCASE — which is exactly what separates the degree
+`BE` from the word `be`. Pinned by
+`test_an_english_word_in_the_education_section_is_not_a_degree`, its
+real-degrees sibling, and the `education_prose_not_a_degree` corpus fixture.
+3/3 mutants dead.

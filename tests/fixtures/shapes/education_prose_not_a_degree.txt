@@ -1,0 +1,13 @@
+Priya Nair
+
+EXPERIENCE
+Senior Data Engineer, Acme Analytics (2019 - Present)
+Data Engineer, Foo Systems (2015 - 2019)
+
+EDUCATION
+B.Tech in Computer Science, NIT Trichy, 2014 - 2018
+The convocation date will be announced later
+Please contact me for sealed transcripts
+
+SKILLS
+Python, SQL, Pandas
