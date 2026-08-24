@@ -165,6 +165,51 @@ def test_academic_lines_are_not_counted_as_roles():
     assert not looks_academic("Senior Data Engineer, Acme Analytics (2019 - Present)")
 
 
+def test_a_url_is_never_a_degree_bearing_line():
+    """`b.com` lives inside `github.com`, and _DEGREE_WORDS was matched with
+    `w in low` -- so EVERY resume carrying a GitHub link counted as carrying a
+    degree, and raised a false `education_not_extracted` whenever education was
+    genuinely absent. In a tech-hiring product most resumes carry that link.
+
+    The same substring bug reaches further than the reported case: `b.sc` sits
+    inside `web.scan`, `m.a` inside `team.access`, `b.e` inside `adobe.exe`.
+    Word boundaries are the fix, so every one of these is asserted -- a
+    regression that restores `in` matching must fail here, not only on GitHub.
+    """
+    assert not looks_academic("https://github.com/priya-nair/rag-support-bot")
+    assert not looks_academic("Portfolio: https://priya.github.io")
+    assert not looks_academic("Ran a web.scan sweep across the estate")
+    assert not looks_academic("Refactored team.access control lists")
+    assert not looks_academic("Packaged adobe.exe for the fleet")
+    assert not looks_academic("Email: priya.nair@example.in")
+    # These three pin _LINKISH specifically. Word boundaries alone do NOT save
+    # them -- a host label can BE a degree token ("www.b.com", "mba.com") and so
+    # can a mailbox name ("mca@..."), and in each the boundary before the token
+    # is a real one. Measured: all three match the degree pattern when the link
+    # is left in place, so deleting the strip must turn this test red.
+    assert not looks_academic("https://www.b.com/profile")
+    assert not looks_academic("Visit https://mba.com/rankings")
+    assert not looks_academic("Contact mca@example.com")
+    # ...and the real degrees still register, dots or no dots.
+    assert looks_academic("B.Com, University of Delhi, 2016")
+    assert looks_academic("B.E in Information Technology, COEP, 2025")
+    assert looks_academic("M.A in Economics, JNU, 2013")
+
+
+def test_an_english_word_is_never_a_degree_bearing_line():
+    r"""A GUARD ON THE FIX, not on the original bug -- it passed before the fix
+    and is written to stay passing after it.
+
+    The obvious repair for the substring bug is a word-boundary regex, and the
+    obvious spelling of it, `b\.?e`, makes the dot OPTIONAL -- which matches
+    the bare English word "be", and `m\.?a` matches "ma". That would trade a
+    URL false positive for a far commoner prose one. The two-letter
+    abbreviations therefore REQUIRE their dot.
+    """
+    assert not looks_academic("Will be responsible for the ingest pipeline")
+    assert not looks_academic("Owned the ma jor release train")
+
+
 def test_header_shaped_rejects_delimited_lists():
     """Controller ruling R10 (review of tasks 4/5): a comma-, semicolon-,
     pipe-, or middle-dot-delimited line is content (a skills list, an inline
