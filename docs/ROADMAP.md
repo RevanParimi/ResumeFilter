@@ -2876,7 +2876,25 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             drops (§3.3 is total-drops-only), and `Key Skills` over a bare list
           - OPEN: six shape fixtures sit under coverage_min_chars=200 (R16);
             spec §5.3 still lists `bs`/`ms`, which R14 deliberately did not ship
-          - ⚠ OPEN, FOUND 2026-08-24: `looks_academic` SUBSTRING-MATCHES
+          - ✅ FIXED 2026-08-24 on `s92-fix-degree-false-positive`: word
+            boundaries + a link/email strip + a REQUIRED dot on the two-letter
+            abbreviations (optional would match the English words "be"/"ma", 
+            trading a URL false positive for a commoner prose one). 2080 -> 2083
+            green, smoke_s92 17/17, 3/3 mutants dead. `_LINKISH` is load-bearing
+            and now pinned: boundaries ALONE still admit `www.b.com`, `mba.com`
+            and `mca@example.com`, because there a host label or mailbox name IS
+            the degree token. genuine_genai_resume.txt now reports `complete`.
+          - ⚠ NEW, OPEN, SAME BUG CLASS ONE MODULE OVER: the EXTRACTOR's
+            `_DEGREE` spells this `b\.?e`, which matches the bare English word
+            "be". Measured: an education section containing "This programme will
+            be announced later" yields an education entry whose degree is that
+            whole sentence. Narrower than the coverage bug (it fires only inside
+            a recognised education section) but real. NOT fixed with the
+            coverage bug on purpose -- editing the extractor changes what is
+            EXTRACTED, not merely what is flagged, and that wants its own
+            TDD pass and its own shape-corpus row.
+          - (superseded, kept for the record) FOUND 2026-08-24: `looks_academic`
+            SUBSTRING-MATCHED
             `b.com` INSIDE `github.com`. coverage.py:42 _DEGREE_WORDS is checked
             with `w in low`, so ANY resume carrying a GitHub link counts as
             carrying a "degree-bearing line" and raises a FALSE

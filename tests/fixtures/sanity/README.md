@@ -63,10 +63,25 @@ fires on EMPTY, never on "more than expected" — spec §3.3), so this is cosmet
 in the advisory numbers but it will look wrong on a profile screen. Put the
 grade on the degree line itself to get a single entry.
 
-## Known instrument bug these fixtures avoid
+## Instrument bug found while measuring these — FIXED
 
-`coverage.looks_academic` substring-matches `b.com`, which is inside
-**`github.com`**. Any resume carrying a GitHub link trips a false
-`education_not_extracted` gap whenever education is genuinely absent. That is
-why `genuine_genai_resume.txt` reports `major_gaps` on a resume that has no
-degree line at all. None of the files here carry a bare `github.com` URL.
+`coverage.looks_academic` matched `_DEGREE_WORDS` as SUBSTRINGS, and `b.com`
+lives inside **`github.com`**. Any resume carrying a GitHub link counted as
+degree-bearing and raised a false `education_not_extracted` whenever education
+was genuinely absent — in a tech-hiring product, most resumes. It is what made
+`genuine_genai_resume.txt` report `major_gaps` on a resume with no degree line
+at all; it now reports `complete`.
+
+Fixed on branch `s92-fix-degree-false-positive`: word-boundary matching, an
+explicit link/email strip, and a required dot on the two-letter abbreviations
+(an optional one would match the English words "be" and "ma"). Pinned by
+`test_a_url_is_never_a_degree_bearing_line`, its English-word sibling, and the
+`github_link_no_education` row of the shape matrix. 3/3 mutants dead.
+
+STILL OPEN, same bug class, different module: the EXTRACTOR's own `_DEGREE`
+spells this `b\.?e`, which matches the bare word "be". A line in an education
+section reading "This programme will be announced later" becomes an education
+entry whose degree is that whole sentence. Narrower than the coverage bug (it
+only fires inside a recognised education section) but real, and not fixed here
+— changing the extractor changes what gets EXTRACTED, not just what gets
+flagged.

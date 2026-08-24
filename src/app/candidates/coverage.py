@@ -38,12 +38,39 @@ from app.schemas.extraction import (
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _PRESENT = re.compile(r"\b(?:present|current|till date|to date|ongoing|now)\b", re.IGNORECASE)
 #: Broader than the extractor's _DEGREE on purpose -- this is the check that has
-#: to still fire when the extractor's regex is the thing that is wrong.
-_DEGREE_WORDS = (
-    "bachelor", "master", "b.tech", "btech", "m.tech", "mtech", "b.e", "b.sc",
-    "m.sc", "bca", "mca", "mba", "bba", "b.com", "m.com", "b.a", "m.a",
-    "phd", "ph.d", "diploma", "degree", "graduation", "post graduate",
+#: to still fire when the extractor's regex is the thing that is wrong. It keeps
+#: four tokens the extractor has never had ("degree", "graduation", "post
+#: graduate", "doctorate"), which is what "broader" means here.
+#:
+#: MATCHED ON WORD BOUNDARIES, NOT AS SUBSTRINGS. This was a tuple tested with
+#: `w in low`, and `b.com` lives inside `github.com` -- so every resume carrying
+#: a GitHub link read as degree-bearing and raised a false
+#: `education_not_extracted` whenever education was genuinely absent. In a
+#: tech-hiring product that is most resumes. The same bug reached `b.sc` inside
+#: `web.scan` and `m.a` inside `team.access`.
+#:
+#: The two-letter abbreviations REQUIRE their dot. Spelling them with an
+#: OPTIONAL dot would match the bare English words "be" and "ma", trading a URL
+#: false positive for a much commoner prose one.
+_DEGREE_PATTERN = re.compile(
+    r"\b(?:"
+    r"bachelors?|masters?|doctorate|"
+    r"b\.?\s?tech|m\.?\s?tech|"
+    r"b\.?\s?sc|m\.?\s?sc|b\.?\s?com|m\.?\s?com|"
+    r"bca|mca|mba|bba|ph\.?\s?d|"
+    r"diploma|degree|graduation|post[\s-]?graduate"
+    r")\b"
+    r"|\b(?:b\.e|m\.e|b\.a|m\.a)\b",
+    re.IGNORECASE,
 )
+
+#: Stripped before the degree test. An explicit URL or an email address cannot
+#: be a degree, and its host half is exactly where the substring bug lived.
+#: BARE domains are deliberately NOT stripped: "B.Com" is indistinguishable from
+#: one, so a bare-domain rule would delete the very degree this is looking for.
+#: Word boundaries already cover bare `github.com` -- there is no boundary
+#: between the "u" and the "b".
+_LINKISH = re.compile(r"(?:https?://|www\.)\S+|[^\s@]+@[^\s@]+\.[A-Za-z]{2,}", re.IGNORECASE)
 _GRADEISH = re.compile(r"\b(?:cgpa|gpa|percentage|marks)\b|\d{2,3}(?:\.\d+)?\s*%", re.IGNORECASE)
 _EMAILISH = re.compile(r"[^\s@]+@[^\s@]+\.[A-Za-z]{2,}")
 _PHONEISH = re.compile(r"(?<!\d)(?:\+?\d[\d\s().-]{8,}\d)(?!\d)")
@@ -166,8 +193,8 @@ def blocks(text: str) -> list[tuple[Optional[str], list[str]]]:
 
 def looks_academic(line: str) -> bool:
     """A degree word or a grade token -- education evidence, not a role."""
-    low = line.lower()
-    return any(w in low for w in _DEGREE_WORDS) or bool(_GRADEISH.search(line))
+    cleaned = _LINKISH.sub(" ", line)
+    return bool(_DEGREE_PATTERN.search(cleaned)) or bool(_GRADEISH.search(cleaned))
 
 
 def looks_dated_role(line: str) -> bool:

@@ -177,7 +177,25 @@ def _key_skills_bare_list_known_limit():
     assert cov.gaps == []
 
 
+def _github_link_no_education():
+    """A GitHub link is not a degree, and a resume with no degree has no
+    education GAP to report -- there is no evidence a section was dropped.
+
+    `_DEGREE_WORDS` used to be matched with `w in low`, and `b.com` sits inside
+    `github.com`, so this shape reported a false `education_not_extracted`. In
+    a tech-hiring product most resumes carry this link, which made it the
+    likeliest false positive the instrument could produce.
+    """
+    text = _load("github_link_no_education")
+    p = heuristic_profile(text)
+    assert len(p.education) == 0, "this fixture deliberately has no degree line"
+    cov = assess_coverage(text, p, min_chars=50)
+    assert "education_not_extracted" not in _gap_ids(cov)
+    assert cov.band is CoverageBand.COMPLETE
+
+
 ROWS = [
+    ("GitHub link + no education -> no false education gap", _github_link_no_education),
     ("bulleted roles -> 2 experience, complete", _bulleted_roles),
     ("CAREER HISTORY header -> 2 experience, complete", _career_history_header),
     ("spelled-out degrees -> 2 education, complete", _spelled_out_degrees),
