@@ -73,6 +73,9 @@ def base_env(scratch: Optional[Path] = None, url: Optional[str] = None,
              **overrides: str) -> dict:
     """The environment every smoke starts from, with the two standing pins.
 
+    There are now THREE pins; the argument is identical for each -- an invariant
+    that lives in 34 places is an invariant nothing can test.
+
     `DEE_OPENROUTER_API_KEY` is pinned EMPTY because a smoke's whole claim is
     that the offline path works, and a developer with a real key in `.env`
     would otherwise bill a live vendor from a test run (S7.3, five sprints
@@ -94,6 +97,15 @@ def base_env(scratch: Optional[Path] = None, url: Optional[str] = None,
     env.update({
         "DEE_VECTORSTORE_BACKEND": "memory",
         "DEE_OPENROUTER_API_KEY": "",
+        # THE THIRD PIN (2026-08-24). `.env` is read by Settings itself, not by
+        # this dict, so a developer switching on the local sign-in echo silently
+        # changed the behaviour of every smoke: the UI fills the six boxes and
+        # SUBMITS on its own, and a script that then types a code from the
+        # capture file is driving a screen that has already moved on. That is
+        # how check_ui_screening_browser.py went red with nothing wrong in it.
+        # A smoke asserts the shape a real deployment has; prod cannot echo, so
+        # neither does a smoke.
+        "DEE_LOGIN_OTP_DEBUG_ECHO": "false",
     })
     if url is not None:
         env["DEE_CANDIDATES_DB_URL"] = url

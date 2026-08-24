@@ -499,6 +499,39 @@ cost of a file nobody can hand-edit. This is the deliberate middle.
 `fastapi==0.141.1` (measured before the pin landed), so that bump is low-risk
 whenever someone wants to run the ritual above.
 
+## 10c. The local sign-in echo (`login_otp_debug_echo`)
+
+Signing in locally means a six-digit code, and the only local mail provider is
+`capture`, which writes it to a file. Reading that file is where the friction
+lives — and worse, it invites an ORDERING mistake with no visible symptom:
+every press of **Send code** mints a new code and kills the previous one, so a
+code copied out of the file *before* the click is already dead when it is
+typed. `invalid_code` is deliberately identical for expired, wrong and
+too-many-attempts (§4 makes the same argument for the 429), so the screen
+cannot tell you which of those just happened. Three sessions were lost to that
+exact loop before this knob existed.
+
+With `DEE_LOGIN_OTP_DEBUG_ECHO=true` **and** `env=local`, the 202 from every
+signup/login carries `debug_code`, and the UI fills the six boxes and submits.
+Typing an address is the whole flow; no file is opened.
+
+Both halves of the guard are load-bearing, and the knob is refused three ways:
+
+| Guard | What it stops |
+|---|---|
+| `env == "local"` **and** the knob, at `_request_code` | The one helper all five code-issuing routes share, so the echo cannot be live on one plane and missing on another. |
+| Boot refusal 9 (`src/app/core/boot.py`) | A prod config that *intends* to leak OTPs dies at boot instead of sitting armed behind an `env` check nobody rereads. |
+| `scripts/_smoke.py`'s third pin | `.env` is read by `Settings` itself, so a developer's local knob would otherwise change what every smoke measures. |
+
+**It is an enumeration oracle, by construction.** A code comes back only when
+one was really sent, so the body distinguishes a registered address from an
+unregistered one — precisely what the uniform 202 exists to hide. That is
+acceptable only because it cannot leave a laptop.
+
+Inside `login_otp_cooldown_seconds` no code is minted (the previous one is
+still live), so the 202 carries no `debug_code` and the UI leaves the boxes
+alone rather than blanking digits already typed.
+
 ## 11. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).

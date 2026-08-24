@@ -78,6 +78,20 @@ def test_base_env_keeps_chroma_out_of_the_smokes(tmp_path):
     assert base_env(tmp_path, "sqlite:///x.db")["DEE_VECTORSTORE_BACKEND"] == "memory"
 
 
+def test_base_env_pins_the_login_code_echo_off(tmp_path, monkeypatch):
+    """A developer's `.env` must not change what a smoke measures.
+
+    Settings reads `.env` itself, so switching the echo on locally makes the UI
+    fill the six boxes and submit BY ITSELF -- and a script that then types a
+    code from the capture file is driving a screen that already moved on.
+    check_ui_screening_browser.py went red exactly that way, with nothing wrong
+    in it. The env var beats the file, so pinning it here restores the shape a
+    real deployment has (prod cannot echo at all).
+    """
+    monkeypatch.setenv("DEE_LOGIN_OTP_DEBUG_ECHO", "true")
+    assert base_env(tmp_path, "sqlite:///x.db")["DEE_LOGIN_OTP_DEBUG_ECHO"] == "false"
+
+
 def test_base_env_scopes_the_database_and_flywheel_to_the_scratch(tmp_path):
     env = base_env(tmp_path, "sqlite:///scoped.db")
     assert env["DEE_CANDIDATES_DB_URL"] == "sqlite:///scoped.db"

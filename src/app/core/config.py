@@ -504,6 +504,13 @@ class Settings(BaseSettings):
     login_otp_ttl_seconds: int = Field(default=600, ge=30)
     login_otp_max_attempts: int = Field(default=5, ge=1)
     login_otp_cooldown_seconds: int = Field(default=60, ge=0)
+    # DOUBLE-GUARDED at the route, exactly like verif_otp_debug_echo: the login
+    # code is echoed in the 202 body only when env == "local" AND this is true.
+    # It exists so a developer clicking through the UI is not reading six digits
+    # out of a capture file every session. It IS an enumeration oracle -- a code
+    # comes back only when one was really sent -- so prod refuses to BOOT with
+    # it on (app/core/boot.py) rather than merely ignoring it.
+    login_otp_debug_echo: bool = False
     # Fail-closed: no origin may call this API cross-site until one is named.
     # NEVER "*" — browsers forbid it with credentials anyway, and relying on that
     # as the guard leaves a defect waiting for someone to silence the error.

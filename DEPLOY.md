@@ -48,11 +48,11 @@ CI job does, and it has not run since S8.4a.
 
 ---
 
-## 1. Pre-flight: the eight boot refusals
+## 1. Pre-flight: the nine boot refusals
 
 The app **refuses to start** on any of these. That is the design: each one
 produces a service that *looks* healthy while being unsafe or unusable, which
-is precisely what a boot check is for. A configuration that satisfies all eight
+is precisely what a boot check is for. A configuration that satisfies all nine
 is a bootable one, so this table doubles as the checklist.
 
 | # | Refused when | Set | Failure it prevents |
@@ -65,6 +65,7 @@ is a bootable one, so this table doubles as the checklist.
 | 6 | `DEE_RATE_LIMIT_ENABLED=false` in prod | `true` | The OTP endpoints are the brute-force surface this PI created; unthrottled on a public host. |
 | 7 | `DEE_GRIEVANCE_OFFICER_EMAIL` empty in prod | a monitored mailbox | DPDP requires the grievance mechanism to be **published**. `GET /grievance` would answer 200 with an empty contact — worse than a 404, because it looks answered. |
 | 8 | no working email provider in prod | `DEE_EMAIL_PROVIDER=smtp` **and** `DEE_EMAIL_SMTP_HOST` | Signup and login on all three planes answer 503 `email_unavailable` — nobody can create an account or log in — while `/healthz` reports healthy. |
+| 9 | `DEE_LOGIN_OTP_DEBUG_ECHO=true` in prod | unset | The knob returns a live sign-in code in the 202 body, handing any caller both the code **and** the answer to "is this address registered". The route already refuses to echo outside `env=local`, so this refusal is about loudness: a config that *intends* to leak OTPs must die at boot, not sit armed behind a check nobody rereads. |
 
 Refusal 8 asks the email **builder** whether it can deliver, not what
 `DEE_EMAIL_PROVIDER` says: `smtp` with an empty host silently falls back to the
@@ -83,7 +84,7 @@ holds tunables, never credentials.
 |---|---|---|
 | `DEE_API_AUTH_KEY` | `openssl rand -hex 32` | Refusal 1. **Never reuse a smoke or test key.** |
 | `DEE_CANDIDATES_DB_URL` | `postgresql+psycopg://…` | Refusal 2. Railway's Postgres plugin supplies this. |
-| `DEE_ENV` | `prod` | Turns on refusals 3–8. |
+| `DEE_ENV` | `prod` | Turns on refusals 3–9. |
 | `DEE_EMAIL_PROVIDER` | `smtp` | Refusals 5 and 8. |
 | `DEE_EMAIL_SMTP_HOST` | your relay | Refusal 8. |
 | `DEE_EMAIL_SMTP_USER` | relay username | |
@@ -102,6 +103,7 @@ holds tunables, never credentials.
 | `DEE_SESSION_COOKIE_SECURE` | `true` | Default, and refusal 3. |
 | `DEE_SESSION_COOKIE_SAMESITE` | `lax` | Default since S8.6 — the UI is served by this API, so requests are same-origin. Use `none` **only** if you host the UI separately. |
 | `DEE_RATE_LIMIT_ENABLED` | `true` | Default, and refusal 6. |
+| `DEE_LOGIN_OTP_DEBUG_ECHO` | `false` | Default, and refusal 9. A local-only developer affordance; see OPERATING.md. |
 | `DEE_RATE_LIMIT_TRUSTED_PROXY_HOPS` | **`1`** behind Railway | See §3. The default `0` is wrong behind a proxy. |
 | `DEE_VECTORSTORE_BACKEND` | `memory` | Unless a Chroma volume is mounted: `PersistentClient` can hang, and grounding is best-effort. |
 | `DEE_LOG_JSON` | `true` | Structured logs. |
