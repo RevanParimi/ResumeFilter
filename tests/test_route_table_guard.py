@@ -15,7 +15,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
-from fastapi.dependencies.utils import get_flat_dependant
 from starlette.routing import Mount
 from starlette.staticfiles import StaticFiles
 
@@ -68,17 +67,53 @@ def _walk(routes, inherited=frozenset()):
             yield route, inherited
 
 
+def _flat_dependency_calls(dependant) -> set:
+    """Every dependency callable reachable from ``dependant``, at any depth.
+
+    THIS REPLACES ``fastapi.dependencies.utils.get_flat_dependant``, which this
+    guard imported until FastAPI 0.141 DELETED it -- taking five test modules
+    down at COLLECTION time and turning CI red while local stayed green, because
+    `requirements.txt` said `fastapi>=0.115.0` and the two machines resolved
+    different versions. `fastapi.dependencies.utils` was never public API, so
+    the guard's correctness rested on an internal that was free to vanish.
+
+    Reading FastAPI 0.138's implementation, the old helper appended each direct
+    sub-dependant AND extended with that sub-dependant's own flattened
+    dependencies -- so ``get_flat_dependant(d).dependencies`` was every
+    TRANSITIVE descendant, excluding ``d`` itself. That is reproduced exactly
+    here; the only dependency now is the ``Dependant`` dataclass having
+    ``.dependencies`` and ``.call``, which is far more stable than a helper's
+    name.
+
+    ``seen`` keys on identity, which the original lacked at its default
+    ``skip_repeats=False``: a dependency reachable by two paths would otherwise
+    be walked twice. It terminates either way, but repeating work in a guard
+    that walks 60+ routes is pointless.
+    """
+    calls: set = set()
+    stack = list(dependant.dependencies)
+    seen: set[int] = set()
+    while stack:
+        sub = stack.pop()
+        if id(sub) in seen:
+            continue
+        seen.add(id(sub))
+        calls.add(sub.call)
+        stack.extend(sub.dependencies)
+    return calls
+
+
 def _resolvers_on(route, inherited=frozenset()) -> set:
     """Every dependency callable that runs for this route.
 
-    ``get_flat_dependant`` folds in router-level dependencies -- verified: an
-    admin route reports ``require_api_key`` even though the decorator never
-    mentions it -- which is exactly how the route inherits its gate at runtime.
+    The flattening folds in router-level dependencies -- verified: an admin
+    route reports ``require_api_key`` even though the decorator never mentions
+    it -- which is exactly how the route inherits its gate at runtime.
     """
     dependant = getattr(route, "dependant", None)
     if dependant is None:
         return set(inherited)
-    return {d.call for d in get_flat_dependant(dependant).dependencies} | set(inherited)
+    return _flat_dependency_calls(dependant) | set(inherited)
 
 
 def _guarded_routes(app):
