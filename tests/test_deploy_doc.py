@@ -16,7 +16,7 @@ from app.core.config import Settings
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "DEPLOY.md"
 
-#: Settings the eight boot refusals read. If a refusal starts reading a new
+#: Settings the nine boot refusals read. If a refusal starts reading a new
 #: one, DEPLOY.md must name it -- otherwise the checklist cannot satisfy it.
 REFUSAL_SETTINGS = {
     "api_auth_key",
@@ -27,6 +27,7 @@ REFUSAL_SETTINGS = {
     "rate_limit_enabled",
     "grievance_officer_email",
     "email_smtp_host",
+    "login_otp_debug_echo",
 }
 
 

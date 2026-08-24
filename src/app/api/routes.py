@@ -260,6 +260,11 @@ class CodeRequestAccepted(BaseModel):
     and unknown addresses on purpose -- see AUTH.md's anti-enumeration rule."""
 
     status: str = "accepted"
+    #: local env + login_otp_debug_echo ONLY; production can never echo. Every
+    #: code-issuing route sets response_model_exclude_none, so a real deployment
+    #: answers `{"status": "accepted"}` with the key ABSENT, not null -- the
+    #: uniform body this model exists to guarantee is unchanged by the knob.
+    debug_code: Optional[str] = None
 
 
 class SessionEstablished(BaseModel):
@@ -2569,8 +2574,10 @@ def _request_code(
     payload: Optional[dict] = None,
 ) -> CodeRequestAccepted:
     """Shared signup/login handler for all three planes."""
+    services = _services(request)
+    code: Optional[str] = None
     try:
-        _services(request).auth.request_code(
+        _sent, code = services.auth.issue_code(
             email=email,
             plane=plane,
             purpose=purpose,
@@ -2593,6 +2600,23 @@ def _request_code(
         # door. The previously sent code is still live and still in their inbox,
         # so the user loses nothing.
         pass
+
+    # Double-guarded: local env AND the knob -- the verif_otp_debug_echo shape
+    # from S7.1. Every code-issuing route funnels through here, so the echo
+    # cannot be live on one plane and missing on another.
+    #
+    # This IS an enumeration oracle: `code` is None precisely when no code was
+    # sent, so the echoed body distinguishes a registered address from an
+    # unregistered one -- the very thing the uniform 202 above exists to hide.
+    # That is acceptable only because it cannot leave a developer's laptop:
+    # prod REFUSES TO BOOT with the knob on (app/core/boot.py), and staging
+    # ignores it.
+    if (
+        code is not None
+        and services.settings.env == "local"
+        and services.settings.login_otp_debug_echo
+    ):
+        return CodeRequestAccepted(debug_code=code)
     return CodeRequestAccepted()
 
 
@@ -2628,7 +2652,8 @@ def _verify(
     )
 
 
-@auth_router.post("/auth/org/signup", status_code=202, response_model=CodeRequestAccepted)
+@auth_router.post("/auth/org/signup", status_code=202, response_model=CodeRequestAccepted,
+                  response_model_exclude_none=True)
 async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeRequestAccepted:
     """Refuse a taken org name HERE, before a code is ever sent (S8.4 §2.1).
 
@@ -2652,7 +2677,8 @@ async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeReques
     )
 
 
-@auth_router.post("/auth/org/login", status_code=202, response_model=CodeRequestAccepted)
+@auth_router.post("/auth/org/login", status_code=202, response_model=CodeRequestAccepted,
+                  response_model_exclude_none=True)
 async def auth_org_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request, email=req.email, plane=AuthPlane.ORG, purpose=LoginPurpose.LOGIN
@@ -2668,7 +2694,8 @@ async def auth_org_verify(
     )
 
 
-@auth_router.post("/auth/candidate/signup", status_code=202, response_model=CodeRequestAccepted)
+@auth_router.post("/auth/candidate/signup", status_code=202, response_model=CodeRequestAccepted,
+                  response_model_exclude_none=True)
 async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request,
@@ -2678,7 +2705,8 @@ async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> Code
     )
 
 
-@auth_router.post("/auth/candidate/login", status_code=202, response_model=CodeRequestAccepted)
+@auth_router.post("/auth/candidate/login", status_code=202, response_model=CodeRequestAccepted,
+                  response_model_exclude_none=True)
 async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request,
@@ -2701,7 +2729,8 @@ async def auth_candidate_verify(
 # existing operator through POST /admin/users, behind the shared admin key.
 
 
-@auth_router.post("/auth/admin/login", status_code=202, response_model=CodeRequestAccepted)
+@auth_router.post("/auth/admin/login", status_code=202, response_model=CodeRequestAccepted,
+                  response_model_exclude_none=True)
 async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
     return _request_code(
         request, email=req.email, plane=AuthPlane.ADMIN, purpose=LoginPurpose.LOGIN

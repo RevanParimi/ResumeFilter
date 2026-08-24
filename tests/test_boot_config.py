@@ -258,3 +258,24 @@ def test_local_does_not_require_an_email_provider(settings):
         "email_provider": "null",
     })
     assert verify_launch_config(ok) is None
+
+
+# ── The NINTH refusal: a config that intends to leak sign-in codes ───────────
+
+
+def test_prod_refuses_the_login_code_echo(settings):
+    """Inert in prod is not the same as absent in prod.
+
+    `_request_code` is double-guarded on env == "local" AND the knob, so the
+    branch is already unreachable here. This refusal buys LOUDNESS: a config
+    that intends to hand callers a live OTP -- and with it the answer to "is
+    this address registered" -- dies at boot with an explanation instead of
+    sitting armed behind an `env` check nobody rereads.
+    """
+    with pytest.raises(LaunchConfigError) as exc:
+        verify_launch_config(_prod(settings, login_otp_debug_echo=True))
+    assert "login_otp_debug_echo" in str(exc.value)
+
+
+def test_prod_boots_with_the_login_code_echo_off(settings):
+    assert verify_launch_config(_prod(settings, login_otp_debug_echo=False)) is None

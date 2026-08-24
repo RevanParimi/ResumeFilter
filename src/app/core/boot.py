@@ -131,3 +131,13 @@ def verify_launch_config(settings: Settings) -> None:
             "credentials. There is no provider that 'works well enough' for a "
             "login code: it either arrives or the account is unreachable."
         )
+    if settings.login_otp_debug_echo:
+        raise LaunchConfigError(
+            "DEE_ENV=prod with login_otp_debug_echo=true. The knob returns a "
+            "live sign-in code in the 202 body, which hands any caller both "
+            "the code AND the answer to 'is this address registered'. The "
+            "route already refuses to echo outside env=local, so this refusal "
+            "is about loudness: a config that INTENDS to leak OTPs must die at "
+            "boot rather than sit armed behind a check nobody rereads. Unset "
+            "DEE_LOGIN_OTP_DEBUG_ECHO."
+        )
