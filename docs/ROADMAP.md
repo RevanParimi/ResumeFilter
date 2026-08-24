@@ -9,6 +9,64 @@
 
 ## ▶ Current state
 
+- **Session 2026-08-24 (latest) — CI WAS RED ON A PUSH AND IS NOW GREEN, plus
+  two extractor/coverage defects fixed. `main` carries all of it, unpushed
+  beyond the user's own push. 2080 → 2091 passing, nothing deployed.**
+  **THE ROADMAP'S "CI HAS NEVER BEEN READ" ITEM IS CLOSED, and reading it was
+  the point.** Five test modules died at COLLECTION time on
+  `from fastapi.dependencies.utils import get_flat_dependant` — a FastAPI
+  INTERNAL, deleted in 0.141. `requirements.txt` said `fastapi>=0.115.0` with
+  no upper bound, so CI installed 0.141.1 while this machine had 0.138.0:
+  **2086 tests were green locally while CI could not import the suite.** Local
+  green proved nothing about CI, this repo's signature defect wearing a
+  packaging costume.
+  REPRODUCED LOCALLY FIRST by shadowing 0.141.1 onto `sys.path` — the same five
+  collection errors, exactly — which is also how the fix was verified on BOTH
+  versions rather than hoped at: 91 routes inspected and 91 resolved under each,
+  and the full suite 2086 green under 0.141.1. **So the APP was always
+  compatible with the latest FastAPI; only the test's use of a private helper
+  was not.** The replacement reproduces the deleted helper's semantics read from
+  0.138's source (every TRANSITIVE descendant, excluding the root) and now
+  depends only on the `Dependant` dataclass. A sweep confirmed it was the ONLY
+  private framework import in `src/` or `tests/`.
+  **THEN THE DEEPER PROBLEM: ALL 18 DEPENDENCIES WERE UNBOUNDED `>=`, ZERO
+  PINS — AND THE DOCKERFILE INSTALLS THE SAME FILE**, so two image builds a week
+  apart could ship different frameworks into production. User chose exact
+  pinning + a refresh ritual (OPERATING.md §10b), since an unrefreshed pin stops
+  getting security patches and is its own risk. fastapi stays at 0.138.0
+  deliberately: 0.141.1 is already proven green, so that bump gets its own
+  reviewable commit instead of riding along with the fix that found it.
+  **THE NEW PIN GUARD FOUND A REAL DEFECT ON ITS FIRST RUN:** `sqlalchemy`,
+  `alembic` and `psycopg` were in `requirements.txt` and MISSING from
+  `pyproject.toml`, so `pip install -e .` built an app that could not import —
+  sqlalchemy alone is imported by **31** modules under `src/app`. `psycopg` has
+  no direct import anywhere (SQLAlchemy loads it from the
+  `postgresql+psycopg://` URL), which is precisely why nothing had noticed.
+  **TWO DEFECTS FIXED IN THE SAME SESSION, BOTH THE SAME BUG CLASS — a degree
+  token matched too loosely.** (1) `coverage.looks_academic` matched
+  `_DEGREE_WORDS` as SUBSTRINGS and `b.com` lives inside `github.com`, so any
+  resume with a GitHub link raised a false `education_not_extracted`; it also
+  reached `b.sc` in `web.scan` and `m.a` in `team.access`. (2) the EXTRACTOR's
+  `_DEGREE` spelled the two-letter forms with an OPTIONAL dot, so the bare
+  English words "be", "me", "ma" AND "ba" matched and a sentence under EDUCATION
+  became an entry whose degree was that whole sentence. The second repair is a
+  CASE SPLIT, not a required dot — `BE`/`ME`/`BA`/`MA` are ordinary degrees in
+  this product's own market, so R14's remedy for `bs`/`ms` would have cost real
+  credentials here. 3/3 mutants dead on each fix.
+  **AND A CORRECTION TO THE PREVIOUS SESSION'S ENTRY:** the
+  `major_gaps / education_not_extracted` reported against
+  `genuine_genai_resume.txt` on 08-22 was a FALSE POSITIVE from defect (1), not
+  a dropped section. The `/evaluate` finding stands — that door still returns
+  null coverage.
+  **NEW: `tests/fixtures/sanity/`** — six resumes whose every claim is measured
+  against `POST /candidates` (14/14), built because the fixture every smoke
+  reaches for extracts **0 experience, 0 education, 0 skills**. Records the
+  trap that farm clones must differ in BOTH email and phone, or identity
+  resolution merges them into one candidate and the farm check (which excludes
+  a candidate's own resumes) can never fire.
+  **➤ NEXT: push, so CI actually re-runs green.** Then the five UI screens,
+  then go-live LAST.
+
 - **Session 2026-08-22 (latest) — S9.2 MERGED to `main` at `2ad59f8`; PI-9's
   second sprint is closed. 2080 passing on the MERGED result, `smoke_s92`
   17/17, branch deleted. `main` is 33 commits ahead of `origin/main` and
