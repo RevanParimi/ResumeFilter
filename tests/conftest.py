@@ -438,12 +438,45 @@ def farm_resume_b() -> str:
     return (FIXTURES / "farm_genai_resume_b.txt").read_text(encoding="utf-8")
 
 
+from app.core.logging import configure_logging  # noqa: E402 -- beside its users
+
 # --- Log seams (S9.3) ---------------------------------------------------------
 # There are TWO, and they are not interchangeable. `capture_logs` replaces the
 # configured processor chain, so it can only report what a call site PASSED.
 # What actually leaves the process is a different artifact and needs the real
 # chain rendered. Asserting an egress claim on the wrong one is how this repo's
 # OTP-leak guard came to check nothing at all for eight PIs.
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _uncached_loggers():
+    """Turn structlog's logger cache OFF for the whole test session.
+
+    WITHOUT THIS, BOTH SEAMS BELOW SILENTLY MISS EVERY REAL MODULE. Production
+    configures structlog with `cache_logger_on_first_use=True`; every module in
+    `src/app` binds `log = get_logger(__name__)` at import, and on that logger's
+    FIRST call the proxy freezes the factory it was configured with. A fixture
+    that reconfigures afterwards is then writing to a buffer nothing points at,
+    and the line goes to real stdout instead.
+
+    MEASURED, not reasoned: with the cache on, `log_output` collected `''` and
+    `capture_logs` collected `[]` from a pre-bound logger -- both seams reporting
+    "nothing was logged" about a line that was, at that moment, being printed to
+    the terminal. A guard that reads silence as proof of silence is exactly the
+    defect S9.3 exists to close, so it is closed here rather than worked around
+    in each test.
+
+    Test-only. Production keeps the cache; that is what it is for.
+    """
+    configure_logging()
+    cfg = structlog.get_config()
+    structlog.configure(
+        processors=cfg["processors"],
+        wrapper_class=cfg["wrapper_class"],
+        logger_factory=cfg["logger_factory"],
+        cache_logger_on_first_use=False,
+    )
+    yield
 
 
 @pytest.fixture
