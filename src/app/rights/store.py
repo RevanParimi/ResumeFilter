@@ -87,7 +87,7 @@ class RightsStore:
             try:
                 session.commit()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="record_request", error=str(exc))
+                _log.info("integrity_race", where="RightsStore.create", error=str(exc))
                 session.rollback()
                 if session.get(CandidateRow, candidate_id) is None:
                     return None

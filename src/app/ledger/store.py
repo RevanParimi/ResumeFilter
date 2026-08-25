@@ -238,7 +238,7 @@ class LedgerStore:
             try:
                 session.flush()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="create_org", error=str(exc))
+                _log.info("integrity_race", where="LedgerStore.create_organization", error=str(exc))
                 session.rollback()
                 raise ValueError(f"organization name already exists: {name!r}") from exc
             self._audit(

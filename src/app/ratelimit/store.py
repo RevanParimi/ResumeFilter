@@ -102,7 +102,7 @@ class RateLimitStore:
                 session.commit()
                 return True
             except IntegrityError as exc:
-                _log.info("integrity_race", where="open_window", error=str(exc))
+                _log.info("integrity_race", where="RateLimitStore.hit", error=str(exc))
                 # Somebody else opened the window between our SELECT and our
                 # INSERT. Their row is authoritative; count against it.
                 session.rollback()

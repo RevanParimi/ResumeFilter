@@ -93,7 +93,7 @@ class SqlReportStore:
             try:
                 s.commit()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="save_report", error=str(exc))
+                _log.info("integrity_race", where="SqlReportStore.save", error=str(exc))
                 s.rollback()
                 if report.candidate_id is None:
                     # No candidate FK, so any IntegrityError is unrelated to
@@ -145,7 +145,7 @@ class SqlReportStore:
             try:
                 s.commit()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="record_outcome", error=str(exc))
+                _log.info("integrity_race", where="SqlReportStore.add_outcome", error=str(exc))
                 s.rollback()
                 if s.get(ReportRow, rec.report_id) is None:
                     return False

@@ -399,7 +399,7 @@ class AuthStore:
             try:
                 session.flush()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="create_org_with_owner", error=str(exc))
+                _log.info("integrity_race", where="AuthStore.create_org_with_owner", error=str(exc))
                 session.rollback()
                 raise OrgNameTaken(
                     f"organization name already exists: {name!r}"
