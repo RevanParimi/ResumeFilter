@@ -1,8 +1,8 @@
 # S9.3 — Error observability (PI-9, sprint 3)
 
 > **Status:** design approved 2026-08-25, spec written the same day.
-> Baseline before any change: `main` at `f15f72e`, branch
-> `s93-error-observability`. Tree carries one unrelated modification
+> Baseline before any change: **2101 passing** (`pytest -q`, exit 0, 224.89s),
+> `main` at `f15f72e`, branch `s93-error-observability`. Tree carries one unrelated modification
 > (`data/veritas.db`, the tracked post-demo state noted in OPERATING.md's
 > workflow) — deliberately left alone, not reverted.
 
@@ -203,8 +203,33 @@ So `tests/conftest.py` gains **two** fixtures:
 
 A third probe confirmed `capture_logs` works against **cached module-level
 loggers** bound at import time (every module binds one), despite
-`cache_logger_on_first_use=True`. So **no production change is required** to
-make logging testable — the fixtures work against the shipped configuration.
+`cache_logger_on_first_use=True`. So no production change is needed for
+*capture* to reach the shipped loggers.
+
+**One small production refactor is needed, and only for `log_output`:**
+`configure_logging()` builds its processor list inline, so a fixture wanting
+the *real* chain would have to re-declare it — a second copy, free to drift,
+which is how a guard goes vacuous in the first place. The list is therefore
+extracted to `build_processors(settings)`, called by both `configure_logging`
+and the fixture. Pure extraction: no behaviour change, and it makes "the
+fixture renders through the production chain" true by construction rather
+than by maintenance.
+
+### 2.3a A leak the fix itself would have introduced
+
+`RequestValidationError.errors()` carries an **`input`** key holding the raw
+value the caller submitted. Probed:
+
+```json
+{"type": "int_parsing", "loc": ["body", "age"],
+ "input": "alice@example.in-SECRET-OTP-123456"}
+```
+
+So the obvious `log.warning("request_invalid", errors=exc.errors())` would
+write candidate emails, resume text and login codes straight into the log —
+committing, in the sprint that closes Gap 2, exactly the leak Gap 2's guard
+was written to catch. **The 422 handler logs `loc` only, never `input`**, and
+a test asserts a submitted secret never reaches the rendered output.
 
 ### 2.4 The targeted fixes
 
