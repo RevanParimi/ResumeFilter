@@ -21,6 +21,13 @@ from sqlalchemy.orm import sessionmaker
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+
+# INFO, not warning: these races are EXPECTED and each handler resolves its
+# own correctly. The signal is the RATE -- one a day versus a thousand a
+# minute -- and at warning they would be noise that trains an operator to
+# ignore the channel now carrying real refusals (S9.3).
+_log = get_logger("reports.store")
 from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
 from app.reports.models import OutcomeRow, ReportRow
@@ -85,7 +92,8 @@ class SqlReportStore:
             row.created_at = as_utc(report.created_at)
             try:
                 s.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
+                _log.info("integrity_race", where="save_report", error=str(exc))
                 s.rollback()
                 if report.candidate_id is None:
                     # No candidate FK, so any IntegrityError is unrelated to
@@ -136,7 +144,8 @@ class SqlReportStore:
             ))
             try:
                 s.commit()
-            except IntegrityError:
+            except IntegrityError as exc:
+                _log.info("integrity_race", where="record_outcome", error=str(exc))
                 s.rollback()
                 if s.get(ReportRow, rec.report_id) is None:
                     return False
