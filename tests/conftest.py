@@ -7,12 +7,15 @@ for the few tests that exercise the LLM path explicitly.
 
 from __future__ import annotations
 
+import io
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
 
 import pytest
+import structlog
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 
@@ -433,3 +436,65 @@ def farm_resume_a() -> str:
 @pytest.fixture
 def farm_resume_b() -> str:
     return (FIXTURES / "farm_genai_resume_b.txt").read_text(encoding="utf-8")
+
+
+# --- Log seams (S9.3) ---------------------------------------------------------
+# There are TWO, and they are not interchangeable. `capture_logs` replaces the
+# configured processor chain, so it can only report what a call site PASSED.
+# What actually leaves the process is a different artifact and needs the real
+# chain rendered. Asserting an egress claim on the wrong one is how this repo's
+# OTP-leak guard came to check nothing at all for eight PIs.
+
+
+@pytest.fixture
+def log_events():
+    """Every structlog event a test emits, as dicts -- what a CALL SITE PASSED.
+
+    Built on structlog.testing.capture_logs, which REPLACES the configured
+    processor chain. So this proves what a call site passed and NEVER what left
+    the process. For an egress claim ("this secret was not written"), use
+    `log_output` -- asserting egress here would be a guard that cannot fail.
+    """
+    with structlog.testing.capture_logs() as events:
+        yield events
+
+
+class _RenderedLog:
+    """The rendered bytes a test's logging actually produced."""
+
+    def __init__(self, buf: io.StringIO) -> None:
+        self._buf = buf
+
+    @property
+    def text(self) -> str:
+        return self._buf.getvalue()
+
+
+@pytest.fixture
+def log_output(settings):
+    """What actually LEAVES THE PROCESS, rendered through the production chain.
+
+    The only honest seam for "no OTP reached the logs". `capture_logs` cannot
+    answer that: measured on this repo's own configuration, a processor
+    installed in the real chain does not run under it, so the captured dict is
+    the pre-processor event and any egress assertion made there is answering a
+    different question than the one asked.
+
+    Restores the previous structlog configuration on teardown, and disables the
+    logger cache for the duration so a module-level logger bound before this
+    fixture ran still renders into the buffer.
+    """
+    from app.core.logging import build_processors
+
+    buf = io.StringIO()
+    previous = structlog.get_config()
+    structlog.configure(
+        processors=[*build_processors(settings), structlog.processors.JSONRenderer()],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        logger_factory=structlog.PrintLoggerFactory(file=buf),
+        cache_logger_on_first_use=False,
+    )
+    try:
+        yield _RenderedLog(buf)
+    finally:
+        structlog.configure(**previous)
