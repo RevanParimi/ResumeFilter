@@ -9,8 +9,9 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) BUILT on branch
-  `s93-error-observability`. NOT merged, NOT pushed, nothing deployed.
+- **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) MERGED to `main`
+  at `31d830e`; branch deleted. NOT pushed, nothing deployed. `main` is 14
+  commits ahead of `origin/main`.
   2101 → 2129 passing, `smoke_s93` 19/19, 4/4 load-bearing mutants dead,
   neighbour smokes re-run green (s92 17/17, s86 28/28, s83b 22/22).**
   Spec `docs/superpowers/specs/2026-08-25-s93-error-observability-design.md`,
@@ -69,7 +70,11 @@
   invisible `IntegrityError` races. **OPERATING.md §10d** is the runbook's
   first log-based entry, and its grep commands were run against the smoke's
   own log file rather than written from memory.
-  **➤ NEXT: review + merge S9.3, then the five UI screens; go-live LAST.**
+  **➤ NEXT: the five UI screens (`evaluate`, `interview`, `adminorgs`,
+  `adminusers`, `curation`), then local testing including the UI. GO-LIVE
+  LAST.** The `/evaluate` null-coverage gap named under S9.2 is still open and
+  lands on the Instant check screen — decide its scope before wiring, not
+  during.
 
 - **Session 2026-08-24 — CI WAS RED ON A PUSH AND IS NOW GREEN, plus
   two extractor/coverage defects fixed. `main` carries all of it, unpushed
@@ -3046,7 +3051,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             assess_coverage says `major_gaps / education_not_extracted`.
             The Instant check screen is the one that wires to this route.
  └── [x] S9.3  ERROR OBSERVABILITY — BUILT on `s93-error-observability`,
-          NOT merged, NOT pushed. 2101 -> 2129 green, smoke_s93 19/19,
+          MERGED 2026-08-25 at `31d830e`, branch deleted, NOT pushed. Suite
+          and smokes RE-RUN ON THE MERGE COMMIT. 2101 -> 2129 green, 19/19,
           4/4 load-bearing mutants dead. Neighbour smokes re-run green
           (s92 17/17, s86 28/28, s83b 22/22) to pin the wire format.
           Asks the operator's question: when veritas refuses, can anyone
