@@ -15,6 +15,7 @@ from typing import Optional
 from app.candidates.schema import LinkType
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
 from app.curation.service import CurationService
 from app.profile_sources.github import to_signal as github_to_signal
 from app.profile_sources.linkedin import parse_linkedin_export
@@ -24,6 +25,9 @@ from app.profile_sources.store import ProfileSourceStore, build_profile_source_s
 from app.services.github import GitHubClient, GitHubService, parse_github_url
 
 _LOGIN_RE = re.compile(r"[A-Za-z0-9-]{1,39}")
+
+
+_log = get_logger("profile_sources.service")
 
 
 class ProfileSourceService:
@@ -108,8 +112,15 @@ class ProfileSourceService:
                     self._curation.record_unmapped(
                         skill.name, source_type=signal.source_type.value
                     )
-                except Exception:  # noqa: BLE001 — advisory capture, never fatal
-                    pass
+                except Exception as exc:  # noqa: BLE001 — advisory, never fatal
+                    # Still never fatal. But a capture queue that has stopped
+                    # accepting anything looks exactly like a taxonomy with
+                    # nothing left to map, and those need telling apart.
+                    _log.warning(
+                        "unmapped_skill_capture_failed",
+                        source_type=signal.source_type.value,
+                        error=str(exc),
+                    )
 
 
 def build_profile_source_service(

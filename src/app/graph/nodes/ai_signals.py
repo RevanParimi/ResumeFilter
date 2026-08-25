@@ -18,6 +18,12 @@ from app.services import Services
 # Stylometry-by-LLM is weak evidence — capped below plausibility's 0.85.
 _LLM_MAX_CONFIDENCE = 0.75
 
+# MODULE level, because the swallow below lives in a module-level helper while
+# the node factory binds its own logger locally. That scope mismatch -- not a
+# decision -- is the whole reason this failure was silent while
+# claim_extraction's, one file over, was not.
+_log = get_logger("node.ai_signals")
+
 
 async def _llm_assessment(
     services: Services, text: str
@@ -40,7 +46,8 @@ async def _llm_assessment(
     # flagship-model spend the way plausibility's per-claim reasoning does.
     try:
         data = await services.llm.acomplete_json(tier="parsing", system=system, prompt=prompt)
-    except Exception:
+    except Exception as exc:  # an LLM outage degrades this signal, loudly
+        _log.warning("ai_signals_llm_failed", error=str(exc))
         return None, [], ""
     if not data or "likelihood" not in data:
         return None, [], ""
