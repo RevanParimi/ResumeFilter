@@ -11,7 +11,7 @@
 
 - **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) BUILT on branch
   `s93-error-observability`. NOT merged, NOT pushed, nothing deployed.
-  2101 → 2128 passing, `smoke_s93` 19/19, 3/3 load-bearing mutants dead,
+  2101 → 2129 passing, `smoke_s93` 19/19, 4/4 load-bearing mutants dead,
   neighbour smokes re-run green (s92 17/17, s86 28/28, s83b 22/22).**
   Spec `docs/superpowers/specs/2026-08-25-s93-error-observability-design.md`,
   plan `docs/superpowers/plans/2026-08-25-s93-error-observability.md`
@@ -3046,8 +3046,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             assess_coverage says `major_gaps / education_not_extracted`.
             The Instant check screen is the one that wires to this route.
  └── [x] S9.3  ERROR OBSERVABILITY — BUILT on `s93-error-observability`,
-          NOT merged, NOT pushed. 2101 -> 2128 green, smoke_s93 19/19,
-          3/3 load-bearing mutants dead. Neighbour smokes re-run green
+          NOT merged, NOT pushed. 2101 -> 2129 green, smoke_s93 19/19,
+          4/4 load-bearing mutants dead. Neighbour smokes re-run green
           (s92 17/17, s86 28/28, s83b 22/22) to pin the wire format.
           Asks the operator's question: when veritas refuses, can anyone
           find out WHY? The answer was no for everything that was not a 500.
@@ -3098,6 +3098,22 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             other entry says `GET /metrics`, and a counter cannot explain a
             single refusal. Its grep commands were run against the smoke's own
             log file, not written from memory
+          - ⚠ PRE-MERGE REVIEW FOUND ONE REAL DEFECT, and it is this sprint's
+            own subject turned on itself: FIVE of the six `integrity_race`
+            `where` labels were copied from the PLAN'S TABLE instead of read off
+            the code, so they named methods with no referent (`record_request`
+            for `RightsStore.create`, `open_window` for `RateLimitStore.hit`,
+            `save_report` for `SqlReportStore.save`, +2). §10d tells an operator
+            to watch these by rate and then find the site, so a label that greps
+            to nothing is an OBSERVABILITY defect shipped by the observability
+            sprint. Now `Class.method`, pinned by an AST guard (not a fixed
+            list, which would be a second copy free to drift the same way)
+          - review also CLEARED, by measurement not assumption: `Retry-After` on
+            the 429 survives the delegation (covered by test_ratelimit_auth.py
+            over real HTTP); ZERO import-time log calls, so the cache fix holds
+            for all 179 modules; and no HTTPException detail interpolates a
+            credential — the 401/403 details name the credential TYPE, never
+            its value
           - SCOPED OUT BY THE USER, deliberately: blanket try/except across all
             179 modules. This repo's defects are the QUIET ones, so failures
             stay loud — observability was added, tolerance was not
