@@ -165,7 +165,7 @@
   `tests/test_auth_org_name_taken.py`. The item can be struck, not worked.
   **⚠ ONE REAL GAP FOUND, AND IT IS S9.2'S OWN QUESTION ONE DOOR LATER.**
   `POST /evaluate` returns `extraction_coverage: null` — STRUCTURALLY, because
-  `routes.py:521` calls `engine.evaluate(...)` without the argument the
+  `routes.py:527` (was :521; S9.3 shifted it) calls `engine.evaluate(...)` without the argument the
   screening door passes at `screening/ingest.py:147`. `cross_field` falls back
   to `heuristic_profile(text)` (nodes/cross_field.py:31), the very extractor
   S9.2 fixed, so the instrument APPLIES to this path — it is simply not wired
@@ -293,10 +293,19 @@
   `extractor._experience` skips `_BULLET` lines because under a bullet a dated
   line is a DUTY, so `- Engineer, Acme (2013 - Present)` yielded zero entries.
   De-bulleted, all eight assertions are real and green.
-  **STILL OPEN, and now a product decision:** the heuristic extractor ignores
-  dated role lines written as bullets, which is a common resume shape. That is
-  an S1.1 call with a wide blast radius, deliberately not made inside a smoke
-  fix.
+  **~~STILL OPEN, and now a product decision:~~ CLOSED BY S9.2 — corrected
+  2026-08-26.** The note said the heuristic extractor ignores dated role lines
+  written as bullets, and called it an S1.1 decision with a wide blast radius,
+  deliberately not made inside a smoke fix. **That was right at the time and
+  S9.2 then made the call**, shipping it as the first of its four extractor
+  fixes. Re-measured on `main` before striking this, not taken from S9.2's own
+  summary: `heuristic_profile` over `- Engineer, Acme (2013 - Present)` plus a
+  second bulleted role now returns **2 entries**, correctly split into
+  `title`/`employer` (`Engineer`/`Acme`, `Senior Data Engineer`/`Acme
+  Analytics`). Kept rather than deleted because the reasoning for deferring it
+  is still the right reasoning, and because S9.2's review found the first fix
+  FABRICATED employment from achievement bullets — the wide blast radius this
+  note warned about was real.
   **THE CORRECTNESS PASS WAS RUN BY HAND (2026-08-19) AND FOUND ONE, ON THE
   GO-LIVE PATH.** `/code-review ultra` was rejected a FIFTH time -- not on
   quota this time but on SIZE: with `main` 25 commits ahead, the diff it
@@ -3046,7 +3055,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             worst possible place for this. Fix needs word-boundary matching, and
             the shape corpus needs a github.com fixture to pin it.
           - ⚠ OPEN, FOUND 2026-08-22: THE INSTRUMENT NEVER REACHES `/evaluate`.
-            routes.py:521 calls engine.evaluate() without extraction_coverage,
+            routes.py:527 calls engine.evaluate() without extraction_coverage,
             so that door returns `extraction_coverage: null` structurally, while
             screening/ingest.py:147 passes it. cross_field falls back to
             heuristic_profile() -- the extractor S9.2 fixed -- so coverage
