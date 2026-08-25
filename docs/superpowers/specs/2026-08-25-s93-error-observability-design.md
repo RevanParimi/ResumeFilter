@@ -246,7 +246,7 @@ a test asserts a submitted secret never reaches the rendered output.
 
 ### 2.5 Documentation
 
-OPERATING.md gains **§12 — Reading the logs**: the event vocabulary, the
+OPERATING.md gains **§10d — Reading the logs**: the event vocabulary, the
 `request_id` correlation path, and the runbook entry §7 has never had —
 *"a customer says they got a 403"*, answered from logs rather than counters.
 
@@ -282,4 +282,4 @@ OPERATING.md gains **§12 — Reading the logs**: the event vocabulary, the
    very defect Gap 2 records.
 6. A smoke run (`scripts/smoke_s93.py`) drives real HTTP and asserts on real
    emitted log lines.
-7. OPERATING.md §12 exists and answers the 403 question from logs.
+7. OPERATING.md §10d exists and answers the 403 question from logs.
