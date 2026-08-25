@@ -24,6 +24,25 @@ from app.core.config import get_settings
 _CONFIGURED = False
 
 
+def build_processors(settings) -> list[structlog.types.Processor]:
+    """The processor chain, WITHOUT a renderer, as one source of truth.
+
+    Extracted so tests can render through the REAL chain instead of a second
+    copy of it. A copy is free to drift, and the drift is invisible: the tests
+    keep passing while they stop describing production. That is precisely the
+    failure S9.3 exists to close -- the OTP-leak guard asserted a string was
+    absent from an empty string for eight PIs -- so the fixture is wired to the
+    shipped list by construction rather than by anyone remembering.
+    """
+    return [
+        structlog.contextvars.merge_contextvars,
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+
 def configure_logging() -> None:
     """Idempotently configure structlog + stdlib logging from settings."""
     global _CONFIGURED
@@ -33,13 +52,7 @@ def configure_logging() -> None:
     settings = get_settings()
     level = getattr(logging, settings.log_level, logging.INFO)
 
-    shared_processors: list[structlog.types.Processor] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-    ]
+    shared_processors = build_processors(settings)
 
     if settings.log_json:
         renderer: structlog.types.Processor = structlog.processors.JSONRenderer()

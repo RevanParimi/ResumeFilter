@@ -21,6 +21,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ratelimit.models import RateLimitCounterRow
+from app.core.logging import get_logger
+
+# INFO, not warning: these races are EXPECTED and each handler resolves its
+# own correctly. The signal is the RATE -- one a day versus a thousand a
+# minute -- and at warning they would be noise that trains an operator to
+# ignore the channel now carrying real refusals (S9.3).
+_log = get_logger("ratelimit.store")
 
 
 class RateLimitStore:
@@ -94,7 +101,8 @@ class RateLimitStore:
                 )
                 session.commit()
                 return True
-            except IntegrityError:
+            except IntegrityError as exc:
+                _log.info("integrity_race", where="RateLimitStore.hit", error=str(exc))
                 # Somebody else opened the window between our SELECT and our
                 # INSERT. Their row is authoritative; count against it.
                 session.rollback()

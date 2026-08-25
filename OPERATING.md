@@ -532,6 +532,85 @@ Inside `login_otp_cooldown_seconds` no code is minted (the previous one is
 still live), so the 202 carries no `debug_code` and the UI leaves the boxes
 alone rather than blanking digits already typed.
 
+## 10d. Reading the logs (PI-9, S9.3)
+
+Until S9.3 this runbook could only count. Every entry above says `GET /metrics`,
+and a counter answers "how many 403s" — it cannot answer **"why did *this*
+customer get one"**, which is the question a staffing agency actually asks.
+
+The reason was structural, not neglect: `api/routes.py` raises `HTTPException`
+138 times and binds no logger, and Starlette answers `HTTPException` itself, so
+none of those refusals ever reached the 500 handler. Every 4xx veritas issued
+left exactly one artifact — a status integer in the `access` line. Two boundary
+handlers in `app/main.py` now log all of them, and `routes.py` is still not
+edited: a refusal is logged **because it happened**, not because whoever wrote
+it remembered to.
+
+**The vocabulary.** One refusal line per failed request, *alongside* the
+`access` line that has always been emitted — two lines, correlated by
+`request_id`. The refusal line carries the *why*; the access line the *timing*.
+
+| event | level | when |
+|---|---|---|
+| `access` | info | every request, with `status` and `duration_ms` |
+| `request_refused` | warning | a 4xx on a route that matched |
+| `request_refused` | info | a 404/405 that matched nothing (scanner noise) |
+| `request_refused` | error | a 5xx HTTPException, e.g. `503 email_unavailable` |
+| `request_invalid` | warning | a body Pydantic rejected; `fields` says where |
+| `unhandled_error` | error | a bug — carries the full traceback |
+| `integrity_race` | info | a store lost an insert race and took the winner's row |
+
+**"A customer says they got a 403."**
+
+1. Ask for the `X-Request-ID` from the response — every response carries it, so
+   a customer quoting it is handing you an exact grep key:
+   ```bash
+   grep '"request_id": "req_de37c5ef75db"' server.log
+   ```
+2. The `request_refused` line carries `reason` — the same detail string the
+   caller received — plus `route` (the template) and `method`.
+3. **No `request_refused` line at that id means it was not a refusal.** Look for
+   `unhandled_error` at the same id: that is a bug, and the traceback is on it.
+
+**"Is anything failing that nobody has reported?"**
+
+```bash
+grep '"event": "request_refused"' server.log | grep '"level": "error"'
+```
+
+5xx refusals only. `503 email_unavailable` here means the email provider is
+down and **logins are failing for everyone** — §10c and the email seam notes
+say why that refuses rather than degrades.
+
+**A sudden flood of `integrity_race`** is the one to watch by rate, not by
+event. Each one is handled correctly and individually harmless; a thousand a
+minute where there was one a day means real contention, most likely two clients
+signing up the same org name or a retry loop.
+
+**What is deliberately NOT logged: the `input` of a rejected body.**
+`RequestValidationError.errors()` carries the caller's raw submitted value, and
+for this product that is resume text, candidate addresses and login codes. The
+`request_invalid` line logs `fields` (the locations) and never the values. If
+you are ever tempted to add `errors=exc.errors()` to that handler, run
+`tests/test_error_logging.py::test_a_validation_failure_never_logs_the_submitted_value`
+first — it exists to stop exactly that, and it was checked against the leaking
+version rather than assumed to work.
+
+**Log labels are bounded on purpose.** `route` is the route TEMPLATE, never the
+raw path, and anything unmatched collapses to `__unmatched__` — the same rule as
+§5's metric labels, for the same reason: a scanner walking random URLs must not
+become unbounded log volume. Unmatched paths also log at `info` rather than
+`warning`, so bot noise does not train you to ignore the channel that carries
+real refusals.
+
+**Asserting on logs in tests.** There are two seams and they are NOT
+interchangeable (`tests/conftest.py`): `log_events` shows what a call site
+*passed*; `log_output` renders through the real processor chain and shows what
+*leaves the process*. Egress claims ("no OTP was written") are only valid on
+`log_output` — `capture_logs` bypasses the processors, which is how the OTP-leak
+guard read as green for eight PIs while asserting a string was absent from an
+empty string.
+
 ## 11. Deliberately not here
 
 - **Sliding windows / token buckets** (§2).

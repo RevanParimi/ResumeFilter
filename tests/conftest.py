@@ -7,12 +7,15 @@ for the few tests that exercise the LLM path explicitly.
 
 from __future__ import annotations
 
+import io
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
 
 import pytest
+import structlog
 from pydantic import SecretStr
 from sqlalchemy import create_engine, text
 
@@ -433,3 +436,98 @@ def farm_resume_a() -> str:
 @pytest.fixture
 def farm_resume_b() -> str:
     return (FIXTURES / "farm_genai_resume_b.txt").read_text(encoding="utf-8")
+
+
+from app.core.logging import configure_logging  # noqa: E402 -- beside its users
+
+# --- Log seams (S9.3) ---------------------------------------------------------
+# There are TWO, and they are not interchangeable. `capture_logs` replaces the
+# configured processor chain, so it can only report what a call site PASSED.
+# What actually leaves the process is a different artifact and needs the real
+# chain rendered. Asserting an egress claim on the wrong one is how this repo's
+# OTP-leak guard came to check nothing at all for eight PIs.
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _uncached_loggers():
+    """Turn structlog's logger cache OFF for the whole test session.
+
+    WITHOUT THIS, BOTH SEAMS BELOW SILENTLY MISS EVERY REAL MODULE. Production
+    configures structlog with `cache_logger_on_first_use=True`; every module in
+    `src/app` binds `log = get_logger(__name__)` at import, and on that logger's
+    FIRST call the proxy freezes the factory it was configured with. A fixture
+    that reconfigures afterwards is then writing to a buffer nothing points at,
+    and the line goes to real stdout instead.
+
+    MEASURED, not reasoned: with the cache on, `log_output` collected `''` and
+    `capture_logs` collected `[]` from a pre-bound logger -- both seams reporting
+    "nothing was logged" about a line that was, at that moment, being printed to
+    the terminal. A guard that reads silence as proof of silence is exactly the
+    defect S9.3 exists to close, so it is closed here rather than worked around
+    in each test.
+
+    Test-only. Production keeps the cache; that is what it is for.
+    """
+    configure_logging()
+    cfg = structlog.get_config()
+    structlog.configure(
+        processors=cfg["processors"],
+        wrapper_class=cfg["wrapper_class"],
+        logger_factory=cfg["logger_factory"],
+        cache_logger_on_first_use=False,
+    )
+    yield
+
+
+@pytest.fixture
+def log_events():
+    """Every structlog event a test emits, as dicts -- what a CALL SITE PASSED.
+
+    Built on structlog.testing.capture_logs, which REPLACES the configured
+    processor chain. So this proves what a call site passed and NEVER what left
+    the process. For an egress claim ("this secret was not written"), use
+    `log_output` -- asserting egress here would be a guard that cannot fail.
+    """
+    with structlog.testing.capture_logs() as events:
+        yield events
+
+
+class _RenderedLog:
+    """The rendered bytes a test's logging actually produced."""
+
+    def __init__(self, buf: io.StringIO) -> None:
+        self._buf = buf
+
+    @property
+    def text(self) -> str:
+        return self._buf.getvalue()
+
+
+@pytest.fixture
+def log_output(settings):
+    """What actually LEAVES THE PROCESS, rendered through the production chain.
+
+    The only honest seam for "no OTP reached the logs". `capture_logs` cannot
+    answer that: measured on this repo's own configuration, a processor
+    installed in the real chain does not run under it, so the captured dict is
+    the pre-processor event and any egress assertion made there is answering a
+    different question than the one asked.
+
+    Restores the previous structlog configuration on teardown, and disables the
+    logger cache for the duration so a module-level logger bound before this
+    fixture ran still renders into the buffer.
+    """
+    from app.core.logging import build_processors
+
+    buf = io.StringIO()
+    previous = structlog.get_config()
+    structlog.configure(
+        processors=[*build_processors(settings), structlog.processors.JSONRenderer()],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        logger_factory=structlog.PrintLoggerFactory(file=buf),
+        cache_logger_on_first_use=False,
+    )
+    try:
+        yield _RenderedLog(buf)
+    finally:
+        structlog.configure(**previous)

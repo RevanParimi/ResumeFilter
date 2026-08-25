@@ -20,6 +20,10 @@ from app.schemas.claims import CandidateContext, Claim
 from app.schemas.report import CoherenceVerdict, Evidence, EvidenceSource, Polarity
 from app.services import Services
 
+# MODULE level; see ai_signals.py for why the node's own local logger is not in
+# scope at the swallow below.
+_log = get_logger("node.plausibility")
+
 # Bounds keep a single noisy source from dominating the fused score.
 _LLM_MAX_CONFIDENCE = 0.85
 
@@ -53,7 +57,8 @@ async def _llm_assessment(
     )
     try:
         data = await services.llm.acomplete_json(tier="reasoning", system=system, prompt=prompt)
-    except Exception:
+    except Exception as exc:  # an LLM outage degrades this claim, loudly
+        _log.warning("plausibility_llm_failed", error=str(exc))
         return None, None, [], [], ""
     if not data or "coherence" not in data:
         return None, None, [], [], ""

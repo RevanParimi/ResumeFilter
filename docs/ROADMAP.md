@@ -9,7 +9,69 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-24 (latest) — CI WAS RED ON A PUSH AND IS NOW GREEN, plus
+- **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) BUILT on branch
+  `s93-error-observability`. NOT merged, NOT pushed, nothing deployed.
+  2101 → 2129 passing, `smoke_s93` 19/19, 4/4 load-bearing mutants dead,
+  neighbour smokes re-run green (s92 17/17, s86 28/28, s83b 22/22).**
+  Spec `docs/superpowers/specs/2026-08-25-s93-error-observability-design.md`,
+  plan `docs/superpowers/plans/2026-08-25-s93-error-observability.md`
+  (9 tasks, all done), executed inline with a mutation gate on the two tasks
+  that carry the sprint's real claims.
+  **THE SPRINT ASKS THE OPERATOR'S QUESTION: when veritas refuses, can anyone
+  find out why?** The answer was no for everything that was not a 500 — and
+  the reason was structural rather than neglect. `api/routes.py` is 2,869
+  lines, raises `HTTPException` **138 times**, and binds no logger; Starlette
+  answers `HTTPException` itself, so **not one of those refusals ever reached
+  the 500 handler**. Every 4xx veritas has ever issued left exactly one
+  artifact: a status integer in the access line. Meanwhile every entry in the
+  OPERATING.md runbook said `GET /metrics` — a counter that can say how many
+  refusals and never which one.
+  **THE REQUEST AS PHRASED WAS "try/except in all modules", AND THAT WAS
+  ARGUED DOWN AND THE USER AGREED.** An AST sweep found **zero** bare
+  `except:` and **zero** `except BaseException` in 27,861 LOC; the 156 existing
+  handlers are mostly deliberate and commented. What was missing was
+  visibility, not tolerance — and in a repo whose defect history is a
+  catalogue of things that were invisible *because they degraded quietly*, a
+  blanket `except Exception` would convert loud bugs into silent wrong
+  answers. **Failures stay loud** is a stated constraint of the sprint.
+  **THE REPO'S ONLY LOGGING TEST WAS VACUOUS, AND MUTATION PROVED IT.**
+  `caplog` is structurally blind to structlog (`PrintLoggerFactory` writes to
+  stdout and never touches stdlib logging), so
+  `test_null_email_logs_neither_code_nor_destination` asserted
+  `"123456" not in ""`. A `NullEmail` mutated to log **both** the OTP and the
+  destination address passed it **10/10**. That guard had been fake since
+  S7.1. It is re-armed on rendered output and the mutant now dies.
+  **THE FIX ITSELF NEARLY COMMITTED THAT SAME LEAK, ONE DOOR LATER.**
+  `RequestValidationError.errors()` carries an **`input` key holding the
+  caller's raw submitted value** — probed on 0.138.0, not assumed. The obvious
+  `errors=exc.errors()` would have written resume text, candidate addresses
+  and login codes straight into the log: the exact leak the sprint exists to
+  close, committed by the sprint closing it. The 422 handler logs `loc` only,
+  and its guard was verified against the leaking version rather than hoped at.
+  **THE REUSABLE LESSON: `capture_logs()` BYPASSES THE PROCESSOR CHAIN.** It
+  reports what a call site PASSED, never what LEFT the process. Any egress
+  claim asserted on it is answering a different question than the one asked.
+  Hence two fixtures — `log_events` and `log_output` — and they are not
+  interchangeable.
+  **AND THE SAME DISEASE APPEARED IN THIS SPRINT'S OWN FIRST TEST**, which is
+  the finding worth carrying: the Task 1 test named
+  `test_log_output_survives_a_module_level_logger...` called `capture_logs`
+  directly instead of taking the fixture it was named for, so it exercised
+  structlog and never the seam. It hid a real defect — production configures
+  `cache_logger_on_first_use=True`, so all 179 modules freeze their logger
+  factory at import, and **both** seams collected nothing from a line that was
+  being printed to the terminal as they watched. Only Task 2's mutation step
+  caught it. A test named for a seam must take that seam.
+  Also closed: three silent swallows (each in a MODULE-LEVEL helper while its
+  node bound `log` inside the factory — an accident of scope, not a decision,
+  which is why the sibling nodes logged the identical failure), unguarded
+  flywheel IO (OSError only; `json.dumps` stays outside the guard), and six
+  invisible `IntegrityError` races. **OPERATING.md §10d** is the runbook's
+  first log-based entry, and its grep commands were run against the smoke's
+  own log file rather than written from memory.
+  **➤ NEXT: review + merge S9.3, then the five UI screens; go-live LAST.**
+
+- **Session 2026-08-24 — CI WAS RED ON A PUSH AND IS NOW GREEN, plus
   two extractor/coverage defects fixed. `main` carries all of it, unpushed
   beyond the user's own push. 2080 → 2091 passing, nothing deployed.**
   **THE ROADMAP'S "CI HAS NEVER BEEN READ" ITEM IS CLOSED, and reading it was
@@ -2983,6 +3045,78 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             fabrication_risk both `insufficient_data`, depth `deep 0.81`, and
             assess_coverage says `major_gaps / education_not_extracted`.
             The Instant check screen is the one that wires to this route.
+ └── [x] S9.3  ERROR OBSERVABILITY — BUILT on `s93-error-observability`,
+          NOT merged, NOT pushed. 2101 -> 2129 green, smoke_s93 19/19,
+          4/4 load-bearing mutants dead. Neighbour smokes re-run green
+          (s92 17/17, s86 28/28, s83b 22/22) to pin the wire format.
+          Asks the operator's question: when veritas refuses, can anyone
+          find out WHY? The answer was no for everything that was not a 500.
+          - `api/routes.py` is 2,869 lines, raises HTTPException **138 times**
+            and binds NO logger. Starlette answers HTTPException itself, so not
+            one of them reached the 500 handler: every 4xx ever issued left a
+            status integer in the access line and nothing else
+          - ONE `StarletteHTTPException` handler covers all 138 plus Starlette's
+            own 404s/405s; routes.py is NOT edited, and a test pins that, so the
+            next refusal added cannot be silent
+          - labelled by route TEMPLATE (`/report/{report_id}`, verified on a
+            live server), unmatched collapses to `__unmatched__` at INFO so
+            scanner noise cannot drown a real refusal
+          - ⚠ THE REPO'S ONLY LOGGING TEST WAS VACUOUS, MUTATION-PROVED:
+            `caplog` cannot see structlog (PrintLoggerFactory -> stdout, never
+            stdlib), so the OTP-leak guard asserted `"123456" not in ""`. A
+            NullEmail logging BOTH the code and the destination address passed
+            it **10/10**. Re-armed on rendered output; the mutant now dies
+          - ⚠ THE FIX ITSELF NEARLY COMMITTED THAT EXACT LEAK.
+            `RequestValidationError.errors()` carries an **`input` key holding
+            the caller's raw submitted value** — probed, not assumed. The
+            obvious `errors=exc.errors()` would have written resume text,
+            candidate addresses and login codes into the log. The 422 handler
+            logs `loc` only, and its guard was checked against the leaking
+            version
+          - THE REUSABLE LESSON: `capture_logs()` **bypasses the configured
+            processor chain**, so it proves what a call site PASSED and never
+            what LEFT the process. Hence two fixtures, not one — `log_events`
+            and `log_output` — and they are not interchangeable
+          - ⚠ AND THE SAME DISEASE APPEARED IN THIS SPRINT'S OWN FIRST TEST:
+            `test_log_output_survives_a_module_level_logger...` called
+            `capture_logs` directly instead of taking the fixture it was named
+            for, so it exercised structlog and never the seam. That hid a real
+            defect — production caches bound loggers on first use, so all 179
+            modules freeze their factory at import and BOTH seams collected
+            nothing from a line being printed to the terminal as they watched.
+            Caught only by Task 2's mutation step. Cache now off for the test
+            session
+          - three silent swallows closed (ai_signals, plausibility,
+            profile_sources): each sat in a MODULE-LEVEL helper while its node
+            bound `log` inside the factory, so there was no logger in scope —
+            an accident of scope, not a decision, which is why the sibling
+            nodes logged the identical failure
+          - flywheel IO guarded (OSError only; `json.dumps` stays outside the
+            guard so a non-serializable record remains a loud bug)
+          - six IntegrityError races now visible at INFO, labelled by site
+          - OPERATING.md **§10d** — the runbook's FIRST log-based entry; every
+            other entry says `GET /metrics`, and a counter cannot explain a
+            single refusal. Its grep commands were run against the smoke's own
+            log file, not written from memory
+          - ⚠ PRE-MERGE REVIEW FOUND ONE REAL DEFECT, and it is this sprint's
+            own subject turned on itself: FIVE of the six `integrity_race`
+            `where` labels were copied from the PLAN'S TABLE instead of read off
+            the code, so they named methods with no referent (`record_request`
+            for `RightsStore.create`, `open_window` for `RateLimitStore.hit`,
+            `save_report` for `SqlReportStore.save`, +2). §10d tells an operator
+            to watch these by rate and then find the site, so a label that greps
+            to nothing is an OBSERVABILITY defect shipped by the observability
+            sprint. Now `Class.method`, pinned by an AST guard (not a fixed
+            list, which would be a second copy free to drift the same way)
+          - review also CLEARED, by measurement not assumption: `Retry-After` on
+            the 429 survives the delegation (covered by test_ratelimit_auth.py
+            over real HTTP); ZERO import-time log calls, so the cache fix holds
+            for all 179 modules; and no HTTPException detail interpolates a
+            credential — the 401/403 details name the credential TYPE, never
+            its value
+          - SCOPED OUT BY THE USER, deliberately: blanket try/except across all
+            179 modules. This repo's defects are the QUIET ones, so failures
+            stay loud — observability was added, tolerance was not
 ```
 
 ## Standing conventions (do not relitigate)

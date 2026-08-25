@@ -29,6 +29,13 @@ from app.auth.schema import (
     SessionStatus, SessionView,
 )
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+
+# INFO, not warning: these races are EXPECTED and each handler resolves its
+# own correctly. The signal is the RATE -- one a day versus a thousand a
+# minute -- and at warning they would be noise that trains an operator to
+# ignore the channel now carrying real refusals (S9.3).
+_log = get_logger("auth.store")
 from app.ledger.consent import as_utc
 from app.ledger.models import OrganizationRow
 
@@ -392,6 +399,7 @@ class AuthStore:
             try:
                 session.flush()
             except IntegrityError as exc:
+                _log.info("integrity_race", where="AuthStore.create_org_with_owner", error=str(exc))
                 session.rollback()
                 raise OrgNameTaken(
                     f"organization name already exists: {name!r}"

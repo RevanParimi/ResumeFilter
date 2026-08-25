@@ -20,13 +20,23 @@ def test_null_email_refuses(settings):
         NullEmail(settings).send(to="a@b.com", subject="s", body="b")
 
 
-def test_null_email_logs_neither_code_nor_destination(settings, caplog):
+def test_null_email_logs_neither_code_nor_destination(settings, log_output):
     """S7.1's NullNotifier posture: an OTP in a log file is an OTP leak, and so
-    is the address it was going to."""
+    is the address it was going to.
+
+    ASSERTED ON RENDERED OUTPUT, not on caplog. The caplog version of this test
+    passed for eight PIs while checking nothing: structlog writes through
+    PrintLoggerFactory to stdout and never touches stdlib logging, so
+    `caplog.text` was always "" and the assertion read `"123456" not in ""`.
+    Proved by mutation -- a NullEmail logging BOTH the code and the address
+    passed the old test 10/10.
+    """
     with pytest.raises(EmailUnavailable):
         NullEmail(settings).send(to="someone@example.in", subject="s", body="code 123456")
-    assert "123456" not in caplog.text
-    assert "someone@example.in" not in caplog.text
+    rendered = log_output.text
+    assert "email.dispatch.refused" in rendered, "the attempt must still be logged"
+    assert "123456" not in rendered
+    assert "someone@example.in" not in rendered
 
 
 def test_capture_email_writes_json_lines(settings, tmp_path):

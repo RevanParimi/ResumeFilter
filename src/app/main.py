@@ -17,9 +17,15 @@ from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
 from starlette.routing import Match, Mount
 from starlette.staticfiles import StaticFiles
 
@@ -356,6 +362,81 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
                 )
                 services.metrics.observe_duration(template, elapsed_ms)
             structlog.contextvars.clear_contextvars()
+
+    @app.exception_handler(StarletteHTTPException)
+    async def refused(request: Request, exc: StarletteHTTPException) -> Response:
+        """Log every refusal ONCE, then answer exactly as FastAPI would.
+
+        All 138 HTTPException raises in routes.py land here, plus Starlette's
+        own 404s and 405s -- measured with a TestClient probe, not assumed. So
+        routes.py is not edited at all: a refusal is logged because it
+        HAPPENED, not because whoever wrote it remembered to.
+
+        This is the gap S9.3 opened on. Starlette answers HTTPException itself,
+        so NONE of those 138 refusals ever reached the handler below, and every
+        4xx veritas issued left exactly one artifact: a status integer in the
+        access line. The runbook could count refusals and could not explain a
+        single one -- every entry in OPERATING.md §7 said `GET /metrics`.
+
+        The detail goes on the line. That is consistent with the handler below,
+        which already logs repr(exc) plus a full traceback: this repo has
+        already decided the operator's own log plane may hold exception text,
+        and inventing a stricter second rule for 4xx would leave two rules
+        where one exists. What S9.3 adds is the ability to CHECK -- see
+        tests/test_email_seam.py, whose guard on that question was fake until
+        this sprint.
+        """
+        rid = getattr(request.state, "request_id", "")
+        template = _route_template(request)
+        if exc.status_code >= 500:
+            # A 503 (email_unavailable) is a real outage, not a refusal.
+            emit = log.error
+        elif template == "__unmatched__":
+            # Nothing matched: a scanner walking URLs. At warning it is
+            # indistinguishable from a customer being refused, which is how
+            # alert fatigue starts and how the real line gets missed.
+            emit = log.info
+        else:
+            emit = log.warning
+        emit(
+            "request_refused",
+            status=exc.status_code,
+            route=template,
+            method=request.method,
+            reason=str(exc.detail),
+            request_id=rid,
+        )
+        return await http_exception_handler(request, exc)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid(request: Request, exc: RequestValidationError) -> Response:
+        """Log WHERE the body failed, never WHAT was in it.
+
+        `exc.errors()` carries an `input` key holding the caller's raw
+        submitted value -- probed on fastapi 0.138.0, not assumed::
+
+            {"type": "int_parsing", "loc": ["body", "age"],
+             "input": "alice@example.in-SECRET-OTP-123456"}
+
+        So the obvious `errors=exc.errors()` would write resume text, candidate
+        addresses and login codes straight into the log -- committing, in the
+        sprint that closes the OTP-leak gap, exactly the leak that gap was
+        about. For this product those three are the whole of the sensitive set.
+
+        Only `loc` is copied. A test asserts a submitted secret never reaches
+        the rendered output, and it was checked against the leaking version.
+        """
+        rid = getattr(request.state, "request_id", "")
+        fields = [".".join(str(p) for p in e.get("loc", ())) for e in exc.errors()]
+        log.warning(
+            "request_invalid",
+            status=422,
+            route=_route_template(request),
+            method=request.method,
+            fields=fields,
+            request_id=rid,
+        )
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:

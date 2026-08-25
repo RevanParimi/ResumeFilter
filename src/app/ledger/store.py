@@ -34,6 +34,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+
+# INFO, not warning: these races are EXPECTED and each handler resolves its
+# own correctly. The signal is the RATE -- one a day versus a thousand a
+# minute -- and at warning they would be noise that trains an operator to
+# ignore the channel now carrying real refusals (S9.3).
+_log = get_logger("ledger.store")
 from app.core.db import make_engine, make_session_factory
 from app.ledger import consent as consent_logic
 from app.ledger.models import (
@@ -231,6 +238,7 @@ class LedgerStore:
             try:
                 session.flush()
             except IntegrityError as exc:
+                _log.info("integrity_race", where="LedgerStore.create_organization", error=str(exc))
                 session.rollback()
                 raise ValueError(f"organization name already exists: {name!r}") from exc
             self._audit(
