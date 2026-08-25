@@ -17,7 +17,11 @@ from typing import Optional
 
 import structlog
 from fastapi import FastAPI, Request
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -403,6 +407,36 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
             request_id=rid,
         )
         return await http_exception_handler(request, exc)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid(request: Request, exc: RequestValidationError) -> Response:
+        """Log WHERE the body failed, never WHAT was in it.
+
+        `exc.errors()` carries an `input` key holding the caller's raw
+        submitted value -- probed on fastapi 0.138.0, not assumed::
+
+            {"type": "int_parsing", "loc": ["body", "age"],
+             "input": "alice@example.in-SECRET-OTP-123456"}
+
+        So the obvious `errors=exc.errors()` would write resume text, candidate
+        addresses and login codes straight into the log -- committing, in the
+        sprint that closes the OTP-leak gap, exactly the leak that gap was
+        about. For this product those three are the whole of the sensitive set.
+
+        Only `loc` is copied. A test asserts a submitted secret never reaches
+        the rendered output, and it was checked against the leaking version.
+        """
+        rid = getattr(request.state, "request_id", "")
+        fields = [".".join(str(p) for p in e.get("loc", ())) for e in exc.errors()]
+        log.warning(
+            "request_invalid",
+            status=422,
+            route=_route_template(request),
+            method=request.method,
+            fields=fields,
+            request_id=rid,
+        )
+        return await request_validation_exception_handler(request, exc)
 
     @app.exception_handler(Exception)
     async def unhandled_error(request: Request, exc: Exception) -> JSONResponse:

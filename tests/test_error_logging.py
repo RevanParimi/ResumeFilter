@@ -105,3 +105,29 @@ def test_routes_py_contains_no_logging_call():
 
     src = Path(routes_mod.__file__).read_text(encoding="utf-8")
     assert "log.warning" not in src and "log.error" not in src
+
+
+def test_a_validation_failure_is_logged_with_the_field_locations(client, log_events):
+    r = client.post("/evaluate", json={"resume_text": 12345})
+    assert r.status_code == 422, r.text
+    hits = [e for e in log_events if e.get("event") == "request_invalid"]
+    assert hits, "a 422 must leave a line"
+    assert any("resume_text" in f for f in hits[0]["fields"])
+
+
+def test_a_validation_failure_never_logs_the_submitted_value(client, log_output):
+    """RequestValidationError.errors() carries an `input` key holding the RAW
+    submitted value -- probed, not assumed:
+
+        {"type": "int_parsing", "loc": ["body", "age"],
+         "input": "alice@example.in-SECRET-OTP-123456"}
+
+    Logging errors() wholesale would write resume text, candidate addresses and
+    login codes into the log -- committing, in the sprint that closes the
+    OTP-leak gap, exactly the leak that gap was about.
+    """
+    secret = "alice@example.in-SECRET-OTP-123456"
+    r = client.post("/evaluate", json={"resume_text": {"nested": secret}})
+    assert r.status_code == 422, r.text
+    assert secret not in log_output.text
+    assert "SECRET-OTP" not in log_output.text
