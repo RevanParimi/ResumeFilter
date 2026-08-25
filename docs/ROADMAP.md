@@ -10,8 +10,13 @@
 ## ▶ Current state
 
 - **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) MERGED to `main`
-  at `31d830e`; branch deleted. NOT pushed, nothing deployed. `main` is 14
-  commits ahead of `origin/main`.
+  at `31d830e` and **PUSHED** (`f15f72e..a7b60c7`), branch deleted. `main` and
+  `origin/main` are in sync. NOTHING DEPLOYED.
+  CI has not been read from this machine (`gh` is not installed here), but the
+  version-drift class that made 08-24 red is closed: all 18 deps are
+  exact-pinned, so CI installs the same `structlog==26.1.0` this was tested
+  against, and every changed file compiles clean under **3.11** (one of CI's
+  two matrix versions; this machine is 3.13).
   2101 → 2129 passing, `smoke_s93` 19/19, 4/4 load-bearing mutants dead,
   neighbour smokes re-run green (s92 17/17, s86 28/28, s83b 22/22).**
   Spec `docs/superpowers/specs/2026-08-25-s93-error-observability-design.md`,
@@ -3051,7 +3056,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
             assess_coverage says `major_gaps / education_not_extracted`.
             The Instant check screen is the one that wires to this route.
  └── [x] S9.3  ERROR OBSERVABILITY — BUILT on `s93-error-observability`,
-          MERGED 2026-08-25 at `31d830e`, branch deleted, NOT pushed. Suite
+          MERGED 2026-08-25 at `31d830e`, PUSHED, branch deleted. Suite
           and smokes RE-RUN ON THE MERGE COMMIT. 2101 -> 2129 green, 19/19,
           4/4 load-bearing mutants dead. Neighbour smokes re-run green
           (s92 17/17, s86 28/28, s83b 22/22) to pin the wire format.
