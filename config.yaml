@@ -278,6 +278,20 @@ login_otp_cooldown_seconds: 60
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.
 login_otp_debug_echo: false
+# A FIXED sign-in code, so local UI testing uses the same digits every time
+# instead of a fresh code per session. Empty = off, and off is what ships.
+#
+# READ THIS BEFORE SETTING IT. This is not a debug aid, it is a CREDENTIAL
+# BYPASS: with it set, one known string signs in as ANY account on ANY plane
+# (org, operator, candidate). It is strictly more powerful than the echo above,
+# which at least only reveals a code that was genuinely sent to someone.
+#
+# Guarded three ways: the mint path ignores it unless env=local, prod REFUSES
+# TO BOOT with it set, and a test asserts this file never ships it armed.
+# Turn it on in a local override, never here:
+#     DEE_LOGIN_OTP_STATIC_CODE=000000 uvicorn app.main:app
+# Must be exactly `login_otp_length` digits or the app refuses to construct.
+login_otp_static_code: ""
 cors_allowed_origins: []            # fail-closed; NEVER "*" (prod refuses it)
 
 # --- Email seam (PI-8, S8.2) ---------------------------------------------------

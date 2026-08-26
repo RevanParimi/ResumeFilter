@@ -532,6 +532,51 @@ Inside `login_otp_cooldown_seconds` no code is minted (the previous one is
 still live), so the 202 carries no `debug_code` and the UI leaves the boxes
 alone rather than blanking digits already typed.
 
+### The fixed test code (`login_otp_static_code`)
+
+The echo above removes the *lookup*; this removes the *rotation*. With it set,
+every minted login code is the same known string, on every plane — so local UI
+testing types the same six digits all session, and a scripted click-through
+needs no capture-file read at all.
+
+```bash
+# local only; never in config.yaml
+DEE_LOGIN_OTP_STATIC_CODE=000000 uvicorn app.main:app
+```
+
+**IT IS A CREDENTIAL BYPASS, NOT A DEBUG AID.** The echo reveals a code that
+was genuinely sent to a real address. This *replaces* the code with one the
+operator already knows, so anyone holding it signs in as **any account on any
+plane**. It is the most dangerous setting in this file, and it is guarded
+accordingly — three ways, because one check is a check nobody rereads:
+
+1. **`env=local` or it does nothing.** `mint_code_for` ignores it otherwise
+   and mints a real random code (`app/auth/challenges.py`).
+2. **Prod refuses to BOOT with it set** — the 10th launch refusal, alongside
+   the missing admin key, prod-on-SQLite, an insecure session cookie, wildcard
+   CORS, a capture email provider, an empty grievance officer, and the debug
+   echo. A config that intends to disable authentication must die loudly
+   rather than sit armed.
+3. **`config.yaml` never ships it armed**, asserted by
+   `tests/test_static_test_otp.py::test_the_shipped_config_does_not_arm_it`.
+
+**One mint door, pinned by a test.** `mint_code_for` is the only production
+caller that mints a login code, and a test fails if a second appears or if any
+production code calls the raw `mint_code`. Without that, the `env=local` rule
+would be applied at one entry point and not the other — the defect shape this
+repo has found in every PI review.
+
+**It must be exactly `login_otp_length` digits** (6 by default) or the app
+refuses to construct. A five-digit static code would mint something the verify
+path rejects, and the developer would read `invalid_code` and go hunting
+through the auth flow instead of looking at their own config.
+
+**The cooldown and TTL still apply.** The digits stop rotating; the challenge
+does not become immortal. A re-request inside `login_otp_cooldown_seconds` is
+still refused, and the row still expires on `login_otp_ttl_seconds` — you
+simply get the same digits back next time. If you want long-lived sessions
+rather than a long-lived code, raise `session_ttl_minutes` instead.
+
 ## 10d. Reading the logs (PI-9, S9.3)
 
 Until S9.3 this runbook could only count. Every entry above says `GET /metrics`,

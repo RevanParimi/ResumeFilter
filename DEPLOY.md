@@ -48,7 +48,7 @@ CI job does, and it has not run since S8.4a.
 
 ---
 
-## 1. Pre-flight: the nine boot refusals
+## 1. Pre-flight: the ten boot refusals
 
 The app **refuses to start** on any of these. That is the design: each one
 produces a service that *looks* healthy while being unsafe or unusable, which
@@ -66,6 +66,7 @@ is a bootable one, so this table doubles as the checklist.
 | 7 | `DEE_GRIEVANCE_OFFICER_EMAIL` empty in prod | a monitored mailbox | DPDP requires the grievance mechanism to be **published**. `GET /grievance` would answer 200 with an empty contact — worse than a 404, because it looks answered. |
 | 8 | no working email provider in prod | `DEE_EMAIL_PROVIDER=smtp` **and** `DEE_EMAIL_SMTP_HOST` | Signup and login on all three planes answer 503 `email_unavailable` — nobody can create an account or log in — while `/healthz` reports healthy. |
 | 9 | `DEE_LOGIN_OTP_DEBUG_ECHO=true` in prod | unset | The knob returns a live sign-in code in the 202 body, handing any caller both the code **and** the answer to "is this address registered". The route already refuses to echo outside `env=local`, so this refusal is about loudness: a config that *intends* to leak OTPs must die at boot, not sit armed behind a check nobody rereads. |
+| 10 | `DEE_LOGIN_OTP_STATIC_CODE` set in prod | unset | A **credential bypass**, not a debug aid: it replaces every minted sign-in code with one fixed string, so anyone holding it signs in as **any account on any plane**. It exists so local UI testing does not need a fresh code per session. The mint path already ignores it outside `env=local`; this refusal is about loudness — a config that *intends* to disable authentication must die at boot. See OPERATING.md §10c. |
 
 Refusal 8 asks the email **builder** whether it can deliver, not what
 `DEE_EMAIL_PROVIDER` says: `smtp` with an empty host silently falls back to the
@@ -104,6 +105,7 @@ holds tunables, never credentials.
 | `DEE_SESSION_COOKIE_SAMESITE` | `lax` | Default since S8.6 — the UI is served by this API, so requests are same-origin. Use `none` **only** if you host the UI separately. |
 | `DEE_RATE_LIMIT_ENABLED` | `true` | Default, and refusal 6. |
 | `DEE_LOGIN_OTP_DEBUG_ECHO` | `false` | Default, and refusal 9. A local-only developer affordance; see OPERATING.md. |
+| `DEE_LOGIN_OTP_STATIC_CODE` | *(unset)* | Default, and refusal 10. A local-only FIXED sign-in code; never set this on a deployment. |
 | `DEE_RATE_LIMIT_TRUSTED_PROXY_HOPS` | **`1`** behind Railway | See §3. The default `0` is wrong behind a proxy. |
 | `DEE_VECTORSTORE_BACKEND` | `memory` | Unless a Chroma volume is mounted: `PersistentClient` can hang, and grounding is best-effort. |
 | `DEE_LOG_JSON` | `true` | Structured logs. |

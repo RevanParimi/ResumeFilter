@@ -276,10 +276,8 @@ class AuthService:
             # so refusing costs the user nothing.
             raise ChallengeRefused("cooldown")
 
-        code, digest = challenge_logic.mint_code(
-            self._settings.login_otp_length,
-            salt=self._settings.contact_hash_salt,
-            rng=rng or random.Random(),
+        code, digest = challenge_logic.mint_code_for(
+            self._settings, rng=rng or random.Random()
         )
 
         # SEND FIRST, persist second. A provider outage must not consume or

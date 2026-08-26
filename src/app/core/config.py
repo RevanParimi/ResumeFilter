@@ -23,7 +23,7 @@ import os
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -511,6 +511,22 @@ class Settings(BaseSettings):
     # comes back only when one was really sent -- so prod refuses to BOOT with
     # it on (app/core/boot.py) rather than merely ignoring it.
     login_otp_debug_echo: bool = False
+    # A FIXED sign-in code for local UI testing. Empty = off, and off is the
+    # only thing that ever ships.
+    #
+    # This is a DELIBERATE AUTH BACKDOOR, not a convenience setting: with it
+    # set, one known string signs in as any account on any plane, so it is
+    # guarded exactly like login_otp_debug_echo above and then one notch
+    # harder. The echo leaks a code that was really sent to someone; this
+    # REPLACES the code with one the developer already knows, which is
+    # strictly more powerful.
+    #
+    # Three guards, because one is a check nobody rereads:
+    #   1. honored only when env == "local" (app/auth/challenges.py)
+    #   2. prod REFUSES TO BOOT with it set (app/core/boot.py) -- the 10th such
+    #      refusal, and the loud one that matters
+    #   3. never armed in the shipped config.yaml, asserted by a test
+    login_otp_static_code: str = ""
     # Fail-closed: no origin may call this API cross-site until one is named.
     # NEVER "*" — browsers forbid it with credentials anyway, and relying on that
     # as the guard leaves a defect waiting for someone to silence the error.
@@ -542,6 +558,23 @@ class Settings(BaseSettings):
     @classmethod
     def _upper_level(cls, v: str) -> str:
         return v.upper()
+
+    @model_validator(mode="after")
+    def _static_code_is_usable(self) -> "Settings":
+        """A static code that can never match is worse than none at all.
+
+        Without this, `login_otp_static_code: 12345` (five digits) mints a code
+        the verify path rejects, and the developer reads "invalid code" and goes
+        hunting through the auth flow instead of looking at their own config.
+        Refusing at construction puts the error where the mistake is.
+        """
+        code = self.login_otp_static_code
+        if code and (not code.isdigit() or len(code) != self.login_otp_length):
+            raise ValueError(
+                f"login_otp_static_code must be exactly {self.login_otp_length} "
+                f"digits (login_otp_length), got {code!r}"
+            )
+        return self
 
     # --- Convenience ----------------------------------------------------------
     @property
