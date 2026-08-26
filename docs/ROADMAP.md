@@ -9,7 +9,34 @@
 
 ## ▶ Current state
 
-- **Session 2026-08-25 (latest) — S9.3 (ERROR OBSERVABILITY) MERGED to `main`
+- **Session 2026-08-26 — LOCAL FIXED SIGN-IN CODE, merged at `58a74a8` and
+  PUSHED. 2129 → 2140 green, smokes s81 10/10 · s82 21/21 · s86 28/28 ·
+  s93 19/19. Not a sprint — a testing affordance for the UI work that is next.**
+  `login_otp_static_code` makes every minted login code one known string, so
+  driving the five unwired screens does not mean reading a fresh six digits out
+  of the capture file each session.
+  **IT IS A CREDENTIAL BYPASS, NOT A DEBUG AID**, and is shaped accordingly:
+  the existing `login_otp_debug_echo` reveals a code genuinely sent to a real
+  address, while this REPLACES the code with one the operator already knows —
+  so anyone holding it signs in as any account on any plane. Three guards,
+  because one check is a check nobody rereads: `env=local` at the mint path ·
+  **prod refuses to BOOT (the 10th refusal)** · `config.yaml` never ships it
+  armed. Each is pinned by a test.
+  **ONE MINT DOOR, PINNED BY ITS OWN TEST** — a second caller, or any
+  production call to the raw `mint_code`, fails the suite. Without it the
+  `env=local` rule would sit at one entry point and not the other, this repo's
+  signature defect.
+  **AN EXISTING DRIFT GUARD CAUGHT A REAL MISTAKE:**
+  `test_deploy_doc.py::test_the_refusal_list_here_matches_the_code` compares
+  DEPLOY.md's refusal list against what `boot.py` actually reads, and failed
+  because the new refusal was undocumented. It also corrected the count — there
+  were already NINE refusals, not seven, so this is the **tenth**; the check was
+  then moved AFTER the echo so DEPLOY.md's rows 1–9 did not renumber.
+  Verified end-to-end over real HTTP, not only in units: org signup → verify
+  with the fixed code → **200, signed in**, every mailed code fixed.
+  Docs: `OPERATING.md §10c` (subsection), `DEPLOY.md` refusal 10, `config.yaml`.
+
+- **Session 2026-08-25 — S9.3 (ERROR OBSERVABILITY) MERGED to `main`
   at `31d830e` and **PUSHED** (`f15f72e..a7b60c7`), branch deleted. `main` and
   `origin/main` are in sync. NOTHING DEPLOYED.
   CI has not been read from this machine (`gh` is not installed here), but the
