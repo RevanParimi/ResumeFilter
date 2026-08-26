@@ -54,6 +54,37 @@ def mint_code(length: int, *, salt: str, rng: random.Random) -> tuple[str, str]:
     return code, otp_logic.hash_code(code, salt)
 
 
+def mint_code_for(settings, *, rng: Optional[random.Random] = None) -> tuple[str, str]:
+    """Mint (plaintext, digest) for a login challenge, honouring the LOCAL-ONLY
+    fixed test code.
+
+    ONE PLACE, deliberately. Every caller that mints a login code goes through
+    here, so the `env == "local"` condition cannot be applied at one door and
+    forgotten at the next -- the defect shape this repo has hit in almost every
+    PI (a rule at one entry point and not the other).
+
+    `login_otp_static_code` is a deliberate auth backdoor: with it set, one
+    known string signs in as any account on any plane. It is honoured ONLY
+    under `env=local`, and prod refuses to BOOT with it set
+    (app/core/boot.py). This check is the belt: even if a process somehow
+    reached a non-local env with it configured, it mints a real random code
+    rather than the developer's known one.
+
+    The digest is computed from whatever `code` ended up being, never from the
+    configured value directly -- so the static path cannot mint a code whose
+    digest belongs to something else, which is precisely the failure this
+    feature exists to remove.
+    """
+    static = settings.login_otp_static_code
+    if static and settings.env == "local":
+        code = static
+    else:
+        code = otp_logic.generate_code(
+            settings.login_otp_length, rng=rng or random.Random()
+        )
+    return code, otp_logic.hash_code(code, settings.contact_hash_salt)
+
+
 def hash_supplied(code: str, *, salt: str) -> str:
     """Digest a code the user typed, so the caller compares digests and never
     handles a stored plaintext (there isn't one) or an unsalted hash."""

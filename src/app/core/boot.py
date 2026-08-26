@@ -141,3 +141,15 @@ def verify_launch_config(settings: Settings) -> None:
             "boot rather than sit armed behind a check nobody rereads. Unset "
             "DEE_LOGIN_OTP_DEBUG_ECHO."
         )
+    if settings.login_otp_static_code:
+        raise LaunchConfigError(
+            "DEE_ENV=prod with login_otp_static_code set. The knob replaces "
+            "every minted sign-in code with one FIXED string, so anyone who "
+            "knows it signs in as any account on any plane -- it is a "
+            "credential bypass for the whole system, not a debug aid. It "
+            "exists only so local UI testing does not need a fresh code every "
+            "session, the mint path already refuses it outside env=local, and "
+            "this refusal is about loudness: a config that INTENDS to disable "
+            "authentication must die at boot rather than sit armed behind a "
+            "check nobody rereads. Unset DEE_LOGIN_OTP_STATIC_CODE."
+        )
