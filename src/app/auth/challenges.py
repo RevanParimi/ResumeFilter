@@ -79,8 +79,12 @@ def mint_code_for(settings, *, rng: Optional[random.Random] = None) -> tuple[str
     if static and settings.env == "local":
         code = static
     else:
+        # SystemRandom, not Random: a Mersenne Twister's internal state is
+        # recoverable from enough observed output, so codes an attacker has
+        # already been sent would predict the next one. Tests still inject a
+        # seeded `rng` -- the DEFAULT is what has to be unpredictable.
         code = otp_logic.generate_code(
-            settings.login_otp_length, rng=rng or random.Random()
+            settings.login_otp_length, rng=rng or random.SystemRandom()
         )
     return code, otp_logic.hash_code(code, settings.contact_hash_salt)
 

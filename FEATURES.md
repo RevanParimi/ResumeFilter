@@ -221,7 +221,7 @@ non-empty), `filters` (optional), `view_name`/`view_version` (default the
 materialized `core_v1`/v1), `as_of` (default the view's newest cut via
 `FeatureStore.latest_as_of`), `limit` (default `search_default_limit`, 50). The
 handler resolves specs **per referenced feature** from the registry (unknown name
-→ 400), loads the pool via `FeatureStore.vectors_for_view`, then filter → score →
+→ 400), loads the pool via `FeatureStore.latest_vectors_for_view`, then filter → score →
 sort → limit. Errors: unknown feature / dtype-invalid op → 400; empty `ranking` →
 422; no admin key → 401. An unmaterialized view is not an error — it yields an
 empty pool (still 200, `advisory=True`).
@@ -233,8 +233,12 @@ empty pool (still 200, `advisory=True`).
   withheld feature is already `null` in the row and simply drops out of scoring.
   The admin plane keeps this consistent — S4.3 adds **no new disclosure surface**.
   (Org-facing, per-org-consented search is PI-5 demand-side work.)
-- **Point-in-time**: `as_of` selects the materialized cut; ranking is pure over
-  whatever `vectors_for_view` returns — no leakage introduced.
+- **Point-in-time**: `as_of` is a cutoff. Search and job matching select each
+  candidate's latest snapshot at or before it, so refreshing one candidate does
+  not remove the others from the pool. Matching reads each profile at its own
+  vector's timestamp. Exact-cut exports still use `vectors_for_view`.
+- **Batch refresh**: omitted `as_of` is resolved once per run, shared across all
+  candidates, and returned by `POST /features/materialize`.
 - **DPDP**: no new candidate-linked table ⇒ no new erasure path; search reads
   `ml_feature_vectors`, which already CASCADE-deletes with the candidate.
 

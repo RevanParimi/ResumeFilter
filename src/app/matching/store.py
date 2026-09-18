@@ -185,7 +185,7 @@ class JobStore:
 
         cut = as_of or self._features.latest_as_of(view_name, view_version)
         pool = (
-            self._features.vectors_for_view(view_name, view_version, as_of=cut)
+            self._features.latest_vectors_for_view(view_name, view_version, as_of=cut)
             if cut is not None else []
         )
         vectors = [mv.vector for mv in pool]
@@ -199,7 +199,7 @@ class JobStore:
         profiles: dict = {}
         if cut is not None and self._candidates is not None:
             for v in vectors:
-                p = self._candidates.profile_as_of(v.candidate_id, cut)
+                p = self._candidates.profile_as_of(v.candidate_id, v.as_of)
                 if p is not None:
                     profiles[v.candidate_id] = p
 

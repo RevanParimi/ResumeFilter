@@ -67,9 +67,8 @@ def test_report_level_outcome_recorded_and_fed_to_flywheel(api):
     ]
     assert len(wheel_outcomes) == 1
     assert wheel_outcomes[0]["report_id"] == report["id"]
-    # S8.5: the flywheel is an append-only JSONL with NO erasure path, so the
-    # free text a human typed beside a candidate's name does not go into it.
-    # The label is the training signal; the prose never was.
+    # The test observer still receives labels/provenance, never human notes.
+    # Production retains only SQL outcomes, not a second event stream.
     assert "notes" not in wheel_outcomes[0]
     assert "screen pending" not in str(wheel_outcomes[0])
     # It gains provenance instead, which is what a calibration harness needs.

@@ -272,12 +272,10 @@ ever written about them, in the database.
 
 Two decisions that follow from that:
 
-* **The flywheel record carries the label, never the note.**
-  `src/app/services/flywheel.py` is an append-only JSONL with **no erasure path**,
-  so free text a human typed beside a candidate's name has no business in it.
-  The label is the training signal; the prose never was. Changed at BOTH doors
-  in one commit, because fixing the customer's and leaving the operator's is
-  the defect shape rather than a smaller version of the fix.
+* **Outcomes are retained only in SQL.** Both outcome doors use the same
+  erasable store. The optional test observer receives labels/provenance without
+  notes; production uses `NullFlywheel` and writes no JSONL. Existing legacy
+  files need separate cleanup and are not removed by this new-write policy.
 * **`outcomes.org_id` is `SET NULL`, not `CASCADE`** — the contrast with
   `screening_batches.org_id` two rows up is the reasoning. A batch is the
   organisation's own operational work product with no meaning once they are

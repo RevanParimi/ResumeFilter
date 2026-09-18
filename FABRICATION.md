@@ -26,9 +26,9 @@ code; file refs are clickable.
    offline-computable core. The only LLM involvement anywhere in PI-2 is the
    S2.1 stylometry pass — cheap tier, confidence-capped, and never able to
    drive a band on its own. S2.2 and S2.3 use **no LLM at all**.
-4. **Everything feeds the flywheel.** Each assessment logs one training
-   record with an open `outcome` field, so future calibration can learn
-   which signals actually predicted fabrication.
+4. **Assessments and outcomes are retained in SQL.** Quality analysis reads
+   these erasable records. Observer events remain available to offline tests;
+   production writes no duplicate JSONL stream (R1-S1-T1).
 
 ## Where each signal is computed
 
@@ -325,6 +325,11 @@ Config: `fr_moderate_threshold`, `fr_elevated_threshold`, `fr_min_confidence`,
 ---
 
 ## What lands on the Report and in the flywheel
+
+The flywheel column below describes optional test-observer events. Production
+uses `NullFlywheel`; only SQL reports/outcomes retain these assessments.
+`flywheel_path` is deprecated and ignored for writes. Legacy files are separate
+cleanup work, not erased automatically.
 
 | Sprint | Report field | Band values | Summary note fires on | Flywheel `record_type` |
 |---|---|---|---|---|

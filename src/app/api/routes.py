@@ -2175,7 +2175,7 @@ async def talent_search(req: TalentSearchRequest, request: Request) -> SearchRes
     as_of = req.as_of or services.features.latest_as_of(view_name, view_version)
 
     pool = (
-        services.features.vectors_for_view(view_name, view_version, as_of=as_of)
+        services.features.latest_vectors_for_view(view_name, view_version, as_of=as_of)
         if as_of is not None
         else []
     )
@@ -2247,10 +2247,11 @@ async def materialize_features(
             services.settings.materialize_max_candidates
         )
 
+    snapshot_time = body.as_of if body.as_of is not None else datetime.now(timezone.utc)
     materialized = skipped = 0
     for candidate_id in ids:
         mv = materialize_candidate(
-            candidate_id, view=view, registry=registry, as_of=body.as_of,
+            candidate_id, view=view, registry=registry, as_of=snapshot_time,
             candidate_store=services.candidates,
             report_store=services.report_store,
             ledger_store=services.ledger,
@@ -2263,7 +2264,7 @@ async def materialize_features(
         materialized += 1
 
     return MaterializeResponse(
-        view_name=view.name, view_version=view.version, as_of=body.as_of,
+        view_name=view.name, view_version=view.version, as_of=snapshot_time,
         materialized=materialized, skipped=skipped,
     )
 
@@ -2277,13 +2278,10 @@ async def get_report(report_id: str, request: Request) -> Report:
 
 
 def _outcome_flywheel_record(rec: OutcomeRecord) -> dict:
-    """What one recorded outcome contributes to the training sink.
+    """Minimal outcome event for the optional test observer.
 
-    NO `notes`. The flywheel is an append-only JSONL with no erasure path, and
-    free text a human typed beside a candidate's name has no business in a file
-    no DPDP delete can reach. The label is the training signal; the prose never
-    was, and it still lives in `outcomes` where erasure genuinely reaches it
-    (outcomes -> reports -> candidates, both CASCADE).
+    Production does not retain this event. Notes and labels live in SQL
+    outcomes, erased via outcomes -> reports -> candidates CASCADE.
 
     It gains provenance instead: a calibration harness must be able to tell a
     customer's judgment from our own operator's, or it trains on its own echo.

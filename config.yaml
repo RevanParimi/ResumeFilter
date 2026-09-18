@@ -63,6 +63,8 @@ chroma_persist_dir: "./.chroma"
 chroma_collection: "depth-eval-evidence"
 
 # --- Flywheel (training-data sink) -------------------------------------------
+# Deprecated compatibility setting; no new JSONL is written. Existing files
+# are not removed automatically. Reports/outcomes are retained in SQL.
 flywheel_path: "./data/flywheel.jsonl"
 
 # --- Candidates (PI-1) ---------------------------------------------------------

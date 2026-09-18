@@ -133,7 +133,7 @@ depth-eval-engine/
 │   │       ├── ai_signals.py        ⑴ AI-text signals (advisory, S2.1) → FABRICATION.md
 │   │       ├── cross_field.py       ⑵ timeline forensics (advisory, S2.2, LLM-free)
 │   │       ├── claim_extraction.py  ② atomic typed claims              → LLM(parsing) + domain
-│   │       ├── provenance.py        ③ ground anchored claims           → GitHub + VectorStore
+│   │       ├── provenance.py        ③ ground anchored claims           → GitHub (evaluation-local)
 │   │       ├── plausibility.py      ④ THE CORE: rules ⊕ LLM coherence  → domain.rules + LLM(reasoning)
 │   │       ├── probe_generation.py  ⑤ probes for suspicious claims     → LLM(reasoning) + domain
 │   │       ├── scoring.py           ⑥ calibrate → status + depth band  → core/calibration
@@ -165,7 +165,7 @@ depth-eval-engine/
 │   │   ├── llm.py               ← OpenRouterLLM (OpenAI SDK, retries) · NullLLM · tier→model
 │   │   ├── vectorstore.py       ← Chroma (bounded init) · InMemory · HashingEmbedding
 │   │   ├── github.py            ← httpx GitHub API client (first-party repos only)
-│   │   ├── flywheel.py          ← JSONL sink (claim→probe→verdict→outcome)
+│   │   ├── flywheel.py          ← no-retention runtime observer; test-only memory sink
 │   │   └── report_store.py      ← SQLite ReportStore: durable reports + human outcomes
 │   │
 │   └── core/                   ─────────────── CROSS-CUTTING ──────────────────────────────
@@ -174,7 +174,7 @@ depth-eval-engine/
 │       └── logging.py           ← structlog (JSON/console)
 │
 ├── data/
-│   └── flywheel.jsonl           ← runtime training-data sink (gitignored)
+│   └── flywheel.jsonl           ← legacy file only; no new writes (gitignored)
 │
 └── tests/
     ├── conftest.py              ← offline fixtures: NullLLM/FakeLLM, InMemory stores, FakeGitHub
@@ -258,7 +258,7 @@ INPUT  (POST /evaluate)
    │ verdicts[] (classified) + aggregates
    ▼
 ┌─ ⑦ report ──────────────────────────────────────────────────────────────────┐
-│  side-effect: flywheel.log() one JSONL row/claim { …, outcome: null }        │
+│  observer: flywheel.log() is non-retaining in production                    │
 │  out: + report (Report)                                                      │
 └──────────────────────────────────────────────────────────────────────────────┘
    │
@@ -373,10 +373,9 @@ Grounds **only anchored claims** against **first-party** GitHub repos (no scrapi
 - Per claim: if it has an `external_anchor.repo`, fetch repo evidence via
   `services.github.gather_repo_evidence(owner, repo)`. Else if the candidate shared a
   top-level `github_url`, use that as soft grounding for the claim. Results cached per `(owner,repo)`.
-- Fetched evidence strings are embedded into ChromaDB (`vectorstore.add`), then for
-  each claim `vectorstore.query(claim.text, n_results=3)` retrieves the most relevant
-  lines and merges them into that claim's grounding.
-- Vector store failure is swallowed (`log.warning`) — grounding is best-effort.
+- Evidence attaches directly to the claim's selected repo. The cache lives only
+  for this evaluation; evidence is neither added to nor queried from the shared
+  vector store. This prevents cross-candidate and cross-claim evidence leakage.
 
 **Out:** `provenance: {claim_id → [evidence strings]}`. Empty for claims with no anchor.
 
@@ -489,13 +488,15 @@ Assembles the advisory `Report` and feeds the flywheel.
   `Report.ai_generation` / `Report.cross_field` / `Report.fabrication_risk`
   (from state) and `Report.resume_farm` (an API-layer input on POST
   /candidates; `null` on POST /evaluate). See [FABRICATION.md](FABRICATION.md).
-- **Flywheel:** one JSONL record per claim →
+- **Optional test observer:** one event per claim →
   `{evaluation_id, report_id, claim_id, claim_text, claim_type, coherence_score,
   confidence, status, probes, evidence_count, outcome:null}`.
   `outcome` is left open, closed later by a human/hiring signal — the training loop (constraint #6).
   Plus one record per present fabrication assessment
   (`record_type: "ai_signals" | "cross_field" | "resume_farm" |
   "fabrication_risk"`), also with `outcome: null`.
+  Production uses `NullFlywheel`: these events are not persisted. Durable
+  reports and labels remain in SQL; `flywheel_path` no longer opens a file.
 
 **Out:** `report: Report` → persisted via `ReportStore` and returned by the API.
 
@@ -527,14 +528,11 @@ owns all three rules — the claim must belong to the report, `notes` must fit
 rather than an `X-Org-Key` machine client is behind the call,
 `recorded_by_org_user_id`).
 
-Each judgment lands in **two** places: the store's `outcomes` table (queryable
-per report, `GET /report/{id}/outcomes`) and the flywheel JSONL
-(`record_type: "outcome"`), so one stream joins every evaluation row to its
-eventual ground truth — the training loop (constraint #6) is now closable.
-**The flywheel record carries the label and the provenance but NOT `notes`**
-(S8.5): that file is append-only with no erasure path, and free text a human
-typed beside a candidate's name has no business in it. The notes stay in
-`outcomes`, where `outcomes → reports → candidates` CASCADE reaches them.
+Each judgment lands in the SQL `outcomes` table (queryable per report through
+`GET /report/{id}/outcomes`). Labels, provenance and notes are retained there;
+`outcomes → reports → candidates` CASCADE reaches them. The optional test
+observer still receives a label/provenance event without notes, but production
+retains no duplicate event stream. Existing JSONL files require separate cleanup.
 `ReportStore.delete()` erases a report + outcomes for DPDP requests.
 
 ---
@@ -595,7 +593,7 @@ YAML key (env override = `DEE_<KEY>`):
 | `vectorstore_init_timeout_seconds` | `15` | Bounded Chroma init; on timeout/error startup degrades to in-memory |
 | `chroma_persist_dir` | `./.chroma` | Vector store on disk |
 | `chroma_collection` | `depth-eval-evidence` | Collection name |
-| `flywheel_path` | `./data/flywheel.jsonl` | Training-data sink |
+| `flywheel_path` | `./data/flywheel.jsonl` | Deprecated, ignored for new writes; legacy files are not automatically deleted |
 | `report_db_path` | `./data/reports.db` | SQLite report store (reports + human outcomes) |
 | `max_resume_chars` | `200000` | Evaluate-input cap; oversize → 422, never OOM |
 | `max_pdf_b64_chars` | `14000000` | ≈10 MB PDF cap (base64 length) |

@@ -740,3 +740,51 @@ def test_verify_accepts_the_matching_challenge_not_the_first_one(auth):
         email="two@example.in", plane=AuthPlane.CANDIDATE, code=real_code, at=NOW
     )
     assert principal.candidate_id
+
+
+# ── F04: one code, one session ──────────────────────────────────────────────
+
+
+def test_one_code_cannot_mint_two_sessions_under_an_interleaved_read(
+    auth, monkeypatch
+):
+    """The F04 interleaving, driven directly.
+
+    Lookup, validation, consumption and session creation each ran in their own
+    transaction, and consumption deleted BY SCOPE without reporting whether
+    this caller took the row. So two verifications that both read the challenge
+    before either deleted it both validated, both "deleted", and both minted a
+    session from one code.
+
+    The second caller here is given exactly what a concurrent one would hold:
+    the row as it looked before the winner consumed it. It must be refused.
+    """
+    from app.auth.challenges import ChallengeScope
+
+    email = "race@example.in"
+    _existing_candidate(auth, email)
+    assert auth.service.request_code(
+        email=email, plane=AuthPlane.CANDIDATE, purpose=LoginPurpose.LOGIN,
+        at=NOW, rng=_rng(),
+    ) is True
+    code = auth.code()
+
+    scope = ChallengeScope(
+        auth.service.hash_email(email), LoginPurpose.LOGIN, AuthPlane.CANDIDATE
+    )
+    stale = auth.service._store.get_challenge(scope)
+    assert stale is not None
+
+    token_a, _, principal_a = auth.service.verify_code(
+        email=email, plane=AuthPlane.CANDIDATE, code=code, at=NOW
+    )
+    assert token_a and principal_a.session_id
+
+    # The loser is still holding the pre-delete snapshot.
+    monkeypatch.setattr(
+        auth.service._store, "get_challenge", lambda s: stale if s == scope else None
+    )
+    with pytest.raises(ChallengeRefused):
+        auth.service.verify_code(
+            email=email, plane=AuthPlane.CANDIDATE, code=code, at=NOW
+        )

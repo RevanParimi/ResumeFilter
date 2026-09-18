@@ -176,7 +176,7 @@ def test_challenge_upsert_supersedes_rather_than_accumulating(store_fixture):
     store.upsert_challenge(
         scope, code_hash="a", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
     )
-    store.bump_attempts(scope)
+    store.bump_attempts(scope, challenge_id=store.get_challenge(scope).id)
     store.upsert_challenge(
         scope, code_hash="b", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
     )
@@ -206,8 +206,9 @@ def test_bump_attempts_counts(store_fixture):
     store.upsert_challenge(
         scope, code_hash="a", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
     )
-    store.bump_attempts(scope)
-    store.bump_attempts(scope)
+    challenge_id = store.get_challenge(scope).id
+    assert store.bump_attempts(scope, challenge_id=challenge_id) == 1
+    assert store.bump_attempts(scope, challenge_id=challenge_id) == 1
     assert store.get_challenge(scope).attempts == 2
 
 
@@ -221,13 +222,16 @@ def test_payload_survives_the_round_trip(store_fixture):
     assert store.get_challenge(scope).payload == {"organization_name": "Acme"}
 
 
-def test_delete_challenge_consumes_it(store_fixture):
+def test_consume_challenge_removes_the_row(store_fixture):
     _, store, _, _ = store_fixture
     scope = _scope()
     store.upsert_challenge(
         scope, code_hash="a", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
     )
-    store.delete_challenge(scope)
+    row = store.get_challenge(scope)
+    assert store.consume_challenge(
+        scope, challenge_id=row.id, code_hash=row.code_hash
+    ) is True
     assert store.get_challenge(scope) is None
 
 
@@ -316,3 +320,85 @@ def test_email_hash_for_feeds_the_erasure_path(store_fixture):
     candidates, _, cid, _ = store_fixture
     assert candidates.email_hash_for(cid) == "hash-1"
     assert candidates.email_hash_for("no-such-candidate") is None
+
+
+# ── F04: atomic consumption and attempt accounting ──────────────────────────
+
+
+def test_consume_challenge_admits_exactly_one_caller(store_fixture):
+    """The single-use guarantee.
+
+    Deleting BY SCOPE cannot tell the winner from the loser: both callers
+    issue a delete, both see no error, and both go on to mint a session from
+    one code. Consumption has to report whether THIS caller took the row.
+    """
+    _, store, _, _ = store_fixture
+    scope = _scope()
+    store.upsert_challenge(
+        scope, code_hash="a", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
+    )
+    row = store.get_challenge(scope)
+
+    first = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash)
+    second = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash)
+
+    assert first is True
+    assert second is False
+    assert store.get_challenge(scope) is None
+
+
+def test_consume_challenge_refuses_a_superseded_row(store_fixture):
+    """A caller holding the row it read before a resend must not consume the
+    NEW challenge -- it validated a code that no longer opens this door."""
+    _, store, _, _ = store_fixture
+    scope = _scope()
+    store.upsert_challenge(
+        scope, code_hash="old", expires_at=NOW + timedelta(minutes=10),
+        payload={}, at=NOW,
+    )
+    stale = store.get_challenge(scope)
+    store.upsert_challenge(
+        scope, code_hash="new", expires_at=NOW + timedelta(minutes=10),
+        payload={}, at=NOW,
+    )
+
+    assert store.consume_challenge(
+        scope, challenge_id=stale.id, code_hash=stale.code_hash
+    ) is False
+    assert store.get_challenge(scope).code_hash == "new"
+
+
+def test_consume_challenge_refuses_a_row_whose_code_changed(store_fixture):
+    """Identity alone is not enough: the row must still carry the digest the
+    caller actually validated against."""
+    _, store, _, _ = store_fixture
+    scope = _scope()
+    store.upsert_challenge(
+        scope, code_hash="a", expires_at=NOW + timedelta(minutes=10), payload={}, at=NOW
+    )
+    row = store.get_challenge(scope)
+
+    assert store.consume_challenge(
+        scope, challenge_id=row.id, code_hash="some-other-digest"
+    ) is False
+    assert store.get_challenge(scope) is not None
+
+
+def test_bump_attempts_leaves_a_resent_challenges_budget_alone(store_fixture):
+    """Scope-wide read-modify-write charged a guess against the WRONG row: a
+    late wrong code for the old challenge burned an attempt on the fresh one
+    the user is about to type."""
+    _, store, _, _ = store_fixture
+    scope = _scope()
+    store.upsert_challenge(
+        scope, code_hash="old", expires_at=NOW + timedelta(minutes=10),
+        payload={}, at=NOW,
+    )
+    stale = store.get_challenge(scope)
+    store.upsert_challenge(
+        scope, code_hash="new", expires_at=NOW + timedelta(minutes=10),
+        payload={}, at=NOW,
+    )
+
+    assert store.bump_attempts(scope, challenge_id=stale.id) == 0
+    assert store.get_challenge(scope).attempts == 0

@@ -1,8 +1,8 @@
 """provenance — ground anchored claims against first-party GitHub evidence.
 
 For claims the candidate linked (or a candidate-level github_url they shared),
-fetch repo signals via the GitHub API, embed them in the vector store, and
-retrieve grounding per claim. CONSENT-CLEAN: only first-party links; no scraping.
+fetch repo signals via the GitHub API and attach them only to the linked claims.
+Cache within this evaluation; never retrieve another candidate's evidence.
 """
 
 from __future__ import annotations
@@ -18,8 +18,6 @@ def make_provenance_node(services: Services):
 
     async def provenance(state: EvaluationState) -> dict:
         prov: dict[str, list[str]] = {}
-        docs: list[str] = []
-        ids: list[str] = []
         cache: dict[tuple[str, str], list[str]] = {}
 
         async def repo_evidence(owner: str, repo: str) -> list[str]:
@@ -41,23 +39,6 @@ def make_provenance_node(services: Services):
 
             if evidence:
                 prov[claim.id] = list(evidence)
-                for i, line in enumerate(evidence):
-                    docs.append(line)
-                    ids.append(f"{claim.id}-{i}")
-
-        if docs:
-            try:
-                services.vectorstore.add(documents=docs, ids=ids)
-                for claim in state.claims:
-                    grounded = services.vectorstore.query(text=claim.text, n_results=3)
-                    if grounded:
-                        merged = prov.get(claim.id, [])
-                        for g in grounded:
-                            if g not in merged:
-                                merged.append(g)
-                        prov[claim.id] = merged
-            except Exception as exc:  # vector store is best-effort grounding
-                log.warning("vectorstore_failed", error=str(exc))
 
         log.info("provenance_done", grounded_claims=len(prov))
         return {"provenance": prov}

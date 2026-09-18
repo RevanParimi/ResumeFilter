@@ -80,3 +80,43 @@ def test_latest_as_of_returns_newest_cut_or_none():
                                  view_version=view.version, values={}, missing=()),
             consent_state={"allowed": True}, materialized_at=t))
     assert fs.latest_as_of(view.name, view.version) == t2
+
+
+def test_latest_pool_keeps_partial_refresh_and_respects_historical_cut():
+    from datetime import timedelta
+    from app.features.materialize import MaterializedVector
+    from app.features.schema import FeatureVector
+
+    cs = make_candidate_store()
+    fs = FeatureStore(cs._session_factory)
+    ids = [cs.ingest(ExtractionResult(profile=heuristic_profile(text), method="heuristic"),
+                     resume_text=text).candidate_id for text in (RESUME, "Another person")]
+    later = T + timedelta(days=1)
+    future = later + timedelta(days=1)
+    for cid, at, name, version in [
+        (ids[0], T, "test", 1), (ids[1], T, "test", 1),
+        (ids[1], later, "test", 1), (ids[0], future, "test", 1),
+        (ids[0], later, "other", 1), (ids[0], later, "test", 2),
+    ]:
+        fs.upsert_vector(MaterializedVector(vector=FeatureVector(
+            candidate_id=cid, as_of=at, view_name=name, view_version=version,
+            values={}, missing=()), consent_state={}, materialized_at=at))
+    pool = fs.latest_vectors_for_view("test", 1, as_of=later)
+    assert {m.vector.candidate_id: m.vector.as_of for m in pool} == {ids[0]: T, ids[1]: later}
+    assert len(fs.latest_vectors_for_view("test", 1, as_of=T)) == 2
+    assert fs.latest_vectors_for_view("test", 1, as_of=T - timedelta(seconds=1)) == []
+    assert len(fs.vectors_for_view("test", 1, as_of=later)) == 1  # exact-cut export unchanged
+
+
+def test_default_materialization_batch_uses_one_snapshot_time(services):
+    from app.features.materialize import materialize_all
+
+    ids = [services.candidates.ingest(
+        ExtractionResult(profile=heuristic_profile(text), method="heuristic"),
+        resume_text=text).candidate_id for text in (RESUME, "Another person")]
+    registry = get_feature_registry()
+    result = materialize_all(ids, view=default_view(registry, settings=services.settings),
+                             registry=registry, candidate_store=services.candidates,
+                             report_store=services.report_store, ledger_store=services.ledger)
+    assert len(result) == 2
+    assert len({m.vector.as_of for m in result}) == 1

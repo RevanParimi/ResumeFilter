@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings, get_settings
@@ -100,6 +100,35 @@ class FeatureStore:
                 q = q.where(FeatureVectorRow.as_of == _key_dt(as_of))
             q = q.order_by(FeatureVectorRow.candidate_id)
             return [_to_mv(r) for r in session.execute(q).scalars().all()]
+
+    def latest_vectors_for_view(
+        self, view_name: str, view_version: int, *, as_of: datetime
+    ) -> list[MaterializedVector]:
+        """One latest eligible snapshot per candidate, including partial refreshes.
+
+        Exact-cut exports continue to use vectors_for_view. Never select a
+        snapshot newer than the requested historical cutoff.
+        """
+        view_filter = (
+            FeatureVectorRow.view_name == view_name,
+            FeatureVectorRow.view_version == view_version,
+        )
+        latest = (
+            select(FeatureVectorRow.candidate_id,
+                   func.max(FeatureVectorRow.as_of).label("snapshot_time"))
+            .where(*view_filter, FeatureVectorRow.as_of <= _key_dt(as_of))
+            .group_by(FeatureVectorRow.candidate_id)
+            .subquery()
+        )
+        query = (
+            select(FeatureVectorRow)
+            .join(latest, (FeatureVectorRow.candidate_id == latest.c.candidate_id)
+                  & (FeatureVectorRow.as_of == latest.c.snapshot_time))
+            .where(*view_filter)
+            .order_by(FeatureVectorRow.candidate_id)
+        )
+        with self._session_factory() as session:
+            return [_to_mv(row) for row in session.execute(query).scalars().all()]
 
     def latest_as_of(self, view_name: str, view_version: int) -> Optional[datetime]:
         """Newest materialized `as_of` for a view (aware UTC), or None if none."""

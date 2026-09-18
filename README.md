@@ -77,11 +77,11 @@ ingest → ai_signals → cross_field → claim_extraction → provenance
 | `ai_signals` | **Advisory** AI-generated-text band: 4 deterministic stylometry detectors ⊕ optional capped LLM pass. Never touches scores ([FABRICATION.md](FABRICATION.md)). |
 | `cross_field` | **Advisory** timeline forensics over the extracted profile (overlaps, gaps, education↔employment, seniority-vs-tenure). Pure date math, no LLM. |
 | `claim_extraction` | LLM extracts atomic claims tagged `{domain, claim_type, specificity, anchor?}` + candidate context. Deterministic heuristic fallback when no API key. |
-| `provenance` | For anchored claims, fetch GitHub signals (repo/commits/languages/recency), embed in ChromaDB, retrieve grounding. **First-party links only.** |
+| `provenance` | Fetch GitHub signals for each claim's linked repo (or the candidate's shared repo). Evidence stays within the evaluation; repeated links share a local fetch cache. **First-party links only.** |
 | `plausibility` ★ | **The core.** Hybrid of (a) the active domain's rule registry and (b) an LLM senior-engineer reasoning pass. Produces per-claim coherence + expected/missing signals + evidence. |
 | `probe_generation` | Targeted follow-up questions a fabricator can't survive, scoped to suspicious claims. |
 | `scoring` | Conservative calibration → per-claim status + confidence-weighted depth band. |
-| `report` | Assemble the explainable report (verdict + evidence + probes + band); log every claim to the flywheel. |
+| `report` | Assemble the explainable report (verdict + evidence + probes + band); retain it through the SQL report store. |
 
 **Explainability is mandatory:** there is no bare "fake"/"real" label anywhere.
 Each verdict carries a coherence score, confidence, an evidence trail, reasoning,
@@ -182,7 +182,7 @@ An absent file is a clean no-op, so it is safe to run anywhere.
 | `GET /candidates/{id}` · `/resumes` · `/reports` | Candidate summary + newest profile (hashes only), resume versions, linked reports. |
 | `DELETE /candidates/{id}` (and `/resumes/{rid}`) | DPDP hard erasure: resumes (raw text), extractions, fingerprints, linked reports. |
 | `GET /report/{id}` | Fetch a persisted report (survives restarts; since S8.1 it lives in the main database beside its candidate). |
-| `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`. Also appended to the flywheel — this closes the training loop. |
+| `POST /report/{id}/outcome` | Record a human outcome (`verified_genuine` \| `verified_fabricated` \| `candidate_clarified` \| `inconclusive`), optionally per `claim_id`, in the erasable SQL outcome store. |
 | `GET /report/{id}/outcomes` | List recorded outcomes for a report. |
 | `GET /domains` | Registered domains + claim taxonomies. |
 | `GET /healthz` | Liveness + effective mode (`version`, `env`, `llm_mode`, `domains`). |
@@ -318,12 +318,16 @@ the mechanical purge job is not built yet.
 
 ## Flywheel
 
-Every `(claim → probe → verdict → outcome?)` record is appended to a pluggable
-store ([app/services/flywheel.py](src/app/services/flywheel.py), JSONL by default)
-with an open `outcome` field. Human reviewers close the loop through
-`POST /report/{id}/outcome`; each judgment lands in both the report store and
-the flywheel (`record_type: "outcome"`), so one stream joins evaluations to
-ground truth for future calibration/training.
+Reports and human outcomes are retained in SQL. Candidate erasure cascades to
+their reports/outcomes; standalone reports follow their own report deletion and
+retention lifecycle. The optional [observer](src/app/services/flywheel.py) uses
+`NullFlywheel` in production and an explicit in-memory observer in offline tests.
+It no longer writes duplicate JSONL records outside SQL's deletion lifecycle.
+
+`flywheel_path` / `DEE_FLYWHEEL_PATH` is a deprecated compatibility setting and
+does not enable file retention. Existing JSONL files are left untouched and need
+separate legacy cleanup (R1-S1-T2). Training/quality analysis uses SQL sources;
+any external JSONL consumer must migrate rather than expect new appended rows.
 
 ---
 

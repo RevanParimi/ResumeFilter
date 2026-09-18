@@ -1,41 +1,28 @@
-"""The flywheel is append-only audit, and its writer was unguarded.
-
-On this machine -- Windows, under OneDrive -- a locked file is a recorded trap
-rather than a hypothetical, and a blocked audit write raised straight out into
-whatever pipeline node called it.
-"""
+"""The default observer cannot retain or write another copy of candidate data."""
 
 from __future__ import annotations
 
-import pytest
-
-from app.services.flywheel import JsonlFlywheel
+from app.services.flywheel import InMemoryFlywheel, build_flywheel
 
 
-def test_a_blocked_write_does_not_take_the_pipeline_down(
-    settings, tmp_path, log_events, monkeypatch
-):
-    fw = JsonlFlywheel(path=str(tmp_path / "fw.jsonl"), settings=settings)
+def test_default_observer_never_opens_a_file(settings, monkeypatch):
 
     def _boom(*a, **kw):
-        raise OSError("file is locked by another process")
+        raise AssertionError("the observer must not perform file I/O")
 
     monkeypatch.setattr("builtins.open", _boom)
-    fw.log({"event": "claim_verified"})  # must not raise
-    assert any(e["event"] == "flywheel_write_failed" for e in log_events)
+    build_flywheel(settings).log({"claim_text": "private candidate detail"})
 
 
-def test_a_normal_write_still_lands(settings, tmp_path):
-    path = tmp_path / "fw.jsonl"
-    fw = JsonlFlywheel(path=str(path), settings=settings)
-    fw.log({"event": "claim_verified"})
-    assert "claim_verified" in path.read_text(encoding="utf-8")
+def test_legacy_path_does_not_create_directories(settings, tmp_path):
+    parent = tmp_path / "unused"
+    fw = build_flywheel(settings.model_copy(update={"flywheel_path": str(parent / "fw.jsonl")}))
+    fw.log({"claim_text": "private detail", "probes": ["private follow-up"]})
+    assert not parent.exists()
 
 
-def test_a_non_serializable_record_still_raises(settings, tmp_path):
-    """OSError only. A record that cannot be serialized is a REAL BUG in the
-    caller, and this sprint does not convert loud bugs into quiet ones -- that
-    is the trade the whole design refused."""
-    fw = JsonlFlywheel(path=str(tmp_path / "fw.jsonl"), settings=settings)
-    with pytest.raises(TypeError):
-        fw.log({"event": "bad", "obj": object()})
+def test_explicit_test_observer_keeps_synthetic_events():
+    observer = InMemoryFlywheel()
+    observer.log({"claim_text": "synthetic test claim"})
+    assert observer.records[0]["claim_text"] == "synthetic test claim"
+    assert "logged_at" in observer.records[0]

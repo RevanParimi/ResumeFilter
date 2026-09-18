@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -323,22 +323,52 @@ class AuthStore:
                 select(LoginChallengeRow).where(self._scope_filter(scope))
             ).scalars().first()
 
-    def bump_attempts(self, scope: ChallengeScope) -> None:
-        with self._session_factory() as session:
-            row = session.execute(
-                select(LoginChallengeRow).where(self._scope_filter(scope))
-            ).scalars().first()
-            if row is None:
-                return
-            row.attempts = (row.attempts or 0) + 1
-            session.commit()
+    def bump_attempts(self, scope: ChallengeScope, *, challenge_id: str) -> int:
+        """Charge one guess against ONE row. Returns the rows updated.
 
-    def delete_challenge(self, scope: ChallengeScope) -> None:
-        """Consume it. Short-TTL secret material is deleted on paths that
-        already run -- hygiene, not a retention policy (the S7.1 precedent)."""
+        Two properties, and the old read-modify-write had neither. The
+        increment is computed by the database, so two concurrent guesses cannot
+        both read 0 and both write 1 -- an attempt cap that loses increments
+        under load is exactly the cap an attacker parallelises away. And it is
+        scoped to `challenge_id`, so a late guess against a superseded code
+        cannot spend the fresh budget of the code the user is about to type.
+        """
         with self._session_factory() as session:
-            session.execute(delete(LoginChallengeRow).where(self._scope_filter(scope)))
+            result = session.execute(
+                update(LoginChallengeRow)
+                .where(self._scope_filter(scope), LoginChallengeRow.id == challenge_id)
+                .values(attempts=func.coalesce(LoginChallengeRow.attempts, 0) + 1)
+            )
             session.commit()
+            return int(result.rowcount or 0)
+
+    def consume_challenge(
+        self, scope: ChallengeScope, *, challenge_id: str, code_hash: str
+    ) -> bool:
+        """Take this exact challenge, once. True only for the caller that got it.
+
+        A code is single-use, and the OLD delete-by-scope could not tell the
+        winner from the loser: both callers of an interleaved verification
+        deleted, neither saw an error, and both went on to mint a session from
+        one code. The conditional DELETE is the whole guarantee -- the database
+        picks the winner, and `rowcount` reports it.
+
+        `code_hash` is in the predicate as well as the id because the caller
+        validated a specific digest; if the row was re-minted under it (same
+        scope, new secret) it must lose rather than consume a code it never
+        checked. Short-TTL secret material still leaves on a path that already
+        runs -- hygiene, not a retention policy (the S7.1 precedent).
+        """
+        with self._session_factory() as session:
+            result = session.execute(
+                delete(LoginChallengeRow).where(
+                    self._scope_filter(scope),
+                    LoginChallengeRow.id == challenge_id,
+                    LoginChallengeRow.code_hash == code_hash,
+                )
+            )
+            session.commit()
+            return int(result.rowcount or 0) == 1
 
     def delete_challenges_for_email(self, email_hash: str) -> int:
         """Every purpose and every plane. The erasure path calls this because

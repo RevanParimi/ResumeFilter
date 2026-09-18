@@ -62,6 +62,25 @@ def test_email_match_takes_precedence_over_phone(store):
     assert hit.matched_on == "email_hash"
 
 
+@pytest.mark.parametrize("existing_email", [None, "victim@example.com"])
+def test_unmatched_email_cannot_claim_candidate_through_phone(store, existing_email):
+    victim = store.ingest(extraction(email=existing_email, phone="9876543210"), "victim")
+    incoming = extraction(email="new@example.com", phone="9876543210")
+    other = store.ingest(incoming, "other")
+    assert other.candidate_id != victim.candidate_id
+    assert store.get_candidate(victim.candidate_id).email_hash == (
+        extraction(email=existing_email).profile.contact.email_hash
+    )
+    assert store.find_by_email_hash(incoming.profile.contact.email_hash) == other.candidate_id
+
+
+def test_ambiguous_phone_does_not_choose_an_arbitrary_candidate(store):
+    a = store.ingest(extraction(email="a@example.com", phone="9876543210"), "a")
+    b = store.ingest(extraction(email="b@example.com", phone="9876543210"), "b")
+    anonymous = store.ingest(extraction(phone="9876543210"), "unknown")
+    assert anonymous.candidate_id not in {a.candidate_id, b.candidate_id}
+
+
 def test_no_contact_always_creates_new_candidate(store):
     a = store.ingest(extraction(name="Anon One"), "r1")
     b = store.ingest(extraction(name="Anon Two"), "r2")

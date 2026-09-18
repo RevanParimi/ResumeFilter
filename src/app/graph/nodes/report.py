@@ -1,8 +1,8 @@
 """report — assemble the explainable, advisory report; feed the flywheel.
 
 Mandates enforced here: human_review_required + advisory are always set; the
-report never carries an auto-reject. Every (claim → probe → verdict) record is
-logged to the flywheel with an open ``outcome`` field for later feedback.
+report never carries an auto-reject. The optional observer receives claim
+events for offline tests; production retains only the SQL report/outcomes.
 """
 
 from __future__ import annotations

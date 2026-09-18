@@ -182,16 +182,19 @@ class CandidateStore:
             )
             if row is not None:
                 return row, "email_hash"
+            # A submitted phone is not proof that a new email owns an existing
+            # profile. In particular, never backfill a login email via this path.
+            return None, None
         if contact.phone_hash:
-            row = (
+            rows = (
                 session.execute(
-                    select(CandidateRow).where(CandidateRow.phone_hash == contact.phone_hash)
+                    select(CandidateRow).where(CandidateRow.phone_hash == contact.phone_hash).limit(2)
                 )
                 .scalars()
-                .first()
+                .all()
             )
-            if row is not None:
-                return row, "phone_hash"
+            if len(rows) == 1:
+                return rows[0], "phone_hash"
         return None, None
 
     @staticmethod

@@ -118,3 +118,51 @@ def test_a_dead_challenge_reports_why_instead_of_wrong_code():
         supplied_hash="wrong", attempts=5, max_attempts=5
     ) == VerifyOutcome.EXHAUSTED
     assert _verify(supplied_hash="wrong", expires_at=NOW) == VerifyOutcome.EXPIRED
+
+
+def test_mint_code_for_defaults_to_a_cryptographic_rng(settings):
+    """`random.Random` is a Mersenne Twister: its internal state is
+    recoverable from enough observed output, so codes an attacker has already
+    seen would predict the next one. No unit test can distinguish the two
+    statistically, so the assertion is on the source itself.
+    """
+    from app.auth import challenges as challenge_logic
+
+    cfg = settings.model_copy(update={"login_otp_static_code": None})
+    seen: list[random.Random] = []
+    real = challenge_logic.otp_logic.generate_code
+
+    def _record(length, *, rng):
+        seen.append(rng)
+        return real(length, rng=rng)
+
+    original = challenge_logic.otp_logic.generate_code
+    challenge_logic.otp_logic.generate_code = _record
+    try:
+        challenge_logic.mint_code_for(cfg)
+    finally:
+        challenge_logic.otp_logic.generate_code = original
+
+    assert seen and isinstance(seen[0], random.SystemRandom)
+
+
+def test_no_production_path_mints_a_login_code_from_a_seeded_rng():
+    """The companion to the single-mint-door scan.
+
+    One door minting from `SystemRandom` is worth nothing if a caller upstream
+    supplies its own `random.Random()` -- the same "rule at one entry point and
+    not the other" shape this repo has hit in every PI.
+    """
+    import pathlib
+    import re
+
+    src_root = pathlib.Path(__file__).resolve().parent.parent / "src" / "app"
+    offenders = []
+    for path in (src_root / "auth").rglob("*.py"):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if re.search(r"\brandom\.Random\s*\(", line):
+                offenders.append(f"{path.name}:{i}: {line.strip()}")
+
+    assert offenders == [], (
+        "a seeded-by-default RNG on the login OTP path: " + "; ".join(offenders)
+    )

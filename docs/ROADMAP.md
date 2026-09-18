@@ -1,13 +1,112 @@
 # Veritas Roadmap — living plan (update every session)
 
-> **New chat? Start here.** Read this file top to bottom, then open the spec:
-> `docs/superpowers/specs/2026-07-06-veritas-talent-platform-design.md`.
-> Work happens sprint by sprint: each sprint gets a spec/plan under
-> `docs/superpowers/`, is built TDD-offline, and ends with `pytest -q` green
-> plus a local smoke run. Update the status board + "Current state" section
-> below before ending any session.
+> **New chat? Read [PROGRESS.md](PROGRESS.md) first.** It holds the current
+> authorized task, completed fixes, and next batch. This file is historical
+> context; read only the relevant session/spec instead of loading it in full.
 
 ## ▶ Current state
+
+- **Session 2026-09-11 — R1-S1-T3a validation still blocked by authentication.**
+  Read-only test connection retry again received password authentication
+  rejection before SQL. No database mutations, application edits or new pytest/
+  HTTP results. Existing report-store hash matches its implementation review.
+  [Evidence](delivery/tasks/R1-S1-T3a.md). Next remains T3a PostgreSQL
+  validation after correcting the local test connection; T3b not started.
+
+- **Session 2026-09-10 — R1-S1-T3a validation retry, gate remains open.**
+  Test connection now exists in `.env`, but read-only probes fail password
+  authentication. User asked to correct it locally. Focused rerun 55 passed,
+  six PostgreSQL skips; scratch HTTP/restart 19/19. Recovered previous full
+  result: 2195 passed, six skips, 42 warnings, 423.01s. No application changes
+  or remote data mutations. [Evidence](delivery/tasks/R1-S1-T3a.md).
+  Next remains T3a PostgreSQL validation; T3b not started.
+
+- **Session 2026-09-10 — R1-S1-T3a implemented, awaiting PostgreSQL validation.**
+  Split T3 into report/outcome work (T3a) and interview/derived writes (T3b).
+  Verified-erasure translation now covers stale report updates; race logs omit
+  SQL parameters carrying candidate content. Three regressions reproduced.
+  Focused tests 55 passed, six PostgreSQL skips; real HTTP/restart 19/19 passed.
+  Full suite 2195 passed, six skips (recovered next session). Self-review
+  complete; no schema/UI change.
+  [Evidence](delivery/tasks/R1-S1-T3a.md). Next: T3a PostgreSQL validation;
+  T3b and parent F05 remain open. Existing user data was not cleaned up.
+
+- **Session 2026-09-09 — R1-S1-T2 complete (F05 part 2).**
+  Added counts-only legacy-file inspection and explicit whole-file cleanup,
+  with digest/path guards, atomic empty replacement, no text backups and retry
+  behavior. Ownership is never guessed; existing user data remains untouched.
+  Focused pytest 31 passed; full suite **2186 passed**, 42 warnings, 344.08s;
+  synthetic CLI smoke 10/10 and subprocess interruption regressions passed.
+  Self-review complete; no app/SQL/UI changes or corresponding journey claims.
+  [Task evidence](delivery/tasks/R1-S1-T2.md), [policy](LEGACY_FLYWHEEL.md).
+  Next chat: **R1-S1-T3** only. F05 stays open through T3 and the sprint gate.
+
+- **Session 2026-09-09 — R1-S1-T1 complete (F05 part 1).**
+  Retired the duplicate JSONL writer; production uses a non-retaining observer.
+  Reports/outcomes stay in the existing erasable SQL stores. Legacy path config
+  remains accepted but does not write; existing files are untouched. Six
+  regressions observed failing before the fix. Focused pytest 57 passed; full
+  suite **2163 passed**, 42 warnings, 286.40s. Default-app restart/erasure HTTP
+  smoke 16/16; employer outcome/CSRF smoke 21/21. Self-review complete; no new
+  schema/SQL/UI, no PostgreSQL/browser/live-provider validation claimed.
+  [Task evidence](delivery/tasks/R1-S1-T1.md). Next chat: **R1-S1-T2** only,
+  legacy-file policy/inspectable cleanup. F05 stays open through T2/T3 and Q.
+
+- **Session 2026-09-09 — PI/sprint/task delivery plan, documentation only.**
+  [Delivery plan](delivery/README.md) maps F01–F16 into 5 remediation PIs,
+  12 sprints, 38 development tasks and 12 integration-review tasks. Each task
+  has acceptance criteria, test scenarios, dependencies and review focus;
+  [workflow](delivery/WORKFLOW.md) requires evidence before completion.
+  One task per chat remains the rule. Next is R1-S1-T1 (F05 new-record erasure);
+  legacy-file handling and concurrent erasure are separate tasks. No application
+  code changed or pytest rerun; planning validation is recorded in PROGRESS.md.
+
+- **Session 2026-09-09 — F04: one login code, one session.**
+  `verify_code` ran lookup, validation, consumption and session creation in
+  four separate transactions, and consumption deleted BY SCOPE without
+  reporting whether the caller took the row — so two verifications that both
+  read a challenge before either deleted it both validated and both minted a
+  session from one code. The regression test reproduces exactly that (the
+  loser is handed the pre-delete snapshot a concurrent caller would hold) and
+  logged `auth.candidate.claimed` twice before the fix. Replaced
+  `AuthStore.delete_challenge(scope)` with `consume_challenge(scope,
+  challenge_id, code_hash)` — a conditional DELETE whose `rowcount` names the
+  single winner; the loser is refused `not_found`. `bump_attempts` is now an
+  id-scoped SQL `attempts + 1` instead of a read-modify-write, so concurrent
+  guesses cannot both read 0 and write 1, and a late guess against a
+  superseded code no longer spends the fresh budget of the code the user is
+  about to type. Login codes now default to `random.SystemRandom` (a Mersenne
+  Twister's state is recoverable from observed output); the service passes
+  `rng` straight through so `mint_code_for` remains the single default, and a
+  source scan keeps `random.Random(` out of `src/app/auth`. The guarded
+  `env=local` static code is unchanged. Seven new tests; full suite **2155
+  passed**, 42 warnings, 467.80 seconds. Known adjacent gap, not fixed:
+  `VerificationStore.confirm_challenge` still increments attempts as a
+  read-modify-write — it holds one transaction (so it cannot mint a duplicate
+  credential the way the login path could) but a lost increment under
+  Postgres READ COMMITTED is possible, and it is not observable through the
+  public API offline. Next: F05 erasure of derived text, then F06.
+
+- **Session 2026-09-07 — foundations fixes and compact continuation handoff.**
+  F01: unmatched emails cannot merge by phone; ambiguous phone matches stay
+  separate. F02: evidence attaches only to the selected repo within each
+  evaluation; removed shared vector retrieval from provenance. F03: shared
+  batch timestamp, latest eligible snapshot per candidate in search/matching,
+  profile aligned to vector timestamp. Eight regression cases added; focused
+  suite 45 passed; full suite **2148 passed**, 42 warnings, 346.20 seconds.
+  UI bindings (402 across 9 states) and JS syntax pass. `AGENTS.md` directs new
+  chats to the short handoff; feature formulas and limitations are documented in
+  [FEATURE_LOGIC.md](FEATURE_LOGIC.md). Next: F04 OTP concurrency/randomness,
+  then F05/F06 erasure and current-consent handling.
+
+- **Session 2026-09-07 — codebase analysis; no application fixes made.**
+  Full local suite: **2140 passed**, 42 warnings, using `.resume`.
+  UI binding check: 402 bindings across 9 states passed. Additional isolated
+  probes reproduced identity-binding, provenance-isolation, snapshot-selection,
+  erasure, OTP-consumption, LLM-validation, interview-scoring, and consent-cache
+  gaps. Feature inventory, evidence, qualifications, and suggested priorities:
+  [Codebase review](CODEBASE_REVIEW_2026-09-07.md). Findings remain open;
+  no deployment or external-provider validation was performed.
 
 - **Session 2026-08-26 — LOCAL FIXED SIGN-IN CODE, merged at `58a74a8` and
   PUSHED. 2129 → 2140 green, smokes s81 10/10 · s82 21/21 · s86 28/28 ·

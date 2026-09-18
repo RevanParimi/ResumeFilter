@@ -272,19 +272,8 @@ def main() -> int:
               org_a.post(f"/screening/reports/{adm_report}/outcome",
                          {"outcome": "verified_genuine"}).status_code == 404)
 
-        # 13. The flywheel got the label and the provenance -- and NOT the note.
-        #     That file is append-only with no erasure path.
-        wheel = [
-            json.loads(line)
-            for line in flywheel.read_text(encoding="utf-8").splitlines()
-            if '"record_type": "outcome"' in line
-        ] if flywheel.exists() else []
-        S.check("flywheel_has_the_label_and_provenance_not_the_note",
-              bool(wheel)
-              and all("notes" not in r for r in wheel)
-              and any(r.get("recorded_by") == "organization" for r in wheel)
-              and not any("had never heard" in json.dumps(r) for r in wheel),
-              f"{len(wheel)} outcome record(s)")
+        # 13. SQL outcomes above hold labels/provenance; no unmanaged duplicate.
+        S.check("no_duplicate_flywheel_file", not flywheel.exists())
 
         # 14-15. DPDP: erasure destroys the judgment through the real FKs,
         #        with nobody remembering to (outcomes -> reports -> candidates).

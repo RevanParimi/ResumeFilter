@@ -18,6 +18,7 @@ from typing import Optional, Protocol
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
@@ -40,7 +41,8 @@ class SubjectErasedError(RuntimeError):
 
     A real race -- an evaluation in flight when an erasure lands. Before S8.1
     the orphan was written and a compensating delete in the route had to
-    remember to remove it; now the foreign key refuses it outright.
+    remember to remove it; now the foreign key refuses inserts and the ORM
+    detects updates whose row was concurrently deleted.
     """
 
 
@@ -92,22 +94,27 @@ class SqlReportStore:
             row.created_at = as_utc(report.created_at)
             try:
                 s.commit()
-            except IntegrityError as exc:
-                _log.info("integrity_race", where="SqlReportStore.save", error=str(exc))
+            except (IntegrityError, StaleDataError) as exc:
+                # SQL exceptions include parameters (claims/notes). Logging
+                # their text would retain the very content erasure rejected.
+                _log.info("write_race", where="SqlReportStore.save",
+                          error_type=type(exc).__name__)
                 s.rollback()
                 if report.candidate_id is None:
-                    # No candidate FK, so any IntegrityError is unrelated to
+                    # No candidate FK, so this failure is unrelated to
                     # candidate erasure.
                     raise
-                # Two FKs now: candidate (CASCADE) and org (SET NULL).
+                # An UPDATE can lose its row without violating a foreign key.
+                # Only classify it as erasure if the candidate is also gone.
+                # Two FKs: candidate (CASCADE) and org (SET NULL).
                 # Verify the actual cause: does the candidate still exist?
                 # This is dialect-independent and checks the real precondition.
                 candidate_exists = s.get(CandidateRow, report.candidate_id) is not None
                 if not candidate_exists:
                     # The subject was genuinely erased mid-flight.
                     raise SubjectErasedError(report.candidate_id) from None
-                # Candidate exists, so the FK failure is from org_id (or some
-                # other unforeseen FK). Re-raise the original error.
+                # Candidate exists: bad org FK, report-only deletion or another
+                # unrelated failure. Preserve the original error.
                 raise
 
     def get(self, report_id: str) -> Optional[Report]:
@@ -145,7 +152,8 @@ class SqlReportStore:
             try:
                 s.commit()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="SqlReportStore.add_outcome", error=str(exc))
+                _log.info("integrity_race", where="SqlReportStore.add_outcome",
+                          error_type=type(exc).__name__)
                 s.rollback()
                 if s.get(ReportRow, rec.report_id) is None:
                     return False

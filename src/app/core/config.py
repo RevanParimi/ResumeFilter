@@ -289,7 +289,8 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./.chroma"
     chroma_collection: str = "depth-eval-evidence"
 
-    # --- Flywheel (training-data sink) ----------------------------------------
+    # Legacy compatibility only: no new JSONL is written. Reports/outcomes use
+    # the erasable SQL store. Existing files require explicit legacy cleanup.
     flywheel_path: str = "./data/flywheel.jsonl"
 
     # --- Candidates (PI-1) ------------------------------------------------------

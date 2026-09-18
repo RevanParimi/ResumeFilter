@@ -6,15 +6,19 @@ work continues across many chat sessions.
 
 ## Start of every session
 
-1. **Read `docs/ROADMAP.md` first** — it has the current sprint, next action,
-   and the full PI/sprint status board. Continue from there unless the user
-   says otherwise.
-2. Product design + decisions:
+1. **Read `docs/PROGRESS.md` first** — it is the compact current handoff and
+   ordered, authorized fix plan. "Continue" means resume its next incomplete
+   task. Use `docs/ROADMAP.md` only for relevant history; do not reload the
+   full sprint log every chat. See `AGENTS.md` for the current working agreement.
+2. Read `docs/delivery/WORKFLOW.md` and the current task brief/PI section.
+   Follow one task per chat, with acceptance tests, full pytest for code changes,
+   relevant application/browser checks and recorded self-review. Update the
+   task evidence and PI status before stopping. Product design reference when needed:
    `docs/superpowers/specs/2026-07-06-veritas-talent-platform-design.md`.
    Architecture: `FLOW.md` (pipeline) · `CANDIDATES.md` (PI-1 candidate
    backbone) · `FABRICATION.md` (PI-2 fabrication defense).
-3. **End of session:** update `docs/ROADMAP.md` (status board, "Current state",
-   session log) before finishing.
+3. **End of session:** update `docs/PROGRESS.md` with completed work, actual
+   validation, and the exact next task; add a brief entry to `docs/ROADMAP.md`.
 
 ## Non-negotiable conventions
 

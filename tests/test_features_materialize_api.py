@@ -101,3 +101,31 @@ def test_materialize_is_admin_only(services):
     with _client(services) as c:
         assert c.post("/features/materialize", json={},
                       headers={"X-Org-Key": key, "X-API-Key": "wrong"}).status_code == 401
+
+
+def test_default_batch_and_partial_refresh_keep_all_candidates_searchable(services):
+    from app.candidates.extractor import heuristic_profile
+    from app.candidates.schema import ExtractionResult
+
+    ids = [services.candidates.ingest(
+        ExtractionResult(profile=heuristic_profile(text), method="heuristic"),
+        resume_text=text).candidate_id for text in ("Jane Rao\nSkills: Python", "John Rao\nSkills: SQL")]
+    _, key = _org_key(services)
+    with _client(services) as c:
+        job = c.post("/jobs", headers={"X-Org-Key": key}, json={
+            "title": "Engineer", "must_have_skills": ["python"]})
+        assert job.status_code == 200, job.text
+        job_id = job.json()["id"]
+        for candidates in (ids, ids[:1]):
+            run = c.post("/features/materialize", json={"candidate_ids": candidates})
+            assert run.status_code == 200, run.text
+            assert run.json()["as_of"] is not None
+            assert run.json()["materialized"] == len(candidates)
+            match = c.post(f"/jobs/{job_id}/match", headers={"X-Org-Key": key}, json={})
+            assert match.status_code == 200, match.text
+            assert match.json()["pool_size"] == 2
+            search = c.post("/talent/search", json={"ranking": {"terms": [
+                {"feature": "candidate.years_experience", "weight": 1.0},
+            ]}})
+            assert search.status_code == 200, search.text
+            assert search.json()["pool_size"] == 2

@@ -276,9 +276,10 @@ class AuthService:
             # so refusing costs the user nothing.
             raise ChallengeRefused("cooldown")
 
-        code, digest = challenge_logic.mint_code_for(
-            self._settings, rng=rng or random.Random()
-        )
+        # `rng` passes straight through: `mint_code_for` owns the default, so
+        # the cryptographic source cannot be honoured at one mint site and
+        # silently replaced by a seeded one here.
+        code, digest = challenge_logic.mint_code_for(self._settings, rng=rng)
 
         # SEND FIRST, persist second. A provider outage must not consume or
         # supersede anything: a retry has to be free, so an SMTP failure never
@@ -390,16 +391,26 @@ class AuthService:
             # Only now is this a real failure, so only now does it cost an
             # attempt -- and only on the challenges the code was actually
             # wrong for, never on one that was merely expired or exhausted.
-            for scope, _, outcome in outcomes:
+            for scope, row, outcome in outcomes:
                 if outcome == VerifyOutcome.WRONG_CODE:
-                    self._store.bump_attempts(scope)
+                    self._store.bump_attempts(scope, challenge_id=row.id)
             raise ChallengeRefused(str(outcomes[0][2]))
         scope, row = winner
 
         # Consume BEFORE minting the session: a code is single-use, and a crash
         # after this point costs a login rather than leaving a reusable code.
+        #
+        # The conditional consume is also what makes "single-use" true under
+        # concurrency. Lookup, validation and session creation each run in
+        # their own transaction, so two verifications can both validate the
+        # same challenge; only the one that actually TAKES the row may go on to
+        # establish a session. The loser is refused as `not_found`, which is
+        # exactly what the challenge now is.
         payload = dict(row.payload or {})
-        self._store.delete_challenge(scope)
+        if not self._store.consume_challenge(
+            scope, challenge_id=row.id, code_hash=row.code_hash
+        ):
+            raise ChallengeRefused(str(VerifyOutcome.NOT_FOUND))
 
         principal_kind = _KIND_FOR_PLANE[plane]
         subject_id, principal = self._establish(

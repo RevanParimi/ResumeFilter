@@ -81,10 +81,11 @@ def materialize_all(
     report_store,
     ledger_store,
 ) -> list[MaterializedVector]:
+    snapshot_time = as_of if as_of is not None else _utcnow()
     out: list[MaterializedVector] = []
     for cid in candidate_ids:
         mv = materialize_candidate(
-            cid, view=view, registry=registry, as_of=as_of,
+            cid, view=view, registry=registry, as_of=snapshot_time,
             candidate_store=candidate_store, report_store=report_store, ledger_store=ledger_store,
         )
         if mv is not None:
