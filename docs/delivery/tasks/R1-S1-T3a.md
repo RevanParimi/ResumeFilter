@@ -148,6 +148,31 @@ Reviewed report-store SHA256:
   `git -c core.safecrlf=false diff --check` passed. Working `data/veritas.db`
   SHA256 remained `4FF974BB964D160163B179742F26CBF8FB1FCB42FFBA5F1F841BA3EB7D24956B`.
 
+## PostgreSQL validation (2026-09-18, in progress)
+
+- Configured remote test URL still rejects authentication before SQL. Instead,
+  initialized a disposable local PostgreSQL **18.6** cluster matching CI's major
+  version, using the [EDB binary archive](https://www.enterprisedb.com/download-postgresql-binaries).
+  Archive: `postgresql-18.6-3-windows-x64-binaries.zip`, observed SHA256
+  `59F8CE701C63C2ED623C665A5E51B3EF6F2E37CCF837B68FFeed0742D0AE6ABD`.
+  Runtime is in OS temp; loopback-only, random port/password, no Windows service
+  or `.env` edits. Only this newly created cluster receives schema/data writes.
+- Runner: `.resume/Scripts/python.exe .pytest_cache/run_r1_s1_t3a_postgres.py`.
+  Uses initdb, pg_ctl, a fresh `veritas_test` database and process-only
+  DEE_TEST_DB_URL. Runs CI's Alembic up/down/up, the exact focused pytest command
+  above, then full pytest. External providers disabled; pg_ctl stops in finally.
+- First local migration up/down/up passed. Focused tests: **61 passed, 1 teardown
+  error**, 2 warnings, 74.35s. Shared `_drop_postgres_test_schemas` exhausted
+  default PostgreSQL lock storage by dropping every schema in one transaction.
+  Reproducer log: `.pytest_cache/r1-s1-t3a-pg-cleanup-red.txt`.
+- Validation fix in `tests/conftest.py`: finish the schema-list read transaction,
+  then commit each DROP separately. No production change or raised lock limits.
+  The existing real-PostgreSQL focused run is the regression for bounded cleanup;
+  final focused/full rerun is in progress on a new disposable cluster.
+- Reviewed current HEAD `eaa94ded275e6039f96f1f50f4fde67e2fc02bf8` plus this
+  fixture diff. Report store, concurrency tests and HTTP smoke still match
+  their implementation-session hashes. No independent review claimed.
+
 ## Handoff
 
 Next task is **R1-S1-T3a validation** after correcting test DB authentication;

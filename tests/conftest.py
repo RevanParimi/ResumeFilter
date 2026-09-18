@@ -198,14 +198,19 @@ def _drop_postgres_test_schemas():
     if not url:
         return
     engine = create_engine(url)
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         names = [
             n for (n,) in conn.execute(
                 text(r"SELECT nspname FROM pg_namespace WHERE nspname LIKE 's\_%'")
             )
         ]
+        conn.commit()
         for name in names:
-            conn.execute(text(f'DROP SCHEMA "{name}" CASCADE'))
+            # Each schema owns many tables/indexes. Holding every DROP lock
+            # until the whole suite is cleaned exhausts PostgreSQL's shared
+            # lock table even when all assertions pass. Release per schema.
+            with conn.begin():
+                conn.execute(text(f'DROP SCHEMA "{name}" CASCADE'))
     engine.dispose()
 
 

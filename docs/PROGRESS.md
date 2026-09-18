@@ -1,6 +1,6 @@
 # Current handoff
 
-Updated: 2026-09-11. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-09-18. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
@@ -40,6 +40,13 @@ Missing required evidence means awaiting validation, not done. Full process:
   secrets. Use isolated test storage/fake providers and project `.resume` Python.
 
 ## Latest session
+
+Portability check (2026-09-18): confirmed AGENTS.md, this handoff and delivery
+plans/task records are Git-tracked. A clone carries their committed/pushed
+versions; .env and .resume are ignored and require local setup. Observed an
+uncommitted tests/conftest.py change; preserved it. No task advanced, application
+behavior changed or tests run. Next remains R1-S1-T3a PostgreSQL validation;
+the recorded connection blocker was not rechecked in this informational session.
 
 T3a validation retry (2026-09-11): the read-only connection probe still fails
 with PostgreSQL password authentication rejected. No database SQL or mutations
