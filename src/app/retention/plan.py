@@ -7,7 +7,7 @@ metadata-drift-guard family that already caught a real migration-vs-ORM drift in
 S7.1. A sweeper free to name its own window could delete on 7 days while the
 portal promised 90, and nothing would say so.
 
-ELEVEN CLASSES, TWELVE TARGETS: ``login_state`` covers two tables, because an
+Data classes can span tables: ``login_state`` covers two tables, because an
 abandoned login challenge and a session that expired without a logout are the
 same fact to the person they describe. That is why the guard compares a SET of
 data classes and not a length.
@@ -32,7 +32,7 @@ from app.ledger.models import (
 from app.portal.retention import RETENTION_KNOBS
 from app.profile_sources.models import ProfileSourceRow
 from app.ratelimit.models import RateLimitCounterRow
-from app.screening.models import BatchItemRow
+from app.screening.models import BatchItemRow, ScreeningInputRow
 from app.verification.models import VerificationRow
 
 
@@ -82,6 +82,9 @@ TARGETS: tuple[SweepTarget, ...] = (
         "batch_item_text", BatchItemRow, "created_at", SweepMode.CLEAR,
         clear_column="raw_text",
     ),
+    # After ingest, retry uses a resume reference instead of an unlinked copy.
+    # The same window ends that capability; the item and resume still survive.
+    SweepTarget("batch_item_text", ScreeningInputRow, "created_at", SweepMode.DELETE),
     # Keyed on expires_at rather than created_at: for a row that declares its
     # own end of life, that declaration is the honest start of the window.
     SweepTarget(

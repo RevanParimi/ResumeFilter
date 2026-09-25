@@ -247,7 +247,7 @@ def test_report_not_persisted_if_candidate_erased_during_eval(api):
             return report
 
     client.app.state.engine = EraseMidEval()
-    body = client.post("/candidates", json={"resume_text": RESUME}).json()
-    assert body["candidate_id"] == cid  # ingest matched before the erasure
-    assert body["report"] is None
+    response = client.post("/candidates", json={"resume_text": RESUME})
+    assert response.status_code == 422
+    assert response.json() == {"detail": "candidate_erased"}
     assert services.report_store.for_candidate(cid) == []

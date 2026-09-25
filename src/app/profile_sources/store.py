@@ -9,12 +9,24 @@ from __future__ import annotations
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.profile_sources.models import ProfileSourceRow
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
+
+
+class SourceSubjectErasedError(LookupError):
+    def __init__(self) -> None:
+        super().__init__("candidate not found")
+
+
+class SourceSignalErasedError(LookupError):
+    def __init__(self) -> None:
+        super().__init__("source not found")
 
 
 class ProfileSourceStore:
@@ -32,8 +44,34 @@ class ProfileSourceStore:
                 fetched_at=signal.fetched_at,
             )
             session.add(row)
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                # Only FK failures can be erasure. A concurrent deletion must
+                # not hide an unrelated NOT NULL/unique failure.
+                is_fk = (getattr(exc.orig, "sqlstate", None) == "23503"
+                         or getattr(exc.orig, "pgcode", None) == "23503"
+                         or getattr(exc.orig, "sqlite_errorcode", None) == 787)
+                if is_fk and session.get(CandidateRow, candidate_id) is None:
+                    raise SourceSubjectErasedError() from None
+                raise
             return row.id
+
+    def require_saved_signal(self, candidate_id: str, row_id: str) -> None:
+        """Fresh response snapshot using the storage ID, not the signal JSON ID."""
+        with self._session_factory() as session:
+            row = session.execute(
+                select(CandidateRow.id, ProfileSourceRow.candidate_id)
+                .outerjoin(ProfileSourceRow, ProfileSourceRow.id == row_id)
+                .where(CandidateRow.id == candidate_id)
+            ).one_or_none()
+            if row is None:
+                raise SourceSubjectErasedError()
+            if row[1] is None:
+                raise SourceSignalErasedError()
+            if row[1] != candidate_id:
+                raise ValueError("source_candidate_mismatch")
 
     def signals_for_candidate(
         self, candidate_id: str, source_type: Optional[ProfileSourceType] = None

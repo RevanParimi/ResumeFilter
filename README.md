@@ -1,5 +1,9 @@
 # veritas — talent intelligence platform (depth-eval engine core)
 
+Current capabilities, completed safeguards and open gaps:
+[Feature status](FEATURE_STATUS.md). Next development task:
+[Progress handoff](docs/PROGRESS.md).
+
 An Indian-market talent intelligence platform growing around a
 **domain-agnostic** engine that evaluates a candidate's resume for both
 **authenticity** and **technical depth** — the way a senior engineer would. It

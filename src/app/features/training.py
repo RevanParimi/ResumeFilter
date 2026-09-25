@@ -17,6 +17,7 @@ from app.features.materialize import MaterializedVector
 from app.features.training_schema import TrainingExample, TrainingLabel
 from app.ledger.consent import as_utc
 from app.ledger.schema import CodingRoundResult, InterviewOutcome, InterviewRecord
+from app.ledger.store import TrainingCandidateMissingError
 
 # Terminal-best ranking; WITHDRAWN is excluded entirely (non-signal, per S3.4).
 _TERMINAL_ORDER: dict[InterviewOutcome, int] = {
@@ -108,7 +109,9 @@ def build_training_set(
     """Join each materialized vector to its leakage-free label. Reads the ledger
     ONLY for a consented vector (a withheld candidate's outcomes are never
     fetched); audits every join as `training.label` (allowed/withheld) unless
-    `audit=False`."""
+    `audit=False`. Erased subjects are omitted, including when auditing is off.
+    Final per-subject existence checks exclude erasures visible at those reads;
+    they do not lock subjects across later checks or snapshot serialization."""
     out: list[TrainingExample] = []
     for mv in mvs:
         cid = mv.vector.candidate_id
@@ -119,6 +122,11 @@ def build_training_set(
         else:
             irs, crs = [], []
         if audit:
-            ledger_store.audit_training_label(cid, allowed=allowed, as_of=mv.vector.as_of)
+            try:
+                ledger_store.audit_training_label(cid, allowed=allowed, as_of=mv.vector.as_of)
+            except TrainingCandidateMissingError:
+                continue
         out.append(build_training_example(mv, interview_records=irs, coding_rounds=crs))
-    return out
+    # Auditing can be disabled, and an earlier subject can disappear while a
+    # later one is built. Never turn a skipped audit into a stale export row.
+    return [ex for ex in out if ledger_store.candidate_exists(ex.vector.candidate_id)]

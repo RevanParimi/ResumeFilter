@@ -65,6 +65,7 @@ from app.interview.schema import (
 from app.interview.service import AnswerTooLargeError, SessionConflictError
 from app.ledger.store import ConsentError
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
+from app.profile_sources.store import SourceSignalErasedError, SourceSubjectErasedError
 from app.curation.schema import (
     CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
 )
@@ -535,6 +536,10 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     services.report_store.save(report)
+    # Report-only deletion can win after save, even without a candidate link.
+    # This is a response snapshot, not a lock across HTTP delivery.
+    if services.report_store.get(report.id) is None:
+        raise HTTPException(status_code=422, detail="report_erased")
     return report
 
 
@@ -773,6 +778,8 @@ async def ingest_github_source(
         raise HTTPException(status_code=404, detail="candidate not found")
     try:
         return await services.profile_sources.ingest_github(candidate_id, handle=req.handle)
+    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -799,7 +806,10 @@ async def ingest_linkedin_source(
         data = base64.b64decode(req.export_b64, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise HTTPException(status_code=422, detail="invalid_base64") from exc
-    return await services.profile_sources.ingest_linkedin(candidate_id, data)
+    try:
+        return await services.profile_sources.ingest_linkedin(candidate_id, data)
+    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
 
 
 @router.get(
@@ -2260,8 +2270,11 @@ async def materialize_features(
             # No context for this candidate (unknown id, or nothing to compute).
             skipped += 1
             continue
-        services.features.upsert_vector(mv)
-        materialized += 1
+        if services.features.upsert_vector(mv) is None:
+            # Erasure after computation is a skipped subject, like a missing ID.
+            skipped += 1
+        else:
+            materialized += 1
 
     return MaterializeResponse(
         view_name=view.name, view_version=view.version, as_of=snapshot_time,

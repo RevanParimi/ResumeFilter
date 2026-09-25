@@ -217,11 +217,26 @@ class ScreeningService:
 
         processed = failed = 0
         for item in claimed:
+            def retain_input(session, outcome):
+                if not self._store.retain_ingested_input(session, org_id, item, outcome):
+                    raise IngestRefused("input_unavailable")
+
+            def bind_report(session, report):
+                if not self._store.bind_input_report(session, org_id, item, report):
+                    raise IngestRefused("input_unavailable")
+
+            def check_input(session):
+                if not self._store.check_input_generation(session, item):
+                    raise IngestRefused("fresh_upload_required")
+
             try:
                 result = await ingest_resume(
                     self._deps, engine,
                     text=item.raw_text, domain=item.domain,
                     evaluate=True, org_id=org_id,
+                    expected_resume_id=item.expected_resume_id, before_commit=retain_input,
+                    before_report_commit=bind_report,
+                    before_write=check_input,
                 )
             except IngestRefused as exc:
                 self._store.fail(item.id, lease=item.claimed_at,
@@ -239,7 +254,7 @@ class ScreeningService:
                 continue
 
             report = result.report
-            self._store.complete(
+            completed = self._store.complete(
                 item.id,
                 lease=item.claimed_at,
                 candidate_id=result.candidate_id,
@@ -258,7 +273,11 @@ class ScreeningService:
                 ) if report is not None else _no_report_signals(result),
                 at=self._now(),
             )
-            processed += 1
+            if completed:
+                processed += 1
+            else:
+                # Erasure or a lost lease discarded this attempt's result.
+                failed += 1
 
         counts = self._store.counts(org_id, batch_id, now=self._now())
         if counts is None:
@@ -297,11 +316,10 @@ class ScreeningService:
 
 
 def _no_report_signals(result) -> ItemSignals:
-    """The subject was erased mid-evaluation, so there is nothing to score.
+    """No report means there is no risk assessment to copy.
 
-    The ingest itself succeeded, so the item is DONE with the ingest facts and
-    no risk assessment -- which reads as "insufficient signal", the honest
-    answer, rather than a zero.
+    Completion still checks the supplied parents through its foreign keys;
+    an erased subject is refused even when report persistence returned None.
     """
     return ItemSignals(
         matched_existing=result.matched_existing,

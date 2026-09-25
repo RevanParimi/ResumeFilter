@@ -121,7 +121,7 @@ AUTH_TABLES = ("org_users", "admin_users", "auth_sessions", "login_challenges")
 
 # S8.4 Phase B — batches CASCADE from the org; the three subject pointers on
 # items SET NULL so an erasure cannot rewrite an org's screening record.
-SCREENING_TABLES = ("screening_batches", "batch_items")
+SCREENING_TABLES = ("screening_batches", "batch_items", "screening_item_inputs")
 
 
 def _is_expression_index(ix) -> bool:

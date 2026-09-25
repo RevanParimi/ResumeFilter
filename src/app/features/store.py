@@ -2,8 +2,9 @@
 
 Shares candidates_db_url (one metadata root, one Alembic env). Schema is
 Alembic's job. The unique cut (candidate_id, as_of, view_name, view_version) makes
-re-materialization an idempotent upsert. as_of is stored + queried as naive-UTC so
-the equality lookup round-trips on SQLite (which drops tzinfo).
+re-materialization an idempotent upsert. Bind aware UTC instants so PostgreSQL
+does not reinterpret them in its session timezone. SQLite drops tzinfo from
+these normalized UTC values; reads restore it with as_utc.
 """
 
 from __future__ import annotations
@@ -12,19 +13,17 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
+from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.features.materialize import MaterializedVector
 from app.features.models import FeatureVectorRow
 from app.features.schema import FeatureVector
 from app.ledger.consent import as_utc
-
-
-def _key_dt(dt: datetime) -> datetime:
-    """Naive-UTC key so an equality lookup round-trips on SQLite (tzinfo dropped)."""
-    return as_utc(dt).replace(tzinfo=None)
 
 
 def _to_mv(row: FeatureVectorRow) -> MaterializedVector:
@@ -46,13 +45,18 @@ class FeatureStore:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def upsert_vector(self, mv: MaterializedVector) -> str:
+    def upsert_vector(self, mv: MaterializedVector) -> Optional[str]:
+        """Return the saved ID, or None when candidate erasure wins the write.
+
+        The candidate FK prevents resurrection; ORM row counts detect an update
+        whose vector was cascaded away after lookup. Other failures propagate.
+        """
         v = mv.vector
         with self._session_factory() as session:
             row = session.execute(
                 select(FeatureVectorRow).where(
                     FeatureVectorRow.candidate_id == v.candidate_id,
-                    FeatureVectorRow.as_of == _key_dt(v.as_of),
+                    FeatureVectorRow.as_of == as_utc(v.as_of),
                     FeatureVectorRow.view_name == v.view_name,
                     FeatureVectorRow.view_version == v.view_version,
                 )
@@ -60,7 +64,7 @@ class FeatureStore:
             if row is None:
                 row = FeatureVectorRow(
                     candidate_id=v.candidate_id,
-                    as_of=_key_dt(v.as_of),
+                    as_of=as_utc(v.as_of),
                     view_name=v.view_name,
                     view_version=v.view_version,
                 )
@@ -68,10 +72,16 @@ class FeatureStore:
             row.feature_values = dict(v.values)
             row.missing = list(v.missing)
             row.consent_state = dict(mv.consent_state)
-            row.materialized_at = _key_dt(mv.materialized_at)
-            session.flush()
-            rid = row.id
-            session.commit()
+            row.materialized_at = as_utc(mv.materialized_at)
+            try:
+                session.flush()
+                rid = row.id
+                session.commit()
+            except (IntegrityError, StaleDataError):
+                session.rollback()
+                if session.get(CandidateRow, v.candidate_id) is None:
+                    return None
+                raise
             return rid
 
     def get_vector(
@@ -81,7 +91,7 @@ class FeatureStore:
             row = session.execute(
                 select(FeatureVectorRow).where(
                     FeatureVectorRow.candidate_id == candidate_id,
-                    FeatureVectorRow.as_of == _key_dt(as_of),
+                    FeatureVectorRow.as_of == as_utc(as_of),
                     FeatureVectorRow.view_name == view_name,
                     FeatureVectorRow.view_version == view_version,
                 )
@@ -97,7 +107,7 @@ class FeatureStore:
                 FeatureVectorRow.view_version == view_version,
             )
             if as_of is not None:
-                q = q.where(FeatureVectorRow.as_of == _key_dt(as_of))
+                q = q.where(FeatureVectorRow.as_of == as_utc(as_of))
             q = q.order_by(FeatureVectorRow.candidate_id)
             return [_to_mv(r) for r in session.execute(q).scalars().all()]
 
@@ -116,7 +126,7 @@ class FeatureStore:
         latest = (
             select(FeatureVectorRow.candidate_id,
                    func.max(FeatureVectorRow.as_of).label("snapshot_time"))
-            .where(*view_filter, FeatureVectorRow.as_of <= _key_dt(as_of))
+            .where(*view_filter, FeatureVectorRow.as_of <= as_utc(as_of))
             .group_by(FeatureVectorRow.candidate_id)
             .subquery()
         )

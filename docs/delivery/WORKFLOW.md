@@ -25,6 +25,12 @@ records hold evidence and decisions. Update these together. Original F01–F16
 IDs are traceability links, not a second competing execution order. PI-R IDs
 are remediation increments and do not renumber the older product PI-1–PI-9.
 
+`FEATURE_STATUS.md` at the repository root is the common feature overview.
+After a task group closes, move its detailed completed child records from
+`tasks/` to `archive/`, keeping the group summary and updating links. Completed
+children of open groups stay in `tasks/` until group closure. Preserve evidence,
+IDs and status; do not load the archive routinely or duplicate it in the handoff.
+
 ## Development loop
 
 1. **Specify the observable result.** Write the trigger, before/after behavior,

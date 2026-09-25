@@ -121,6 +121,16 @@ resolves it against the candidate's grants and **audits `feature.materialize`**
 (actor `system`/`platform`, allowed *and* withheld) in the same transaction. It
 returns the decision — withheld does **not** raise.
 
+If erasure wins before this audit commits, the store raises the specific
+`MaterializationCandidateMissingError` (a `LookupError`). The materializer
+returns `None`; `POST /features/materialize` counts that subject as skipped and
+continues the batch. A failed audit transaction is rolled back before checking
+whether the candidate disappeared; unrelated errors propagate. If the audit
+commits first, candidate erasure cascades it away and the feature-store write
+guard refuses later vector persistence. Allowed/withheld consent rules are
+unchanged. [Concurrency evidence](docs/delivery/archive/R1-S1-T3b-D3c1.md).
+
+
 ### Materializer (`materialize.py`)
 
 `materialize_candidate` slices the context, computes the view (`compute_view`
@@ -307,7 +317,7 @@ platform use of gated data observable without a new gate. A withheld vector's
 (shared `feature_columns` / `vector_cells` helpers) **plus** appended
 `label_hired, label_outcome, label_coding_best_percentile, label_event_at,
 label_lag_days, label_observed, label_withheld`. Values are already
-masked/withheld, so a file can never leak. Parquet stays guarded
+masked/withheld according to the stored materialization decision. Parquet stays guarded
 (`ParquetUnavailable` without pyarrow).
 
 ### DPDP
@@ -315,6 +325,15 @@ masked/withheld, so a file can never leak. Parquet stays guarded
 No new candidate-linked table ⇒ no new erasure path; labels recompute from ledger
 rows that already CASCADE on erasure, and the `training.label` audit rows are
 candidate-linked and CASCADE too.
+
+The training builder skips subjects erased before their audit commits and checks
+each assembled example's candidate existence again before returning, including
+with `audit=False`. It continues surviving subjects without exporting an erased
+subject as a withheld or censored row. Unrelated audit errors still propagate.
+These final per-subject reads are snapshot boundaries, not locks across later
+checks or file delivery. Pure CSV/parquet writers do not recheck the database or
+revoke already returned examples/files; current-consent enforcement is tracked
+separately in R1-S2-T2. See [D3c2 evidence](docs/delivery/archive/R1-S1-T3b-D3c2.md).
 
 ### Testing (S4.4)
 

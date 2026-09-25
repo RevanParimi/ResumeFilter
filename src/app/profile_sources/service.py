@@ -21,7 +21,7 @@ from app.profile_sources.github import to_signal as github_to_signal
 from app.profile_sources.linkedin import parse_linkedin_export
 from app.profile_sources.linkedin import to_signal as linkedin_to_signal
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
-from app.profile_sources.store import ProfileSourceStore, build_profile_source_store
+from app.profile_sources.store import ProfileSourceStore, SourceSubjectErasedError, build_profile_source_store
 from app.services.github import GitHubClient, GitHubService, parse_github_url
 
 _LOGIN_RE = re.compile(r"[A-Za-z0-9-]{1,39}")
@@ -50,25 +50,27 @@ class ProfileSourceService:
         self, candidate_id: str, handle: Optional[str] = None
     ) -> ProfileSourceSignal:
         if self._candidates.get_candidate(candidate_id) is None:
-            raise LookupError(f"candidate {candidate_id} not found")
+            raise SourceSubjectErasedError()
         login = self._resolve_handle(candidate_id, handle)
         raw = await self._github.gather_user_signal(login)
         signal = github_to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
         self._capture_unmapped(signal)
-        self._store.save_signal(candidate_id, signal)
+        row_id = self._store.save_signal(candidate_id, signal)
+        self._store.require_saved_signal(candidate_id, row_id)
         return signal
 
     async def ingest_linkedin(
         self, candidate_id: str, data: bytes
     ) -> ProfileSourceSignal:
         if self._candidates.get_candidate(candidate_id) is None:
-            raise LookupError(f"candidate {candidate_id} not found")
+            raise SourceSubjectErasedError()
         raw = parse_linkedin_export(data, self._settings)
         signal = linkedin_to_signal(
             raw, self._settings, fetched_at=datetime.now(timezone.utc)
         )
         self._capture_unmapped(signal)
-        self._store.save_signal(candidate_id, signal)
+        row_id = self._store.save_signal(candidate_id, signal)
+        self._store.require_saved_signal(candidate_id, row_id)
         return signal
 
     def list_sources(
@@ -88,6 +90,8 @@ class ProfileSourceService:
                     anchor = parse_github_url(link.url)
                     if anchor is not None and anchor.owner:
                         return anchor.owner
+        if self._candidates.get_candidate(candidate_id) is None:
+            raise SourceSubjectErasedError()
         raise ValueError("no GitHub handle supplied or found on the candidate profile")
 
     @staticmethod

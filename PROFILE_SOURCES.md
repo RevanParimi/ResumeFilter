@@ -14,6 +14,16 @@ persist` shape and the same `ProfileSourceSignal` envelope. The **normalization
 curation loop** (reviewing/correcting unmapped taxonomy terms) shipped in
 **S6.3** — see `CURATION.md`.
 
+Erasure during ingestion (2026-09-24): both adapters return 404 `candidate not
+found` when the subject disappears during profile lookup, fetch/parse or signal
+persistence. A final check of the exact saved row also returns 404 `source not
+found` if that source alone was removed. Foreign keys prevent orphan writes;
+unrelated database failures remain errors. These reads are snapshots, not locks
+across HTTP delivery. Fresh ingestion remains permitted and unavailable-source
+signals retain their advisory 200 behavior. Shared curation observations keep
+their separate lifetime described in CURATION.md.
+[Evidence](docs/delivery/tasks/R1-S1-T3b-D3d2b.md).
+
 ## GitHub pipeline
 
 ```

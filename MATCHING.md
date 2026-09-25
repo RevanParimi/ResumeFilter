@@ -82,7 +82,17 @@ v1 refinement.)
   candidate-linked** — a requisition **survives candidate erasure** (correct) and
   dies with its org. The candidate-facing side effect (`match.surface` audit rows)
   is candidate-linked and CASCADEs on erasure; an erased candidate is absent from
-  the vector pool, so a re-run simply omits them.
+  the vector pool, so a re-run simply omits them. If erasure wins while the
+  disclosure audit is committing, the whole audit batch rolls back and retries
+  without the missing subjects, refilling the limit and preserving survivor
+  scores/order. Unrelated persistence failures propagate. A final existence
+  check removes observed erasures from returned matches and pool/filter counts.
+  After-commit erasure may shorten the shortlist; no unaudited replacement is
+  added, and surviving audits retain their committed rank. These reads are
+  snapshots (large pools use bounded query batches), not locks across response
+  delivery or revocation of previously returned matches. This applies to both
+  match and board routes; consent policy is unchanged.
+  [Validation](docs/delivery/archive/R1-S1-T3b-D3c3.md).
 - **Point-in-time.** One `as_of` drives both the vector cut and the profile read,
   so skill coverage and scalar features describe the same instant — no leakage.
 
@@ -97,7 +107,8 @@ selection reuses `feat_default_view` (`core_v1`).
 
 `POST /jobs` (create) · `GET /jobs` (list) · `GET /jobs/{id}` · `PATCH /jobs/{id}`
 (status and/or full spec replace) · `POST /jobs/{id}/match` →
-`MatchResult{advisory=True}`. Cross-org → 404; empty/unmaterialized pool → 422;
+`MatchResult{advisory=True}`. Cross-org → 404; empty/unmaterialized pool → 200
+with `reason="no_materialized_candidates"`;
 malformed match request → 400; missing/invalid `X-Org-Key` → 401.
 
 ### Seams

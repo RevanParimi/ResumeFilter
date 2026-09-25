@@ -13,11 +13,11 @@ module has no ``delete_for_candidate`` at all.
 
 from __future__ import annotations
 
-from typing import Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.candidates.models import CandidateRow
@@ -47,7 +47,8 @@ class SubjectErasedError(RuntimeError):
 
 
 class ReportStore(Protocol):
-    def save(self, report: Report, *, org_id: Optional[str] = None) -> None: ...
+    def save(self, report: Report, *, org_id: Optional[str] = None,
+             before_commit: Optional[Callable[[Session, Report], None]] = None) -> None: ...
     def get(self, report_id: str) -> Optional[Report]: ...
     def add_outcome(self, rec: OutcomeRecord) -> bool: ...
     def outcomes(self, report_id: str) -> list[OutcomeRecord]: ...
@@ -70,7 +71,8 @@ class SqlReportStore:
     def __init__(self, session_factory: sessionmaker) -> None:
         self._session_factory = session_factory
 
-    def save(self, report: Report, *, org_id: Optional[str] = None) -> None:
+    def save(self, report: Report, *, org_id: Optional[str] = None,
+             before_commit: Optional[Callable[[Session, Report], None]] = None) -> None:
         """Upsert. (The old store used ``INSERT OR REPLACE``, which Postgres
         does not have -- the SQL had to be rewritten whatever we did here.)
 
@@ -93,6 +95,9 @@ class SqlReportStore:
             row.body = report.model_dump(mode="json")
             row.created_at = as_utc(report.created_at)
             try:
+                if before_commit is not None:
+                    s.flush()
+                    before_commit(s, report)
                 s.commit()
             except (IntegrityError, StaleDataError) as exc:
                 # SQL exceptions include parameters (claims/notes). Logging

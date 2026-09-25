@@ -228,7 +228,7 @@ class InterviewService:
             answered_at=moment,
         )
 
-        session = self._store.get_session(session.id)
+        session = self._owned(candidate_id, session.id)
         following = self._next_question(session)
         if following is None:
             session = self._complete(session, at=moment)

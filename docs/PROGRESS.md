@@ -1,111 +1,114 @@
 # Current handoff
 
-Updated: 2026-09-18. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-09-26. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**Next task: R1-S1-T3a validation — disposable PostgreSQL concurrency gate.**
-T3 was split into T3a (reports/outcomes) and T3b (interview/derived-store writes).
-T3a is implemented and **awaiting validation**, not done. Read
-`docs/delivery/WORKFLOW.md`, the T3 section of `docs/delivery/PI-R1.md` and
-`docs/delivery/tasks/R1-S1-T3a.md` for commands/evidence. DEE_TEST_DB_URL is now
-present in `.env`, but PostgreSQL rejects authentication. User was asked to
-correct it locally; never print its credentials. The fixtures read the process
-environment, so load only that setting explicitly after correction. Confirm
-disposable storage before running the concurrency/focused tests and full suite.
-The suite cleanup drops all schemas matching `s_%` (literal underscore). Do not
-repeat the audit or count SQLite as PostgreSQL evidence. If unavailable,
-keep the validation gate open rather than starting another task.
-After T3a passes, next development task is **R1-S1-T3b** in a separate chat;
-its entry points/scope are in `docs/delivery/tasks/R1-S1-T3.md`. Do not begin
-T3b, R1-S1-Q or F06 in this chat. Legacy-file cleanup remains unauthorized.
+Feature overview: [FEATURE_STATUS.md](../FEATURE_STATUS.md). Detailed children
+of closed groups are in [the archive](delivery/archive/README.md); active tasks
+and completed children of open groups remain in `delivery/tasks/`. Read only
+the evidence needed for the current task.
 
-One development or sprint-review task per chat: reproduce/specify, implement,
-run required pytest and journey checks, review/fix, record evidence, then stop.
-If a task is too large, split into named children and finish only the next one.
-Missing required evidence means awaiting validation, not done. Full process:
-`docs/delivery/WORKFLOW.md`.
+**Next task: R1-S1-T3b-D3d2c2 - challenge issuance across erasure.**
+Read `docs/delivery/WORKFLOW.md`, the T3 section of `docs/delivery/PI-R1.md`,
+`docs/delivery/tasks/R1-S1-T3b-D3d2c2.md` and D3d2c's split/trace. Trace the
+send-before-persist boundary against erasure and define bounded acceptance
+before implementation. Preserve fresh signup, all-plane cleanup, anti-enumeration,
+send-failure retry and unrelated principals. Synthetic capture/null email only;
+no external messages or working-data cleanup.
 
-## Standing user direction
+D3d2a/b and D3d2c1 are done. Issuance (c2), redemption/login closure (c3) and
+combined validation (d) remain pending. Exactly one bounded task per session.
+D3d2c/D3d2/D3d/D3/D/T3b/T3/F05/R1-S1-Q remain open. D3d2d must include source
+list/portal aggregate response windows and shared curation raw-display-name policy.
 
-- "Continue" means resume the task above without asking again to perform the
-  authorized local audit fixes, feature completion and simplification.
-- Preserve accuracy through focused source reads, explicit acceptance tests,
-  failure-path coverage and review; no assumed 5–10% failure rate or zero-bug claim.
-- Keep AI-polished truthful writing separate from factual fabrication risk.
-- Conversational video with content-only scoring is the working recommendation;
-  user has not confirmed the optional format preference. Repair rubric first.
-- No publishing, deployment, external messages or destructive user-data cleanup.
-- Preserve the existing modified `data/veritas.db`, other uncommitted work and
-  secrets. Use isolated test storage/fake providers and project `.resume` Python.
+## Latest completed task
 
-## Latest session
+**R1-S1-T3b-D3d2c1 done.** Resumed and validated the existing atomic login-state
+fix. CandidateStore now deletes existing challenges for the stored email hash
+in the same transaction as candidate deletion. Both portal/admin erasure inherit
+commit/rollback together, independent of optional portal auth wiring. Sessions
+and candidate-linked data cascade; all challenge planes/purposes retain the prior
+cleanup policy. No schema/frontend change. Missing/null-address deletion leaves
+unrelated challenges untouched; org/admin principals and sessions survive.
 
-Portability check (2026-09-18): confirmed AGENTS.md, this handoff and delivery
-plans/task records are Git-tracked. A clone carries their committed/pushed
-versions; .env and .resume are ignored and require local setup. Observed an
-uncommitted tests/conftest.py change; preserved it. No task advanced, application
-behavior changed or tests run. Next remains R1-S1-T3a PostgreSQL validation;
-the recorded connection blocker was not rechecked in this informational session.
+Failure or process exit before commit preserves candidate data, sessions and
+existing codes. Retry completes erasure, old codes/sessions are refused, and
+fresh signup remains allowed. Late issuance and already-consumed redemption are
+still open c2/c3 boundaries; atomic cleanup alone does not prevent them.
 
-T3a validation retry (2026-09-11): the read-only connection probe still fails
-with PostgreSQL password authentication rejected. No database SQL or mutations
-ran; disposable storage cannot yet be verified. No task completed and no
-application code changed. Pytest/HTTP checks were not repeated: existing SQLite
-evidence cannot satisfy the missing PostgreSQL gate. Report-store SHA256 still
-matches the implementation review. Self-review, documentation checks and
-working-database preservation recorded in the task evidence. Next remains
-**R1-S1-T3a validation** after the local test connection is corrected.
+- Initial red (preserved evidence): **4 failed, 4 passed, 4 skipped**, 1 warning,
+  7.98s. Both API doors lost codes on candidate-delete failure; direct candidate
+  deletion left challenges behind. Initial focused SQLite: **93 passed, 4 skipped**.
+- Resumed full SQLite: **2497 passed, 178 skipped**, 44 warnings, 627.87s.
+- Resumed focused PG 18.6: **113 passed, 2 skipped**, 16 warnings, 242.18s.
+  Controlled connections, observed consume blocking, commit/rollback/retry and
+  migration up/down/up passed. Disposable cluster stopped cleanly.
+- Resumed migrated HTTP/process exit/restart: **24/24 per backend**, both erasure
+  doors, six challenge scopes, old-code/session refusal, unrelated survivor and
+  fresh signup. These runs executed 25 September; closure recorded 26 September.
+- Diff self-review, compilation and whitespace passed. Node bindings now available:
+  **402 bindings across 9 states passed**. No frontend change, browser execution,
+  full PostgreSQL, live-provider or independent-review claim.
 
-T3a validation follow-up (2026-09-10): read-only connection probes resolved DNS
-but failed with password authentication rejected; no remote schema/data changes
-were made. PostgreSQL remains unvalidated. Local focused rerun: **55 passed,
-6 skipped, 2 warnings**, 41.32s; real scratch HTTP/restart rerun **19/19 passed**.
-Recovered the prior full-suite log: **2195 passed, 6 skipped, 42 warnings**,
-423.01s (SQLite evidence, not a new full run). No application code changed.
-Report-store hash matches the implementation review; self-review and diff checks
-recorded in the task evidence. Next remains T3a validation after connection repair.
+Evidence/commands: `docs/delivery/tasks/R1-S1-T3b-D3d2c1.md`. AUTH.md and PORTAL.md
+reflect the transaction and remaining boundaries. Prior work and working DB preserved:
+`4FF974BB964D160163B179742F26CBF8FB1FCB42FFBA5F1F841BA3EB7D24956B` (SHA256).
+No working-data migration/deletion or deployment performed.
 
-R1-S1-T3a: report updates racing erasure now translate stale-row errors into
-SubjectErasedError after rollback and a fresh candidate lookup. Report/outcome
-race logs no longer retain SQL exception parameters containing claims/notes.
-Existing insert/cascade constraints, null-report evaluation cancellation and
-outcome 404 responses remain authoritative. No schema/API/UI change.
+Documentation maintenance (2026-09-26): added `FEATURE_STATUS.md`, archived 12
+detailed children of closed groups and updated links. Documentation checks passed
+across 47 files; statuses and the next-task pointer are unchanged. Same-agent
+review and whitespace check passed. Application code is unchanged from the
+recorded full-suite run; no new application-test claim for this cleanup.
 
-Three intended regressions failed before the fix. Final focused verification:
-**55 passed, 6 PostgreSQL skips**, 2 warnings, 50.19s; HTTP/restart smoke
-**19/19 passed**, with event-controlled evaluator pauses through portal/admin
-erasure and SQL inspection preserving only B. Full result recovered above.
-Self-review and diff checks complete. Evidence/commands:
-`docs/delivery/tasks/R1-S1-T3a.md`. No independent review, PostgreSQL success,
-browser execution or live-provider validation claimed. No user-data cleanup.
+## Test environment
 
-Prior completed task: T2, legacy CLI/policy, full suite 2186 passed;
-details in `docs/delivery/tasks/R1-S1-T2.md` and `docs/LEGACY_FLYWHEEL.md`.
-Existing logs, legacy files, cloud backups and physical media are not cleaned
-by T3a. Interview/derived-store and ingest races remain the pending T3b child.
+Use `.resume/Scripts/python.exe`. Restored matching CPython 3.13.11 base runtime
+and existing project dependencies remain in use. Portable PostgreSQL 18.6:
+`.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`. Latest focused/HTTP runner:
+`.pytest_cache/run_r1_s1_t3b_d3d2c1_postgres.py`. These are ignored local artifacts,
+not portable setup guarantees; each run creates a disposable cluster and stops
+it in finally. No .env edits or Windows PostgreSQL service registration.
 
-## Implementation state and evidence
+The remote test connection's earlier authentication rejection was not rechecked.
+Use disposable storage only: shared pytest teardown drops all schemas matching
+`s_%` (literal underscore). Fixtures read process DEE_TEST_DB_URL, not dotenv.
+Never substitute the application database or print connection credentials.
 
-F01–F04 are completed local fixes, with qualifications in
-`docs/delivery/BASELINE.md`. R1-S1-T1/T2 are done; F05–F16 remain open. Task status lives in
-the matching PI card; evidence lives in `delivery/tasks/<id>.md`. T3a awaits
-PostgreSQL validation; T3b remains pending; the parent is incomplete.
+## Standing direction and remaining risks
 
-Prior baseline: F04 2155 passed; foundations 2148 passed; UI bindings 402 across
-nine states with JS syntax passing. Latest code result is above; it does not
-establish production or representative model quality.
+- Continue the named task without re-asking to perform authorized local fixes.
+- Preserve user data, uncommitted work, tenant isolation and consent/erasure.
+  User authorized committing/pushing the accumulated project changes and this
+  documentation cleanup on 2026-09-26 using revan.datta132@gmail.com. Deployment,
+  external messages and working-data/legacy-file cleanup remain unauthorized.
+- Historical feature timestamps written under a non-UTC PostgreSQL session may
+  still be shifted. Repair requires an explicit policy; do not guess their
+  original timezone or silently rewrite existing data.
+- Training final existence reads exclude erasures visible at each subject's
+  check; they do not lock across later checks/file delivery or revoke returned
+  snapshots/files. Current-consent enforcement remains R1-S2-T2.
+- Matching final existence reads are snapshots (bounded batches for large pools),
+  not locks across HTTP delivery. Committed audit ranks describe the pre-response
+  ranking; after-commit erasure can leave rank gaps. D3d must not infer an atomic
+  whole-response or whole-ingest guarantee from the individual-store fixes.
+- Ingest candidate/resume/report checks and standalone report checks are
+  snapshots, not locks across evaluation, save or HTTP delivery. Source POST
+  guards have the same limit; login-state ordering and combined closure remain
+  D3d2c/d. Source list/portal read windows and curation raw-display-name policy
+  are explicitly carried into D3d2d.
+  Current-consent gaps, identity repair, verification-attempt races
+  and shared vector startup remain scheduled. Unknown input retains its original
+  TTL; deletion pauses older unresolved items across tenants. This is not
+  immediate erasure of unidentified text or a permanent fresh-upload ban.
+- Preserve advisory/human-review behavior, domain independence and deterministic
+  fallbacks. AI-polished truthful writing is not evidence of fabricated experience.
+- Video scoring judges answer content, not appearance/emotion. Conversational
+  video remains a recommendation, not a confirmed user format preference.
+- F01-F04 are completed local fixes with baseline qualifications. T1/T2/T3a are
+  done; F05-F16 remain open. Tests do not establish representative model quality.
 
-Known residuals: no persisted identity repair; contact-verification attempts
-still have a separate race; no PostgreSQL concurrency evidence; shared vector
-startup remains; current consent and erasure gaps remain. Full qualifications
-and baseline command evidence: `docs/delivery/BASELINE.md`.
-
-## Read only when relevant
-
-- `docs/delivery/README.md`: PI/sprint order, original finding mapping.
-- `docs/delivery/TASK_TEMPLATE.md`: per-task evidence/review record.
-- `docs/CODEBASE_REVIEW_2026-09-07.md`: original detailed audit.
-- `docs/FEATURE_LOGIC.md`: feature formulas and present limitations.
-- `docs/ROADMAP.md` and old `.superpowers` artifacts: historical context;
-  never load all of them for a new task.
+Use `docs/delivery/README.md` for order, `docs/delivery/BASELINE.md` for prior
+qualifications and `docs/CODEBASE_REVIEW_2026-09-07.md` for original findings.
+`docs/ROADMAP.md` is historical reference; do not load it end to end.

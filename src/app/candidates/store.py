@@ -15,12 +15,15 @@ from __future__ import annotations
 import hashlib
 import secrets
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
+from app.auth.models import LoginChallengeRow
 from app.candidates.models import (
     CandidateCredentialRow,
     CandidateRow,
@@ -36,6 +39,20 @@ from app.fabrication.similarity import Fingerprint, estimate_similarity
 from app.schemas.fabrication import ResumeMatch
 
 MatchedOn = Literal["email_hash", "phone_hash"]
+
+
+class CandidateErasedError(RuntimeError):
+    """The candidate resolved by this ingest was erased before its write."""
+
+    def __init__(self) -> None:
+        super().__init__("candidate_erased")
+
+
+class ResumeErasedError(RuntimeError):
+    """The resume backing a derived write no longer exists."""
+
+    def __init__(self) -> None:
+        super().__init__("resume_erased")
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -90,17 +107,51 @@ class CandidateStore:
         resume_text: str,
         *,
         org_id: Optional[str] = None,
+        expected_resume_id: Optional[str] = None,
+        before_commit: Optional[Callable[[Session, IngestOutcome], None]] = None,
+        before_write: Optional[Callable[[Session], None]] = None,
     ) -> IngestOutcome:
         sha = hashlib.sha256(resume_text.encode("utf-8")).hexdigest()
         profile = result.profile
         with self._session_factory() as session:
-            cand, matched_on = self._resolve_candidate(session, profile)
+            if expected_resume_id is None:
+                cand, matched_on = self._resolve_candidate(session, profile)
+            else:
+                # A retry is the same upload, even when extraction has no
+                # contact hashes. Never resolve it into a replacement person.
+                owner = session.scalar(select(ResumeRow.candidate_id).where(
+                    ResumeRow.id == expected_resume_id, ResumeRow.org_id == org_id
+                ))
+                if owner is None:
+                    raise ResumeErasedError()
+                cand, matched_on = session.get(CandidateRow, owner), None
+                if cand is None:
+                    raise CandidateErasedError()
+            if before_write is not None:
+                # Preserve explicit erasure cleanup when this invocation already
+                # resolved a concrete subject. A missing pre-resolution match
+                # still relies on the batch generation barrier below.
+                if cand is not None and session.scalar(select(CandidateRow.id).where(
+                    CandidateRow.id == cand.id)) is None:
+                    raise CandidateErasedError()
+                before_write(session)
             matched = cand is not None
             if cand is None:
                 cand = CandidateRow()
                 session.add(cand)
             self._refresh_identity(cand, profile)
-            session.flush()
+            candidate_id = cand.id
+            try:
+                # Even duplicate uploads update updated_at. This UPDATE holds
+                # the candidate write lock through the resume/extraction commit;
+                # erasure either wins here or cascades after that commit.
+                session.flush()
+            except StaleDataError:
+                session.rollback()
+                if matched and session.get(CandidateRow, candidate_id) is None:
+                    # Never resolve again: that could recreate the erased person.
+                    raise CandidateErasedError() from None
+                raise
 
             same_text = (
                 session.execute(
@@ -132,6 +183,19 @@ class CandidateStore:
                 # whatever is already there, exactly as it did pre-S8.4.
                 resume = same_text[0]
 
+            if expected_resume_id is not None:
+                # Candidate write lock first, then resume lock: the same order
+                # as candidate deletion. Recheck after the candidate flush so
+                # a resume erased during the initial read cannot be recreated.
+                resume = session.scalar(select(ResumeRow).where(
+                    ResumeRow.id == expected_resume_id, ResumeRow.candidate_id == cand.id,
+                    ResumeRow.org_id == org_id,
+                ).with_for_update().execution_options(populate_existing=True))
+                if resume is None:
+                    raise ResumeErasedError()
+                if resume.text_sha256 != sha:
+                    raise ValueError("retry_input_mismatch")
+
             if resume is None:
                 latest = session.execute(
                     select(func.max(ResumeRow.version)).where(
@@ -156,8 +220,8 @@ class CandidateStore:
                 warnings=list(result.warnings),
             )
             session.add(extraction)
-            session.commit()
-            return IngestOutcome(
+            session.flush()
+            outcome = IngestOutcome(
                 candidate_id=cand.id,
                 resume_id=resume.id,
                 extraction_id=extraction.id,
@@ -166,6 +230,10 @@ class CandidateStore:
                 matched_on=matched_on,
                 duplicate_resume=duplicate,
             )
+            if before_commit is not None:
+                before_commit(session, outcome)
+            session.commit()
+            return outcome
 
     @staticmethod
     def _resolve_candidate(
@@ -306,12 +374,40 @@ class CandidateStore:
                 for r in rows
             ]
 
+    def require_ingest_subject(self, candidate_id: str, resume_id: str) -> None:
+        """Check the exact ingest subject in one fresh read, without locking it.
+
+        This bounds a response snapshot; write constraints remain authoritative.
+        """
+        with self._session_factory() as session:
+            row = session.execute(
+                select(CandidateRow.id, ResumeRow.candidate_id)
+                .outerjoin(ResumeRow, ResumeRow.id == resume_id)
+                .where(CandidateRow.id == candidate_id)
+            ).one_or_none()
+            if row is None:
+                raise CandidateErasedError()
+            if row[1] is None:
+                raise ResumeErasedError()
+            if row[1] != candidate_id:
+                raise ValueError("resume_candidate_mismatch")
+
     def delete_candidate(self, candidate_id: str) -> bool:
-        """DPDP erasure: candidate + all resumes (raw text) + extractions."""
+        """Erase the candidate, cascaded data and existing login challenges.
+
+        Challenges have no FK because signup may precede a principal. Delete
+        every plane/purpose for the stored address in THIS transaction so an
+        interruption cannot commit only half of the erasure. In-flight issuance
+        and redemption require separate ordering; this covers existing rows.
+        """
         with self._session_factory() as session:
             cand = session.get(CandidateRow, candidate_id)
             if cand is None:
                 return False
+            if cand.email_hash:
+                session.execute(delete(LoginChallengeRow).where(
+                    LoginChallengeRow.email_hash == cand.email_hash
+                ))
             session.delete(cand)
             session.commit()
             return True
@@ -461,15 +557,27 @@ class CandidateStore:
         self, fp: Fingerprint, *, resume_id: str, candidate_id: str
     ) -> bool:
         """Idempotent per (resume, algo): re-uploads of an existing version
-        write nothing. Returns True when a row was actually written."""
+        write nothing. Returns True when a row was actually written.
+
+        Missing parents refuse stale work; False means an existing fingerprint,
+        never erasure. Foreign keys serialize inserts with concurrent deletion.
+        """
         with self._session_factory() as session:
-            exists = session.execute(
-                select(FingerprintRow.id).where(
-                    FingerprintRow.resume_id == resume_id,
-                    FingerprintRow.algo == fp.algo,
-                )
-            ).first()
-            if exists:
+            def require_parents():
+                if session.get(CandidateRow, candidate_id) is None:
+                    raise CandidateErasedError() from None
+                resume = session.get(ResumeRow, resume_id)
+                if resume is None:
+                    raise ResumeErasedError() from None
+                if resume.candidate_id != candidate_id:
+                    raise ValueError("resume_candidate_mismatch")
+
+            existing = select(FingerprintRow.id).where(
+                FingerprintRow.resume_id == resume_id,
+                FingerprintRow.algo == fp.algo,
+            )
+            require_parents()
+            if session.scalar(existing) is not None:
                 return False
             session.add(
                 FingerprintRow(
@@ -480,7 +588,20 @@ class CandidateStore:
                     shingle_count=fp.shingle_count,
                 )
             )
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                # Roll back before re-reading; never log SQL/parameters or retry
+                # ingest, which could recreate an erased identity.
+                session.rollback()
+                require_parents()
+                duplicate = (
+                    getattr(exc.orig, "sqlstate", None) == "23505"
+                    or getattr(exc.orig, "sqlite_errorname", None) == "SQLITE_CONSTRAINT_UNIQUE"
+                )
+                if duplicate and session.scalar(existing) is not None:
+                    return False
+                raise
             return True
 
     def similar_resumes(

@@ -20,11 +20,16 @@ CurationService.refresh_overlay → set_curated_overlay → normalize_skill]
   breaks ingestion.
 
 ## DPDP posture
-The queue (`unmapped_terms`) holds **no candidate_id** — aggregate taxonomy-gap
-metadata (norm_key + counts + source_types), not personal data. No new
-`ConsentPurpose`, no CASCADE. Candidate erasure deliberately leaves queue terms
-intact. `cur_min_term_len`/`cur_max_term_len` drop noise/overlong junk before it
-is ever persisted.
+The queue (`unmapped_terms`) holds **no candidate_id**. It stores a normalized
+key, raw display name, counts, source types, timestamps and reviewer decisions.
+No new `ConsentPurpose`, no CASCADE: candidate erasure deliberately leaves shared
+queue terms intact. Capture precedes source persistence and can survive a refused
+source write. `cur_min_term_len`/`cur_max_term_len` bound the normalized key;
+they do not prove that submitted display names contain no personal data. The
+absence of a candidate link is not a de-identification guarantee. Broader input/
+retention policy remains a review item; this erasure fix neither deletes shared
+vocabulary nor infers ownership.
+[Ordering evidence](docs/delivery/tasks/R1-S1-T3b-D3d2b.md).
 
 ## API (admin plane, X-API-Key)
 - `GET /curation/skills/unmapped?status=pending&limit=N` → 200 `list[UnmappedTerm]`

@@ -8,6 +8,24 @@ ranked and reasoned risk queue.
 Peer documents: `TENANCY.md` (who may read what), `AUTH.md` (how a principal is
 established), `FABRICATION.md` (what the risk numbers mean).
 
+Shared-ingest erasure boundary (2026-09-24): admin/org uploads check that the
+candidate and exact resume still exist before evaluation, before saving its
+report, and before returning. Observed disappearance returns the existing 422
+`candidate_erased`/`resume_erased` refusal, including evaluate=False and short
+inputs without fingerprints. Candidate erasure during evaluation now refuses
+the upload rather than returning stale IDs with report=null. Batches use the
+same refusal codes and scrub retry input under the existing policy; distinct
+fresh uploads remain permitted. These reads are snapshots, not locks across
+HTTP delivery. Resume-only deletion does not erase independently retained
+reports. [D3d1 evidence](docs/delivery/tasks/R1-S1-T3b-D3d1.md).
+
+Report-only erasure (2026-09-24): after saving, shared ingest and standalone
+`POST /evaluate` also check the report still exists. Observed absence returns
+422 `report_erased`; batches record that failure and clear retry input. Candidate
+and resume records survive report-only deletion. A fresh upload/evaluation remains
+permitted. Deletion after the final read may leave a delivered snapshot, but does
+not restore the deleted report. [Evidence](docs/delivery/tasks/R1-S1-T3b-D3d2a.md).
+
 A rule nobody can look up is a rule the next sprint reinvents differently, so
 every section below states the decision **and the alternative it rejected**.
 
@@ -221,21 +239,50 @@ discovered.
 
 ## 7. DPDP
 
-`batch_items.raw_text` holds personal data with **no candidate to cascade
-from** — a resume cannot be written to `resumes` before extraction, because a
-resume row needs a candidate and identity resolution needs the extraction.
+`batch_items.raw_text` initially holds personal data with **no candidate to
+cascade from**. Successful ingest clears that copy and its hash in the same
+transaction that creates a private `screening_item_inputs` resume reference.
+The resume owns the retry text; candidate/resume deletion cascades the reference
+even when the worker never records completion or failure. Saving the batch report
+also binds this reference to report erasure in that same save transaction.
+Report-only deletion ends unfinished retry capability without deleting the resume,
+including worker exits before completion or after completion rollback. Public
+subject links remain unset until completion.
 
-* **Cleared on success.** The text then lives in `resumes`, where candidate
-  erasure already cascades. Deleted on a path that already runs (the S7.1
-  challenge-hygiene pattern).
-* **Kept on failure — and since S8.3 Phase A there is a path that uses it.**
+**Unlinked input requires a fresh upload after erasure.** New items record the
+database's current erasure generation. Candidate, resume or report deletion
+(including cascades and bulk retention) advances it transactionally. Older
+unlinked items appear as failed with `fresh_upload_required`, an instruction to
+upload again, and no automatic retry. This intentionally also pauses unrelated
+unlinked input across organizations, because its subject is unknown. The reason
+does not disclose whose data was deleted. An in-flight initial ingest checks and
+locks this generation before writing, so a stale worker cannot recreate a subject.
+Already-bound retries keep their precise resume/report lifetime.
+
+The retained text remains subject to the **original** `ret_batch_item_days`
+window; quarantine does not identify and immediately erase unknown personal
+data. A new upload remains permitted. Migration 0026 also pauses historical raw
+input and unfinished references with no report association without guessing
+ownership or deleting their content. Completed anonymous counts/scalars stay
+unchanged. [Evidence](docs/delivery/archive/R1-S1-T3b-D3b2b2.md).
+
+* **Completion removes the private retry reference.** The text lives in
+  `resumes`, where candidate erasure cascades. The completed anonymous
+  count/scalar retention policy remains unchanged.
+* **Cleared on a recorded erasure refusal.** Candidate/resume/report erasure
+  failures clear text, hash, subject links, signals and score under the item's
+  processing lease. Failed status and payload cleanup commit together; retry
+  reports the item as `skipped`. Earlier unresolved input is paused by the
+  generation policy above; it is retained only within its existing window.
+* **Kept on ordinary failure — and since S8.3 Phase A there is a path that uses it.**
   `POST /screening/batches/{batch_id}/retry` flips this batch's `failed` items
   back to `pending`, clearing `error`, `claimed_at` and `processed_at`; the
   existing `process` call then picks them up, so there is still exactly **one**
-  door that evaluates an item. An item whose `raw_text` is already empty is
-  reported as `skipped`, never re-queued — it either succeeded (text cleared)
-  or failed as `empty_resume` and would fail identically, and a `requeued`
-  count the next `process` call cannot honour would be a lie.
+  door that evaluates an item. After ingest, retry uses the private reference
+  and pins that exact resume, including when extraction has no contact hashes.
+  Erasure after retry reads the text cannot resolve it into a replacement
+  candidate or resume. Items without raw input or a surviving private reference
+  are reported as `skipped`, as are quarantined inputs requiring a fresh upload.
   *(This paragraph used to read "for a retry path that DOES NOT EXIST YET",
   which the S8.4 Phase B review wrote after catching the original overclaim.
   The capability has now shipped; the honest correction is this, not a
@@ -251,6 +298,9 @@ resume row needs a candidate and identity resolution needs the extraction.
   day forever. There is still **no scheduler**: `POST /admin/retention/sweep` or
   `python -m app.retention.sweep --apply` is what makes it happen
   (`OPERATING.md` §8).
+  The same window now deletes private retry references using the original
+  batch-item creation time. This ends retry without deleting the resume or the
+  screening record; retries cannot restore a swept reference from stale text.
   *(This bullet used to say "declared and NOT yet swept", which was the honest
   statement at the time. It is corrected rather than deleted.)*
 * **Retention BOUNDS the retry, and that coupling is the point.** Past
@@ -311,8 +361,15 @@ Two decisions that follow from that:
   asserted structurally *and* end to end through a real erasure.
 * `tests/test_screening_store.py` — the claim cannot double-claim (including the
   interleaved race the public API cannot reach), stale claims heal, `raw_text`
-  is cleared on success and kept on failure, unreadable signals degrade to
+  is cleared on success and kept on ordinary failure, unreadable signals degrade to
   `None` rather than bricking the batch.
+* `tests/test_screening_refusal_retention.py` — recorded erasure refusals scrub
+  retry input atomically; stale leases cannot scrub another claim. Actual
+  ingest/fingerprint refusals are exercised through process/queue/retry.
+* `tests/test_screening_durable_input.py` — successful ingest and retry binding
+  commit together; candidate/resume erasure survives worker interruption,
+  pinned retry races and interrupted completion cleanup. Includes retention,
+  populated migration rollback and PostgreSQL lock inspection.
 * `tests/test_screening_service.py` — registration evaluates nothing, processing
   is bounded and resumable, a bad item fails alone, and a queue row cannot carry
   farm-match identities *on a batch whose report genuinely has them*.

@@ -21,9 +21,11 @@ worthless), is still bounded exactly where it was: at the org-plane boundary by
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
-from app.candidates.store import CandidateStore, MatchedOn
+from sqlalchemy.orm import Session
+
+from app.candidates.store import CandidateErasedError, CandidateStore, IngestOutcome, MatchedOn, ResumeErasedError
 from app.core.config import Settings
 from app.reports.store import ReportStore, SubjectErasedError
 from app.schemas.extraction import ExtractionCoverage
@@ -91,6 +93,10 @@ async def ingest_resume(
     domain: str,
     evaluate: bool,
     org_id: Optional[str],
+    expected_resume_id: Optional[str] = None,
+    before_commit: Optional[Callable[[Session, IngestOutcome], None]] = None,
+    before_report_commit: Optional[Callable[[Session, Report], None]] = None,
+    before_write: Optional[Callable[[Session], None]] = None,
 ) -> IngestResult:
     """Upload -> extract -> store -> (auto) depth-eval, for ONE resume.
 
@@ -116,7 +122,14 @@ async def ingest_resume(
         raise IngestRefused("unknown_domain") from exc
 
     result = await extract_profile(text, llm=deps.llm, settings=deps.settings)
-    outcome = deps.candidates.ingest(result, text, org_id=org_id)
+    try:
+        outcome = deps.candidates.ingest(result, text, org_id=org_id,
+            expected_resume_id=expected_resume_id, before_commit=before_commit,
+            before_write=before_write)
+    except CandidateErasedError:
+        raise IngestRefused("candidate_erased") from None
+    except ResumeErasedError:
+        raise IngestRefused("resume_erased") from None
 
     # S2.3: fingerprint + farm check. Lives HERE, not in a graph node: the
     # comparison must exclude the uploader's own candidate (re-uploads and new
@@ -125,9 +138,14 @@ async def ingest_resume(
     farm = ResumeFarmAssessment()  # insufficient_data when the text is too short
     fp = fingerprint_text(text, deps.settings)
     if fp is not None:
-        deps.candidates.save_fingerprint(
-            fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
-        )
+        try:
+            deps.candidates.save_fingerprint(
+                fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
+            )
+        except CandidateErasedError:
+            raise IngestRefused("candidate_erased") from None
+        except ResumeErasedError:
+            raise IngestRefused("resume_erased") from None
         matches, corpus = deps.candidates.similar_resumes(
             fp,
             exclude_candidate_id=outcome.candidate_id,
@@ -139,26 +157,43 @@ async def ingest_resume(
             settings=deps.settings,
         )
 
+    def require_subject() -> None:
+        try:
+            deps.candidates.require_ingest_subject(outcome.candidate_id, outcome.resume_id)
+        except CandidateErasedError:
+            raise IngestRefused("candidate_erased") from None
+        except ResumeErasedError:
+            raise IngestRefused("resume_erased") from None
+
     report: Optional[Report] = None
     if evaluate:
+        # Fingerprinting is optional and comparison may outlive its commit.
+        # Do not evaluate an already erased subject, even on short input.
+        require_subject()
         report = await engine.evaluate(
             resume_text=text, domain=domain,
             candidate_profile=result.profile, resume_farm=farm,
             extraction_coverage=result.coverage,
         )
+        require_subject()
         report.candidate_id = outcome.candidate_id
         # DPDP: a derived report must not outlive the erasure of its subject.
         # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
         # landing after the save cascades the row away -- so both halves of this
         # race are the database's job, not a compensating delete we remember.
         try:
-            deps.reports.save(report, org_id=org_id)
+            if before_report_commit is None:
+                deps.reports.save(report, org_id=org_id)
+            else:
+                deps.reports.save(report, org_id=org_id, before_commit=before_report_commit)
         except SubjectErasedError:
-            report = None
-        else:
-            if deps.candidates.get_candidate(outcome.candidate_id) is None:
-                report = None
+            raise IngestRefused("candidate_erased") from None
 
+    # A final snapshot, not a lock across HTTP delivery. Never return stale IDs
+    # as success after observed erasure, including evaluate=False.
+    require_subject()
+    if report is not None and deps.reports.get(report.id) is None:
+        raise IngestRefused("report_erased")
     return IngestResult(
         candidate_id=outcome.candidate_id,
         resume_id=outcome.resume_id,

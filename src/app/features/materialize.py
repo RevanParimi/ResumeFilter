@@ -16,6 +16,7 @@ from typing import Iterable, Optional
 from app.features.context import build_context
 from app.features.registry import FeatureRegistry
 from app.features.schema import FeatureVector, FeatureView
+from app.ledger.store import MaterializationCandidateMissingError
 
 
 def _utcnow() -> datetime:
@@ -50,7 +51,11 @@ def materialize_candidate(
         return None
 
     vector = registry.compute_view(view, ctx)
-    decision = ledger_store.materialization_consent(candidate_id, at=ctx.as_of)
+    try:
+        decision = ledger_store.materialization_consent(candidate_id, at=ctx.as_of)
+    except MaterializationCandidateMissingError:
+        # Context may predate erasure. Cancel this subject, not the whole batch.
+        return None
 
     if decision.allowed:
         consent_state = {"allowed": True, "consent_id": decision.grant_id}

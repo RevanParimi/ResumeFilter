@@ -12,8 +12,10 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
+from app.candidates.models import CandidateRow
 from app.candidates.normalize.skills import normalize_skill
 from app.candidates.normalize.text import norm_key
 from app.candidates.store import CandidateStore, build_candidate_store
@@ -162,6 +164,17 @@ class JobStore:
             session.commit()
             return _to_contract(row)
 
+    def _existing_candidate_ids(self, candidate_ids: set[str]) -> set[str]:
+        """Fresh reads, with bounded parameters for large materialized pools."""
+        ids = list(candidate_ids)
+        existing: set[str] = set()
+        with self._session_factory() as session:
+            for start in range(0, len(ids), 500):
+                existing.update(session.scalars(select(CandidateRow.id).where(
+                    CandidateRow.id.in_(ids[start:start + 500])
+                )))
+        return existing
+
     def run_match(
         self,
         org_id: str,
@@ -173,7 +186,10 @@ class JobStore:
         """Role-conditioned match over the materialized pool. Returns None if the
         requisition is not owned by org_id. Reads vectors + point-in-time profiles
         at one as_of, ranks with the pure engine, and audits each RETURNED
-        candidate as a match.surface disclosure (candidate-linked, CASCADE)."""
+        candidate as a match.surface disclosure (candidate-linked, CASCADE).
+        Erasure at audit commit removes the subject and retries the rolled-back
+        batch. Final existence reads exclude observed erasures, without locking
+        subjects across HTTP delivery or backfilling unaudited matches."""
         req = self.get_requisition(org_id, req_id)
         if req is None:
             return None
@@ -204,24 +220,42 @@ class JobStore:
                     profiles[v.candidate_id] = p
 
         all_ranked = _match_engine(req, vectors, profiles, specs_by_name, self._settings)
-        filtered_size = len(all_ranked)  # after the opt-in filter, before the limit
-        ranked = all_ranked[:limit]
+        # Preserve the ranked snapshot's scores/order. Every retry removes at
+        # least one missing attempted subject, so concurrent erasure cannot make
+        # this loop unbounded. A rolled-back batch leaves no survivor audits.
+        while True:
+            ranked = all_ranked[:limit]
+            with self._session_factory() as session:
+                for rank, mc in enumerate(ranked, start=1):
+                    session.add(AuditLogRow(
+                        actor_type="org", actor_id=org_id, action="match.surface",
+                        entity_type="requisition", entity_id=req_id,
+                        candidate_id=mc.candidate_id,
+                        details={"rank": rank, "score": mc.score},
+                    ))
+                try:
+                    session.commit()
+                except IntegrityError:
+                    session.rollback()
+                    attempted = {mc.candidate_id for mc in ranked}
+                    missing = attempted - self._existing_candidate_ids(attempted)
+                    if not missing:
+                        raise
+                    all_ranked = [mc for mc in all_ranked if mc.candidate_id not in missing]
+                    continue
+            break
 
-        # Disclosure audit: one match.surface row per RETURNED candidate.
-        with self._session_factory() as session:
-            for rank, mc in enumerate(ranked, start=1):
-                session.add(AuditLogRow(
-                    actor_type="org", actor_id=org_id, action="match.surface",
-                    entity_type="requisition", entity_id=req_id,
-                    candidate_id=mc.candidate_id,
-                    details={"rank": rank, "score": mc.score},
-                ))
-            session.commit()
+        # A candidate can disappear after commit, even outside the shortlist or
+        # the opt-in filter. Counts reflect these reads too. Do not refill here:
+        # remaining lower matches were not part of the committed disclosure.
+        existing = self._existing_candidate_ids({v.candidate_id for v in vectors})
+        ranked = [mc for mc in ranked if mc.candidate_id in existing]
+        filtered_size = sum(mc.candidate_id in existing for mc in all_ranked)
 
         return MatchResult(
             advisory=True, requisition_id=req_id, as_of=cut,
             view_name=view_name, view_version=view_version,
-            pool_size=len(vectors), filtered_size=filtered_size,
+            pool_size=sum(v.candidate_id in existing for v in vectors), filtered_size=filtered_size,
             ranked=tuple(ranked),
         )
 

@@ -276,15 +276,39 @@ portal keeps promising a window that nothing enforces.
 | `coding_rounds` | `ret_coding_round_days` (1825) | `coding_round_results` | `created_at` | delete |
 | `observed_offers` | `ret_observed_offer_days` (1825) | `observed_offers` | `created_at` | delete |
 | `audit_log` | `ret_audit_log_days` (2555) | `audit_log` | `created_at` | delete |
-| `batch_item_text` | `ret_batch_item_days` (90) | `batch_items` | `created_at` | **clear** `raw_text` |
+| `batch_item_text` | `ret_batch_item_days` (90) | `batch_items` + `screening_item_inputs` | original item `created_at` | **clear** unlinked `raw_text`; **delete** private retry reference |
 | `rate_limit_counters` | `ret_rate_limit_days` (7) | `rate_limit_counters` | `expires_at` | delete |
 | `login_state` | `ret_login_state_days` (7) | `login_challenges` **+** `auth_sessions` | `expires_at` | delete |
 
-**Eleven classes, twelve targets.** `login_state` covers two tables because an
+**Eleven classes, thirteen targets.** `login_state` covers two tables because an
 abandoned login challenge and a session that expired without a logout are the
-same fact to the person they describe.
+same fact to the person they describe. `batch_item_text` covers the unlinked
+copy before ingest and the private resume reference used for retry after ingest.
+New batch report saves also bind that reference to report erasure atomically.
+Report-only deletion ends unfinished retry even after a worker exit, while
+preserving the resume and completed anonymous counts/scalars. Migration 0025
+adds this nullable link without inferring historical report associations.
 
-**`batch_item_text` CLEARS and keeps the row.** An organisation's record of what
+Migration 0026 adds a non-personal erasure counter and an item registration
+generation. Candidate/resume/report deletes, including bulk retention, advance
+the counter in their transaction. Older unlinked items then require a fresh
+upload, including unrelated queued items across organizations. The queue shows
+`fresh_upload_required` and a re-upload instruction; retry skips these items.
+Their original retention window is unchanged. Already-bound surviving resume
+retries and completed counts/scalars remain intact. This limits automatic
+recreation; it does not identify or immediately delete unknown personal text.
+
+Upgrade pauses historical raw input and unfinished private references without
+report links, preserving their contents. **Downgrade refuses while retained
+quarantined input exists** (`screening_input_requires_review_before_downgrade`),
+because old code could make it retryable again. Review that data under the normal
+batch deletion/retention policy before attempting downgrade; the migration does
+not silently remove it. SQLite uses native column removal to preserve child
+references. These changes require the migration before running the new code.
+
+**`batch_item_text` keeps the screening item.** The sweep clears unlinked text
+and deletes private retry references; it does not delete the referenced resume.
+An organisation's record of what
 it screened must outlive the text it screened — the same reasoning as
 `batch_items.candidate_id` being `SET NULL`. Its eligibility predicate has a
 second half (`raw_text != ''`), because the column is already empty on every
@@ -331,8 +355,8 @@ python -m app.retention.sweep --apply    # delete
   before turning the knob on.
 - **`sweep_max_rows_per_class` (10000) bounds one invocation.** The report says
   `truncated: true` rather than pretending it finished; run it again. Precisely:
-  it bounds each **target**, and `login_state` is the one class with two, so a
-  single run can move up to 2× the cap for it. The cap exists to bound how long
+  it bounds each **target**; `login_state` and `batch_item_text` each have two,
+  so a single run can move up to 2× the cap for each. The cap exists to bound how long
   one statement holds locks, which is a per-table property.
 - **The CLI's report is the LAST line of stdout**, and it is JSON. This process
   shares stdout with the structured log, so the stream is a sequence of JSON

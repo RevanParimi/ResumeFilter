@@ -13,12 +13,15 @@ disclosure legible.
 from __future__ import annotations
 
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
 from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
@@ -173,6 +176,24 @@ class InterviewStore:
 
     # -- writes ----------------------------------------------------------------
 
+    @contextmanager
+    def _write_session(self, parent_model, parent_id: str):
+        """Keep FK/stale-update refusal and audit rollback in one boundary.
+
+        A preflight lookup cannot prevent erasure during flush/commit. Only
+        translate failures after rollback confirms the parent is now missing;
+        unrelated constraints must still surface as errors. Never include SQL
+        exception text, which can contain the rejected transcript or plan.
+        """
+        with self._session_factory() as session:
+            try:
+                yield session
+            except (IntegrityError, StaleDataError):
+                session.rollback()
+                if session.get(parent_model, parent_id) is None:
+                    raise LookupError("interview subject or session no longer exists") from None
+                raise
+
     def create_session(
         self,
         *,
@@ -184,7 +205,7 @@ class InterviewStore:
         at: Optional[datetime] = None,
     ) -> InterviewSession:
         moment = as_utc(at) if at else _utcnow()
-        with self._session_factory() as session:
+        with self._write_session(CandidateRow, candidate_id) as session:
             if session.get(CandidateRow, candidate_id) is None:
                 raise LookupError(f"unknown candidate: {candidate_id}")
             row = InterviewSessionRow(
@@ -237,7 +258,7 @@ class InterviewStore:
         """Record ONE answered turn. Deliberately unaudited (see the module
         docstring). The audio bytes never reach this method -- only their
         digest does."""
-        with self._session_factory() as session:
+        with self._write_session(InterviewSessionRow, session_id) as session:
             if session.get(InterviewSessionRow, session_id) is None:
                 raise LookupError(f"unknown interview session: {session_id}")
             answered = session.execute(
@@ -354,7 +375,7 @@ class InterviewStore:
         at: Optional[datetime] = None,
     ) -> InterviewSession:
         moment = as_utc(at) if at else _utcnow()
-        with self._session_factory() as session:
+        with self._write_session(InterviewSessionRow, session_id) as session:
             row = session.get(InterviewSessionRow, session_id)
             if row is None:
                 raise LookupError(f"unknown interview session: {session_id}")

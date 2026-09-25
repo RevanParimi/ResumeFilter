@@ -6,6 +6,230 @@
 
 ## ▶ Current state
 
+- **Session 2026-09-26 - Feature summary and evidence organization.** User
+  authorized consolidation, committing and pushing accumulated project changes.
+  Added root FEATURE_STATUS.md; archived 12 detailed children of closed task
+  groups, retaining group summaries and all open work. Rebased evidence links
+  and documented the archive policy. Application code and the next development
+  task (D3d2c2) are unchanged; earlier validation remains qualified as recorded.
+  Local-link/status checks passed across 47 documents; archive IDs and all 12
+  completed records verified. Diff self-review and whitespace passed, working
+  database preserved. No application rerun for documentation reorganization.
+
+- **Session 2026-09-26 - R1-S1-T3b-D3d2c1 completed.** Resumed the existing
+  atomic erasure implementation and finished validation. Existing login challenges
+  and candidate deletion commit/roll back together through both erasure doors;
+  unrelated principals and fresh signup remain intact. Full SQLite 2497 passed,
+  178 skipped; focused PG 113 passed, 2 skipped; migrated HTTP/process exit/restart
+  24/24 per backend, migration up/down/up and clean cluster shutdown. Tests ran
+  25 September; handoff closure recorded 26 September. Same-agent diff review,
+  compilation, whitespace and 402 UI bindings passed. Working DB preserved.
+  No schema/frontend change or browser/live-provider claim. Next: D3d2c2 issuance;
+  c3 redemption and D3d2d combined validation remain open. Evidence:
+  `docs/delivery/tasks/R1-S1-T3b-D3d2c1.md`.
+
+- **Session 2026-09-24 - R1-S1-T3b-D3d2b completed.** Source ingestion now
+  translates confirmed FK erasure and missing saved subjects/sources into safe
+  404 responses. Unrelated constraints/lookups, unavailable 200 behavior, fresh
+  ingestion and shared curation retention remain intact. Review fixed implicit
+  GitHub handle resolution misclassifying erasure as 400. Red 12 failed plus
+  one review reproducer; final focused SQLite 77 passed, 7 skipped; PG broad
+  96 passed, 1 skipped plus final-source 52 passed, 1 skipped. Full SQLite
+  **2488 passed, 170 skipped**, 44 warnings; migrated final HTTP/restart **29/29
+  per backend**, PG lock observation/migrations, clean shutdown and self-review.
+  Working DB preserved; Node unavailable, no browser/live-provider claim. Raw
+  curation display names are not guaranteed de-identified; snapshot limits and
+  aggregate-read residuals remain explicit. [Evidence](delivery/tasks/R1-S1-T3b-D3d2b.md).
+  Next **R1-S1-T3b-D3d2c**; login ordering/combined validation and parents stay open.
+
+- **Session 2026-09-24 - R1-S1-T3b-D3d2a completed.** Split D3d2 after
+  tracing separate report-response, profile-source and login-state boundaries.
+  Final report lookups now refuse observed report-only deletion on both upload
+  routes and standalone evaluation; batches retain existing scrub/no-retry
+  behavior. Candidate/resume lifetime and fresh requests are preserved. Red
+  14 failed; focused SQLite 117 passed, 17 skipped; PostgreSQL **172 passed,
+  1 skipped**; full SQLite **2463 passed, 163 skipped**, 44 warnings. Migrated
+  HTTP/restart **29/29 per backend**, migrations, clean shutdown and self-review
+  recorded. Working DB unchanged; Node unavailable, no browser/live-provider
+  claim. Response snapshots do not lock across delivery.
+  [Evidence](delivery/tasks/R1-S1-T3b-D3d2a.md). Next **R1-S1-T3b-D3d2b**;
+  login-state ordering/combined validation and all higher parents remain open.
+
+- **Session 2026-09-24 - R1-S1-T3b-D3d1 completed.** Resumed the unfinished
+  shared-ingest response guard and closed validation. Admin/org uploads refuse
+  observed late candidate/resume erasure with 422; batches record scrubbed
+  failure. Short input, evaluate=False, report-save races and unrelated errors
+  are covered. Original red 36 failed; added save-boundary red 2 failed; final
+  focused SQLite 81 passed, 3 skipped; PostgreSQL 84 passed, zero skips. Full
+  SQLite **2445 passed, 161 skipped**, 44 warnings; migrated HTTP/restart **36/36
+  per backend**, migrations, clean shutdown and self-review recorded. Working
+  DB preserved; Node unavailable, no browser/live-provider claim. Snapshot and
+  independent report lifetime limits documented. [Evidence](delivery/tasks/R1-S1-T3b-D3d1.md).
+  Next **R1-S1-T3b-D3d2**; D3d and higher gates remain open.
+
+- **Session 2026-09-24 - R1-S1-T3b-D3c3 completed.** Matching disclosure
+  audit rollback/retry omits erased subjects while preserving survivor scores
+  and audits. Final existence reads filter matches/counts on direct match and
+  dashboard-board routes; after-commit erasure never adds an unaudited replacement.
+  Ownership, consent policy and response shapes stay unchanged. Red 20 failed;
+  focused SQLite 63 passed; PG **167 passed, 3 skipped**; full SQLite **2398 passed,
+  158 skipped**, 44 warnings. Migrated HTTP/restart **21/21 per backend**, observed
+  FK blocking, migration chain and self-review recorded. Working DB unchanged;
+  Node unavailable, no frontend change or browser claim. Snapshot delivery limits
+  documented. [Evidence](delivery/archive/R1-S1-T3b-D3c3.md).
+  D3c and all its children done; next **R1-S1-T3b-D3d**. Higher gates stay open.
+
+- **Session 2026-09-23 - R1-S1-T3b-D3c2 completed.** Training audit erasure
+  cancels that subject; final existence reads omit stale examples even with
+  auditing disabled. Stored consent and survivor labels stay unchanged; returned
+  snapshots/files are not revoked. Red 16 failed; focused SQLite 73 passed;
+  PG **151 passed, 2 skipped**; full SQLite **2371 passed, 142 skipped**, 44 warnings.
+  HTTP/subprocess/restart **3/3 outer and 13/13 worker checks per backend**,
+  observed FK blocking, migration chain and self-review recorded. CSV and missing
+  parquet dependency checked; Node unavailable, no UI change or browser claim.
+  Working DB unchanged. [Evidence](delivery/archive/R1-S1-T3b-D3c2.md).
+  Next: **R1-S1-T3b-D3c3**; D3c and higher gates remain open.
+
+- **Session 2026-09-23 - R1-S1-T3b-D3c1 completed.** Split D3c into
+  materialization consent audit, training-label audit/export and matching disclosure.
+  Erasure before consent-audit commit now skips just that materialization subject;
+  unrelated failures propagate and consent policy is unchanged. Red 10 failed;
+  focused SQLite 59 passed; PG **104 passed, 1 skipped**; full SQLite **2353 passed,
+  123 skipped**, 44 warnings. HTTP/restart **19/19 per backend**, observed FK
+  blocking, migration chain and self-review recorded. Working DB unchanged.
+  [Evidence](delivery/archive/R1-S1-T3b-D3c1.md). Next: **R1-S1-T3b-D3c2**.
+  D3c and higher gates remain open. No browser/independent/live-provider claim.
+
+- **Session 2026-09-23 - R1-S1-T3b-D3b2b2 completed.** User authorized the
+  conservative unresolved-input pause. Generation locking and migration 0026
+  prevent recovery after erasure while preserving TTL, historical text and
+  fresh uploads. Full SQLite **2332 passed, 115 skipped**; PG focused **330 passed,
+  13 skipped**, final-file supplement **25 passed, 1 skipped**; HTTP/real worker
+  exits/restarts **17/17 each backend**, SQLite Chrome journey **21/21**. Populated
+  migrations, observed locks and self-review recorded. Two final compatibility
+  tests ran separately after full-suite collection. Node unavailable; no frontend
+  assets changed. Working DB and prior changes preserved. D3b2b/D3b2/D3b done;
+  exact next task **R1-S1-T3b-D3c**. D3 and higher gates remain open.
+  [Evidence](delivery/archive/R1-S1-T3b-D3b2b2.md).
+
+- **Session 2026-09-23 - R1-S1-T3b-D3b2b2 unresolved-input trace.**
+  Task remains in progress. Three isolated synthetic probes reproduced candidate
+  recreation after erasure before first extraction, ordinary first-ingest failure
+  and simulated interruption. A user policy choice is pending: pause older
+  unlinked input (including unrelated items), or retain bounded retries with the
+  limitation documented. No application code or working data changed; no full
+  suite/PG/browser/subprocess rerun and no completed task claimed.
+  [Design and evidence](delivery/archive/R1-S1-T3b-D3b2b2.md).
+  Exact next task remains **R1-S1-T3b-D3b2b2**; all parent gates stay open.
+
+- **Session 2026-09-23 - R1-S1-T3b-D3b2b1 interrupted report cleanup.**
+  Split D3b2b; completed only the report-interruption child. Migration 0025 and
+  report-save callback bind private retry input to report erasure atomically.
+  Real worker exits before completion/after rollback cannot retain erased report
+  retry capability; candidate/resume data and anonymous completed records survive.
+  Historical ownership is not inferred. SQLite focused 95 passed; PG focused
+  **306 passed, 12 skipped**; full SQLite **2317 passed, 105 skipped**, 44 warnings;
+  migrated HTTP/worker exit/restart **19/19 per backend**, migration and observed
+  PG lock evidence, clean cluster stop and self-review recorded. Fixture/smoke
+  setup errors corrected; working DB unchanged. Node unavailable; no frontend,
+  browser, independent-review or live-provider claim.
+  [Evidence](delivery/archive/R1-S1-T3b-D3b2b1.md).
+  Next: **R1-S1-T3b-D3b2b2**, unresolved/failed-first-ingest and historical input.
+  D3b2b/D3b2/D3b/D3/D/T3b/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-23 - R1-S1-T3b-D3b2a durable screening retry input.**
+  Split D3b2; completed only D3b2a. Successful ingest atomically replaces batch
+  raw input/hash with a private CASCADE resume reference. Retry pins that resume;
+  candidate/resume erasure works through worker interruption. The reference uses
+  the original batch TTL. Migration 0024 leaves ambiguous legacy data intact and
+  restores only surviving unfinished input on downgrade. Final durable SQLite
+  23 passed; PG runner **253 passed, 11 skipped**; full SQLite **2303 passed,
+  93 skipped**, 42 warnings. HTTP/worker termination/restart **18/18 per backend**,
+  migration/lock evidence and self-review recorded. Initial four PG fixture
+  failures corrected. Shutdown wait timed out, then status/log confirmed clean
+  stop. Working database unchanged; Node unavailable; no browser/live-provider/
+  independent-review claim. [Evidence](delivery/archive/R1-S1-T3b-D3b2a.md).
+  Next: **R1-S1-T3b-D3b2b**, earlier unresolved input and interrupted report-only
+  cleanup. D3b2/D3b/D3/D/T3b/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-22 - R1-S1-T3b-D3b1 screening refusal retention.**
+  Split D3b; completed only D3b1. Recording an erasure refusal atomically scrubs
+  batch input/hash, links, signals and score under its lease; retry skips it.
+  Ordinary failures remain retryable. Focused SQLite 102 passed; PG runner
+  142 passed, seven SQLite-only skips; full SQLite **2279 passed, 70 skipped**,
+  42 warnings. Migrated HTTP/restart **19/19 per backend**, migrations and
+  self-review recorded. Working database unchanged. Node unavailable; no
+  browser/live-provider/independent-review claim.
+  [Evidence](delivery/archive/R1-S1-T3b-D3b1.md). Next: **R1-S1-T3b-D3b2**, durable
+  input association and interrupted cleanup. D3b/D3/D/T3b/T3/F05/R1-S1-Q open.
+
+- **Session 2026-09-22 - R1-S1-T3b-D3a screening completion erasure.**
+  Split D3 before implementation; completed only D3a. Erased candidate/resume/
+  report completion now fails safely, clears retained input under its lease and
+  is not counted as processed. Existing completed scalar/count retention stays.
+  Focused SQLite 65 passed; PG runner 78 passed, three SQLite-only skips;
+  full SQLite **2266 passed, 61 skipped**, 42 warnings. Migrated HTTP/restart
+  **19/19 per backend**, PostgreSQL migration/lock checks and self-review recorded.
+  Working database unchanged. [Evidence](delivery/tasks/R1-S1-T3b-D3a.md).
+  Node unavailable; no browser/live-provider/independent-review claim.
+  Next: **R1-S1-T3b-D3b**, earlier unlinked screening input and interrupted
+  cleanup. D3/D/T3b/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-22 - R1-S1-T3b-D2b fingerprint erasure races.**
+  Completed D2b and parent D2. Missing candidate/resume fingerprint writes now
+  return safe ingest refusals (HTTP 422/failed batch); concurrent duplicates are
+  idempotent and mismatched ownership is rejected. Focused SQLite 79 passed;
+  PG runner 97 passed, four SQLite-only skips; full SQLite **2250 passed,
+  45 skipped**, 42 warnings. Migrated HTTP/restart **18/18 per backend**,
+  migration up/down/up and self-review recorded. Working database unchanged.
+  [Evidence](delivery/archive/R1-S1-T3b-D2b.md). No full PG suite, browser or
+  independent review claimed. Next: **R1-S1-T3b-D3**, screening/audits/cross-store
+  ordering; D/T3b/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-22 - R1-S1-T3b-D2a resolved-ingest erasure race.**
+  Split D2 before implementation; completed only identity-resolution-to-commit
+  refusal. Erased resolved candidates produce candidate_erased (HTTP 422/failed
+  batch item) after rollback, without retrying resolution. Focused SQLite 64
+  passed; PG runner 71 passed, 2 SQLite-only skips; full SQLite **2234 passed,
+  32 skipped**, 42 warnings. Migrated HTTP/restart **12/12 per backend**,
+  migration up/down/up and self-review recorded. Working database unchanged.
+  [Evidence](delivery/archive/R1-S1-T3b-D2a.md). No browser/independent review or
+  full PG suite claimed. Next: **R1-S1-T3b-D2b**, fingerprints. D2/D3 and
+  D/T3b/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-21 - R1-S1-T3b-D1 feature-vector erasure races.**
+  Split derived-store work before implementing only vector persistence. Erased
+  insert/update writes return None after rollback; API batches count them as
+  skipped and continue. Focused SQLite 35 passed; PostgreSQL 45 passed, zero
+  skips; full SQLite **2223 passed, 23 PostgreSQL skips**, 42 warnings. Migrated
+  HTTP/restart **15/15 per backend**, migration up/down/up and self-review passed.
+  [Evidence](delivery/tasks/R1-S1-T3b-D1.md). No browser/independent review or
+  full PostgreSQL suite claimed. Existing data and uncommitted work preserved.
+  Next: **R1-S1-T3b-D2**, fingerprints/ingest. D3 audits/screening and parents
+  D/T3b/T3/F05 plus R1-S1-Q remain open.
+
+- **Session 2026-09-21 - R1-S1-T3b-I interview erasure races.**
+  Split T3b before implementation; completed only interview mutations/reload.
+  Stale start/turn/completion failures now return defined missing-parent
+  refusals after rollback; answer reload handles erasure with 404. Focused
+  SQLite 76 passed; PostgreSQL 83 passed, no skips; full SQLite **2213 passed,
+  17 PostgreSQL skips**, 32 warnings. Real migrated HTTP/restart **15/15**;
+  migration up/down/up and self-review recorded. Existing database untouched.
+  [Evidence](delivery/tasks/R1-S1-T3b-I.md). Next: **R1-S1-T3b-D**;
+  derived stores/ingest, T3b/T3/F05 and sprint gate remain open.
+
+- **Session 2026-09-21 - R1-S1-T3a-V1 feature timestamp repair.**
+  Recovered the previous PostgreSQL full result (9 failed, 2192 passed) and
+  reproduced it plus two new timezone regressions (11 failed, 82 passed).
+  FeatureStore now preserves UTC instants at every write/query binding.
+  Focused PostgreSQL 93 passed; feature HTTP/restart 12/12 on each database;
+  erasure HTTP/restart 19/19 on SQLite. Full PostgreSQL **2208 passed**,
+  zero skips; SQLite **2198 passed, 10 PostgreSQL skips**, 32 warnings each.
+  [Evidence](delivery/archive/R1-S1-T3a-V1.md). No historical-data repair;
+  V1 and T3a are done. Next task: **R1-S1-T3b**, separate chat;
+  parent T3, F05 and the sprint gate remain open.
+
+
 - **Session 2026-09-11 — R1-S1-T3a validation still blocked by authentication.**
   Read-only test connection retry again received password authentication
   rejection before SQL. No database mutations, application edits or new pytest/

@@ -49,8 +49,8 @@ class PortalService:
         # Optional for the same reason: the portal stays constructible without
         # the S7.3 package, and `interviews` is simply omitted from MyData.
         self._interview = interview
-        # Optional for the same reason (S8.2). It also owns the erasure of
-        # login challenges, which carry no FK and so cannot cascade.
+        # Optional for the same reason (S8.2); used for the session view.
+        # CandidateStore owns atomic candidate/challenge erasure.
         self._auth = auth
         # Optional for the same reason (S8.3 Phase B): the portal stays
         # constructible without the rights package, and `requests` is simply
@@ -200,14 +200,12 @@ class PortalService:
         reports (S8.1), ledger rows, verifications, interviews, credentials and
         auth sessions. `login_challenges` is the one exception, because it
         carries no foreign key -- at signup time no principal exists to point at
-        -- so it is deleted explicitly here rather than in a handler.
+        -- so CandidateStore deletes it in the candidate erasure transaction.
 
         `reports_deleted` is a COUNT READ taken before the delete: an entry
         point that forgets it loses a number in a response, not a person's data.
         """
         reports_deleted = len(self._report_store.for_candidate(candidate_id))
-        if self._auth is not None:
-            self._auth.erase_login_state(candidate_id)
         deleted = self._candidates.delete_candidate(candidate_id)
         return {
             "candidate_id": candidate_id,

@@ -75,6 +75,14 @@ class ConsentError(RuntimeError):
     """A write needed consent that is not currently active."""
 
 
+class MaterializationCandidateMissingError(LookupError):
+    """The subject disappeared before its materialization audit could commit."""
+
+
+class TrainingCandidateMissingError(LookupError):
+    """The subject disappeared before its training-label audit could commit."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -984,11 +992,13 @@ class LedgerStore:
         feature table at `at`? Basis = any active ledger_read grant (org-agnostic).
         Audits `feature.materialize` (allowed AND withheld) in the same
         transaction. Returns the decision — withheld does NOT raise (the caller
-        still writes a valid row with those features nulled)."""
+        still writes a valid row with those features nulled). Missing/erased
+        subjects raise MaterializationCandidateMissingError, never a consent
+        denial; unrelated persistence failures propagate."""
         moment = consent_logic.as_utc(at) if at else _utcnow()
         with self._session_factory() as session:
             if session.get(CandidateRow, candidate_id) is None:
-                raise LookupError(f"unknown candidate: {candidate_id}")
+                raise MaterializationCandidateMissingError("candidate_unavailable")
             grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_READ)
             decision = consent_logic.has_any_active(
                 grants, purpose=ConsentPurpose.LEDGER_READ, at=moment
@@ -1006,8 +1016,24 @@ class LedgerStore:
                 candidate_id=candidate_id,
                 details=details,
             )
-            session.commit()
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                # The CASCADE FK orders the audit with erasure. Recheck only
+                # after rollback, without retaining a stale identity-map row.
+                if session.get(CandidateRow, candidate_id) is None:
+                    raise MaterializationCandidateMissingError("candidate_unavailable") from None
+                raise
             return decision
+
+    def candidate_exists(self, candidate_id: str) -> bool:
+        """Fresh existence check for the training builder's snapshot handoff.
+
+        This is not a consent check or a lock across subsequent file delivery.
+        """
+        with self._session_factory() as session:
+            return session.get(CandidateRow, candidate_id) is not None
 
     def audit_training_label(
         self, candidate_id: str, *, allowed: bool, as_of: datetime
@@ -1016,7 +1042,9 @@ class LedgerStore:
         withheld (not allowed) this candidate's consent-gated outcomes as a
         training label. Audit-only — it records the S4.2 materialization decision
         reused at export time (single source of truth), does not recompute
-        consent, and never raises. The candidate-linked row CASCADEs on erasure."""
+        consent. Missing/erased subjects raise TrainingCandidateMissingError;
+        unrelated persistence failures propagate. The candidate-linked row
+        CASCADEs on erasure."""
         with self._session_factory() as session:
             self._audit(
                 session,
@@ -1031,8 +1059,13 @@ class LedgerStore:
                     "as_of": consent_logic.as_utc(as_of).isoformat(),
                 },
             )
-            session.commit()
-
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                if session.get(CandidateRow, candidate_id) is None:
+                    raise TrainingCandidateMissingError("candidate_unavailable") from None
+                raise
 
     def audit_request_event(
         self,

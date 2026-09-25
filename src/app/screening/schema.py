@@ -142,6 +142,8 @@ def compose_reason(
     if status is ItemStatus.PROCESSING:
         return "screening in progress"
     if status is ItemStatus.FAILED:
+        if error == "fresh_upload_required":
+            return "Upload this resume again to screen it; this saved input can no longer be retried."
         return f"could not be screened: {error or 'unknown_error'}"
     if signals is None:
         return "screened, but the stored signals could not be read"

@@ -683,8 +683,9 @@ class AuthService:
 
         Sessions CASCADE with the candidate row; login_challenges cannot,
         because they carry no FK (at signup time no principal exists). This
-        lives on the SERVICE so both erasure entry points -- the portal and the
-        admin plane -- inherit it, rather than each remembering a line.
+        method only clears challenges; it does not erase the candidate. Full
+        candidate erasure uses CandidateStore.delete_candidate, which commits
+        challenge cleanup and candidate deletion together.
         """
         email_hash = self._candidates.email_hash_for(candidate_id)
         if not email_hash:

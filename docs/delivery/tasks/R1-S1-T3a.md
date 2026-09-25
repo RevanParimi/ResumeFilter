@@ -1,6 +1,6 @@
 # R1-S1-T3a - Report writes racing erasure
 
-Status: awaiting validation (2026-09-11). Parent: [R1-S1-T3](R1-S1-T3.md).
+Status: done (2026-09-21). Parent: [R1-S1-T3](R1-S1-T3.md).
 
 ## Scope and acceptance
 
@@ -14,8 +14,8 @@ Interview/derived stores are T3b; no data cleanup, schema or UI change.
 
 | ID | Acceptance | Evidence |
 |---|---|---|
-| AC1 | Erase before insert/update/outcome flush rejects stale writes and preserves B | SQLite competing connections/retry passed; PostgreSQL pending |
-| AC2 | A committed write followed by erase leaves no report/outcome | SQLite event-controlled ordering passed; PostgreSQL pending |
+| AC1 | Erase before insert/update/outcome flush rejects stale writes and preserves B | SQLite and PostgreSQL competing connections/retry passed |
+| AC2 | A committed write followed by erase leaves no report/outcome | SQLite and PostgreSQL event-controlled ordering passed |
 | AC3 | Rejected claims/notes do not escape through race logs | Rendered production logging assertions passed |
 | AC4 | Unrelated integrity/stale errors remain errors | Bad org FKs on reports/outcomes and report-only disappearance passed |
 | AC5 | In-flight evaluation cancels; outcomes fail 404; restart retains only B | HTTP/restart 19/19; both outcome API boundary regressions passed |
@@ -148,13 +148,13 @@ Reviewed report-store SHA256:
   `git -c core.safecrlf=false diff --check` passed. Working `data/veritas.db`
   SHA256 remained `4FF974BB964D160163B179742F26CBF8FB1FCB42FFBA5F1F841BA3EB7D24956B`.
 
-## PostgreSQL validation (2026-09-18, in progress)
+## PostgreSQL validation (2026-09-18, result recovered 2026-09-21)
 
 - Configured remote test URL still rejects authentication before SQL. Instead,
   initialized a disposable local PostgreSQL **18.6** cluster matching CI's major
   version, using the [EDB binary archive](https://www.enterprisedb.com/download-postgresql-binaries).
   Archive: `postgresql-18.6-3-windows-x64-binaries.zip`, observed SHA256
-  `59F8CE701C63C2ED623C665A5E51B3EF6F2E37CCF837B68FFeed0742D0AE6ABD`.
+  `59F8CE701C63C2ED623C665A5E51B3EF6F2E37CCF837B68FFEED0742D0AE6ABD`.
   Runtime is in OS temp; loopback-only, random port/password, no Windows service
   or `.env` edits. Only this newly created cluster receives schema/data writes.
 - Runner: `.resume/Scripts/python.exe .pytest_cache/run_r1_s1_t3a_postgres.py`.
@@ -167,16 +167,34 @@ Reviewed report-store SHA256:
   Reproducer log: `.pytest_cache/r1-s1-t3a-pg-cleanup-red.txt`.
 - Validation fix in `tests/conftest.py`: finish the schema-list read transaction,
   then commit each DROP separately. No production change or raised lock limits.
-  The existing real-PostgreSQL focused run is the regression for bounded cleanup;
-  final focused/full rerun is in progress on a new disposable cluster.
+  The existing real-PostgreSQL focused run is the regression for bounded cleanup.
+  Rerun on a new cluster: **61 passed, zero skips, 2 warnings**, 61.64s, exit 0,
+  including teardown. Log: `.pytest_cache/r1-s1-t3a-pg-focused.txt`. Migration
+  up/down/up also passed again; log: `r1-s1-t3a-pg-migrations.txt` in the same
+  directory. Recovered full result: **9 failed, 2192 passed, 32 warnings**,
+  1150.32s. These feature timestamp/API failures block completion; bounded
+  repair [R1-S1-T3a-V1](../archive/R1-S1-T3a-V1.md) was completed on 2026-09-21.
 - Reviewed current HEAD `eaa94ded275e6039f96f1f50f4fde67e2fc02bf8` plus this
   fixture diff. Report store, concurrency tests and HTTP smoke still match
   their implementation-session hashes. No independent review claimed.
+  Fixture SHA256: `B1AC147E1DEDDAE068C3B64DD16D92A35941E7A93EBE8B5FF00C92E1AEACE613`.
+
+## Final validation (2026-09-21)
+
+Validation prerequisite [R1-S1-T3a-V1](../archive/R1-S1-T3a-V1.md) is done. Its record
+contains exact commands, final code-state review and logs. Final PostgreSQL
+focused: **93 passed**, zero skips, 2 warnings, 79.17s, including all T3a cases.
+Full PostgreSQL: **2208 passed**, zero skips, 32 warnings, 1431.51s. Full SQLite:
+**2198 passed, 10 PostgreSQL skips**, 32 warnings, 663.66s. Erasure HTTP/restart:
+**19/19** on SQLite; feature HTTP/restart **12/12** on each backend. Migration
+up/down/up, per-schema cleanup and clean cluster shutdown passed. Report-store
+and shared-fixture hashes match their reviewed implementation states above.
+No T3a acceptance gates remain open. This does not close parent T3 or F05.
 
 ## Handoff
 
-Next task is **R1-S1-T3a validation** after correcting test DB authentication;
-use disposable PostgreSQL and do not repeat
-implementation or close the parent based on SQLite evidence. After its gates
-pass, T3b is the next development child in a separate chat. F05 and R1-S1-Q
-remain open. No publishing, deployment or legacy-file cleanup performed.
+Next task is **R1-S1-T3b**, in a separate chat. Interview/derived-store and
+ingest races, F05 and R1-S1-Q remain open. Historical shifted feature timestamps
+need a separate repair policy. No publishing, deployment, user-data rewrite or
+legacy-file cleanup performed. No independent review, browser or live-provider
+validation is claimed.

@@ -64,8 +64,8 @@ def run_sweep(
     """Sweep every target once.
 
     ``sweep_max_rows_per_class`` bounds each TARGET, not each data class, and
-    the only class with two targets is ``login_state`` -- so one invocation can
-    move up to 2x the cap for it. Stated rather than hidden: the cap exists to
+    ``login_state`` and ``batch_item_text`` each have two targets, so one invocation
+    can move up to 2x the cap for each. Stated rather than hidden: the cap exists to
     bound how long a single statement holds locks, which is a per-table
     property, and a class-wide budget would make the second table's progress
     depend on the first table's size. The report still marks the CLASS

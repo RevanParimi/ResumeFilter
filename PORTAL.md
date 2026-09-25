@@ -255,17 +255,20 @@ parametrize the surfaced `retained_until` only):
 
 ## DPDP erasure completeness
 
-`DELETE /portal/me` reuses the existing erasure path exactly as the admin
-`DELETE /candidates/{id}` does: it deletes the candidate's reports
-(`report_store.delete_for_candidate`) then hard-deletes the candidate
-(`CandidateStore.delete_candidate`), which cascades resumes, extractions, and
-every candidate-linked ledger row via the migration's CASCADE FKs — including
-the new `candidate_credentials` row, and (since S7.1) the candidate's
-`verifications` rows and their `verification_challenges`. After erasure the
-same key **401s** on
-any subsequent call: the credential is gone, so `authenticate_candidate` finds
-nothing to match. Response: **200** `{candidate_id, deleted: true,
-reports_deleted: N}`.
+`DELETE /portal/me` and admin `DELETE /candidates/{id}` both call
+`PortalService.erase()`. It reads the report count, then delegates to
+`CandidateStore.delete_candidate()`. The candidate delete cascades reports,
+resumes, extractions, candidate-linked ledger data, credentials, verifications,
+interviews and sessions. Login challenges lack a candidate FK because signup can
+precede the principal; all existing challenge scopes for the stored email hash
+are explicitly deleted in the same transaction. Failure or interruption before
+commit rolls back the erasure, including the challenge cleanup.
+
+After committed erasure, the old candidate key/session returns **401**. The
+response remains **200** `{candidate_id, deleted: true, reports_deleted: N}`;
+`reports_deleted` is a count read before deletion, not a locked response snapshot.
+Fresh signup is still allowed. Late issuance and already-consumed redemption
+across erasure remain open in D3d2c2/c3; atomic cleanup alone does not fence them.
 
 ## Endpoint contract
 

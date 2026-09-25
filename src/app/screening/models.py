@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    JSON, DateTime, Float, ForeignKey, Index, String, Text,
+    JSON, BigInteger, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -75,13 +75,13 @@ class BatchItemRow(Base):
         ForeignKey("screening_batches.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(String(16), default="pending")
-    #: CLEARED on success -- the text then lives in `resumes`, where candidate
-    #: erasure already cascades. Kept on failure so an in-place retry does not
-    #: have to ask the org to re-upload: since S8.3 Phase A,
-    #: `POST /screening/batches/{id}/retry` re-queues failed items and an item
-    #: whose text is already gone is reported `skipped` (SCREENING.md §7).
+    #: Cleared when ingest commits; subsequent retry uses ScreeningInputRow.
+    #: Pre-ingest ordinary failures retain this copy. An item without either
+    #: source of input is reported `skipped` by retry (SCREENING.md §7).
     raw_text: Mapped[str] = mapped_column(Text, default="")
     text_sha256: Mapped[str] = mapped_column(String(64), index=True)
+    # NULL is historical/untrusted input. Never backfill inferred ownership.
+    input_generation: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     candidate_id: Mapped[Optional[str]] = mapped_column(
         ForeignKey("candidates.id", ondelete="SET NULL"), nullable=True
@@ -119,3 +119,47 @@ class BatchItemRow(Base):
         Index("ix_batch_items_batch_status", "batch_id", "status"),
         Index("ix_batch_items_batch_risk", "batch_id", "risk_score"),
     )
+
+
+class ScreeningInputRow(Base):
+    """Private retry reference; erasure removes it without changing item counts.
+
+    The resume owns the text. This row replaces the batch's unlinked copy in
+    the same transaction as ingest, and lives only until completion or sweep.
+    """
+
+    __tablename__ = "screening_item_inputs"
+
+    id: Mapped[str] = mapped_column(
+        ForeignKey("batch_items.id", ondelete="CASCADE"), primary_key=True
+    )
+    resume_id: Mapped[str] = mapped_column(
+        ForeignKey("resumes.id", ondelete="CASCADE"), index=True
+    )
+    # Bound when report save commits; deletion ends unfinished retry capability.
+    report_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("reports.id", ondelete="CASCADE", name="fk_screening_input_report"),
+        nullable=True, index=True,
+    )
+    # Copy the item's timestamp: retry must not reset its retention window.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScreeningErasureStateRow(Base):
+    """One transaction-ordering counter, containing no personal information."""
+
+    __tablename__ = "screening_erasure_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    __table_args__ = (CheckConstraint("id = 1", name="ck_screening_erasure_singleton"),)
+
+
+# ORM create_all is a test convenience; production installs this via Alembic.
+# BatchItem's parents must exist before installing their deletion triggers.
+BatchItemRow.__table__.add_is_dependent_on(ScreeningErasureStateRow.__table__)
+
+
+@event.listens_for(BatchItemRow.__table__, "after_create")
+def _install_erasure_schema(target, connection, **kwargs):
+    from app.screening.erasure_schema import install
+    install(connection)

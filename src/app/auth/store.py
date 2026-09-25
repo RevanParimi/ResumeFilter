@@ -1,7 +1,8 @@
 """Auth persistence (S8.2): sessions, login challenges, org users, operators.
 
-All SQL for the four tables lives here; the service above holds the policy and
-the routes above that hold nothing at all. Datetimes are normalized with
+Auth SQL lives here, except existing challenge cleanup in CandidateStore's
+erasure transaction; the service above holds the policy and the routes above
+that hold nothing at all. Datetimes are normalized with
 ``as_utc`` on write because SQLite drops tzinfo on refetch -- the S3.1 lesson,
 where an IST-written revocation would otherwise land 5.5 hours late and open a
 fail-open window.
@@ -371,8 +372,10 @@ class AuthStore:
             return int(result.rowcount or 0) == 1
 
     def delete_challenges_for_email(self, email_hash: str) -> int:
-        """Every purpose and every plane. The erasure path calls this because
-        login_challenges has no FK and therefore cannot cascade."""
+        """Standalone cleanup for every purpose/plane, without candidate erasure.
+
+        CandidateStore owns cleanup in the candidate-delete transaction.
+        """
         if not email_hash:
             return 0
         with self._session_factory() as session:

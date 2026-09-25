@@ -160,11 +160,15 @@ fusing them would repeat S7.2's two-ladders mistake.
 - Candidate session create/revoke are audited into the shared `audit_log`, so
   they appear in `GET /portal/access-log`. Org-user and operator events have no
   candidate subject and are structured-logged only (see §9).
-- **Erasure**: `PortalService.erase()` is the single path both the portal and
-  the admin plane call. Sessions CASCADE; `login_challenges` **cannot** (no FK,
-  because at signup time no principal exists), so they are deleted explicitly
-  there — the one non-structural guarantee in this subsystem, tested at *both*
-  entry points.
+- **Erasure**: both portal and admin routes call `PortalService.erase()`, which
+  delegates to `CandidateStore.delete_candidate()`. Candidate sessions and other
+  candidate-linked rows cascade. Existing `login_challenges` have no FK (signup
+  can precede a principal), so the candidate store explicitly deletes every
+  plane/purpose for the stored email hash in the **same transaction**. A failed
+  or interrupted erasure rolls back both deletes; a retry can complete them.
+  Other addresses and organization/admin principals and sessions survive.
+  Fresh signup remains permitted. Late issuance and already-consumed redemption
+  across erasure are separate open ordering tasks, D3d2c2/c3.
 
 ## 8. Email seam
 

@@ -8,6 +8,11 @@ it does not claim any pending implementation or validation is complete.
 Read [WORKFLOW.md](WORKFLOW.md), that task's PI section and its evidence record.
 Do not load all PIs or the historical roadmap in each session.
 
+Use [FEATURE_STATUS.md](../../FEATURE_STATUS.md) for the common feature summary.
+Detailed children of closed task groups live in the [evidence archive](archive/README.md);
+their group summaries and all open work remain in `tasks/`. Follow links to
+archived evidence only when needed. Archiving does not change completion status.
+
 ## Increments and sprint order
 
 PI-R identifies remediation work; historical product PI identifiers remain unchanged.
