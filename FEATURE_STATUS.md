@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-09-26. This is the common feature summary. For the exact next
+Updated: 2026-09-27. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -13,7 +13,7 @@ follow the linked task records. Existing features can still have open remediatio
 | Consent and evaluation ledger | Interview/coding records, purpose-scoped consent and advisory reputation. | [Ledger](LEDGER.md). Current authorization across reads/exports remains R1-S2. |
 | Features, training and matching | Feature registry/materialization, exports, talent search, job matching and employer dashboard. | [Features](FEATURES.md), [matching](MATCHING.md), [dashboard](DASHBOARD.md). Snapshot checks do not lock across delivery. |
 | Profile intake and curation | GitHub/LinkedIn-export ingestion, advisory source signals and human taxonomy review. | [Sources](PROFILE_SOURCES.md), [curation](CURATION.md). Shared raw display-name retention needs D3d2d review. |
-| Login and candidate portal | Email-code authentication, sessions, candidate access/consent controls and erasure. | [Auth](AUTH.md), [portal](PORTAL.md). Issuance/redemption races remain open. |
+| Login and candidate portal | Email-code authentication, sessions, candidate access/consent controls and erasure. | [Auth](AUTH.md), [portal](PORTAL.md). Redemption across erasure remains open. |
 | Screening | Batch processing, leases, retry handling and retained-input controls. | [Screening](SCREENING.md). Completed erasure safeguards below; UI journeys and bounded work remain PI-R3/R4. |
 | Verification and interviews | Contact/manual verification and interview assessment workflows. | [Verification](VERIFICATION.md), [interviews](INTERVIEWS.md). Attempt races, unfinished journeys and assessment quality remain PI-R1/R3/R5. |
 
@@ -34,20 +34,17 @@ representative assessment accuracy; see [delivery plan](docs/delivery/README.md)
 | Materialization/training/matching audits | Erased subjects are excluded at the checked boundaries without losing surviving subjects' audits/results. | [D3c](docs/delivery/tasks/R1-S1-T3b-D3c.md) |
 | Ingest/report/source responses | Observed candidate, resume, report or saved-source disappearance produces a defined refusal. | [Ingest](docs/delivery/tasks/R1-S1-T3b-D3d1.md), [reports](docs/delivery/tasks/R1-S1-T3b-D3d2a.md), [sources](docs/delivery/tasks/R1-S1-T3b-D3d2b.md) |
 | Existing login-state cleanup | Existing challenge cleanup and candidate deletion commit or roll back together through portal/admin erasure; unrelated principals and fresh signup survive. | [D3d2c1](docs/delivery/tasks/R1-S1-T3b-D3d2c1.md) |
+| Login issuance | Erasure cancels pending send reservations; late delivery cannot restore a challenge. Send failures preserve previous valid codes, and fresh signup remains allowed. | [D3d2c2](docs/delivery/tasks/R1-S1-T3b-D3d2c2.md) |
 
 ## Open gates and validation
 
-Next: [D3d2c2 - challenge issuance across erasure](docs/delivery/tasks/R1-S1-T3b-D3d2c2.md),
-then [D3d2c3 - redemption](docs/delivery/tasks/R1-S1-T3b-D3d2c3.md), then D3d2d
+Next: [D3d2c3 - redemption](docs/delivery/tasks/R1-S1-T3b-D3d2c3.md), then D3d2d
 combined review, including source-list/portal aggregate windows and curation
 retention. T3, F05 and sprint R1-S1 remain open. Individual safeguards do not
 establish atomic whole-request erasure or revoke already-delivered snapshots.
 
-Latest full SQLite validation: **2497 passed, 178 skipped**, 44 warnings
-(2026-09-25). Latest focused PostgreSQL: **113 passed, 2 skipped**; login erasure
-HTTP/process-exit/restart **24/24 per backend**, migration up/down/up and 402 UI
-bindings passed. Detailed scope and limitations are in D3d2c1. Documentation
-reorganization did not rerun these tests or change application behavior.
+Latest application validation, exact counts, commands and limitations:
+[D3d2c2 evidence](docs/delivery/tasks/R1-S1-T3b-D3d2c2.md).
 
 ## Where records live
 
@@ -60,3 +57,8 @@ reorganization did not rerun these tests or change application behavior.
 Keep active task records and completed children of open groups in `tasks/`.
 When a group closes, archive its detailed child records and retain the group
 summary. Read archived evidence only when the current task needs it.
+
+Documentation/runtime-clutter findings from the 2026-09-26 review are recorded in
+the [existing audit](docs/CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
+Old `docs/superpowers/` plans and UI design records are historical, not a second
+active backlog. Runtime simplification remains assigned to PI-R4.

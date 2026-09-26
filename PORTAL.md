@@ -260,15 +260,16 @@ parametrize the surfaced `retained_until` only):
 `CandidateStore.delete_candidate()`. The candidate delete cascades reports,
 resumes, extractions, candidate-linked ledger data, credentials, verifications,
 interviews and sessions. Login challenges lack a candidate FK because signup can
-precede the principal; all existing challenge scopes for the stored email hash
-are explicitly deleted in the same transaction. Failure or interruption before
-commit rolls back the erasure, including the challenge cleanup.
+precede the principal; all challenge scopes and pending send reservations for
+the stored email hash are explicitly deleted in the same transaction. Failure
+or interruption before commit rolls back the erasure, including login cleanup.
 
 After committed erasure, the old candidate key/session returns **401**. The
 response remains **200** `{candidate_id, deleted: true, reports_deleted: N}`;
 `reports_deleted` is a count read before deletion, not a locked response snapshot.
-Fresh signup is still allowed. Late issuance and already-consumed redemption
-across erasure remain open in D3d2c2/c3; atomic cleanup alone does not fence them.
+An already-reserved send cannot activate after cleanup, including after process
+restart. Fresh signup is still allowed; sent emails cannot be recalled.
+Redemption after an already-committed consume remains open in D3d2c3.
 
 ## Endpoint contract
 

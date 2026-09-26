@@ -1,5 +1,9 @@
 # PI-8 — Launch Readiness (PI-level design)
 
+> Historical design. Source links were updated to current file locations on
+> 2026-09-26; obsolete line anchors were removed. The design text still describes
+> its original scope, not current completion or security guarantees.
+
 **Date:** 2026-08-01
 **Status:** Design approved by the user. Each S8.x gets its own sprint spec
 before it is built; this document fixes the decisions that span sprints.
@@ -45,7 +49,7 @@ alternatives.
 
 ## 1. The defect that reorders this PI
 
-[`app/api/routes.py:76-82`](../../../app/api/routes.py#L76-L82):
+[`app/api/routes.py:76-82`](../../../src/app/api/routes.py):
 
 ```python
 """Shared-secret gate (FR-15). No key configured → open (local/dev)."""

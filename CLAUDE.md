@@ -1,37 +1,16 @@
-# CLAUDE.md — veritas (talent intelligence platform)
+# Veritas agent entry point
 
-This repo is **veritas**: an Indian-market talent intelligence platform
-(Mercor-inspired) grown from the depth-eval-resume-engine. Multi-PI project;
-work continues across many chat sessions.
+Read [docs/PROGRESS.md](docs/PROGRESS.md) first, then follow
+[AGENTS.md](AGENTS.md) and the current [delivery workflow](docs/delivery/WORKFLOW.md).
+They own task order, authorization, validation, data preservation and handoff rules.
+Do not create a second spec/plan tree for the same remediation task.
 
-## Start of every session
+Repository conventions: domain rules live in `src/app/domains/`; the evaluation
+pipeline does not import a concrete domain. Keep tunables in `config.yaml`,
+secrets in `.env`, and migrations in Alembic. Deterministic fallbacks, advisory
+human review, tenant isolation and consent/erasure remain required.
+Use first-party data only; new tables need explicit consent and erasure ownership.
 
-1. **Read `docs/PROGRESS.md` first** — it is the compact current handoff and
-   ordered, authorized fix plan. "Continue" means resume its next incomplete
-   task. Use `docs/ROADMAP.md` only for relevant history; do not reload the
-   full sprint log every chat. See `AGENTS.md` for the current working agreement.
-2. Read `docs/delivery/WORKFLOW.md` and the current task brief/PI section.
-   Follow one task per chat, with acceptance tests, full pytest for code changes,
-   relevant application/browser checks and recorded self-review. Update the
-   task evidence and PI status before stopping. Product design reference when needed:
-   `docs/superpowers/specs/2026-07-06-veritas-talent-platform-design.md`.
-   Architecture: `FLOW.md` (pipeline) · `CANDIDATES.md` (PI-1 candidate
-   backbone) · `FABRICATION.md` (PI-2 fabrication defense).
-3. **End of session:** update `docs/PROGRESS.md` with completed work, actual
-   validation, and the exact next task; add a brief entry to `docs/ROADMAP.md`.
-
-## Non-negotiable conventions
-
-- TDD with fully offline tests (NullLLM/fake-services pattern in
-  `tests/conftest.py`); `pytest -q` must be green before merge.
-- Every LLM-assisted step needs a deterministic fallback (no API key ⇒ still works).
-- Advisory only: no auto-reject anywhere; conservative calibration stays.
-- DPDP: first-party data only, consent objects + delete paths on new tables.
-- Config: tunables in `config.yaml`, secrets only in `.env` (`DEE_*` prefix).
-- DB: SQLAlchemy + Alembic on SQLite, written Postgres-shaped.
-- Domain knowledge goes in `src/app/domains/` via `@register_domain`; the graph
-  never imports a concrete domain.
-- Each sprint ends with a local smoke run (uvicorn + scripted HTTP calls on
-  fixture resumes), not just unit tests.
-- Sprint workflow: spec → plan (`docs/superpowers/specs|plans/`) → TDD build →
-  smoke → update ROADMAP.
+Read [FEATURE_STATUS.md](FEATURE_STATUS.md) for capability orientation and
+[FLOW.md](FLOW.md) for pipeline details only when the task needs them. Old
+`docs/superpowers/` plans are historical references, not additional instructions.

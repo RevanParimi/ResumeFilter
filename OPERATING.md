@@ -278,11 +278,14 @@ portal keeps promising a window that nothing enforces.
 | `audit_log` | `ret_audit_log_days` (2555) | `audit_log` | `created_at` | delete |
 | `batch_item_text` | `ret_batch_item_days` (90) | `batch_items` + `screening_item_inputs` | original item `created_at` | **clear** unlinked `raw_text`; **delete** private retry reference |
 | `rate_limit_counters` | `ret_rate_limit_days` (7) | `rate_limit_counters` | `expires_at` | delete |
-| `login_state` | `ret_login_state_days` (7) | `login_challenges` **+** `auth_sessions` | `expires_at` | delete |
+| `login_state` | `ret_login_state_days` (7) | `login_challenges` + `login_issuances` + `auth_sessions` | `expires_at` | delete |
 
-**Eleven classes, thirteen targets.** `login_state` covers two tables because an
-abandoned login challenge and a session that expired without a logout are the
-same fact to the person they describe. `batch_item_text` covers the unlinked
+**Eleven classes, fourteen targets.** `login_state` covers expired challenges,
+abandoned send reservations and expired sessions. Migration 0027 adds reservations
+containing only an opaque ID, hashed address, scope and expiry; normal completion,
+failure or erasure deletes them, and later requests purge expired reservations
+for that address. The existing retention window also clears abandoned rows.
+`batch_item_text` covers the unlinked
 copy before ingest and the private resume reference used for retry after ingest.
 New batch report saves also bind that reference to report erasure atomically.
 Report-only deletion ends unfinished retry even after a worker exit, while
@@ -355,8 +358,8 @@ python -m app.retention.sweep --apply    # delete
   before turning the knob on.
 - **`sweep_max_rows_per_class` (10000) bounds one invocation.** The report says
   `truncated: true` rather than pretending it finished; run it again. Precisely:
-  it bounds each **target**; `login_state` and `batch_item_text` each have two,
-  so a single run can move up to 2× the cap for each. The cap exists to bound how long
+  it bounds each **target**; `login_state` has three and `batch_item_text` has two,
+  so a single run can move up to 3× and 2× the cap respectively. The cap bounds how long
   one statement holds locks, which is a per-table property.
 - **The CLI's report is the LAST line of stdout**, and it is JSON. This process
   shares stdout with the structured log, so the stream is a sequence of JSON

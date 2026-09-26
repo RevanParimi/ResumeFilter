@@ -1,5 +1,9 @@
 # Veritas UI — build plan (multi-session)
 
+> Historical prototype plan, not the active development backlog. Current
+> delivery order: [delivery plan](../delivery/README.md). Consolidated screen
+> specification: [UI-Spec.md](../../UI-Spec.md).
+
 Source of truth: `depth-eval-resume-engine/UI.md` (83 routes, tagged ✅/🔜/🚫).
 Design systems attached: Modernist, Broadsheet, Organic (in `_ds/`).
 

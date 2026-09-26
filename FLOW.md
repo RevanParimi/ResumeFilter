@@ -11,183 +11,36 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 > (`ai_signals` + `cross_field` nodes, resume-farm detection, and the unified
 > `fabrication_risk` fused in scoring, S2.4). The pipeline is
 > now **9 nodes**: two advisory fabrication nodes sit between `ingest` and
-> `claim_extraction`. Everything below about the original 7 stages is unchanged.
+> `claim_extraction`. The stage numbering below retains the original seven stages plus 1a/1b.
 
 ---
 
-## Architecture (ASCII)
+## Architecture and source map
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT (HTTP)                                    │
-│            POST /evaluate {resume_text|pdf_b64, github_url?, domain}          │
-│            GET  /report/{id}   POST/GET /report/{id}/outcome(s)               │
-│            GET  /domains       GET /healthz      (X-API-Key when configured)  │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                     │
-┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  API LAYER          src/app/main.py  create_app(): request-id middleware,        │
-│                     access logs, generic 500s, optional API-key auth         │
-│                     src/app/api/routes.py → caps, domain pre-check, engine,      │
-│                     ReportStore persistence, outcome endpoints (advisory)    │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                     │ EvaluationEngine.evaluate(...)
-┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  ENGINE             src/app/graph/build.py                                       │
-│   • build_graph(services) → compiled LangGraph (linear)                      │
-│   • holds one Services bundle + the active domain registry                   │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                     │ ainvoke(EvaluationState)
-                                     │
-   EvaluationState (src/app/graph/state.py) ── threaded through every node ──┐
-                                     │                                    │
-┌────────────────────────────────────────────────────────────────────────┼────┐
-│  LANGGRAPH PIPELINE  (src/app/graph/nodes/*)        each node returns a partial   │
-│                                                  dict merged into the state    │
-│                                                                                │
-│  ① ingest ──► ⑴ ai_signals ──► ⑵ cross_field ──► ② claim_extraction ──►        │
-│                            ③ provenance ──► ④ plausibility ──►                 │
-│                                                          ⑤ probe_generation ──►│
-│                                                          ⑥ scoring ──► ⑦ report│
-│                                                                                │
-│  ① parse PDF/text                              (LLM-free)                      │
-│  ⑴ AI-text signals (advisory) ──uses──► deterministic detectors ⊕ LLM(parsing) │
-│  ⑵ cross-field forensics (advisory)     pure date math — NO LLM  → FABRICATION.md│
-│  ② atomic typed claims        ──uses──► LLM(parsing) + DomainModel guidance    │
-│  ③ ground anchored claims     ──uses──► GitHub + VectorStore                   │
-│  ④ THE CORE: rules ⊕ LLM      ──uses──► DomainModel.rules + LLM(reasoning)     │
-│  ⑤ probes for suspicious      ──uses──► LLM(reasoning) + DomainModel           │
-│  ⑥ calibrate → status+depth   ──uses──► core/calibration (thresholds)         │
-│  ⑦ assemble Report + log      ──uses──► Flywheel                              │
-└───────┬───────────────┬───────────────┬───────────────┬───────────────┬──────┘
-        │               │               │               │               │
-        ▼               ▼               ▼               ▼               ▼
-┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌──────────────┐
-│  DOMAINS      │ │  SERVICES     │ │  SERVICES     │ │  SERVICES     │ │  SERVICES    │
-│ domains/base  │ │ services/llm  │ │ vectorstore   │ │ github        │ │ flywheel     │
-│  DomainModel  │ │ OpenRouterLLM │ │ Chroma /      │ │ httpx GitHub  │ │ JSONL sink   │
-│  + Rule + reg │ │  (OpenAI SDK) │ │ InMemory      │ │  API (1st-    │ │ (claim→probe │
-│ rules.py      │ │ tiers→models  │ │ Hashing embed │ │  party only)  │ │  →verdict→   │
-│  SignalRule   │ │ NullLLM(no key)│ │ bounded init  │ │               │ │  outcome)    │
-│ genai·data_eng│ │ retries       │ │               │ │               │ │ report_store │
-│  3+3 rules    │ │               │ │               │ │               │ │  SQLite      │
-└───────┬───────┘ └───────┬───────┘ └───────────────┘ └───────────────┘ └──────────────┘
-        │                 │
-        │                 ▼  OpenRouter (https://openrouter.ai/api/v1)
-        │            ┌──────────────────────────────────────────────┐
-        │            │ reasoning      → qwen/qwen3.7-max             │
-        │            │ reasoning_hard → qwen/qwen3.7-max (override)  │
-        │            │ parsing (FAST) → qwen/qwen3.6-flash           │
-        │            │ bulk           → qwen/qwen3.6-35b-a3b (unused)│
-        │            └──────────────────────────────────────────────┘
-        │
-        ▼  registry lookup by state.domain (NEVER hardcoded in the graph)
-   get_domain("genai") → rules_for(claim), extraction/plausibility/probe prompts
+Routes in [routes.py](src/app/api/routes.py) call the shared ingest/service paths
+or [EvaluationEngine](src/app/graph/build.py). The compiled graph runs nine nodes
+in a fixed sequence; nodes return updates to [EvaluationState](src/app/graph/state.py).
 
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  CORE (cross-cutting)   src/app/core/                                             │
-│   config.py      env-driven Settings (DEE_*): models, thresholds, paths       │
-│   calibration.py classify() + aggregate_depth()  ← conservative decision math │
-│   logging.py     structlog (JSON/console), routes stdlib deps                 │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-OUTPUT: Report {verdicts[], depth_band, depth_score, confidence,
-                flagged_ids, deferred_ids, advisory=True, human_review_required=True,
-                candidate_id?,                      ← set by POST /candidates (S1.3)
-                ai_generation?, cross_field?, resume_farm?,   ← advisory (PI-2)
-                fabrication_risk?}       ← unified advisory fusion (S2.4)
+```mermaid
+flowchart LR
+    ingest --> ai_signals --> cross_field --> claim_extraction --> provenance
+    provenance --> plausibility --> probe_generation --> scoring --> report
 ```
 
-Notes: the nodes run in sequence and fan *out* to services/domains — nodes never
-call each other, they communicate only through `EvaluationState`. The graph layer
-never imports `genai`; it resolves a `DomainModel` at runtime via `state.domain`.
-No LLM key → `NullLLM` and every node falls back to deterministic logic.
+| Boundary | Current implementation |
+|---|---|
+| Domain rules | [domains](src/app/domains): registry lookup by `state.domain`; no concrete-domain import in graph nodes. |
+| Model calls | [llm.py](src/app/services/llm.py): configured tiers with deterministic fallbacks when unavailable. Model choices live in configuration. |
+| Provenance | [provenance.py](src/app/graph/nodes/provenance.py): anchored GitHub facts cached within one evaluation and attached to the corresponding claims. No vector-store writes or queries. |
+| Durable reports/outcomes | [reports/store.py](src/app/reports/store.py): SQLAlchemy storage on the configured candidate database, with migrations and erasure constraints. |
+| Runtime observation | [flywheel.py](src/app/services/flywheel.py): non-retaining production observer; in-memory event capture for tests. Legacy JSONL cleanup is separate. |
+| Service construction | [services](src/app/services/__init__.py): currently still constructs unused vector-store infrastructure and repeated SQL resources; simplification remains R4-S1-T1/T2. |
+| Schemas/configuration | [schemas](src/app/schemas), [core](src/app/core), [migrations](alembic/versions). |
+| Intake and UI | [screening](src/app/screening), [frontend](frontend); workflow contracts are in [SCREENING.md](SCREENING.md). |
 
----
-
-## Project tree (annotated)
-
-```
-depth-eval-engine/
-│
-├── config.yaml                  ← non-sensitive config (committed): models, thresholds, paths
-├── .env                         ← SECRETS ONLY (gitignored): OPENROUTER_API_KEY, GITHUB_TOKEN
-├── pyproject.toml               ← deps + pytest config (uv/pip)
-├── requirements.txt             ← pip install -r target
-├── .gitignore                   ← ignores .env, .venv, caches, .chroma, flywheel.jsonl
-├── README.md                    ← run + add-a-domain guide
-├── FLOW.md                      ← architecture + node logic + decision factors
-│
-├── src/app/
-│   │
-│   ├── main.py                  ← FastAPI app + lifespan (builds EvaluationEngine once)
-│   │
-│   ├── api/
-│   │   └── routes.py            ← POST /evaluate · GET /report/{id} · GET /healthz
-│   │
-│   ├── graph/                   ─────────────── ORCHESTRATION (domain-agnostic) ───────────
-│   │   ├── build.py             ← wires LangGraph; EvaluationEngine.evaluate()
-│   │   ├── state.py             ← EvaluationState (Pydantic) threaded through all nodes
-│   │   └── nodes/               ← the 9-stage pipeline (linear)
-│   │       ├── ingest.py            ① parse PDF/text                    (LLM-free)
-│   │       ├── ai_signals.py        ⑴ AI-text signals (advisory, S2.1) → FABRICATION.md
-│   │       ├── cross_field.py       ⑵ timeline forensics (advisory, S2.2, LLM-free)
-│   │       ├── claim_extraction.py  ② atomic typed claims              → LLM(parsing) + domain
-│   │       ├── provenance.py        ③ ground anchored claims           → GitHub (evaluation-local)
-│   │       ├── plausibility.py      ④ THE CORE: rules ⊕ LLM coherence  → domain.rules + LLM(reasoning)
-│   │       ├── probe_generation.py  ⑤ probes for suspicious claims     → LLM(reasoning) + domain
-│   │       ├── scoring.py           ⑥ calibrate → status + depth band  → core/calibration
-│   │       │                          + fuse fabrication_risk (S2.4)   → fabrication/risk
-│   │       └── report.py            ⑦ assemble Report + log flywheel
-│   │
-│   ├── candidates/              ─────────────── CANDIDATE BACKBONE (PI-1) → CANDIDATES.md ─
-│   │   ├── schema.py · extractor.py · hashing.py · dates.py · normalize/
-│   │   ├── models.py            ← ORM rows incl. resume_fingerprints (S2.3)
-│   │   └── store.py             ← CandidateStore: ingest, identity, fingerprints, DPDP
-│   │
-│   ├── fabrication/             ─────────────── FABRICATION DEFENSE (PI-2) → FABRICATION.md
-│   │   ├── ai_text.py           ← S2.1 deterministic AI-text detectors + fusion/banding
-│   │   ├── cross_field.py       ← S2.2 interval math + 4 timeline/coherence checks
-│   │   ├── similarity.py        ← S2.3 MinHash fingerprints + farm banding
-│   │   └── risk.py              ← S2.4 unified fabrication_risk fusion + banding
-│   │
-│   ├── domains/                 ─────────────── DOMAIN KNOWLEDGE (pluggable) ──────────────
-│   │   ├── base.py              ← DomainModel + Rule interfaces + registry (@register_domain)
-│   │   ├── rules.py             ← shared SignalRule machinery (all domains build on it)
-│   │   ├── genai.py             ← GenAI rules (fine_tuning · rag · multi_agent) + prompts
-│   │   └── data_eng.py          ← Data-eng rules (etl · streaming · warehouse) + prompts
-│   │
-│   ├── schemas/                 ─────────────── DATA CONTRACTS ─────────────────────────────
-│   │   ├── claims.py            ← Claim, ClaimSet, CandidateContext, Specificity
-│   │   └── report.py            ← Report, CoherenceVerdict, Evidence, VerdictStatus, DepthBand
-│   │
-│   ├── services/               ─────────────── EXTERNAL I/O (injectable) ──────────────────
-│   │   ├── llm.py               ← OpenRouterLLM (OpenAI SDK, retries) · NullLLM · tier→model
-│   │   ├── vectorstore.py       ← Chroma (bounded init) · InMemory · HashingEmbedding
-│   │   ├── github.py            ← httpx GitHub API client (first-party repos only)
-│   │   ├── flywheel.py          ← no-retention runtime observer; test-only memory sink
-│   │   └── report_store.py      ← SQLite ReportStore: durable reports + human outcomes
-│   │
-│   └── core/                   ─────────────── CROSS-CUTTING ──────────────────────────────
-│       ├── config.py            ← Settings: YAML source + env(DEE_*) + .env, precedence
-│       ├── calibration.py       ← classify() + aggregate_depth()  (conservative decision math)
-│       └── logging.py           ← structlog (JSON/console)
-│
-├── data/
-│   └── flywheel.jsonl           ← legacy file only; no new writes (gitignored)
-│
-└── tests/
-    ├── conftest.py              ← offline fixtures: NullLLM/FakeLLM, InMemory stores, FakeGitHub
-    ├── fixtures/
-    │   ├── genuine_genai_resume.txt
-    │   └── fabricated_genai_resume.txt
-    └── test_*.py                ← one per node + calibration + integration (20 tests)
-```
-
-Layering (top→bottom = request flow): `api` receives → `graph` orchestrates the 7
-nodes → nodes reach *sideways* into `domains` (what to check) + `services` (how to
-fetch/infer) → `core` supplies config, scoring math, logging. Two independence axes:
-`graph/` never imports `genai`; `services/` are injected (real vs. fakes in tests).
+The detailed stages below describe evidence and scoring behavior. For delivery
+status and unresolved policy/quality gaps, use [FEATURE_STATUS.md](FEATURE_STATUS.md).
+No LLM key means deterministic fallbacks; it does not establish model accuracy.
 
 ---
 
@@ -224,7 +77,7 @@ INPUT  (POST /evaluate)
    ▼
 ┌─ ③ provenance ──────────────────────────────────────────────────────────────┐
 │  in : claims[].external_anchor, github_url                                   │
-│  ext: GitHub API ─► repo signals ─► VectorStore.add ─► query per claim       │
+│  ext: GitHub API -> evaluation-local repo cache -> anchored claims       │
 │  out: + provenance{ claim_id -> [evidence strings] }                         │
 └──────────────────────────────────────────────────────────────────────────────┘
    │ claims[] + provenance{}
@@ -502,10 +355,11 @@ Assembles the advisory `Report` and feeds the flywheel.
 
 ---
 
-## 8. The outcome loop — [report_store.py](src/app/services/report_store.py) + [routes.py](src/app/api/routes.py)
+## 8. The outcome loop — [store.py](src/app/reports/store.py) + [routes.py](src/app/api/routes.py)
 
-Reports are persisted in SQLite (`reports` table, full JSON body; WAL). A human
-reviewer closes the loop after the screen/interview:
+Reports are persisted through SQLAlchemy on the configured SQLite/PostgreSQL
+candidate database (`reports` table). A human reviewer closes the loop after
+the screen/interview:
 
 ```
 POST /report/{id}/outcome  {outcome, claim_id?, notes?}

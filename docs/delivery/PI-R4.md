@@ -2,6 +2,12 @@
 
 Status: planned. Reduce unnecessary machinery while proving ownership, concurrency, resource lifecycle and operating behavior remain correct.
 
+2026-09-26 targeted review reconfirmed repeated engine/store construction (T1),
+unused vector-store startup after scoped provenance replaced retrieval (T2),
+large live route/frontend modules (T3/T4) and tracked runtime DB (R4-S3-T3).
+See the [audit follow-up](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
+These are source findings, not completed runtime fixes or measured speedups.
+
 Load only the current task section plus [WORKFLOW.md](WORKFLOW.md), not this entire PI by default.
 Source entry points (paths relative to repository root): src/app/services/; src/app/core/; src/app/api/; src/app/screening/; src/app/candidates/; src/app/curation/; src/app/metrics/; frontend/; .github/workflows/ci.yml
 Task test lists are starting points verified during planning; select/add regression cases from actual callers at implementation time.
@@ -168,4 +174,3 @@ Status: pending. Audit mapping: F15. Prerequisites: R4-S3-T2.
 Status: pending. Prerequisites: all tasks in R4-S3.
 
 Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R4-S3-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
-

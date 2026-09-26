@@ -46,3 +46,8 @@ tests actually run, changed behavior, remaining risks, and the exact next task.
 Update the task's PI status and `docs/delivery/tasks/<id>.md` evidence record.
 Keep that file short. Add detailed evidence to the relevant task document and
 a brief session entry to `docs/ROADMAP.md` when appropriate.
+
+Avoid documentation duplication: parents link to child evidence instead of
+copying test logs. Reuse the existing audit/task record for maintenance reviews;
+new task files require a distinct acceptance/validation contract. See the
+documentation ownership rules in `docs/delivery/WORKFLOW.md`.

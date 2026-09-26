@@ -70,6 +70,7 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     assert "admin_users" in names  # S8.2 migration 0017
     assert "auth_sessions" in names  # S8.2 migration 0017
     assert "login_challenges" in names  # S8.2 migration 0017
+    assert "login_issuances" in names  # Erasure-safe issuance migration 0027
     org_cols = {c["name"] for c in inspect(engine).get_columns("organizations")}
     assert "reliability_weight" in org_cols  # S3.4 migration 0006
 

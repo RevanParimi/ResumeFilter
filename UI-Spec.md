@@ -1,4 +1,11 @@
-# Veritas UI — what is built, screen by screen
+# Veritas UI - historical screen specification
+
+> Historical August 2026 design snapshot, consolidated from the former
+> `docs/ui/UI-SPEC.md` and this file. Root tenancy decisions and the nested
+> specification's auth/interview corrections are retained. "Built", "not wired"
+> and gap labels below describe that snapshot, not current acceptance. Use
+> [FEATURE_STATUS.md](FEATURE_STATUS.md), [SCREENING.md](SCREENING.md),
+> [AUTH.md](AUTH.md) and [PI-R3](docs/delivery/PI-R3.md) for current scope.
 
 Single Design Component: `Veritas.dc.html`. Nothing is wired to the API yet —
 every screen renders mock data shaped like the real response objects. Light and
@@ -40,7 +47,8 @@ Legend for the endpoint column:
 
 | Maps to | |
 |---|---|
-| `POST /auth/{org,candidate,admin}/signup` · `/login` · `/verify` | ✅ |
+| `POST /auth/{org,candidate}/signup` | Historical contract: no admin signup route |
+| `POST /auth/{org,candidate,admin}/login` / `/verify` | Available in the snapshot |
 | `GET /auth/me` on load | ✅ — **not yet called** |
 
 **Not yet designed:** the `503 email_unavailable` state, the 403-CSRF state,
@@ -152,7 +160,12 @@ revoke itself. Copy states the 12h / 2h-idle expiry.
 
 ---
 
-## 8b. Instant check (org plane) — `POST /evaluate` ✅ **BUILT**
+## 8b. Instant check — `POST /evaluate` ⚠️ **BUILT, but admin-plane**
+
+> ⚠️ `/evaluate` is on the **admin router** — an org session gets 401, same as
+> `GET /domains`. The screen is designed on the org rail because it is the only
+> zero-setup demo surface in the repo, which makes it a strong candidate to move
+> to the org plane in S8.4. Until it does, this screen is operator-only.
 
 Paste one resume → full `Report`, nothing persisted.
 
@@ -170,17 +183,27 @@ Paste one resume → full `Report`, nothing persisted.
 
 ## 8c. Interview runner (candidate plane) — `/portal/interviews*` ✅ **BUILT**
 
-Five probes drawn from the candidate's own claims. Turn pips, per-turn scoring.
+Probes drawn from the candidate's own claims. Turn pips, per-turn scoring.
+
+> **Question count is 3–8, not fixed.** `interview_min_questions = 3`,
+> `interview_max_questions = 8`; `questions.py` refuses below the minimum rather
+> than running short. The runner derives its pips and its counter from the
+> planned count (`InterviewSummary.questions_planned` /
+> `questions_answered`) — nothing is hard-coded to five.
 
 | Contract detail | How it surfaces |
 |---|---|
-| Channel `audio \| text` | Voice / type toggle; both scored identically |
+| Channel `audio \| text` | Voice / type toggle. **The rubric is channel-blind** (`scoring.py` never reads channel) — but `proxy.py` partitions turns by channel and applies different words/sec thresholds (4.0 spoken vs 8.0 typed), and an all-text interview records a `text_channel_only` finding. That finding is `info` severity so it cannot raise the band, but the copy must not imply the channel is signal-free. |
 | `SubmitAnswerRequest{question_id, text, audio_b64, mime}` | Recorder produces base64 + mime — no multipart upload UI |
 | `422 speech_unavailable` | Calm inline notice, **not an error**: audio refused, interview continues in text, score unaffected. Driven by the `speechEnabled` prop |
 | `SpeechFailed` must not cost a turn | Turn 3 on audio demonstrates it — question stays open, copy says the failure was ours and the retry is free |
 | TTS deliberately absent | Question card states nothing is read aloud; no playback control exists |
 | Audio transcribed then discarded | Footer states it, plus "the transcript is yours" |
 | Org sees `InterviewSummary` only | Footer states an org receives a summary, never the transcript or turns |
+| `interview_min_answer_words = 12` | Live word count; under the floor the answer **scores nothing**, which is deliberately not the same as scoring zero — its own inline state |
+| `interview_max_answer_chars = 20,000` | Character counter, enforced client-side so the 422 never arrives after the fact |
+| `interview_max_audio_b64_chars = 8,000,000` | Recorder states the ceiling (~6 MB of audio) before the upload starts |
+| `interview_session_ttl_minutes = 120` · `InterviewSession.expires_at` | Session countdown in the header; a session can expire mid-interview |
 
 **Still missing:** `transcript_truncated` inside `TurnScore.codes` has no
 display, there is no post-interview transcript/review screen, and the org-side
@@ -308,12 +331,14 @@ This is the list to check against.
 
 ### Smaller gaps
 
+(Items 7 and 12-17 above are closer to this tier; item 8 is built.
+Numbering is retained for historical references.)
+
 - Resume versions (`GET /candidates/{id}/resumes`) and per-resume erasure.
 - `GET /report/{id}/outcomes` — recorded outcomes are written, never listed.
 - Coding rounds (`/ledger/candidates/{id}/coding-rounds`) — consent-gated.
 - Reputation — **deliberately excluded** (UI.md §8: ledger is off the pitch).
 - `GET /healthz` / build + LLM-mode indicator for the operator console.
-- Org signup flow (self-registration) — only login is designed.
 
 ### Deliberately NOT built (UI.md §8)
 

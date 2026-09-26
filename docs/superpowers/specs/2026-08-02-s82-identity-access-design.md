@@ -1,5 +1,9 @@
 # S8.2 — Identity & access (design)
 
+> Historical design. Source links were updated to current file locations on
+> 2026-09-26; obsolete line anchors were removed. The design text still describes
+> its original scope, not current completion or security guarantees.
+
 **Date:** 2026-08-02
 **Sprint:** S8.2, the second sprint of PI-8 (launch readiness).
 **Status:** Design approved by the user, 2026-08-02. Implementation plan follows.
@@ -50,7 +54,7 @@ one of those three whole-branch reviews found it independently.
 
 ### 2.1 The seam today
 
-Three sibling dependencies in [`app/api/routes.py:78-114`](../../../app/api/routes.py#L78-L114),
+Three sibling dependencies in [`app/api/routes.py:78-114`](../../../src/app/api/routes.py),
 each reading its own header and each the sole gate for its plane:
 
 ```python
@@ -185,7 +189,7 @@ Notes that are decisions, not details:
   that must survive the OTP round trip — today just the organization name. It is
   never read on a `login` purpose.
 - **`token_hash` is sha256 and the plaintext is returned once, never stored**,
-  mirroring `issue_access_key` ([`app/candidates/store.py:279`](../../../app/candidates/store.py#L279)).
+  mirroring `issue_access_key` ([`app/candidates/store.py:279`](../../../src/app/candidates/store.py)).
 - **Expiry — absolute and idle — is computed at read time, never written by a
   job.** The S7.1 `effective_status` precedent, for the same reason: no scheduler
   exists, and a stored `expired` that nothing corrects is a lie.
@@ -248,7 +252,7 @@ are added, all `env == "prod"`:
 
 ## 5. OTP mechanics — reused, not rewritten
 
-The pure functions in [`app/verification/otp.py`](../../../app/verification/otp.py)
+The pure functions in [`app/verification/otp.py`](../../../src/app/verification/otp.py)
 — `generate_code`, `hash_code`, `is_challenge_expired`, `attempts_exhausted`,
 `cooldown_active` — are already pure, clock-injected, RNG-injected and tested.
 S8.2 reuses **the functions, not the table**: `verification_challenges` is
@@ -439,7 +443,7 @@ added here — they ship with the limiter in S8.3 (decision 0.6), because a knob
 that throttles nothing is worse than an absent one.
 
 **Hygiene fix carried in this sprint:** `api_auth_key`'s field comment in
-[`app/core/config.py:361`](../../../app/core/config.py#L361) still reads
+[`app/core/config.py:361`](../../../src/app/core/config.py) still reads
 "Empty (default) = auth disabled (local/dev)". S8.1 made that false. It is
 corrected here, because a stale comment describing a fail-open default is how the
 next reader re-derives the wrong mental model.

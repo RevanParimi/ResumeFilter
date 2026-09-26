@@ -23,7 +23,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
-from app.auth.models import LoginChallengeRow
+from app.auth.models import LoginChallengeRow, LoginIssuanceRow
+from app.auth.store import lock_login_state
 from app.candidates.models import (
     CandidateCredentialRow,
     CandidateRow,
@@ -397,14 +398,19 @@ class CandidateStore:
 
         Challenges have no FK because signup may precede a principal. Delete
         every plane/purpose for the stored address in THIS transaction so an
-        interruption cannot commit only half of the erasure. In-flight issuance
-        and redemption require separate ordering; this covers existing rows.
+        interruption cannot commit only half of the erasure. The shared login
+        lock also cancels reserved sends before they can activate a challenge.
+        Redemption after committed consumption requires separate ordering.
         """
         with self._session_factory() as session:
             cand = session.get(CandidateRow, candidate_id)
             if cand is None:
                 return False
             if cand.email_hash:
+                lock_login_state(session, cand.email_hash)
+                session.execute(delete(LoginIssuanceRow).where(
+                    LoginIssuanceRow.email_hash == cand.email_hash
+                ))
                 session.execute(delete(LoginChallengeRow).where(
                     LoginChallengeRow.email_hash == cand.email_hash
                 ))

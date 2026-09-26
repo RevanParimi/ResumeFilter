@@ -124,6 +124,18 @@ class AuthSessionRow(Base):
     ip_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
 
+class LoginIssuanceRow(Base):
+    """Short-lived send reservation, not a redeemable code or identity tombstone."""
+
+    __tablename__ = "login_issuances"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    email_hash: Mapped[str] = mapped_column(String(64), index=True)
+    purpose: Mapped[str] = mapped_column(String(16))
+    plane: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class LoginChallengeRow(Base):
     """A pending email-OTP signup or login.
 

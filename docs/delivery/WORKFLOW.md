@@ -31,6 +31,16 @@ After a task group closes, move its detailed completed child records from
 children of open groups stay in `tasks/` until group closure. Preserve evidence,
 IDs and status; do not load the archive routinely or duplicate it in the handoff.
 
+Keep one owner for each kind of information: feature overview in
+`FEATURE_STATUS.md`, next action/current risks in `PROGRESS.md`, PI task status
+in the PI file, direct-child scope/status in parent records, and exact test
+commands/counts in leaf evidence. Link to the owner instead of copying its log.
+Do not append each leaf result to every ancestor or create another review/status
+Markdown file when an existing audit/task record fits. Create a child only for a
+distinct bounded acceptance/validation contract, not a work session or test rerun.
+Historical `docs/superpowers/` specs/plans and UI prototype records are reference
+material; they do not restart the old spec/plan workflow for remediation.
+
 ## Development loop
 
 1. **Specify the observable result.** Write the trigger, before/after behavior,

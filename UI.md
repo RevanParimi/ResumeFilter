@@ -1,5 +1,10 @@
 # UI.md — what to build, and what it can actually call
 
+> Historical August 2026 UI contract. The repository now ships frontend assets;
+> the original route counts and future-sprint labels below are historical.
+> Current capability status: [FEATURE_STATUS.md](FEATURE_STATUS.md). Current
+> API behavior is defined by routes/tests and the served `/openapi.json`.
+
 **Date:** 2026-08-02 · **Audience:** whoever designs the veritas UI (externally,
 via claude.ai/design — this repo ships no HTML, templates or JS toolchain).
 **Read order:** `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md`

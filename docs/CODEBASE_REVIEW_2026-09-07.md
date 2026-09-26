@@ -172,3 +172,55 @@ The signal-quality harness is a useful foundation and correctly refuses insuffic
 5. Gather representative, human-reviewed outcomes and use the existing signal-quality tools before expanding the platform's breadth.
 
 The most valuable next release would make the existing core reliable and explainable across real workflows. Additional scoring systems or abstraction layers would currently compound the unresolved boundaries.
+
+
+## Follow-up 2026-09-26 — Repository clutter review
+
+Scope: user-requested review of file/document accumulation and unnecessary logic
+at `4c83cad`. Inventoried all 760 tracked files: 156 Markdown (26 root, 44 delivery,
+74 historical specs/plans, 12 other). No byte-identical nonempty files were found.
+Read both UI specs, agent/workflow instructions, active parent/PI records and
+architecture notes; traced source references for service composition, vector
+retrieval, graph orchestration, routes/UI and smoke harnesses. This is a targeted
+source review, not an exhaustive line-by-line correctness or performance audit.
+No live providers, working-data edits or runtime refactor were performed.
+
+| Severity | Finding, trigger and consequence | Resolution / evidence |
+|---|---|---|
+| Medium | `UI-Spec.md` and `docs/ui/UI-SPEC.md` diverged: root retained later tenancy decisions but advertised admin signup/fixed question count; nested copy carried auth/interview corrections. Both presented old mock-only claims as current. | Merged unique tenancy and auth/interview material into root UI-Spec; removed nested copy. Marked UI.md, UI-Spec and docs/ui/PLAN as historical and linked current contracts. This does not certify every historical UI statement as current. |
+| Medium | `CLAUDE.md` still required the old spec-to-plan workflow alongside the remediation workflow, inviting another plan tree for the same work. | Reduced it to AGENTS/workflow references plus unique repository conventions. No extra task/review file created. |
+| Medium | PI-R1 and seven open ancestors copied leaf test counts and obsolete initial traces. Each small fix required synchronized edits across ancestors and could leave stale completion claims. | Parents now own direct-child scope/status and acceptance; leaf evidence retains exact counts/commands. Shortened the handoff and feature validation section; added explicit documentation ownership rules. No leaf evidence or task ID removed; no gate closed. |
+| Medium | [Service composition](../src/app/services/__init__.py) still calls `build_vectorstore`; [provenance](../src/app/graph/nodes/provenance.py) now uses evaluation-local evidence and has no vector query/add consumer. Default config selects Chroma and its builder can wait up to the configured 15-second initialization deadline. | Reconfirmed R4-S1-T2. Keep removal/config/dependency compatibility and startup tests together in that task. The potential wait is a configured bound, not a measured startup delay. Corrected FLOW's stale vector/JSONL diagrams now. |
+| Medium | [Job](../src/app/matching/store.py), [comp](../src/app/comp/service.py) and [dashboard](../src/app/dashboard/service.py) builders recursively construct stores/engines for the same URL; [app lifespan](../src/app/main.py) logs shutdown without explicit resource disposal. | Reconfirmed R4-S1-T1; preserve injection, separate URL semantics and lifecycle tests before implementation. No engines removed in this documentation task. |
+| Medium | `data/veritas.db` remains tracked. Deleting or untracking it casually would risk working data and would not erase historical copies. | Preserve bytes; retain the fixture/untracking work under R4-S3-T3. No records inspected or database cleanup run. |
+| Low | FLOW linked a removed report store and described old persistence/provenance wiring; three historical designs had 12 obsolete pre-src-layout links. | Updated FLOW to the current nine-node/source map and SQL report store. Rebased historical links to current files and removed obsolete line anchors, with historical notices. |
+| Low | `routes.py` (2880 lines) and `frontend/support.js` (1911 lines) mix many live flows; LangGraph is a fixed nine-node chain. Large size or linearity alone does not prove dead code. | Keep R4-S1-T3/T4 extraction and T2 graph evaluation; do not delete live handlers or replace orchestration just to lower file count. |
+
+Retained deliberately: distinct feature contracts, active task briefs, completed
+regression evidence, 74 historical design/plan files, migration history, and
+scenario-specific smoke/tests. Archived UI/design-system assets are historical,
+and static mount tests enforce that the served UI is allowlisted. Similar smoke
+setup does not make its distinct race/interruption scenarios redundant. No broad
+file deletion, new abstraction, dependency change or runtime behavior change.
+
+Acceptance for this review: consolidate proven documentation duplication without
+losing unique decisions/evidence, correct actionable stale pointers/instructions,
+keep all task statuses and the next development task unchanged, preserve working
+DB bytes, and map runtime findings to existing tasks.
+
+Validation: inline `.resume/Scripts/python.exe -` checks resolved local links in
+all **155 remaining tracked Markdown files**, preserved all **34 task statuses**
+and PI task headings/statuses, compared every detailed leaf/archive record with
+HEAD (unchanged), and asserted the merged UI corrections/tenancy decisions plus
+the unchanged D3d2c2 next-task pointer. `git diff --check` passed. Only Markdown
+changed: one redundant file removed, no new file, more than 700 net lines removed.
+The working DB SHA256 is unchanged from the handoff. No application tests were
+rerun because source, tests, migrations and frontend assets are unchanged.
+
+Same-agent diff review covered `4c83cad` plus the 24-file documentation delta:
+acceptance/evidence preservation, direct-child status maps, unique UI decisions,
+source-link corrections, historical/current labeling and instruction ownership.
+Review retained the original first-party-data requirement in the short CLAUDE
+entry point and corrected text encoding during consolidation. No documentation
+acceptance blocker remains. Runtime findings above remain open under PI-R4; no
+independent review, application execution or full-codebase correctness claim.

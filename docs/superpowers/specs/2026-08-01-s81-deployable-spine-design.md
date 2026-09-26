@@ -1,5 +1,9 @@
 # S8.1 — Deployable spine (design)
 
+> Historical design. Source links were updated to current file locations on
+> 2026-09-26; obsolete line anchors were removed. The design text still describes
+> its original scope, not current completion or security guarantees.
+
 **Date:** 2026-08-01
 **Sprint:** PI-8, S8.1 — the first of four (`S8.1` spine · `S8.2` identity &
 access · `S8.3` operating safely · `S8.4` UI integration surface).
@@ -25,7 +29,7 @@ These two are S8.1's own, taken 2026-08-01 before any code, and one of them
 
 | # | Decision | Rejected | Why |
 |---|---|---|---|
-| 0.1 | **The admin credential is required in EVERY environment. There is no `env == "local"` escape.** | PI-8 §1's "…and the environment is not explicitly declared local" | `env` **defaults to `"local"`** ([`app/core/config.py:366`](../../../app/core/config.py#L366)). An env-gated escape therefore means a deploy is safe only if **two** variables are remembered — `DEE_ENV` *and* `DEE_API_AUTH_KEY` — and forgetting either leaves 27 admin endpoints public. That is the same fail-open shape, one indirection deeper. Local dev sets `DEE_API_AUTH_KEY=anything` in `.env` once; the suite sets a test key in `conftest`. This is what decision 0.5's "fail-closed is not trimmable" and §1's "no config knob restores the old behaviour" actually require. |
+| 0.1 | **The admin credential is required in EVERY environment. There is no `env == "local"` escape.** | PI-8 §1's "…and the environment is not explicitly declared local" | `env` **defaults to `"local"`** ([`app/core/config.py:366`](../../../src/app/core/config.py)). An env-gated escape therefore means a deploy is safe only if **two** variables are remembered — `DEE_ENV` *and* `DEE_API_AUTH_KEY` — and forgetting either leaves 27 admin endpoints public. That is the same fail-open shape, one indirection deeper. Local dev sets `DEE_API_AUTH_KEY=anything` in `.env` once; the suite sets a test key in `conftest`. This is what decision 0.5's "fail-closed is not trimmable" and §1's "no config knob restores the old behaviour" actually require. |
 | 0.2 | **Railway Postgres is provisioned at the START of this sprint; the API service deploys at the END.** | deploy-ready artifacts only, PG verified solely in GitHub Actions | There is **no docker and no psql on the development machine** (verified). Without a hosted Postgres, the cutover could only ever be observed in CI, asynchronously, after a push — a bad way to debug a dialect problem. Provisioning the database first turns Postgres into something this sprint can run the full suite against interactively. The API service deploys once the plane in front of it fails closed, which is the same sprint. |
 
 ## 1. What this sprint is, in one paragraph
@@ -61,9 +65,9 @@ prove nothing.
 
 ### 3.1 The defect, restated with this sprint's measurements
 
-[`app/api/routes.py:76-82`](../../../app/api/routes.py#L76-L82) treats an unset
+[`app/api/routes.py:76-82`](../../../src/app/api/routes.py) treats an unset
 `api_auth_key` as "auth disabled". `api_auth_key` defaults to `SecretStr("")`
-([`config.py:361`](../../../app/core/config.py#L361)), so **fail-open is the
+([`config.py:361`](../../../src/app/core/config.py)), so **fail-open is the
 default posture**, and `DEE_API_AUTH_KEY` is a variable a deploy can silently
 forget.
 
@@ -200,7 +204,7 @@ New package **`app/reports/`**, peer of `app/portal/`, `app/verification/`,
 `app/services/report_store.py` is **deleted**, including its 212 lines of raw
 `sqlite3`, its `INSERT OR REPLACE`, its process-wide write lock and the
 `ALTER TABLE ... ADD COLUMN` in a `try/except` at construction
-([`report_store.py:76`](../../../app/services/report_store.py#L76)) — a
+([`report_store.py:76`](../../../src/app/reports/store.py)) — a
 migration system reimplemented badly beside fifteen real ones.
 
 The Pydantic `Report` stays where it is (`app/schemas/report.py`); it is imported
@@ -249,7 +253,7 @@ guarantee), and it is written before the store exists so it cannot be satisfied
 by accident.
 
 `session.delete(cand)` issues a plain `DELETE FROM candidates`; the database
-cascades. SQLite honours this because [`db.py:30-34`](../../../app/core/db.py#L30-L34)
+cascades. SQLite honours this because [`db.py:30-34`](../../../src/app/core/db.py)
 sets `PRAGMA foreign_keys=ON` per connection — the same mechanism the ledger and
 interview tables already rely on.
 
@@ -259,8 +263,8 @@ PI-8 §2.1 leaves it "on the Protocol for as long as something still needs it
 explicitly". Measured: **nothing does.** Its only two callers are the two route
 sites being deleted. It comes off the Protocol and out of the store.
 
-[`routes.py:354-355`](../../../app/api/routes.py#L354-L355) (admin) and
-[`routes.py:988-989`](../../../app/api/routes.py#L988-L989) (portal) each
+[`routes.py:354-355`](../../../src/app/api/routes.py) (admin) and
+[`routes.py:988-989`](../../../src/app/api/routes.py) (portal) each
 collapse to a single `delete_candidate`.
 
 **`reports_deleted` stays in both responses**, computed as `len(for_candidate(id))`

@@ -1,6 +1,6 @@
 """Auth persistence (S8.2): sessions, login challenges, org users, operators.
 
-Auth SQL lives here, except existing challenge cleanup in CandidateStore's
+Auth SQL lives here, except login-state cleanup in CandidateStore's
 erasure transaction; the service above holds the policy and the routes above
 that hold nothing at all. Datetimes are normalized with
 ``as_utc`` on write because SQLite drops tzinfo on refetch -- the S3.1 lesson,
@@ -13,17 +13,18 @@ Nothing in this module reads a wall clock: every method that needs "now" takes
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, false, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth import sessions as session_logic
 from app.auth.challenges import ChallengeScope
 from app.auth.models import (
-    AdminUserRow, AuthSessionRow, LoginChallengeRow, OrgUserRow,
+    AdminUserRow, AuthSessionRow, LoginChallengeRow, LoginIssuanceRow, OrgUserRow,
 )
 from app.auth.schema import (
     AdminUser, OrgUser, OrgUserRole, PrincipalKind, ResolvedSession,
@@ -39,6 +40,23 @@ from app.core.logging import get_logger
 _log = get_logger("auth.store")
 from app.ledger.consent import as_utc
 from app.ledger.models import OrganizationRow
+
+
+def lock_login_state(session: Session, email_hash: str) -> None:
+    """Order short issuance/erasure transactions, including an absent address.
+
+    No persistent address lock/tombstone and no lock held over email delivery.
+    SQLite serializes writers; the false DELETE acquires that lock without
+    deleting data. PostgreSQL uses a namespaced, transaction-scoped advisory key.
+    """
+    if session.get_bind().dialect.name == "postgresql":
+        key = int.from_bytes(hashlib.sha256(
+            ("veritas:login:" + email_hash).encode()).digest()[:8], "big", signed=True)
+        session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+    elif session.get_bind().dialect.name == "sqlite":
+        session.execute(delete(LoginIssuanceRow).where(false()))
+    else:
+        raise NotImplementedError("login ordering supports SQLite and PostgreSQL")
 
 #: Which nullable FK column carries the principal for each plane.
 _PRINCIPAL_COLUMN = {
@@ -278,6 +296,49 @@ class AuthStore:
 
     # -- login challenges ----------------------------------------------------
 
+    def reserve_issuance(self, scope: ChallengeScope, *, expires_at: datetime) -> str:
+        with self._session_factory() as session:
+            lock_login_state(session, scope.email_hash)
+            row = LoginIssuanceRow(email_hash=scope.email_hash, purpose=str(scope.purpose),
+                                   plane=str(scope.plane), expires_at=as_utc(expires_at))
+            session.add(row)
+            session.commit()
+            return row.id
+
+    def cancel_issuance(self, issuance_id: str) -> None:
+        with self._session_factory() as session:
+            session.execute(delete(LoginIssuanceRow).where(LoginIssuanceRow.id == issuance_id))
+            session.commit()
+
+    def activate_issuance(self, scope: ChallengeScope, *, issuance_id: str,
+                         code_hash: str, expires_at: datetime, payload: dict,
+                         at: datetime) -> bool:
+        with self._session_factory() as session:
+            lock_login_state(session, scope.email_hash)
+            result = session.execute(delete(LoginIssuanceRow).where(
+                LoginIssuanceRow.id == issuance_id,
+                LoginIssuanceRow.email_hash == scope.email_hash,
+                LoginIssuanceRow.purpose == str(scope.purpose),
+                LoginIssuanceRow.plane == str(scope.plane),
+                LoginIssuanceRow.expires_at > as_utc(at),
+            ))
+            if result.rowcount != 1:
+                return False
+            self._replace_challenge(session, scope, code_hash=code_hash,
+                                    expires_at=expires_at, payload=payload, at=at)
+            session.commit()
+            return True
+
+    def _replace_challenge(self, session: Session, scope: ChallengeScope, *,
+                           code_hash: str, expires_at: datetime, payload: dict,
+                           at: datetime) -> None:
+        session.execute(delete(LoginChallengeRow).where(self._scope_filter(scope)))
+        session.add(LoginChallengeRow(
+            email_hash=scope.email_hash, purpose=str(scope.purpose), plane=str(scope.plane),
+            code_hash=code_hash, payload=dict(payload or {}), created_at=as_utc(at),
+            expires_at=as_utc(expires_at), attempts=0, last_sent_at=as_utc(at),
+        ))
+
     @staticmethod
     def _scope_filter(scope: ChallengeScope):
         return (
@@ -302,20 +363,9 @@ class AuthStore:
         make the attempt cap decorative.
         """
         with self._session_factory() as session:
-            session.execute(delete(LoginChallengeRow).where(self._scope_filter(scope)))
-            session.add(
-                LoginChallengeRow(
-                    email_hash=scope.email_hash,
-                    purpose=str(scope.purpose),
-                    plane=str(scope.plane),
-                    code_hash=code_hash,
-                    payload=dict(payload or {}),
-                    created_at=as_utc(at),
-                    expires_at=as_utc(expires_at),
-                    attempts=0,
-                    last_sent_at=as_utc(at),
-                )
-            )
+            lock_login_state(session, scope.email_hash)
+            self._replace_challenge(session, scope, code_hash=code_hash,
+                                    expires_at=expires_at, payload=payload, at=at)
             session.commit()
 
     def get_challenge(self, scope: ChallengeScope) -> Optional[LoginChallengeRow]:
@@ -374,11 +424,14 @@ class AuthStore:
     def delete_challenges_for_email(self, email_hash: str) -> int:
         """Standalone cleanup for every purpose/plane, without candidate erasure.
 
+        Cancels pending sends too; the return value counts active challenges only.
         CandidateStore owns cleanup in the candidate-delete transaction.
         """
         if not email_hash:
             return 0
         with self._session_factory() as session:
+            lock_login_state(session, email_hash)
+            session.execute(delete(LoginIssuanceRow).where(LoginIssuanceRow.email_hash == email_hash))
             result = session.execute(
                 delete(LoginChallengeRow).where(
                     LoginChallengeRow.email_hash == email_hash
@@ -391,6 +444,11 @@ class AuthStore:
         """Opportunistic hygiene on a path that already runs, so abandoned
         challenges do not accumulate without inventing a scheduler."""
         with self._session_factory() as session:
+            lock_login_state(session, email_hash)
+            session.execute(delete(LoginIssuanceRow).where(
+                LoginIssuanceRow.email_hash == email_hash,
+                LoginIssuanceRow.expires_at <= as_utc(at),
+            ))
             session.execute(
                 delete(LoginChallengeRow).where(
                     (LoginChallengeRow.email_hash == email_hash)

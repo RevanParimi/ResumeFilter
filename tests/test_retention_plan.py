@@ -51,12 +51,12 @@ def test_a_target_naming_an_undeclared_class_cannot_even_be_ASKED_for_its_knob()
         orphan.knob
 
 
-def test_login_state_is_one_class_over_two_tables():
+def test_login_state_is_one_class_over_three_tables():
     """The reason the guard compares a SET and not a length."""
     tables = sorted(
         t.model.__tablename__ for t in TARGETS if t.data_class == "login_state"
     )
-    assert tables == ["auth_sessions", "login_challenges"]
+    assert tables == ["auth_sessions", "login_challenges", "login_issuances"]
 
 
 def test_batch_item_text_clears_and_never_deletes():

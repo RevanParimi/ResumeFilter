@@ -162,13 +162,17 @@ fusing them would repeat S7.2's two-ladders mistake.
   candidate subject and are structured-logged only (see §9).
 - **Erasure**: both portal and admin routes call `PortalService.erase()`, which
   delegates to `CandidateStore.delete_candidate()`. Candidate sessions and other
-  candidate-linked rows cascade. Existing `login_challenges` have no FK (signup
-  can precede a principal), so the candidate store explicitly deletes every
-  plane/purpose for the stored email hash in the **same transaction**. A failed
-  or interrupted erasure rolls back both deletes; a retry can complete them.
+  candidate-linked rows cascade. `login_challenges` and `login_issuances` have no
+  FK (signup can precede a principal), so the candidate store explicitly deletes
+  every plane/purpose for the stored email hash in the **same transaction**.
+  Failed or interrupted erasure rolls back the cleanup; a retry can complete it.
   Other addresses and organization/admin principals and sessions survive.
-  Fresh signup remains permitted. Late issuance and already-consumed redemption
-  across erasure are separate open ordering tasks, D3d2c2/c3.
+  A send reserves an expiring token before provider I/O and activates a challenge
+  only if that exact token survives. Short transaction locks order reservation,
+  activation and erasure; no lock spans delivery. Cancelled sends return generic
+  202 without debug echo. Provider failures preserve any previous valid code.
+  Fresh signup remains permitted; already-sent mail cannot be recalled.
+  Redemption after an already-committed consume remains open in D3d2c3.
 
 ## 8. Email seam
 

@@ -6,6 +6,25 @@
 
 ## ▶ Current state
 
+- **Session 2026-09-27 - R1-S1-T3b-D3d2c2 completed.** Pending send reservations
+  are cancelled atomically with erasure; late email delivery cannot restore a
+  challenge. Fresh signup and previous codes on send failure remain supported.
+  Full SQLite 2517 passed/188 skipped; focused PG 167 passed/2 skipped; migrated
+  issuance HTTP/restart 34/34 per backend, c1 PG 24/24, migration up/down/up passed.
+  Same-agent diff review; database preserved. Commands and limits live in the
+  [existing leaf evidence](delivery/tasks/R1-S1-T3b-D3d2c2.md); no new Markdown
+  record. Next c3 redemption; parents/F05/sprint gates remain open.
+
+- **Session 2026-09-26 - User-requested clutter review.** Inventoried the
+  tracked repository and traced runtime simplification candidates. Consolidated
+  diverged UI specs, shortened repetitive parent/PI/handoff text and corrected
+  stale workflow/architecture/source links. Detailed findings use the existing
+  CODEBASE_REVIEW_2026-09-07.md follow-up; no new Markdown record or runtime
+  refactor. Leaf evidence, migration history and next task D3d2c2 preserved.
+  Local-link checks passed across 155 Markdown files; 34 task statuses and all
+  leaf evidence unchanged. More than 700 net lines removed, zero new Markdown
+  files. Same-agent diff/whitespace review passed; no application-test rerun.
+
 - **Session 2026-09-26 - Feature summary and evidence organization.** User
   authorized consolidation, committing and pushing accumulated project changes.
   Added root FEATURE_STATUS.md; archived 12 detailed children of closed task

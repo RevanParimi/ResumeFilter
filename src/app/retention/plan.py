@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Optional
 
-from app.auth.models import AuthSessionRow, LoginChallengeRow
+from app.auth.models import AuthSessionRow, LoginChallengeRow, LoginIssuanceRow
 from app.candidates.models import ResumeRow
 from app.core.config import Settings
 from app.interview.models import InterviewSessionRow
@@ -91,6 +91,7 @@ TARGETS: tuple[SweepTarget, ...] = (
         "rate_limit_counters", RateLimitCounterRow, "expires_at", SweepMode.DELETE
     ),
     SweepTarget("login_state", LoginChallengeRow, "expires_at", SweepMode.DELETE),
+    SweepTarget("login_state", LoginIssuanceRow, "expires_at", SweepMode.DELETE),
     SweepTarget("login_state", AuthSessionRow, "expires_at", SweepMode.DELETE),
 )
 

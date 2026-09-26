@@ -182,7 +182,8 @@ class AuthService:
         with it). Anything else wanting to know whether a code went out should
         call :meth:`request_code`, which cannot leak it.
 
-        Returns `(True, code)` when one was actually sent.
+        Returns `(True, code)` when delivery and activation both succeeded.
+        Erasure during delivery returns `(False, None)`; sent mail cannot be recalled.
 
         Returns `(False, None)` -- WITHOUT raising -- when there is deliberately
         nothing to send:
@@ -281,32 +282,35 @@ class AuthService:
         # silently replaced by a seeded one here.
         code, digest = challenge_logic.mint_code_for(self._settings, rng=rng)
 
-        # SEND FIRST, persist second. A provider outage must not consume or
-        # supersede anything: a retry has to be free, so an SMTP failure never
-        # costs someone their login.
+        # Reserve before sending, but activate only after delivery. Erasure
+        # can cancel this exact send without invalidating an older code on a
+        # provider failure. No SQL transaction spans the external call.
+        expires_at = at + timedelta(seconds=self._settings.login_otp_ttl_seconds)
+        issuance_id = self._store.reserve_issuance(scope, expires_at=expires_at)
         try:
-            self._email.send(
-                to=normalize_email(email),
-                subject="Your veritas sign-in code",
-                body=(
-                    f"Your sign-in code is {code}\n\n"
-                    f"It expires in {self._settings.login_otp_ttl_seconds // 60} "
-                    "minutes. If you did not request it, ignore this message."
-                ),
-            )
-        except EmailUnavailable as exc:
-            raise EmailUnavailableError(str(exc)) from exc
-        except EmailSendFailed as exc:
-            raise ChallengeRefused("send_failed") from exc
+            try:
+                self._email.send(
+                    to=normalize_email(email),
+                    subject="Your veritas sign-in code",
+                    body=(
+                        f"Your sign-in code is {code}\n\n"
+                        f"It expires in {self._settings.login_otp_ttl_seconds // 60} "
+                        "minutes. If you did not request it, ignore this message."
+                    ),
+                )
+            except EmailUnavailable as exc:
+                raise EmailUnavailableError(str(exc)) from exc
+            except EmailSendFailed as exc:
+                raise ChallengeRefused("send_failed") from exc
 
-        self._store.upsert_challenge(
-            scope,
-            code_hash=digest,
-            expires_at=at + timedelta(seconds=self._settings.login_otp_ttl_seconds),
-            payload=payload or {},
-            at=at,
-        )
-        return True, code
+            activated = self._store.activate_issuance(
+                scope, issuance_id=issuance_id, code_hash=digest,
+                expires_at=expires_at, payload=payload or {}, at=at,
+            )
+            # Generic 202 at HTTP, no local debug echo for a cancelled code.
+            return (True, code) if activated else (False, None)
+        finally:
+            self._store.cancel_issuance(issuance_id)
 
     # -- redeeming a code ----------------------------------------------------
 
@@ -679,13 +683,14 @@ class AuthService:
         return self._store.delete_admin_user(admin_user_id)
 
     def erase_login_state(self, candidate_id: str) -> int:
-        """Delete every login challenge for this candidate's address.
+        """Cancel sends and delete challenges for this candidate's address.
 
         Sessions CASCADE with the candidate row; login_challenges cannot,
         because they carry no FK (at signup time no principal exists). This
-        method only clears challenges; it does not erase the candidate. Full
+        method clears login state; it does not erase the candidate. Full
         candidate erasure uses CandidateStore.delete_candidate, which commits
-        challenge cleanup and candidate deletion together.
+        login-state cleanup and candidate deletion together. Returns the number
+        of active challenges deleted, excluding cancelled sends.
         """
         email_hash = self._candidates.email_hash_for(candidate_id)
         if not email_hash:
