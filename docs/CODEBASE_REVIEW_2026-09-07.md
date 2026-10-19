@@ -376,10 +376,18 @@ This is self-review; no independent reviewer or new live-provider, PostgreSQL,
 Docker runtime or empirical-quality validation is claimed. Earlier bounded
 migration/database evidence remains in the linked task records.
 
-Publication candidate is ready for the explicitly authorized main push using
-Revan Parimi <revan.datta132@gmail.com>. The exact commit/remote verification is
-recorded after publication. Remaining development status is unchanged: 29 parent
-tasks done, one in progress and 20 pending. R4-S1-T3E remains next, not started.
+Publication complete: [commit f62a564](https://github.com/RevanParimi/ResumeFilter/commit/f62a56477f5ae523b2bc8f94eb8aefdcc3f0403d)
+was pushed normally to origin/main and verified with `git ls-remote`. Author and
+committer are Revan Parimi <revan.datta132@gmail.com>. All 342 reviewed paths,
+including the 58 pending deletions, are committed; no application/test work from
+this reviewed manifest remains uncommitted. The final documentation-only commit
+records that verified publication. Protected working-data/credential/editor
+hashes remain unchanged and no demo restart or deployment command was run.
+Git push access uses the existing RevanParimi account explicitly; no account
+credentials were changed or disclosed. Remaining development status is unchanged:
+29 parent tasks done, one in progress and 20 pending. R4-S1-T3E remains next,
+not started. Previously blocked ignored local-artifact deletion is still not
+counted as completed or bypassed by this publication.
 
 ## Follow-up 2026-10-18 — Test and delivery consolidation
 

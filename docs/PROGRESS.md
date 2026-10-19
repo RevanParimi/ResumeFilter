@@ -4,20 +4,21 @@ Updated: 2026-10-19. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-M2 publication follow-up: all completed local work reviewed and validated.**
-The existing application changes and R4-M1 test/delivery consolidation are now
-included in the explicit 342-path publication scope, alongside 58 pending tracked
+**R4-M2 publication follow-up complete: all reviewed local work committed and pushed.**
+The existing application changes and R4-M1 test/delivery consolidation are included
+in published commit `f62a564` on main: 342 reviewed paths and 58 tracked
 deletions. Full offline pytest, actual scratch Chrome/HTTP restart journeys,
 static checks, record/link preservation and staged diff self-review passed.
 [The existing audit](CODEBASE_REVIEW_2026-09-07.md#publication-follow-up-previously-completed-local-work)
-owns exact commands, counts, limits and publication evidence. Publish to main
-using revan.datta132@gmail.com; final commit verification follows publication.
+owns exact commands, counts, limits and verified remote publication. Author and
+committer: revan.datta132@gmail.com. No reviewed application/test work remains
+uncommitted; the final documentation-only commit records the publication.
 Working data, secrets, local editor settings and the running demo are preserved.
 Previously blocked ignored local-artifact deletion remains outside the push.
 
 R4-M1 test/delivery consolidation and R4-M2 versioned-file retirement are done.
-The earlier cleanup-only publication is `57a68ec`; this follow-up includes the
-previously uncommitted completed work. No new backlog development starts here.
+The earlier cleanup-only publication is `57a68ec`; `f62a564` includes the
+previously uncommitted completed work. No new backlog development started here.
 
 **Exact next development task: R4-S1-T3E - Extract ledger organizations, consent,
 records, coding and reputation routes (not started).** Read [PI-R4](delivery/PI-R4.md),
