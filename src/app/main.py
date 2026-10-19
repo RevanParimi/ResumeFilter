@@ -128,10 +128,9 @@ def _advertised_endpoints(app: FastAPI) -> list[str]:
 #:
 #: Two of those three are GITIGNORED, which is the point: `StaticFiles` reads
 #: the filesystem, so git's opinion of a file has no bearing on whether it is
-#: public. `_ds` is a vendored third-party design-system bundle and goes in
-#: whole -- its readmes describe the bundle, not veritas, and editing a
-#: vendored tree to satisfy our own rule buys nothing.
-UI_ASSETS = frozenset({"api.js", "support.js", "Veritas.dc.html", "_ds"})
+#: public. Retired design-system bundles are not application assets; restoring
+#: an old `_ds` directory must not make its files public again.
+UI_ASSETS = frozenset({"api.js", "support.js", "Veritas.dc.html"})
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open
 #: `/ui`, and until this existed that redirected to `/ui/` and 404'd: there is
@@ -151,8 +150,7 @@ class _AllowlistedStaticFiles(StaticFiles):
     thumbnail and the screenshot got out. A test can only observe that; the
     mount can prevent it.
 
-    Matched on the FIRST path segment so `_ds/` and any future asset directory
-    work without listing every file, and so a traversal attempt cannot smuggle
+    Matched on the FIRST path segment so a traversal attempt cannot smuggle
     an allowed name into a later segment. Starlette normalises and confines the
     path before this runs -- that defence is still its job, not ours.
     """

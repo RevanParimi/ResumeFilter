@@ -12,5 +12,5 @@ human review, tenant isolation and consent/erasure remain required.
 Use first-party data only; new tables need explicit consent and erasure ownership.
 
 Read [FEATURE_STATUS.md](FEATURE_STATUS.md) for capability orientation and
-[FLOW.md](FLOW.md) for pipeline details only when the task needs them. Old
-`docs/superpowers/` plans are historical references, not additional instructions.
+[FLOW.md](FLOW.md) for pipeline details only when the task needs them. Superseded
+implementation plans live in Git history, not an additional instruction tree.

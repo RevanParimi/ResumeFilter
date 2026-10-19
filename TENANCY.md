@@ -1,7 +1,7 @@
 # TENANCY.md — org-plane data ownership (S8.4 Phase A)
 
 Peer of `AUTH.md` / `PORTAL.md` / `VERIFICATION.md`.
-Design record: `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`
+Design record: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md)
 §0.1, §0.4, §3.
 
 Before S8.4 an organisation that self-registered through S8.2 could log in and
@@ -311,7 +311,7 @@ These stay, and the reasoning is the same principle as the `matches[]` strip
 rather than an exception to it: **a count and a match-type are not an
 identity.** An org learns *that* this person is already known to the platform
 and *what* identified her — never to whom, never how many organisations, never
-which. That is precisely the fraud signal the wedge is sold on (`UI-Spec.md`
+which. That is precisely the fraud signal the wedge is sold on ([historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md)
 item 9 asks for these ingest-time signals to be surfaced, not hidden), and
 suppressing it would blind the product to "this candidate is being shopped
 around" while protecting nothing that §7's strip does not already protect.
@@ -363,7 +363,7 @@ demands database-level isolation, this is the layer it replaces, not one it
 fights), and org offboarding as a product *flow* — the `SET NULL` semantics
 (§1) make offboarding *safe*, and `DELETE /ledger/orgs/{org_id}` already
 performs it on the **admin** plane; what does not exist is an org-plane
-self-service flow, and that is the part deferred (`UI-Spec.md` item 17).
+self-service flow, and that is the part deferred ([historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) item 17).
 
 ## 9. Proof
 

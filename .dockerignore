@@ -11,6 +11,8 @@ __pycache__
 **/__pycache__
 *.pyc
 .pytest_cache
+.superpowers
+%SystemDrive%
 .chroma
 data/
 .env
@@ -42,3 +44,4 @@ frontend/uploads/
 # refuses anything outside app.main.UI_ASSETS, so exposure is closed at the
 # server; these two lines only keep the artefacts out of the IMAGE.
 frontend/.thumbnail
+frontend/_ds/

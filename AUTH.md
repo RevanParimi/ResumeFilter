@@ -1,7 +1,7 @@
 # AUTH.md — identity & access (S8.2)
 
 Peer of `LEDGER.md`, `PORTAL.md`, `VERIFICATION.md`, `INTERVIEWS.md`.
-Design record: `docs/superpowers/specs/2026-08-02-s82-identity-access-design.md`.
+Design record: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-02-s82-identity-access-design.md).
 
 Before S8.2 every principal was a long-lived header key an operator minted by
 hand. A browser could obtain none of them, and no human identity sat behind any

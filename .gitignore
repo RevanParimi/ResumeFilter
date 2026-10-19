@@ -12,6 +12,10 @@ __pycache__/
 # Test / tooling caches
 .pytest_cache/
 
+# Retired local agent reviews and accidental Windows cache paths
+/.superpowers/
+/%SystemDrive%/
+
 # Runtime data (regenerated)
 .chroma/
 data/flywheel.jsonl

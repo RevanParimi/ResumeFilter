@@ -2,7 +2,7 @@
 
 Peer of `VERIFICATION.md`. What `src/app/interview/` is, why it is shaped this way,
 and which lines are load-bearing. Design record:
-`docs/superpowers/specs/2026-07-31-s73-ai-interview-delivery-design.md`.
+[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-31-s73-ai-interview-delivery-design.md).
 
 **Advisory, always.** An interview score never gates matching, ranking, search,
 or a depth report. It is one more thing a human reads.

@@ -6,6 +6,10 @@
 
 ## ▶ Current state
 
+- Session 2026-10-19: R4-M2 retires 93 obsolete plans/prototype assets.
+  [The existing audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material) owns completed acceptance, full regression, Chrome and self-review evidence.
+  Prior uncommitted application work is outside this cleanup-only publication.
+
 - **Session 2026-09-27 - R1-S1-T3b-D3d2c2 completed.** Pending send reservations
   are cancelled atomically with erasure; late email delivery cannot restore a
   challenge. Fresh signup and previous codes on send failure remain supported.
@@ -388,8 +392,8 @@
   two matrix versions; this machine is 3.13).
   2101 → 2129 passing, `smoke_s93` 19/19, 4/4 load-bearing mutants dead,
   neighbour smokes re-run green (s92 17/17, s86 28/28, s83b 22/22).**
-  Spec `docs/superpowers/specs/2026-08-25-s93-error-observability-design.md`,
-  plan `docs/superpowers/plans/2026-08-25-s93-error-observability.md`
+  Spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-25-s93-error-observability-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-25-s93-error-observability.md)
   (9 tasks, all done), executed inline with a mutation gate on the two tasks
   that carry the sprint's real claims.
   **THE SPRINT ASKS THE OPERATOR'S QUESTION: when veritas refuses, can anyone
@@ -559,8 +563,8 @@
   AND REGRESSION-FIXED on branch `s92-extraction-coverage`. (MERGED the next
   session; see above.) Not pushed, nothing deployed. 1996 → 2080 passing, 21/21 mutants dead,
   `smoke_s92` 17/17, tree clean.**
-  Spec `docs/superpowers/specs/2026-08-20-s92-extraction-coverage-design.md`,
-  plan `docs/superpowers/plans/2026-08-20-s92-extraction-coverage.md` (14 tasks,
+  Spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-20-s92-extraction-coverage-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-20-s92-extraction-coverage.md) (14 tasks,
   all done), executed subagent-driven with a per-task review loop.
   **THE SPRINT ASKS THE QUESTION UNDERNEATH S9.1'S.** S9.1 asked whether the
   advisory numbers predict a human's judgment. This one asks whether they were
@@ -726,8 +730,8 @@
   `.superpowers/sdd/2026-08-17-s91-signal-quality-harness/progress.md` (it
   holds every ruling and the exact stop point; it is GIT-IGNORED, so if it is
   gone, recover from `git log` plus this entry). Spec
-  `docs/superpowers/specs/2026-08-17-s91-signal-quality-harness-design.md`,
-  plan `docs/superpowers/plans/2026-08-17-s91-signal-quality-harness.md`
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-17-s91-signal-quality-harness-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-17-s91-signal-quality-harness.md)
   (13 tasks; 1 and 2-4 done, 5-13 pending).
   **THE SPRINT PROCEEDS DESPITE PI-9'S OWN GATE, and the gate is answered by
   construction rather than by waiting.** Gap-analysis v2 §5 parked calibration
@@ -790,8 +794,8 @@
   `git diff s87-src-layout HEAD` is empty — `main` never moved while the
   branch was built, so the merge tree is byte-identical to the tested tip and
   the evidence above is the merge's, not just the branch's.
-  Spec `docs/superpowers/specs/2026-08-15-s87-src-layout-design.md`, plan
-  `docs/superpowers/plans/2026-08-15-s87-src-layout.md`.
+  Spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-15-s87-src-layout-design.md), plan
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-15-s87-src-layout.md).
   **THE OPEN DECISION IS SETTLED: the package KEEPS the name `app`.** The user
   declined the `veritas` rename. It buys nothing for the sprint's stated goal —
   `/code-review ultra src/` scopes identically either way — and the "pay the
@@ -900,7 +904,7 @@
   **FINDING 3 (minor, NOT fixed):** `frontend/api.js` justifies
   `credentials:"include"` by the `?api=` cross-origin override, but the same
   sprint shipped `samesite=lax`, which stops the session cookie riding a
-  genuinely cross-SITE request. `UI.md` §3 states the real rule (host
+  genuinely cross-SITE request. [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) §3 states the real rule (host
   separately ⇒ set `samesite=none`); the api.js comment does not.
   **CHECKED AND CLEAN:** alembic has ONE head, so `revision_state`'s
   `get_current_head()` cannot raise; `build_email` opens no socket at boot;
@@ -930,7 +934,7 @@
   31/31, bindings 402/402. NOT REVIEWED, NOT MERGED, NOT PUSHED. NOTHING WAS
   DEPLOYED: no Railway project, service, database, domain or variable exists
   that did not exist before the branch.** Plan:
-  `docs/superpowers/plans/2026-08-12-s86-production-shape.md`, 15 tasks, TDD
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-12-s86-production-shape.md), 15 tasks, TDD
   with every failing test seen red first.
   **THE DEPLOY SPRINT STOPPED BEING A DEPLOY, and that was decided before any
   code.** There are zero customers. A running host buys nothing and costs
@@ -1104,7 +1108,7 @@
   because this branch touched the **container** (`Services` gained two fields),
   the candidate store's identity refresh and `/portal/me` — so the ingest-era
   smokes were genuinely at risk, not only the recent ones. Plan:
-  `docs/superpowers/plans/2026-08-11-s83b-retention-and-rights.md`, 16 tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-11-s83b-retention-and-rights.md), 16 tasks,
   TDD with every failing test proven red first. **NOT YET REVIEWED OR MERGED —
   that is the next action.**
   **The statutory surface exists: the retention promise is now mechanically
@@ -1369,9 +1373,9 @@
   `s83a-limits-and-metrics`. 1586 → 1665, `smoke_s83a` 19/19 on its second
   run, ALL NINE smokes green (s63, s64, s73, s81, s82, s83a, s84a, s84b,
   s85_outcome), and 10/10 mutants dead.** Spec:
-  `docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md` (S8.3
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md) (S8.3
   builds as TWO branches from one spec, the S8.4 shape); plan
-  `docs/superpowers/plans/2026-08-10-s83a-limits-and-metrics.md`, all 13 tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-10-s83a-limits-and-metrics.md), all 13 tasks,
   TDD with a commit per task. **NOT YET REVIEWED OR MERGED — that is the next
   action, then Phase B.**
   **The service can now be run for paying customers on the abuse and spend
@@ -1500,8 +1504,8 @@
   `smoke_s85_outcome` 21/21 on its first run, `smoke_s84a` 23/23 and
   `smoke_s84b` 16/16 re-run green, and all three UI layers green (bindings
   402/402 · contract 31/31 · browser 19/19).** Spec:
-  `docs/superpowers/specs/2026-08-10-org-outcome-route-design.md`, plan
-  `docs/superpowers/plans/2026-08-10-org-outcome-route.md`.
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-10-org-outcome-route-design.md), plan
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-10-org-outcome-route.md).
   **This closes the named gap the wiring session left.**
   `POST /report/{id}/outcome` was admin-plane, so a customer who screened 400
   resumes and formed a judgment had nowhere to put it — and that judgment is
@@ -1589,7 +1593,7 @@
   always the one that drifts (S8.2's `OPEN_PATHS`/`PUBLIC_PATHS` finding). The
   real fix is deriving it from `/openapi.json`, and it belongs with the
   `docs/routes.md` idea below. A comment in the code now says so. Same call for
-  `UI.md` §5's five plane counts, which are the `a9b8e59` measurement and are
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) §5's five plane counts, which are the `a9b8e59` measurement and are
   now marked as not re-measured.
   **⚠ A SELF-REVIEW OF THE BRANCH FOUND ONE REAL DEFECT, ONE NON-DEFECT I HAD
   TALKED MYSELF INTO, AND ONE GAP.** 1584 → 1586 green; browser 18 → 19.
@@ -1626,7 +1630,7 @@
   (`pytest -q` re-measured at 1553, unchanged). Verified three ways:
   bindings 384/384, contract 25/25 over real HTTP, browser click-through
   16/16 in headless Chrome.** Spec:
-  `docs/superpowers/specs/2026-08-10-ui-screening-wiring-design.md`.
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-10-ui-screening-wiring-design.md).
   **The wedge is now clickable end to end by the customer who bought it:**
   sign up → drop resumes in → watch them screen → read a ranked, reasoned queue
   → open a report → screenshot the roll-up → delete the batch. Queue, report,
@@ -1784,7 +1788,7 @@
   branch `s84b-screening-surface`. 1434→1542 green, `smoke_s84b` 16/16 exit 0,
   and ALL SIXTEEN smokes green (s12, s13, s23, s41, s51, s52, s53, s63, s64,
   s71, s72, s73, s81, s82, s84a, s84b).** Plan:
-  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`, all 15 tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-07-s84b-screening-surface.md), all 15 tasks,
   TDD with a commit per task. **NOT YET REVIEWED OR MERGED — that is the next
   action.**
   **The wedge now works at volume, without an operator.** An organisation
@@ -1880,8 +1884,8 @@
 
 - **Session 2026-08-07 (later) — S8.4 PHASE B IS SPEC'D AND PLANNED. Documents
   only; no `app/` code touched. `pytest -q` re-measured green at 1434 first.**
-  Spec `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`,
-  plan `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` (15 tasks).
+  Spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-07-s84b-screening-surface.md) (15 tasks).
   **The tenancy analysis is a FIELD table, not a handler count** — that is the
   method change Phase A's leak paid for, applied to the two new org-facing
   response shapes (the queue and the summary).
@@ -1928,7 +1932,7 @@
   MERGED. 1377→1434 green, `smoke_s84a` 23/23 exit 0, all regression smokes
   green (s12, s13, s23, s41, s53 OK · s64 10/10 · s73 18/18 · s81 10/10 ·
   s82 21/21).** Plan:
-  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`. Built
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md). Built
   subagent-driven across 10 tasks + a closeout fix round; every task got a
   fresh implementer and its own review.
   **The wedge is now reachable by the customer who bought it.** A
@@ -2029,9 +2033,9 @@
   **Next: the S8.4 Phase B spec + plan** (screening surface — batches,
   processing, the fraud-screen read-model, cursor pagination, materialization
   route, both 422 sites, comp's single shape, OpenAPI).
-- **Session 2026-08-05 — S8.4 IS SPEC'D. `UI.md`'s five open questions are ALL
+- **Session 2026-08-05 — S8.4 IS SPEC'D. [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md)'s five open questions are ALL
   CLOSED with the user, and the sprint builds as TWO branches from one spec.**
-  Spec: `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`.
+  Spec: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md).
   No `app/` code was touched; this session is documents only.
   **The centre of gravity turned out not to be batch upload but TENANCY.**
   `reports` / `candidates` / `resumes` have never had an org column, so
@@ -2088,7 +2092,7 @@
   **on purpose**), and `POST /comp/estimate` changes shape to match
   `GET /jobs/{id}/comp` (the UI already unwraps `CompBenchmark` centrally, so
   this makes that unwrap correct for both paths). Everything else is additive.
-  **`UI.md` and `UI-Spec.md` were updated in place** — §2, §2.1, §4.A, §4.B and
+  **[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) and [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) were updated in place** — §2, §2.1, §4.A, §4.B and
   §9 now carry the resolutions with their rejected alternatives, so the UI docs
   no longer describe tenancy as an assumption.
   **Next: the S8.4 Phase A plan**, then TDD build.
@@ -2096,7 +2100,7 @@
   `pytest -q` 1377 passed, unchanged (no `app/` code was touched).** This was
   the integration step PI-8 was re-sequenced around
   (`S8.2 → S8.4 → UI → integrate → S8.3 → deploy`). Spec:
-  `docs/superpowers/specs/2026-08-03-ui-api-wiring-design.md`.
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-03-ui-api-wiring-design.md).
   **Scope, chosen by the user: through roles/comp.** Wired = auth on all three
   planes · `GET /auth/me` as the boot sequence · candidate DPDP portal
   (`/portal/me`, access-log, consents + revoke, erasure) · devices
@@ -2177,11 +2181,11 @@
   DB is a TRACKED file, so test orgs and candidate emails otherwise land in git.
 - **Session 2026-08-02 — UI-Spec REVIEWED against the code; next session is API
   WIRING.** The external UI (`Veritas.dc.html`, mock data only) is described in
-  the new root doc `UI-Spec.md`, which was cross-checked route by route against
+  the new root doc [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md), which was cross-checked route by route against
   the **live route table (78 app routes + 5 doc/root = 83, matching UI.md)** and
   the Pydantic schemas — enumerated from the running routers, not remembered.
   **The gap list was accurate for everything it named, and missed ten surfaces**,
-  now folded into `UI-Spec.md` as items 9–17: ingest-response fraud signals
+  now folded into [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) as items 9–17: ingest-response fraud signals
   thrown away (`CandidateCreateResponse.matched_existing/matched_on/
   duplicate_resume/resume_farm` — the near-duplicate check runs AT INGEST, so
   "this exact resume was uploaded before" is available before any report opens);
@@ -2194,7 +2198,7 @@
   0.4, and no screen obtains or rotates it); operator consent administration;
   operator candidate surfaces; `POST /candidates/{id}/auth-key`; org offboarding.
   `POST /evaluate` and the candidate-side interview runner were BUILT in response
-  (`UI-Spec.md` §8b/§8c). **Two documentation defects found, BOTH THE SAME
+  ([historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) §8b/§8c). **Two documentation defects found, BOTH THE SAME
   SHAPE — a route's plane assumed rather than read off the router it is
   registered on:** `GET /domains` and `POST /evaluate` were both marked org-plane
   and are both on the ADMIN router (an org session gets 401). Twice in one
@@ -2235,11 +2239,11 @@
   risk-detail screen can only be demoed as an operator until S8.4. And there is
   still **no rate limiting** (S8.3), so a UI retry loop will not be caught.
   **The two product decisions that should be settled BEFORE more design lands on
-  screens 2/4/6:** UI.md §2.1 tenancy (`UI-Spec.md` line 104 already asserts "you
+  screens 2/4/6:** UI.md §2.1 tenancy ([historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) line 104 already asserts "you
   see only what your organisation uploaded", but `reports`/`candidates`/`resumes`
   have **no org column** — verified), and UI.md §9 Q3 batch identity (nothing in
   the schema has a batch). Both are cheap now and a rebuild later.
-  **`UI-Spec.md` items 9–17 should feed the S8.4 spec directly as measured
+  **[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) items 9–17 should feed the S8.4 spec directly as measured
   requirements input** — S8.4 is the last sprint before integration.
 - **Current sprint:** **S8.2 (Identity & access) BUILT and GREEN on branch
   `s82-identity-access`, REVIEWED and MERGED to main — 1200→1377,
@@ -2699,14 +2703,14 @@
   interview runner is candidate-plane. All three carry a "sample data" chip.
   **Deferred out of S8.4 Phase B, deliberately:** no cross-batch queue
   (`SCREENING.md` §8). Phase plans, for reference:
-  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md` and
-  `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md`.
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md) and
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-07-s84b-screening-surface.md).
   **Verifying the UI after any change to it** (there is no CI for `frontend/`):
   `node scripts/check_ui_bindings.js` · `python
   scripts/check_ui_screening_contract.py` · `python
   scripts/check_ui_screening_browser.py`.
 - **Long-range planning:** the current audit is
-  **`docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md`** (post-PI-7
+  **[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-01-veritas-gap-analysis-v2.md)** (post-PI-7
   re-audit, measured not remembered). It **supersedes** the 2026-07-26 vision
   gap analysis, which is kept as the dated record of the PI-5→PI-6→PI-7 call but
   is four PIs stale in its asset inventory. **v2's three corrections matter for
@@ -3642,7 +3646,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
      Typed through the native setter plus a dispatched `input` event.
   8. **Two hand-maintained lists were found stale and deliberately left that
      way**, with the staleness written down: `GET /`'s `endpoints` array and
-     `UI.md` §5's plane counts. Patching in two entries would make an
+     [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) §5's plane counts. Patching in two entries would make an
      unmaintained list look maintained.
   9. **A rule that was load-bearing in one place is not load-bearing in the
      next, and only a probe tells you which.** The self-review "found" a
@@ -3722,9 +3726,9 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
 
 - **2026-08-07 (later)** — **S8.4 PHASE B IS SPEC'D AND PLANNED. Documents only;
   no `app/` code touched, `pytest -q` re-measured green at 1434 before writing.**
-  Spec: `docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md`
+  Spec: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-07-s84b-screening-surface-design.md)
   (the *delta* on top of the 2026-08-05 spec §4, which still stands).
-  Plan: `docs/superpowers/plans/2026-08-07-s84b-screening-surface.md` — 15 tasks.
+  Plan: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-07-s84b-screening-surface.md) — 15 tasks.
   **The tenancy section is written the way Phase A's failure says it must be:**
   a FIELD table (spec §2) listing every field of every new org-facing response,
   where the value came from, and what stops it naming somebody who is not this
@@ -3740,7 +3744,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   and therefore sortable, where the same number inside `reports.body` JSON is
   dialect-specific and unindexable.
   **The DPDP decision that fell out of it, and it refuses the obvious
-  implementation:** `UI.md` asks each queue row for "a one-line reason", and
+  implementation:** [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) asks each queue row for "a one-line reason", and
   copying `fabrication_risk.reasoning` onto the item is refused —
   `batch_items.candidate_id` is `SET NULL` (so an erasure cannot rewrite an
   org's record of what it screened), which means anything stored beside it
@@ -3782,7 +3786,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   per-task review, then a whole-branch review before merge.
 - **2026-08-06/07** — **S8.4 Phase A built, reviewed and merged.** 1377→1434
   green, `smoke_s84a` 23/23, all regression smokes green. Plan
-  `docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md`; built
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-08-06-s84a-upload-ownership.md); built
   subagent-driven over 10 tasks with a per-task review, then a whole-branch
   review and one closeout fix round.
   **What shipped:** migration `0018_upload_ownership`, `app/screening/`
@@ -3826,10 +3830,10 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   than reading the diff. Every guard change from here should be pinned in both
   directions: it must fire on the bad shape *and* stay silent on prose.
 - **2026-08-05** — **S8.4 specced. Documents only; no `app/` code touched.**
-  Spec `docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md`;
-  `UI.md` §2/§2.1/§4.A/§4.B/§9 and `UI-Spec.md` §2/§3/§4 updated in place so the
+  Spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-05-s84-ui-integration-surface-design.md);
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md) §2/§2.1/§4.A/§4.B/§9 and [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) §2/§3/§4 updated in place so the
   UI docs record decisions rather than assumptions.
-  **`UI.md`'s five open questions are all closed** (§0.1–0.4 of the spec, each
+  **[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI.md)'s five open questions are all closed** (§0.1–0.4 of the spec, each
   with its rejected alternatives), and the sprint splits into **two branches**
   (§0.5) because a tenancy invariant across ~20 org-plane routes should not share
   a review with pagination and OpenAPI polish.
@@ -3910,7 +3914,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   question the repo had never asked: *how does this become revenue?* — offering
   three options (build a UI + advertise + investors · sell to LinkedIn/Naukri/
   Indeed · sell direct to companies via API). Written up as
-  `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md`.
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md).
   **Two framing corrections did most of the work.** (a) The three options are
   **not alternatives** — options 2 and 3 both require a screen a non-engineer can
   evaluate, so "build a UI" is the shared cost of entry, not a competing
@@ -4263,7 +4267,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   auth + DPDP portal).
 - **2026-07-29** — **S6.2 (LinkedIn export parsing / 2nd profile_sources
   adapter) built** (TDD-offline on branch `s62-linkedin-export`, 7 tasks; plan
-  `docs/superpowers/plans/2026-07-28-s62-linkedin-export.md`). Second adapter on
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-28-s62-linkedin-export.md)). Second adapter on
   the S6.1 spine, no LLM, no network: config knobs
   `max_linkedin_b64_chars`/`ps_linkedin_skill_base_confidence`/
   `ps_linkedin_skill_corroborated_confidence`/`ps_linkedin_max_rows`;
@@ -4473,7 +4477,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   Smoke `scripts/smoke_s12.py` green live (llm) AND key-less (heuristic).
   Next: S1.3 plan (API + engine wiring).
 - **2026-07-06 (4)** — S1.3 implementation plan written:
-  `docs/superpowers/plans/2026-07-06-s13-api-engine-wiring.md` (7 TDD tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-06-s13-api-engine-wiring.md) (7 TDD tasks,
   branch `s13-api-wiring`, 113→137 tests). Scope: `Report.candidate_id` +
   `for_candidate`/`delete_for_candidate` on both report stores (guarded ALTER
   for legacy reports.db), shared `app/core/pdf.py` helper, `Services.candidates`
@@ -4497,7 +4501,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   whose candidate_id no longer resolves). Next: S1.4 plan (India
   normalization).
 - **2026-07-09** — S1.4 implementation plan written:
-  `docs/superpowers/plans/2026-07-09-s14-india-normalization.md` (7 TDD tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-09-s14-india-normalization.md) (7 TDD tasks,
   branch `s14-india-normalization`, 138→190 tests). Scope: pure deterministic
   `app/candidates/normalize/` package (no LLM, no migration, no new tables),
   Optional canonical sibling fields on the S1.1 schema, extractor wiring.
@@ -4515,7 +4519,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   (heuristic floor) AND live (llm) after the user refreshed the expired
   OpenRouter key. PI-1 complete. Next: S2.1 plan.
 - **2026-07-17** — S2.1 implementation plan written:
-  `docs/superpowers/plans/2026-07-17-s21-ai-signals.md` (7 TDD tasks, branch
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-17-s21-ai-signals.md) (7 TDD tasks, branch
   `s21-ai-signals`, 190→~223 tests). Scope: pure `app/fabrication/ai_text.py`
   (4 deterministic detectors: template phrases, uniform bullets, metric
   saturation, symmetric structure; fusion + conservative banding), new
@@ -4541,7 +4545,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   (deterministic floor) AND live (llm; read timeout raised to 600s — the
   12-bullet fixture pays one reasoning call per claim). Next: S2.2 plan.
 - **2026-07-17 (3)** — S2.2 implementation plan written:
-  `docs/superpowers/plans/2026-07-17-s22-cross-field-forensics.md` (8 TDD
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-17-s22-cross-field-forensics.md) (8 TDD
   tasks, branch `s22-cross-field`, 225→~268 tests). Scope: pure
   `app/fabrication/cross_field.py` (conservative interval math: year-only
   dates shrink inward for overlaps / expand outward for tenure; 4 checks),
@@ -4594,7 +4598,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   the corpus) and was corrected mid-session to assert self-exclusion
   directly — a script bug, not a product bug. Next: S2.4 plan.
 - **2026-07-18** — S2.4 implementation plan written:
-  `docs/superpowers/plans/2026-07-18-s24-fabrication-risk.md` (7 TDD tasks,
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-18-s24-fabrication-risk.md) (7 TDD tasks,
   branch `s24-fabrication-risk`, 312→~345 tests). Scope: pure deterministic
   `app/fabrication/risk.py` (band→risk mapping as code constants; fused score
   = 0.7·confidence-weighted mean + 0.3·max component risk; coverage
@@ -4624,7 +4628,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   is a pre-existing pattern across all smoke scripts. 350 tests green.
   PI-2 complete. Next: S3.1 plan.
 - **2026-07-19** — S3.1 implementation plan written:
-  `docs/superpowers/plans/2026-07-19-s31-ledger-schema-consent.md` (7 TDD
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-19-s31-ledger-schema-consent.md) (7 TDD
   tasks, branch `s31-ledger-consent`, 350→~395 tests). Scope: new
   `app/ledger/` package — Pydantic contracts + StrEnum taxonomies
   (stage screen/tech/coding/hm, outcome, purpose ledger_write/ledger_read),
@@ -4684,7 +4688,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   green on main, branch deleted. S3.1 COMPLETE. Next: S3.2 plan.
 - **2026-07-22** — S3.2 done, subagent-driven on branch `s32-ledger-apis`
   (11 tasks, each spec+quality reviewed; final whole-branch review opus).
-  Plan: `docs/superpowers/plans/2026-07-22-s32-ledger-apis.md`. Delivered:
+  Plan: [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-22-s32-ledger-apis.md). Delivered:
   two HTTP auth planes over `LedgerStore` — ADMIN (`X-API-Key` on `router`:
   `POST/GET /ledger/orgs`, rotate `/api-key`, `DELETE`, consent
   grant/revoke/status) and ORG (`X-Org-Key`→org via `authenticate_org` on a
@@ -4714,8 +4718,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   complete. Next: S3.3 plan (coding-round results — schema + ingest only).
 - **2026-07-25** — S3.3 done, inline TDD-offline on branch
   `s33-coding-round-results` (6 tasks; spec
-  `docs/superpowers/specs/2026-07-25-s33-coding-round-results-design.md`, plan
-  `docs/superpowers/plans/2026-07-25-s33-coding-round-results.md`). Design
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-25-s33-coding-round-results-design.md), plan
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-25-s33-coding-round-results.md)). Design
   decisions taken with user (all recommendations accepted): standalone
   `coding_round_results` table (a peer of `interview_records`, NOT an overload —
   the `stage=coding` interview_record is a coarse pipeline outcome; a coding
@@ -4742,7 +4746,7 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   S3.3 COMPLETE — PI-3 now S3.1–S3.3 done. Next: S3.4 plan (cross-company
   reputation).
 - **2026-07-26** — Vision gap analysis written (docs only, no code):
-  `docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md`. Audited
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-26-veritas-vision-gap-analysis.md). Audited
   the whole product against the Mercor-for-India reference anatomy
   (ingest/verification/assessment/reputation/intelligence/flywheel/marketplace/
   platform). Key findings: biggest strategic gap is AI interview delivery;
@@ -4789,8 +4793,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   the next action.
 - **2026-07-26 (4)** — S3.4 done, inline TDD-offline on branch
   `s34-cross-company-reputation` (6 tasks; spec
-  `docs/superpowers/specs/2026-07-26-s34-cross-company-reputation-design.md`,
-  plan `docs/superpowers/plans/2026-07-26-s34-cross-company-reputation.md`).
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-26-s34-cross-company-reputation-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-26-s34-cross-company-reputation.md)).
   **PI-3 COMPLETE.** One design decision taken with user: negative-signal stance
   = **one corroboration-gated band** (recommended); user delegated the rest.
   Delivered: cross-company reputation as a **derived, `ledger_read`-gated read**
@@ -4823,8 +4827,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   feature (never an auto-reject gate). Next: S4.1 plan (feature registry).
 - **2026-07-26 (5)** — S4.1 done, inline TDD-offline on branch
   `s41-feature-registry` (10 tasks; spec
-  `docs/superpowers/specs/2026-07-26-s41-feature-registry-design.md`, plan
-  `docs/superpowers/plans/2026-07-26-s41-feature-registry.md`). **PI-4 started.**
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-26-s41-feature-registry-design.md), plan
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-26-s41-feature-registry.md)). **PI-4 started.**
   Two design decisions taken with user (both recommendations accepted, user
   delegated the rest): (1) registry shape = **code-first `@register_feature`
   decorator** (mirrors `@register_domain`), not a DB table; (2) ledger/reputation
@@ -4857,8 +4861,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   to clear the confidence floor). No new residuals. Next: S4.2 plan
   (materialization → wide `ml_features` table + point-in-time slicer + export).
 - **2026-07-27** — S4.2 done, inline TDD-offline on branch `s42-materialization`
-  (9 tasks; spec `docs/superpowers/specs/2026-07-26-s42-materialization-design.md`,
-  plan `docs/superpowers/plans/2026-07-26-s42-materialization.md`). Three design
+  (9 tasks; spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-26-s42-materialization-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-26-s42-materialization.md)). Three design
   decisions taken with user (all recommendations accepted, user delegated the
   rest): (D1) consent enforcement = **per-candidate gate, one global platform
   table** — consent-tagged features materialize only under an active `ledger_read`
@@ -4896,8 +4900,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   main (fast-forward), 529 green on main, branch deleted. S4.2 COMPLETE. Next: S4.3
   plan (talent search/ranking API over `ml_feature_vectors`).
 - **2026-07-27 (2)** — S4.3 done, inline TDD-offline on branch `s43-talent-search`
-  (8 tasks; spec `docs/superpowers/specs/2026-07-27-s43-talent-search-ranking-design.md`,
-  plan `docs/superpowers/plans/2026-07-27-s43-talent-search-ranking.md`). Three
+  (8 tasks; spec [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-27-s43-talent-search-ranking-design.md),
+  plan [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-27-s43-talent-search-ranking.md)). Three
   design decisions taken with user (all delegated to the recommendation): (D1)
   **admin plane only** (`X-API-Key`) — reading the S4.2-masked vectors as-is means
   no new consent gate / no new disclosure surface; org-facing job-conditioned
@@ -4924,8 +4928,8 @@ PI-9  SIGNAL QUALITY — "do any of the seven advisory
   (training-set export — features ⋈ outcomes, leakage-free at the `as_of` cut).
 - **2026-07-27 (3)** — S4.4 done, inline TDD-offline on branch
   `s44-training-set-export` (9 tasks; spec
-  `docs/superpowers/specs/2026-07-27-s44-training-set-export-design.md`, plan
-  `docs/superpowers/plans/2026-07-27-s44-training-set-export.md`). **PI-4 COMPLETE.**
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-27-s44-training-set-export-design.md), plan
+  [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/plans/2026-07-27-s44-training-set-export.md)). **PI-4 COMPLETE.**
   Four design decisions taken with user (all recommendations accepted, user
   delegated the rest): (D1) **ledger-only labels** — the flywheel `outcome` field
   is a permanent `None` placeholder (`report.py`), so interview outcomes + coding

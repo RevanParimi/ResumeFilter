@@ -8,6 +8,9 @@ large live route/frontend modules (T3/T4) and tracked runtime DB (R4-S3-T3).
 See the [audit follow-up](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
 These are source findings, not completed runtime fixes or measured speedups.
 
+R4-M2 maintenance: obsolete-file cleanup validated; see the existing
+[audit](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material).
+
 Load only the current task section plus [WORKFLOW.md](WORKFLOW.md), not this entire PI by default.
 Source entry points (paths relative to repository root): src/app/services/; src/app/core/; src/app/api/; src/app/screening/; src/app/candidates/; src/app/curation/; src/app/metrics/; frontend/; .github/workflows/ci.yml
 Task test lists are starting points verified during planning; select/add regression cases from actual callers at implementation time.

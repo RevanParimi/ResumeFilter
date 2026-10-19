@@ -60,5 +60,5 @@ summary. Read archived evidence only when the current task needs it.
 
 Documentation/runtime-clutter findings from the 2026-09-26 review are recorded in
 the [existing audit](docs/CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
-Old `docs/superpowers/` plans and UI design records are historical, not a second
-active backlog. Runtime simplification remains assigned to PI-R4.
+Superseded implementation plans and prototype UI documents remain in Git
+history, not the working tree or the active backlog. Runtime simplification remains assigned to PI-R4.

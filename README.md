@@ -4,6 +4,11 @@ Current capabilities, completed safeguards and open gaps:
 [Feature status](FEATURE_STATUS.md). Next development task:
 [Progress handoff](docs/PROGRESS.md).
 
+Superseded implementation plans and prototype UI records were retired from the
+working tree; [their original versions remain in Git](https://github.com/RevanParimi/ResumeFilter/tree/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers).
+Current feature contracts and the delivery plan own ongoing work.
+
+
 An Indian-market talent intelligence platform growing around a
 **domain-agnostic** engine that evaluates a candidate's resume for both
 **authenticity** and **technical depth** — the way a senior engineer would. It

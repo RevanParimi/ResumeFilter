@@ -1508,7 +1508,7 @@ async def match_job(
     if result.pool_size == 0:
         # 200, not 422: an empty feature store is a server-side state and the
         # caller cannot fix it. Mirrors GET /candidates/{id}/card's
-        # 200-with-status pattern (UI.md §6).
+        # 200-with-status pattern (SCREENING.md (batch processing)).
         return result.model_copy(update={"reason": "no_materialized_candidates"})
     return result
 

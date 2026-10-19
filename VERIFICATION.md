@@ -2,8 +2,8 @@
 
 Peer of `LEDGER.md` (consent machinery) and `PORTAL.md` (candidate plane).
 Design records:
-`docs/superpowers/specs/2026-07-31-s71-identity-verification-design.md` (spine)
-· `docs/superpowers/specs/2026-07-31-s72-document-forensics-design.md` (claims).
+[historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-31-s71-identity-verification-design.md) (spine)
+· [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-07-31-s72-document-forensics-design.md) (claims).
 
 `src/app/verification/` answers **two** questions, and keeps them apart on purpose:
 

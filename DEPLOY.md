@@ -220,6 +220,6 @@ outside-activity terms in that employment agreement must be reviewed **before
 veritas takes revenue** — not after a customer signs, when the answer is
 materially worse and the options are fewer.
 
-See `docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md` §8.3. This
+See [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-01-veritas-gtm-positioning.md) §8.3. This
 line item is here because this is the document someone opens on the day they
 decide to go live, which is the last honest moment to have already done it.

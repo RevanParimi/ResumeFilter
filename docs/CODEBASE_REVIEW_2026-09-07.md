@@ -187,7 +187,7 @@ No live providers, working-data edits or runtime refactor were performed.
 
 | Severity | Finding, trigger and consequence | Resolution / evidence |
 |---|---|---|
-| Medium | `UI-Spec.md` and `docs/ui/UI-SPEC.md` diverged: root retained later tenancy decisions but advertised admin signup/fixed question count; nested copy carried auth/interview corrections. Both presented old mock-only claims as current. | Merged unique tenancy and auth/interview material into root UI-Spec; removed nested copy. Marked UI.md, UI-Spec and docs/ui/PLAN as historical and linked current contracts. This does not certify every historical UI statement as current. |
+| Medium | [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/UI-Spec.md) and `docs/ui/UI-SPEC.md` diverged: root retained later tenancy decisions but advertised admin signup/fixed question count; nested copy carried auth/interview corrections. Both presented old mock-only claims as current. | Merged unique tenancy and auth/interview material into root UI-Spec; removed nested copy. Marked UI.md, UI-Spec and docs/ui/PLAN as historical and linked current contracts. This does not certify every historical UI statement as current. |
 | Medium | `CLAUDE.md` still required the old spec-to-plan workflow alongside the remediation workflow, inviting another plan tree for the same work. | Reduced it to AGENTS/workflow references plus unique repository conventions. No extra task/review file created. |
 | Medium | PI-R1 and seven open ancestors copied leaf test counts and obsolete initial traces. Each small fix required synchronized edits across ancestors and could leave stale completion claims. | Parents now own direct-child scope/status and acceptance; leaf evidence retains exact counts/commands. Shortened the handoff and feature validation section; added explicit documentation ownership rules. No leaf evidence or task ID removed; no gate closed. |
 | Medium | [Service composition](../src/app/services/__init__.py) still calls `build_vectorstore`; [provenance](../src/app/graph/nodes/provenance.py) now uses evaluation-local evidence and has no vector query/add consumer. Default config selects Chroma and its builder can wait up to the configured 15-second initialization deadline. | Reconfirmed R4-S1-T2. Keep removal/config/dependency compatibility and startup tests together in that task. The potential wait is a configured bound, not a measured startup delay. Corrected FLOW's stale vector/JSONL diagrams now. |
@@ -224,3 +224,59 @@ Review retained the original first-party-data requirement in the short CLAUDE
 entry point and corrected text encoding during consolidation. No documentation
 acceptance blocker remains. Runtime findings above remain open under PI-R4; no
 independent review, application execution or full-codebase correctness claim.
+
+
+## Follow-up 2026-10-19 — Retire obsolete repository material
+
+R4-M2 tracked-file cleanup validated (2026-10-19). User authorized removal and a push to
+main with commit email revan.datta132@gmail.com. This commit is scoped to cleanup;
+earlier uncommitted application/test work, working data, secrets and editor
+settings are excluded. It does not publish later local feature-completion claims.
+
+Scope: remove 74 historical implementation plans, two prototype documents under
+docs/ui, UI.md/UI-Spec.md, and 15 unreferenced design-system assets (93 files).
+Retain useful regression/journey scripts, current feature contracts and existing
+task/evidence records. Historical links point to the exact prior Git revision.
+Ignore local review/Windows-cache artifacts and exclude them from build context.
+Automatic approval review blocked their recursive local deletion; they remain.
+
+Acceptance: current UI entry/assets still work, restored retired design assets
+return 404, useful API contracts and prior task statuses remain unchanged, all
+documentation links resolve, full regression and relevant real Chrome journeys
+pass, separate self-review is recorded, and the pushed main SHA is verified.
+No database, migration, model-quality or additional feature work is implied.
+
+Validation of this exact cleanup-only candidate:
+
+- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py focused -m pytest -q --tb=short tests/test_ui_mount.py tests/test_image_contents.py tests/test_deploy_doc.py tests/test_route_table_guard.py tests/test_org_scope_guard.py`:
+  **44 passed, 1 warning, 14.64s**, exit 0.
+- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py full`
+  (default `-m pytest -q --tb=short`): **2,518 passed, 188 skipped, 44 warnings,
+  568.89s (9:28)**, exit 0. Optional/PostgreSQL skips do not prove those cases;
+  existing dependency and SQLite reflection warnings remain.
+- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py browser scripts/check_ui_screening_browser.py`:
+  **19/19**, exit 0, real Chrome on migrated scratch storage with fake/capture
+  providers and existing CDN access. No live-provider or quality claim.
+- Candidate `node scripts/check_ui_bindings.js`: **402 bindings / 9 states**;
+  `node --check frontend/api.js` and `node --check frontend/support.js`: passed.
+- `.resume/Scripts/python.exe .pytest_cache/verify_retire.py candidate`:
+  **386 local links**, exact historical blobs, all prior PI IDs/statuses and
+  API/function ASTs verified; 649 unrelated files unchanged, including the
+  candidate database. Windows-aware `git diff --check` passed.
+
+The added regression was first run against the old allowlist in the working
+copy: a real restored `_ds/retired.js` returned 200, producing the intended
+**1 failed** result. With the retired directory removed from the allowlist, it
+returns 404 while api.js remains 200. No prior test assertion was removed.
+
+Separate self-review: base `54804988f3ead83d727754e4361266a4322655c4` plus the
+explicit 112-path diff (93 deletions, 19 related updates). Reviewed current asset
+references, inherited route/ownership behavior, static refusal, package exclusion,
+historical recovery and preservation of prior task statuses. All existing route
+and UI-test function ASTs are retained, except removal of `_ds` from UI_ASSETS and
+one added behavior test. No independent review, database/migration change,
+provider validation, deployment or unrelated local application publication.
+Reviewed code hashes and detailed logs are ignored local artifacts, not portable
+setup guarantees. The final commit is checked against those hashes before push;
+verify origin/main's exact SHA afterwards. Commit author/committer email:
+revan.datta132@gmail.com. Earlier application/test work remains uncommitted.

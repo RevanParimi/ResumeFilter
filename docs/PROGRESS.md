@@ -4,6 +4,11 @@ Updated: 2026-09-27. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
+R4-M2 obsolete-file cleanup is validated for the authorized main push; [the existing audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material)
+owns its evidence. This cleanup-only publication does not include later local
+application work; the committed development pointer below is unchanged.
+
+
 **Next development task: R1-S1-T3b-D3d2c3 - redemption across erasure and login closure.**
 Read [WORKFLOW.md](delivery/WORKFLOW.md), the T3 section of [PI-R1](delivery/PI-R1.md),
 [the c3 brief](delivery/tasks/R1-S1-T3b-D3d2c3.md) and its

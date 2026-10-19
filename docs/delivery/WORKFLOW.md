@@ -38,8 +38,8 @@ commands/counts in leaf evidence. Link to the owner instead of copying its log.
 Do not append each leaf result to every ancestor or create another review/status
 Markdown file when an existing audit/task record fits. Create a child only for a
 distinct bounded acceptance/validation contract, not a work session or test rerun.
-Historical `docs/superpowers/` specs/plans and UI prototype records are reference
-material; they do not restart the old spec/plan workflow for remediation.
+Superseded implementation plans and prototype UI records live in Git history.
+Current feature contracts, this plan and the handoff own ongoing work.
 
 ## Development loop
 

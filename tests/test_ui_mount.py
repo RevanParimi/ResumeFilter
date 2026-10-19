@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.main import UI_ASSETS, create_app
+from app.main import UI_ASSETS, _AllowlistedStaticFiles, create_app
 from tests.test_route_table_guard import _mounts
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,7 +47,7 @@ def test_the_mount_serves_only_the_allowlist(services):
     over the wire at 200:
 
       * `Veritas v1 (Broadsheet).dc.html` (42KB) -- the design direction
-        `docs/ui/PLAN.md` records as REJECTED ("reads like a PDF"). The first
+        the historical prototype review recorded as REJECTED ("reads like a PDF"). The first
         fix relocated the document DESCRIBING the rejected design and left the
         rejected design itself served.
       * `.thumbnail` (18KB) and `uploads/*.png` (659KB) -- gitignored
@@ -172,3 +173,14 @@ def test_serving_the_index_does_not_weaken_the_allowlist(services):
     client = TestClient(create_app(services))
     assert client.get("/ui/not-an-asset.txt").status_code == 404
     assert client.get("/ui/_ds").status_code == 404      # a directory, not a file
+
+def test_retired_design_assets_are_not_served_if_restored(tmp_path):
+    retired = tmp_path / "_ds"
+    retired.mkdir()
+    (retired / "retired.js").write_text("window.retired = true", encoding="utf-8")
+    (tmp_path / "api.js").write_text("window.currentAsset = true", encoding="utf-8")
+    app = FastAPI()
+    app.mount("/ui", _AllowlistedStaticFiles(directory=tmp_path))
+    with TestClient(app) as client:
+        assert client.get("/ui/_ds/retired.js").status_code == 404
+        assert client.get("/ui/api.js").status_code == 200
