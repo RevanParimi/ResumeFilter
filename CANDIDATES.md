@@ -6,6 +6,10 @@ candidate record — and how that record is wired into the vetting pipeline
 read this data are in [FABRICATION.md](FABRICATION.md). Source of truth is
 the code; file refs are clickable.
 
+Resume contact hashes are asserted hints. Candidate login uses separate private
+mailbox proof fields; its initial claim, refusal, migration and erasure contract
+is documented in [AUTH.md](AUTH.md#6-the-claim--the-sprints-sharpest-edge).
+
 ---
 
 ## Module layout
@@ -109,33 +113,39 @@ scripts/
                     schema owned by Alembic (0001_candidate_store)
 ```
 
-## Identity resolution (decision tree)
+## Asserted contact matching
 
-Matching NEVER merges two existing candidates — that needs human judgment.
-It only attaches a new resume to at most one existing candidate.
+Matching attaches a submission to at most one existing subject; this release
+refuses profile merges and login changes as documented in [AUTH.md](AUTH.md).
 
-```
-ingest(profile, text)
-│
-├── profile.contact.email_hash present?
-│   ├── yes → candidate with same email_hash exists?
-│   │         ├── yes ──► MATCH (matched_on="email_hash")
-│   │         └── no  ──┐
-│   └── no ─────────────┤
-│                       ▼
-├── profile.contact.phone_hash present?
-│   ├── yes → candidate with same phone_hash exists?
-│   │         ├── yes ──► MATCH (matched_on="phone_hash")
-│   │         └── no  ──┐
-│   └── no ─────────────┤
-│                       ▼
-└──────────────► NEW CANDIDATE (no hashes ⇒ never guess identity)
+| Submitted hints | Dedup result |
+|---|---|
+| Email, with or without phone | Match only one asserted email row whose proof is absent or agrees with that hint. Never fall back to phone. |
+| Phone only | Match only one phone row with no proved login and no legacy review flag. |
+| Missing, ambiguous or conflicting hints | Create a separate submission; preserve every existing subject. |
 
-on MATCH:  backfill candidate's missing email_hash/phone_hash from this
-           resume; full_name updated to this resume's non-empty name
-on same sha256(text) for that candidate:  reuse the ResumeRow (no new
-           version), still record a fresh ExtractionRow (audit trail)
-```
+Only unproved subjects without a legacy review flag accept missing contact
+backfills. Proved/review subjects keep their top-level contact hints; extraction
+JSON still records each document's contacts. Names keep the existing latest
+non-empty rule and reviewed-name protection. None of this verifies document
+truth, mailbox authorship or identity assurance.
+
+Backfill SQL checks the current row under its write lock. A resolved match whose
+contact/proof state changes before the write rolls back atomically with
+`candidate_contact_changed` (HTTP 422; the batch records the same refusal).
+Do not re-resolve interrupted work into another subject. A fresh upload may
+resolve again; resume-bound retries preserve their original org/resume boundary.
+Duplicate cardinality remains a read snapshot across new submissions.
+
+Same text reuses only that uploader's resume row and records another extraction;
+different orgs receive different rows for the same candidate/text. The admin
+plane retains its existing unowned-row reuse policy.
+
+Read-only anomaly inventory: project Python
+`scripts/inventory_candidate_contacts.py --database <explicit SQLite file>`.
+It reports aggregate counts and missing proof-schema coverage without identifiers,
+hash values, configuration loading or a repair mode. Actual inventory evidence:
+[R1-S2-T4B](docs/delivery/EVIDENCE-R1.md#r1-s2-t4b).
 
 ## Database schema (ER, ASCII)
 
@@ -243,7 +253,7 @@ src/app/candidates/store.py
                                                   # only, same algo only
 ```
 
-## HTTP surface (S1.3) — [app/api/routes.py](src/app/api/routes.py)
+## HTTP surface (S1.3) — [app/api/candidates.py](src/app/api/candidates.py)
 
 | Endpoint | What it does |
 |---|---|
@@ -257,6 +267,16 @@ src/app/candidates/store.py
 The engine and graph stay candidate-blind: the route passes the extracted
 profile + farm assessment *into* `evaluate(...)` and stamps
 `report.candidate_id` *after* — the graph never resolves identity.
+
+Resume acceptance is shared with evaluation and screening registration through
+`app/core/resume.py`. Whitespace text returns 422 `empty_resume`; unreadable
+PDFs return `pdf_parse_failed` without parser details, and blank/image-only PDFs
+return `pdf_no_readable_text`. No report or intake row is saved for these inputs.
+The text cap applies before trimming, including after PDF extraction; raw
+base64 size is also capped. Text takes precedence when both sources are sent.
+Sparse readable resumes remain valid and can yield advisory insufficient-data
+results. PDF page/work/expansion containment is still pending in
+[R2-S1-T2B](docs/delivery/EVIDENCE-R2.md#r2-s1-t2b).
 
 ## Extraction coverage (S9.2)
 

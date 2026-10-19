@@ -30,10 +30,52 @@ from app.main import app
 from app.auth.challenges import ChallengeScope
 from app.auth.models import LoginChallengeRow, LoginIssuanceRow
 from app.auth.schema import AuthPlane, LoginPurpose
+from app.candidates.models import CandidateRow
+from app.auth.models import OrgUserRow
 
 issuer = ThreadPoolExecutor(max_workers=1)
 ready, release = Event(), Event()
 pending = None
+
+@app.post('/_test/stale-redemption')
+async def stale_redemption(email: str, plane: AuthPlane):
+    auth = app.state.services.auth
+    auth._settings.login_otp_cooldown_seconds = 0
+    digest = auth.hash_email(email)
+    if plane == AuthPlane.ORG and auth._store.org_user_by_email(digest) is None:
+        auth._store.create_org_with_owner(name='Synthetic ' + email, email_hash=digest)
+    if plane == AuthPlane.ADMIN and auth._store.admin_user_by_email(digest) is None:
+        auth._store.create_admin_user(email_hash=digest)
+    auth.issue_code(email=email, plane=plane, purpose=LoginPurpose.LOGIN,
+                    at=datetime.now(timezone.utc))
+    actual = auth._live_scopes
+    stale = actual(digest, plane, None)
+    def once(email_hash, requested_plane, purpose):
+        if email_hash == digest and requested_plane == plane:
+            auth._live_scopes = actual
+            return stale
+        return actual(email_hash, requested_plane, purpose)
+    auth._live_scopes = once
+    return {'prepared': bool(stale)}
+
+@app.post('/_test/crash-redemption')
+async def crash_redemption(stage: str):
+    store = app.state.services.auth._store
+    method = 'consume_challenge' if stage == 'consume' else 'create_session'
+    actual = getattr(store, method)
+    def crash(*args, **kwargs):
+        actual(*args, **kwargs)
+        os._exit(75)
+    setattr(store, method, crash)
+    return {'armed': True}
+
+@app.get('/_test/principal-count')
+async def principal_count(email: str):
+    services = app.state.services
+    digest = services.auth.hash_email(email)
+    with services.candidates._session_factory() as session:
+        return {'candidates': len(list(session.scalars(select(CandidateRow.id).where(CandidateRow.email_hash == digest)))),
+                'org_users': len(list(session.scalars(select(OrgUserRow.id).where(OrgUserRow.email_hash == digest))))}
 
 @app.post('/_test/start-send')
 async def start_send(email: str, plane: AuthPlane = AuthPlane.CANDIDATE, crash: bool = False):
@@ -180,6 +222,71 @@ def main():
 
         def verify(http, email, code):
             return require(http.post("/auth/candidate/verify", json={"email": email, "code": code}))
+
+        if "--redemption" in sys.argv:
+            for door in ("portal", "admin"):
+                for plane in ("candidate", "org", "admin"):
+                    email = f"redeem-{door}-{plane}@example.in"
+                    with client(base) as person, client(base) as keeper:
+                        with server() as (admin, _):
+                            _, code = issue(person, email)
+                            csrf = verify(person, email, code)["csrf_token"]
+                            cid = require(person.get("/portal/me"))["candidate_id"]
+                            other = f"keep-{email}"
+                            _, keep_code = issue(keeper, other)
+                            verify(keeper, other, keep_code)
+                            state = require(admin.post("/_test/stale-redemption", params={"email": email, "plane": plane}))
+                            checks.check(f"{door}/{plane}: verifier holds live snapshot", state["prepared"])
+                            stale_code = _code_for(mailbox, email)
+                            actor = person if door == "portal" else admin
+                            path = "/portal/me" if door == "portal" else f"/candidates/{cid}"
+                            require(actor.delete(path, headers={"X-CSRF-Token": csrf}))
+                            refused = person.post(f"/auth/{plane}/verify", json={"email": email, "code": stale_code})
+                            body = require(refused, 400)
+                            unknown = require(person.post(f"/auth/{plane}/verify", json={"email": "unknown@example.in", "code": stale_code}), 400)
+                            checks.check(f"{door}/{plane}: stale verification has generic refusal and no cookie",
+                                         body == unknown and 'set-cookie' not in refused.headers)
+                            checks.check(f"{door}/{plane}: no recreated candidate",
+                                         require(admin.get("/_test/principal-count", params={"email": email}))["candidates"] == 0)
+                            require(person.get("/portal/me"), 401)
+                            require(keeper.get("/portal/me"))
+                            checks.check(f"{door}/{plane}: erased session dies, unrelated session survives", True)
+                        with server() as (admin, _):
+                            require(admin.get(f"/candidates/{cid}"), 404)
+                            require(person.post(f"/auth/{plane}/verify", json={"email": email, "code": stale_code}), 400)
+                            require(person.post(f"/auth/{plane}/login", json={"email": email}), 202)
+                            code = _code_for(mailbox, email)
+                            require(person.post(f"/auth/{plane}/verify", json={"email": email, "code": code}))
+                            require(person.post(f"/auth/{plane}/verify", json={"email": email, "code": code}), 400)
+                            checks.check(f"{door}/{plane}: restart, fresh login and single use", True)
+
+            for plane in ("candidate", "org"):
+                for stage in ("consume", "session"):
+                    email = f"crash-{plane}-{stage}@example.in"
+                    with client(base) as person:
+                        with server() as (admin, proc):
+                            payload = {"email": email}
+                            if plane == "org":
+                                payload["organization_name"] = f"Synthetic {stage}"
+                            require(person.post(f"/auth/{plane}/signup", json=payload), 202)
+                            code = _code_for(mailbox, email)
+                            require(admin.post("/_test/crash-redemption", params={"stage": stage}))
+                            try:
+                                person.post(f"/auth/{plane}/verify", json={"email": email, "code": code})
+                                raise AssertionError("expected redemption process exit")
+                            except httpx.TransportError:
+                                pass
+                            checks.check(f"{plane}/{stage}: worker exits inside redemption", proc.wait(timeout=15) == 75)
+                        with server() as (admin, _):
+                            checks.check(f"{plane}/{stage}: restart has no partial principal",
+                                         require(admin.get("/_test/principal-count", params={"email": email})) ==
+                                         {"candidates": 0, "org_users": 0})
+                            checks.check(f"{plane}/{stage}: uncommitted challenge restored",
+                                         require(admin.get("/_test/count", params={"email": email}))["count"] == 1)
+                            require(person.post(f"/auth/{plane}/verify", json={"email": email, "code": code}))
+                            require(person.post(f"/auth/{plane}/verify", json={"email": email, "code": code}), 400)
+                            checks.check(f"{plane}/{stage}: retry succeeds exactly once", True)
+            return checks.summary()
 
         if "--issuance" in sys.argv:
             for door in ("portal", "admin"):

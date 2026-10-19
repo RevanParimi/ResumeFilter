@@ -316,9 +316,12 @@ class SqlReportStore:
             return [Report.model_validate(r.body) for r in rows]
 
 
-def build_report_store(settings: Optional[Settings] = None) -> ReportStore:
+def build_report_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> ReportStore:
     """Store on the shared candidates DB URL (one metadata root, one Alembic
     env). Schema is Alembic's job, NOT the builder's."""
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
-    return SqlReportStore(make_session_factory(engine))
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
+    return SqlReportStore(session_factory)

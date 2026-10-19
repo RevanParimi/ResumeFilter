@@ -21,6 +21,8 @@ jobs:
       # SQLite is the default backend here; the postgres job below runs the SAME
       # suite against the database production actually uses.
       - run: pytest -q
+      - name: PDF resource refusal and verification on migrated scratch HTTP
+        run: python scripts/smoke_r2_s1_t2b.py
 
   postgres:
     runs-on: ubuntu-latest
@@ -90,6 +92,32 @@ jobs:
       - name: the UI shipped
         run: docker run --rm veritas:ci test -f /srv/app/frontend/api.js
 
+      - name: isolated PDF worker shipped and contains parsing inside the image
+        run: |
+          docker run --rm veritas:ci python -c '
+          import base64, io
+          from pypdf import PdfWriter
+          from app.core.config import Settings
+          from app.core.pdf import pdf_b64_to_document
+          settings = Settings(_env_file=None, pdf_max_pages=1)
+          writer = PdfWriter()
+          writer.add_blank_page(width=200, height=200)
+          writer.add_metadata({"/Producer": "Synthetic image gate"})
+          out = io.BytesIO()
+          writer.write(out)
+          assert pdf_b64_to_document(base64.b64encode(out.getvalue()).decode(), settings=settings) == ("", 1, {"producer": "Synthetic image gate"})
+          writer.add_blank_page(width=200, height=200)
+          out = io.BytesIO()
+          writer.write(out)
+          try:
+              pdf_b64_to_document(base64.b64encode(out.getvalue()).decode(), settings=settings)
+          except ValueError as exc:
+              assert str(exc) == "pdf_page_limit"
+          else:
+              raise AssertionError("image worker ignored page cap")
+          print("image PDF worker extraction and page refusal passed")
+          '
+
       # The Railway cron's door, in the container it will actually run in, on
       # the database state it is most likely to meet: none. Before S8.6 this
       # printed a forty-line traceback; a cron log nobody reads at 3am is the
@@ -99,7 +127,6 @@ jobs:
           code=0
           out=$(docker run --rm \
                   -e DEE_API_AUTH_KEY=ci-not-a-real-key \
-                  -e DEE_VECTORSTORE_BACKEND=memory \
                   veritas:ci python -m app.retention.sweep --apply 2>&1) || code=$?
           echo "$out"
           test "$code" = "3" || { echo "::error::expected exit 3, got $code"; exit 1; }
@@ -116,7 +143,6 @@ jobs:
         run: |
           docker run --rm \
             -e DEE_API_AUTH_KEY=ci-not-a-real-key \
-            -e DEE_VECTORSTORE_BACKEND=memory \
             veritas:ci sh -c 'python -c "
           from app.core.config import get_settings
           from app.core.migrate import upgrade_to_head

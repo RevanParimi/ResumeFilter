@@ -48,6 +48,7 @@ def summarize(
         overall=assessment.overall if assessment else 0.0,
         dimensions=dict(assessment.dimensions) if assessment else {},
         confidence=assessment.confidence if assessment else 0.0,
+        scorer_version=assessment.scorer_version if assessment else "",
         proxy_band=assessment.proxy.band if assessment else ProxyBand.LOW,
         questions_planned=(
             assessment.questions_planned if assessment else len(session.questions)

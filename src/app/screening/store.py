@@ -707,12 +707,15 @@ class ScreeningStore:
         )
 
 
-def build_screening_store(settings: Optional[Settings] = None) -> ScreeningStore:
+def build_screening_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> ScreeningStore:
     """On the shared candidates DB URL -- one metadata root, one Alembic env.
     Schema is Alembic's job, NOT the builder's."""
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
     return ScreeningStore(
-        make_session_factory(engine),
+        session_factory,
         claim_timeout_seconds=settings.screening_claim_timeout_seconds,
     )

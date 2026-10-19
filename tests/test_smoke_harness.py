@@ -72,12 +72,6 @@ def test_base_env_pins_the_api_key_empty(tmp_path):
     assert env["DEE_OPENROUTER_API_KEY"] == ""
 
 
-def test_base_env_keeps_chroma_out_of_the_smokes(tmp_path):
-    """PersistentClient hangs on the maintainer's machine; every smoke has
-    always had to say so, 34 times."""
-    assert base_env(tmp_path, "sqlite:///x.db")["DEE_VECTORSTORE_BACKEND"] == "memory"
-
-
 def test_base_env_pins_the_login_code_echo_off(tmp_path, monkeypatch):
     """A developer's `.env` must not change what a smoke measures.
 
@@ -106,7 +100,6 @@ def test_base_env_takes_no_arguments_at_all(tmp_path):
     call and their update still wins. The pins hold for what they forgot."""
     env = base_env()
     assert env["DEE_OPENROUTER_API_KEY"] == ""
-    assert env["DEE_VECTORSTORE_BACKEND"] == "memory"
     assert "DEE_FLYWHEEL_PATH" not in env or "flywheel.jsonl" not in env["DEE_FLYWHEEL_PATH"]
 
 

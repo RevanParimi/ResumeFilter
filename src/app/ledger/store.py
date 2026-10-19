@@ -1102,13 +1102,16 @@ class LedgerStore:
             session.commit()
 
 
-def build_ledger_store(settings: Optional[Settings] = None) -> LedgerStore:
+def build_ledger_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> LedgerStore:
     """Store on the shared candidates DB URL (one metadata root, one Alembic
     env). Schema is Alembic's job (`alembic upgrade head`), NOT the builder's."""
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
     return LedgerStore(
-        make_session_factory(engine),
+        session_factory,
         default_consent_ttl_days=settings.ledger_consent_default_ttl_days,
         api_key_bytes=getattr(settings, "ledger_api_key_bytes", 32),
         settings=settings,

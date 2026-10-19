@@ -25,3 +25,9 @@ def test_non_pdf_bytes_raise():
     junk_b64 = base64.b64encode(b"this is not a pdf").decode()
     with pytest.raises(Exception):
         pdf_b64_to_text(junk_b64)
+
+
+def test_base64_junk_is_not_silently_discarded():
+    valid = _blank_pdf_b64()
+    with pytest.raises(ValueError):
+        pdf_b64_to_text(valid[:20] + "!" + valid[20:])

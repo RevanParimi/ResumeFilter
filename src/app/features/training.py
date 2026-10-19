@@ -14,6 +14,8 @@ from datetime import datetime
 from typing import Iterable
 
 from app.features.materialize import MaterializedVector
+from app.features.registry import FeatureRegistry
+from app.features.serving import current_consent, mask_consent_vector
 from app.features.training_schema import TrainingExample, TrainingLabel
 from app.ledger.consent import as_utc
 from app.ledger.schema import CodingRoundResult, InterviewOutcome, InterviewRecord
@@ -86,47 +88,79 @@ def build_training_example(
     *,
     interview_records: Iterable[InterviewRecord],
     coding_rounds: Iterable[CodingRoundResult],
+    consent_allowed: bool,
+    registry: FeatureRegistry,
 ) -> TrainingExample:
-    """Combine one materialized vector with the candidate's ledger rows. Consent is
-    read from the vector's stored S4.2 decision; a withheld vector short-circuits
-    to a withheld label inside build_label regardless of the passed records."""
-    allowed = bool(mv.consent_state.get("allowed"))
+    """Pure assembly with an explicit boundary decision and historical ceiling.
+
+    Store-backed callers must check present permission before reading outcomes.
+    Neither a cached allowed flag nor this pure reducer authorizes a data read.
+    """
+    allowed = bool(mv.consent_state.get("allowed")) and consent_allowed
     label = build_label(
         as_of=mv.vector.as_of,
         interview_records=interview_records,
         coding_rounds=coding_rounds,
         consent_allowed=allowed,
     )
-    return TrainingExample(vector=mv.vector, label=label)
+    vector = mask_consent_vector(mv.vector, registry=registry, allowed=allowed)
+    return TrainingExample(vector=vector, label=label)
+
+
+def current_training_example(
+    example: TrainingExample, *, registry: FeatureRegistry, ledger_store,
+    org_id: str | None = None,
+) -> TrainingExample | None:
+    """Revalidate assembled/cached labels without mutating or refilling them."""
+    cid = example.vector.candidate_id
+    allowed = current_consent(cid, ledger_store=ledger_store, org_id=org_id).allowed
+    if not ledger_store.candidate_exists(cid):
+        return None
+    vector = mask_consent_vector(example.vector, registry=registry, allowed=allowed)
+    return TrainingExample(vector=vector, label=example.label if allowed else _withheld_label())
 
 
 def build_training_set(
     mvs: Iterable[MaterializedVector],
     *,
     ledger_store,
+    registry: FeatureRegistry,
+    org_id: str | None = None,
     audit: bool = True,
 ) -> list[TrainingExample]:
-    """Join each materialized vector to its leakage-free label. Reads the ledger
-    ONLY for a consented vector (a withheld candidate's outcomes are never
-    fetched); audits every join as `training.label` (allowed/withheld) unless
-    `audit=False`. Erased subjects are omitted, including when auditing is off.
-    Final per-subject existence checks exclude erasures visible at those reads;
-    they do not lock subjects across later checks or snapshot serialization."""
+    """Join only with both historical and current ledger_read permission.
+
+    Denied outcomes are never fetched; recheck after reads and for each final
+    example. Audit each join's decision unless audit=False. Omit erased subjects
+    even without auditing. Checks are snapshots, not locks across delivery.
+    """
     out: list[TrainingExample] = []
     for mv in mvs:
         cid = mv.vector.candidate_id
-        allowed = bool(mv.consent_state.get("allowed"))
+        allowed = (current_consent(cid, ledger_store=ledger_store, org_id=org_id).allowed
+                   and bool(mv.consent_state.get("allowed")))
         if allowed:
             irs = ledger_store.records_for_candidate(cid)
             crs = ledger_store.coding_rounds_for_candidate(cid)
         else:
             irs, crs = [], []
+        # A revocation committed during the reads must invalidate their label.
+        allowed = allowed and current_consent(
+            cid, ledger_store=ledger_store, org_id=org_id,
+        ).allowed
         if audit:
             try:
                 ledger_store.audit_training_label(cid, allowed=allowed, as_of=mv.vector.as_of)
             except TrainingCandidateMissingError:
                 continue
-        out.append(build_training_example(mv, interview_records=irs, coding_rounds=crs))
+        out.append(build_training_example(mv, interview_records=irs, coding_rounds=crs,
+                                         consent_allowed=allowed, registry=registry))
     # Auditing can be disabled, and an earlier subject can disappear while a
     # later one is built. Never turn a skipped audit into a stale export row.
-    return [ex for ex in out if ledger_store.candidate_exists(ex.vector.candidate_id)]
+    result = []
+    for ex in out:
+        checked = current_training_example(ex, registry=registry, ledger_store=ledger_store,
+                                           org_id=org_id)
+        if checked is not None:
+            result.append(checked)
+    return result

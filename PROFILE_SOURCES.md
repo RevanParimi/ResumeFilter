@@ -20,9 +20,17 @@ persistence. A final check of the exact saved row also returns 404 `source not
 found` if that source alone was removed. Foreign keys prevent orphan writes;
 unrelated database failures remain errors. These reads are snapshots, not locks
 across HTTP delivery. Fresh ingestion remains permitted and unavailable-source
-signals retain their advisory 200 behavior. Shared curation observations keep
-their separate lifetime described in CURATION.md.
-[Evidence](docs/delivery/tasks/R1-S1-T3b-D3d2b.md).
+signals retain their advisory 200 behavior. Curation capture now follows source
+commit; raw observations cascade with source/candidate erasure and expire after
+30 days. Explicitly approved vocabulary has an independent lifecycle described
+in [CURATION.md](CURATION.md).
+[Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2b).
+
+Source lists also check candidate existence after loading signals. Observed
+erasure returns 404 `candidate not found`, including erasure after the route's
+initial lookup. This final read is a snapshot; it does not lock HTTP delivery or
+promise an atomic view across individual source-row deletions.
+[Aggregate-read evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d1).
 
 ## GitHub pipeline
 
@@ -129,6 +137,8 @@ ProfileSourceStore.save_signal(...)      → profile_sources row    (CASCADE)
   string `"linkedin_export"` (there is no per-account handle to key on).
 
 ## API (admin/candidate plane)
+
+The admin handlers live in [app/api/candidates.py](src/app/api/candidates.py).
 
 Candidate-facing auth is **S6.4**; until then these ride the existing
 `X-API-Key` router, which will move them under candidate auth.

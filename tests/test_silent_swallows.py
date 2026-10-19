@@ -35,7 +35,7 @@ async def test_ai_signals_logs_when_the_llm_fails(services, log_events):
 async def test_plausibility_logs_when_the_llm_fails(services, log_events):
     services.llm = _BoomLLM()
     claim = Claim(text="Fine-tuned an LLM for support triage")
-    result = await plaus_assess(services, "genai", claim, CandidateContext(), [])
+    result = await plaus_assess(services, "genai", claim, CandidateContext())
     assert result == (None, None, [], [], ""), "the degradation itself must not change"
     assert any(e["event"] == "plausibility_llm_failed" for e in log_events)
 
@@ -62,6 +62,6 @@ def test_unmapped_skill_capture_logs_when_curation_fails(services, log_events):
 
     svc = ProfileSourceService.__new__(ProfileSourceService)
     svc._curation = _BoomCuration()
-    svc._capture_unmapped(_Signal())
+    svc._capture_unmapped(_Signal(), source_id="synthetic-saved-source")
 
     assert any(e["event"] == "unmapped_skill_capture_failed" for e in log_events)

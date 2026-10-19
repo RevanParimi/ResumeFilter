@@ -15,10 +15,10 @@ from __future__ import annotations
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
@@ -39,6 +39,10 @@ from app.ledger.schema import ConsentPurpose
 from app.ledger.store import ConsentError, LedgerStore
 
 log = get_logger(__name__)
+
+
+class SessionConflictError(Exception):
+    """A start, answer or finish no longer matches the saved live state (409)."""
 
 
 def _utcnow() -> datetime:
@@ -116,6 +120,33 @@ class InterviewStore:
         self._session_factory = session_factory
         self._ledger = ledger
         self._settings = settings or get_settings()
+
+    @staticmethod
+    def _lock_candidate(session, owner):
+        # Same candidate-first order as verification/erasure. SQLite must take
+        # its write lock before reading mutable state; preserve updated_at.
+        if session.get_bind().dialect.name == "sqlite":
+            found = session.execute(update(CandidateRow).where(CandidateRow.id == owner)
+                .values(updated_at=CandidateRow.updated_at)
+                .execution_options(synchronize_session=False)).rowcount == 1
+        else:
+            found = session.scalar(select(CandidateRow.id).where(
+                CandidateRow.id == owner).with_for_update()) is not None
+        if not found:
+            raise LookupError("interview subject or session no longer exists")
+
+    def _locked_live(self, session, session_id, *, at):
+        owner = select(InterviewSessionRow.candidate_id).where(
+            InterviewSessionRow.id == session_id).scalar_subquery()
+        self._lock_candidate(session, owner)
+        row = session.get(InterviewSessionRow, session_id, populate_existing=True)
+        if row is None:
+            raise LookupError("interview subject or session no longer exists")
+        moment = as_utc(at) if at else _utcnow()
+        status = effective_status(InterviewStatus(row.status), row.expires_at, at=moment)
+        if status is not InterviewStatus.IN_PROGRESS:
+            raise SessionConflictError(f"this interview is {status.value}")
+        return row, moment
 
     # -- reads -----------------------------------------------------------------
 
@@ -204,10 +235,15 @@ class InterviewStore:
         assurance_level: int,
         at: Optional[datetime] = None,
     ) -> InterviewSession:
-        moment = as_utc(at) if at else _utcnow()
         with self._write_session(CandidateRow, candidate_id) as session:
-            if session.get(CandidateRow, candidate_id) is None:
-                raise LookupError(f"unknown candidate: {candidate_id}")
+            self._lock_candidate(session, candidate_id)
+            moment = as_utc(at) if at else _utcnow()
+            existing = session.scalars(select(InterviewSessionRow).where(
+                InterviewSessionRow.candidate_id == candidate_id,
+                InterviewSessionRow.status == InterviewStatus.IN_PROGRESS.value)).all()
+            for live in existing:
+                if effective_status(InterviewStatus(live.status), live.expires_at, at=moment) is InterviewStatus.IN_PROGRESS:
+                    raise SessionConflictError(f"an interview is already in progress: {live.id}")
             row = InterviewSessionRow(
                 id=str(uuid.uuid4()),
                 candidate_id=candidate_id,
@@ -252,24 +288,26 @@ class InterviewStore:
         audio_digest: Optional[str],
         audio_duration_seconds: Optional[float],
         score: TurnScore,
-        asked_at: datetime,
         answered_at: datetime,
+        assess: Callable[[InterviewSession], InterviewAssessment],
+        at: Optional[datetime] = None,
     ) -> InterviewTurn:
         """Record ONE answered turn. Deliberately unaudited (see the module
         docstring). The audio bytes never reach this method -- only their
-        digest does."""
+        digest does. The final turn and its bounded, synchronous assessment
+        commit together; scoring/provider work has already finished."""
         with self._write_session(InterviewSessionRow, session_id) as session:
-            if session.get(InterviewSessionRow, session_id) is None:
-                raise LookupError(f"unknown interview session: {session_id}")
-            answered = session.execute(
-                select(func.count())
-                .select_from(InterviewTurnRow)
-                .where(InterviewTurnRow.session_id == session_id)
-            ).scalar_one()
+            parent, moment = self._locked_live(session, session_id, at=at)
+            turns = self._turn_rows(session, session_id)
+            answered = {t.question_id for t in turns}
+            current = next((InterviewQuestion(**q) for q in parent.planned_questions
+                            if q["id"] not in answered), None)
+            if current is None or question != current:
+                raise SessionConflictError("this question is no longer current; reload the interview")
             row = InterviewTurnRow(
                 id=str(uuid.uuid4()),
                 session_id=session_id,
-                sequence=int(answered) + 1,
+                sequence=len(turns) + 1,
                 question_id=question.id,
                 question_text=question.text[:512],
                 question_source=question.source.value,
@@ -280,10 +318,15 @@ class InterviewStore:
                 audio_digest=audio_digest,
                 audio_duration_seconds=audio_duration_seconds,
                 scores=score.model_dump(mode="json"),
-                asked_at=as_utc(asked_at),
+                asked_at=as_utc(turns[-1].answered_at if turns else parent.started_at),
                 answered_at=as_utc(answered_at),
             )
             session.add(row)
+            session.flush()
+            snapshot = _session(parent, [*turns, row])
+            answered.add(question.id)
+            if all(q.id in answered for q in snapshot.questions):
+                self._save_completion(session, parent, assess(snapshot), moment)
             session.commit()
             return _turn(row)
 
@@ -371,32 +414,34 @@ class InterviewStore:
         self,
         session_id: str,
         *,
-        assessment: InterviewAssessment,
+        assess: Callable[[InterviewSession], InterviewAssessment],
         at: Optional[datetime] = None,
     ) -> InterviewSession:
-        moment = as_utc(at) if at else _utcnow()
         with self._write_session(InterviewSessionRow, session_id) as session:
-            row = session.get(InterviewSessionRow, session_id)
-            if row is None:
-                raise LookupError(f"unknown interview session: {session_id}")
-            row.status = InterviewStatus.COMPLETED.value
-            row.completed_at = moment
-            row.assessment = assessment.model_dump(mode="json")
-            row.scorer_version = assessment.scorer_version
-            self._ledger._audit(
-                session,
-                actor_type="system",
-                actor_id=None,
-                action="interview.complete",
-                entity_type="interview_session",
-                entity_id=row.id,
-                candidate_id=row.candidate_id,
-                details={
-                    "band": assessment.band.value,
-                    "answered": assessment.questions_answered,
-                    "planned": assessment.questions_planned,
-                    "proxy_band": assessment.proxy.band.value,
-                },
-            )
+            row, moment = self._locked_live(session, session_id, at=at)
+            snapshot = _session(row, self._turn_rows(session, session_id))
+            self._save_completion(session, row, assess(snapshot), moment)
             session.commit()
             return _session(row, self._turn_rows(session, session_id))
+
+    def _save_completion(self, session, row, assessment, moment):
+        """Pure bounded scoring is supplied by the service; no provider I/O here."""
+        row.status = InterviewStatus.COMPLETED.value
+        row.completed_at = moment
+        row.assessment = assessment.model_dump(mode="json")
+        row.scorer_version = assessment.scorer_version
+        self._ledger._audit(
+            session,
+            actor_type="system",
+            actor_id=None,
+            action="interview.complete",
+            entity_type="interview_session",
+            entity_id=row.id,
+            candidate_id=row.candidate_id,
+            details={
+                "band": assessment.band.value,
+                "answered": assessment.questions_answered,
+                "planned": assessment.questions_planned,
+                "proxy_band": assessment.proxy.band.value,
+            },
+        )

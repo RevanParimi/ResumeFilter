@@ -54,13 +54,9 @@ reranker_model: "qwen/qwen3-reranker-0.6b"     # optional PI-5/8 search quality
 # NOTE: the TOKEN is a secret and lives in .env, not here.
 github_api_base: "https://api.github.com"
 
-# --- Vector store (ChromaDB) -------------------------------------------------
-# backend: chroma | memory. Chroma init is bounded — if it hangs/fails, the
-# service starts anyway with the in-memory store (grounding is best-effort).
-vectorstore_backend: "chroma"
-vectorstore_init_timeout_seconds: 15
-chroma_persist_dir: "./.chroma"
-chroma_collection: "depth-eval-evidence"
+# Provenance uses evaluation-local GitHub observations; no vector store.
+# Legacy vectorstore_backend, vectorstore_init_timeout_seconds,
+# chroma_persist_dir and chroma_collection settings are accepted and ignored.
 
 # --- Flywheel (training-data sink) -------------------------------------------
 # Deprecated compatibility setting; no new JSONL is written. Existing files
@@ -112,14 +108,14 @@ rf_cluster_candidates_min: 3     # matches from >= this many other candidates ->
 rf_max_matches: 10               # matches carried on the assessment (best first)
 
 # --- Fabrication defense (PI-2) — S2.4 unified fabrication risk ----------------
-# Deterministic fusion of the three fabrication signals into one advisory band,
+# Deterministic v2 fusion of timeline and duplication into one advisory band,
 # computed in the calibration stage. Never changes verdicts or depth scores;
 # "moderate" additionally requires a flagged subsystem or >=2 non-clean ones,
 # "elevated" additionally requires >=2 subsystems at their top band.
 fr_moderate_threshold: 0.30      # fused score >= this (AND gate above) -> "moderate"
 fr_elevated_threshold: 0.60      # fused score >= this (AND >=2 flags) -> "elevated"
 fr_min_confidence: 0.50          # below this -> "insufficient_data", never assert
-fr_weight_ai: 1.0                # per-subsystem fusion weights (x component confidence).
+fr_weight_ai: 1.0               # legacy compatibility setting; ignored in v2
 fr_weight_cross_field: 1.0       # NOTE: weights scale the mean term only — weight 0 does
 fr_weight_farm: 1.0              # NOT mute a subsystem (max term/coverage still count)
 
@@ -252,6 +248,13 @@ speech_max_retries: 2
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
 max_resume_chars: 200000
 max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
+pdf_max_pages: 40
+pdf_max_work_units: 100000         # graph visits + expanded extraction operations
+pdf_max_depth: 64                 # page/parent/form nesting
+pdf_max_decoded_bytes: 16000000    # cumulative streams, including content arrays
+pdf_max_output_chars: 1000000      # extracted text + normalized metadata
+pdf_parse_timeout_seconds: 10.0   # disposable parser worker deadline
+pdf_worker_memory_mb: 256         # Windows private commit / Linux address space
 # Outcome notes: free text a human types beside a candidate's name, on BOTH
 # the operator's and the customer's route (S8.5). Enforced in ONE place,
 # app/reports/outcomes.py, so neither door can be bounded while the other is not.

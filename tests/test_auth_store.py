@@ -230,7 +230,7 @@ def test_consume_challenge_removes_the_row(store_fixture):
     )
     row = store.get_challenge(scope)
     assert store.consume_challenge(
-        scope, challenge_id=row.id, code_hash=row.code_hash
+        scope, challenge_id=row.id, code_hash=row.code_hash, at=NOW
     ) is True
     assert store.get_challenge(scope) is None
 
@@ -339,8 +339,8 @@ def test_consume_challenge_admits_exactly_one_caller(store_fixture):
     )
     row = store.get_challenge(scope)
 
-    first = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash)
-    second = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash)
+    first = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash, at=NOW)
+    second = store.consume_challenge(scope, challenge_id=row.id, code_hash=row.code_hash, at=NOW)
 
     assert first is True
     assert second is False
@@ -363,7 +363,7 @@ def test_consume_challenge_refuses_a_superseded_row(store_fixture):
     )
 
     assert store.consume_challenge(
-        scope, challenge_id=stale.id, code_hash=stale.code_hash
+        scope, challenge_id=stale.id, code_hash=stale.code_hash, at=NOW
     ) is False
     assert store.get_challenge(scope).code_hash == "new"
 
@@ -379,7 +379,7 @@ def test_consume_challenge_refuses_a_row_whose_code_changed(store_fixture):
     row = store.get_challenge(scope)
 
     assert store.consume_challenge(
-        scope, challenge_id=row.id, code_hash="some-other-digest"
+        scope, challenge_id=row.id, code_hash="some-other-digest", at=NOW
     ) is False
     assert store.get_challenge(scope) is not None
 

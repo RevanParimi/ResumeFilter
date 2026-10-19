@@ -208,7 +208,7 @@ exactly one door that evaluates an item, and this is not a second one.
   indistinguishable from an unknown id: same status, same body. (`X-Request-ID`
   differs on every response by design and carries nothing about the batch.
   Asserted by `smoke_s83a` check 10 and
-  `tests/test_screening_retry.py::test_another_org_gets_404_never_403`.)
+  `tests/test_screening_batches_api.py::test_another_org_gets_404_never_403`.)
 - It is not itself rate-limited: it is one `UPDATE`, and the spend it unlocks
   is bounded by `screening_process` on the call that does the work.
 

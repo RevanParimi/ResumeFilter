@@ -1,14 +1,8 @@
-"""Curation contracts (PI-6 / S6.3): the review queue for unmapped skill terms.
-
-A skill term normalize_skill can't map (canonical=None) surfaces here as an
-UnmappedTerm. A human reviewer resolves it (map / create / ignore); the
-resolution feeds a deterministic overlay consulted by normalize_skill. No LLM,
-no auto-learning. The queue is candidate-agnostic — taxonomy-gap metadata, not
-personal data (no candidate_id, no consent, no CASCADE).
-"""
+"""Source-owned review snapshots and raw-free approved decision receipts."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Optional
@@ -29,22 +23,16 @@ class CurationAction(StrEnum):
 
 
 class UnmappedTerm(BaseModel):
-    """One unmapped skill term in the review queue (aggregate, candidate-agnostic)."""
+    """Snapshot derived only from surviving, unexpired source observations."""
 
-    norm_key: str                                    # stable identity + API handle
+    norm_key: str                                    # snapshot API handle
     display_name: str                                # human-readable raw form (most recent)
     source_types: list[str] = Field(default_factory=list)
     occurrences: int = Field(default=1, ge=1)
     first_seen: datetime
     last_seen: datetime
+    review_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: CurationStatus = CurationStatus.PENDING
-    # resolution — set only when resolved/ignored
-    action: Optional[CurationAction] = None
-    canonical: Optional[str] = None
-    category: Optional[str] = None
-    note: Optional[str] = None
-    decided_by: Optional[str] = None
-    decided_at: Optional[datetime] = None
 
 
 class UnmappedPage(BaseModel):
@@ -52,9 +40,21 @@ class UnmappedPage(BaseModel):
 
     NOTE the sort key (occurrences, last_seen) is MUTABLE -- a term seen again
     moves. Paging is therefore stable against inserts and not against
-    re-observation. Acceptable here and stated rather than hidden: this is an
+    re-observation, expiry or erasure. Acceptable here and stated rather than hidden: this is an
     internal operator queue (UI.md §4.F), not a customer surface.
     """
 
     terms: list[UnmappedTerm] = Field(default_factory=list)
     next_cursor: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CurationDecision:
+    """Only explicitly approved vocabulary; no submitted raw term or notes."""
+
+    action: CurationAction
+    alias: str | None
+    canonical: str | None
+    category: str | None
+    decided_at: datetime
+    admin_user_id: str | None

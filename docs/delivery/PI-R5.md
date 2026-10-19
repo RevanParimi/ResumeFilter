@@ -5,7 +5,7 @@ Status: planned. Deliver a content-scored interview experience and distinguish f
 Load only the current task section plus [WORKFLOW.md](WORKFLOW.md), not this entire PI by default.
 Source entry points (paths relative to repository root): src/app/interview/; src/app/services/; src/app/signal_quality/; frontend/; scripts/; .github/workflows/ci.yml
 Task test lists are starting points verified during planning; select/add regression cases from actual callers at implementation time.
-Every task inherits the workflow's full pytest, review and relevant journey gates. Task evidence lives in `tasks/<task-id>.md`.
+Every task inherits [WORKFLOW.md](WORKFLOW.md). Reuse inline active task sections; completed records use PI evidence anchors.
 
 ## R5-S1 — Conversational interview transport
 
@@ -63,7 +63,7 @@ Status: pending. Audit mapping: F05; F06; F11 extension. Prerequisites: R5-S1-T3
 
 Status: pending. Prerequisites: all tasks in R5-S1.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R5-S1-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 
 ## R5-S2 — End-to-end regression and effectiveness
 
@@ -109,5 +109,5 @@ Status: pending. Audit mapping: F16; all parents. Prerequisites: R5-S2-T2.
 
 Status: pending. Prerequisites: all tasks in R5-S2.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R5-S2-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 

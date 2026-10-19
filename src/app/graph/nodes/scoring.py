@@ -26,7 +26,8 @@ def make_scoring_node(services: Services):
             v.status = classify(
                 coherence=v.coherence_score,
                 confidence=v.confidence,
-                has_evidence=bool(v.evidence),
+                # Zero-weight context (including fetch availability) is not proof.
+                has_evidence=any(item.weight > 0 for item in v.evidence),
                 settings=settings,
             )
 

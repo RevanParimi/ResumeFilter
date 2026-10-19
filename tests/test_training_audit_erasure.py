@@ -30,7 +30,11 @@ def inputs(factory, allowed=True):
     vectors = []
     for cid in ("a", "b"):
         ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=org.id,
-                             now=T - timedelta(days=1))
+                             now=T - timedelta(days=1), expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc))
+        if allowed:
+            ledger.grant_consent(candidate_id=cid, purpose="ledger_read", org_id=org.id,
+                                 now=T - timedelta(days=1),
+                                 expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc))
         ledger.submit_interview_record(org_id=org.id, candidate_id=cid, stage="hm",
             outcome="hired", interviewed_at=T + timedelta(days=1))
         vectors.append(MaterializedVector(vector=FeatureVector(candidate_id=cid,
@@ -124,12 +128,12 @@ def test_builder_omits_erased_vectors_and_cached_labels(database, monkeypatch, t
         monkeypatch.setattr(ledger, "records_for_candidate", forbidden)
         monkeypatch.setattr(ledger, "coding_rounds_for_candidate", forbidden)
 
-    examples = build_training_set(initial, ledger_store=ledger, audit=audit)
+    examples = build_training_set(initial, ledger_store=ledger, registry=get_feature_registry(), audit=audit)
     assert [ex.vector.candidate_id for ex in examples] == ["b"]
     label = examples[0].label
     assert label.withheld is (not allowed)
     assert label.hired is (True if allowed else None)
-    assert build_training_set(vectors, ledger_store=ledger, audit=audit) == examples
+    assert build_training_set(vectors, ledger_store=ledger, registry=get_feature_registry(), audit=audit) == examples
     assert ledger.audit_for_candidate("a") == []
     joins = [x for x in ledger.audit_for_candidate("b") if x.action == "training.label"]
     assert bool(joins) is audit
@@ -138,14 +142,14 @@ def test_builder_omits_erased_vectors_and_cached_labels(database, monkeypatch, t
     registry = get_feature_registry()
     view = default_view(registry)
     path = tmp_path / "training.csv"
-    export_training_csv(examples, view=view, path=str(path))
+    export_training_csv(examples, view=view, registry=registry, ledger_store=ledger, path=str(path))
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     assert [row["candidate_id"] for row in rows] == ["b"]
     assert rows[0]["label_withheld"] == str(not allowed)
     path = tmp_path / "training.parquet"
     try:
-        export_training_parquet(examples, view=view, registry=registry, path=str(path))
+        export_training_parquet(examples, view=view, registry=registry, ledger_store=ledger, path=str(path))
     except ParquetUnavailable:
         assert not path.exists()
     else:
@@ -164,16 +168,16 @@ def test_unrelated_audit_errors_propagate(database, monkeypatch):
 
     event.listen(factory, "before_flush", invalid, once=True)
     with pytest.raises(IntegrityError):
-        build_training_set(vectors, ledger_store=ledger)
+        build_training_set(vectors, ledger_store=ledger, registry=get_feature_registry())
     assert CandidateStore(factory).get_candidate("a") is not None
     assert not [a for a in ledger.audit_for_candidate("a") if a.action == "training.label"]
-    assert len(build_training_set(vectors, ledger_store=ledger)) == 2
+    assert len(build_training_set(vectors, ledger_store=ledger, registry=get_feature_registry())) == 2
 
     def broken(*args, **kwargs):
         raise LookupError("unrelated lookup failure")
     monkeypatch.setattr(ledger, "audit_training_label", broken)
     with pytest.raises(LookupError, match="unrelated lookup failure"):
-        build_training_set(vectors, ledger_store=ledger)
+        build_training_set(vectors, ledger_store=ledger, registry=get_feature_registry())
 
 
 def test_postgres_training_audit_blocks_erasure(database):

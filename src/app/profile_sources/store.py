@@ -96,7 +96,10 @@ class ProfileSourceStore:
         return sigs[0] if sigs else None
 
 
-def build_profile_source_store(settings: Optional[Settings] = None) -> ProfileSourceStore:
+def build_profile_source_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> ProfileSourceStore:
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
-    return ProfileSourceStore(make_session_factory(engine))
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
+    return ProfileSourceStore(session_factory)

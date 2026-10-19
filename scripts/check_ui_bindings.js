@@ -120,8 +120,12 @@ const REPORT = {
   depth_score: 0.31, depth_band: "superficial", overall_confidence: 0.6,
   advisory: true, human_review_required: true, summary: "Three depth claims sit ahead of the evidence.",
   flagged_claim_ids: ["clm_1"], deferred_claim_ids: [],
-  ai_generation: { likelihood: 0.54, confidence: 0.48, band: "possible", signals: [], reasoning: "Template phrasing.", advisory: true },
-  cross_field: { score: 0.22, confidence: 0.66, band: "minor_issues", findings: [], reasoning: "A four-month gap.", advisory: true },
+  ai_generation: { likelihood: 0.54, confidence: 0.48, band: "possible",
+    signals: [{ id: "template_phrases", detail: "Repeated template phrases", score: 0.6, source: "deterministic" }],
+    reasoning: "Template phrasing.", advisory: true },
+  cross_field: { score: 0.22, confidence: 0.66, band: "minor_issues",
+    findings: [{ id: "timeline_gap", detail: "A four-month gap", severity: "minor", score: 0.2 }],
+    reasoning: "A four-month gap.", advisory: true },
   // matches[] arrive with their ids ALREADY NULL on the org plane (S8.4 Phase A).
   resume_farm: { score: 0.91, confidence: 0.82, band: "near_duplicate", corpus_size: 4182, reasoning: "One resume overlaps at 0.91.", advisory: true,
     matches: [{ candidate_id: null, resume_id: null, similarity: 0.91 }] },
@@ -195,7 +199,7 @@ const STATES = {
     portal: held({
       profile: { full_name: { value: "Priya Nandakumar" }, email: null, phone: null, location: { value: "Bengaluru" } },
       resumes: [{ id: "res_1" }], reports: [{ report_id: "rep_1", domain: "genai", created_at: "2026-08-01T10:00:00Z" }],
-      consents: [{ id: "con_1" }], interviews: [], identity: { methods_held: ["otp_email"] },
+      consents: [{ id: "con_1" }], interviews: [], identity: { methods: ["otp_email"], expired_methods: [] },
       retention: { windows: [{ data_class: "resume", ttl_days: 365 }], sweep_active: false },
     }),
     accessLog: held([{ at: "2026-08-09T10:00:00Z", actor_name: "Sampoorna Staffing", actor_id: "org_1", actor_type: "organization", action: "ledger_read", allowed: true }]),
@@ -210,9 +214,45 @@ const STATES = {
     comp: held({ estimate: { p25: 1800000, p50: 2400000, p75: 3200000, n_observed: 7, confidence: 0.62 }, position: "at_market", delta_pct: 0.03 }),
   },
   "operator plane": { screen: "adminorgs", plane: "operator", me: { kind: "admin" } },
+  "operator org details": { screen: "adminorgs", plane: "operator", me: { kind: "admin" },
+    orgList: held([{ id: "synthetic_org", name: "Synthetic Org", status: "active", reliability_weight: 1,
+      created_at: "2026-10-13T10:00:00Z" }]), orgSelection: "synthetic_org", orgWeight: "1",
+    orgKey: "synthetic-key", orgKeyOwner: "Synthetic Org", orgConfirm: { id: "synthetic_org", action: "rotate" } },
+  "operator accounts": { screen: "adminusers", plane: "operator", me: { kind: "admin" },
+    usersList: held([{ id: "synthetic_operator", label: "Synthetic Operator", created_at: "2026-10-13T10:00:00Z",
+      disabled_at: null }]), usersConfirm: "synthetic_operator" },
+  "operator, curation loaded": {
+    screen: "curation", plane: "operator", me: { kind: "admin" },
+    curationList: held({ terms: [{ norm_key: "synthetic raw", display_name: "Synthetic raw",
+      source_types: ["github", "linkedin_export"], occurrences: 2,
+      review_revision: "a".repeat(64), status: "pending", first_seen: "2026-10-14T10:00:00Z", last_seen: "2026-10-14T10:00:00Z" }], next_cursor: null }),
+  },
 };
 
+STATES["candidate contact verification"] = {
+  screen: "portal", plane: "candidate", me: { kind: "candidate" },
+  contactList: held({ verifications: [{ id: "contact_1", method: "otp_email", status: "pending",
+    requested_at: "2026-10-12T12:00:00Z" }] }), contactId: "contact_1"
+};
+STATES["candidate interview saved answers"] = {
+  screen: "interview", plane: "candidate", me: { kind: "candidate" },
+  interviewList: held([{ id: "iv_1", domain: "genai", status: "completed", started_at: "2026-10-15T10:00:00Z" }]),
+  interviewBody: { next_question: null, session: { id: "iv_1", domain: "genai", status: "completed", questions: [],
+    turns: [{ id: "turn_1", question_text: "Synthetic question", transcript: "Synthetic saved answer",
+      score: { insufficient: true, scorer_version: "s73.2", codes: ["limited_content", "relevance_unconfirmed"] } }],
+    assessment: { band: "insufficient_signal", scorer_version: "s73.2", overall: 0, confidence: 0, coverage: 1 } } }
+};
 const bags = {};
+for (const [label, report] of Object.entries({
+  "current v2": { ...REPORT, fabrication_risk: { ...REPORT.fabrication_risk, scorer_version: 2,
+    components: REPORT.fabrication_risk.components.filter(c => c.id !== "ai_generation") } },
+  "insufficient": { ...REPORT, fabrication_risk: { ...REPORT.fabrication_risk, scorer_version: 2, band: "insufficient_data" } },
+  "absent": { ...REPORT, fabrication_risk: null, ai_generation: null, cross_field: null, resume_farm: null },
+  "unsupported": { ...REPORT, fabrication_risk: { ...REPORT.fabrication_risk, scorer_version: 9 } },
+})) {
+  STATES["org report " + label] = { screen: "report", plane: "org", me: { kind: "org", organization_id: "org_1" },
+    report: held(report), outcomes: held({ report_id: REPORT.id, outcomes: [] }) };
+}
 for (const [label, patch] of Object.entries(STATES)) {
   const c = new Component();
   c.props = {};

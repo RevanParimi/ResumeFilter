@@ -155,7 +155,10 @@ class FeatureStore:
             return as_utc(row) if row is not None else None
 
 
-def build_feature_store(settings: Optional[Settings] = None) -> FeatureStore:
+def build_feature_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> FeatureStore:
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
-    return FeatureStore(make_session_factory(engine))
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
+    return FeatureStore(session_factory)

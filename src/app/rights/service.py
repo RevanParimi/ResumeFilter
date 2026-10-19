@@ -265,17 +265,17 @@ class RightsService:
         if field is CorrectionField.EMAIL:
             return (
                 "an email correction cannot be applied automatically: "
-                "email_hash is both a candidate dedup key and the portal login "
-                "credential, so changing it can merge two people's records or "
-                "move an account's login address. Resolve it by hand, after an "
-                "identity check, and record what was done."
+                "asserted contacts and the proved login mailbox are separate. "
+                "Login changes, aliases and profile merges are unsupported; "
+                "a new mailbox OTP alone cannot authorize them. Review the "
+                "request and record a refusal with applied=false."
             )
         if field is CorrectionField.PHONE:
             return (
                 "a phone correction cannot be applied automatically: "
-                "phone_hash is a candidate dedup key, so changing it can merge "
-                "two people's records. Resolve it by hand and record what was "
-                "done."
+                "phone_hash is an asserted dedup hint. Contact changes and "
+                "profile merges are unsupported. Review the request and "
+                "record a refusal with applied=false."
             )
         return (
             "this correction cannot be applied automatically -- it names no "

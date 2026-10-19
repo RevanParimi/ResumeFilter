@@ -25,13 +25,13 @@ from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
 
 if TYPE_CHECKING:
-    # Deferred: app.api.routes reaches this module at runtime via
+    # Deferred: app.api.candidates reaches this module at runtime via
     # app.services -> app.screening.scope -> app.screening.projection, so a
     # top-level import here would cycle. `from __future__ import annotations`
     # (above) makes every annotation in this file a lazy string, so this
     # import is never executed at runtime -- it exists purely for type
     # checkers/IDEs to resolve the hint on redact_ingest_response_for_org.
-    from app.api.routes import CandidateCreateResponse
+    from app.api.candidates import CandidateCreateResponse
 
 
 def _stripped_matches(farm: ResumeFarmAssessment) -> ResumeFarmAssessment:
@@ -81,7 +81,7 @@ def redact_ingest_response_for_org(
 ) -> "CandidateCreateResponse":
     """Redact an org-plane upload response before it leaves the process.
 
-    ``_ingest_one`` (app/api/routes.py) computes ``resume_farm`` from
+    ``_ingest_one`` (app/api/candidates.py) computes ``resume_farm`` from
     ``services.candidates.similar_resumes(...)``, which scans the ENTIRE
     platform's resume fingerprints -- every customer's -- excluding only the
     uploader's own candidate. The resulting assessment carries real

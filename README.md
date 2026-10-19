@@ -4,9 +4,10 @@ Current capabilities, completed safeguards and open gaps:
 [Feature status](FEATURE_STATUS.md). Next development task:
 [Progress handoff](docs/PROGRESS.md).
 
-Superseded implementation plans and prototype UI records were retired from the
-working tree; [their original versions remain in Git](https://github.com/RevanParimi/ResumeFilter/tree/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers).
-Current feature contracts and the delivery plan own ongoing work.
+Current feature contracts live in the linked guides. Superseded implementation
+plans and prototype UI documents were retired from the working tree; their
+[original versions remain in Git](https://github.com/RevanParimi/ResumeFilter/tree/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers).
+Use `docs/delivery/` for the active plan, not historical implementation scripts.
 
 
 An Indian-market talent intelligence platform growing around a
@@ -345,8 +346,12 @@ any external JSONL consumer must migrate rather than expect new appended rows.
 ```
 src/app/
   main.py                create_app(): middleware, error handler, lifespan
-  api/routes.py          evaluate · candidates (upload/read/DPDP-delete)
-                         · report · outcomes · domains · healthz
+  api/routes.py          remaining product handlers and ordered API assembly
+  api/screening.py       employer intake · scoped reports/outcomes · batches/queue
+  api/candidates.py      candidate intake/resumes · profile sources · shared ingest DTOs
+  api/reports.py         evaluate · operator reports/outcomes · shared outcome DTOs
+  api/auth.py            email-OTP authentication and session lifecycle
+  api/dependencies.py    shared principal resolution, CSRF and request helpers
   graph/
     state.py             EvaluationState (Pydantic)
     build.py             LangGraph assembly + EvaluationEngine
@@ -401,7 +406,7 @@ src/app/
   services/              Services container (candidates · ledger · features · jobs
                          · comp · dashboard · profile_sources · curation · portal
                          · verification; injected, never global) + llm (OpenRouter) ·
-                         vectorstore (Chroma) · github · flywheel · report_store
+                         github (evaluation-local provenance) · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)
 alembic/                 shared migrations 0001-0009 (candidate store, fingerprints,
                          ledger, consent/api-keys, coding rounds, reputation weight,

@@ -39,10 +39,10 @@ def _setup():
     b = _ingest(cs, "B Dev", "b@example.com")
     c = _ingest(cs, "C Dev", "c@example.com")
     for cid in (a, b, c):
-        ls.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_WRITE, org_id=org.id, now=G)
+        ls.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_WRITE, org_id=org.id, now=G, expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc))
     # A and B are read-consented (materialization allowed); C is not.
     for cid in (a, b):
-        ls.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ, org_id=org.id, now=G)
+        ls.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ, org_id=org.id, now=G, expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc))
     # A: a post-cut HIRED record -> positive label.
     ls.submit_interview_record(org_id=org.id, candidate_id=a, stage=InterviewStage.HM,
                                outcome=InterviewOutcome.HIRED, interviewed_at=POST)
@@ -58,7 +58,7 @@ def _setup():
 
 def test_build_training_set_labels_the_mix_correctly():
     ls, mvs, (a, b, c) = _setup()
-    examples = build_training_set(mvs, ledger_store=ls)
+    examples = build_training_set(mvs, ledger_store=ls, registry=get_feature_registry())
     by_id = {ex.vector.candidate_id: ex.label for ex in examples}
     # A: consented + post-cut hired.
     assert by_id[a].observed is True and by_id[a].hired is True and by_id[a].withheld is False
@@ -70,7 +70,7 @@ def test_build_training_set_labels_the_mix_correctly():
 
 def test_build_training_set_audits_every_join():
     ls, mvs, (a, b, c) = _setup()
-    build_training_set(mvs, ledger_store=ls)
+    build_training_set(mvs, ledger_store=ls, registry=get_feature_registry())
     for cid, expected in ((a, True), (b, True), (c, False)):
         joins = [x for x in ls.audit_for_candidate(cid) if x.action == "training.label"]
         assert joins and joins[-1].details.get("allowed") is expected
@@ -78,8 +78,8 @@ def test_build_training_set_audits_every_join():
 
 def test_audit_false_flag_skips_audit_rows():
     ls, mvs, _ = _setup()
-    build_training_set(mvs, ledger_store=ls, audit=False)
+    build_training_set(mvs, ledger_store=ls, registry=get_feature_registry(), audit=False)
     assert all(
         not [x for x in ls.audit_for_candidate(ex.vector.candidate_id) if x.action == "training.label"]
-        for ex in build_training_set(mvs, ledger_store=ls, audit=False)
+        for ex in build_training_set(mvs, ledger_store=ls, registry=get_feature_registry(), audit=False)
     )

@@ -1,15 +1,17 @@
-"""S8.4 Phase B: the screening surface over HTTP."""
+"""Screening batches api regressions, grouped by behavior."""
 
 from __future__ import annotations
 
 import base64
 from contextlib import contextmanager
-
 from fastapi.testclient import TestClient
-
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS
+from app.screening.models import BatchItemRow
+from app.screening.schema import ItemStatus
 
+
+# Screening batches api
 
 @contextmanager
 def _client(services):
@@ -176,3 +178,190 @@ def test_a_machine_caller_records_no_human_creator(services, genuine_resume):
     with _client(services) as c:
         created = _register(c, key, [genuine_resume])
         assert created.json()["created_by_org_user_id"] is None
+
+
+# Screening retry
+
+def _items(services):
+    with services.candidates._session_factory() as session:
+        return session.query(BatchItemRow).order_by(BatchItemRow.created_at).all()
+
+
+def _fail_item(services, item_id: str, *, error="internal_error", clear_text=False):
+    with services.candidates._session_factory() as session:
+        row = session.get(BatchItemRow, item_id)
+        row.status = ItemStatus.FAILED.value
+        row.error = error
+        if clear_text:
+            row.raw_text = ""
+        session.commit()
+
+
+def test_a_failed_item_is_requeued_and_becomes_claimable(services, genuine_resume):
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        item_id = _items(services)[0].id
+        _fail_item(services, item_id)
+
+        resp = c.post(f"/screening/batches/{bid}/retry", headers={"X-Org-Key": key})
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"batch_id": bid, "requeued": 1, "skipped": 0}
+
+    with services.candidates._session_factory() as session:
+        row = session.get(BatchItemRow, item_id)
+        assert row.status == ItemStatus.PENDING.value
+        assert row.error is None
+        assert row.claimed_at is None
+        assert row.processed_at is None
+
+
+def test_an_item_with_no_text_is_SKIPPED_not_requeued(services, genuine_resume):
+    """Either the text was cleared on success or the failure was empty_resume.
+    Re-queueing it would report requeued:1 and then fail identically -- a
+    promise the next process call breaks."""
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        item_id = _items(services)[0].id
+        _fail_item(services, item_id, error="empty_resume", clear_text=True)
+
+        body = c.post(f"/screening/batches/{bid}/retry",
+                      headers={"X-Org-Key": key}).json()
+    assert body == {"batch_id": bid, "requeued": 0, "skipped": 1}
+    with services.candidates._session_factory() as session:
+        assert session.get(BatchItemRow, item_id).status == ItemStatus.FAILED.value
+
+
+def test_done_and_pending_items_are_untouched(services, genuine_resume):
+    """Retry means 'try the failures again', not 'run everything again'. A
+    finished item has had its text cleared and is not re-runnable at all."""
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume, genuine_resume]).json()["id"]
+        rows = _items(services)
+        done_id, pending_id = rows[0].id, rows[1].id
+        with services.candidates._session_factory() as session:
+            row = session.get(BatchItemRow, done_id)
+            row.status = ItemStatus.DONE.value
+            row.raw_text = ""
+            session.commit()
+
+        body = c.post(f"/screening/batches/{bid}/retry",
+                      headers={"X-Org-Key": key}).json()
+
+    assert body["requeued"] == 0 and body["skipped"] == 0
+    with services.candidates._session_factory() as session:
+        assert session.get(BatchItemRow, done_id).status == ItemStatus.DONE.value
+        assert session.get(BatchItemRow, pending_id).status == ItemStatus.PENDING.value
+
+
+def test_another_org_gets_404_never_403(services, genuine_resume):
+    """403 confirms the batch exists to anyone guessing ids. The same rule S8.5
+    asserted on both outcome verbs, and the two answers must be
+    byte-identical."""
+    _, key_a = _key(services, "Agency A")
+    _, key_b = _key(services, "Agency B")
+    with _client(services) as c:
+        bid = _register(c, key_a, [genuine_resume]).json()["id"]
+        theirs = c.post(f"/screening/batches/{bid}/retry",
+                        headers={"X-Org-Key": key_b})
+        unknown = c.post(
+            "/screening/batches/00000000-0000-0000-0000-000000000000/retry",
+            headers={"X-Org-Key": key_b},
+        )
+    assert theirs.status_code == unknown.status_code == 404
+    assert theirs.json() == unknown.json()
+
+
+def test_a_requeued_item_is_actually_picked_up_by_process(services, genuine_resume):
+    """The point of the whole task: retry re-queues, and the EXISTING process
+    door does the work. There is no second processing path."""
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        item_id = _items(services)[0].id
+        _fail_item(services, item_id)
+        c.post(f"/screening/batches/{bid}/retry", headers={"X-Org-Key": key})
+        result = c.post(f"/screening/batches/{bid}/process",
+                        headers={"X-Org-Key": key}).json()
+    assert result["processed"] + result["failed"] == 1
+
+
+def test_retrying_a_batch_with_nothing_failed_is_a_no_op(services, genuine_resume):
+    _, key = _key(services)
+    with _client(services) as c:
+        bid = _register(c, key, [genuine_resume]).json()["id"]
+        body = c.post(f"/screening/batches/{bid}/retry",
+                      headers={"X-Org-Key": key}).json()
+    assert body == {"batch_id": bid, "requeued": 0, "skipped": 0}
+
+
+# Screening tenancy
+
+def _screening_tenancy_key(services, name):
+    org = services.ledger.create_organization(name)
+    return org.id, services.ledger.issue_api_key(org.id)
+
+
+def test_every_batch_route_is_404_for_another_org_and_matches_absence(
+    services, genuine_resume
+):
+    _, key_a = _screening_tenancy_key(services, "Agency A")
+    _, key_b = _screening_tenancy_key(services, "Agency B")
+    with _client(services) as c:
+        bid = _register(c, key_a, [genuine_resume]).json()["id"]
+        b = {"X-Org-Key": key_b}
+
+        cases = [
+            ("get", f"/screening/batches/{bid}", "/screening/batches/nope"),
+            ("get", f"/screening/batches/{bid}/queue", "/screening/batches/nope/queue"),
+            ("get", f"/screening/batches/{bid}/summary", "/screening/batches/nope/summary"),
+            ("post", f"/screening/batches/{bid}/process", "/screening/batches/nope/process"),
+            ("delete", f"/screening/batches/{bid}", "/screening/batches/nope"),
+        ]
+        for method, theirs, absent in cases:
+            got = getattr(c, method)(theirs, headers=b)
+            missing = getattr(c, method)(absent, headers=b)
+            assert got.status_code == 404, f"{method} {theirs} -> {got.status_code}"
+            assert got.json() == missing.json(), (
+                f"{method} {theirs}: a different body from a genuinely absent "
+                f"batch confirms this one exists"
+            )
+
+
+def test_listing_shows_only_my_own_batches(services, genuine_resume):
+    _, key_a = _screening_tenancy_key(services, "Agency A")
+    _, key_b = _screening_tenancy_key(services, "Agency B")
+    with _client(services) as c:
+        _register(c, key_a, [genuine_resume], name="A's batch")
+        mine = c.get("/screening/batches", headers={"X-Org-Key": key_b}).json()
+        assert mine["batches"] == []
+
+
+def test_a_cursor_from_another_org_reaches_nothing(services, genuine_resume):
+    """A cursor is a sort position, not a capability -- the org filter is what
+    protects the boundary, so a stolen cursor buys nothing."""
+    _, key_a = _screening_tenancy_key(services, "Agency A")
+    _, key_b = _screening_tenancy_key(services, "Agency B")
+    with _client(services) as c:
+        # TWO batches, so a limit=1 page actually has a next_cursor to steal.
+        _register(c, key_a, [genuine_resume], name="first")
+        _register(c, key_a, [genuine_resume + "\nRef 2"], name="second")
+        page = c.get("/screening/batches?limit=1", headers={"X-Org-Key": key_a}).json()
+        stolen = page["next_cursor"]
+        assert stolen, "two batches and limit=1 must produce a cursor"
+
+        theirs = c.get(f"/screening/batches?cursor={stolen}",
+                       headers={"X-Org-Key": key_b})
+        assert theirs.status_code == 200
+        assert theirs.json()["batches"] == []
+
+
+def test_all_batch_routes_require_an_org_credential(services):
+    with _client(services) as c:
+        assert c.get("/screening/batches").status_code == 401
+        assert c.post("/screening/batches", json={}).status_code == 401
+        assert c.get("/screening/batches/x/queue").status_code == 401
+        assert c.post("/screening/batches/x/process").status_code == 401
+        assert c.delete("/screening/batches/x").status_code == 401

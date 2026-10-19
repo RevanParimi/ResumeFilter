@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select, update
 
+from app.auth.models import AuthSessionRow, LoginChallengeRow
 from app.main import create_app
 from app.services.email import CaptureEmail
 from tests.conftest import ADMIN_HEADERS, make_services
@@ -55,6 +58,32 @@ def _sent(capture_path) -> int:
     if not capture_path.exists():
         return 0
     return len(capture_path.read_text(encoding="utf-8").splitlines())
+
+
+@pytest.mark.parametrize('denial', ['exhausted', 'expired'])
+def test_stale_valid_code_returns_generic_failure_without_cookie(client, capture_path, monkeypatch, denial):
+    email = 'stale-login@example.in'
+    assert client.post('/auth/candidate/login', json={'email': email}).status_code == 202
+    code = _code(capture_path)
+    auth = client.app_services.auth
+    original = auth._live_scopes
+
+    def invalidate(*args):
+        stale = original(*args)
+        with auth._store._session_factory.begin() as session:
+            for _, row in stale:
+                session.execute(update(LoginChallengeRow).where(LoginChallengeRow.id == row.id).values(
+                    **({'attempts': client.app_services.settings.login_otp_max_attempts}
+                       if denial == 'exhausted' else {'expires_at': datetime.now(timezone.utc)})))
+        return stale
+
+    monkeypatch.setattr(auth, '_live_scopes', invalidate)
+    response = client.post('/auth/candidate/verify', json={'email': email, 'code': code})
+    assert response.status_code == 400
+    assert response.json() == {'detail': 'invalid_code'}
+    assert 'set-cookie' not in response.headers
+    with auth._store._session_factory() as session:
+        assert session.scalars(select(AuthSessionRow)).all() == []
 
 
 def _signup_candidate(client, capture_path, email="a@b.in") -> str:

@@ -66,6 +66,29 @@ def test_get_missing_returns_none(store):
     assert store.get("rep_missing") is None
 
 
+def test_legacy_style_inclusive_risk_keeps_original_interpretation_and_storage(store, factory):
+    from copy import deepcopy
+    from app.reports.models import ReportRow
+    from app.schemas.fabrication import FabricationRiskAssessment, RiskComponent
+
+    rep = _report(fabrication_risk=FabricationRiskAssessment(
+        score=0.75, confidence=0.6, band="moderate", reasoning="historical style-inclusive fusion",
+        components=[RiskComponent(id="ai_generation", band="likely", risk=0.75,
+                                  confidence=0.8, weight=0.8, flagged=True)]))
+    store.save(rep)
+    with factory() as session:
+        row = session.get(ReportRow, rep.id)
+        legacy_body = deepcopy(row.body)
+        legacy_body["fabrication_risk"].pop("scorer_version")
+        row.body = legacy_body
+        session.commit()
+    got = store.get(rep.id)
+    assert got.fabrication_risk.scorer_version == 1
+    assert got.fabrication_risk == rep.fabrication_risk
+    with factory() as session:
+        assert session.get(ReportRow, rep.id).body == legacy_body  # reading never rewrites
+
+
 def test_save_is_an_upsert(store):
     """The old store used INSERT OR REPLACE, which Postgres does not have."""
     rep = _report()

@@ -293,7 +293,7 @@ async def run(tab: Tab, mailbox: Path, files: list[str], admin: httpx.Client) ->
     rows = await tab.js(ROW_SELECTOR + ".length")
     S.check("the_queue_renders_a_row_per_resume_with_its_reason",
           rows == len(files)
-          and ("fabrication risk" in body or "insufficient signal" in body)
+          and "advisory review context" in body
           and "loudest signal" in body,
           f"{rows} rows for {len(files)} files")
 

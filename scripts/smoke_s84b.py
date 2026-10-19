@@ -15,8 +15,7 @@ The checks this sprint exists to protect:
   * registration_is_evaluation_free -- 500 resumes cannot be evaluated inside
     one request (there is no worker anywhere in app/), so upload must only
     insert rows. A regression here is a request that times out in production.
-  * a_failed_item_does_not_stop_the_batch -- a batch of 500 with one corrupt
-    file has to finish.
+  * invalid_input_refuses_registration -- invalid input never creates a batch
   * queue_row_carries_no_match_identities -- THE structural guarantee. The
     queue read-model is built from batch_items ALONE, so no Report (a
     cross-corpus object) is ever on the org-plane read path. Asserted on a
@@ -130,12 +129,16 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
 
     # ── 2. Registration is evaluation-free ──────────────────────────────────
     before = len(c.get("/candidates", headers=ADMIN_H).json())
+    refused = c.post("/screening/batches", headers=key_a,
+                     json={"items": [{"resume_text": "   "}]})
+    S.check("invalid_input_refuses_registration",
+            refused.status_code == 422 and refused.json()["detail"] == "item 0: empty_resume")
     reg = c.post("/screening/batches", headers=key_a, json={
         "name": "Q3 intake", "domain": "genai",
         "items": [
             {"resume_text": _resume("priya.nair@example.in")},
             {"resume_text": _resume("arjun.rao@example.in", "Note: second candidate.")},
-            {"resume_text": "   "},  # the failing item -- check 5
+            {"resume_text": "Skills: Python"},  # sparse but readable
         ],
     })
     batch = reg.json()
@@ -161,15 +164,15 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
     detail = c.get(f"/screening/batches/{bid}", headers=key_a).json()
     S.check("derived_progress_reaches_a_terminal_status",
           detail["counts"]["pending"] == 0 and detail["counts"]["processing"] == 0
-          and detail["status"] == "partial",
+          and detail["status"] == "complete",
           f"counts={detail['counts']} status={detail['status']}")
 
-    # ── 5. A failed item does not stop the batch ────────────────────────────
+    # ── 5. Readable sparse input is accepted ───────────────────────────────
     rows = c.get(f"/screening/batches/{bid}/queue", headers=key_a).json()["rows"]
     failed = [r for r in rows if r["status"] == "failed"]
     done = [r for r in rows if r["status"] == "done"]
-    S.check("a_failed_item_does_not_stop_the_batch",
-          len(failed) == 1 and failed[0]["error"] == "empty_resume" and len(done) == 2,
+    S.check("readable_sparse_item_finishes_with_the_batch",
+          len(failed) == 0 and len(done) == 3,
           f"done={len(done)} failed={len(failed)} err={failed[0]['error'] if failed else None}")
 
     # ── 6. The queue is ranked, and every row explains itself ───────────────
@@ -207,7 +210,7 @@ def run_checks(c: httpx.Client, mailbox: Path) -> None:
              if k in body]
     S.check("summary_is_counts_only",
           summary.status_code == 200 and not leaks
-          and summary.json()["n_screened"] == 2,
+          and summary.json()["n_screened"] == 3,
           f"leaked={leaks}")
 
     # ── 9. Cursor paging covers every row exactly once ──────────────────────

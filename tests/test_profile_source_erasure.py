@@ -245,7 +245,7 @@ def test_erasure_after_final_read_leaves_only_a_response_snapshot(services, monk
 
 
 @pytest.mark.parametrize("kind", ["github", "linkedin"])
-def test_shared_curation_policy_survives_source_refusal_and_erasure(services, monkeypatch, kind):
+def test_owned_curation_excludes_refused_source_and_erased_contributor(services, monkeypatch, kind):
     cid = _bare_candidate(services.candidates)
     other = _bare_candidate(services.candidates)
     if kind == "github":
@@ -275,10 +275,10 @@ def test_shared_curation_policy_survives_source_refusal_and_erasure(services, mo
         assert store.signals_for_candidate(cid) == []
         terms = services.curation.list_unmapped().terms
         term = next(t for t in terms if t.norm_key == "syntheticlang")
-        assert term.display_name == "SyntheticLang" and term.occurrences == 2
+        assert term.display_name == "SyntheticLang" and term.occurrences == 1
         assert term.source_types == ["github" if kind == "github" else "linkedin_export"]
         assert services.portal.erase(other)["deleted"]
-        assert services.curation.list_unmapped().terms == terms
+        assert services.curation.list_unmapped().terms == []
 
 
 def test_erasure_during_implicit_handle_resolution_is_not_bad_input(services, monkeypatch):

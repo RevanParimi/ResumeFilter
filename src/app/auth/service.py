@@ -14,6 +14,8 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
 from app.auth import challenges as challenge_logic
 from app.auth import csrf as csrf_logic
 from app.auth.challenges import ChallengeScope, VerifyOutcome
@@ -23,7 +25,7 @@ from app.auth.schema import (
 )
 from app.auth.store import AuthStore, OrgNameTaken
 from app.candidates.hashing import contact_hash, normalize_email
-from app.candidates.store import CandidateStore
+from app.candidates.store import CandidateStore, LoginBindingRefused
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.ledger.store import LedgerStore
@@ -41,6 +43,10 @@ _PLANE_FOR_KIND = {
     PrincipalKind.ADMIN: AuthPlane.ADMIN,
 }
 _KIND_FOR_PLANE = {plane: kind for kind, plane in _PLANE_FOR_KIND.items()}
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class AuthError(Exception):
@@ -346,13 +352,14 @@ class AuthService:
         email: str,
         plane: AuthPlane,
         code: str,
-        at: datetime,
+        at: Optional[datetime] = None,
         purpose: Optional[LoginPurpose] = None,
         user_agent: Optional[str] = None,
         ip_hash: Optional[str] = None,
     ) -> tuple[str, str, Principal]:
         """Redeem a code and issue a session. Returns (token, csrf, principal)."""
         email_hash = self._hash_email(email)
+        moment = at if at is not None else _utcnow()
 
         # Its OWN rule, with its own window: `login_otp_max_attempts` bounds
         # guesses against ONE challenge, and an attacker who simply requests a
@@ -360,7 +367,7 @@ class AuthService:
         self._limiter.enforce(
             self._limiter.rules_for("login_verify"),
             {LimitScope.EMAIL: email_hash, LimitScope.IP: ip_hash},
-            now=at,
+            now=moment,
         )
 
         live = self._live_scopes(email_hash, plane, purpose)
@@ -383,7 +390,7 @@ class AuthService:
                     expires_at=row.expires_at,
                     attempts=row.attempts or 0,
                     max_attempts=self._settings.login_otp_max_attempts,
-                    at=at,
+                    at=moment,
                 ),
             )
             for scope, row in live
@@ -401,35 +408,32 @@ class AuthService:
             raise ChallengeRefused(str(outcomes[0][2]))
         scope, row = winner
 
-        # Consume BEFORE minting the session: a code is single-use, and a crash
-        # after this point costs a login rather than leaving a reusable code.
-        #
-        # The conditional consume is also what makes "single-use" true under
-        # concurrency. Lookup, validation and session creation each run in
-        # their own transaction, so two verifications can both validate the
-        # same challenge; only the one that actually TAKES the row may go on to
-        # establish a session. The loser is refused as `not_found`, which is
-        # exactly what the challenge now is.
-        payload = dict(row.payload or {})
-        if not self._store.consume_challenge(
-            scope, challenge_id=row.id, code_hash=row.code_hash
-        ):
-            raise ChallengeRefused(str(VerifyOutcome.NOT_FOUND))
-
-        principal_kind = _KIND_FOR_PLANE[plane]
-        subject_id, principal = self._establish(
-            plane=plane, email_hash=email_hash, payload=payload, purpose=scope.purpose
-        )
-
+        # A stale lookup may survive erasure or replacement. Only the exact
+        # challenge winner may establish a principal. Consume, principal and
+        # session commit together under the same address lock as erasure;
+        # no committed consume can outlive cleanup and recreate the candidate.
         csrf_token = csrf_logic.generate_csrf_token(self._settings.csrf_token_bytes)
-        token, view = self._store.create_session(
-            kind=principal_kind,
-            subject_id=subject_id,
-            csrf_token=csrf_token,
-            at=at,
-            user_agent=user_agent,
-            ip_hash=ip_hash,
-        )
+        with self._store.login_transaction(email_hash) as session:
+            current = self._store.get_challenge(scope, session=session)
+            if current is None or current.id != row.id:
+                raise ChallengeRefused(str(VerifyOutcome.NOT_FOUND))
+            # Wait for both the address lock and any competing budget write
+            # before sampling expiry. Explicit clocks retain deterministic cuts.
+            redemption_at = at if at is not None else _utcnow()
+            if not self._store.consume_challenge(
+                scope, challenge_id=row.id, code_hash=row.code_hash,
+                at=redemption_at, session=session,
+            ):
+                raise ChallengeRefused(str(VerifyOutcome.NOT_FOUND))
+            subject_id, principal = self._establish(
+                plane=plane, email_hash=email_hash, payload=dict(current.payload or {}),
+                purpose=scope.purpose, session=session, at=redemption_at,
+            )
+            token, view = self._store.create_session(
+                kind=_KIND_FOR_PLANE[plane], subject_id=subject_id,
+                csrf_token=csrf_token, at=redemption_at, user_agent=user_agent,
+                ip_hash=ip_hash, session=session,
+            )
         return token, csrf_token, principal.model_copy(
             update={"session_id": view.id}
         )
@@ -441,6 +445,8 @@ class AuthService:
         email_hash: str,
         payload: dict,
         purpose: LoginPurpose,
+        session: Session,
+        at: datetime,
     ) -> tuple[str, Principal]:
         """Resolve (or create) the principal this verified address belongs to.
 
@@ -448,14 +454,14 @@ class AuthService:
         is the ORG_USER, not the org: a session belongs to a person.
         """
         if plane == AuthPlane.ORG:
-            user = self._store.org_user_by_email(email_hash)
+            user = self._store.org_user_by_email(email_hash, session=session)
             if user is None:
                 name = (payload.get("organization_name") or "").strip()
                 if not name:
                     raise RegistrationRefused("missing_organization_name")
                 try:
                     org_id, user = self._store.create_org_with_owner(
-                        name=name, email_hash=email_hash
+                        name=name, email_hash=email_hash, session=session
                     )
                 except OrgNameTaken as exc:
                     # Reachable despite the signup-time check (S8.4 §2.1): the
@@ -471,7 +477,7 @@ class AuthService:
             )
 
         if plane == AuthPlane.ADMIN:
-            admin = self._store.admin_user_by_email(email_hash)
+            admin = self._store.admin_user_by_email(email_hash, session=session)
             if admin is None:
                 # There is no admin signup. Reachable only by racing an operator
                 # deletion between request_code and verify_code.
@@ -498,11 +504,12 @@ class AuthService:
         #
         # It grants NO identity assurance: logging in is not being verified, and
         # fusing the two would repeat S7.2's two-ladders mistake.
-        candidate_id = self._candidates.find_by_email_hash(email_hash)
-        if candidate_id is None:
-            candidate_id = self._candidates.create_bare_candidate(
-                email_hash=email_hash
-            )
+        try:
+            candidate_id, created = self._candidates.bind_verified_login_email(
+                email_hash, session=session, at=at)
+        except LoginBindingRefused as exc:
+            raise RegistrationRefused(str(exc)) from exc
+        if created:
             log.info("auth.candidate.created", purpose=str(purpose))
         else:
             log.info("auth.candidate.claimed", purpose=str(purpose))
@@ -692,10 +699,7 @@ class AuthService:
         login-state cleanup and candidate deletion together. Returns the number
         of active challenges deleted, excluding cancelled sends.
         """
-        email_hash = self._candidates.email_hash_for(candidate_id)
-        if not email_hash:
-            return 0
-        return self._store.delete_challenges_for_email(email_hash)
+        return self._candidates.clear_login_state(candidate_id)
 
 
 def build_auth_service(

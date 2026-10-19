@@ -59,9 +59,9 @@ class ResolvedBy(StrEnum):
 
 #: The ONLY field a resolution may write automatically. `full_name` is a plain
 #: column with no identity semantics. `email`/`phone` are hashed into the dedup
-#: keys `_resolve_candidate` matches on and `email_hash` is the portal login
-#: credential, so changing either is an identity operation that can collide two
-#: candidate rows or move an account's login address. `other` is free text
+#: hints `_resolve_candidate` matches on. Login proof is stored separately;
+#: contact changes/merges need their own proof/review operation, which this
+#: release explicitly refuses. `other` is free text
 #: nobody can map to a column.
 AUTO_APPLIABLE_FIELDS: frozenset[CorrectionField] = frozenset(
     {CorrectionField.FULL_NAME}

@@ -25,8 +25,9 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from sqlalchemy.orm import Session
 
-from app.candidates.store import CandidateErasedError, CandidateStore, IngestOutcome, MatchedOn, ResumeErasedError
+from app.candidates.store import AssertedContactChangedError, CandidateErasedError, CandidateStore, IngestOutcome, MatchedOn, ResumeErasedError
 from app.core.config import Settings
+from app.core.resume import ResumeInputError, validate_resume_text
 from app.reports.store import ReportStore, SubjectErasedError
 from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
@@ -111,11 +112,10 @@ async def ingest_resume(
     from app.domains.base import get_domain
     from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 
-    if len(text) > deps.settings.max_resume_chars:
-        raise IngestRefused("resume_too_long")
-    text = (text or "").strip()
-    if not text:
-        raise IngestRefused("empty_resume")
+    try:
+        text = validate_resume_text(text, deps.settings)
+    except ResumeInputError as exc:
+        raise IngestRefused(exc.reason) from None
     try:
         get_domain(domain)
     except KeyError as exc:
@@ -126,6 +126,8 @@ async def ingest_resume(
         outcome = deps.candidates.ingest(result, text, org_id=org_id,
             expected_resume_id=expected_resume_id, before_commit=before_commit,
             before_write=before_write)
+    except AssertedContactChangedError:
+        raise IngestRefused("candidate_contact_changed") from None
     except CandidateErasedError:
         raise IngestRefused("candidate_erased") from None
     except ResumeErasedError:

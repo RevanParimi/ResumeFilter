@@ -42,6 +42,8 @@ class CompService:
         return benchmark_comp(est, req.comp_band, settings=self._settings)
 
 
-def build_comp_service(settings: Optional[Settings] = None) -> CompService:
+def build_comp_service(
+    settings: Optional[Settings] = None, *, ledger: Optional[LedgerStore] = None,
+) -> CompService:
     settings = settings or get_settings()
-    return CompService(build_ledger_store(settings), settings=settings)
+    return CompService(ledger if ledger is not None else build_ledger_store(settings), settings=settings)

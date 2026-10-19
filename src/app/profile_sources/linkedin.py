@@ -66,7 +66,10 @@ def _find_member(names: list[str], stem: str) -> Optional[str]:
     return None
 
 
-def _read_rows(zf: zipfile.ZipFile, member: str, settings: Settings, warnings: list[str]) -> list[dict[str, str]]:
+def _read_rows(
+    zf: zipfile.ZipFile, member: str, settings: Settings, warnings: list[str],
+    *, strip_values: bool = True,
+) -> list[dict[str, str]]:
     try:
         with zf.open(member) as fh:
             text = io.TextIOWrapper(fh, encoding="utf-8-sig", errors="replace")
@@ -83,7 +86,7 @@ def _read_rows(zf: zipfile.ZipFile, member: str, settings: Settings, warnings: l
                         continue
                     if isinstance(v, list):  # defensive: extras can arrive as a list
                         v = " ".join(x for x in v if x)
-                    cleaned[k.strip() if k else ""] = (v or "").strip()
+                    cleaned[k.strip() if k else ""] = (v or "").strip() if strip_values else (v or "")
                 rows.append(cleaned)
             return rows
     except Exception as exc:  # a corrupt member is a warning, never a crash
@@ -117,8 +120,12 @@ def parse_linkedin_export(data: bytes, settings: Settings) -> LinkedInExportRaw:
 
     if members["skills"]:
         raw.skills = [
-            _col(r, "Name") for r in _read_rows(zf, members["skills"], settings, warnings)
-            if _col(r, "Name")
+            # Keep original cell input for the curation boundary. The source
+            # signal builder still trims/deduplicates its display names.
+            _col(r, "Name") for r in _read_rows(
+                zf, members["skills"], settings, warnings, strip_values=False,
+            )
+            if _col(r, "Name").strip()
         ]
     if members["certifications"]:
         raw.certifications = [

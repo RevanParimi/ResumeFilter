@@ -11,6 +11,10 @@ from app.features.export import (
 )
 from app.features import default_view, get_feature_registry
 
+from app.ledger.store import LedgerStore
+from app.candidates.models import CandidateRow
+from tests.conftest import make_candidate_store
+
 T = datetime(2026, 6, 1, tzinfo=timezone.utc)
 LABELS = ["label_hired", "label_outcome", "label_coding_best_percentile",
           "label_event_at", "label_lag_days", "label_observed", "label_withheld"]
@@ -30,13 +34,21 @@ def _fixture():
                        TrainingLabel(hired=True, outcome="hired", coding_best_percentile=88.0,
                                      event_at=T, lag_days=30.0, observed=True))
     withheld = _example("c", {c: None for c in cols}, TrainingLabel(withheld=True))
-    return reg, view, [labeled, withheld]
+    factory = make_candidate_store()._session_factory
+    with factory() as session:
+        session.add_all([CandidateRow(id='a'), CandidateRow(id='c')])
+        session.commit()
+    ledger = LedgerStore(factory)
+    ledger.grant_consent(candidate_id="a", purpose="ledger_read", now=T,
+                         expires_at=datetime(2100, 1, 1, tzinfo=timezone.utc))
+    ledger.grant_consent(candidate_id="c", purpose="ledger_write", now=T)
+    return reg, view, [labeled, withheld], ledger
 
 
 def test_training_csv_header_appends_label_columns(tmp_path):
-    reg, view, examples = _fixture()
+    reg, view, examples, ledger = _fixture()
     path = tmp_path / "train.csv"
-    export_training_csv(examples, view=view, path=str(path))
+    export_training_csv(examples, view=view, registry=reg, ledger_store=ledger, path=str(path))
     with open(path, newline="", encoding="utf-8") as f:
         header = next(csv.reader(f))
     assert header[:4] == ["candidate_id", "as_of", "view_name", "view_version"]
@@ -45,9 +57,9 @@ def test_training_csv_header_appends_label_columns(tmp_path):
 
 
 def test_training_csv_rows_render_label_values_and_nulls(tmp_path):
-    reg, view, examples = _fixture()
+    reg, view, examples, ledger = _fixture()
     path = tmp_path / "train.csv"
-    export_training_csv(examples, view=view, path=str(path))
+    export_training_csv(examples, view=view, registry=reg, ledger_store=ledger, path=str(path))
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     a = next(r for r in rows if r["candidate_id"] == "a")
@@ -58,11 +70,11 @@ def test_training_csv_rows_render_label_values_and_nulls(tmp_path):
 
 
 def test_training_parquet_guarded(tmp_path):
-    reg, view, examples = _fixture()
+    reg, view, examples, ledger = _fixture()
     path = tmp_path / "train.parquet"
     if importlib.util.find_spec("pyarrow") is None:
         with pytest.raises(ParquetUnavailable):
-            export_training_parquet(examples, view=view, registry=reg, path=str(path))
+            export_training_parquet(examples, view=view, registry=reg, ledger_store=ledger, path=str(path))
     else:
-        export_training_parquet(examples, view=view, registry=reg, path=str(path))
+        export_training_parquet(examples, view=view, registry=reg, ledger_store=ledger, path=str(path))
         assert path.exists()

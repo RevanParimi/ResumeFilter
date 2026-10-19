@@ -53,8 +53,12 @@ cannot do. **Widening `PUBLIC_PATHS` is the reviewable act.**
 
 > **Adding a route?** Depend on one of the four resolvers. If your route is
 > genuinely pre-authentication (a new login surface), add its path to
-> `PUBLIC_PATHS` in `src/app/api/routes.py` — deliberately, in a diff someone reads.
+> `PUBLIC_PATHS` in `src/app/api/dependencies.py` — deliberately, in a diff someone reads.
 > `tests/test_api_auth_gate.py` imports that same set, so the two never drift.
+
+Authentication/session handlers and their wire models live in `src/app/api/auth.py`.
+Product handlers share the resolvers in `api/dependencies.py`; existing imports
+from `api/routes.py` retain the same resolver and allowlist identities.
 
 ## 3. Sessions
 
@@ -122,7 +126,7 @@ challenge before refusing so it cannot arise on another plane either.
 
 ### No account enumeration
 
-Signup and login always answer `202`, and every verify failure answers one
+Signup and login always answer `202`, and every invalid-code failure answers one
 `400 invalid_code` — distinguishing expired from wrong from exhausted tells a
 brute-forcer which assumption was right. Cooldown refusals are also `202`.
 
@@ -137,8 +141,67 @@ The org plane keeps the distinction, because an `org_users` row *is* an account.
 
 ## 6. The claim — the sprint's sharpest edge
 
-**A candidate signing up with an address already on file attaches to that
-existing candidate record**, rather than forking a duplicate person.
+After exact mailbox OTP redemption, candidate login first resolves the unique
+`login_email_hash` proved previously. Resume `email_hash`/`phone_hash` values are
+asserted hints and cannot move that binding or change a session's subject.
+The first proof timestamp remains unchanged on subsequent logins.
+
+An address with no binding may claim one uniquely matching, unbound candidate
+hint, or create a bare candidate if no hint matches. Duplicated hints refuse
+with `409 candidate_identity_ambiguous`; a hint pointing at an already bound
+candidate refuses with `409 candidate_identity_conflict`. Neither refusal spends
+the correct code, creates a session or replaces an existing cookie. Requests
+still return the same `202`; invalid proofs still return `400 invalid_code`.
+There is no automatic contact change, alias or profile merge operation.
+
+This release explicitly refuses login changes, aliases and profile merges;
+there is no apply endpoint or supported manual-SQL procedure. A new mailbox's
+OTP alone cannot authorize moving an old subject, its history, keys or consents.
+`candidate_id` supplied at login is ignored. A supported future change would
+need proof of the existing principal and both relevant mailboxes, collision and
+consent review, audit and session invalidation; those checks are not implemented.
+Contact corrections may be submitted and reviewed through the existing rights
+routes. `apply=true` refuses with 422, leaving the request open; an operator may
+record the refusal with `apply=false`. That decision changes no identity fields
+and never clears `login_binding_review_required`.
+
+Uploads dedup only against one compatible asserted email hint. Duplicate hints
+or a hint inconsistent with its proved mailbox create a separate submission.
+An email upload never falls back to phone; phone-only matching excludes proved
+and legacy-review subjects. Their top-level contact hints are frozen to uploads,
+while extraction JSON retains the document's contact claims. These rules do not
+verify document truth or authorship; unique-email dedup remains advisory. A match
+whose contact/proof state changes before its write rolls back and returns
+`422 candidate_contact_changed`; a fresh upload may resolve again. Duplicate
+cardinality is a read snapshot, not a global lock across new submissions.
+
+`scripts/inventory_candidate_contacts.py --database <explicit SQLite file>`
+reports aggregate hints/proof/review counts read-only, with no repair mode or
+configuration loading. Missing proof columns are reported as unknown. The actual
+working-file inventory and preservation evidence are owned by
+[R1-S2-T4B](docs/delivery/EVIDENCE-R1.md#r1-s2-t4b); it authorizes no cleanup or migration.
+
+Migration `0029_candidate_login_binding` never infers historical ownership from
+resume hints. It marks candidates with any existing candidate session (including
+expired/revoked sessions) or session-create audit `login_binding_review_required`; the flag survives
+session purge. New binding refuses `409 candidate_identity_review_required`
+until explicit review. Existing sessions and candidate keys retain their subjects.
+Historical sessions whose rows and audits were both purged cannot be recovered.
+Downgrade removes the new proof/review metadata; it preserves older candidate,
+session and key rows and must not be used as an ownership recovery procedure.
+Only migrated disposable stores were exercised for this change.
+
+Redemption locks and reloads the exact challenge, then rechecks its current
+attempt budget and expiry in the consuming DELETE. Production samples time
+after address/challenge lock waits; explicit injected clocks remain deterministic.
+A stale preflight cannot redeem an exhausted or expired code. Refusal remains
+the generic `400 invalid_code` and mints no session or mailbox binding.
+
+Challenge consumption, binding, the session-create audit and session creation
+share one transaction and the existing address lock. Erasure clears both proved
+and asserted addresses, except an asserted hint at another candidate's proved
+mailbox, whose challenges must survive. Proof fields are private to persistence;
+the portal continues to return its existing candidate/assurance contracts.
 
 Why: records built from org-uploaded resumes would otherwise be unreachable by
 their own subject, which makes the portal's DPDP access, correction and erasure
@@ -172,7 +235,12 @@ fusing them would repeat S7.2's two-ladders mistake.
   activation and erasure; no lock spans delivery. Cancelled sends return generic
   202 without debug echo. Provider failures preserve any previous valid code.
   Fresh signup remains permitted; already-sent mail cannot be recalled.
-  Redemption after an already-committed consume remains open in D3d2c3.
+  Redemption uses the same address lock: exact code consumption, principal
+  creation/resolution, session and candidate audit commit together. Erasure
+  first refuses stale verification; redemption first allows erasure to cascade
+  its candidate session. Failure before commit restores the challenge and leaves
+  no partial signup/session. A cookie delivered after later erasure cannot
+  resolve the erased candidate; response delivery itself is outside the lock.
 
 ## 8. Email seam
 

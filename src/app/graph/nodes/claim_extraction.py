@@ -8,6 +8,7 @@ validated :class:`ClaimSet`.
 
 from __future__ import annotations
 
+import json
 import re
 
 from app.core.logging import get_logger
@@ -17,6 +18,7 @@ from app.schemas.claims import (
     CandidateContext,
     Claim,
     ClaimSet,
+    ExternalAnchor,
     Specificity,
 )
 from app.services import Services
@@ -82,27 +84,32 @@ def _heuristic_extract(
 
 
 def _parse_llm_claimset(payload: dict, domain: str) -> ClaimSet:
-    ctx_raw = payload.get("candidate_context", {}) or {}
-    ctx = CandidateContext(**{k: v for k, v in ctx_raw.items() if k in CandidateContext.model_fields})
+    # Reject nonfinite values even for clients that bypass the shared parser.
+    json.dumps(payload, allow_nan=False)
+    ctx = CandidateContext.model_validate(payload.get("candidate_context", {}), strict=True)
+    if ctx.years_experience is not None and ctx.years_experience < 0:
+        raise ValueError("negative years_experience")
+    raw_claims = payload["claims"]
+    if not isinstance(raw_claims, list):
+        raise ValueError("claims must be a list")
     claims: list[Claim] = []
-    for c in payload.get("claims", []) or []:
+    for c in raw_claims:
         anchor = None
         a = c.get("external_anchor")
-        if isinstance(a, dict) and a.get("url"):
-            anchor = parse_github_url(a["url"]) if "github.com" in a["url"] else None
-        try:
-            claims.append(
-                Claim(
-                    text=c["text"],
-                    domain=domain,
-                    claim_type=c.get("claim_type", "generic"),
-                    specificity=Specificity(c.get("specificity", "moderate")),
-                    external_anchor=anchor,
-                    source_excerpt=c.get("source_excerpt") or c.get("text"),
-                )
-            )
-        except (KeyError, ValueError):
-            continue
+        if a is not None:
+            checked = ExternalAnchor.model_validate_json(json.dumps({
+                **a, "type": a.get("type", "portfolio_url")}), strict=True)
+            anchor = parse_github_url(checked.url) if "github.com" in checked.url else None
+        claim = Claim.model_validate_json(json.dumps({
+            "text": c["text"], "domain": domain,
+            "claim_type": c.get("claim_type", "generic"),
+            "specificity": c.get("specificity", "moderate"),
+            "external_anchor": anchor.model_dump(mode="json") if anchor else None,
+            "source_excerpt": c["text"] if c.get("source_excerpt") is None else c["source_excerpt"],
+        }), strict=True)
+        if not claim.text.strip():
+            raise ValueError("empty claim text")
+        claims.append(claim)
     return ClaimSet(candidate_context=ctx, claims=claims)
 
 
@@ -120,10 +127,10 @@ def make_claim_extraction_node(services: Services):
                 system=domain.extraction_guidance(),
                 prompt=f"RESUME:\n{text}",
             )
-            if payload.get("claims"):
+            if payload != {}:
                 claimset = _parse_llm_claimset(payload, state.domain)
         except Exception as exc:  # any LLM error → heuristic fallback
-            log.warning("extraction_llm_failed", error=str(exc))
+            log.warning("extraction_llm_failed", error_type=type(exc).__name__)
 
         if not claimset.claims:
             # Hints come from the active domain, never hardcoded here (FR-17).

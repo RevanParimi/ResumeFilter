@@ -3,6 +3,8 @@ confuses "no yardstick" with "shallow answer" punishes candidates for gaps in
 the question bank."""
 
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 
 import pytest
 
@@ -57,7 +59,7 @@ def test_an_answer_below_the_floor_scores_nothing_rather_than_zero(s, profile):
     assert score.codes == ["insufficient_answer"]
 
 
-def test_specificity_rewards_numbers_and_named_tools(s, profile):
+def test_specificity_requires_content_beyond_vague_claims(s, profile):
     vague = ("I worked on the model and made it better for the users over "
              "several months with the team and it went well overall")
     concrete = ("I fine-tuned PyTorch on 8 A100 GPUs for 14 hours, cut p99 "
@@ -65,10 +67,10 @@ def test_specificity_rewards_numbers_and_named_tools(s, profile):
     assert (score_turn(transcript=concrete, expected_signals=[], profile=profile,
                        settings=s).dimensions["specificity"]
             > score_turn(transcript=vague, expected_signals=[], profile=profile,
-                         settings=s).dimensions["specificity"])
+                         settings=s).dimensions.get("specificity", 0.0))
 
 
-def test_ownership_prefers_i_over_we_and_is_neutral_when_neither_appears(s, profile):
+def test_ownership_recognizes_claimed_actions_and_keeps_team_or_unknown_neutral(s, profile):
     mine = ("I traced the regression to a tokenizer change, I rewrote the "
             "batching path and I shipped the fix behind a flag that week")
     ours = ("we traced the regression to a tokenizer change, we rewrote the "
@@ -78,18 +80,18 @@ def test_ownership_prefers_i_over_we_and_is_neutral_when_neither_appears(s, prof
     assert score_turn(transcript=mine, expected_signals=[], profile=profile,
                       settings=s).dimensions["ownership"] == 1.0
     assert score_turn(transcript=ours, expected_signals=[], profile=profile,
-                      settings=s).dimensions["ownership"] == 0.0
+                      settings=s).dimensions["ownership"] == 0.5
     assert score_turn(transcript=neither, expected_signals=[], profile=profile,
                       settings=s).dimensions["ownership"] == 0.5
 
 
-def test_depth_is_the_share_of_expected_signals_actually_covered(s, profile):
-    answer = ("I ran it on 8 GPUs for 14 hours over a dataset of 120k rows and "
-              "logged every checkpoint so we could compare them properly")
+def test_depth_rewards_reasoning_stages_over_literal_signal_share(s, profile):
+    answer = ("I compared GPU checkpoint logs; I pinned the dataset version; "
+              "replay tests confirmed recovery")
     score = score_turn(transcript=answer,
                        expected_signals=["gpu", "dataset", "eval harness"],
                        profile=profile, settings=s)
-    assert score.dimensions["depth"] == pytest.approx(2 / 3, abs=1e-3)
+    assert score.dimensions["depth"] == 1.0
 
 
 def test_depth_is_neutral_when_the_question_has_no_yardstick(s, profile):
@@ -98,14 +100,14 @@ def test_depth_is_neutral_when_the_question_has_no_yardstick(s, profile):
     assert score.dimensions["depth"] == 0.5
 
 
-def test_consistency_corroborates_but_never_punishes(s, profile):
+def test_consistency_does_not_treat_a_profile_name_as_independent_corroboration(s, profile):
     known = ("At Acme I moved the PyTorch training job onto spot instances and "
              "handled the preemption restarts myself over that quarter")
     unknown = ("At a client I cannot name I moved the training job onto spot "
                "instances and handled the preemption restarts myself")
     assert score_turn(transcript=known, expected_signals=[], profile=profile,
-                      settings=s).dimensions["consistency"] == 1.0
-    # v0 can corroborate, not contradict: an unrecognised employer stays neutral.
+                      settings=s).dimensions["consistency"] == 0.5
+    # Neither a repeated profile term nor an unnamed client proves truth/falsehood.
     assert score_turn(transcript=unknown, expected_signals=[], profile=profile,
                       settings=s).dimensions["consistency"] == 0.5
 
@@ -124,7 +126,7 @@ def test_band_needs_confidence_before_it_will_assert_anything(s):
     assert band_for(0.10, 0.90, s) is InterviewBand.SUPERFICIAL
 
 
-def test_aggregate_means_each_dimension_and_weights_depth_hardest(s):
+def test_legacy_aggregate_means_and_version_are_preserved(s):
     turns = [
         _turn(1, TurnScore(dimensions={"specificity": 1.0, "ownership": 1.0,
                                        "depth": 0.0, "consistency": 1.0})),
@@ -136,7 +138,7 @@ def test_aggregate_means_each_dimension_and_weights_depth_hardest(s):
     assert a.dimensions["depth"] == 0.0
     # depth weighs 1.5 of 4.5 total, so a zero there pulls overall to 3/4.5.
     assert a.overall == pytest.approx(2 / 3, abs=1e-3)
-    assert a.scorer_version == SCORER_VERSION
+    assert a.scorer_version == "s73.1"
 
 
 def test_insufficient_turns_count_against_coverage_but_not_the_means(s):
@@ -170,3 +172,145 @@ def test_a_full_thorough_session_can_reach_a_real_band(s):
     assert a.coverage == 1.0
     assert a.confidence >= 0.5
     assert a.band is InterviewBand.DEEP
+
+
+def test_keyword_repetition_never_earns_a_strong_band(s):
+    python = CandidateProfile(skills=[SkillItem(name="Python", canonical="python")])
+    answer = "I Python 123 retrieval " * 20
+    score = score_turn(transcript=answer, expected_signals=["retrieval"], profile=python, settings=s)
+    turns = [_turn(i, score, word_count(answer)) for i in range(1, 4)]
+    result = aggregate(session_id="s", candidate_id="c", questions=_questions(3),
+                       turns=turns, proxy=ProxyRisk(), settings=s)
+    assert result.band not in (InterviewBand.SOLID, InterviewBand.DEEP)
+    assert result.confidence < s.interview_min_confidence
+
+
+RUBRIC = json.loads((Path(__file__).parent / "fixtures/interview_rubric_v2.json").read_text(encoding="utf-8"))
+
+
+def _content_assessment(text, s, *, signals=None, question=None, profile=None):
+    score = score_turn(transcript=text, expected_signals=signals if signals is not None else RUBRIC["signals"],
+        question_text=question if question is not None else RUBRIC["question"], profile=profile, settings=s)
+    turn = _turn(1, score, word_count(text)).model_copy(update={"transcript": text})
+    return score, aggregate(session_id="s", candidate_id="c", questions=_questions(1),
+                            turns=[turn], proxy=ProxyRisk(), settings=s)
+
+
+@pytest.mark.parametrize("case", RUBRIC["cases"], ids=lambda case: case["id"])
+def test_frozen_development_examples(s, case):
+    score, result = _content_assessment(case["text"], s)
+    assert score.scorer_version == RUBRIC["version"] == SCORER_VERSION
+    if case["usable"]:
+        assert not score.insufficient
+        assert result.band in (InterviewBand.SOLID, InterviewBand.DEEP)
+        assert result.confidence >= s.interview_min_confidence
+    else:
+        assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+        assert result.confidence < s.interview_min_confidence
+
+
+def test_padding_and_repetition_do_not_raise_content_confidence(s):
+    answer = RUBRIC["cases"][1]["text"]
+    score, result = _content_assessment(answer, s)
+    for padded in (answer * 10, answer + " wonderful excellent impressive " * 30,
+                   RUBRIC["question"] * 5 + answer):
+        repeated, aggregate_score = _content_assessment(padded, s)
+        assert repeated.dimensions == score.dimensions
+        assert repeated.evidence_confidence == score.evidence_confidence
+        assert aggregate_score.confidence == result.confidence
+
+
+def test_substantive_clause_credit_is_not_a_punctuation_preference(s):
+    separate = RUBRIC["cases"][0]["text"]
+    combined = separate.replace("; ", " and ")
+    a, _ = _content_assessment(separate, s)
+    b, _ = _content_assessment(combined, s)
+    assert b.dimensions == a.dimensions
+    assert b.evidence_confidence == a.evidence_confidence
+
+
+def test_repetition_or_filler_cannot_cross_a_single_clause_word_floor(s):
+    answer = "I compared restored cut tokenizer regression."
+    base, original = _content_assessment(answer, s)
+    for padded in (answer * 20, answer + " wonderful excellent impressive " * 30):
+        score, result = _content_assessment(padded, s)
+        assert score.evidence_confidence == base.evidence_confidence
+        assert result.confidence == original.confidence
+        assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+
+
+def test_unrelated_or_limited_turns_never_inflate_an_otherwise_partial_assessment(s):
+    good, _ = _content_assessment(RUBRIC["cases"][1]["text"], s)
+    unrelated, _ = _content_assessment(RUBRIC["cases"][6]["text"], s)
+    limited, _ = _content_assessment("I compared restored cut tokenizer regression." * 20, s)
+    before = aggregate(session_id="s", candidate_id="c", questions=_questions(3),
+        turns=[_turn(1, good)], proxy=ProxyRisk(), settings=s)
+    after = aggregate(session_id="s", candidate_id="c", questions=_questions(3),
+        turns=[_turn(1, good), _turn(2, unrelated), _turn(3, limited)], proxy=ProxyRisk(), settings=s)
+    assert after.coverage == 1.0 and before.coverage < 1
+    assert after.dimensions == before.dimensions
+    assert after.overall == before.overall and after.confidence == before.confidence
+
+
+def test_profile_word_overlap_is_not_independent_consistency_evidence(s, profile):
+    answer = RUBRIC["cases"][1]["text"]
+    plain, _ = _content_assessment(answer, s)
+    named, _ = _content_assessment(answer, s, profile=profile)
+    assert plain.dimensions == named.dimensions
+    assert named.dimensions["consistency"] == 0.5
+
+
+def test_non_software_content_and_concise_answers_are_usable(s):
+    _, result = _content_assessment("Compared stock records; replaced duplicate orders; follow-up checks confirmed fewer shortages.",
+        s, signals=["inventory", "orders"], question="How did you resolve duplicate stock orders?")
+    assert result.band in (InterviewBand.SOLID, InterviewBand.DEEP)
+
+
+def test_missing_yardstick_is_neutral_and_unrelated_relevance_is_uncertain(s):
+    score, _ = _content_assessment(RUBRIC["cases"][1]["text"], s, signals=[])
+    assert score.dimensions["depth"] == 0.5
+    unrelated, result = _content_assessment(RUBRIC["cases"][6]["text"], s)
+    assert unrelated.dimensions["depth"] == 0.5
+    assert "relevance_unconfirmed" in unrelated.codes
+    assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+
+
+def test_mixed_score_versions_do_not_create_a_confident_new_assessment(s):
+    legacy = _turn(1, TurnScore(dimensions=dict.fromkeys(("depth", "ownership"), 1.0)))
+    current_score, _ = _content_assessment(RUBRIC["cases"][1]["text"], s)
+    current = _turn(2, current_score)
+    result = aggregate(session_id="s", candidate_id="c", questions=_questions(2),
+        turns=[legacy, current], proxy=ProxyRisk(), settings=s)
+    assert result.dimensions == {} and result.confidence == 0
+    assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+    assert "mixed" in result.scorer_version
+    assert len(result.scorer_version) <= 16  # Existing persisted version column.
+
+
+def test_lowered_confidence_setting_cannot_turn_unknown_relevance_into_a_strong_band(s):
+    lowered = s.model_copy(update={"interview_min_confidence": 0.0})
+    for answer in (RUBRIC["cases"][6]["text"], "I Python 123 retrieval " * 20):
+        _, result = _content_assessment(answer, lowered)
+        assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+
+
+def test_unrelated_answer_is_not_rescued_by_a_missing_signal_yardstick(s):
+    score, result = _content_assessment(RUBRIC["cases"][6]["text"], s, signals=[])
+    assert score.dimensions["depth"] == 0.5
+    assert result.band is InterviewBand.INSUFFICIENT_SIGNAL
+    assert "relevance_unconfirmed" in score.codes
+
+
+def test_profile_template_accepts_substance_without_repeating_a_tool_or_failure_word(s, profile):
+    from app.interview.questions import SKILL_TEMPLATE, DEPTH_MARKERS
+    _, result = _content_assessment(
+        "I compared checkpoint logs; I restored the tokenizer version; replay checks confirmed recovery.",
+        s, question=SKILL_TEMPLATE.format(skill="PyTorch"), signals=["pytorch", *DEPTH_MARKERS], profile=profile)
+    assert result.band in (InterviewBand.SOLID, InterviewBand.DEEP)
+
+
+def test_profile_template_does_not_accept_a_generic_investigation_cue_as_relevance(s, profile):
+    from app.interview.questions import SKILL_TEMPLATE, DEPTH_MARKERS
+    _, result = _content_assessment(RUBRIC["cases"][6]["text"], s,
+        question=SKILL_TEMPLATE.format(skill="PyTorch"), signals=["pytorch", *DEPTH_MARKERS], profile=profile)
+    assert result.band is InterviewBand.INSUFFICIENT_SIGNAL

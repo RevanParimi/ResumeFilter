@@ -17,8 +17,11 @@ exact math/decision rules. Source of truth is the code; file refs are clickable.
 
 ## Architecture and source map
 
-Routes in [routes.py](src/app/api/routes.py) call the shared ingest/service paths
-or [EvaluationEngine](src/app/graph/build.py). The compiled graph runs nine nodes
+The report workflow in [reports.py](src/app/api/reports.py), candidate workflow
+in [candidates.py](src/app/api/candidates.py), employer screening in
+[screening.py](src/app/api/screening.py), and remaining product handlers
+in [routes.py](src/app/api/routes.py) call shared services or
+[EvaluationEngine](src/app/graph/build.py). The compiled graph runs nine nodes
 in a fixed sequence; nodes return updates to [EvaluationState](src/app/graph/state.py).
 
 ```mermaid
@@ -131,9 +134,9 @@ the conservative decision lives in exactly one place.
 
 ## 0. Entry
 
-`POST /evaluate` → [routes.py](src/app/api/routes.py) builds an `EvaluationState`
-([state.py](src/app/graph/state.py)) and calls `EvaluationEngine.evaluate()`
-([build.py](src/app/graph/build.py)). The engine `ainvoke`s a compiled LangGraph.
+`POST /evaluate` enters [reports.py](src/app/api/reports.py) and calls
+`EvaluationEngine.evaluate()` ([build.py](src/app/graph/build.py)). The engine
+creates an [EvaluationState](src/app/graph/state.py) and invokes the compiled graph.
 
 The graph is a **linear chain** (no branches), wired in [build.py](src/app/graph/build.py#L34):
 
@@ -355,7 +358,7 @@ Assembles the advisory `Report` and feeds the flywheel.
 
 ---
 
-## 8. The outcome loop — [store.py](src/app/reports/store.py) + [routes.py](src/app/api/routes.py)
+## 8. The outcome loop — [store.py](src/app/reports/store.py) + [reports.py](src/app/api/reports.py)
 
 Reports are persisted through SQLAlchemy on the configured SQLite/PostgreSQL
 candidate database (`reports` table). A human reviewer closes the loop after
@@ -443,10 +446,7 @@ YAML key (env override = `DEE_<KEY>`):
 | `llm_timeout_seconds` | `60` | Per-call timeout |
 | `llm_max_retries` | `2` | SDK retries w/ backoff; provider blips degrade to rules, not 500s |
 | `github_api_base` | `https://api.github.com` | GitHub REST base (the *token* is a secret in `.env`) |
-| `vectorstore_backend` | `chroma` | `chroma` \| `memory`. Chroma can hang on some machines — see next row |
-| `vectorstore_init_timeout_seconds` | `15` | Bounded Chroma init; on timeout/error startup degrades to in-memory |
-| `chroma_persist_dir` | `./.chroma` | Vector store on disk |
-| `chroma_collection` | `depth-eval-evidence` | Collection name |
+| `vectorstore_backend`, `vectorstore_init_timeout_seconds`, `chroma_persist_dir`, `chroma_collection` | retired | Accepted and ignored in constructor/YAML/.env/DEE_ config; provenance uses evaluation-local GitHub observations, with no vector storage or data deletion |
 | `flywheel_path` | `./data/flywheel.jsonl` | Deprecated, ignored for new writes; legacy files are not automatically deleted |
 | `report_db_path` | `./data/reports.db` | SQLite report store (reports + human outcomes) |
 | `max_resume_chars` | `200000` | Evaluate-input cap; oversize → 422, never OOM |
@@ -476,7 +476,7 @@ YAML key (env override = `DEE_<KEY>`):
 | **Always advisory** | `advisory=True`, `human_review_required=True`, no auto-reject | Hiring decisions stay human; the engine only surfaces evidence + probes. |
 | **Consent-clean** | first-party GitHub/portfolio links only, no scraping | DPDP compliance — only candidate-shared data. |
 | **Domain-agnostic core** | graph resolves `DomainModel` by `state.domain` | New domain = one file + `@register_domain`, zero graph changes. |
-| **Embeddings** | local `HashingEmbedding` stand-in at M0 | Keeps M0 offline/reproducible. Swap for a real embedding model (separate from the chat tiers) for production retrieval quality. |
+| **Provenance storage** | evaluation-local GitHub observations | No embeddings or vector retrieval; observations stay scoped to the candidate's linked repository within that evaluation. |
 
 ### D. Scoring constants (in code, not env — change deliberately)
 

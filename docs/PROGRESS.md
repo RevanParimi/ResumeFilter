@@ -1,88 +1,126 @@
 # Current handoff
 
-Updated: 2026-09-27. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-19. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-R4-M2 obsolete-file cleanup is validated for the authorized main push; [the existing audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material)
-owns its evidence. This cleanup-only publication does not include later local
-application work; the committed development pointer below is unchanged.
+**R4-M2 publication follow-up: all completed local work reviewed and validated.**
+The existing application changes and R4-M1 test/delivery consolidation are now
+included in the explicit 342-path publication scope, alongside 58 pending tracked
+deletions. Full offline pytest, actual scratch Chrome/HTTP restart journeys,
+static checks, record/link preservation and staged diff self-review passed.
+[The existing audit](CODEBASE_REVIEW_2026-09-07.md#publication-follow-up-previously-completed-local-work)
+owns exact commands, counts, limits and publication evidence. Publish to main
+using revan.datta132@gmail.com; final commit verification follows publication.
+Working data, secrets, local editor settings and the running demo are preserved.
+Previously blocked ignored local-artifact deletion remains outside the push.
+
+R4-M1 test/delivery consolidation and R4-M2 versioned-file retirement are done.
+The earlier cleanup-only publication is `57a68ec`; this follow-up includes the
+previously uncommitted completed work. No new backlog development starts here.
+
+**Exact next development task: R4-S1-T3E - Extract ledger organizations, consent,
+records, coding and reputation routes (not started).** Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md), [T3](delivery/tasks/R4-S1-T3.md) and
+[D evidence](delivery/EVIDENCE-R4.md#r4-s1-t3d). Write E's contract/evidence inline
+in T3; reuse `tests/test_api_route_extraction.py`. Trace admin/org planes,
+shared schemas/helpers and DTOs; retain the full OpenAPI/ordered dependency,
+auth/CSRF, ownership and error contracts. Complete only E next session; no T4.
+
+## Latest work
+
+R4-M2 removed 93 superseded implementation/prototype/design files and updated
+historical references. The static allowlist refuses restored retired assets;
+focused/full offline regression, actual Chrome, binding/syntax, history/link,
+AST and preservation checks passed for both the workspace and published candidate.
+Automatic approval review blocked recursive deletion of ignored local tooling/
+Windows-cache directories; they remain excluded from Git/build context. The
+owned validation checkout was unregistered, but Windows denied removing its
+residual ignored scratch directory.
 
 
-**Next development task: R1-S1-T3b-D3d2c3 - redemption across erasure and login closure.**
-Read [WORKFLOW.md](delivery/WORKFLOW.md), the T3 section of [PI-R1](delivery/PI-R1.md),
-[the c3 brief](delivery/tasks/R1-S1-T3b-D3d2c3.md) and its
-[login parent](delivery/tasks/R1-S1-T3b-D3d2c.md). Trace committed consumption,
-principal establishment and session creation against erasure; define bounded
-acceptance before implementation. Preserve fresh signup, single use, generic
-refusal, all-plane cleanup and unrelated principals. Compose c1/c2 evidence.
-Use synthetic capture/null email and disposable storage only.
+R4-M1 consolidated 47 test modules into 15 (314 -> 282 overall), and 86 completed
+delivery records into four PI evidence files (97 -> 14 delivery Markdown files).
+Task IDs, original evidence/statuses and all 4,015 collected cases are retained.
+The workflow now reuses inline child records and existing product-area tests;
+there is no standalone cleanup task document. Focused/full offline pytest, all
+seven Node handler journeys, bindings, collection/AST/evidence/link preservation,
+whitespace and self-review passed; the audit owns exact commands/results. Runtime
+source/scripts/frontend, prior unrelated edits, working DB and demo were preserved.
 
-One bounded development task per session. D3d2c1/c2 are done; c3 redemption
-and D3d2d combined review remain open, as do T3/F05/R1-S1-Q. Combined review must
-include source-list/portal aggregate response windows and curation display-name
-retention. [FEATURE_STATUS.md](../FEATURE_STATUS.md) is the feature overview;
-[archived evidence](delivery/archive/README.md) is read only when relevant.
+T3A/B/C/D are done; [their PI-R4 evidence](delivery/EVIDENCE-R4.md) retains exact
+checks and limitations. D moved 13 screening operations, three DTOs and two
+helpers; `routes.py` is 1,626 lines. The full 102-operation contract, shared/legacy
+aliases and auth/CSRF are unchanged. T3/F13, R4-S1 and PI-R4 stay open. T1/T2
+retain shared resource ownership and unused vector infrastructure removal.
+[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview; completed
+PI-R1/R2/R3 records retain bounded validation and unresolved PI-R5 scope.
 
-## Latest work and evidence
+## Reusable validation setup
 
-- **D3d2c2 done:** sends reserve expiring tokens before delivery; erasure cancels
-  them atomically, preventing late challenge activation. Short transaction locks
-  preserve fresh signup, prior codes on send failure and unrelated principals.
-  Full SQLite: 2517 passed, 188 skipped; focused PG: 167 passed, 2 skipped.
-  Migrated issuance HTTP/interruption/restart: 34/34 on each backend; existing c1
-  PG journey: 24/24. Migration up/down/up and cluster shutdown passed.
-  Exact commands, warnings, acceptance and self-review are in the
-  [leaf evidence](delivery/tasks/R1-S1-T3b-D3d2c2.md). Sent mail cannot be recalled;
-  redemption remains c3. No browser, full-PG, live-provider or independent review.
-  Existing summary/task files updated; no new Markdown file. Earlier clutter
-  cleanup preserved and included with c2 in the user-authorized commit to main.
-  Final local links/statuses, Python compilation, bindings and whitespace passed;
-  working database hash below is unchanged.
-- **Documentation organization committed/pushed:** `4c83cad` contains accumulated
-  application fixes, feature summary and 12 archived completed child records.
-- **User-requested clutter review (2026-09-26):** inventory of all 760 tracked
-  files (156 Markdown before cleanup), targeted runtime caller tracing, merged
-  diverged UI specs, condensed parent/PI summaries and removed competing workflow
-  instructions. Findings and validation are in the existing
-  [audit follow-up](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
-  That review left application code, detailed leaf evidence and backlog unchanged.
-  Checks passed for local links across 155 Markdown files, 34 task statuses,
-  merged decisions, unchanged DB and whitespace; no application-test rerun.
-  That follow-up is included with c2 in the user-authorized commit to main.
+- Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
+  --tb=short`. Use fake providers and isolated stores, never working storage.
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3d.py <tag> <Python args>`;
+  omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
+  Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
+  Candidate/source/ownership/graceful restart: `scripts/smoke_r4_s1_t3c.py`.
+  Evaluation/report/outcome/restart journey: `scripts/smoke_r3_s1_q.py`
+  (Windows stop is forced). Auth/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
+  Contract fixture: `tests/fixtures/api_contract_r4_s1_t3.json`; pure extractions
+  retain it. Provenance journey: `scripts/smoke_r4_s1_t2.py` (blocked Chroma imports,
+  default/legacy settings, migrated HTTP and graceful restart). Provider lifecycle
+  journey: `scripts/smoke_r4_s1_t1b.py`, or
+  `--postgres` with an explicitly disposable DEE_TEST_DB_URL. Latest owned PG
+  runner/runtime: `.pytest_cache/run_r4_s1_t1b_postgres.py` /
+  `r4-s1-t1b-pg-runtime.json`; server stopped. Portable PG distribution metadata:
+  `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`. These local artifacts are not
+  portable setup guarantees. PG HTTP proves PG behavior; SQLite fixtures and
+  skipped lock cases do not. T1A owns the actual controlled lock/migration gate.
+- Actual Chrome: `scripts/check_ui_evaluate_browser.py` and
+  `scripts/check_ui_interview_integration_browser.py`; screening contracts:
+  `scripts/check_ui_screening_contract.py`. Chrome needs existing CDN internet.
+  Bindings: `node scripts/check_ui_bindings.js`; JS syntax: `node --check
+  frontend/api.js` and `frontend/support.js`. Bindings/source checks are not Chrome.
+- CPython 3.13.11/current dependencies remain in use; optional Parquet and
+  environment skips do not prove omitted cases. Synthetic providers/media prove
+  mechanics, not live ASR/codec compatibility, factual accuracy or measured quality.
+  Same-agent diff self-review is not independent review.
 
-Working database SHA256 remains
-`4FF974BB964D160163B179742F26CBF8FB1FCB42FFBA5F1F841BA3EB7D24956B`.
+## Standing constraints and risks
 
-## Test environment
-
-Use `.resume/Scripts/python.exe`; full suite: `-m pytest -q --tb=short`.
-CPython 3.13.11 and existing dependencies are in use. Portable PostgreSQL 18.6
-metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`; latest local runner:
-`.pytest_cache/run_r1_s1_t3b_d3d2c2_postgres.py`. These ignored artifacts are not
-portable setup guarantees. Each run must own a disposable cluster and stop it.
-No .env edits or service registration. Remote authentication failure was not
-rechecked. Fixtures use process DEE_TEST_DB_URL; shared teardown drops schemas
-matching `s_%` (literal underscore). Never use the working database or print
-credentials. Browser checks need their own environment; bindings are not a browser.
-
-## Standing constraints and open risks
-
-- Preserve data and prior work. Commit/push to main was authorized on 27 September;
-  deployment, external messages and working-data/legacy-file cleanup are not.
-- Historical feature timestamps may be shifted; repairs need an explicit policy.
-- Final existence reads in training, matching, ingest, reports and sources are
-  snapshots, not locks across delivery. Matching audits may retain pre-response
-  rank gaps. No whole-response/whole-ingest guarantee follows from these fixes.
-- Current consent/identity/verification-attempt races remain R1-S2; shared startup
-  and resource simplification remain PI-R4. Older unresolved screening input pauses
-  across tenants on erasure but keeps its original TTL; it is not immediately
-  erased or permanently barred from fresh upload.
-- Keep domain independence, deterministic fallbacks, advisory human review and
-  tenant/consent isolation. Polished/AI-assisted truthful writing is not fabrication.
-  Video scoring judges content, not appearance/emotion. Conversational video is
-  still a recommendation, not a confirmed format preference.
-- F01-F04 have qualified baseline fixes; F05-F16 remain open. Synthetic tests do
-  not establish representative model quality. The [delivery plan](delivery/README.md),
-  [baseline](delivery/BASELINE.md) and original audit own detailed traceability.
-  [ROADMAP.md](ROADMAP.md) is history, not required end-to-end reading.
+- Exactly one task per chat. Standing Option A fixes are authorized; publishing,
+  deployment, external messages and working-data/legacy cleanup are not implied.
+  Prior commit/push authorization was recorded on 27 September; no such action
+  was taken in D. Preserve all prior changes and modified `data/veritas.db`.
+- Do not restart the running `http://127.0.0.1:8000/ui/` demo. Its older,
+  reload-disabled backend still needs a separately controlled restart for earlier
+  backend/PDF/rubric/lifecycle changes. Scratch validation does not update it.
+  Working DB remains at 0023; only scratch stores were migrated to 0029.
+- Preserve advisory/human review, domain independence, deterministic fallbacks,
+  tenant isolation and present consent/erasure. Polished/AI-assisted truthful
+  writing is not fabrication. Video scoring judges content, not appearance or
+  inferred emotion. Heuristic scores and synthetic fixtures are not fraud proof.
+- `s73.2` English content coverage is bounded/uncalibrated; historical v1 stays
+  labeled and mixed/unknown versions refuse confident comparison. Microphone
+  answers score immediately; saved transcripts appear afterwards. Limits are per
+  clip, timers may be delayed, and pending permission requests cannot be canceled;
+  late streams stop when resolved. Uncertain writes require saved-state reads
+  without automatic replay; duplicate provider work remains possible.
+- Final read/export/search/delivery guards are snapshots, not locks across later
+  delivery. Failed HTTP after a commit does not imply rollback; concurrent fresh
+  capture may reappear and matching audit rank gaps remain. Older unresolved
+  screening input pauses across tenants on erasure with its TTL; fresh intake is
+  allowed. Future-media erasure extensions remain R5-S1-T4.
+- Curation retention can exceed 30 days if maintenance/startup is delayed;
+  schedule/monitor `scripts/purge_curation.py` (no scheduler installed). Overlay
+  refresh is process-local. Approval is human judgment, not anonymization; the
+  named legacy inventory was one empty snapshot, not proof for other stores.
+- Historical feature timestamps and the named working DB's one historical-login
+  subject with unknown mailbox proof need explicit review/policy. Do not infer
+  login ownership from hints, merge identities or auto-repair old history. Missing
+  session/audit history is unrecoverable; downgrade discards new proof metadata.
+- Phone verification remains unavailable. Mail/DB commits are not atomic; SMTP
+  holds the candidate/SQLite writer lock with existing socket timeouts. PDF limits
+  are per parse, not aggregate RSS/concurrency; unsupported runtimes/input can
+  refuse safely. Aggregate bounds/cross-worker overlay/reproducibility remain R4.

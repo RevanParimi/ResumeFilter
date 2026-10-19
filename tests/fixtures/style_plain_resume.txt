@@ -1,0 +1,22 @@
+Synthetic Taylor
+Data Engineer
+
+Work Experience
+
+Data Engineer, Synthetic Alpha (Jan 2022 - Dec 2025)
+I designed daily ingestion pipelines for finance reporting; this reduced manual work by 20%.
+The SQL query changes I made reduced dashboard loading time by 30%. I also configured
+Airflow retry policies, which improved successful daily job completion by 40%.
+
+Data Engineer, Synthetic Beta (Jan 2019 - Dec 2021)
+Batch imports in Python ran 20% faster after I updated them. I wrote validation checks
+for customer data and reduced invalid rows by 30%. My streaming ingestion service
+reduced event delivery delay by 40%.
+
+Data Engineer, Synthetic Gamma (Jan 2016 - Dec 2018)
+I migrated the daily reporting tables to SQL storage, cutting storage costs by 20%.
+I implemented monitoring rules that reduced alert noise by 30%, and documented recovery
+procedures that reduced restoration time by 40%.
+
+Technical Skills
+Python, SQL, Airflow

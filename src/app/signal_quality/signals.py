@@ -64,12 +64,22 @@ def _major_findings(report: Report) -> Optional[float]:
     )
 
 
+def _current_factual_risk(report: Report):
+    """Keep style-inclusive v1/unknown scores out of v2 measurement samples.
+
+    The report population still includes those labels; only these two signal
+    samples omit them. Stored historical reports remain unchanged.
+    """
+    risk = report.fabrication_risk
+    return risk if risk is not None and risk.scorer_version == 2 else None
+
+
 SIGNALS: tuple[SignalSpec, ...] = (
     # --- FRAUD: scored by `outcomes`, measurable today -----------------------
     SignalSpec("fabrication_risk.score", LabelKind.FRAUD, _SCORE,
-               lambda r: _opt(r.fabrication_risk, "score")),
+               lambda r: _opt(_current_factual_risk(r), "score")),
     SignalSpec("fabrication_risk.band", LabelKind.FRAUD, _BAND,
-               lambda r: _band_value(r.fabrication_risk), band=True),
+               lambda r: _band_value(_current_factual_risk(r)), band=True),
     SignalSpec("ai_generation.likelihood", LabelKind.FRAUD, _SCORE,
                lambda r: _opt(r.ai_generation, "likelihood")),
     SignalSpec("ai_generation.band", LabelKind.FRAUD, _BAND,

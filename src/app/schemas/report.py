@@ -27,7 +27,7 @@ class EvidenceSource(StrEnum):
     RULE = "rule"            # DomainModel rule registry
     LLM = "llm"              # domain-expert model reasoning
     GITHUB = "github"        # provenance fetch
-    VECTORSTORE = "vectorstore"  # retrieved grounding
+    VECTORSTORE = "vectorstore"  # historical reports; no current retrieval writer
 
 
 class Polarity(StrEnum):
@@ -109,7 +109,7 @@ class Report(BaseModel):
     deferred_claim_ids: list[str] = Field(default_factory=list)
 
     # S2.1: advisory AI-generation signals (stylistic context, never a verdict;
-    # fusion into calibration is S2.4). None for pre-S2.1 stored reports.
+    # excluded from factual-risk fusion since v2). None for pre-S2.1 reports.
     ai_generation: Optional[AIGenerationAssessment] = None
 
     # S2.2: advisory cross-field forensics (timeline/coherence observations for
@@ -122,8 +122,8 @@ class Report(BaseModel):
     # S2.4). None for pre-S2.3 reports and ad-hoc POST /evaluate runs.
     resume_farm: Optional[ResumeFarmAssessment] = None
 
-    # S2.4: unified advisory fabrication risk — the three signals above fused in
-    # the calibration stage. Reviewer context only, never a verdict and never a
+    # S2.4: versioned advisory fabrication risk — v1 includes writing style;
+    # v2 fuses only timeline/duplication. Reviewer context only, never a verdict or
     # rejection signal. None for pre-S2.4 stored reports and runs where nothing
     # was assessed.
     fabrication_risk: Optional[FabricationRiskAssessment] = None

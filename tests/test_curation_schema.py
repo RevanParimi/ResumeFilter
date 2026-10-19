@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.curation.schema import CurationAction, CurationStatus, UnmappedTerm
+from app.curation.schema import CurationAction, CurationDecision, CurationStatus, UnmappedTerm
 
 
 def test_status_and_action_values():
@@ -13,17 +13,15 @@ def test_unmapped_term_defaults_pending_no_resolution():
     t = UnmappedTerm(
         norm_key="cobol", display_name="COBOL", source_types=["linkedin_export"],
         first_seen=now, last_seen=now,
+        review_revision="0" * 64,
     )
     assert t.status == CurationStatus.PENDING
     assert t.occurrences == 1
-    assert t.action is None and t.canonical is None and t.category is None
+    assert "note" not in t.model_dump() and "decided_by" not in t.model_dump()
 
 
-def test_unmapped_term_carries_resolution():
+def test_decision_receipt_contains_approved_vocabulary_only():
+    from dataclasses import asdict
     now = datetime(2026, 7, 30, tzinfo=timezone.utc)
-    t = UnmappedTerm(
-        norm_key="cobol", display_name="COBOL", first_seen=now, last_seen=now,
-        status=CurationStatus.RESOLVED, action=CurationAction.CREATE,
-        canonical="cobol", category="language", decided_by="ops", decided_at=now,
-    )
-    assert t.action == CurationAction.CREATE and t.canonical == "cobol"
+    receipt = CurationDecision(CurationAction.CREATE, "Approved COBOL", "cobol", "language", now, None)
+    assert set(asdict(receipt)) == {"action", "alias", "canonical", "category", "decided_at", "admin_user_id"}

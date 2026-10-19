@@ -1,10 +1,11 @@
 """S7.1 OTP mechanics: pure, deterministic under an injected RNG and clock."""
 
 import random
+import pytest
 from datetime import datetime, timedelta, timezone
 
 from app.verification.otp import (
-    NullNotifier, attempts_exhausted, cooldown_active, generate_code,
+    DeliveryUnavailable, NullNotifier, attempts_exhausted, cooldown_active, generate_code,
     hash_code, is_challenge_expired,
 )
 
@@ -59,6 +60,8 @@ def test_zero_cooldown_never_blocks():
     assert cooldown_active(NOW, 0, at=NOW) is False
 
 
-def test_null_notifier_accepts_a_send_and_records_nothing_sensitive():
+def test_null_notifier_refuses_delivery_and_records_nothing_sensitive(log_output):
     n = NullNotifier()
-    n.send("someone@example.com", "123456", channel="email")  # must not raise
+    with pytest.raises(DeliveryUnavailable):
+        n.send("someone@example.com", "123456", channel="email")
+    assert "someone@example.com" not in log_output.text and "123456" not in log_output.text

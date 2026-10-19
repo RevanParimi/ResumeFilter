@@ -1,7 +1,7 @@
 """S6.3 smoke: boot uvicorn on a migrated scratch DB, ingest a LinkedIn export
 containing novel skills, verify they queue for curation, resolve them
 (create / map / ignore), re-ingest and confirm the overlay now maps them, then
-prove the queue is candidate-agnostic (survives DPDP erasure). No network, no
+prove raw observations cascade while approved vocabulary survives erasure. No network, no
 LLM. Run from repo root: python scripts/smoke_s63.py
 """
 
@@ -45,6 +45,9 @@ def main() -> int:
     env = base_env()
     env.update({
         "DEE_CANDIDATES_DB_URL": url,
+        "DEE_CONFIG_FILE": str(scratch / "no-config.yaml"),
+        "DEE_GITHUB_TOKEN": "", "DEE_GITHUB_API_BASE": "http://127.0.0.1:9",
+        "DEE_EMAIL_PROVIDER": "null", "DEE_LOGIN_OTP_STATIC_CODE": "",
         "DEE_REPORT_DB_PATH": (scratch / "reports.db").as_posix(),
         "DEE_FLYWHEEL_PATH": (scratch / "flywheel.jsonl").as_posix(),
         "DEE_VECTORSTORE_BACKEND": "memory",
@@ -60,7 +63,7 @@ def main() -> int:
     checks: dict[str, bool] = {}
 
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)], env=env
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(PORT)], env=env, cwd=scratch
     )
     try:
         with httpx.Client(base_url=BASE, timeout=httpx.Timeout(60, connect=5)) as c:
@@ -79,29 +82,33 @@ def main() -> int:
             # rather than a bare list -- the curation queue is cursor-paged.
             pend = c.get("/curation/skills/unmapped?status=pending", headers=admin_h).json()
             pkeys = {t["norm_key"] for t in pend["terms"]}
+            revisions = {t["norm_key"]: t["review_revision"] for t in pend["terms"]}
             checks["cobol queued pending"] = "cobol" in pkeys
             checks["pytorch lightning queued pending"] = "pytorch lightning" in pkeys
             checks["team player queued pending"] = "team player" in pkeys
 
             r1 = c.post("/curation/skills/resolve", headers=admin_h, json={
                 "norm_key": "cobol", "action": "create",
-                "canonical": "cobol", "category": "language"})
+                "expected_revision": revisions["cobol"],
+                "alias": "COBOL", "canonical": "cobol", "category": "language"})
             checks["resolve create cobol -> 200"] = r1.status_code == 200
             r2 = c.post("/curation/skills/resolve", headers=admin_h, json={
-                "norm_key": "pytorch lightning", "action": "map", "canonical": "pytorch"})
+                "expected_revision": revisions["pytorch lightning"],
+                "norm_key": "pytorch lightning", "action": "map", "alias": "PyTorch Lightning", "canonical": "pytorch", "category": "ml"})
             checks["resolve map pytorch -> 200"] = r2.status_code == 200
-            checks["map derived category ml"] = r2.json().get("category") == "ml"
+            checks["map validates explicit category ml"] = r2.json().get("category") == "ml"
             r3 = c.post("/curation/skills/resolve", headers=admin_h, json={
+                "expected_revision": revisions["team player"],
                 "norm_key": "team player", "action": "ignore"})
             checks["resolve ignore -> 200"] = r3.status_code == 200
 
             bad = c.post("/curation/skills/resolve", headers=admin_h, json={
-                "norm_key": "nope", "action": "ignore"})
+                "norm_key": "nope", "action": "ignore", "expected_revision": "0" * 64})
             checks["resolve unknown -> 404"] = bad.status_code == 404
             bad2 = c.post("/curation/skills/resolve", headers=admin_h, json={
+                "expected_revision": revisions["cobol"],
                 "norm_key": "cobol", "action": "map", "canonical": "not_real"})
-            # cobol is already resolved, but validation runs after existence: map to
-            # unknown canonical is 422.
+            # An invalid promotion is rejected before the transactional resolution.
             checks["resolve invalid -> 422"] = bad2.status_code == 422
 
             # re-ingest: overlay now maps cobol + pytorch lightning; team player stays unmapped
@@ -116,15 +123,14 @@ def main() -> int:
             still_pending = {t["norm_key"] for t in
                              c.get("/curation/skills/unmapped?status=pending",
                                    headers=admin_h).json()["terms"]}
-            checks["nothing re-queued pending"] = not (
-                {"cobol", "pytorch lightning", "team player"} & still_pending)
+            checks["ignored term reappears, approved aliases stay mapped"] = still_pending == {"team player"}
 
-            # DPDP: erasing the candidate must NOT sweep the candidate-agnostic queue
+            # DPDP: raw observations cascade; approved aliases remain.
             deleted = c.delete(f"/candidates/{cid}", headers=admin_h)
             checks["DPDP delete candidate -> 200"] = deleted.status_code == 200
             all_terms = {t["norm_key"] for t in
                          c.get("/curation/skills/unmapped", headers=admin_h).json()["terms"]}
-            checks["queue survives erasure"] = {"cobol", "pytorch lightning", "team player"} <= all_terms
+            checks["raw queue erased"] = not all_terms
     finally:
         proc.terminate()
         proc.wait(timeout=15)

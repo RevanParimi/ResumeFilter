@@ -210,13 +210,16 @@ def run_checks(mailbox: Path) -> None:
     # which is this repo's recurring shape: a check that inspects less than it
     # appears to.
     others = ["Meera Sundaram", "Vikram Joshi", "Ananya Bose"]
+    refused = b.post("/screening/batches", {"items": [{"resume_text": "   "}]})
+    S.check("invalid_input_is_refused_before_registration",
+            refused.status_code == 422 and refused.json()["detail"] == "item 0: empty_resume")
     reg = b.post("/screening/batches", {
         "name": "Wipro DE — August intake", "domain": "genai",
         "items": [
             {"resume_text": _resume("Priya Nandakumar", "priya.n@example.in")},
             {"resume_text": _resume("Arjun Rao", "arjun.rao@example.in")},
             {"resume_pdf_b64": pdf_item},
-            {"resume_text": "   "},          # fails at PROCESSING, not registration
+            {"resume_text": "Skills: Python"},  # sparse but readable
         ] + [
             {"resume_text": _resume(n, n.split()[0].lower() + "@example.in")}
             for n in others
@@ -254,7 +257,7 @@ def run_checks(mailbox: Path) -> None:
     detail = b.get(f"/screening/batches/{bid}").json()
     S.check("derived_progress_is_terminal_after_the_loop",
           detail["counts"]["pending"] == 0 and detail["counts"]["processing"] == 0
-          and detail["status"] == "partial",
+          and detail["status"] == "complete",
           f"counts={detail['counts']} status={detail['status']}")
 
     # ── 7. The queue the screen renders ─────────────────────────────────────
@@ -273,10 +276,8 @@ def run_checks(mailbox: Path) -> None:
     S.check("a_queue_row_carries_no_persons_name", not leaked, f"leaked={leaked}")
 
     failed = [r for r in rows if r["status"] == "failed"]
-    S.check("a_failed_row_carries_a_code_not_a_verdict",
-          len(failed) == 1 and failed[0]["error"] == "empty_resume"
-          and failed[0]["risk_score"] is None
-          and failed[0]["reason"].startswith("could not be screened"),
+    S.check("readable_sparse_input_finishes_without_an_input_failure",
+          len(failed) == 0 and len(rows) == 7,
           f"{[ (r['status'], r['error']) for r in rows ]}")
 
     # ── 8. The summary, which is the page a customer screenshots ────────────

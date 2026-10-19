@@ -25,7 +25,7 @@ from app.core.logging import get_logger
 log = get_logger(__name__)
 
 Tier = Literal["reasoning", "reasoning_hard", "parsing", "bulk", "scoring"]
-_JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
+_JSON_BLOCK = re.compile(r"\{.*\}|\[.*\]", re.DOTALL)
 
 
 def _extract_json(text: str) -> dict:
@@ -37,15 +37,26 @@ def _extract_json(text: str) -> dict:
         fenced = fenced.strip("`")
         fenced = fenced.split("\n", 1)[-1] if "\n" in fenced else fenced
     try:
-        return json.loads(fenced)
+        data = json.loads(fenced)
     except json.JSONDecodeError:
+        # Recover the outer array too, so prose/fences cannot turn its nested
+        # object into an apparently valid object reply.
         m = _JSON_BLOCK.search(text)
         if m:
             try:
-                return json.loads(m.group(0))
+                data = json.loads(m.group(0))
             except json.JSONDecodeError:
                 return {}
-    return {}
+        else:
+            return {}
+    # A successfully parsed array/scalar must not be rescued as a nested object.
+    if not isinstance(data, dict):
+        return {}
+    try:
+        json.dumps(data, allow_nan=False)
+    except ValueError:  # NaN/Infinity, including exponent overflow, at any depth
+        return {}
+    return data
 
 
 class LLMClient(ABC):
@@ -56,6 +67,9 @@ class LLMClient(ABC):
 
     def _model(self, tier: Tier) -> str:
         return self.settings.model_for_tier(tier)
+
+    async def aclose(self) -> None:
+        """No transport in the refusing/fake implementations."""
 
     @abstractmethod
     async def _araw(self, *, model: str, system: str, prompt: str, max_tokens: int) -> str:
@@ -88,6 +102,14 @@ class OpenRouterLLM(LLMClient):
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         super().__init__(settings)
+        self._client = None
+        self._closed = False
+
+    def _get_client(self):
+        if getattr(self, "_closed", False):
+            raise RuntimeError("LLM client is closed")
+        if self._client is not None:
+            return self._client
         from openai import AsyncOpenAI  # local import; optional at test time
 
         headers: dict[str, str] = {}
@@ -103,9 +125,17 @@ class OpenRouterLLM(LLMClient):
             max_retries=self.settings.llm_max_retries,
             default_headers=headers or None,
         )
+        return self._client
+
+    async def aclose(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        if self._client is not None:
+            await self._client.close()
 
     async def _araw(self, *, model: str, system: str, prompt: str, max_tokens: int) -> str:
-        resp = await self._client.chat.completions.create(
+        resp = await self._get_client().chat.completions.create(
             model=model,
             max_tokens=max_tokens,
             messages=[

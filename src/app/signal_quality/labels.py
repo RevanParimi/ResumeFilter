@@ -20,8 +20,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Protocol
 
+from app.features.serving import current_consent
 from app.features.training import build_label
 from app.ledger.consent import as_utc
+from app.ledger.store import MaterializationCandidateMissingError
 from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
 from app.signal_quality.schema import LabelKind
@@ -127,12 +129,12 @@ class LedgerLabelSource:
 
     CONSENT IS READ, NOT ASSUMED (ruling R1). The plan passed
     ``consent_allowed=True`` as a constant; that is a bypass, and this is the
-    one place in PI-9 that touches consented data. The decision is taken at
-    ``report.created_at`` rather than "now", because a grant that began after
-    the report was written did not authorize reading that subject at the moment
-    the prediction was made.
+    one place in PI-9 that touches consented data. Historical permission at
+    ``report.created_at`` is required alongside current ledger_read, because a
+    grant that began after the report was written did not authorize reading that
+    subject at the moment the prediction was made.
 
-    One consent read per report, deliberately un-cached: the decision is
+    Consent reads are deliberately un-cached: historical permission is
     time-scoped, so two reports on the same candidate at different moments can
     legitimately differ. ``materialization_consent`` also AUDITS each call,
     which is correct -- a consent check on a data principal is an auditable
@@ -153,16 +155,24 @@ class LedgerLabelSource:
             cid = report.candidate_id
             if cid is None:
                 continue
-            decision = self._ledger.materialization_consent(cid, at=report.created_at)
+            try:
+                decision = self._ledger.materialization_consent(cid, at=report.created_at)
+            except MaterializationCandidateMissingError:
+                continue
+            if not decision.allowed or not current_consent(cid, ledger_store=self._ledger).allowed:
+                continue
             label = build_label(
                 as_of=report.created_at,
                 interview_records=self._ledger.records_for_candidate(cid),
                 coding_rounds=self._ledger.coding_rounds_for_candidate(cid),
                 consent_allowed=decision.allowed,
             )
-            if not label.observed or label.withheld or label.event_at is None:
+            if (not label.observed or label.withheld or label.event_at is None
+                    or not current_consent(cid, ledger_store=self._ledger).allowed):
                 continue
             out.append(LabeledReport(
                 report=report, positive=bool(label.hired), labeled_at=label.event_at,
             ))
-        return out
+        return [item for item in out
+                if current_consent(item.report.candidate_id, ledger_store=self._ledger).allowed
+                and self._ledger.candidate_exists(item.report.candidate_id)]

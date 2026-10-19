@@ -36,6 +36,10 @@ Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
   pairs; the default view **`core_v1`** (config knob `feat_default_view`) pins
   every seed feature at its latest version, making a materialization/training run
   reproducible. `compute_view` yields a **`FeatureVector`** (values + `missing`).
+  Since R2-S2-T1, this bundle uses version **2**, retaining the configured name.
+  Its risk score/band members use factual-risk v2 and exclude writing style.
+  Historical v1 reports/vectors remain distinct; opposite/unknown report
+  semantics yield missing risk features. See [current risk logic](docs/FEATURE_LOGIC.md#combined-advisory-risk).
 - **`build_context`** (`context.py`) — the only store-touching helper; assembles
   a snapshot from the candidate/report/ledger stores. See point-in-time below.
 
@@ -128,7 +132,7 @@ continues the batch. A failed audit transaction is rolled back before checking
 whether the candidate disappeared; unrelated errors propagate. If the audit
 commits first, candidate erasure cascades it away and the feature-store write
 guard refuses later vector persistence. Allowed/withheld consent rules are
-unchanged. [Concurrency evidence](docs/delivery/archive/R1-S1-T3b-D3c1.md).
+unchanged. [Concurrency evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c1).
 
 
 ### Materializer (`materialize.py`)
@@ -157,8 +161,9 @@ view_name, view_version` then one column per feature **in `view.members` order**
 `export_view_csv` (stdlib `csv`) is always available; null / consent-withheld →
 empty cell. `export_view_parquet` types each column from `spec.dtype` and raises
 `ParquetUnavailable` when `pyarrow` is not installed (an optional extra, **not**
-in core requirements). Exports never re-apply consent — values were masked at
-materialization, so a file can never leak a withheld value.
+in core requirements). Exports require an explicit registry/ledger store and
+recheck current permission before serializing gated values, retaining the
+historical snapshot. See the S4.4 export policy below for timing and scope.
 
 ### S4.3 seam
 
@@ -216,13 +221,12 @@ categorical is not rankable (`ValueError`).
 
 ### Missing / consent-withheld handling
 
-A missing term (null value — absent data *or* a consent-withheld feature already
-nulled at S4.2) is **dropped**, the candidate's remaining weights are
+A missing term (null value — absent data or a feature withheld at materialization
+or by current serving authorization) is **dropped**, the candidate's remaining weights are
 **renormalized**, and the result surfaces both a `missing` list and a `coverage`
 fraction (share of ranking weight that had data — the `reputation.py`/`risk.py`
-confidence pattern). Withholding consent can only lower `coverage`, never rank:
-a candidate scored on its present terms alone is never pushed below a candidate
-whose extra term merely scored low.
+confidence pattern). Missing consent adds no score penalty or automatic rejection.
+Relative rank can still change when terms drop or normalization pools change.
 
 ### Serving (`POST /talent/search`, admin plane)
 
@@ -231,18 +235,24 @@ non-empty), `filters` (optional), `view_name`/`view_version` (default the
 materialized `core_v1`/v1), `as_of` (default the view's newest cut via
 `FeatureStore.latest_as_of`), `limit` (default `search_default_limit`, 50). The
 handler resolves specs **per referenced feature** from the registry (unknown name
-→ 400), loads the pool via `FeatureStore.latest_vectors_for_view`, then filter → score →
+→ 400), loads the pool via `FeatureStore.latest_vectors_for_view`, applies current
+consent via `current_consent_vectors`, then filter → score →
 sort → limit. Errors: unknown feature / dtype-invalid op → 400; empty `ranking` →
 422; no admin key → 401. An unmaterialized view is not an error — it yields an
 empty pool (still 200, `advisory=True`).
 
 ### Consent, point-in-time, DPDP
 
-- **Consent** is **not re-applied at query time**. S4.2 masked consent-tagged
-  features at materialization on the reputation-network opt-in basis, so a
-  withheld feature is already `null` in the row and simply drops out of scoring.
-  The admin plane keeps this consistent — S4.3 adds **no new disclosure surface**.
-  (Org-facing, per-org-consented search is PI-5 demand-side work.)
+- **Current consent** is checked before filters, normalization and scoring.
+  Admin search requires any currently active `ledger_read` grant; `JobStore`
+  requires a grant for the requesting org or a wildcard. Historical `as_of` and
+  cached `consent_state.allowed` cannot authorize current use. Gated values are
+  masked in a serving copy; historical materialization stays intact. A new grant
+  cannot fill historically withheld values. Existing job rankings use first-party
+  and synthetic terms. Consent reads are snapshots, not locks across delivery.
+  [R1-S2-T1 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t1) owns validation and limits;
+  [R1-S2-T2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t2) owns the export/training
+  extension of the same policy.
 - **Point-in-time**: `as_of` is a cutoff. Search and job matching select each
   candidate's latest snapshot at or before it, so refreshing one candidate does
   not remove the others from the pool. Matching reads each profile at its own
@@ -299,26 +309,40 @@ Per vector it emits a `TrainingLabel`:
   interview label).
 - `observed` — a post-cut non-withdrawn interview record exists. When False the
   example is **right-censored** (`hired`/`outcome` null) — *not* a negative.
-- `withheld` — consent was not active at `as_of`; the label is unread and null.
+- `withheld` — historical or current consent denied use; every label value is
+  null. Denied outcomes are not fetched; permission is rechecked after reads.
 
-### Consent (reuse S4.2 decision + audit)
+### Consent (historical ceiling plus current permission)
 
-The label is derived from the same consent-gated cross-company records S4.2 masks,
-so it **inherits the S4.2 decision** stored in `MaterializedVector.consent_state`.
-`build_training_set` reads the ledger only for a consented vector (a withheld
-candidate's outcomes are never fetched) and audits every join via
-`LedgerStore.audit_training_label` → `training.label` (allowed/withheld), keeping
-platform use of gated data observable without a new gate. A withheld vector's
-`ledger.*` features are already null *and* its label is withheld — consistent.
+`build_training_set` requires both the historical S4.2 permission stored in
+`MaterializedVector.consent_state` and current `ledger_read`. Platform use needs
+any active grant; an explicit `org_id` needs that org or a wildcard. Other
+purposes, future, revoked and expired grants cannot authorize use at an older
+`as_of`. Denied outcomes are never fetched. Permission is rechecked after the
+outcome reads and for each assembled example before returning the set. The
+metrics `LedgerLabelSource` also requires historical and present permission.
+
+Each join is audited as `training.label` (allowed/withheld at its check);
+`audit=False` suppresses audit writes without bypassing authorization. A later
+revocation may make the final output withheld after an earlier allowed audit.
+Pure `build_label`/`build_training_example` reducers use explicitly supplied
+decisions; they do not authorize store reads. `build_training_example` additionally
+enforces the stored historical ceiling and masks gated features in a copy.
 
 ### Export (`export.py`)
 
 `export_training_csv` / `export_training_parquet` = the S4.2 wide feature pivot
 (shared `feature_columns` / `vector_cells` helpers) **plus** appended
 `label_hired, label_outcome, label_coding_best_percentile, label_event_at,
-label_lag_days, label_observed, label_withheld`. Values are already
-masked/withheld according to the stored materialization decision. Parquet stays guarded
-(`ParquetUnavailable` without pyarrow).
+label_lag_days, label_observed, label_withheld`. All four feature/training
+writers require explicit `registry` and `ledger_store` arguments, with optional
+`org_id` for scoped use. They recheck current permission for cached inputs and
+omit erased subjects. Denial masks gated features and every label value,
+including coding percentile, event time and lag; first-party features survive.
+CSV checks each yielded row before writing. Parquet collects inputs first, then
+checks each row while assembling columns. Column order, null tokens and dtypes
+remain unchanged. Parquet stays guarded (`ParquetUnavailable` without pyarrow),
+before input iteration or file creation.
 
 ### DPDP
 
@@ -330,10 +354,20 @@ The training builder skips subjects erased before their audit commits and checks
 each assembled example's candidate existence again before returning, including
 with `audit=False`. It continues surviving subjects without exporting an erased
 subject as a withheld or censored row. Unrelated audit errors still propagate.
-These final per-subject reads are snapshot boundaries, not locks across later
-checks or file delivery. Pure CSV/parquet writers do not recheck the database or
-revoke already returned examples/files; current-consent enforcement is tracked
-separately in R1-S2-T2. See [D3c2 evidence](docs/delivery/archive/R1-S1-T3b-D3c2.md).
+These per-subject reads are snapshot boundaries, not locks across later checks
+or file delivery. A consent-read error propagates without a cached fallback;
+CSV may already contain earlier authorized rows when a later row fails.
+See [D3c2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c2) for the erasure seam.
+
+Revocation invalidates **present use** through read-time masking; it does not
+rewrite historical feature values or cached materialization evidence.
+Re-materializing an old cut retains its point-in-time consent semantics and
+still cannot authorize current use. A new grant cannot fill a withheld old cut
+or cached label; explicitly materialize/build a fresh cut to use it. Regenerate
+exports and training sets after authorization changes. Already delivered files
+and previously trained models are not recalled by this change. No working-data
+cleanup or schema migration is part of this policy.
+[R1-S2-T2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t2) owns validation and limits.
 
 ### Testing (S4.4)
 

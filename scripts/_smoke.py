@@ -71,33 +71,29 @@ class Smoke:
 
 def base_env(scratch: Optional[Path] = None, url: Optional[str] = None,
              **overrides: str) -> dict:
-    """The environment every smoke starts from, with the two standing pins.
-
-    There are now THREE pins; the argument is identical for each -- an invariant
-    that lives in 34 places is an invariant nothing can test.
+    """The environment every smoke starts from, with provider/login pins.
 
     `DEE_OPENROUTER_API_KEY` is pinned EMPTY because a smoke's whole claim is
     that the offline path works, and a developer with a real key in `.env`
     would otherwise bill a live vendor from a test run (S7.3, five sprints
-    running). `DEE_VECTORSTORE_BACKEND` is `memory` because Chroma's
-    PersistentClient can hang on init and a smoke has to stay bounded.
+    running). Provenance has no vector backend; older smoke overrides for it
+    are ignored by Settings.
 
     `overrides` are applied LAST and may override either -- deliberately: the
     refusal smokes set the key precisely to prove the boot guard fires. What
     the pins prevent is a smoke inheriting a real key by saying nothing.
 
-    BOTH ARGUMENTS ARE OPTIONAL so that the older smokes, which each built the
+    Both arguments are optional so that the older smokes, which each built the
     dict inline and then called `env.update({...})` with their own settings,
     migrate by swapping ONE call: `os.environ.copy()` -> `base_env()`. Their
     own update still runs afterwards and still wins, so behaviour is unchanged
-    for every value they set -- and the two pins now hold for the ones they
+    for every value they set -- and the provider/login pins hold for ones they
     forgot, which is the entire point.
     """
     env = os.environ.copy()
     env.update({
-        "DEE_VECTORSTORE_BACKEND": "memory",
         "DEE_OPENROUTER_API_KEY": "",
-        # THE THIRD PIN (2026-08-24). `.env` is read by Settings itself, not by
+        # `.env` is read by Settings itself, not by
         # this dict, so a developer switching on the local sign-in echo silently
         # changed the behaviour of every smoke: the UI fills the six boxes and
         # SUBMITS on its own, and a script that then types a code from the

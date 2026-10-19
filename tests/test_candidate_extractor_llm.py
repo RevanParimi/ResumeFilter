@@ -66,7 +66,7 @@ def _llm_payload() -> str:
                     "start": "2021-06",
                     "end": None,
                     "is_current": True,
-                    "confidence": 1.7,
+                    "confidence": 0.97,
                     "source_excerpt": "Senior Data Engineer, Flipkart",
                 }
             ],
@@ -96,10 +96,14 @@ async def test_llm_path_parses_profile_and_locates_spans(settings, full_resume):
     assert p.links[0].type == "github"
 
 
-async def test_llm_confidence_is_clamped_to_unit_interval(settings, full_resume):
-    llm = FakeLLM({"RESUME:": _llm_payload()}, settings=settings)
+async def test_out_of_range_llm_confidence_discards_the_whole_reply(settings, full_resume):
+    payload = json.loads(_llm_payload())
+    payload["experience"][0]["confidence"] = 1.7
+    llm = FakeLLM({"RESUME:": json.dumps(payload)}, settings=settings)
     result = await extract_profile(full_resume, llm=llm, settings=settings)
-    assert result.profile.experience[0].confidence == 1.0  # 1.7 clamped
+    assert result.method == "heuristic"
+    assert len(result.profile.experience) == 2
+    assert "llm_extraction_failed" in result.warnings
 
 
 async def test_llm_path_computes_contact_hashes(settings, full_resume):
@@ -130,4 +134,4 @@ async def test_llm_exception_degrades_with_warning(settings, full_resume):
 
     result = await extract_profile(full_resume, llm=BoomLLM(settings), settings=settings)
     assert result.method == "heuristic"
-    assert any("provider down" in w for w in result.warnings)
+    assert result.warnings == ["llm_extraction_failed"]

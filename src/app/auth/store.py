@@ -14,8 +14,9 @@ Nothing in this module reads a wall clock: every method that needs "now" takes
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Iterator, Optional
 
 from sqlalchemy import delete, false, func, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -43,7 +44,7 @@ from app.ledger.models import OrganizationRow
 
 
 def lock_login_state(session: Session, email_hash: str) -> None:
-    """Order short issuance/erasure transactions, including an absent address.
+    """Order short issuance/redemption/erasure transactions, even absent addresses.
 
     No persistent address lock/tombstone and no lock held over email delivery.
     SQLite serializes writers; the false DELETE acquires that lock without
@@ -92,6 +93,12 @@ class OrgNameTaken(Exception):
 
 
 class AuthStore:
+    """Methods accepting a session join its caller-owned transaction.
+
+    Without one, each method owns its session and commits its own writes.
+    Redemption passes one session through principal creation and session audit.
+    """
+
     def __init__(
         self,
         session_factory: sessionmaker,
@@ -102,6 +109,13 @@ class AuthStore:
         self._session_factory = session_factory
         self._ledger = ledger
         self._settings = settings or get_settings()
+
+    @contextmanager
+    def login_transaction(self, email_hash: str) -> Iterator[Session]:
+        """Commit redemption as a unit, ordered against all-plane cleanup."""
+        with self._session_factory.begin() as session:
+            lock_login_state(session, email_hash)
+            yield session
 
     def _audit_candidate(
         self, session: Session, *, action: str, entity_id: str, candidate_id: str
@@ -159,6 +173,7 @@ class AuthStore:
         at: datetime,
         user_agent: Optional[str] = None,
         ip_hash: Optional[str] = None,
+        session: Optional[Session] = None,
     ) -> tuple[str, SessionView]:
         """Mint a session and return (PLAINTEXT token, view).
 
@@ -180,7 +195,8 @@ class AuthStore:
             ip_hash=ip_hash,
             **{_PRINCIPAL_COLUMN[kind]: subject_id},
         )
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory.begin()) as session:
             session.add(row)
             session.flush()
             if kind == PrincipalKind.CANDIDATE:
@@ -190,7 +206,6 @@ class AuthStore:
                     entity_id=row.id,
                     candidate_id=subject_id,
                 )
-            session.commit()
             return raw, self._view(row, at, current_id=row.id)
 
     def session_by_token(self, raw: str, *, at: datetime) -> Optional[ResolvedSession]:
@@ -368,11 +383,13 @@ class AuthStore:
                                     expires_at=expires_at, payload=payload, at=at)
             session.commit()
 
-    def get_challenge(self, scope: ChallengeScope) -> Optional[LoginChallengeRow]:
-        with self._session_factory() as session:
-            return session.execute(
-                select(LoginChallengeRow).where(self._scope_filter(scope))
-            ).scalars().first()
+    def get_challenge(self, scope: ChallengeScope, *, session: Optional[Session] = None) -> Optional[LoginChallengeRow]:
+        """Redemption locks/reloads the row in its caller-owned transaction."""
+        statement = select(LoginChallengeRow).where(self._scope_filter(scope))
+        if session is not None:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        with (nullcontext(session) if session is not None else self._session_factory()) as session:
+            return session.scalars(statement).first()
 
     def bump_attempts(self, scope: ChallengeScope, *, challenge_id: str) -> int:
         """Charge one guess against ONE row. Returns the rows updated.
@@ -394,7 +411,9 @@ class AuthStore:
             return int(result.rowcount or 0)
 
     def consume_challenge(
-        self, scope: ChallengeScope, *, challenge_id: str, code_hash: str
+        self, scope: ChallengeScope, *, challenge_id: str, code_hash: str,
+        at: datetime,
+        session: Optional[Session] = None,
     ) -> bool:
         """Take this exact challenge, once. True only for the caller that got it.
 
@@ -409,16 +428,21 @@ class AuthStore:
         scope, new secret) it must lose rather than consume a code it never
         checked. Short-TTL secret material still leaves on a path that already
         runs -- hygiene, not a retention policy (the S7.1 precedent).
+
+        Recheck expiry and attempt budget in the same DELETE: preflight may
+        precede a committed final wrong guess or wait beyond the code lifetime.
         """
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory.begin()) as session:
             result = session.execute(
                 delete(LoginChallengeRow).where(
                     self._scope_filter(scope),
                     LoginChallengeRow.id == challenge_id,
                     LoginChallengeRow.code_hash == code_hash,
+                    LoginChallengeRow.expires_at > as_utc(at),
+                    func.coalesce(LoginChallengeRow.attempts, 0) < self._settings.login_otp_max_attempts,
                 )
             )
-            session.commit()
             return int(result.rowcount or 0) == 1
 
     def delete_challenges_for_email(self, email_hash: str) -> int:
@@ -473,7 +497,7 @@ class AuthStore:
             return _org_user(row)
 
     def create_org_with_owner(
-        self, *, name: str, email_hash: str
+        self, *, name: str, email_hash: str, session: Optional[Session] = None,
     ) -> tuple[str, OrgUser]:
         """Create the organization AND its first owner in ONE transaction.
 
@@ -484,14 +508,14 @@ class AuthStore:
         """
         from app.ledger.models import OrganizationRow  # local: avoids a cycle
 
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory.begin()) as session:
             org = OrganizationRow(name=name)
             session.add(org)
             try:
                 session.flush()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="AuthStore.create_org_with_owner", error=str(exc))
-                session.rollback()
+                _log.info("integrity_race", where="AuthStore.create_org_with_owner")
                 raise OrgNameTaken(
                     f"organization name already exists: {name!r}"
                 ) from exc
@@ -501,7 +525,7 @@ class AuthStore:
                 role=str(OrgUserRole.OWNER),
             )
             session.add(user)
-            session.commit()
+            session.flush()
             return org.id, _org_user(user)
 
     def organization_name_exists(self, name: str) -> bool:
@@ -524,7 +548,7 @@ class AuthStore:
                 .limit(1)
             ).scalars().first() is not None
 
-    def org_user_by_email(self, email_hash: str) -> Optional[OrgUser]:
+    def org_user_by_email(self, email_hash: str, *, session: Optional[Session] = None) -> Optional[OrgUser]:
         """Enabled org users only -- a disabled row must not authenticate.
 
         Ordered by `created_at` because the schema permits ONE address to hold
@@ -538,7 +562,8 @@ class AuthStore:
         """
         if not email_hash:
             return None
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory()) as session:
             row = session.execute(
                 select(OrgUserRow)
                 .where(
@@ -574,10 +599,11 @@ class AuthStore:
             session.commit()
             return _admin_user(row)
 
-    def admin_user_by_email(self, email_hash: str) -> Optional[AdminUser]:
+    def admin_user_by_email(self, email_hash: str, *, session: Optional[Session] = None) -> Optional[AdminUser]:
         if not email_hash:
             return None
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory()) as session:
             # email_hash is UNIQUE on admin_users, so at most one row can
             # match; the ordering is belt-and-braces against a future migration
             # relaxing that constraint.

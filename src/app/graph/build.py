@@ -32,7 +32,7 @@ from app.graph.nodes import (
 )
 from app.graph.state import EvaluationState
 from app.schemas.report import Report
-from app.services import Services, build_default_services
+from app.services import Services
 
 log = get_logger("graph.build")
 
@@ -66,8 +66,10 @@ def build_graph(services: Services):
 class EvaluationEngine:
     """Compiled graph + services; the API and tests run evaluations through this."""
 
-    def __init__(self, services: Optional[Services] = None) -> None:
-        self.services = services or build_default_services()
+    def __init__(self, services: Services) -> None:
+        if services is None:
+            raise ValueError("EvaluationEngine requires an explicit Services bundle; its caller owns cleanup")
+        self.services = services
         self.graph = build_graph(self.services)
 
     async def evaluate(
@@ -98,9 +100,3 @@ class EvaluationEngine:
         if final.report is None:  # defensive: never return nothing
             raise RuntimeError(f"pipeline produced no report; errors={final.errors}")
         return final.report
-
-    def close(self) -> None:
-        github = getattr(self.services, "github", None)
-        aclose = getattr(github, "aclose", None)
-        if aclose:  # best-effort async client cleanup is handled by caller/lifespan
-            return

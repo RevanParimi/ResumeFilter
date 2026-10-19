@@ -1,6 +1,7 @@
 # Feature logic and current limits
 
-Reviewed against local source on 2026-09-07. Numbers below are code defaults;
+Risk fusion updated on 2026-10-12; other sections reviewed on 2026-09-07.
+Numbers below are code defaults;
 configuration can override them. This document describes implemented behavior.
 Proposed changes are explicitly marked and tracked in [PROGRESS.md](PROGRESS.md).
 
@@ -11,7 +12,8 @@ PDF, TXT and Markdown (`.md`); TXT/Markdown are read as plain text. PDFs use pyp
 text extraction. There is no DOC/DOCX parser, image input or OCR for scanned PDFs.
 The current malformed/empty PDF refusal gap is tracked as F07.
 
-Sources: `src/app/api/routes.py`, `src/app/graph/nodes/ingest.py`,
+Sources: `src/app/api/reports.py`, `src/app/api/candidates.py`,
+`src/app/api/screening.py`, `src/app/graph/nodes/ingest.py`,
 `frontend/Veritas.dc.html` (file admission/reading).
 
 ## Writing-style signals
@@ -37,10 +39,10 @@ assessment is fused with it in `src/app/graph/nodes/ai_signals.py`.
 using a resume template can too. The code observes patterns in the final text;
 it has no evidence of who wrote it or whether the underlying experience is true.
 
-Proposed F08: present these as optional writing-style observations and remove
-their contribution to factual fabrication risk. This change is not implemented
-in the foundations batch. Setting `fr_weight_ai=0` alone is insufficient: the
-current fusion still includes that component in maximum-risk and coverage logic.
+New risk assessments exclude these observations from the mean, maximum,
+confidence coverage and corroboration gates. `fr_weight_ai` remains accepted
+for configuration compatibility and is ignored by v2. Descriptive style data
+remains optional on reports; UI explanations are the separate R2-S2-T2 task.
 
 ## Timeline checks
 
@@ -73,11 +75,12 @@ or of a coordinated resume-writing operation.
 
 ## Combined advisory risk
 
-`src/app/fabrication/risk.py` currently combines all three subsystems:
+`src/app/fabrication/risk.py` emits `scorer_version=2` and combines the two
+factual observation subsystems. Their findings require candidate clarification;
+they are not independently verified facts:
 
 | Component | Low / middle / high band values |
 |---|---|
-| AI-style likelihood | 0.10 / 0.45 / 0.75 |
 | Timeline consistency issues | 0.10 / 0.40 / 0.75 |
 | Resume duplication | 0.10 / 0.45 / 0.80 |
 
@@ -95,7 +98,19 @@ non-low components. Elevated requires risk >= 0.60 and two high-band components.
 
 This means "review these observations together", not "this person is X% likely
 to be dishonest". It does not change depth scores/verdicts or automatically
-reject candidates. F08 will separate style because AI polishing is legitimate.
+reject candidates. With dates/evidence/duplication inputs held fixed, changing
+only the style assessment cannot change any factual-risk output.
+
+Historical assessments without a version marker retain v1 interpretation,
+including their original style component, score, confidence and reasoning.
+Reads never recompute or rewrite them. The risk feature score/band have separate
+v1/v2 definitions; an extractor returns missing for another or unknown version.
+The default feature view keeps its configured name (`core_v1`) and uses bundle
+version 2. Existing v1 vectors remain accessible by explicit version; default
+search/matching uses v2 and needs a fresh operator materialization. No automatic
+data rewrite occurs. Current signal-quality risk samples omit v1/unknown scores;
+the labeled population still counts those reports. This is version isolation,
+not evidence of measured detection accuracy.
 
 ## Employer screening outcomes
 
@@ -126,7 +141,8 @@ The UI reads `dee_csrf` and echoes it as `X-CSRF-Token` for write requests.
 The authentication guard compares the nonempty cookie and header using
 `hmac.compare_digest`; mismatches receive 403. This supplements SameSite cookie
 controls. API-key requests use a different authentication path.
-Sources: `src/app/auth/csrf.py`, `src/app/api/routes.py`, `frontend/api.js`.
+Sources: `src/app/auth/csrf.py`, `src/app/api/dependencies.py`,
+`src/app/api/auth.py`, `frontend/api.js`.
 
 Rate limiting counts requests within time windows using SQL-backed counters.
 Keys depend on the operation: email/IP for login, organization for screening,
@@ -185,9 +201,16 @@ The backend stores transcript/turn records and advances through the plan.
 
 `src/app/interview/scoring.py` calculates specificity, ownership, depth and
 consistency through deterministic signals, with an optional bounded LLM
-adjustment. Session completion aggregates turns. The audit showed repetitive
-keyword-filled nonsense can max these scores: F11 must repair and validate this
-rubric before relying on it for assessment.
+adjustment. New `s73.2` turns use distinct action/object clauses and explicit
+reasoning stages/paraphrases. Word repetition, copied prompts and profile-name
+overlap do not supply confidence or factual corroboration. Unknown relevance
+stays uncertain, with no strong band when every turn lacks relevant evidence.
+Confidence uses frozen content evidence and coverage rather than answer length.
+Completed historical scores remain unchanged; mixed/unknown turn versions
+produce an insufficient assessment. See [INTERVIEWS.md](../INTERVIEWS.md#5-scoring-scoringpy)
+for formulas, additive version metadata and the bounded English heuristic's
+limitations. R3-S3-T1 addresses the known exploit with synthetic development
+regressions; F11's integration/video gates and empirical effectiveness remain open.
 
 There is no camera/video session, streaming conversational interview, or
 answer-adaptive follow-up loop in this implementation. The existing feature

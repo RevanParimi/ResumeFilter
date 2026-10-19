@@ -22,6 +22,7 @@ from typing import Collection, Optional
 from app.candidates.normalize.orgs import canonicalize_employer, strip_legal_suffix
 from app.candidates.normalize.text import norm_key
 from app.candidates.schema import CandidateProfile
+from app.core.config import Settings, get_settings
 from app.fabrication.cross_field import narrow_interval, overlap_months
 from app.verification.schema import (
     ClaimStrength, DocumentFinding, DocumentType, VerificationStatus,
@@ -41,11 +42,15 @@ class ParsedDocument:
     metadata: dict = field(default_factory=dict)
 
 
-def parse_document(content_b64: str, *, max_pages: int) -> ParsedDocument:
+def parse_document(content_b64: str, *, max_pages: int,
+                   settings: Settings | None = None) -> ParsedDocument:
     """Decode, extract text + metadata, and hash. PDF first; anything that is
     not a PDF is treated as a UTF-8 text body, because a pasted letter is still
     assessable and refusing it would push candidates toward worse workarounds.
     """
+    settings = settings or get_settings()
+    if len(content_b64) > settings.doc_max_b64_chars:
+        raise DocumentParseError("document exceeds encoded size limit")
     try:
         data = base64.b64decode(content_b64, validate=True)
     except (binascii.Error, ValueError) as exc:
@@ -58,7 +63,8 @@ def parse_document(content_b64: str, *, max_pages: int) -> ParsedDocument:
     if data[:5] == b"%PDF-":
         from app.core.pdf import pdf_b64_to_document
         try:
-            text, pages, meta = pdf_b64_to_document(content_b64)
+            text, pages, meta = pdf_b64_to_document(content_b64, settings=settings,
+                                                  max_pages=max_pages)
         except DocumentParseError:
             raise
         except Exception as exc:  # pypdf raises a zoo of types on damaged files

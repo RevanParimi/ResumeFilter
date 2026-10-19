@@ -13,9 +13,10 @@ stored assessment records which version produced it.
 from __future__ import annotations
 
 import re
-from typing import Optional, Sequence
+from typing import Annotated, Optional, Sequence
 
-from app.candidates.normalize.skills import normalize_skill
+from pydantic import BaseModel, ConfigDict, Field
+
 from app.candidates.schema import CandidateProfile
 from app.core.config import Settings
 from app.core.logging import get_logger
@@ -28,16 +29,15 @@ from app.services.llm import LLMClient
 log = get_logger(__name__)
 
 #: Bump on ANY change to the maths below. Stamped on every stored assessment.
-SCORER_VERSION = "s73.1"
+SCORER_VERSION = "s73.2"
 
-#: Concrete tokens (numerals + recognised tools) for a full specificity score.
-SPECIFICITY_TARGET = 6
-#: Words at which an answer counts as fully substantive for confidence.
+#: Distinct substantive clauses, never repeated tool/numeral tokens.
+SPECIFICITY_TARGET = 3
+#: Historical v1 aggregation only. New confidence never uses word count.
 SUBSTANCE_TARGET_WORDS = 60
 
 _TOKEN = re.compile(r"[A-Za-z0-9+#./\-']+")
 _FIRST_SINGULAR = frozenset({"i", "my", "me", "mine", "i'd", "i'll", "i've", "i'm"})
-_FIRST_PLURAL = frozenset({"we", "our", "us", "ours", "we'd", "we'll", "we've", "we're"})
 
 
 def _tokens(text: str) -> list[str]:
@@ -52,56 +52,63 @@ def word_count(text: str) -> int:
     return len(_alpha_words(text))
 
 
-def _specificity(tokens: Sequence[str]) -> float:
-    concrete = 0
-    for token in tokens:
-        if any(c.isdigit() for c in token):
-            concrete += 1
-        elif normalize_skill(token) is not None:
-            concrete += 1
-    return round(min(1.0, concrete / SPECIFICITY_TARGET), 4)
+# Explicit, bounded development rubric, not a semantic accuracy claim. These
+# are reported actions with objects; listing the nouns/imperatives earns nothing.
+_INVESTIGATE = frozenset("analyzed analysed compared measured identified traced diagnosed isolated checked reviewed reproduced evaluated validated audited surveyed tested investigated".split())
+_CHANGE = frozenset("designed changed built implemented replaced pinned restored rewrote rewritten rebuilt rolled reverted migrated negotiated scheduled trained selected chose reduced increased cut recovered fixed deployed improved removed moved handled shipped".split())
+_OUTCOME = frozenset("confirmed showed demonstrated disappeared recovered prevented reduced increased cut improved restored resolved".split())
+_VERBS = _INVESTIGATE | _CHANGE | _OUTCOME
+_CLAUSES = re.compile(
+    r"(?<!\d)\.(?!\d)|[!?;\n]+|(?:,\s*|\s+(?:and|but|so)\s+)"
+    r"(?=(?:[\w'-]+\s+){0,3}(?:" + "|".join(sorted(_VERBS)) + r")\b)",
+    re.IGNORECASE,
+)
+_STOP = frozenset(("a an the this that these those i my me mine we our us ours you your it its they their them "
+    "is are was were be been being am did do does had have has of on in at by for from with to and or but so "
+    "then than as after before over under into through myself itself ourselves what how why which when "
+    "there here one specific problem thing things work worked made better well overall team personally "
+    "describe walk hardest done tried first instead tell explain could would should can will not no").split())
+_QUESTION_STOP = _STOP | frozenset("diagnose recover solve solved cause found change broke list engineer engineering role title failed failing failure debug debugging trade-off rollback outcome result constraint difficult example".split())
 
 
-def _ownership(words: Sequence[str]) -> float:
-    lowered = [w.casefold() for w in words]
-    mine = sum(1 for w in lowered if w in _FIRST_SINGULAR)
-    ours = sum(1 for w in lowered if w in _FIRST_PLURAL)
-    if mine + ours == 0:
-        return 0.5   # neither claimed nor disclaimed: unknown, not bad
-    return round(mine / (mine + ours), 4)
+def _terms(text: str) -> set[str]:
+    return {w[:-1] if w.endswith("s") and len(w) > 3 else w
+            for w in (t.casefold().strip("./-'") for t in _tokens(text)) if any(c.isalpha() for c in w)}
 
 
-def _depth(text_cf: str, expected_signals: Sequence[str]) -> float:
-    signals = [s for s in expected_signals if s and s.strip()]
-    if not signals:
-        return 0.5   # no yardstick for this question
-    matched = sum(1 for s in signals if s.strip().casefold() in text_cf)
-    return round(matched / len(signals), 4)
+def _signal_covered(words: set[str], signal: str) -> bool:
+    groups = {
+        "debug": _INVESTIGATE | {"debug", "debugged", "diagnosis"},
+        "rollback": {"rollback", "reverted", "restored", "pinned"},
+        "fail": {"fail", "failed", "failing", "failure", "broke", "broken", "error"},
+        "trade-off": {"trade-off", "tradeoff", "because", "instead", "constraint"},
+        "latency": {"latency", "delay", "response"},
+        "cost": {"cost", "expense", "spend", "budget"},
+    }
+    signal_terms = _terms(signal)
+    if signal.strip().casefold() in groups:
+        return bool(words & groups[signal.strip().casefold()])
+    return bool(signal_terms) and signal_terms <= words
 
 
-def _profile_terms(profile: Optional[CandidateProfile]) -> list[str]:
-    if profile is None:
-        return []
-    terms: list[str] = []
-    for exp in profile.experience:
-        for value in (exp.employer_canonical, exp.employer):
-            if value:
-                terms.append(value.casefold())
-    for skill in profile.skills:
-        for value in (skill.canonical, skill.name):
-            if value:
-                terms.append(value.casefold())
-    return list(dict.fromkeys(terms))
-
-
-def _consistency(text_cf: str, profile: Optional[CandidateProfile]) -> float:
-    """v0 CORROBORATES; it does not contradict. Naming something on the profile
-    lifts this to 1.0; naming something we never taxonomised leaves it neutral.
-    A candidate must never lose points for a client they cannot name."""
-    for term in _profile_terms(profile):
-        if term and term in text_cf:
-            return 1.0
-    return 0.5
+def _evidence(transcript: str, question_text: str):
+    prompt = _terms(question_text)
+    units, seen = [], set()
+    for clause in _CLAUSES.split(transcript or ""):
+        words = _terms(clause)
+        # Exclude echoed question clauses before counting content or confidence.
+        if prompt and words and words <= prompt:
+            continue
+        actions = words & _VERBS
+        objects = words - _STOP - _VERBS
+        if not actions or len(objects) < 2:
+            continue
+        fingerprint = frozenset(words - _STOP)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        units.append(words)
+    return units
 
 
 def score_turn(
@@ -110,24 +117,60 @@ def score_turn(
     expected_signals: Sequence[str],
     profile: Optional[CandidateProfile],
     settings: Settings,
+    question_text: str = "",
 ) -> TurnScore:
-    """Score ONE answer. An answer below the word floor scores NOTHING (an empty
-    `dimensions`), which is different from scoring zero: silence is missing
-    evidence, not evidence of shallowness."""
-    words = _alpha_words(transcript)
-    if len(words) < settings.interview_min_answer_words:
-        return TurnScore(dimensions={}, insufficient=True, codes=["insufficient_answer"])
-
-    text_cf = (transcript or "").casefold()
+    """Score distinct reported content. A short answer with two substantive
+    clauses is usable; a long keyword list is still missing evidence. Unknown
+    relevance/consistency never asserts a contradiction or fabricated history.
+    """
+    units = _evidence(transcript, question_text)
+    if not units or len(units) < 2 and word_count(transcript) < settings.interview_min_answer_words:
+        return TurnScore(dimensions={}, insufficient=True, codes=["insufficient_answer"],
+                         scorer_version=SCORER_VERSION)
+    words = set().union(*units)
+    signals = list(dict.fromkeys(s.strip().casefold() for s in expected_signals if s and s.strip()))
+    topics = _terms(question_text) - _QUESTION_STOP - _VERBS
+    # A profile name is neither a required password nor independent evidence.
+    if profile:
+        for exp in profile.experience:
+            topics -= _terms(" ".join(filter(None, (exp.employer, exp.employer_canonical, exp.title))))
+        for skill in profile.skills:
+            topics -= _terms(" ".join(filter(None, (skill.name, skill.canonical))))
+    covered = [s for s in signals if _signal_covered(words, s)]
+    generic = {"debug", "rollback", "fail", "trade-off", "latency", "cost"}
+    # Generic template prompts need more than a universal verb such as
+    # "compared". A specific signal or two distinct procedural concepts can
+    # anchor a nameless answer without requiring profile-name repetition.
+    signal_anchor = any(s not in generic for s in covered) or len(covered) >= 2
+    # Question relevance and the depth yardstick are separate. An absent signal
+    # list must not turn unrelated fluent prose into a confident answer.
+    anchored = bool(topics & words) if topics else signal_anchor
+    stages = (bool(words & _INVESTIGATE), bool(words & _CHANGE),
+              bool(words & _OUTCOME) or bool(words & {"because", "constraint", "instead"}))
+    depth = round(sum(stages) / 3, 4) if signals and anchored else 0.5
+    # One descriptive clause is limited evidence at any length. This also keeps
+    # repetition/filler crossing the word floor from creating confidence.
+    confidence = min(0.95, 0.35 + len(units) * 0.2) if len(units) >= 2 else 0.0
+    codes = ["consistency_unverified"]
+    if len(units) < 2:
+        codes.append("limited_content")
+    if not any(u & _FIRST_SINGULAR for u in units):
+        codes.append("ownership_unknown")
+    if not signals:
+        codes.append("depth_unknown")
+    if not anchored:
+        codes.append("relevance_unconfirmed")
+        confidence = min(confidence, 0.4)
     return TurnScore(
         dimensions={
-            "specificity": _specificity(_tokens(transcript)),
-            "ownership": _ownership(words),
-            "depth": _depth(text_cf, expected_signals),
-            "consistency": _consistency(text_cf, profile),
+            "specificity": round(min(1.0, len(units) / SPECIFICITY_TARGET), 4),
+            "ownership": 1.0 if any(u & _FIRST_SINGULAR for u in units) else 0.5,
+            "depth": depth,
+            "consistency": 0.5,
         },
         insufficient=False,
-        codes=[],
+        codes=codes, scorer_version=SCORER_VERSION,
+        evidence_confidence=round(confidence, 4),
     )
 
 
@@ -156,17 +199,27 @@ def aggregate(
 ) -> InterviewAssessment:
     """Fold scored turns into one advisory assessment.
 
-    Confidence = coverage x substance. Both matter: three thorough answers out
-    of eight planned questions is not the same evidence as eight thorough ones,
-    and eight one-liners are not either.
+    Current confidence is coverage x frozen per-turn content evidence, never
+    word count. Legacy-only turns retain their original aggregation semantics;
+    mixed/unknown versions cannot silently create a new scored assessment.
     """
     planned = len(questions)
     answered = len(turns)
     coverage = round(answered / planned, 4) if planned else 0.0
 
+    versions = {t.score.scorer_version or "s73.1" for t in turns}
+    legacy = bool(versions) and versions <= {"s73.1"}
+    if versions and not legacy and versions != {SCORER_VERSION}:
+        return InterviewAssessment(session_id=session_id, candidate_id=candidate_id,
+            coverage=coverage, questions_planned=planned, questions_answered=answered,
+            proxy=proxy, scorer_version="mixed/unknown")
+
+    eligible = [t for t in turns if legacy or (
+        not t.score.insufficient and t.score.evidence_confidence > 0
+        and "relevance_unconfirmed" not in t.score.codes)]
     dimensions: dict[str, float] = {}
     for dim in DIMENSIONS:
-        values = [t.score.dimensions[dim] for t in turns if dim in t.score.dimensions]
+        values = [t.score.dimensions[dim] for t in eligible if dim in t.score.dimensions]
         if values:
             dimensions[dim] = round(sum(values) / len(values), 4)
 
@@ -178,17 +231,18 @@ def aggregate(
         else 0.0
     )
 
-    substance = (
-        sum(min(1.0, t.word_count / SUBSTANCE_TARGET_WORDS) for t in turns) / answered
-        if answered
-        else 0.0
-    )
-    confidence = round(min(0.95, coverage * substance), 4)
+    if legacy:
+        substance = sum(min(1.0, t.word_count / SUBSTANCE_TARGET_WORDS) for t in turns) / answered
+        confidence = round(min(0.95, coverage * substance), 4)
+    else:
+        # Sum/planned is coverage x mean evidence without intermediate rounding.
+        # An unrelated/limited turn changes progress, never assessment evidence.
+        confidence = round(min(0.95, sum(t.score.evidence_confidence for t in eligible) / planned), 4) if planned else 0.0
 
     return InterviewAssessment(
         session_id=session_id,
         candidate_id=candidate_id,
-        band=band_for(overall, confidence, settings),
+        band=band_for(overall, confidence, settings) if legacy or eligible else InterviewBand.INSUFFICIENT_SIGNAL,
         overall=overall,
         dimensions=dimensions,
         confidence=confidence,
@@ -196,7 +250,7 @@ def aggregate(
         questions_planned=planned,
         questions_answered=answered,
         proxy=proxy,
-        scorer_version=SCORER_VERSION,
+        scorer_version="s73.1" if legacy else SCORER_VERSION,
     )
 
 
@@ -207,8 +261,17 @@ _SCORING_SYSTEM = (
     "specificity (concrete detail), ownership (what the speaker personally did), "
     "depth (coverage of what a genuine answer must contain), and consistency. "
     "Return only dimensions you are confident differ from the given baseline. "
+    "Assess distinct actions, reasoning and outcomes, including paraphrases. "
+    "Repeated keywords, fluency, pronoun frequency, profile-name overlap, appearance "
+    "and inferred emotion are not evidence of technical depth or factual truth. "
     "You are an adjustment, not the grader: your suggestions are clamped."
 )
+
+
+class _AdjustmentReply(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    dimensions: dict[str, Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]]
 
 
 async def adjust_with_llm(
@@ -241,23 +304,23 @@ async def adjust_with_llm(
                 'Return JSON: {"dimensions": {"<axis>": 0.0-1.0, ...}}'
             ),
         )
+        if data == {}:
+            return base
+        proposed = _AdjustmentReply.model_validate(data).dimensions
     except Exception as exc:  # noqa: BLE001 -- an LLM outage is not a failure here
-        log.warning("interview_scoring_llm_failed", error=str(exc))
-        return base
-
-    proposed = (data or {}).get("dimensions")
-    if not isinstance(proposed, dict):
+        log.warning("interview_scoring_llm_failed", error_type=type(exc).__name__)
         return base
 
     cap = settings.interview_llm_max_delta
     adjusted = dict(base.dimensions)
     changed = False
-    for dim, raw in proposed.items():
+    for dim, value in proposed.items():
         if dim not in adjusted:
             continue
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
+        if base.scorer_version == SCORER_VERSION and (
+            dim == "consistency" or dim == "ownership" and "ownership_unknown" in base.codes
+            or dim == "depth" and any(c in base.codes for c in ("depth_unknown", "relevance_unconfirmed"))
+        ):
             continue
         delta = max(-cap, min(cap, value - adjusted[dim]))
         if delta:
@@ -266,6 +329,4 @@ async def adjust_with_llm(
 
     if not changed:
         return base
-    return TurnScore(
-        dimensions=adjusted, insufficient=False, codes=[*base.codes, "llm_adjusted"]
-    )
+    return base.model_copy(update={"dimensions": adjusted, "codes": [*base.codes, "llm_adjusted"]})

@@ -7,10 +7,18 @@ plausibility are preserved as the offline/no-key baseline.
 
 from __future__ import annotations
 
+from pydantic import BaseModel, ConfigDict
+
 from app.core.logging import get_logger
 from app.domains.base import get_domain
 from app.graph.state import EvaluationState
 from app.services import Services
+
+
+class _ProbeReply(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    probes: list[str]
 
 
 def make_probe_generation_node(services: Services):
@@ -35,11 +43,12 @@ def make_probe_generation_node(services: Services):
                         'Return JSON: {"probes": [str, ...]} with 1-3 questions.'
                     ),
                 )
+                new = _ProbeReply.model_validate(data).probes if data != {} else []
             except Exception as exc:
-                log.warning("probe_llm_failed", claim_id=v.claim_id, error=str(exc))
-                data = {}
+                log.warning("probe_llm_failed", claim_id=v.claim_id, error_type=type(exc).__name__)
+                new = []
 
-            new = [str(p) for p in data.get("probes", []) if p]
+            new = [p for p in new if p.strip()]
             if new:
                 v.probes = list(dict.fromkeys([*v.probes, *new]))[:5]
                 generated += 1

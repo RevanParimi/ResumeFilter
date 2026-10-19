@@ -65,7 +65,7 @@ def test_extract_reads_the_score_off_the_report_body():
     rep = Report(
         depth_score=0.42,
         fabrication_risk=FabricationRiskAssessment(
-            score=0.77, band=FabricationRiskBand.ELEVATED),
+            scorer_version=2, score=0.77, band=FabricationRiskBand.ELEVATED),
         ai_generation=AIGenerationAssessment(
             likelihood=0.31, band=AILikelihoodBand.POSSIBLE),
     )
@@ -118,3 +118,11 @@ def test_an_assessment_with_no_findings_is_zero_not_none():
 def test_by_name_refuses_an_unknown_signal():
     with pytest.raises(KeyError):
         by_name("nope.not.a.signal")
+
+
+@pytest.mark.parametrize("version", [1, 2, 99])
+def test_factual_risk_measurements_never_mix_scoring_versions(version):
+    report = Report(fabrication_risk=FabricationRiskAssessment(
+        scorer_version=version, score=0.75, confidence=0.6, band=FabricationRiskBand.MODERATE))
+    assert by_name("fabrication_risk.score").extract(report) == (0.75 if version == 2 else None)
+    assert by_name("fabrication_risk.band").extract(report) == ("moderate" if version == 2 else None)

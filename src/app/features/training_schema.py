@@ -2,8 +2,9 @@
 
 A TrainingLabel is derived ONLY from ledger outcomes strictly after the feature
 vector's `as_of`. `observed=False` (right-censored) means no post-cut outcome
-exists yet — NOT a negative. `withheld=True` means consent was not active at
-`as_of` (the S4.2 decision), so no label was read and every value field is None.
+exists yet — NOT a negative. `withheld=True` means historical or present consent
+denied use, so every label value field is None. Present denial is checked before
+outcome reads and again after joining or when exporting cached examples.
 Advisory: this is training data, never a gate.
 """
 

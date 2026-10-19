@@ -274,6 +274,21 @@ def test_signup_does_not_create_a_second_candidate(auth):
         assert s.execute(select(func.count()).select_from(CandidateRow)).scalar() == 1
 
 
+def test_mailbox_proof_is_pinned_without_identity_assurance(auth):
+    cid = _existing_candidate(auth, 'proof-owner@example.in')
+    auth.service.request_code(email='proof-owner@example.in', plane=AuthPlane.CANDIDATE,
+                             purpose=LoginPurpose.SIGNUP, at=NOW, rng=_rng())
+    auth.service.verify_code(email='proof-owner@example.in', plane=AuthPlane.CANDIDATE, code=auth.code(), at=NOW)
+    from app.ledger.consent import as_utc
+    with auth.candidates._session_factory() as session:
+        row = session.get(CandidateRow, cid)
+        assert row.login_email_hash == auth.service.hash_email('proof-owner@example.in')
+        assert as_utc(row.login_email_verified_at) == NOW
+        from app.verification.models import VerificationRow
+        from sqlalchemy import select
+        assert session.scalars(select(VerificationRow).where(VerificationRow.candidate_id == cid)).all() == []
+
+
 # ── the adversarial OTP cases ───────────────────────────────────────────────
 
 
@@ -782,7 +797,7 @@ def test_one_code_cannot_mint_two_sessions_under_an_interleaved_read(
 
     # The loser is still holding the pre-delete snapshot.
     monkeypatch.setattr(
-        auth.service._store, "get_challenge", lambda s: stale if s == scope else None
+        auth.service, "_live_scopes", lambda *args: [(scope, stale)]
     )
     with pytest.raises(ChallengeRefused):
         auth.service.verify_code(

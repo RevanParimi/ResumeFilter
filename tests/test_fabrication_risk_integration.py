@@ -1,5 +1,11 @@
 """Full-pipeline (offline) checks: fabrication_risk lands on real reports."""
 
+import json
+from pathlib import Path
+
+import pytest
+
+from app.candidates.extractor import heuristic_profile
 from app.graph.build import EvaluationEngine
 from app.schemas.fabrication import (
     DuplicationBand,
@@ -8,7 +14,7 @@ from app.schemas.fabrication import (
     ResumeFarmAssessment,
     ResumeMatch,
 )
-from tests.conftest import make_services
+from tests.conftest import FakeLLM, make_services
 
 
 def _near_dup() -> ResumeFarmAssessment:
@@ -29,7 +35,7 @@ async def test_candidates_path_includes_farm_component(settings, genuine_resume)
     assert isinstance(risk, FabricationRiskAssessment)
     ids = [c.id for c in risk.components]
     assert "resume_farm" in ids
-    assert set(ids) <= {"ai_generation", "cross_field", "resume_farm"}
+    assert set(ids) <= {"cross_field", "resume_farm"}
     assert risk.advisory is True
 
 
@@ -59,3 +65,36 @@ async def test_stored_pre_s24_reports_still_validate(settings, genuine_resume):
     dumped.pop("fabrication_risk")  # simulate a pre-S2.4 stored report
     from app.schemas.report import Report
     assert Report.model_validate(dumped).fabrication_risk is None
+
+
+@pytest.mark.parametrize("domain", ["genai", "data_eng"])
+@pytest.mark.parametrize("farm", [None, ResumeFarmAssessment(
+    confidence=0.7, band=DuplicationBand.UNIQUE, corpus_size=4), _near_dup()])
+async def test_same_truthful_resume_plain_and_polished_has_identical_factual_risk(settings, domain, farm):
+    texts = [Path("tests/fixtures/style_" + name + "_resume.txt").read_text(encoding="utf-8")
+             for name in ("plain", "polished")]
+    # Hold atomic claims/profile/corpus fixed; only descriptive style varies.
+    script = {"extracting atomic": json.dumps({"claims": [
+        {"text": "Built a daily ingestion pipeline for finance reporting.", "claim_type": "unknown"}
+    ]})}
+    profile = heuristic_profile(texts[0])
+    reports = [await EvaluationEngine(make_services(settings, llm=FakeLLM(script, settings))).evaluate(
+        resume_text=text, domain=domain, candidate_profile=profile, resume_farm=farm) for text in texts]
+    plain, polished = reports
+    assert polished.ai_generation.band.value == "likely"
+    assert plain.ai_generation.likelihood < polished.ai_generation.likelihood
+    assert plain.fabrication_risk == polished.fabrication_risk
+    assert plain.cross_field == polished.cross_field
+    assert plain.resume_farm == polished.resume_farm == farm
+    assert plain.fabrication_risk.scorer_version == 2
+    assert plain.depth_score == polished.depth_score
+    assert plain.depth_band == polished.depth_band
+    assert [(v.status, v.coherence_score, v.confidence) for v in plain.verdicts] == [
+        (v.status, v.coherence_score, v.confidence) for v in polished.verdicts]
+    assert all(r.advisory and r.human_review_required for r in reports)
+    if farm is None:
+        assert plain.fabrication_risk.band is FabricationRiskBand.INSUFFICIENT_DATA
+    elif farm.band is DuplicationBand.UNIQUE:
+        assert plain.fabrication_risk.band is FabricationRiskBand.LOW
+    else:
+        assert plain.fabrication_risk.band is FabricationRiskBand.MODERATE

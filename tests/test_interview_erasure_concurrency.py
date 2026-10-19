@@ -11,14 +11,14 @@ from sqlalchemy.exc import IntegrityError
 from app.candidates.store import CandidateStore
 from app.core.db import make_session_factory
 from app.interview.models import InterviewSessionRow, InterviewTurnRow
-from app.interview.schema import AnswerChannel, InterviewAssessment, ProxyRisk, TurnScore
+from app.interview.schema import AnswerChannel, TurnScore
 from app.interview.store import InterviewStore
 from app.ledger.models import AuditLogRow
 from app.ledger.store import LedgerStore
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS
 from tests.test_interview_erasure import _candidate, ANSWER
-from tests.test_interview_store import NOW, _questions
+from tests.test_interview_store import NOW, _questions, _assessment
 from tests.test_report_erasure_concurrency import database  # shared isolated backend fixture
 
 
@@ -32,14 +32,11 @@ def _turn(store, sid):
     return store.add_turn(sid, question=_questions()[0], channel=AnswerChannel.TEXT,
                           transcript="synthetic private transcript sentinel",
                           word_count=5, audio_digest=None, audio_duration_seconds=None,
-                          score=TurnScore(), asked_at=NOW, answered_at=NOW)
+                          score=TurnScore(), answered_at=NOW, assess=_assessment, at=NOW)
 
 
 def _complete(store, sid):
-    return store.complete_session(sid, assessment=InterviewAssessment(
-        session_id=sid, candidate_id="a", questions_answered=1, questions_planned=2,
-        proxy=ProxyRisk(),
-    ), at=NOW)
+    return store.complete_session(sid, assess=_assessment, at=NOW)
 
 
 @pytest.mark.parametrize("operation", ["start", "turn", "complete"])
@@ -62,7 +59,8 @@ def test_interview_write_erasure_order(database, settings, operation, order, log
         ready.set()
         assert release.wait(20), "writer was not released"
 
-    hook = "before_flush" if order == "erase_first" else "after_commit"
+    # Erasure precedes lock acquisition or follows the committed write.
+    hook = "after_begin" if order == "erase_first" else "after_commit"
     event.listen(writer_factory, hook, pause)
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
@@ -110,10 +108,10 @@ def test_unrelated_integrity_failure_is_not_missing_interview(database, settings
 
 
 @pytest.mark.parametrize("operation", ["start", "turn", "complete", "reload",
-                                       "start_flush", "turn_flush", "complete_flush"])
+                                       "start_lock", "turn_lock", "complete_lock"])
 def test_api_erasure_after_authorization(services, monkeypatch, operation, log_output):
-    at_flush = operation.endswith("_flush")
-    operation = operation.removesuffix("_flush")
+    at_lock = operation.endswith("_lock")
+    operation = operation.removesuffix("_lock")
     cid, key = _candidate(services)
     bid, bkey = _candidate(services, "Other Candidate")
     store = services.interview._store
@@ -130,11 +128,11 @@ def test_api_erasure_after_authorization(services, monkeypatch, operation, log_o
         original = getattr(store, method)
 
         def erase_then_write(*args, **kwargs):
-            if at_flush:
-                # Separate factory keeps erasure's own flush out of this hook.
+            if at_lock:
+                # Separate factory keeps erasure's transaction out of this hook.
                 writer_factory = make_session_factory(services.candidates._session_factory.kw["bind"])
                 monkeypatch.setattr(store, "_session_factory", writer_factory)
-                event.listen(writer_factory, "before_flush",
+                event.listen(writer_factory, "after_begin",
                              lambda *_: services.portal.erase(cid), once=True)
                 return original(*args, **kwargs)
             if operation == "reload":

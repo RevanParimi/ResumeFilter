@@ -23,8 +23,10 @@ from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.features import default_view, get_feature_registry
 from app.features.store import FeatureStore, build_feature_store
+from app.features.serving import current_consent_vectors
 from app.ledger.consent import as_utc
 from app.ledger.models import AuditLogRow, OrganizationRow
+from app.ledger.store import LedgerStore
 from app.matching.match import compile_ranking, match as _match_engine
 from app.matching.models import JobRequisitionRow
 from app.matching.schema import (
@@ -185,7 +187,8 @@ class JobStore:
     ) -> Optional[MatchResult]:
         """Role-conditioned match over the materialized pool. Returns None if the
         requisition is not owned by org_id. Reads vectors + point-in-time profiles
-        at one as_of, ranks with the pure engine, and audits each RETURNED
+        at one as_of, applies current org-scoped ledger_read authorization before
+        ranking with the pure engine, and audits each RETURNED
         candidate as a match.surface disclosure (candidate-linked, CASCADE).
         Erasure at audit commit removes the subject and retries the rolled-back
         batch. Final existence reads exclude observed erasures, without locking
@@ -204,7 +207,11 @@ class JobStore:
             self._features.latest_vectors_for_view(view_name, view_version, as_of=cut)
             if cut is not None else []
         )
-        vectors = [mv.vector for mv in pool]
+        vectors = current_consent_vectors(
+            [mv.vector for mv in pool], registry=registry,
+            ledger_store=LedgerStore(self._session_factory, settings=self._settings),
+            org_id=org_id,
+        )
 
         # Scalar feature specs the compiled ranking references (synthetic specs are
         # merged inside the engine); resolved from the registry.
@@ -260,14 +267,27 @@ class JobStore:
         )
 
 
-def build_job_store(settings: Optional[Settings] = None) -> JobStore:
+def build_job_store(
+    settings: Optional[Settings] = None, *,
+    candidates: Optional[CandidateStore] = None, features: Optional[FeatureStore] = None,
+    session_factory: Optional[sessionmaker] = None,
+) -> JobStore:
     """Store on the shared candidates DB URL. Schema is Alembic's job."""
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
-    session_factory = make_session_factory(engine)
+    if session_factory is None:
+        if candidates is not None:
+            session_factory = candidates._session_factory
+        elif features is not None:
+            session_factory = features._session_factory
+        else:
+            session_factory = make_session_factory(make_engine(settings.candidates_db_url))
+    if candidates is None:
+        candidates = build_candidate_store(settings, session_factory=session_factory)
+    if features is None:
+        features = build_feature_store(settings, session_factory=session_factory)
     return JobStore(
         session_factory,
-        candidate_store=build_candidate_store(settings),
-        feature_store=build_feature_store(settings),
+        candidate_store=candidates,
+        feature_store=features,
         settings=settings,
     )

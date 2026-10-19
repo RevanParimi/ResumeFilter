@@ -6,9 +6,481 @@
 
 ## ▶ Current state
 
-- Session 2026-10-19: R4-M2 retires 93 obsolete plans/prototype assets.
-  [The existing audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material) owns completed acceptance, full regression, Chrome and self-review evidence.
-  Prior uncommitted application work is outside this cleanup-only publication.
+- Session 2026-10-19 publication follow-up: include previously completed local
+  remediation and R4-M1 consolidation, record the 58 pending tracked deletions,
+  and preserve working data/local settings. Final full pytest and actual scratch
+  HTTP/Chrome journeys passed; [the existing audit](CODEBASE_REVIEW_2026-09-07.md#publication-follow-up-previously-completed-local-work)
+  owns review/publication evidence. T3E remains next, not started.
+
+- Session 2026-10-19: R4-M2 removes 93 obsolete plans/prototype/design assets,
+  preserves useful regression tooling and prepares a cleanup-only main push.
+  [The audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material) owns passed focused/full regression, Chrome, review and publication evidence (`57a68ec`).
+  Next development task remains T3E, not started.
+
+- **Session 2026-10-18 - R4-M1 test/delivery consolidation.** User-requested
+  maintenance reuses [the audit](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-18--test-and-delivery-consolidation)
+  for its contract/evidence: 47 related test modules become 15, completed task
+  records become four PI evidence collections with stable IDs, and future
+  children reuse inline sections. Focused/full pytest and structural/link checks passed; T3E
+  remains next and is not started. Historical commands below retain their then-current paths.
+
+- **Session 2026-10-18 - R4-S1-T3D completed; employer screening extraction.**
+  Thirteen screening/scoped report/outcome/batch/queue operations, three DTOs and
+  two helpers now live in api/screening, with original org-plane registration
+  order and shared/legacy candidate/report contracts. [D evidence](delivery/EVIDENCE-R4.md#r4-s1-t3d)
+  owns final focused/full pytest, migrated UI HTTP contract/graceful restart,
+  actual Chrome file intake/driver/feedback/delete/new-document reload/error
+  recovery, imports/static checks, separate self-review and preservation. Full
+  API/dependency contract unchanged; no SQL/scorer/UI change or PG/live-provider/
+  quality/independent-review claim. Working DB/prior edits/demo preserved;
+  scratch processes stopped. T3/F13/sprint/PI stay open. Exact next T3E, not
+  started; stop after D. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the sequence.
+
+- **Session 2026-10-18 - R4-S1-T3C completed; candidate workflow extraction.**
+  Ten admin operations and shared intake/erasure DTOs now live in api/candidates;
+  employer intake and portal erasure retain shared contracts. Ordered guarded
+  composition and the full API contract are unchanged. [C evidence](delivery/EVIDENCE-R4.md#r4-s1-t3c)
+  owns the resolved portal exception-import finding, final focused/full pytest,
+  migrated candidate/source/two-employer HTTP/graceful restart, actual Chrome,
+  imports/static checks, self-review and preservation. Working DB/prior edits/demo
+  preserved; scratch processes stopped. No SQL/scorer/UI change or PG/live-provider/
+  quality/independent-review claim. T3/F13/sprint/PI stay open. Exact next T3D,
+  not started; stop after C. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the sequence.
+
+- **Session 2026-10-18 - R4-S1-T3B completed; evaluation/report workflow.**
+  Moved four admin operations, DTOs and shared outcome helpers to api/reports.
+  Two guarded registration groups preserve original order; employer handlers
+  share the same outcome contracts/helpers. [B evidence](delivery/EVIDENCE-R4.md#r4-s1-t3b)
+  owns unchanged full API/dependency contract, final focused/full pytest, migrated
+  HTTP/restart, actual Chrome, isolated imports/static checks, separate self-review
+  and preservation. Windows HTTP stop is forced; no new graceful-cleanup/PG/live-
+  provider/quality claim. Working DB, unrelated edits and existing demo preserved;
+  scratch processes stopped. T3/F13/sprint/PI stay open. Exact next T3C, not started;
+  stop after B. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the area sequence.
+
+- **Session 2026-10-17 - R4-S1-T3A completed; authentication router extraction.**
+  Split T3 into bounded product areas before implementing only A. Auth/session
+  handlers and DTOs now live in api/auth; shared principal/CSRF/request helpers
+  live in api/dependencies, with existing resolver/allowlist aliases preserved.
+  [T3A evidence](delivery/EVIDENCE-R4.md#r4-s1-t3a) owns unchanged full API contract,
+  final focused/full pytest, migrated three-plane HTTP/graceful restart, actual
+  Chrome, isolated import/static checks, self-review and preservation. No SQL,
+  scorer, UI behavior or working-data change; demo preserved and scratch processes
+  stopped. Parent T3/F13/sprint/PI remain open. Exact next T3B, not started;
+  stop after A. [T3 parent](delivery/tasks/R4-S1-T3.md) owns remaining areas.
+
+- **Session 2026-10-16 - R4-S1-T2 completed; unused provenance infrastructure.**
+  Removed the unused Chroma/vector/hash service, dependency and startup path.
+  Retired settings are accepted and ignored; saved report values and scoped
+  GitHub observations remain supported. Graph retained with a short rationale.
+  [T2 evidence](delivery/EVIDENCE-R4.md#r4-s1-t2) owns final focused/full pytest,
+  migrated HTTP/default-and-legacy restart, packaging/import/static checks,
+  resolved deployment-doc finding, self-review and preservation. No new SQL/UI,
+  browser/PG/live-provider or general performance claim. Working DB, unrelated
+  edits and demo preserved; scratch apps stopped. F12/F13/sprint/PI remain open.
+  Exact next R4-S1-T3, not started; stop after T2.
+
+- **Session 2026-10-16 - R4-S1-T1B and parent T1 completed.**
+  Lazy owned GitHub/LLM/speech transports close with shared async cleanup;
+  failures/cancellation preserve other cleanup and borrowed resources. Accessible
+  and late Chroma clients close via the SDK; graph injection is explicit.
+  [B evidence](delivery/EVIDENCE-R4.md#r4-s1-t1b) owns final focused/full pytest,
+  actual Chrome/contracts, migrated SQLite/PG HTTP/graceful restart, separate
+  self-review and preservation. A/B leaves archived; working data/prior edits/demo
+  preserved and owned processes stopped. No blanket leak-free/live-provider or
+  quality claim. F12 retains sprint Q; blocked Chroma startup remains T2. Exact
+  next R4-S1-T2, not started; stop after B.
+
+- **Session 2026-10-16 - R4-S1-T1A completed; shared SQL resources.**
+  Split T1 before implementation into SQL ownership (A) and provider lifecycle
+  (B). Default composition shares one runtime engine/factory and existing store/
+  service instances; shutdown/failed composition disposes owned SQL and preserves
+  borrowed resources. [T1A evidence](delivery/EVIDENCE-R4.md#r4-s1-t1a) owns intended
+  red, final focused/full pytest, Chrome/contracts, SQLite/PG HTTP/graceful restart,
+  PG locks/migrations, separate self-review and preservation. Working DB/prior
+  edits/demo preserved; owned processes stopped. No schema/scoring or live-provider
+  claim. Parent T1/F12/R4-S1/PI-R4 remain open; exact next T1B, not started.
+  Stop after T1A.
+
+- **Session 2026-10-16 - R3-S3-Q, R3-S3 and bounded PI-R3 completed.**
+  Combined real browser text/audio, process restart, saved evidence/version
+  explanations and consent-permitted employer summaries agree. [Q evidence](delivery/EVIDENCE-R3.md#r3-s3-q)
+  owns final focused/full pytest, PG locks/migrations/HTTP, browser compatibility,
+  contracts/static checks, combined self-review and preservation. No application
+  change; reusable synthetic validation extended. Sprint leaves archived with
+  repaired links; working DB/prior edits/demo preserved, owned processes stopped.
+  F10/F11 retain PI-R5 residuals; no live-ASR/quality/independent-review claim.
+  Exact next R4-S1-T1, not started. Stop after Q.
+
+- **Session 2026-10-16 - R3-S3-T3 completed; actual microphone answers.**
+  Explicit capture/stop/discard/submit and typed fallback use the saved interview
+  lifecycle. Device/actor cleanup, audio validation before ASR, safe provider
+  refusals and visible transcript truncation are complete. [T3 evidence](delivery/EVIDENCE-R3.md#r3-s3-t3)
+  owns final focused/full pytest, actual Chrome synthetic media/text compatibility,
+  native audio HTTP/restart/consent/erasure, contracts/static checks, separate
+  self-review and preservation. Data/prior edits/demo preserved; owned app/Chrome
+  stopped. No SQL/scorer/working migration or live-ASR/quality/independent-review
+  claim. Exact next Q, not started; R3-S3/PI-R3/F11 remain open. Stop after T3.
+
+- **Session 2026-10-15 - R3-S3-T2B and parent T2 completed.**
+  Real candidate text interview lifecycle replaces simulations; reload/history,
+  chosen domain, saved advisory/version/evidence displays and read-only recovery
+  without replay are wired. [T2B evidence](delivery/EVIDENCE-R3.md#r3-s3-t2b) owns final
+  focused/full pytest, actual Chrome/API/restart, actor/consent/erasure, contracts,
+  static checks, separate self-review and preservation. Working DB/prior edits/
+  demo preserved; owned app/Chrome stopped. No backend/SQL/scorer/working migration,
+  independent/live-provider or quality claim. Next T3, not started; sprint/PI/F11
+  remain open. Stop after T2B.
+
+- **Session 2026-10-15 - R3-S3-T2A completed; atomic interview lifecycle.**
+  Split T2 before implementation: repair saved transitions, then wire T2B's
+  browser. Candidate locks recheck question/status/expiry after provider work;
+  final answer, advisory assessment and audit commit together. [T2A evidence](delivery/EVIDENCE-R3.md#r3-s3-t2a)
+  owns red reproduction, focused/full pytest, controlled PostgreSQL contention,
+  migrated SQLite/PG HTTP/restart/actor/consent/erasure, contracts/static checks,
+  separate self-review and preservation. Data/prior edits/demo preserved; owned
+  processes stopped. No schema migration or interview UI claim. T2/sprint/PI/F11
+  remain open; exact next T2B, not started. Stop after T2A.
+
+- **Session 2026-10-15 - R3-S3-T1 completed; versioned content rubric.**
+  New `s73.2` scoring uses distinct contextual content rather than token/pronoun
+  counts and answer length. Unsupported/limited turns cannot inflate assessment
+  evidence; historical values remain and mixed versions stay insufficient.
+  [T1 evidence](delivery/EVIDENCE-R3.md#r3-s3-t1) owns intended red reproductions,
+  review fixes, final focused/full pytest, actual migrated SQLite/PG HTTP/restart/
+  actor/consent/erasure, common Chrome/contracts and preservation. Two fixture
+  write clocks were pinned after a date-dependent full-run failure; production
+  consent is unchanged. Prior work/DB/demo preserved; owned validation processes
+  stopped. No SQL/migration, interview UI, independent/live-provider or measured
+  quality claim. PI-R3/F11 and R3-S3 remain open; next T2, not started. Stop after T1.
+
+- **Session 2026-10-14 - R3-S2-Q and R3-S2 completed.**
+  Combined actual Chrome/org/account/guarded-curation and migrated SQLite/PG
+  HTTP/restart agree on saved state, stale-review refusal and three-surface
+  revocation. [Q evidence](delivery/EVIDENCE-R3.md#r3-s2-q) owns focused/full pytest,
+  offline handlers, PostgreSQL locks/migrations, existing browser/contracts/
+  erasure, separate self-review and preservation. Added two reusable validation
+  journeys; no application change. Detailed T1/T2/T3A/T3B evidence archived and
+  links/count repaired. Working DB/prior edits/demo preserved; owned validation
+  processes stopped. No working migration, cleanup, live/quality or independent
+  review claim. PI-R3/F10 remain open; exact next R3-S3-T1, not started. Stop after Q.
+
+- **Session 2026-10-14 - R3-S2-T3B and parent T3 completed.**
+  Browser map/create/ignore now submit required snapshot revisions; stale
+  reviews clear safely, uncertain writes retain read-only drafts, and validated
+  paging/deadlines/actor/view/session guards protect queue/editor state. Review
+  fixed draft loss after a failed recovery read. [T3B evidence](delivery/EVIDENCE-R3.md#r3-s2-t3b)
+  owns full/focused regression, offline JS, actual Chrome/PG HTTP/restart/denials,
+  caller/evaluate/contracts/erasure regressions, self-review and preservation.
+  No SQL/store/scoring or working migration, live provider, quality claim or
+  cleanup. Prior work/DB/demo retained; owned validation processes stopped.
+  R3-S2/PI-R3/F10 remain open; next R3-S2-Q, not started. Stop after T3B.
+
+- **Session 2026-10-13 - R3-S2-T3A completed; guarded curation snapshots.**
+  Split T3 into distinct API and browser contracts before implementation. Opaque
+  queue revisions and opt-in atomic decision preconditions refuse changed live
+  observations without consuming them. [T3A evidence](delivery/EVIDENCE-R3.md#r3-s2-t3a)
+  owns full/focused pytest, actual SQLite/PG HTTP/restart/lock races, current
+  Chrome compatibility, contracts, separate self-review and preservation.
+  No schema/working migration, scoring, live provider or data cleanup. Prior
+  work/DB/demo retained; owned validation processes stopped. T3B will require
+  guarded HTTP/browser decisions and finish lifecycle handling; parent T3,
+  R3-S2/PI-R3/F10 remain open. Stop after T3A; next T3B, not started.
+
+- **Session 2026-10-13 - R3-S2-T2 completed; real operator accounts.**
+  List/create/confirmed deletion now use actual account role/status and revoke
+  target sessions, with self/last-operator warnings and honest refusal/recovery.
+  Readable emails, last-seen and unsupported role/membership controls are omitted.
+  [T2 evidence](delivery/EVIDENCE-R3.md#r3-s2-t2) owns full/focused regression, Chrome/
+  HTTP/restart, two-actor/self/denied-role checks, self-review and preservation.
+  No backend/schema/scoring change, live delivery or working-data cleanup.
+  Data/prior edits/demo retained; owned validation processes stopped.
+  R3-S2/PI-R3/F10 remain open; next R3-S2-T3, not started. Stop after T2.
+
+- **Session 2026-10-13 - R3-S2-T1 completed; real organization administration.**
+  Operator list/inspection, create, reliability, confirmed key rotation and
+  offboarding now use actual APIs with persistence, refusals and private key
+  lifecycle. Review fixed late-view keys and incorrect admin denial wording.
+  [T1 evidence](delivery/EVIDENCE-R3.md#r3-s2-t1) owns full/focused regression, Chrome/
+  HTTP/restart, two-actor/key checks, review and preservation. No backend/schema/
+  scoring change, live delivery or working-data cleanup. Data/prior edits/demo
+  retained; owned validation processes stopped. R3-S2/PI-R3/F10 remain open;
+  next R3-S2-T2, not started. Stop after T1.
+
+- **Session 2026-10-13 - R3-S1-Q completed; evaluation/contact sprint closed.**
+  Combined authenticated intake/report/feedback/contact and restart checks passed.
+  Review fixed stalled feedback, late account callbacks and stale 401 signout;
+  read-only feedback recovery handles a write whose acknowledgment was lost.
+  [Q evidence](delivery/EVIDENCE-R3.md#r3-s1-q) owns full/focused regression, Chrome,
+  SQLite/actual PG, privacy, review and preservation. T1/T2 evidence archived;
+  bounded F09 closed, PI-R3/F10 remain open. Working data/prior edits/demo retained;
+  owned validation processes stopped. No independent/live-provider/quality claim.
+  Next R3-S2-T1, not started; stop after Q. Demo backend still awaits restart.
+
+- **Session 2026-10-13 - T2B Unicode correction completed.**
+  Resumed the paused PDF boundary review while preserving newer R3 work.
+  Valid Unicode metadata now fits the bounded JSON protocol at the character
+  limit; one character over still refuses before writes. [T2B evidence](delivery/EVIDENCE-R2.md#r2-s1-t2b--unicode-output-correction-2026-10-13)
+  owns the failing reproduction, final full/focused pytest, actual boundary HTTP,
+  current Linux/image gates, same-agent review and preservation. Working data and
+  demo retained; owned VM stopped. Next remains R3-S1-Q, not started here.
+
+- **Session 2026-10-12 - R3-S1-T2 completed; captured contact delivery and candidate controls.**
+  Verification shares the configured email capability, refuses unavailable
+  delivery and rolls back failed issuance without invalidating an older code.
+  The portal requests/confirms codes and shows server status, including corrected
+  held/expired assurance. [T2 evidence](delivery/EVIDENCE-R3.md#r3-s1-t2) owns full/focused
+  regression, actual SQLite/PG HTTP/restart, blockers, Chrome, privacy, review and
+  preservation. No live email/SMS or quality claim. Demo kept running; its backend
+  needs a controlled restart. Next R3-S1-Q, not started; sprint/PI/F09 remain open.
+
+- **Session 2026-10-12 - R3-S1-T1 completed; Instant check uses real account routes.**
+  Org/operator text/PDF submissions open saved reports with authorized reload,
+  persisted reviewer feedback, explicit storage/error/retry states and lifecycle
+  guards. Factual/style/historical presentation is preserved. [T1 evidence](delivery/EVIDENCE-R3.md#r3-s1-t1)
+  owns full/focused regression, offline JS, actual migrated HTTP/Chrome journeys,
+  contracts, review fixes and preservation. Working data/prior edits/local demo
+  intact; no independent/live-provider/quality claim. Next R3-S1-T2, not started.
+  R3-S1/PI-R3/F10 remain open; stop after T1.
+
+- **Session 2026-10-12 - R2-S2-Q completed; combined acceptance and PI-R2 closure.**
+  Fresh regression, migrated scratch HTTP/restart, real Chrome report/batch/plane
+  checks and API contracts preserve factual invariance, descriptive style,
+  specific observations, neutral missing coverage and historical semantics.
+  [Q evidence](delivery/EVIDENCE-R2.md#r2-s2-q) owns commands/counts, combined same-agent
+  review, preservation and bounded F08 closure. No application change in Q;
+  T1/T2 evidence archived. Working data/prior edits/local demo preserved;
+  no independent/live-provider/quality claim. Next R3-S1-T1, not started.
+
+- **Session 2026-10-12 - R2-S2-T2 completed; findings explained in the actual UI.**
+  Reports separate descriptive style from factual observations, show uncertainty
+  and clarification, refuse numeric indices with missing coverage, and retain
+  historical v1 wording under a visible version notice. [T2 evidence](delivery/EVIDENCE-R2.md#r2-s2-t2)
+  owns full regression completion, closure hash/focused/Chrome plane checks,
+  migrated HTTP/contracts, preservation and separate same-agent review.
+  Working data/prior edits/local demo preserved; prototype flows remain R3.
+  No independent/live-provider/quality claim. Next R2-S2-Q; F08 remains open.
+
+- **Session 2026-10-12 - R2-S2-T1 completed; factual-risk v2 excludes style.**
+  New fusion uses timeline/duplication only. Historical v1 reports and vectors
+  retain their semantics; current risk features/measurement samples stay separate.
+  [T1 evidence](delivery/EVIDENCE-R2.md#r2-s2-t1) owns regressions, full pytest, actual
+  migrated HTTP/restart, Chrome/contracts, preservation and same-agent review.
+  Working DB/prior edits and local demo preserved; no independent/live-provider/
+  quality claim. Next R2-S2-T2; UI explanations and F08/Q closure remain open.
+
+- **Session 2026-10-12 - R2-S1-Q completed; combined input/evidence acceptance.**
+  Actual migrated HTTP and current Linux image combine input/parser containment,
+  whole-reply model fallback and neutral GitHub context with ownership/restart.
+  Focused/full pytest, Chrome/contracts, packaging/hash/preservation gates passed;
+  [Q evidence](delivery/EVIDENCE-R2.md#r2-s1-q) owns commands/counts and separate self-review.
+  No application finding/change. R2-S1/bounded F07 complete; PI-R2 stays open.
+  Detailed T1/T3 evidence archived; working data/prior edits preserved. Owned VM
+  stopped with evidence retained; local demo remains running. No independent,
+  live-provider or accuracy claim. Next R2-S2-T1, not started; stop after Q.
+
+- **Session 2026-10-11 - R2-S1-T3 completed; neutral GitHub context.**
+  New reports separate metadata and unavailable diagnostics; neither supports
+  or contradicts claims or enters rule/model corroboration. Claim/evaluation
+  isolation, advisory behavior and persisted ownership/restart remain.
+  [T3 evidence](delivery/EVIDENCE-R2.md#r2-s1-t3) owns reproduction, reviewed full/focused
+  pytest, HTTP, Chrome, API contracts, preservation and self-review. One stale
+  private test caller was corrected before the passing full rerun. Historical
+  reports/working data/prior edits preserved; no independent/live-provider or
+  quality claim. Next R2-S1-Q, not started; R2-S1/PI-R2/F07 remain open.
+
+- **Session 2026-10-11 - R2-S1-T2B Linux validation completed.**
+  Verified the existing isolated Linux snapshot and production image against
+  current source; actual memory/allocation, parser cleanup, migrated HTTP and
+  image gates passed. Hash-matched full/focused regression evidence recovered;
+  full suite not rerun in closure. [Archived T2B evidence](delivery/EVIDENCE-R2.md#r2-s1-t2b)
+  owns commands/counts and review. Parent T2 done; task-owned VM shut down with
+  scratch disk/logs retained. Working data/prior edits preserved. Next T3,
+  not started; R2-S1/PI-R2/F07 remain open.
+
+- **Session 2026-10-11 - user-requested local demo readiness.**
+  Started and browser-checked an isolated fictional-data demo; present batch
+  screening, report questions and persisted reviewer decisions. No public URL
+  or live-model quality claim. [Existing audit evidence](CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-11--local-demo-readiness)
+  owns validation and runtime details. No backlog task/status change in that check.
+
+- **Session 2026-10-11 - R2-S1-T2B implemented; awaiting Linux validation.**
+  Disposable PDF parsing now bounds page/work/depth/expansion/output/time and
+  worker memory before extraction; shared resume/verification refusals and
+  metadata remain. Windows resource/cleanup regressions, migrated scratch HTTP,
+  wheel execution, bindings, preservation, reviewed full/focused pytest and
+  self-review passed. [T2B evidence](delivery/EVIDENCE-R2.md#r2-s1-t2b) owns
+  details and the missing Linux/image gate. Docker/WSL unavailable, so T2B/T2
+  remain open and next; T3 not started. Working data/prior edits preserved.
+
+- **Session 2026-10-10 - R2-S1-T2A completed; shared resume acceptance.**
+  Invalid input now fails before model work or persistence with safe 422 details;
+  decoded-text caps, readable sparse input and legacy batch failures are covered.
+  Reviewed focused/full pytest, migrated HTTP/restart, cookie/CSRF contracts,
+  bindings and preservation passed. [T2A evidence](delivery/EVIDENCE-R2.md#r2-s1-t2a)
+  owns commands/counts/review. Parent T2 stays open for explicit parser resource
+  limits at T2B, the exact next task. T2B/T3 not started; working data preserved.
+
+- **Session 2026-10-10 - R2-S1-T1 completed; model response validation.**
+  All six JSON consumers now reject malformed replies as a whole and retain
+  deterministic behavior. Strict bounds/member checks preserve valid profiles,
+  enums, confidence caps and interview adjustments; diagnostics omit provider
+  payloads. Reviewed full/focused pytest, migrated fake-provider HTTP/restart,
+  bindings and preservation passed. [T1 evidence](delivery/EVIDENCE-R2.md#r2-s1-t1)
+  owns commands, counts, review fixes and SDK attempt limitations. Working data
+  and prior edits preserved. R2-S1/PI-R2/F07 stay open. Next R2-S1-T2; not started.
+
+- **Session 2026-10-09 - R1-S2-Q completed; bounded R1-S2/PI-R1 closure.**
+  Integrated historical-cut authorization, actor/org isolation, exact login/contact
+  OTP ownership, cached exports/labels and erasure/restart passed on scratch SQL.
+  Review found stale login expiry/attempt validity could bypass preflight; locked
+  reread, post-lock clock and atomic predicates now refuse without session/binding.
+  Full pytest, optional CSV/Parquet, migrated SQLite/PostgreSQL journeys,
+  controlled transactions, migration gates and self-review/preservation passed.
+  [Q evidence](delivery/EVIDENCE-R1.md#r1-s2-q) owns counts, corrected old test callers
+  and limitations. Working data/prior edits preserved; no working migration.
+  Future media and contact delivery remain separate. Next R2-S1-T1; not started.
+
+- **Session 2026-10-08 - R1-S2-T4B and parent T4 completed.**
+  Asserted-contact dedup/backfill protects proved/review subjects and refuses
+  stale matches; login changes/aliases/merges explicitly refuse. Named working
+  contact inventory is read-only and records one historical-login subject with
+  unknown proof at 0023. Full regression, real SQLite/PostgreSQL writes/migration
+  gates, both migrated HTTP/restart journeys and self-review/preservation passed.
+  [B evidence](delivery/EVIDENCE-R1.md#r1-s2-t4b) owns results/limits; [T4](delivery/EVIDENCE-R1.md#r1-s2-t4)
+  maps combined acceptance. Working data/prior edits preserved; no deployment.
+  Detailed A/B records archived on group closure. Next R1-S2-Q; not started.
+
+- **Session 2026-10-08 - R1-S2-T4A completed; verified mailbox ownership.**
+  Exact OTP login pins a durable subject separate from resume hints; unsafe claims
+  refuse and erasure preserves other proved owners. Migration flags legacy
+  session/audit subjects for review while preserving existing credentials. Full
+  pytest, PostgreSQL/migration gates, both migrated HTTP/restart journeys and
+  self-review/preservation passed. [T4A evidence](delivery/EVIDENCE-R1.md#r1-s2-t4a)
+  owns results, harness corrections and limits. Working data/prior edits preserved.
+  Parent T4 stays open. Next T4B contact policy/refusal/inventory; not started.
+
+- **Session 2026-10-08 - R1-S2-T3 completed; contact challenge concurrency.**
+  Candidate locks serialize attempts, consumption and resend; exhausted, expired,
+  consumed and superseded codes cannot verify. Repeat confirmation preserves one
+  outcome/audit; legacy ambiguity requires resend. Post-lock clocks retain explicit
+  injection. Full pytest, controlled SQLite/PostgreSQL and migration checks,
+  migrated HTTP/restart journeys, bindings, self-review and preservation passed.
+  [T3 evidence](delivery/EVIDENCE-R1.md#r1-s2-t3) owns counts, commands and limits.
+  Login OTP remains intact; synthetic echo/capture is not delivery. F09/R1-S2/PI-R1
+  stay open. Working data/prior edits preserved. Next R1-S2-T4; not started.
+
+- **Session 2026-10-08 - R1-S2-T2 completed; current export/training consent.**
+  Feature/training CSV and optional Parquet writers, outcome joins and metrics
+  ledger labels reuse present permission with historical ceilings and scoped
+  authorization. Cached inputs cannot restore revoked use; historical snapshots
+  stay intact. Full pytest, SQLite/PostgreSQL regressions and migration gates,
+  migrated HTTP/direct-library/restart journeys, real Parquet/absent dependency,
+  bindings, self-review and preservation passed. [T2 evidence](delivery/EVIDENCE-R1.md#r1-s2-t2)
+  owns commands, counts and limits. Current reads remain snapshots; delivered
+  files/models cannot be recalled. F06/R1-S2/PI-R1 stay open. Working data/prior
+  edits preserved. Next R1-S2-T3; not started in this session.
+
+- **Session 2026-10-06 - R1-S2-T1 completed; current serving consent.**
+  Search and direct JobStore matching mask historical gated values using current
+  purpose/scope permission before filters and scoring. Historical stored evidence
+  and first-party matching survive. Full pytest, targeted SQLite/PostgreSQL reads,
+  migrated scratch HTTP/restart journeys, bindings, self-review and preservation
+  passed. [T1 evidence](delivery/EVIDENCE-R1.md#r1-s2-t1) owns commands, counts and limits.
+  Current reads remain snapshots; F06/R1-S2 stay open for exports/training and the
+  sprint gate. Working data and prior edits preserved. Next R1-S2-T2; not started.
+
+- **Session 2026-10-06 - R1-S1-Q completed; bounded sprint erasure gate.**
+  Strengthened paused-evaluation refusal, retained-sink/child-ID checks and browser
+  startup readiness in three harnesses. Full pytest, controlled SQLite/PostgreSQL,
+  migration and HTTP/restart checks plus real Chrome screening/reviewer journeys
+  passed. [Q evidence](delivery/EVIDENCE-R1.md#r1-s1-q) owns counts, commands, corrected
+  harness failures, self-review and limits. R1-S1/F05's current-system gate closes;
+  PI-R1, future media and storage-copy/physical-erasure limits remain open. Prior
+  work and working data preserved. Next R1-S2-T1; not started in this session.
+
+- **Session 2026-10-06 - D3d2d4 completed; actual empty legacy inventory.**
+  Read-only inspection and a consistently copied, privately migrated snapshot
+  verified no legacy curation rows in the named working database. No cleanup,
+  approval request or runtime migration was needed; original bytes and prior work
+  are preserved, and the disposable copy was removed. [D4 evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d4)
+  owns commands, counts, decision, self-review and scope. T3's bounded development
+  records close; detailed completed children are archived with links preserved.
+  Next R1-S1-Q, a separate sprint review. F05/R1-S1 remain open; no backup/history
+  or physical storage erasure claim. No application test rerun for this task.
+
+- **Session 2026-10-06 - D3d2d3 completed; combined synthetic erasure validation.**
+  Both erasure doors passed rollback, actual worker interruption, retry/restart,
+  multi-tenant survivor and fresh signup/upload checks. Full pytest, focused
+  SQLite/PostgreSQL, migrations and HTTP journeys passed; no application/UI
+  behavior change. [D3 evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d3) owns counts,
+  commands, self-review and ancestor mapping. Working data and prior edits are
+  preserved. Next D4 read-only inventory/disposition decision; cleanup requires
+  separate authorization. T3/F05/R1-S1-Q remain open for legacy disposition.
+
+- **Session 2026-10-05 - D3d2d2c completed; D2 engineering policy closes.**
+  Added read-only counts inventory and explicit bounded legacy removal/approval,
+  with atomic conflict rollback, crash/retry and app reload evidence. Integrated
+  policy/full pytest, PostgreSQL/migration and Chrome checks passed;
+  [D2c evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2c) owns commands, review and limits.
+  Archived the completed policy children; working data and prior edits preserved.
+  Legacy working-data disposition remains a parent-closure gap. Next D3d2d3
+  combined validation; D3d2d/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-10-05 - D3d2d2b2b completed.** Activated source-owned capture
+  after source commit, survivor/expiry review, explicit alias promotion, authenticated
+  reviewer API/UI and startup/daily physical purge. Legacy raw queue paths are
+  removed; compatible resolved overlays remain. [Activation evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2b2b)
+  owns full regression, controlled PostgreSQL, migrated HTTP/restart, Chrome and
+  self-review results. D2b2/D2b close; next is D2c legacy disposition/policy validation.
+  Working data and prior edits preserved; D2/D3d2d/T3/F05/R1-S1-Q remain open.
+
+- **Session 2026-09-29 - D3d2d2b2a completed.** Split store transaction work
+  from coupled runtime/reviewer activation before code. The inactive owned store
+  now enforces durable source capture, survivor snapshots, expiry and atomic
+  explicit-vocabulary promotion/ignore. [D2b2a evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2b2a)
+  owns full regression, PostgreSQL ordering/migration, HTTP/restart and self-review
+  results. Next D2b2b activates capture/service/API/reviewer UI and maintenance
+  together. Production still uses the legacy queue; wider parents remain open.
+
+- **Session 2026-09-28/29 - D3d2d2b1 completed.** Split the owned curation
+  lifecycle before code and completed its additive storage foundation: source-owned
+  raw observations, separate approved aliases and explicit legacy classification.
+  [D2b1 evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2b1) owns full pytest,
+  controlled PostgreSQL/migration and migrated HTTP/restart validation. Runtime
+  still uses the legacy queue; D2b2 owns the capture/reviewer/expiry switch next.
+  Working data and prior edits preserved. D2b/D2/T3/F05 remain open.
+
+- **Session 2026-09-28 - D3d2d2a completed after option A approval.** The user
+  approved candidate/source-linked expiring review. Split the work into bounded
+  children and completed original-input length/control guards plus safe capture
+  logging. [D2a evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2a) owns regressions,
+  full-suite and migrated HTTP/restart validation, including the corrected smoke
+  assertion. Working data and previous edits preserved. Next D2b owned review
+  lifecycle; D2/D3d2d/T3/F05 and sprint closure remain open.
+
+- **Session 2026-09-28 - D3d2d2 policy proposal prepared.** Traced the current
+  curation lifecycle and documented candidate-linked expiring review versus
+  administrator-only vocabulary entry, with explicit promotion and legacy rules.
+  [D2 proposal](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2) awaits the user's required
+  policy choice. No runtime changes, cleanup or application tests this session;
+  D2 and its parents remain open, and the next task remains D2.
+
+- **Session 2026-09-28 - D3d2d review split; D3d2d1 completed.**
+  Closed bounded source/portal aggregate erasure refusal with controlled API,
+  full regression and migrated SQLite/PostgreSQL HTTP/restart evidence. Raw
+  curation retention and input-length findings were reproduced with synthetic
+  data; no policy change or working-data cleanup. [D1 evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d1)
+  and [parent findings](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d) own details. Next D3d2d2
+  curation policy, then D3d2d3 combined validation; wider parents remain open.
+
+- **Session 2026-09-28 - R1-S1-T3b-D3d2c3 and login group completed.**
+  Redemption now commits consumption, principal and session/audit together against
+  erasure; interruption rolls back for retry. Combined login checks, full SQLite,
+  focused PostgreSQL, migrated HTTP/restart and self-review passed; working DB
+  preserved. Exact evidence: [c3](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2c3). Archived
+  the three completed login child records. Next D3d2d combined response/curation
+  review; broader parents/F05/sprint gates remain open.
 
 - **Session 2026-09-27 - R1-S1-T3b-D3d2c2 completed.** Pending send reservations
   are cancelled atomically with erasure; late email delivery cannot restore a
@@ -16,7 +488,7 @@
   Full SQLite 2517 passed/188 skipped; focused PG 167 passed/2 skipped; migrated
   issuance HTTP/restart 34/34 per backend, c1 PG 24/24, migration up/down/up passed.
   Same-agent diff review; database preserved. Commands and limits live in the
-  [existing leaf evidence](delivery/tasks/R1-S1-T3b-D3d2c2.md); no new Markdown
+  [existing leaf evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2c2); no new Markdown
   record. Next c3 redemption; parents/F05/sprint gates remain open.
 
 - **Session 2026-09-26 - User-requested clutter review.** Inventoried the
@@ -49,7 +521,7 @@
   compilation, whitespace and 402 UI bindings passed. Working DB preserved.
   No schema/frontend change or browser/live-provider claim. Next: D3d2c2 issuance;
   c3 redemption and D3d2d combined validation remain open. Evidence:
-  `docs/delivery/tasks/R1-S1-T3b-D3d2c1.md`.
+  `docs/delivery/archive/R1-S1-T3b-D3d2c1.md`.
 
 - **Session 2026-09-24 - R1-S1-T3b-D3d2b completed.** Source ingestion now
   translates confirmed FK erasure and missing saved subjects/sources into safe
@@ -62,7 +534,7 @@
   per backend**, PG lock observation/migrations, clean shutdown and self-review.
   Working DB preserved; Node unavailable, no browser/live-provider claim. Raw
   curation display names are not guaranteed de-identified; snapshot limits and
-  aggregate-read residuals remain explicit. [Evidence](delivery/tasks/R1-S1-T3b-D3d2b.md).
+  aggregate-read residuals remain explicit. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2b).
   Next **R1-S1-T3b-D3d2c**; login ordering/combined validation and parents stay open.
 
 - **Session 2026-09-24 - R1-S1-T3b-D3d2a completed.** Split D3d2 after
@@ -75,7 +547,7 @@
   HTTP/restart **29/29 per backend**, migrations, clean shutdown and self-review
   recorded. Working DB unchanged; Node unavailable, no browser/live-provider
   claim. Response snapshots do not lock across delivery.
-  [Evidence](delivery/tasks/R1-S1-T3b-D3d2a.md). Next **R1-S1-T3b-D3d2b**;
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2a). Next **R1-S1-T3b-D3d2b**;
   login-state ordering/combined validation and all higher parents remain open.
 
 - **Session 2026-09-24 - R1-S1-T3b-D3d1 completed.** Resumed the unfinished
@@ -87,7 +559,7 @@
   SQLite **2445 passed, 161 skipped**, 44 warnings; migrated HTTP/restart **36/36
   per backend**, migrations, clean shutdown and self-review recorded. Working
   DB preserved; Node unavailable, no browser/live-provider claim. Snapshot and
-  independent report lifetime limits documented. [Evidence](delivery/tasks/R1-S1-T3b-D3d1.md).
+  independent report lifetime limits documented. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d1).
   Next **R1-S1-T3b-D3d2**; D3d and higher gates remain open.
 
 - **Session 2026-09-24 - R1-S1-T3b-D3c3 completed.** Matching disclosure
@@ -99,7 +571,7 @@
   158 skipped**, 44 warnings. Migrated HTTP/restart **21/21 per backend**, observed
   FK blocking, migration chain and self-review recorded. Working DB unchanged;
   Node unavailable, no frontend change or browser claim. Snapshot delivery limits
-  documented. [Evidence](delivery/archive/R1-S1-T3b-D3c3.md).
+  documented. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c3).
   D3c and all its children done; next **R1-S1-T3b-D3d**. Higher gates stay open.
 
 - **Session 2026-09-23 - R1-S1-T3b-D3c2 completed.** Training audit erasure
@@ -110,7 +582,7 @@
   HTTP/subprocess/restart **3/3 outer and 13/13 worker checks per backend**,
   observed FK blocking, migration chain and self-review recorded. CSV and missing
   parquet dependency checked; Node unavailable, no UI change or browser claim.
-  Working DB unchanged. [Evidence](delivery/archive/R1-S1-T3b-D3c2.md).
+  Working DB unchanged. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c2).
   Next: **R1-S1-T3b-D3c3**; D3c and higher gates remain open.
 
 - **Session 2026-09-23 - R1-S1-T3b-D3c1 completed.** Split D3c into
@@ -120,7 +592,7 @@
   focused SQLite 59 passed; PG **104 passed, 1 skipped**; full SQLite **2353 passed,
   123 skipped**, 44 warnings. HTTP/restart **19/19 per backend**, observed FK
   blocking, migration chain and self-review recorded. Working DB unchanged.
-  [Evidence](delivery/archive/R1-S1-T3b-D3c1.md). Next: **R1-S1-T3b-D3c2**.
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c1). Next: **R1-S1-T3b-D3c2**.
   D3c and higher gates remain open. No browser/independent/live-provider claim.
 
 - **Session 2026-09-23 - R1-S1-T3b-D3b2b2 completed.** User authorized the
@@ -133,7 +605,7 @@
   tests ran separately after full-suite collection. Node unavailable; no frontend
   assets changed. Working DB and prior changes preserved. D3b2b/D3b2/D3b done;
   exact next task **R1-S1-T3b-D3c**. D3 and higher gates remain open.
-  [Evidence](delivery/archive/R1-S1-T3b-D3b2b2.md).
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2b2).
 
 - **Session 2026-09-23 - R1-S1-T3b-D3b2b2 unresolved-input trace.**
   Task remains in progress. Three isolated synthetic probes reproduced candidate
@@ -142,7 +614,7 @@
   unlinked input (including unrelated items), or retain bounded retries with the
   limitation documented. No application code or working data changed; no full
   suite/PG/browser/subprocess rerun and no completed task claimed.
-  [Design and evidence](delivery/archive/R1-S1-T3b-D3b2b2.md).
+  [Design and evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2b2).
   Exact next task remains **R1-S1-T3b-D3b2b2**; all parent gates stay open.
 
 - **Session 2026-09-23 - R1-S1-T3b-D3b2b1 interrupted report cleanup.**
@@ -156,7 +628,7 @@
   PG lock evidence, clean cluster stop and self-review recorded. Fixture/smoke
   setup errors corrected; working DB unchanged. Node unavailable; no frontend,
   browser, independent-review or live-provider claim.
-  [Evidence](delivery/archive/R1-S1-T3b-D3b2b1.md).
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2b1).
   Next: **R1-S1-T3b-D3b2b2**, unresolved/failed-first-ingest and historical input.
   D3b2b/D3b2/D3b/D3/D/T3b/T3/F05/R1-S1-Q remain open.
 
@@ -171,7 +643,7 @@
   migration/lock evidence and self-review recorded. Initial four PG fixture
   failures corrected. Shutdown wait timed out, then status/log confirmed clean
   stop. Working database unchanged; Node unavailable; no browser/live-provider/
-  independent-review claim. [Evidence](delivery/archive/R1-S1-T3b-D3b2a.md).
+  independent-review claim. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2a).
   Next: **R1-S1-T3b-D3b2b**, earlier unresolved input and interrupted report-only
   cleanup. D3b2/D3b/D3/D/T3b/T3/F05/R1-S1-Q remain open.
 
@@ -183,7 +655,7 @@
   42 warnings. Migrated HTTP/restart **19/19 per backend**, migrations and
   self-review recorded. Working database unchanged. Node unavailable; no
   browser/live-provider/independent-review claim.
-  [Evidence](delivery/archive/R1-S1-T3b-D3b1.md). Next: **R1-S1-T3b-D3b2**, durable
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b1). Next: **R1-S1-T3b-D3b2**, durable
   input association and interrupted cleanup. D3b/D3/D/T3b/T3/F05/R1-S1-Q open.
 
 - **Session 2026-09-22 - R1-S1-T3b-D3a screening completion erasure.**
@@ -193,7 +665,7 @@
   Focused SQLite 65 passed; PG runner 78 passed, three SQLite-only skips;
   full SQLite **2266 passed, 61 skipped**, 42 warnings. Migrated HTTP/restart
   **19/19 per backend**, PostgreSQL migration/lock checks and self-review recorded.
-  Working database unchanged. [Evidence](delivery/tasks/R1-S1-T3b-D3a.md).
+  Working database unchanged. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d3a).
   Node unavailable; no browser/live-provider/independent-review claim.
   Next: **R1-S1-T3b-D3b**, earlier unlinked screening input and interrupted
   cleanup. D3/D/T3b/T3/F05/R1-S1-Q remain open.
@@ -205,7 +677,7 @@
   PG runner 97 passed, four SQLite-only skips; full SQLite **2250 passed,
   45 skipped**, 42 warnings. Migrated HTTP/restart **18/18 per backend**,
   migration up/down/up and self-review recorded. Working database unchanged.
-  [Evidence](delivery/archive/R1-S1-T3b-D2b.md). No full PG suite, browser or
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d2b). No full PG suite, browser or
   independent review claimed. Next: **R1-S1-T3b-D3**, screening/audits/cross-store
   ordering; D/T3b/T3/F05/R1-S1-Q remain open.
 
@@ -216,7 +688,7 @@
   passed; PG runner 71 passed, 2 SQLite-only skips; full SQLite **2234 passed,
   32 skipped**, 42 warnings. Migrated HTTP/restart **12/12 per backend**,
   migration up/down/up and self-review recorded. Working database unchanged.
-  [Evidence](delivery/archive/R1-S1-T3b-D2a.md). No browser/independent review or
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d2a). No browser/independent review or
   full PG suite claimed. Next: **R1-S1-T3b-D2b**, fingerprints. D2/D3 and
   D/T3b/T3/F05/R1-S1-Q remain open.
 
@@ -226,7 +698,7 @@
   skipped and continue. Focused SQLite 35 passed; PostgreSQL 45 passed, zero
   skips; full SQLite **2223 passed, 23 PostgreSQL skips**, 42 warnings. Migrated
   HTTP/restart **15/15 per backend**, migration up/down/up and self-review passed.
-  [Evidence](delivery/tasks/R1-S1-T3b-D1.md). No browser/independent review or
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-d1). No browser/independent review or
   full PostgreSQL suite claimed. Existing data and uncommitted work preserved.
   Next: **R1-S1-T3b-D2**, fingerprints/ingest. D3 audits/screening and parents
   D/T3b/T3/F05 plus R1-S1-Q remain open.
@@ -238,7 +710,7 @@
   SQLite 76 passed; PostgreSQL 83 passed, no skips; full SQLite **2213 passed,
   17 PostgreSQL skips**, 32 warnings. Real migrated HTTP/restart **15/15**;
   migration up/down/up and self-review recorded. Existing database untouched.
-  [Evidence](delivery/tasks/R1-S1-T3b-I.md). Next: **R1-S1-T3b-D**;
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3b-i). Next: **R1-S1-T3b-D**;
   derived stores/ingest, T3b/T3/F05 and sprint gate remain open.
 
 - **Session 2026-09-21 - R1-S1-T3a-V1 feature timestamp repair.**
@@ -248,7 +720,7 @@
   Focused PostgreSQL 93 passed; feature HTTP/restart 12/12 on each database;
   erasure HTTP/restart 19/19 on SQLite. Full PostgreSQL **2208 passed**,
   zero skips; SQLite **2198 passed, 10 PostgreSQL skips**, 32 warnings each.
-  [Evidence](delivery/archive/R1-S1-T3a-V1.md). No historical-data repair;
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3a-v1). No historical-data repair;
   V1 and T3a are done. Next task: **R1-S1-T3b**, separate chat;
   parent T3, F05 and the sprint gate remain open.
 
@@ -257,7 +729,7 @@
   Read-only test connection retry again received password authentication
   rejection before SQL. No database mutations, application edits or new pytest/
   HTTP results. Existing report-store hash matches its implementation review.
-  [Evidence](delivery/tasks/R1-S1-T3a.md). Next remains T3a PostgreSQL
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3a). Next remains T3a PostgreSQL
   validation after correcting the local test connection; T3b not started.
 
 - **Session 2026-09-10 — R1-S1-T3a validation retry, gate remains open.**
@@ -265,7 +737,7 @@
   authentication. User asked to correct it locally. Focused rerun 55 passed,
   six PostgreSQL skips; scratch HTTP/restart 19/19. Recovered previous full
   result: 2195 passed, six skips, 42 warnings, 423.01s. No application changes
-  or remote data mutations. [Evidence](delivery/tasks/R1-S1-T3a.md).
+  or remote data mutations. [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3a).
   Next remains T3a PostgreSQL validation; T3b not started.
 
 - **Session 2026-09-10 — R1-S1-T3a implemented, awaiting PostgreSQL validation.**
@@ -275,7 +747,7 @@
   Focused tests 55 passed, six PostgreSQL skips; real HTTP/restart 19/19 passed.
   Full suite 2195 passed, six skips (recovered next session). Self-review
   complete; no schema/UI change.
-  [Evidence](delivery/tasks/R1-S1-T3a.md). Next: T3a PostgreSQL validation;
+  [Evidence](delivery/EVIDENCE-R1.md#r1-s1-t3a). Next: T3a PostgreSQL validation;
   T3b and parent F05 remain open. Existing user data was not cleaned up.
 
 - **Session 2026-09-09 — R1-S1-T2 complete (F05 part 2).**
@@ -285,7 +757,7 @@
   Focused pytest 31 passed; full suite **2186 passed**, 42 warnings, 344.08s;
   synthetic CLI smoke 10/10 and subprocess interruption regressions passed.
   Self-review complete; no app/SQL/UI changes or corresponding journey claims.
-  [Task evidence](delivery/tasks/R1-S1-T2.md), [policy](LEGACY_FLYWHEEL.md).
+  [Task evidence](delivery/EVIDENCE-R1.md#r1-s1-t2), [policy](LEGACY_FLYWHEEL.md).
   Next chat: **R1-S1-T3** only. F05 stays open through T3 and the sprint gate.
 
 - **Session 2026-09-09 — R1-S1-T1 complete (F05 part 1).**
@@ -296,7 +768,7 @@
   suite **2163 passed**, 42 warnings, 286.40s. Default-app restart/erasure HTTP
   smoke 16/16; employer outcome/CSRF smoke 21/21. Self-review complete; no new
   schema/SQL/UI, no PostgreSQL/browser/live-provider validation claimed.
-  [Task evidence](delivery/tasks/R1-S1-T1.md). Next chat: **R1-S1-T2** only,
+  [Task evidence](delivery/EVIDENCE-R1.md#r1-s1-t1). Next chat: **R1-S1-T2** only,
   legacy-file policy/inspectable cleanup. F05 stays open through T2/T3 and Q.
 
 - **Session 2026-09-09 — PI/sprint/task delivery plan, documentation only.**

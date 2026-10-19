@@ -1,19 +1,23 @@
 # PI-R3 — Complete the existing product workflows
 
-Status: planned. Each advertised screen performs a real authorized operation and handles errors, with browser evidence for the user journey.
+Status: done within bounded scope (2026-10-16); [final gate](EVIDENCE-R3.md#r3-s3-q). F10/F11 retain their PI-R5 residuals. Each advertised screen performs a real authorized operation and handles errors, with browser evidence for the user journey.
 
 Load only the current task section plus [WORKFLOW.md](WORKFLOW.md), not this entire PI by default.
 Source entry points (paths relative to repository root): frontend/Veritas.dc.html; frontend/api.js; frontend/support.js; src/app/api/routes.py; src/app/verification/; src/app/interview/; src/app/curation/
 Task test lists are starting points verified during planning; select/add regression cases from actual callers at implementation time.
-Every task inherits the workflow's full pytest, review and relevant journey gates. Task evidence lives in `tasks/<task-id>.md`.
+Every task inherits [WORKFLOW.md](WORKFLOW.md). Reuse inline active task sections; completed records use PI evidence anchors.
 
 ## R3-S1 — Evaluation and verification flows
+
+Status: done (2026-10-13). Combined gate: [R3-S1-Q](EVIDENCE-R3.md#r3-s1-q).
+Bounded F09 contact ordering/delivery is complete; PI-R3 closes at R3-S3-Q, while F10 retains R5-S2-T1 regression scope.
 
 Sprint acceptance journey: A browser user signs in, uploads, receives a real report, submits human outcome feedback and handles an invalid upload/provider outage without fake progress. Contact verification uses a captured provider in tests.
 
 ### R3-S1-T1 — Wire the evaluate screen
 
-Status: pending. Audit mapping: F10. Prerequisites: R2-S2-Q.
+Status: done (2026-10-12). Audit mapping: F10. Prerequisites: R2-S2-Q.
+Evidence: [R3-S1-T1](EVIDENCE-R3.md#r3-s1-t1).
 
 **Development:** Replace timer/mock evaluation with the authorized API flow, real progress states and report navigation.
 
@@ -25,7 +29,8 @@ Status: pending. Audit mapping: F10. Prerequisites: R2-S2-Q.
 
 ### R3-S1-T2 — Connect contact-verification delivery
 
-Status: pending. Audit mapping: F09. Prerequisites: R3-S1-T1; R1-S2-T3.
+Status: done (2026-10-12). Audit mapping: F09. Prerequisites: R3-S1-T1; R1-S2-T3.
+Evidence: [R3-S1-T2](EVIDENCE-R3.md#r3-s1-t2).
 
 **Development:** Inject the existing email capability into verification; use explicit refusal for unavailable phone/email delivery.
 
@@ -37,17 +42,23 @@ Status: pending. Audit mapping: F09. Prerequisites: R3-S1-T1; R1-S2-T3.
 
 ### R3-S1-Q — Sprint integration review
 
-Status: pending. Prerequisites: all tasks in R3-S1.
+Status: done (2026-10-13). Prerequisites: all tasks in R3-S1.
+Evidence: [R3-S1-Q](EVIDENCE-R3.md#r3-s1-q).
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R3-S1-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 
 ## R3-S2 — Operator and curation screens
+
+Status: done (2026-10-14). T1/T2/T3 (including T3A/T3B) and Q are done.
+Combined acceptance/review: [R3-S2-Q](EVIDENCE-R3.md#r3-s2-q). Detailed children are
+consolidated in PI-R3 evidence. PI-R3 closes at R3-S3-Q; F10 retains R5-S2-T1 scope.
 
 Sprint acceptance journey: An authorized operator changes org/user/curation state through the browser, reloads and sees persisted results; wrong-plane callers are refused without disclosing tenant data.
 
 ### R3-S2-T1 — Wire organization administration
 
-Status: pending. Audit mapping: F10. Prerequisites: R3-S1-Q.
+Status: done (2026-10-13). Audit mapping: F10. Prerequisites: R3-S1-Q.
+Evidence: [R3-S2-T1](EVIDENCE-R3.md#r3-s2-t1).
 
 **Development:** Replace adminorgs fixture data/actions with real list/detail/mutation APIs and honest empty/error states.
 
@@ -59,7 +70,8 @@ Status: pending. Audit mapping: F10. Prerequisites: R3-S1-Q.
 
 ### R3-S2-T2 — Wire user administration
 
-Status: pending. Audit mapping: F10. Prerequisites: R3-S2-T1.
+Status: done (2026-10-13). Audit mapping: F10. Prerequisites: R3-S2-T1.
+Evidence: [R3-S2-T2](EVIDENCE-R3.md#r3-s2-t2).
 
 **Development:** Connect adminusers to supported user/membership/session actions; remove simulated success.
 
@@ -71,7 +83,9 @@ Status: pending. Audit mapping: F10. Prerequisites: R3-S2-T1.
 
 ### R3-S2-T3 — Wire taxonomy curation
 
-Status: pending. Audit mapping: F10. Prerequisites: R3-S2-T2.
+Status: done (2026-10-14). Audit mapping: F10. Prerequisites: R3-S2-T2.
+Bounded children: [T3A/T3B contract and status](EVIDENCE-R3.md#r3-s2-t3).
+T3A/T3B passed; required HTTP revisions and guarded browser decisions/lifecycle are complete. Combined sprint acceptance passed Q.
 
 **Development:** Connect queue/review/edit actions to curation APIs with persisted result and clear conflict/refusal handling.
 
@@ -83,17 +97,27 @@ Status: pending. Audit mapping: F10. Prerequisites: R3-S2-T2.
 
 ### R3-S2-Q — Sprint integration review
 
-Status: pending. Prerequisites: all tasks in R3-S2.
+Status: done (2026-10-14). Prerequisites: all tasks in R3-S2.
+Evidence: [R3-S2-Q](EVIDENCE-R3.md#r3-s2-q). Combined Chrome/HTTP/restart, focused/full
+pytest, PostgreSQL locks/migrations, separate self-review and preservation passed.
+No application change in Q; scope and remaining limits belong to its evidence.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R3-S2-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 
 ## R3-S3 — Trustworthy interview baseline
+
+Status: done (2026-10-16). Combined gate: [R3-S3-Q](EVIDENCE-R3.md#r3-s3-q); detailed records consolidated in PI-R3 evidence. Video and empirical quality remain PI-R5.
 
 Sprint acceptance journey: A candidate completes a real text/audio interview in the browser and an authorized employer sees only the permitted summary. Repetitive nonsense cannot earn the strong band solely through keyword counts.
 
 ### R3-S3-T1 — Repair and version the interview rubric
 
-Status: pending. Audit mapping: F11. Prerequisites: R3-S2-Q.
+Status: done (2026-10-15). Audit mapping: F11. Prerequisites: R3-S2-Q.
+Evidence: [R3-S3-T1](EVIDENCE-R3.md#r3-s3-t1). Bounded `s73.2` content rubric, saved
+version/history compatibility, full/focused pytest, actual migrated SQLite/PG
+HTTP/restart/actor denials, common UI/contracts and separate self-review passed.
+That evidence section owns findings, preservation and heuristic/quality limits; no interview
+UI wiring, independent/live-provider or representative-accuracy claim. F11 stays open.
 
 **Development:** Use distinct substantive details, relevance and repetition handling; assess semantic reasoning against explicit examples. Keep insufficient evidence neutral and score versions auditable.
 
@@ -105,7 +129,10 @@ Status: pending. Audit mapping: F11. Prerequisites: R3-S2-Q.
 
 ### R3-S3-T2 — Wire interview lifecycle and text answers
 
-Status: pending. Audit mapping: F11. Prerequisites: R3-S3-T1.
+Status: done (2026-10-15). Audit mapping: F11. Prerequisites: R3-S3-T1.
+[T2A](EVIDENCE-R3.md#r3-s3-t2a) and [T2B](EVIDENCE-R3.md#r3-s3-t2b) passed their distinct
+backend/browser gates; [parent scope/status](EVIDENCE-R3.md#r3-s3-t2). Leaf evidence
+owns exact validation/review and limits. T3/Q close R3-S3/PI-R3; F11 retains PI-R5 scope.
 
 **Development:** Replace local mock handlers with start/current question/answer/finish APIs and resumable server state.
 
@@ -117,7 +144,10 @@ Status: pending. Audit mapping: F11. Prerequisites: R3-S3-T1.
 
 ### R3-S3-T3 — Wire microphone answers and transcription
 
-Status: pending. Audit mapping: F11. Prerequisites: R3-S3-T2.
+Status: done (2026-10-16). Audit mapping: F11. Prerequisites: R3-S3-T2.
+[R3-S3-T3](EVIDENCE-R3.md#r3-s3-t3) owns microphone/typed fallback, validation/privacy
+fixes, actual Chrome/fake-ASR/native HTTP/restart, full regression, self-review
+and preservation evidence. Q closes R3-S3/PI-R3; F11 retains PI-R5 scope. No live-ASR/quality claim.
 
 **Development:** Connect browser audio capture to existing transcription flow with typed-answer fallback and explicit permission/size/provider errors.
 
@@ -129,7 +159,7 @@ Status: pending. Audit mapping: F11. Prerequisites: R3-S3-T2.
 
 ### R3-S3-Q — Sprint integration review
 
-Status: pending. Prerequisites: all tasks in R3-S3.
+Status: done (2026-10-16). Prerequisites: all tasks in R3-S3.
+Evidence: [R3-S3-Q](EVIDENCE-R3.md#r3-s3-q). Combined actual Chrome/text/audio/restart, employer consent/privacy, focused/full regression, PostgreSQL gates and separate self-review passed. No application change in Q; PI-R3 closes within scope.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R3-S3-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
-
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.

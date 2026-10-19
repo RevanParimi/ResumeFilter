@@ -80,7 +80,7 @@ changing it is a reviewed schema decision, same stance as `InterviewStage` and
 |---|---|---|
 | 0 `NONE` | — | no verification held |
 | 1 `SELF_ATTESTED` | `self_attested` | ships — the candidate asserts their own identity |
-| 2 `CONTACT_CONTROL` | `otp_email`, `otp_phone` | ships — proves control of the contact on file |
+| 2 `CONTACT_CONTROL` | `otp_email`, `otp_phone` | Email uses the configured provider; phone delivery is unavailable by default. Confirmation proves control of the contact on file. |
 | 3 `REVIEWED` | `manual_review` | ships — an operator checked out of band; **admin plane only** |
 | 4 `GOVERNMENT_ID` | `government_id` | **declared, not implemented** — the spine refuses it (422) |
 
@@ -175,8 +175,8 @@ hash of that type on file is a 400 with a distinct reason.
 
 | Route | Behaviour |
 |---|---|
-| `POST /portal/verifications` | Body `{method, destination?}`. Self-attest completes immediately → `verified` at L1. OTP methods bind the destination (§6), create a pending verification + challenge, and "send" via the notifier. 400 on destination problems · 403 for a method a candidate may not initiate (`manual_review`) or without `IDENTITY_VERIFY` for a third-party adapter · 422 unknown method **or a declared-but-unimplemented one (`government_id`)** · 429 resend inside the cooldown. |
-| `POST /portal/verifications/{id}/confirm` | Body `{code}`. Correct + unexpired → `verified`. Wrong → 400, attempts incremented; at `verif_otp_max_attempts` the verification flips to `failed`. Expired challenge → 400. |
+| `POST /portal/verifications` | Body `{method, destination?}`. Self-attest completes immediately → `verified` at L1. OTP methods bind the destination (§6) and deliver through the configured capability before committing the challenge. 400 on destination problems · 403 for a method a candidate may not initiate (`manual_review`) or without `IDENTITY_VERIFY` for a third-party adapter · 422 unknown/unimplemented method · 429 resend inside cooldown · 503 `email_unavailable`, `phone_unavailable` or `email_send_failed`. A failed send returns no usable new code. |
+| `POST /portal/verifications/{id}/confirm` | Body `{code}`. One correct, unexpired code with remaining attempts → `verified`. Wrong → 400, attempts incremented; at `verif_otp_max_attempts` the verification flips to `failed`. Expired, exhausted, consumed, superseded or repeated confirmation → 400. Repeat requests preserve the saved outcome, expiry and completion audit. |
 | `POST /portal/documents` | **(S7.2)** Body `{doc_type, content_b64, claim_ref?}`. Parses, assesses, writes ONE claim verification. 200 `{verification, findings, claims}` · 400 unparseable or bad base64 · 403 a method a candidate may not initiate · 404 unknown candidate · 422 oversize (`doc_max_b64_chars`), over `doc_max_pages`, or an unknown `doc_type`. |
 | `GET /portal/verifications` | The candidate's own verifications + current `IdentityAssurance` **+ `claims: ClaimEvidence` (S7.2)** — two numbers, side by side, never merged. |
 | `GET /portal/me` | Carries `identity: IdentityAssurance` **and `claims: ClaimEvidence` (S7.2)**. |
@@ -219,6 +219,30 @@ a stolen candidate key could ask again for another code and another full set of
 candidate+channel, exactly one code is ever live and a restart still waits out
 the cooldown.
 
+Issuance, confirmation and trusted completion serialize on the existing
+candidate row: PostgreSQL uses a row lock; SQLite obtains its write lock before
+reading mutable state without changing the candidate's update timestamp.
+Each contender re-reads current state after the lock wait. Default challenge
+time is sampled then; explicit injected clocks remain supported. Competing
+failures charge separate attempts; a correct code cannot bypass an exhausted
+budget. Exactly one confirmation consumes the code and writes its outcome and
+audit in one transaction. A confirmation/resend race follows lock acquisition
+order. Legacy ambiguous candidate/channel sets refuse confirmation until a
+resend replaces them; there is no destructive working-data cleanup or migration.
+
+Email delivery and the candidate portal controls are wired at
+[R3-S1-T2](docs/delivery/EVIDENCE-R3.md#r3-s1-t2). Login and verification share the
+configured email client; contact messages are separate from sign-in messages.
+`NullNotifier` and unavailable email/phone refuse. Send failure rolls back the
+new secret and supersession, preserving an older active code; the new attempt
+is recorded failed. Codes/destinations stay out of logs and failure responses.
+The existing candidate lock covers dispatch/activation; SMTP socket timeouts
+apply and SQLite holds its writer lock during send. This is not an atomic
+transaction with the mail provider: an acknowledgment/commit failure can leave
+a delivered but unusable code. Capture/browser/PG tests prove mechanics, not
+live mailbox delivery. Bounded sprint/contact acceptance closes at
+[R3-S1-Q](docs/delivery/EVIDENCE-R3.md#r3-s1-q); other PI-R3/R5 work remains open.
+
 Both tables CASCADE from `candidates`: a DPDP delete removes every verification
 and challenge, and the org-plane read then 404s.
 
@@ -259,7 +283,7 @@ if the knob is flipped by accident.
 - No liveness, face match, or any biometric capture.
 - No feature-store consumption — assurance is not a ranking feature.
 - No effect on matching, ranking, depth scoring, or `fabrication_risk`.
-- No email/SMS delivery provider (`NullNotifier` discards).
+- Phone/SMS delivery remains unavailable; email uses the configured email client.
 
 **Follow-ups:** S7.3 proxy-detection hooks reading assurance · PI-8 real OTP
 delivery, the mechanical retention sweep, and assurance as a feature once its

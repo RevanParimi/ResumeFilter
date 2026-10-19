@@ -146,6 +146,7 @@
 
   function request(method, path, body, opts) {
     var m = String(method || "GET").toUpperCase();
+    var requestCsrf = csrfToken();
     var init = {
       method: m,
       // Rule 1. Not an option a caller can pass — there is no way to omit it.
@@ -158,11 +159,15 @@
     }
     if (!SAFE[m]) {
       // Rule 2. Read at call time, not cached.
-      var t = csrfToken();
+      var t = requestCsrf;
       if (t) init.headers["X-CSRF-Token"] = t;
     }
 
-    return global
+    var timeoutMs = opts && opts.timeoutMs;
+    var controller = timeoutMs > 0 ? new AbortController() : null;
+    if (controller) init.signal = controller.signal;
+
+    var pending = global
       .fetch(base() + path, init)
       .catch(function (netErr) {
         // A CORS rejection and a dead server are indistinguishable here by
@@ -196,7 +201,11 @@
             if (res.ok) return parsed;
             var detail = isJson ? readDetail(parsed) : String(parsed || "").slice(0, 300);
             var kind = classify(res.status, detail);
-            if (kind === "session_lost" && sessionLostHandler) {
+            var currentCsrf = csrfToken();
+            if (kind === "session_lost" && sessionLostHandler &&
+                (!currentCsrf || currentCsrf === requestCsrf)) {
+              // A delayed 401 belongs to the cookie used for that request.
+              // A new CSRF cookie means another account has signed in since.
               // Rule 3. Fire once, then throw. The caller must not retry, and
               // there is nothing to retry with.
               try {
@@ -208,6 +217,18 @@
             throw ApiError(res.status, detail, kind);
           });
       });
+
+    if (!controller) return pending;
+    var timer;
+    // Include response-body reading in the deadline. Abort frees browser work;
+    // it cannot prove that the server rolled back an already saved run.
+    var deadline = new Promise(function (_resolve, reject) {
+      timer = setTimeout(function () {
+        controller.abort();
+        reject(ApiError(0, "Request timed out. The server may have saved this run.", "timeout"));
+      }, timeoutMs);
+    });
+    return Promise.race([pending, deadline]).finally(function () { clearTimeout(timer); });
   }
 
   global.VeritasAPI = {
@@ -215,10 +236,10 @@
     setBase: setBase,
     csrfToken: csrfToken,
     request: request,
-    get: function (p) { return request("GET", p); },
-    post: function (p, b) { return request("POST", p, b === undefined ? {} : b); },
+    get: function (p, opts) { return request("GET", p, null, opts); },
+    post: function (p, b, opts) { return request("POST", p, b === undefined ? {} : b, opts); },
     patch: function (p, b) { return request("PATCH", p, b === undefined ? {} : b); },
-    del: function (p) { return request("DELETE", p); },
+    del: function (p, opts) { return request("DELETE", p, null, opts); },
     onSessionLost: function (fn) { sessionLostHandler = fn; },
 
     /* Screens this session's plane has no endpoint for render mock data. They
@@ -226,7 +247,7 @@
      * up showing a buyer numbers that were never computed (UI.md §7).
      *
      * Since S8.4 the reason is never "not built" — the operator console and
-     * the instant check are ADMIN-plane routes, and the interview runner is
+     * ad-hoc evaluation are ADMIN-plane routes, and the interview runner is
      * candidate-plane. All three 401 an org session. */
     MOCK_NOTE: "Sample data — this screen's endpoints are on another plane",
   };

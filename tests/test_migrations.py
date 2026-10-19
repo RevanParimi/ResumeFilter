@@ -108,7 +108,7 @@ MATCHING_TABLES = ("job_requisitions",)  # S5.1
 
 PROFILE_SOURCE_TABLES = ("profile_sources",)  # S6.1
 
-CURATION_TABLES = ("unmapped_terms",)  # S6.3 — candidate-agnostic (no FK)
+CURATION_TABLES = ("unmapped_terms", "curation_observations", "curation_aliases")
 
 CANDIDATE_AUTH_TABLES = ("candidate_credentials",)  # S6.4 — candidate CASCADE
 

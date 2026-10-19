@@ -1,42 +1,20 @@
-# <task-id> — <title>
+# Inline task record fields
 
-Status: pending. PI/sprint: <id>. Audit findings: <F-ids>.
-Prerequisites: <task IDs and evidence links>.
+Reuse these fields in the existing active task or sprint section. This is a
+reference, not a request to create a file per task/chat. Follow [WORKFLOW.md](WORKFLOW.md).
 
-## Context and scope
+- ID/title, status, PI/sprint/audit mapping and prerequisites.
+- Trigger, expected observable result, exclusions and relevant entry points.
+- Short design decision and compatibility/data implications.
+- Acceptance criteria mapped to meaningful regression/API/browser scenarios.
+- Required validation layers, explaining any that do not apply.
+- Evidence: intended reproducer where applicable; final commands, environment,
+  passed/failed/skipped counts, warning summary and artifact locations.
+- Separate self-review: reviewed code state, scope, findings and resolutions;
+  distinguish independent review and live-provider evidence when actually run.
+- Remaining risks/missing validation and completion decision; never close a
+  parent while its acceptance or required evidence is incomplete.
 
-- Trigger and current defect/missing behavior:
-- Expected behavior and scope exclusions:
-- Source/test entry points (open only relevant files):
-- Constraints and short design decision:
-
-## Acceptance and test mapping
-
-| ID | Observable criterion | Test/scenario | Result |
-|---|---|---|---|
-| AC1 | <behavior> | <test name / HTTP / browser journey> | Not run |
-
-Required layers from WORKFLOW.md: <focused/full pytest, journey, browser,
-PostgreSQL/migrations, etc.; explain any not applicable>.
-
-## Implementation evidence
-
-- Reproducer before fix: exact command, intended failure and result.
-- Final change: affected behavior/files and compatibility/data implications.
-- Final commands: environment, passed/failed/skipped counts, warning summary,
-  duration if available and log/artifact paths. Distinguish planned from run.
-- Code state reviewed/tested: commit plus relevant uncommitted diff summary.
-
-## Review
-
-- Reviewer type: self-review unless a separate review actually happened.
-- Scope and scenarios checked:
-- Findings: severity, location, trigger, consequence, fix and regression.
-- Remaining findings/limitations:
-
-## Handoff
-
-- Completion decision: done / unfinished, with evidence for each gate.
-- Changed contracts, migration/rollback instructions if relevant:
-- Exact next task and entry points:
-- Unfinished work or missing environment; no parent marked done prematurely.
+Put only the exact next task and current risks in `docs/PROGRESS.md`; avoid
+copying evidence into each ancestor. Fold completed records into the relevant
+PI evidence file under a stable task anchor and update inbound links.

@@ -8,10 +8,9 @@ The refusal matters and is not an error path to paper over. With no provider
 configured, signup and login return 503 email_unavailable rather than appearing
 to succeed -- the NullSpeech posture from S7.3. Nothing silently degrades.
 
-This also closes a standing gap: S7.1's L2 contact-control assurance ships, is
-tested, and has NEVER delivered an OTP to a human, because NullNotifier logs
-neither the code nor the destination. SMTPEmail gives that rung a real delivery
-path for the first time since 2026-07-31.
+The same configured client also serves contact verification through its notifier
+adapter. Unavailable email and phone delivery refuse explicitly; an accepted
+email does not prove contact control until the candidate confirms its code.
 """
 
 from __future__ import annotations
@@ -117,8 +116,8 @@ class SMTPEmail(EmailClient):
                 smtp.send_message(msg)
         except Exception as exc:  # noqa: BLE001 -- one failure surface for the caller
             # No address and no body in the log line, same reason as NullEmail.
-            log.warning("email.dispatch.failed", error=str(exc))
-            raise EmailSendFailed(f"email delivery failed: {exc}") from exc
+            log.warning("email.dispatch.failed", error_type=type(exc).__name__)
+            raise EmailSendFailed("email delivery failed") from None
         log.info("email.dispatch.sent")
 
 

@@ -82,3 +82,41 @@ async def test_fake_speech_can_be_scripted_to_fail(s):
     fake = FakeSpeech(fail=SpeechFailed("upstream down"))
     with pytest.raises(SpeechFailed):
         await fake.atranscribe(audio_b64="AAAA", mime="audio/wav")
+
+
+@pytest.mark.parametrize("content", [None, "", [], {"private": "synthetic-private-provider-data"}])
+async def test_provider_empty_or_malformed_content_has_a_safe_failure(s, content, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.services import speech as module
+    logs = []
+    monkeypatch.setattr(module, "log", SimpleNamespace(warning=lambda event, **fields: logs.append((event, fields))))
+    speech = OpenRouterSpeech.__new__(OpenRouterSpeech)
+    speech.settings = s
+    create = AsyncMock(return_value=SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))]))
+    speech._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with pytest.raises(SpeechFailed) as error:
+        await speech.atranscribe(audio_b64="AAAA", mime="audio/webm;codecs=opus")
+    assert "synthetic-private" not in str(error.value) + str(logs)
+    assert logs[0][1].keys() == {"error_type"}
+
+
+async def test_provider_exception_does_not_expose_its_payload_and_browser_mime_maps_on_the_wire(s, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from app.services import speech as module
+    logs = []
+    monkeypatch.setattr(module, "log", SimpleNamespace(warning=lambda event, **fields: logs.append((event, fields))))
+    speech = OpenRouterSpeech.__new__(OpenRouterSpeech)
+    speech.settings = s
+    create = AsyncMock(side_effect=RuntimeError("synthetic-private-provider-token-and-audio"))
+    speech._client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    with pytest.raises(SpeechFailed) as error:
+        await speech.atranscribe(audio_b64="AAAA", mime="audio/webm;codecs=opus")
+    assert "synthetic-private" not in str(error.value) + str(logs)
+    create.side_effect = None
+    create.return_value = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="A saved spoken answer."))])
+    transcript = await speech.atranscribe(audio_b64="AAAA", mime="audio/webm;codecs=opus")
+    assert transcript.text == "A saved spoken answer."
+    part = create.call_args.kwargs["messages"][1]["content"][1]["input_audio"]
+    assert part == {"data": "AAAA", "format": "webm"}

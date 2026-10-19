@@ -8,38 +8,47 @@ review, end-to-end verification and accurate context between sessions.
 
 1. Read `docs/PROGRESS.md`: current task, last evidence, next task and constraints.
 2. Read this workflow and the current task section in its PI file. Read its
-   `tasks/<id>.md` record if one exists. Use targeted sections, not the whole
+   active task section if one exists. Use targeted sections, not the whole
    roadmap, every PI or old `.superpowers` review transcripts.
 3. Inspect current git status/diff and relevant source/tests. Local state may
    have changed in another chat. Historical test results are not current proof.
 4. Confirm dependencies against task evidence. Continue an unfinished current
    task first; otherwise start the named next eligible task. No new permission
    is needed for the already-authorized local work.
-5. If the task cannot fit a focused session, create named child tasks before
-   implementation. Give each its own acceptance criteria and tests. Complete
+5. If the task cannot fit a focused session, define named child sections in its
+   existing record before implementation, each with acceptance criteria and tests. Complete
    only one child; the parent remains incomplete. Do not widen the task to
    unrelated improvements found during review.
 
-PI files hold task status; the current handoff holds the next pointer. Per-task
-records hold evidence and decisions. Update these together. Original F01–F16
+PI files hold task status; the current handoff holds the next pointer. Active
+task sections hold contracts, evidence and decisions. Original F01–F16
 IDs are traceability links, not a second competing execution order. PI-R IDs
 are remediation increments and do not renumber the older product PI-1–PI-9.
 
 `FEATURE_STATUS.md` at the repository root is the common feature overview.
-After a task group closes, move its detailed completed child records from
-`tasks/` to `archive/`, keeping the group summary and updating links. Completed
-children of open groups stay in `tasks/` until group closure. Preserve evidence,
-IDs and status; do not load the archive routinely or duplicate it in the handoff.
+Completed records live under stable task anchors in `EVIDENCE-R1.md` through
+`EVIDENCE-R4.md`; append to the relevant PI evidence file when work closes.
+Keep only open task records in `tasks/`, with child contracts/evidence inline.
+Preserve task IDs, statuses, decisions, checks and limitations when folding a
+record; update inbound links. Read historical evidence only when relevant.
 
 Keep one owner for each kind of information: feature overview in
 `FEATURE_STATUS.md`, next action/current risks in `PROGRESS.md`, PI task status
-in the PI file, direct-child scope/status in parent records, and exact test
-commands/counts in leaf evidence. Link to the owner instead of copying its log.
-Do not append each leaf result to every ancestor or create another review/status
-Markdown file when an existing audit/task record fits. Create a child only for a
-distinct bounded acceptance/validation contract, not a work session or test rerun.
+in the PI file, child scope/status in the active task, and exact commands/counts
+in its evidence section (or PI evidence after closure). Link to the owner instead
+of copying its log. Reuse the existing audit for maintenance reviews. A chat,
+test rerun or small regression does not justify another Markdown or test file.
+Create a standalone task file only for a distinct open workstream that cannot
+fit the existing task section; do not create placeholder files for pending work.
+
+Group tests by product area and layer. Extend an existing module and reuse its
+fixtures before adding a file; split only when it improves navigation or
+isolation. Keep distinct concurrency, ownership and erasure assertions. Combine
+identical subprocess launchers with explicit parameter IDs, rather than copying
+one wrapper per screen. File counts are not coverage or quality measures.
 Superseded implementation plans and prototype UI records live in Git history.
-Current feature contracts, this plan and the handoff own ongoing work.
+Current feature contracts, this plan and the handoff own ongoing work; do not
+recreate a parallel spec/plan tree.
 
 ## Development loop
 
@@ -65,6 +74,17 @@ Current feature contracts, this plan and the handoff own ongoing work.
 7. **Record and stop.** Update the task record, PI status and short handoff.
    State completed behavior, evidence, open risks and the exact next task. Do
    not start that next task in the same chat.
+
+## Sprint closure
+
+Run the sprint's acceptance journey through actual application composition on
+migrated scratch storage, with fake external providers. Use HTTP/subprocess
+checks for backend work and real browsers for UI work. Run full pytest and the
+applicable database/browser gates; review the combined diff for ownership,
+lifecycle, fallback and compatibility. Record results and unresolved findings in
+the existing sprint section. Fix acceptance blockers; return unrelated work to
+the backlog. Missing evidence means awaiting validation. Stop after closure and
+name the next task.
 
 No arbitrary number of review loops or assumed defect percentage proves
 correctness. Stop when the acceptance gates pass, not after a token/time budget

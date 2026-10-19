@@ -115,23 +115,23 @@ def main() -> int:
         fs.upsert_vector(mv)
         mvs.append(mv)
 
-    examples = build_training_set(mvs, ledger_store=ls)
+    examples = build_training_set(mvs, ledger_store=ls, registry=reg)
     label = {ex.vector.candidate_id: ex.label for ex in examples}
 
     csv_path = scratch / "train_core_v1.csv"
-    export_training_csv(examples, view=view, path=str(csv_path))
+    export_training_csv(examples, view=view, registry=reg, ledger_store=ls, path=str(csv_path))
     header = csv_path.read_text(encoding="utf-8").splitlines()[0].split(",")
 
     pq_ok = True
     pq_path = scratch / "train_core_v1.parquet"
     if importlib.util.find_spec("pyarrow") is None:
         try:
-            export_training_parquet(examples, view=view, registry=reg, path=str(pq_path))
+            export_training_parquet(examples, view=view, registry=reg, ledger_store=ls, path=str(pq_path))
             pq_ok = False  # should have raised
         except ParquetUnavailable:
             pq_ok = True
     else:
-        export_training_parquet(examples, view=view, registry=reg, path=str(pq_path))
+        export_training_parquet(examples, view=view, registry=reg, ledger_store=ls, path=str(pq_path))
         pq_ok = pq_path.exists()
 
     a, b, c = label[ids["a"]], label[ids["b"]], label[ids["c"]]

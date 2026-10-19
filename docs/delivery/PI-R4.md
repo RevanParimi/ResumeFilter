@@ -1,6 +1,6 @@
 # PI-R4 — Simpler services and reliable execution
 
-Status: planned. Reduce unnecessary machinery while proving ownership, concurrency, resource lifecycle and operating behavior remain correct.
+Status: in progress. Reduce unnecessary machinery while proving ownership, concurrency, resource lifecycle and operating behavior remain correct.
 
 2026-09-26 targeted review reconfirmed repeated engine/store construction (T1),
 unused vector-store startup after scoped provenance replaced retrieval (T2),
@@ -8,13 +8,20 @@ large live route/frontend modules (T3/T4) and tracked runtime DB (R4-S3-T3).
 See the [audit follow-up](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-09-26--repository-clutter-review).
 These are source findings, not completed runtime fixes or measured speedups.
 
-R4-M2 maintenance: obsolete-file cleanup validated; see the existing
-[audit](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material).
+R4-M2 maintenance (2026-10-19): obsolete-file retirement done; the follow-up
+publication includes the previously completed remediation and R4-M1 consolidation.
+Final regression/journey/review gates passed. Local ignored-artifact removal
+remains blocked; feature task statuses and next T3E are unchanged.
+[Contract/evidence](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-19--retire-obsolete-repository-material).
+
+R4-M1 maintenance (2026-10-18): test/delivery consolidation done;
+[contract and evidence](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-18--test-and-delivery-consolidation).
+R4-S1-T3E remains next; no feature task starts during this cleanup.
 
 Load only the current task section plus [WORKFLOW.md](WORKFLOW.md), not this entire PI by default.
 Source entry points (paths relative to repository root): src/app/services/; src/app/core/; src/app/api/; src/app/screening/; src/app/candidates/; src/app/curation/; src/app/metrics/; frontend/; .github/workflows/ci.yml
 Task test lists are starting points verified during planning; select/add regression cases from actual callers at implementation time.
-Every task inherits the workflow's full pytest, review and relevant journey gates. Task evidence lives in `tasks/<task-id>.md`.
+Every task inherits [WORKFLOW.md](WORKFLOW.md). Reuse inline active task sections; completed records use PI evidence anchors.
 
 ## R4-S1 — Simplify construction and boundaries
 
@@ -22,7 +29,13 @@ Sprint acceptance journey: Boot the production service composition against a mig
 
 ### R4-S1-T1 — Share database and service resources
 
-Status: pending. Audit mapping: F12. Prerequisites: R3-S3-Q.
+Status: done (2026-10-16). Audit mapping: F12; sprint closure remains R4-S1-Q. Prerequisites: R3-S3-Q.
+
+Split before implementation: [T1 parent](EVIDENCE-R4.md#r4-s1-t1).
+[T1A](EVIDENCE-R4.md#r4-s1-t1a) and [T1B](EVIDENCE-R4.md#r4-s1-t1b) are done for shared SQL
+topology/engine ownership and lazy owned-provider cleanup. Their PI evidence sections
+own final evidence. T2 removes the unused Chroma construction path; no blanket
+leak-free or live-provider claim. F12 remains open for R4-S1-Q.
 
 **Development:** Construct one engine/session factory per configured database and reuse service instances. Dispose resources on shutdown; preserve distinct database URLs when intentional.
 
@@ -34,7 +47,13 @@ Status: pending. Audit mapping: F12. Prerequisites: R3-S3-Q.
 
 ### R4-S1-T2 — Remove unused provenance infrastructure
 
-Status: pending. Audit mapping: F13; F02 cleanup. Prerequisites: R4-S1-T1.
+Status: done (2026-10-16). Audit mapping: F13; F02 cleanup. Prerequisites: R4-S1-T1.
+
+[T2 contract/evidence](EVIDENCE-R4.md#r4-s1-t2): unused vector service, hashing path
+and Chroma dependency removed; retired settings are accepted and ignored.
+Final focused/full pytest, migrated HTTP/restart, packaging, static checks,
+self-review and preservation passed. Graph retained with a bounded rationale;
+F13 and sprint/PI closure remain open.
 
 **Development:** Search callers before removing unused vector-store startup/config/dependencies; migrate supported settings with clear compatibility behavior. Evaluate linear graph simplification only if it has no required capability.
 
@@ -46,9 +65,14 @@ Status: pending. Audit mapping: F13; F02 cleanup. Prerequisites: R4-S1-T1.
 
 ### R4-S1-T3 — Split routes by product area
 
-Status: pending. Audit mapping: F13. Prerequisites: R4-S1-T2.
+Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
-**Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Partition further before starting if one router exceeds a session.
+[T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
+contracts/evidence. A-D are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
+retains their exact validation. Next: T3E, ledger/consent/records/coding/reputation.
+The parent, remaining children, finding and sprint stay open.
+
+**Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 
 **Acceptance:** Every moved route retains method/path, status codes, auth plane and CSRF enforcement. No accidental unguarded registration.
 
@@ -72,7 +96,7 @@ Status: pending. Audit mapping: F13. Prerequisites: R4-S1-T3.
 
 Status: pending. Prerequisites: all tasks in R4-S1.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R4-S1-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 
 ## R4-S2 — Concurrency and bounded work
 
@@ -86,7 +110,7 @@ Status: pending. Audit mapping: F14. Prerequisites: R4-S1-Q.
 
 **Acceptance:** Expired/stolen lease results cannot count as committed successes or overwrite newer results. Retries are bounded and cancellation is defined.
 
-**Tests and journey:** Extend tests/test_screening_store.py, tests/test_screening_service.py and tests/test_screening_retry.py. Controlled slow fake provider with two workers; HTTP process/retry count assertions.
+**Tests and journey:** Extend tests/test_screening_store.py, tests/test_screening_service.py and tests/test_screening_batches_api.py. Controlled slow fake provider with two workers; HTTP process/retry count assertions.
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
@@ -130,7 +154,7 @@ Status: pending. Audit mapping: F14. Prerequisites: R4-S2-T3.
 
 Status: pending. Prerequisites: all tasks in R4-S2.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R4-S2-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
 
 ## R4-S3 — Cross-worker state and reproducibility
 
@@ -176,4 +200,4 @@ Status: pending. Audit mapping: F15. Prerequisites: R4-S3-T2.
 
 Status: pending. Prerequisites: all tasks in R4-S3.
 
-Run the sprint acceptance journey above through the actual app composition on a migrated scratch database. Use HTTP/subprocess checks for backend sprints and a real browser for UI sprints; fake external providers. Run full pytest and the required PostgreSQL/browser gates from the task records. Review the final combined diff for broken ownership, data lifecycle, fallback and compatibility boundaries. Record command results and unresolved findings in `tasks/R4-S3-Q.md`. Fix acceptance-blocking regressions within this closure task; unrelated improvements return to the backlog. Missing required evidence means awaiting validation, not done. Stop after this task and name the next sprint task.
+Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.

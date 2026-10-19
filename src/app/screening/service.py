@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Optional
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.core.resume import ResumeInputError, validate_resume_text
 from app.ratelimit.schema import LimitScope
 from app.ratelimit.service import RateLimiter
 from app.screening.ingest import IngestDeps, IngestRefused, ingest_resume
@@ -75,9 +76,16 @@ class ScreeningService:
         if len(texts) > cap:
             raise ValueError(f"a batch holds at most {cap} items")
 
+        validated = []
+        for i, text in enumerate(texts):
+            try:
+                validated.append(validate_resume_text(text, self._settings))
+            except ResumeInputError as exc:
+                raise ValueError(f"item {i}: {exc.detail}") from None
+
         batch_id = self._store.create_batch(
             org_id, name=name, domain=domain,
-            created_by_org_user_id=created_by_org_user_id, texts=texts,
+            created_by_org_user_id=created_by_org_user_id, texts=validated,
         )
         detail = self.get(org_id, batch_id)
         assert detail is not None  # just created, by this org
@@ -334,7 +342,7 @@ def build_screening_service(
     from app.ratelimit.service import build_rate_limiter
 
     settings = settings or get_settings()
-    store = build_screening_store(settings)
+    store = build_screening_store(settings, session_factory=deps.candidates._session_factory)
     return ScreeningService(
         store, deps, settings=settings,
         limiter=build_rate_limiter(settings, store._session_factory, metrics=metrics),

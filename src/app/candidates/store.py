@@ -1,10 +1,10 @@
 """Candidate store — identity resolution, versioned resumes, extraction audit.
 
-Identity resolution matches on the S1.1 salted contact hashes: email_hash
-first, phone_hash second. A match attaches the new resume to that candidate
-(and backfills any hash the candidate is missing); it NEVER merges two
-existing candidates — that needs human judgment, not a heuristic. No hashes
-at all ⇒ a new candidate every time (advisory system: never guess identity).
+Dedup uses unique asserted contact hints, never mailbox proof as an upload key.
+Email takes precedence; phone-only matching excludes proved/review subjects.
+Only unproved subjects accept missing contact backfills. An upload never merges
+existing candidates or changes login ownership. Unsafe/no hints create a new
+submission (advisory system: never guess identity).
 
 DPDP: delete_candidate / delete_resume are hard deletes that cascade to
 resumes and extractions, erasing raw resume text on request.
@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import hashlib
 import secrets
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Callable, Literal, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, case, delete, func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
@@ -54,6 +55,17 @@ class ResumeErasedError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__("resume_erased")
+
+
+class LoginBindingRefused(ValueError):
+    """Proved mailbox cannot safely identify one candidate; no identifiers leaked."""
+
+
+class AssertedContactChangedError(RuntimeError):
+    """Resolved contact state changed before the write; retry as a fresh upload."""
+
+    def __init__(self) -> None:
+        super().__init__("candidate_contact_changed")
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -154,6 +166,14 @@ class CandidateStore:
                     raise CandidateErasedError() from None
                 raise
 
+            if matched_on is not None:
+                # The UPDATE above holds the row write lock. Re-read proof/hints
+                # after waiting, so a concurrent login or hint change cannot
+                # authorize a stale match. Refuse without choosing a new owner.
+                session.refresh(cand)
+                if not self._compatible_contact(cand, profile, matched_on):
+                    raise AssertedContactChangedError()
+
             same_text = (
                 session.execute(
                     select(ResumeRow)
@@ -242,15 +262,16 @@ class CandidateStore:
     ) -> tuple[Optional[CandidateRow], Optional[MatchedOn]]:
         contact = profile.contact
         if contact.email_hash:
-            row = (
+            rows = (
                 session.execute(
                     select(CandidateRow).where(CandidateRow.email_hash == contact.email_hash)
+                    .limit(2)
                 )
                 .scalars()
-                .first()
+                .all()
             )
-            if row is not None:
-                return row, "email_hash"
+            if len(rows) == 1 and CandidateStore._compatible_contact(rows[0], profile, "email_hash"):
+                return rows[0], "email_hash"
             # A submitted phone is not proof that a new email owns an existing
             # profile. In particular, never backfill a login email via this path.
             return None, None
@@ -262,13 +283,23 @@ class CandidateStore:
                 .scalars()
                 .all()
             )
-            if len(rows) == 1:
+            if len(rows) == 1 and CandidateStore._compatible_contact(rows[0], profile, "phone_hash"):
                 return rows[0], "phone_hash"
         return None, None
 
     @staticmethod
+    def _compatible_contact(cand: CandidateRow, profile: CandidateProfile, matched_on: MatchedOn) -> bool:
+        if matched_on == "email_hash":
+            return cand.email_hash == profile.contact.email_hash and (
+                cand.login_email_hash is None or cand.login_email_hash == cand.email_hash)
+        return (cand.phone_hash == profile.contact.phone_hash and
+                cand.login_email_hash is None and not cand.login_binding_review_required)
+
+    @staticmethod
     def _refresh_identity(cand: CandidateRow, profile: CandidateProfile) -> None:
-        """Backfill hashes this resume adds; latest non-empty name wins --
+        """Backfill missing hints only on unproved/non-review subjects.
+
+        Latest non-empty name wins --
         UNLESS the name was corrected by a reviewed DPDP request (S8.3 Phase B).
 
         Without that exception the rule reverts corrections: a subject asks for
@@ -279,10 +310,20 @@ class CandidateStore:
         this is the narrowest place to say so.
         """
         contact = profile.contact
-        if contact.email_hash and not cand.email_hash:
-            cand.email_hash = contact.email_hash
-        if contact.phone_hash and not cand.phone_hash:
-            cand.phone_hash = contact.phone_hash
+        if cand.login_email_hash is None and not cand.login_binding_review_required:
+            for field in ("email_hash", "phone_hash"):
+                value = getattr(contact, field)
+                if value and not getattr(cand, field):
+                    column = getattr(CandidateRow, field)
+                    # A login/review writer may commit after resolution. Guard
+                    # backfills in the UPDATE itself, under its row write lock.
+                    if inspect(cand).persistent:
+                        value = case((and_(
+                            column.is_(None),
+                            CandidateRow.login_email_hash.is_(None),
+                            CandidateRow.login_binding_review_required.is_(False),
+                        ), value), else_=column)
+                    setattr(cand, field, value)
         if (
             profile.full_name
             and profile.full_name.value
@@ -400,23 +441,37 @@ class CandidateStore:
         every plane/purpose for the stored address in THIS transaction so an
         interruption cannot commit only half of the erasure. The shared login
         lock also cancels reserved sends before they can activate a challenge.
-        Redemption after committed consumption requires separate ordering.
+        Redemption holds that same lock through principal/session creation.
         """
         with self._session_factory() as session:
             cand = session.get(CandidateRow, candidate_id)
             if cand is None:
                 return False
-            if cand.email_hash:
-                lock_login_state(session, cand.email_hash)
-                session.execute(delete(LoginIssuanceRow).where(
-                    LoginIssuanceRow.email_hash == cand.email_hash
-                ))
-                session.execute(delete(LoginChallengeRow).where(
-                    LoginChallengeRow.email_hash == cand.email_hash
-                ))
+            self._clear_login_state(session, cand)
             session.delete(cand)
             session.commit()
             return True
+
+    @staticmethod
+    def _clear_login_state(session: Session, cand: CandidateRow) -> int:
+        count = 0
+        # Address-before-candidate ordering agrees with redemption. A mismatched
+        # hint cannot cancel another candidate's proved mailbox challenge.
+        for digest in sorted({h for h in (cand.email_hash, cand.login_email_hash) if h}):
+            lock_login_state(session, digest)
+            if digest != cand.login_email_hash and session.scalar(select(CandidateRow.id).where(
+                CandidateRow.login_email_hash == digest, CandidateRow.id != cand.id)) is not None:
+                continue
+            session.execute(delete(LoginIssuanceRow).where(LoginIssuanceRow.email_hash == digest))
+            count += session.execute(delete(LoginChallengeRow).where(
+                LoginChallengeRow.email_hash == digest)).rowcount
+        return count
+
+    def clear_login_state(self, candidate_id: str) -> int:
+        """Standalone cleanup; full erasure calls the same helper before cascade."""
+        with self._session_factory.begin() as session:
+            cand = session.get(CandidateRow, candidate_id)
+            return self._clear_login_state(session, cand) if cand else 0
 
     def apply_correction(self, candidate_id: str, *, full_name: str) -> bool:
         """Write a REVIEWED correction onto the candidate's own identity row.
@@ -430,8 +485,9 @@ class CandidateStore:
 
         email/phone are refused one layer up, in RightsService, and refused BY
         NAME: both are hashed into the dedup keys ``_resolve_candidate`` matches
-        on, and ``email_hash`` is additionally the portal login credential, so
-        changing either is an identity operation rather than a data correction.
+        on. The proved login address is separate, but contact changes/profile
+        merges still require a dedicated proof/review operation this release
+        does not implement. A correction decision cannot authorize such writes.
 
         It also PINS the column: `full_name_corrected_at` stops
         `_refresh_identity` from overwriting a verified correction with the next
@@ -507,11 +563,47 @@ class CandidateStore:
 
     # -- self-registration support (S8.2) --------------------------------------
 
-    def find_by_email_hash(self, email_hash: str) -> Optional[str]:
+    def bind_verified_login_email(self, email_hash: str, *, session: Session,
+                                  at: datetime) -> tuple[str, bool]:
+        """Redeem-only helper: caller has consumed an exact valid mailbox OTP
+        under lock_login_state in THIS transaction. Returns (subject, created).
+
+        A proved address outranks mutable resume hints. Initial claim uses only
+        a unique unbound hint; conflicts never merge or move an existing owner.
+        Row locks and a refresh protect the claim from concurrent hint writes.
+        """
+        row = session.scalar(select(CandidateRow).where(
+            CandidateRow.login_email_hash == email_hash).with_for_update()
+            .execution_options(populate_existing=True))
+        created = False
+        if row is None:
+            matches = session.scalars(select(CandidateRow).where(
+                CandidateRow.email_hash == email_hash).order_by(CandidateRow.id)
+                .limit(2).with_for_update().execution_options(populate_existing=True)).all()
+            if len(matches) > 1:
+                raise LoginBindingRefused('candidate_identity_ambiguous')
+            row = matches[0] if matches else None
+            if row is None:
+                row = CandidateRow(email_hash=email_hash)
+                session.add(row)
+                created = True
+            elif row.login_email_hash is not None:
+                raise LoginBindingRefused('candidate_identity_conflict')
+        if row.login_binding_review_required:
+            raise LoginBindingRefused('candidate_identity_review_required')
+        if row.login_email_hash is None:
+            row.login_email_hash = email_hash
+            row.login_email_verified_at = _as_utc(at)
+        elif row.login_email_verified_at is None:
+            raise LoginBindingRefused('candidate_identity_review_required')
+        session.flush()
+        return row.id, created
+
+    def find_by_email_hash(self, email_hash: str, *, session: Optional[Session] = None) -> Optional[str]:
         """The candidate whose contact hash matches, else None.
 
-        This is what lets a self-registering candidate CLAIM the record built
-        from a resume an org uploaded, rather than forking a duplicate person.
+        This is an asserted-contact lookup, not authentication proof. Login uses
+        bind_verified_login_email after exact OTP redemption instead.
 
         The hash MUST be produced by the same salted function that wrote it
         (``app.candidates.hashing.contact_hash`` with ``contact_hash_salt``) or
@@ -519,7 +611,8 @@ class CandidateStore:
         """
         if not email_hash:
             return None
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory()) as session:
             row = session.execute(
                 select(CandidateRow).where(CandidateRow.email_hash == email_hash)
             ).scalars().first()
@@ -543,13 +636,14 @@ class CandidateStore:
                 .limit(1)
             ).scalars().first() is not None
 
-    def create_bare_candidate(self, *, email_hash: str) -> str:
+    def create_bare_candidate(self, *, email_hash: str, session: Optional[Session] = None) -> str:
         """A candidate row carrying a contact hash and nothing else — someone
         who signed up before any resume of theirs was ever submitted."""
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory.begin()) as session:
             row = CandidateRow(email_hash=email_hash)
             session.add(row)
-            session.commit()
+            session.flush()
             return row.id
 
     def email_hash_for(self, candidate_id: str) -> Optional[str]:
@@ -647,12 +741,15 @@ class CandidateStore:
             return matches[:limit], len(rows)
 
 
-def build_candidate_store(settings: Optional[Settings] = None) -> CandidateStore:
+def build_candidate_store(
+    settings: Optional[Settings] = None, *, session_factory: Optional[sessionmaker] = None,
+) -> CandidateStore:
     """Store on the configured URL. Schema is Alembic's job (`alembic upgrade
     head`), NOT the builder's — no create_all here by design."""
     settings = settings or get_settings()
-    engine = make_engine(settings.candidates_db_url)
+    if session_factory is None:
+        session_factory = make_session_factory(make_engine(settings.candidates_db_url))
     return CandidateStore(
-        make_session_factory(engine),
+        session_factory,
         access_key_bytes=settings.candidate_access_key_bytes,
     )

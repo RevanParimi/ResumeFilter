@@ -280,14 +280,9 @@ class Settings(BaseSettings):
     # candidate list.
     materialize_max_candidates: int = Field(default=1000, ge=1)
 
-    # --- Vector store (ChromaDB) ----------------------------------------------
-    # Chroma's PersistentClient can hang (not raise) on some machines; startup
-    # gives it this long, then degrades to the in-memory store (grounding is
-    # best-effort). Set backend="memory" to skip Chroma entirely.
-    vectorstore_backend: Literal["chroma", "memory"] = "chroma"
-    vectorstore_init_timeout_seconds: float = 15.0
-    chroma_persist_dir: str = "./.chroma"
-    chroma_collection: str = "depth-eval-evidence"
+    # Retired vectorstore_backend/vectorstore_init_timeout_seconds and
+    # chroma_persist_dir/chroma_collection are ignored by extra="ignore".
+    # Provenance uses evaluation-local GitHub observations; no vector storage.
 
     # Legacy compatibility only: no new JSONL is written. Reports/outcomes use
     # the erasable SQL store. Existing files require explicit legacy cleanup.
@@ -346,14 +341,14 @@ class Settings(BaseSettings):
     rf_max_matches: int = 10
 
     # --- Fabrication defense (PI-2, S2.4): unified fabrication risk -------------
-    # Deterministic fusion of ai_generation + cross_field + resume_farm bands,
+    # Deterministic fusion of cross_field + resume_farm bands (v2 excludes style),
     # computed in the calibration stage. ADVISORY: never changes verdicts or
     # depth, never a rejection signal. ELEVATED additionally requires >= 2
     # components at their top band; fusion never asserts on a single subsystem.
     fr_moderate_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
     fr_elevated_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     fr_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
-    fr_weight_ai: float = Field(default=1.0, ge=0.0)
+    fr_weight_ai: float = Field(default=1.0, ge=0.0)  # legacy config; ignored in v2
     fr_weight_cross_field: float = Field(default=1.0, ge=0.0)
     fr_weight_farm: float = Field(default=1.0, ge=0.0)
 
@@ -455,7 +450,15 @@ class Settings(BaseSettings):
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
     max_resume_chars: int = 200_000
-    max_pdf_b64_chars: int = 14_000_000  # ≈ 10 MB PDF once base64-decoded
+    max_pdf_b64_chars: int = Field(default=14_000_000, ge=1)  # ≈ 10 MB decoded
+    # Per PDF, including verification documents. Logical caps do not bound RSS.
+    pdf_max_pages: int = Field(default=40, ge=1)
+    pdf_max_work_units: int = Field(default=100_000, ge=1)
+    pdf_max_depth: int = Field(default=64, ge=1)
+    pdf_max_decoded_bytes: int = Field(default=16_000_000, ge=1)
+    pdf_max_output_chars: int = Field(default=1_000_000, ge=1)
+    pdf_parse_timeout_seconds: float = Field(default=10.0, gt=0, allow_inf_nan=False)
+    pdf_worker_memory_mb: int = Field(default=256, ge=1)
     # Free text a human types beside a candidate's name, now on BOTH the
     # operator's and the customer's outcome route (S8.5). Unbounded is S7.2's
     # `claim_ref` finding one table over -- that one stored 5031 chars including

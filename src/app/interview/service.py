@@ -9,8 +9,8 @@ holds for a direct caller too. In order:
    the timing-based proxy signals meaningless.
 2. OWNERSHIP. Every method resolves the session from (candidate_id, session_id);
    another candidate's session is indistinguishable from a missing one.
-3. CURRENT QUESTION. An answer must name the question it answers, so two racing
-   clients cannot collapse into one turn.
+3. CURRENT QUESTION. The store rechecks it under the candidate lock after
+   provider work, so racing clients cannot duplicate a turn.
 4. LIVE SESSION ONLY. Expired (read-time) and completed sessions refuse answers.
 5. SIZE, BEFORE DECODE. An oversize body is refused before base64 is expanded.
 
@@ -38,22 +38,16 @@ from app.interview.schema import (
 )
 from app.interview.scoring import adjust_with_llm, aggregate, score_turn, word_count
 from app.interview.session import effective_status, summarize
-from app.interview.store import InterviewStore
+from app.interview.store import InterviewStore, SessionConflictError
 from app.ledger.consent import as_utc
 from app.ledger.store import LedgerStore
 from app.ratelimit.schema import LimitScope
 from app.ratelimit.service import RateLimiter
 from app.services.llm import LLMClient
-from app.services.speech import SpeechClient
+from app.services.speech import SpeechClient, SpeechFailed, format_for_mime
 from app.verification.schema import AssuranceLevel, IdentityAssurance
 
 log = get_logger(__name__)
-
-
-class SessionConflictError(Exception):
-    """The session is not in a state that accepts this action -- one is already
-    live, this one is finished or expired, or the answer names the wrong
-    question. Maps to 409."""
 
 
 class AnswerTooLargeError(Exception):
@@ -140,7 +134,7 @@ class InterviewService:
             report_id=report.id if report is not None else None,
             questions=questions,
             assurance_level=int(assurance.level),
-            at=moment,
+            at=at,
         )
 
     async def answer(
@@ -192,6 +186,7 @@ class InterviewService:
         profile = self._candidates.latest_profile(candidate_id)
         score = score_turn(
             transcript=answer.transcript,
+            question_text=current.text,
             expected_signals=current.expected_signals,
             profile=profile,
             settings=self._settings,
@@ -211,10 +206,6 @@ class InterviewService:
                 update={"codes": [*score.codes, "transcript_truncated"]}
             )
 
-        # The clock starts at the previous answer (or the session's start): that
-        # is the window in which this answer was actually produced, and it is
-        # what the words-per-second proxy signal reads.
-        asked_at = session.turns[-1].answered_at if session.turns else session.started_at
         self._store.add_turn(
             session.id,
             question=current,
@@ -224,14 +215,13 @@ class InterviewService:
             audio_digest=answer.digest,
             audio_duration_seconds=answer.duration,
             score=score,
-            asked_at=asked_at,
             answered_at=moment,
+            assess=self._assessment,
+            at=at,
         )
 
-        session = self._owned(candidate_id, session.id)
+        session = self.get(candidate_id, session.id, at=at)
         following = self._next_question(session)
-        if following is None:
-            session = self._complete(session, at=moment)
         return session, following
 
     def finish(
@@ -245,7 +235,7 @@ class InterviewService:
         status = effective_status(session.status, session.expires_at, at=moment)
         if status is not InterviewStatus.IN_PROGRESS:
             raise SessionConflictError(f"this interview is {status.value}")
-        return self._complete(session, at=moment)
+        return self._store.complete_session(session.id, assess=self._assessment, at=at)
 
     def get(
         self, candidate_id: str, session_id: str, *, at: Optional[datetime] = None
@@ -301,6 +291,8 @@ class InterviewService:
 
     @staticmethod
     def _next_question(session: InterviewSession) -> Optional[InterviewQuestion]:
+        if session.status is not InterviewStatus.IN_PROGRESS:
+            return None
         answered = {t.question_id for t in session.turns}
         for question in session.questions:
             if question.id not in answered:
@@ -326,22 +318,26 @@ class InterviewService:
         """Resolve one submitted answer. The audio bytes exist only inside this
         method: they are hashed and dropped, and nothing that could reconstruct
         them is returned."""
+        if text is not None and audio_b64 is not None:
+            raise ValueError("provide either text or audio_b64, not both")
         if audio_b64:
             if len(audio_b64) > self._settings.interview_max_audio_b64_chars:
                 raise AnswerTooLargeError(
                     "audio exceeds interview_max_audio_b64_chars="
                     f"{self._settings.interview_max_audio_b64_chars}"
                 )
-            # Speech first: a provider failure must leave no trace, so nothing
-            # is written and the candidate simply answers again.
-            transcript = await self._speech.atranscribe(
-                audio_b64=audio_b64, mime=mime or "audio/wav"
-            )
+            resolved_mime = mime or "audio/wav"
+            format_for_mime(resolved_mime)
             try:
                 raw = base64.b64decode(audio_b64, validate=True)
             except (binascii.Error, ValueError) as exc:
                 raise ValueError("audio is not valid base64") from exc
             digest = hashlib.sha256(raw).hexdigest()
+            del raw
+            # Validate before provider work; a refusal/failure saves no turn.
+            transcript = await self._speech.atranscribe(
+                audio_b64=audio_b64, mime=resolved_mime
+            )
             # A typed answer is refused past interview_max_answer_chars, so a
             # transcribed one cannot be allowed to stream unbounded text into
             # the single Text column on the table -- the S7.2 `claim_ref`
@@ -349,6 +345,8 @@ class InterviewService:
             # bound. Truncated rather than refused, because the candidate did
             # nothing wrong and losing their answer would be the worse outcome.
             text_out = (transcript.text or "").strip()
+            if not text_out:
+                raise SpeechFailed("transcription returned no text")
             truncated = False
             if len(text_out) > self._settings.interview_max_answer_chars:
                 log.warning(
@@ -375,9 +373,7 @@ class InterviewService:
 
         raise ValueError("provide either text or audio_b64")
 
-    def _complete(
-        self, session: InterviewSession, *, at: datetime
-    ) -> InterviewSession:
+    def _assessment(self, session: InterviewSession):
         # The STAMPED level, never a fresh read: verifying yourself after the
         # fact must not rewrite what the session was worth.
         assurance = IdentityAssurance(
@@ -387,7 +383,7 @@ class InterviewService:
         proxy = assess_proxy_risk(
             assurance=assurance, turns=session.turns, settings=self._settings
         )
-        assessment = aggregate(
+        return aggregate(
             session_id=session.id,
             candidate_id=session.candidate_id,
             questions=session.questions,
@@ -395,7 +391,6 @@ class InterviewService:
             proxy=proxy,
             settings=self._settings,
         )
-        return self._store.complete_session(session.id, assessment=assessment, at=at)
 
 
 def build_interview_service(

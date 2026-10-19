@@ -4,8 +4,8 @@ No I/O and no ambient randomness: the caller injects `rng` and `at`, so every
 path is reproducible under test. Codes are stored only as salted sha256
 digests -- the plaintext exists just long enough to hand to a notifier.
 
-This repo has no email/SMS provider and S7.1 does not add one, so the shipped
-notifier discards. Real delivery is a PI-8 concern.
+Email delivery uses the shared configured client. Unsupported delivery refuses;
+phone requires an explicitly injected notifier with that capability.
 """
 
 from __future__ import annotations
@@ -15,11 +15,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional, Protocol
 
-import structlog
-
 from app.ledger.consent import as_utc
-
-log = structlog.get_logger(__name__)
 
 
 def generate_code(length: int, *, rng: random.Random) -> str:
@@ -52,14 +48,23 @@ def cooldown_active(
 
 
 class Notifier(Protocol):
-    """Delivery seam. Implementations must never persist the code."""
+    """Delivery seam. Production implementations must never retain raw codes."""
 
+    def check_available(self, *, channel: str) -> None: ...
     def send(self, destination: str, code: str, *, channel: str) -> None: ...
 
 
+class DeliveryUnavailable(Exception):
+    def __init__(self, channel: str):
+        self.detail = "email_unavailable" if channel == "email" else "phone_unavailable"
+        super().__init__(self.detail)
+
+
 class NullNotifier:
-    """Ships nothing. Logs the delivery attempt WITHOUT the code or the raw
-    destination -- an OTP in the log file is an OTP leak."""
+    """No delivery capability; refuse without creating or exposing a code."""
+
+    def check_available(self, *, channel: str) -> None:
+        raise DeliveryUnavailable(channel)
 
     def send(self, destination: str, code: str, *, channel: str) -> None:
-        log.info("verification.otp.dispatch", channel=channel)
+        self.check_available(channel=channel)

@@ -1,14 +1,15 @@
-"""Candidate API surface (S1.3) — offline: NullLLM ⇒ heuristic extraction,
-rule-driven depth-eval. TestClient over injected in-memory services."""
+"""Candidates api regressions, grouped by behavior."""
 
 from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
-
 from app.candidates.store import CandidateStore
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS, make_services
+
+
+# Candidates api
 
 RESUME = """Asha Rao
 Email: asha.rao@example.com | Phone: +91 98765 43210
@@ -31,14 +32,12 @@ def api(settings, flywheel):
         yield client, services
 
 
-# ── services wiring ───────────────────────────────────────────────────────────
 def test_services_bundle_has_working_candidate_store(services):
     assert isinstance(services.candidates, CandidateStore)
     # Live schema behind it (create_all in the test fake), not a stub.
     assert services.candidates.get_candidate("no-such-id") is None
 
 
-# ── POST /candidates ──────────────────────────────────────────────────────────
 def test_create_candidate_ingests_and_links_report(api):
     client, services = api
     resp = client.post("/candidates", json={"resume_text": RESUME})
@@ -121,7 +120,6 @@ def test_candidates_requires_a_source_422(api):
     assert client.post("/candidates", json={}).status_code == 422
 
 
-# ── candidate reads ───────────────────────────────────────────────────────────
 def test_candidate_detail_includes_latest_profile(api):
     client, _ = api
     cid = client.post(
@@ -172,7 +170,6 @@ def test_list_candidate_reports(api):
     assert client.get("/candidates/no-such-id/reports").status_code == 404
 
 
-# ── DPDP deletes ──────────────────────────────────────────────────────────────
 RESUME_B = """Ravi Kumar
 Email: ravi.kumar@example.com
 
@@ -251,3 +248,52 @@ def test_report_not_persisted_if_candidate_erased_during_eval(api):
     assert response.status_code == 422
     assert response.json() == {"detail": "candidate_erased"}
     assert services.report_store.for_candidate(cid) == []
+
+
+# Candidate auth api
+
+@pytest.fixture
+def _client(settings):
+    # NOTE: this repo's installed Starlette/FastAPI only runs the app's
+    # lifespan (which sets app.state.services) when the TestClient is used as
+    # a context manager (see every other tests/test_*_api.py `with _client(...)
+    # as client:` fixture). We keep the brief's tuple-return shape but do the
+    # entering via a pytest fixture wrapping a `with` block, so every route in
+    # this file — including the ones Task 9 still owes — resolves
+    # `_services(request)` correctly, AND the lifespan shutdown (closing the
+    # background portal thread) runs on fixture teardown even if the test
+    # body raises.
+    services = make_services(settings)
+    with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
+        yield client, services
+
+
+def _make_candidate(client) -> str:
+    r = client.post("/candidates", json={"resume_text": "Dev\nEmail: d@e.com\nSKILLS\nPython\n",
+                                         "evaluate": False})
+    assert r.status_code == 200
+    return r.json()["candidate_id"]
+
+
+def test_admin_mints_candidate_key_and_it_authenticates(_client):
+    client, _ = _client
+    cid = _make_candidate(client)
+    r = client.post(f"/candidates/{cid}/auth-key")
+    assert r.status_code == 200
+    key = r.json()["access_key"]
+    assert r.json()["candidate_id"] == cid and key
+    # the key authenticates on a portal route
+    ok = client.get("/portal/me", headers={"X-Candidate-Key": key})
+    assert ok.status_code == 200
+
+
+def test_mint_unknown_candidate_404(_client):
+    client, _ = _client
+    r = client.post("/candidates/nope/auth-key")
+    assert r.status_code == 404
+
+
+def test_portal_route_without_key_is_401(_client):
+    client, _ = _client
+    assert client.get("/portal/me").status_code == 401
+    assert client.get("/portal/me", headers={"X-Candidate-Key": "bad"}).status_code == 401

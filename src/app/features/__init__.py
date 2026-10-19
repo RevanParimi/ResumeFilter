@@ -33,7 +33,9 @@ def default_view(registry: FeatureRegistry | None = None, *, settings=None) -> F
     from app.core.config import get_settings
     settings = settings or get_settings()
     reg = registry or get_feature_registry()
-    return latest_view(reg, name=settings.feat_default_view, version=1)
+    # v2 pins factual-risk features that exclude style. Existing persisted v1
+    # vectors remain available by explicit version, never mixed into this view.
+    return latest_view(reg, name=settings.feat_default_view, version=2)
 
 
 __all__ = [

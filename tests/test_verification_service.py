@@ -1,11 +1,11 @@
 """S7.1 orchestration: destination binding, the third-party consent gate, isolation."""
 
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.candidates.hashing import contact_hash, normalize_email
+from app.candidates.hashing import contact_hash, normalize_email, normalize_phone
 from app.candidates.models import CandidateRow
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import ConsentError, LedgerStore
@@ -15,7 +15,9 @@ from app.verification.schema import (
 from app.verification.service import (
     DestinationError, MethodNotPermittedError, VerificationService,
 )
-from app.verification.store import VerificationStore
+from app.verification.store import ChallengeError, VerificationStore
+from app.services.email import CaptureEmail
+from app.verification.delivery import EmailNotifier
 from tests.conftest import make_candidate_store
 
 NOW = datetime(2026, 7, 31, 12, 0, tzinfo=timezone.utc)
@@ -23,7 +25,7 @@ EMAIL = "dev@example.com"
 
 
 @pytest.fixture
-def svc(settings):
+def svc(settings, tmp_path):
     candidates = make_candidate_store()
     ledger = LedgerStore(
         candidates._session_factory,
@@ -31,7 +33,9 @@ def svc(settings):
         settings=settings,
     )
     store = VerificationStore(candidates._session_factory, ledger=ledger, settings=settings)
-    service = VerificationService(store, candidates, ledger, settings=settings)
+    service = VerificationService(store, candidates, ledger, settings=settings,
+        notifier=EmailNotifier(CaptureEmail(settings.model_copy(update={
+            "email_capture_path": str(tmp_path / "contact-mail.jsonl")}))))
     with candidates._session_factory() as s:
         row = CandidateRow(
             full_name="A Candidate",
@@ -126,6 +130,57 @@ def test_confirm_verifies_and_lifts_the_assurance_level(svc):
     assert done.status is VerificationStatus.VERIFIED
     _, assurance = service.list_for_candidate(cid, at=NOW)
     assert assurance.level is AssuranceLevel.CONTACT_CONTROL
+
+
+def test_repeat_success_preserves_outcome_and_one_completion_audit(svc):
+    service, ledger, cid = svc
+    v, code = service.start(cid, VerificationMethod.OTP_EMAIL, destination=EMAIL, at=NOW)
+    done = service.confirm(cid, v.id, code, at=NOW)
+    with pytest.raises(ChallengeError):
+        service.confirm(cid, v.id, code, at=NOW + timedelta(days=1))
+    assert service._store.get_verification(v.id) == done
+    assert len([a for a in ledger.audit_for_candidate(cid)
+                if a.action == 'verification.complete' and a.entity_id == v.id]) == 1
+
+
+@pytest.mark.parametrize('explicit_clock', [False, True])
+def test_issuance_uses_store_clock_unless_caller_injects_time(svc, monkeypatch, explicit_clock):
+    service, _, cid = svc
+    later = NOW + timedelta(minutes=1)
+    monkeypatch.setattr('app.verification.service._utcnow', lambda: NOW)
+    monkeypatch.setattr('app.verification.store._utcnow', lambda: later)
+    v, _ = service.start(cid, VerificationMethod.OTP_EMAIL, destination=EMAIL, at=NOW if explicit_clock else None)
+    from sqlalchemy import select
+    from app.ledger.consent import as_utc
+    from app.verification.models import VerificationChallengeRow
+    with service._candidates._session_factory() as session:
+        challenge = session.scalar(select(VerificationChallengeRow).where(VerificationChallengeRow.verification_id == v.id))
+        assert as_utc(challenge.last_sent_at) == (NOW if explicit_clock else later)
+        assert as_utc(challenge.expires_at) == (NOW if explicit_clock else later) + timedelta(minutes=service._settings.verif_otp_ttl_minutes)
+
+
+def test_phone_capture_proves_mechanics_only_and_remains_candidate_bound(svc):
+    service, _, cid = svc
+    phone = '+919876543210'
+    with service._candidates._session_factory.begin() as session:
+        session.get(CandidateRow, cid).phone_hash = contact_hash(normalize_phone(phone), service._settings.contact_hash_salt)
+    captured = []
+
+    class CaptureNotifier:
+        def check_available(self, *, channel):
+            assert channel == "phone"
+
+        def send(self, destination, code, *, channel):
+            captured.append((channel, destination, code))
+
+    service._notifier = CaptureNotifier()  # no SMS provider or delivery claim
+    v, code = service.start(cid, VerificationMethod.OTP_PHONE, destination=phone, at=NOW)
+    assert captured == [('phone', phone, code)]
+    with pytest.raises(LookupError):
+        service.confirm('another-candidate', v.id, code, at=NOW)
+    assert service.confirm(cid, v.id, code, at=NOW).status is VerificationStatus.VERIFIED
+    with pytest.raises(ChallengeError):
+        service.confirm(cid, v.id, code, at=NOW)
 
 
 def test_a_third_party_method_without_identity_verify_consent_is_refused(svc, monkeypatch):

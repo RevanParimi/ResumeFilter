@@ -1,11 +1,14 @@
 """S7.1 candidate-plane routes: the key is the only identity input that counts."""
 
 import pytest
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 
 from app.candidates.hashing import contact_hash, normalize_email
 from app.candidates.models import CandidateRow
 from app.main import create_app
+from app.verification.models import VerificationChallengeRow
 from tests.conftest import ADMIN_HEADERS, make_services
 
 EMAIL = "dev@example.com"
@@ -27,11 +30,13 @@ def _candidate(services, email=EMAIL, name="A Candidate"):
 
 
 @pytest.fixture
-def client(settings, monkeypatch):
+def client(settings, monkeypatch, tmp_path):
     # The lifespan (which sets app.state.services) only runs when TestClient is
     # used as a context manager -- the pattern every other tests/test_*_api.py
     # follows. create_app(services) injects the offline container.
     monkeypatch.setattr(settings, "verif_otp_debug_echo", True)
+    monkeypatch.setattr(settings, "email_provider", "capture")
+    monkeypatch.setattr(settings, "email_capture_path", str(tmp_path / "contact-mail.jsonl"))
     services = make_services(settings)
     with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         yield c, services
@@ -79,6 +84,35 @@ def test_otp_flow_start_wrong_code_then_correct_code(client):
     assert ok.status_code == 200
     assert ok.json()["status"] == "verified"
     assert c.get("/portal/verifications", headers=h).json()["assurance"]["level"] == 2
+
+    for _ in range(2):
+        assert c.post(f"/portal/verifications/{vid}/confirm", json={"code": code}, headers=h).status_code == 400
+    assert services.verification._store.get_verification(vid).model_dump(mode='json') == ok.json()
+
+
+@pytest.mark.parametrize('reason', ['exhausted', 'expired', 'superseded'])
+def test_correct_code_cannot_revive_inactive_api_challenge(client, reason):
+    c, services = client
+    cid, key = _candidate(services)
+    h = {'X-Candidate-Key': key}
+    started = c.post('/portal/verifications', json={'method': 'otp_email', 'destination': EMAIL}, headers=h).json()
+    vid, code = started['verification']['id'], started['debug_code']
+    factory = services.candidates._session_factory
+    with factory.begin() as session:
+        values = ({'attempts': services.settings.verif_otp_max_attempts} if reason == 'exhausted' else
+                  {'expires_at': datetime.now(timezone.utc) - timedelta(seconds=1)} if reason == 'expired' else
+                  {'last_sent_at': datetime.now(timezone.utc) - timedelta(seconds=services.settings.verif_otp_resend_cooldown_seconds + 1)})
+        session.execute(update(VerificationChallengeRow).where(VerificationChallengeRow.verification_id == vid).values(**values))
+    if reason == 'superseded':
+        newer = c.post('/portal/verifications', json={'method': 'otp_email', 'destination': EMAIL}, headers=h)
+        assert newer.status_code == 200
+    assert c.post(f'/portal/verifications/{vid}/confirm', json={'code': code}, headers=h).status_code == 400
+    assert services.verification._store.get_verification(vid).status.value == ('failed' if reason == 'exhausted' else 'pending')
+    completed = [a for a in services.ledger.audit_for_candidate(cid) if a.action == 'verification.complete' and a.entity_id == vid]
+    assert len(completed) == (1 if reason == 'exhausted' else 0)
+    if reason == 'superseded':
+        body = newer.json()
+        assert c.post(f"/portal/verifications/{body['verification']['id']}/confirm", json={'code': body['debug_code']}, headers=h).status_code == 200
 
 
 def test_a_destination_that_is_not_on_file_is_a_400(client):
@@ -175,7 +209,9 @@ def test_one_candidate_cannot_confirm_anothers_verification(client):
     ).status_code == 200
 
 
-def test_the_debug_echo_is_absent_when_the_knob_is_off(settings):
+def test_the_debug_echo_is_absent_when_the_knob_is_off(settings, tmp_path):
+    settings = settings.model_copy(update={"email_provider": "capture",
+        "email_capture_path": str(tmp_path / "contact-mail.jsonl")})
     services = make_services(settings)  # verif_otp_debug_echo defaults to False
     with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as c:
         _, key = _candidate(services)
@@ -183,4 +219,5 @@ def test_the_debug_echo_is_absent_when_the_knob_is_off(settings):
             "/portal/verifications", json={"method": "otp_email", "destination": EMAIL},
             headers={"X-Candidate-Key": key},
         ).json()
+        assert "verification" in body
         assert body.get("debug_code") is None

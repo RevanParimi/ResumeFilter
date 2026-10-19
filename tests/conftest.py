@@ -45,12 +45,11 @@ from app.ledger.store import LedgerStore
 from app.metrics.registry import build_metrics
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
-from app.services.github import GitHubRepoRaw, GitHubUserRaw
+from app.services.github import GitHubRepoEvidence, GitHubRepoRaw, GitHubUserRaw
 from app.services.llm import LLMClient, NullLLM
 from app.reports.store import SqlReportStore
 from app.services.email import build_email
 from app.services.speech import NullSpeech, SpeechClient, Transcript
-from app.services.vectorstore import InMemoryVectorStore
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -60,7 +59,7 @@ class FakeGitHub:
 
     def __init__(
         self,
-        evidence: dict[tuple[str, str], list[str]] | None = None,
+        evidence: dict[tuple[str, str], list[str] | GitHubRepoEvidence] | None = None,
         user_signals: dict[str, GitHubUserRaw] | None = None,
     ) -> None:
         self._evidence = evidence or {}
@@ -68,12 +67,13 @@ class FakeGitHub:
         self.calls: list[tuple[str, str]] = []
         self.user_calls: list[str] = []
 
-    async def gather_repo_evidence(self, owner: str, repo: str) -> list[str]:
+    async def gather_repo_evidence(self, owner: str, repo: str) -> GitHubRepoEvidence:
         self.calls.append((owner, repo))
-        return self._evidence.get(
+        result = self._evidence.get(
             (owner, repo),
             [f"Repo {owner}/{repo} exists: primary_language=Python, recent commits found."],
         )
+        return result if isinstance(result, GitHubRepoEvidence) else GitHubRepoEvidence(observations=result)
 
     async def gather_user_signal(self, login: str) -> GitHubUserRaw:
         self.user_calls.append(login)
@@ -289,12 +289,17 @@ def make_services(
             candidates=candidates, settings=settings, curation=curation,
         )
     report_store = SqlReportStore(candidates._session_factory)
+    # Match production: auth and verification share the explicitly selected
+    # email capability, including its refusing default.
+    email = email or build_email(settings)
     if verification is None:
         from app.verification.service import VerificationService
         from app.verification.store import VerificationStore
+        from app.verification.delivery import EmailNotifier
         verification = VerificationService(
             VerificationStore(candidates._session_factory, ledger=ledger, settings=settings),
             candidates, ledger, profile_sources=profile_sources, settings=settings,
+            notifier=EmailNotifier(email),
         )
     # Default to the REFUSING speech client: the suite proves the no-key path
     # unless a test deliberately injects FakeSpeech.
@@ -318,7 +323,6 @@ def make_services(
     # The default is "null", so the suite still proves the REFUSING path
     # (mirroring NullSpeech) -- but a test that configures capture gets
     # capture, instead of silently getting a client that refuses everything.
-    email = email or build_email(settings)
     if auth is None:
         from app.auth.service import build_auth_service
         auth = build_auth_service(
@@ -379,7 +383,6 @@ def make_services(
         settings=settings,
         llm=llm,
         speech=speech,
-        vectorstore=InMemoryVectorStore(),
         github=github,
         flywheel=flywheel or InMemoryFlywheel(),
         report_store=report_store,

@@ -1,0 +1,16 @@
+{
+  "version": "s73.2",
+  "provenance": "Synthetic development examples reviewed in R3-S3-T1; not held-out or representative quality data.",
+  "question": "How did you diagnose and recover from the tokenizer regression?",
+  "signals": ["debug", "rollback"],
+  "cases": [
+    {"id": "concise", "text": "Traced the tokenizer regression; pinned the previous version; replay tests confirmed recovery.", "usable": true},
+    {"id": "paraphrase", "text": "I compared failing runs with known-good checkpoints. I restored the earlier tokenizer version because the new release broke compatibility. Replay checks showed the errors disappeared.", "usable": true},
+    {"id": "collaborative", "text": "We compared failing runs with known-good checkpoints. Our team restored the earlier tokenizer version because the new release broke compatibility. Replay checks showed the errors disappeared.", "usable": true},
+    {"id": "polished_truthful", "text": "I isolated the tokenizer regression by comparing release logs. I reverted the incompatible version to preserve checkpoint compatibility. Replay validation confirmed recovery without dropped requests.", "usable": true},
+    {"id": "keyword_list", "text": "debug rollback Python 123 I me mine tokenizer regression debug rollback Python 123 I me mine tokenizer regression", "usable": false},
+    {"id": "prompt_echo", "text": "How did you diagnose and recover from the tokenizer regression? How did you diagnose and recover from the tokenizer regression?", "usable": false},
+    {"id": "unrelated_fluent", "text": "I compared seasonal flower varieties in the garden. I replaced the clay soil with compost to improve drainage. Follow-up measurements confirmed healthier roots and larger blossoms.", "usable": false},
+    {"id": "too_little", "text": "We did it.", "usable": false}
+  ]
+}

@@ -13,6 +13,7 @@ measurements.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Optional
 
@@ -518,15 +519,10 @@ Rules:
 """
 
 
-def _clamp(value: object, default: float = 0.5) -> float:
-    try:
-        return min(1.0, max(0.0, float(value)))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return default
-
-
 def _find_span(text: str, excerpt: str) -> Optional[SourceSpan]:
     """Re-locate an LLM-quoted excerpt in the resume (case-insensitive rescue)."""
+    if not isinstance(excerpt, str):
+        raise ValueError("source excerpt must be a string")
     if not excerpt:
         return None
     idx = text.find(excerpt)
@@ -538,125 +534,75 @@ def _find_span(text: str, excerpt: str) -> Optional[SourceSpan]:
 
 
 def _scalar(node: object, text: str) -> Optional[ExtractedStr]:
-    if not isinstance(node, dict) or not node.get("value"):
+    if node is None:
         return None
-    return ExtractedStr(
-        value=str(node["value"]),
-        confidence=_clamp(node.get("confidence")),
-        span=_find_span(text, str(node.get("source_excerpt") or "")),
-    )
-
-
-def _node_dates(node: dict) -> DateRange:
-    return DateRange(
-        start=node.get("start") or None,
-        end=node.get("end") or None,
-        is_current=bool(node.get("is_current")),
-    )
+    if not isinstance(node, dict):
+        raise ValueError("extracted scalar must be an object")
+    # Required fields are checked before any partial profile can be accepted.
+    scalar = ExtractedStr.model_validate({
+        "value": node["value"], "confidence": node["confidence"],
+        "span": _find_span(text, node.get("source_excerpt", "")),
+    }, strict=True)
+    if not scalar.value.strip():
+        raise ValueError("empty extracted value")
+    return scalar
 
 
 def _parse_llm_profile(payload: dict, text: str) -> CandidateProfile:
-    """Defensive payload→profile mapping: skip malformed entries, never raise."""
-    contact_raw = payload.get("contact") or {}
-    profile = CandidateProfile(
-        full_name=_scalar(payload.get("full_name"), text),
-        headline=_scalar(payload.get("headline"), text),
-        contact=ContactInfo(
-            email=_scalar(contact_raw.get("email"), text),
-            phone=_scalar(contact_raw.get("phone"), text),
-            location=_scalar(contact_raw.get("location"), text),
-        ),
-        notice_period=_scalar(payload.get("notice_period"), text),
-    )
-    for e in payload.get("education") or []:
-        if not isinstance(e, dict):
-            continue
-        try:
-            profile.education.append(
-                EducationEntry(
-                    degree=e.get("degree"),
-                    field_of_study=e.get("field_of_study"),
-                    institution=e.get("institution"),
-                    grade_value=e.get("grade_value"),
-                    grade_scale=e.get("grade_scale"),
-                    dates=_node_dates(e),
-                    confidence=_clamp(e.get("confidence")),
-                    span=_find_span(text, str(e.get("source_excerpt") or "")),
-                )
-            )
-        except (TypeError, ValueError):
-            continue
-    for x in payload.get("experience") or []:
-        if not isinstance(x, dict):
-            continue
-        try:
-            raw_type = str(x.get("employment_type") or "unknown")
-            etype = (
-                EmploymentType(raw_type)
-                if raw_type in EmploymentType._value2member_map_
-                else EmploymentType.UNKNOWN
-            )
-            profile.experience.append(
-                ExperienceEntry(
-                    employer=x.get("employer"),
-                    title=x.get("title"),
-                    seniority=x.get("seniority"),
-                    employment_type=etype,
-                    dates=_node_dates(x),
-                    confidence=_clamp(x.get("confidence")),
-                    span=_find_span(text, str(x.get("source_excerpt") or "")),
-                )
-            )
-        except (TypeError, ValueError):
-            continue
-    for s in payload.get("skills") or []:
-        if isinstance(s, dict) and s.get("name"):
-            profile.skills.append(
-                SkillItem(
-                    name=str(s["name"]),
-                    confidence=_clamp(s.get("confidence")),
-                    span=_find_span(text, str(s.get("source_excerpt") or "")),
-                )
-            )
-    for pr in payload.get("projects") or []:
-        if isinstance(pr, dict) and pr.get("name"):
-            profile.projects.append(
-                ProjectEntry(
-                    name=str(pr["name"]),
-                    description=pr.get("description"),
-                    technologies=[str(t) for t in pr.get("technologies") or []],
-                    url=pr.get("url"),
-                    confidence=_clamp(pr.get("confidence")),
-                    span=_find_span(text, str(pr.get("source_excerpt") or "")),
-                )
-            )
-    for c in payload.get("certifications") or []:
-        if isinstance(c, dict) and c.get("name"):
-            try:
-                year = int(c["year"]) if c.get("year") is not None else None
-            except (TypeError, ValueError):
-                year = None
-            profile.certifications.append(
-                CertificationEntry(
-                    name=str(c["name"]),
-                    issuer=c.get("issuer"),
-                    year=year,
-                    confidence=_clamp(c.get("confidence")),
-                    span=_find_span(text, str(c.get("source_excerpt") or "")),
-                )
-            )
-    for lk in payload.get("links") or []:
-        if isinstance(lk, dict) and lk.get("url"):
-            raw_type = str(lk.get("type") or "other")
-            ltype = (
-                LinkType(raw_type)
-                if raw_type in LinkType._value2member_map_
-                else LinkType.OTHER
-            )
-            profile.links.append(
-                LinkItem(type=ltype, url=str(lk["url"]), span=_find_span(text, str(lk["url"])))
-            )
-    return profile
+    """Validate the entire provider reply using the existing profile schemas."""
+    json.dumps(payload, allow_nan=False)
+    contact = payload.get("contact", {})
+    if contact is None:
+        contact = {}
+    mapped = {
+        "full_name": _scalar(payload.get("full_name"), text),
+        "headline": _scalar(payload.get("headline"), text),
+        "notice_period": _scalar(payload.get("notice_period"), text),
+        "contact": {key: _scalar(contact.get(key), text)
+                    for key in ("email", "phone", "location")},
+    }
+    # Translate only the flat provider fields; normalized/identity fields stay
+    # owned by this app. JSON strict validation accepts enum strings while
+    # refusing coerced numbers, strings, booleans and collection members.
+    fields = {
+        "education": ("degree", "field_of_study", "institution", "grade_value", "grade_scale"),
+        "experience": ("employer", "title", "seniority", "employment_type"),
+        "skills": ("name",),
+        "projects": ("name", "description", "technologies", "url"),
+        "certifications": ("name", "issuer", "year"),
+        "links": ("type", "url"),
+    }
+    for collection, keys in fields.items():
+        entries = payload.get(collection, [])
+        if not isinstance(entries, list):
+            raise ValueError("profile collection must be a list")
+        mapped[collection] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError("profile member must be an object")
+            item = {key: entry[key] for key in keys if key in entry}
+            if "name" in item and not item["name"]:
+                raise ValueError("empty entry name")
+            if collection == "links":
+                item["span"] = _find_span(text, entry["url"])
+            else:
+                item["confidence"] = entry["confidence"]
+                item["span"] = _find_span(text, entry.get("source_excerpt", ""))
+            if collection in ("education", "experience"):
+                item["dates"] = {key: entry[key] for key in ("start", "end", "is_current")
+                                 if key in entry}
+            mapped[collection].append(item)
+    # Scalar/span instances need JSON serialization for the nested validation.
+    for key in ("full_name", "headline", "notice_period"):
+        if mapped[key] is not None:
+            mapped[key] = mapped[key].model_dump(mode="json")
+    mapped["contact"] = {key: value.model_dump(mode="json") if value else None
+                         for key, value in mapped["contact"].items()}
+    for collection in fields:
+        for item in mapped[collection]:
+            if item["span"] is not None:
+                item["span"] = item["span"].model_dump(mode="json")
+    return CandidateProfile.model_validate_json(json.dumps(mapped, allow_nan=False), strict=True)
 
 
 def _is_empty(profile: CandidateProfile) -> bool:
@@ -684,12 +630,12 @@ async def extract_profile(
             system=PROFILE_EXTRACTION_SYSTEM,
             prompt=f"RESUME:\n{resume_text}",
         )
-        if payload:
+        if payload != {}:
             profile = _parse_llm_profile(payload, resume_text)
             method = "llm"
     except Exception as exc:  # any LLM failure → heuristic floor
-        warnings.append(f"llm_extraction_failed: {exc}")
-        log.warning("profile_llm_failed", error=str(exc))
+        warnings.append("llm_extraction_failed")
+        log.warning("profile_llm_failed", error_type=type(exc).__name__)
     if profile is None or _is_empty(profile):
         profile = heuristic_profile(resume_text)
         method = "heuristic"

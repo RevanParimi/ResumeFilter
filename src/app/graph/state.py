@@ -64,8 +64,10 @@ class EvaluationState(BaseModel):
     claims: list[Claim] = Field(default_factory=list)
 
     # --- provenance -----------------------------------------------------------
-    # claim_id -> list of human-readable grounding strings fetched/retrieved.
+    # Claim-linked repository metadata is context, not claim corroboration.
     provenance: dict[str, list[str]] = Field(default_factory=dict)
+    # Fetch diagnostics never enter rule or model claim assessment.
+    provenance_warnings: dict[str, list[str]] = Field(default_factory=dict)
 
     # --- plausibility / probe / scoring ---------------------------------------
     # Verdicts are built incrementally: plausibility seeds them, probe_generation

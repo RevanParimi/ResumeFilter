@@ -29,11 +29,11 @@ def store():
     return SqlReportStore(make_candidate_store()._session_factory)
 
 
-def _seed(store, score, band, positive, *, i=0):
+def _seed(store, score, band, positive, *, i=0, version=2):
     now = datetime.now(timezone.utc) + timedelta(seconds=i)
     rep = Report(
         domain="genai", created_at=now,
-        fabrication_risk=FabricationRiskAssessment(score=score, band=band),
+        fabrication_risk=FabricationRiskAssessment(scorer_version=version, score=score, band=band),
     )
     store.save(rep)
     store.add_outcome(OutcomeRecord(
@@ -157,3 +157,14 @@ def test_every_registered_signal_appears_exactly_once(store):
     from app.signal_quality.signals import SIGNALS
     got = measure(OutcomesLabelSource(store), min_samples=5)
     assert [s.signal for s in got.signals] == [s.name for s in SIGNALS]
+
+
+def test_current_risk_sample_excludes_legacy_and_unknown_but_keeps_population(store):
+    for i, version in enumerate((1, 2, 99)):
+        _seed(store, 0.75, FabricationRiskBand.MODERATE, True, i=i, version=version)
+    got = measure(OutcomesLabelSource(store), min_samples=2)
+    assert got.population.labels_usable == 3
+    for name in ("fabrication_risk.score", "fabrication_risk.band"):
+        item = _of(got, name)
+        assert isinstance(item, SignalRefused)
+        assert item.n == 1 and item.reason is RefusalReason.INSUFFICIENT_SAMPLES

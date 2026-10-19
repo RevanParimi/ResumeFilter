@@ -1,7 +1,7 @@
 from app.graph.nodes.provenance import make_provenance_node
 from app.graph.state import EvaluationState
 from app.schemas.claims import Claim
-from app.services.github import parse_github_url
+from app.services.github import GitHubRepoEvidence, parse_github_url
 
 
 async def test_provenance_uses_first_party_github(services, fake_github):
@@ -47,3 +47,31 @@ async def test_provenance_keeps_claim_anchors_separate(services, fake_github):
         claims[2].id: ["First repo evidence"],
     }
     assert fake_github.calls == [("alice", "one"), ("alice", "two")]
+
+
+async def test_provenance_diagnostics_are_cached_per_evaluation_and_claim(services, fake_github):
+    failure = GitHubRepoEvidence(warnings=["GitHub repository unavailable: HTTP 429."])
+    partial = GitHubRepoEvidence(observations=["Bob metadata"], warnings=["Bob commits unavailable"])
+    fake_github._evidence = {("alice", "one"): failure, ("bob", "two"): partial}
+    linked = [Claim(text="Built a project", external_anchor=parse_github_url(url))
+              for url in ("https://github.com/alice/one", "https://github.com/bob/two",
+                          "https://github.com/alice/one")]
+    unlinked = Claim(text="Unlinked work")
+    node = make_provenance_node(services)
+    state = EvaluationState(claims=[*linked, unlinked])
+    result = await node(state)
+    assert result["provenance"] == {linked[1].id: ["Bob metadata"]}
+    assert result["provenance_warnings"] == {
+        linked[0].id: failure.warnings, linked[1].id: partial.warnings,
+        linked[2].id: failure.warnings,
+    }
+    assert fake_github.calls == [("alice", "one"), ("bob", "two")]
+    result["provenance_warnings"][linked[0].id].append("local mutation")
+    assert "local mutation" not in result["provenance_warnings"][linked[2].id]
+    assert "local mutation" not in failure.warnings
+    # A later evaluation refetches, even for the same URL. It cannot retain an
+    # earlier outage or another subject's metadata when provider state changes.
+    fake_github._evidence[("alice", "one")] = GitHubRepoEvidence(observations=["Recovered metadata"])
+    second = await node(EvaluationState(claims=[unlinked], github_url="https://github.com/alice/one"))
+    assert second == {"provenance": {unlinked.id: ["Recovered metadata"]}, "provenance_warnings": {}}
+    assert fake_github.calls[-1] == ("alice", "one")

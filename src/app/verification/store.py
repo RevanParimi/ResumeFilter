@@ -16,10 +16,10 @@ import hmac
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Callable, Optional
 
-from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
@@ -32,6 +32,7 @@ from app.verification import otp as otp_logic
 from app.verification.assurance import compute_assurance
 from app.verification.claims import compute_claim_evidence
 from app.verification.models import VerificationChallengeRow, VerificationRow
+from app.verification.methods import get_adapter
 from app.verification.schema import (
     METHOD_LEVEL, METHOD_SUBJECT, AssuranceLevel, ClaimEvidence,
     ConcurrentEmployment, IdentityAssurance, Verification, VerificationMethod,
@@ -77,6 +78,34 @@ class VerificationStore:
         self._session_factory = session_factory
         self._ledger = ledger
         self._settings = settings or get_settings()
+
+    def _locked_verification(self, session: Session, verification_id: str) -> VerificationRow:
+        """Serialize candidate/channel issuance and use, including erasure.
+
+        SQLite must take its write lock before reading mutable state; a read
+        followed by a write can otherwise race or fail while upgrading the lock.
+        The explicit self-assignment suppresses CandidateRow's onupdate clock.
+        PostgreSQL locks only this candidate, then reads the current outcome.
+        """
+        owner = select(VerificationRow.candidate_id).where(
+            VerificationRow.id == verification_id
+        ).scalar_subquery()
+        if session.get_bind().dialect.name == "sqlite":
+            found = session.execute(
+                update(CandidateRow).where(CandidateRow.id == owner)
+                .values(updated_at=CandidateRow.updated_at)
+                .execution_options(synchronize_session=False)
+            ).rowcount == 1
+        else:
+            found = session.scalar(select(CandidateRow.id).where(
+                CandidateRow.id == owner
+            ).with_for_update()) is not None
+        if not found:
+            raise LookupError(f"unknown verification: {verification_id}")
+        row = session.get(VerificationRow, verification_id, populate_existing=True)
+        if row is None:
+            raise LookupError(f"unknown verification: {verification_id}")
+        return row
 
     # -- outcomes -------------------------------------------------------------
 
@@ -168,11 +197,9 @@ class VerificationStore:
         details: Optional[dict] = None,
         at: Optional[datetime] = None,
     ) -> Verification:
-        moment = as_utc(at) if at else _utcnow()
         with self._session_factory() as session:
-            row = session.get(VerificationRow, verification_id)
-            if row is None:
-                raise LookupError(f"unknown verification: {verification_id}")
+            row = self._locked_verification(session, verification_id)
+            moment = as_utc(at) if at else _utcnow()
             row.status = status.value
             row.completed_at = moment
             if status is VerificationStatus.VERIFIED:
@@ -206,6 +233,7 @@ class VerificationStore:
         destination_hash: str,
         rng: Optional[random.Random] = None,
         at: Optional[datetime] = None,
+        dispatch: Optional[Callable[[str], None]] = None,
     ) -> str:
         """Issue a code and return the PLAINTEXT once, for immediate delivery.
         Only its salted digest is stored.
@@ -217,13 +245,15 @@ class VerificationStore:
         and another full set of guesses. Per candidate+channel, exactly one code
         is live and a restart still has to wait out the cooldown.
         """
-        moment = as_utc(at) if at else _utcnow()
         rng = rng or random.SystemRandom()
         s = self._settings
         with self._session_factory() as session:
-            row = session.get(VerificationRow, verification_id)
-            if row is None:
-                raise LookupError(f"unknown verification: {verification_id}")
+            row = self._locked_verification(session, verification_id)
+            moment = as_utc(at) if at else _utcnow()
+            adapter = get_adapter(VerificationMethod(row.method))
+            if (row.status != VerificationStatus.PENDING.value
+                    or not adapter.challenge_based or adapter.channel != channel):
+                raise ChallengeError("verification cannot receive this challenge")
             existing = (
                 session.execute(
                     select(VerificationChallengeRow)
@@ -259,18 +289,24 @@ class VerificationStore:
                     last_sent_at=moment,
                 )
             )
+            # Keep send and activation in the same candidate-locked order.
+            # A refusing/failed provider rolls back this secret and prior-secret
+            # supersession; it cannot charge cooldown for an unsent request.
+            if dispatch is not None:
+                session.flush()
+                dispatch(code)
             session.commit()
             return code
 
     def confirm_challenge(
         self, verification_id: str, code: str, *, at: Optional[datetime] = None
     ) -> Verification:
-        moment = as_utc(at) if at else _utcnow()
         s = self._settings
         with self._session_factory() as session:
-            row = session.get(VerificationRow, verification_id)
-            if row is None:
-                raise LookupError(f"unknown verification: {verification_id}")
+            row = self._locked_verification(session, verification_id)
+            moment = as_utc(at) if at else _utcnow()
+            if row.status != VerificationStatus.PENDING.value:
+                raise ChallengeError("no active challenge")
             challenge = (
                 session.execute(
                     select(VerificationChallengeRow).where(
@@ -280,14 +316,34 @@ class VerificationStore:
             )
             if challenge is None:
                 raise ChallengeError("no active challenge")
+            adapter = get_adapter(VerificationMethod(row.method))
+            if (challenge.consumed_at is not None or not adapter.challenge_based
+                    or challenge.channel != adapter.channel):
+                session.delete(challenge)
+                session.commit()
+                raise ChallengeError("no active challenge")
+            # Older concurrent issuances could persist multiple live secrets.
+            # Their transaction order is unknowable: refuse both until a resend
+            # replaces the candidate/channel set under the same lock.
+            competing = session.scalar(
+                select(VerificationChallengeRow.id).join(VerificationRow,
+                    VerificationRow.id == VerificationChallengeRow.verification_id)
+                .where(VerificationRow.candidate_id == row.candidate_id,
+                       VerificationChallengeRow.channel == challenge.channel,
+                       VerificationChallengeRow.id != challenge.id).limit(1)
+            )
+            if competing is not None:
+                raise ChallengeError("no active challenge; request a new code")
             if otp_logic.is_challenge_expired(challenge.expires_at, at=moment):
                 session.delete(challenge)
                 session.commit()
                 raise ChallengeError("challenge expired")
 
+            exhausted = otp_logic.attempts_exhausted(challenge.attempts, challenge.max_attempts)
             supplied = otp_logic.hash_code(code or "", s.contact_hash_salt)
-            if not hmac.compare_digest(supplied, challenge.code_hash):
-                challenge.attempts += 1
+            if exhausted or not hmac.compare_digest(supplied, challenge.code_hash):
+                if not exhausted:
+                    challenge.attempts += 1
                 exhausted = otp_logic.attempts_exhausted(
                     challenge.attempts, challenge.max_attempts
                 )

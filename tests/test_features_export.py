@@ -32,13 +32,13 @@ def _mv():
     set_extraction_created_at(cs, cid, datetime(2026, 1, 1, tzinfo=timezone.utc))
     mv = materialize_candidate(cid, view=view, registry=reg, as_of=T,
                                candidate_store=cs, report_store=rs, ledger_store=ls)
-    return reg, view, mv, cid
+    return reg, view, mv, cid, ls
 
 
 def test_csv_header_is_wide_and_in_view_order(tmp_path):
-    reg, view, mv, cid = _mv()
+    reg, view, mv, cid, ls = _mv()
     path = tmp_path / "features.csv"
-    export_view_csv([mv], view=view, path=str(path))
+    export_view_csv([mv], view=view, registry=reg, ledger_store=ls, path=str(path))
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
     header = rows[0]
@@ -48,9 +48,9 @@ def test_csv_header_is_wide_and_in_view_order(tmp_path):
 
 
 def test_csv_masks_consent_cell_and_keeps_first_party(tmp_path):
-    reg, view, mv, cid = _mv()
+    reg, view, mv, cid, ls = _mv()
     path = tmp_path / "features.csv"
-    export_view_csv([mv], view=view, path=str(path))
+    export_view_csv([mv], view=view, registry=reg, ledger_store=ls, path=str(path))
     with open(path, newline="", encoding="utf-8") as f:
         header, row = list(csv.reader(f))
     col = {name: row[i] for i, name in enumerate(header)}
@@ -60,20 +60,20 @@ def test_csv_masks_consent_cell_and_keeps_first_party(tmp_path):
 
 
 def test_parquet_guarded(tmp_path):
-    reg, view, mv, cid = _mv()
+    reg, view, mv, cid, ls = _mv()
     path = tmp_path / "features.parquet"
     if importlib.util.find_spec("pyarrow") is None:
         with pytest.raises(ParquetUnavailable):
-            export_view_parquet([mv], view=view, registry=reg, path=str(path))
+            export_view_parquet([mv], view=view, registry=reg, ledger_store=ls, path=str(path))
     else:
-        export_view_parquet([mv], view=view, registry=reg, path=str(path))
+        export_view_parquet([mv], view=view, registry=reg, ledger_store=ls, path=str(path))
         assert path.exists()
 
 
 def test_feature_columns_and_vector_cells_helpers():
     from app.features.export import feature_columns, vector_cells
 
-    reg, view, mv, cid = _mv()
+    reg, view, mv, cid, ls = _mv()
     cols = feature_columns(view)
     assert cols == [name for name, _ in view.members]
     cells = vector_cells(mv.vector, view, "")

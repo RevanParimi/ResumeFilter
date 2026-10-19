@@ -4,11 +4,11 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.candidates.models import CandidateRow
 from app.ledger.store import LedgerStore
-from app.verification.models import VerificationChallengeRow
+from app.verification.models import VerificationChallengeRow, VerificationRow
 from app.verification.schema import (
     AssuranceLevel, VerificationMethod, VerificationStatus,
 )
@@ -36,6 +36,58 @@ def _candidate(candidates, email_hash="e" * 64):
         s.add(row)
         s.commit()
         return row.id
+
+
+@pytest.mark.parametrize('state', ['verified', 'failed', 'expired', 'consumed', 'wrong_channel'])
+def test_legacy_inactive_challenge_cannot_complete_or_issue(store_bundle, state):
+    candidates, ledger, store = store_bundle
+    cid = _candidate(candidates)
+    v = store.create_verification(candidate_id=cid, method=VerificationMethod.OTP_EMAIL, at=NOW)
+    code = store.create_challenge(verification_id=v.id, channel='email', destination_hash='e' * 64, at=NOW)
+    with candidates._session_factory.begin() as session:
+        if state in ('verified', 'failed', 'expired'):
+            session.execute(update(VerificationRow).where(VerificationRow.id == v.id).values(status=state))
+        else:
+            values = {'consumed_at': NOW} if state == 'consumed' else {'channel': 'phone'}
+            session.execute(update(VerificationChallengeRow).where(VerificationChallengeRow.verification_id == v.id).values(**values))
+    before = store.get_verification(v.id)
+    with pytest.raises(ChallengeError):
+        store.confirm_challenge(v.id, code, at=NOW)
+    assert store.get_verification(v.id) == before
+    assert not [a for a in ledger.audit_for_candidate(cid) if a.action == 'verification.complete']
+    if state in ('verified', 'failed', 'expired'):
+        with pytest.raises(ChallengeError):
+            store.create_challenge(verification_id=v.id, channel='email', destination_hash='e' * 64,
+                                   at=NOW + timedelta(minutes=10))
+
+
+@pytest.mark.parametrize('method,channel', [(VerificationMethod.SELF_ATTESTED, 'email'),
+                                          (VerificationMethod.MANUAL_REVIEW, 'email'),
+                                          (VerificationMethod.OTP_EMAIL, 'phone')])
+def test_non_challenge_method_or_mismatched_channel_cannot_issue(store_bundle, method, channel):
+    candidates, _, store = store_bundle
+    cid = _candidate(candidates)
+    v = store.create_verification(candidate_id=cid, method=method, at=NOW)
+    with pytest.raises(ChallengeError):
+        store.create_challenge(verification_id=v.id, channel=channel, destination_hash='e' * 64, at=NOW)
+    with candidates._session_factory() as session:
+        assert session.scalar(select(VerificationChallengeRow)) is None
+
+
+def test_challenge_lock_preserves_candidate_timestamp_and_separates_channels(store_bundle):
+    candidates, _, store = store_bundle
+    cid = _candidate(candidates)
+    with candidates._session_factory() as session:
+        before = session.get(CandidateRow, cid).updated_at
+    codes = []
+    for method, channel in [(VerificationMethod.OTP_EMAIL, 'email'), (VerificationMethod.OTP_PHONE, 'phone')]:
+        v = store.create_verification(candidate_id=cid, method=method, at=NOW)
+        code = store.create_challenge(verification_id=v.id, channel=channel, destination_hash='e' * 64, at=NOW)
+        codes.append((v.id, code))
+    for vid, code in codes:
+        store.confirm_challenge(vid, code, at=NOW)
+    with candidates._session_factory() as session:
+        assert session.get(CandidateRow, cid).updated_at == before
 
 
 def test_create_verification_persists_and_stamps_the_level(store_bundle):

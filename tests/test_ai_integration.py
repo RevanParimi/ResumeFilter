@@ -18,7 +18,7 @@ async def test_ai_generated_resume_gets_likely_band(services, ai_resume):
     ]
     assert len(det) >= 2                       # multiple independent tells...
     assert all(s.detail for s in det)          # ...each one explained
-    assert "AI-generation signals: likely" in report.summary
+    assert "Writing-style observations" in report.summary
     # Mandates survive: advisory, human decides.
     assert report.advisory is True
     assert report.human_review_required is True

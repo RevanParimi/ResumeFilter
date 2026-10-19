@@ -115,12 +115,12 @@ def main():
         assert response.status_code == status, (response.request.url.path, response.status_code)
         return response.json()
 
-    def upload(email):
+    def upload(email, status=200):
         with client(base, headers=headers) as http:
             return require(http.post("/candidates", json={"resume_text": (
                 f"Candidate\nEmail: {email}\nSkills: Python\n"
                 "- Built production RAG at scale for support tickets.\n"
-            )}))
+            )}), status)
 
     print(f"Synthetic artifacts: {scratch}")
     with (scratch / "server.log").open("w", encoding="utf-8") as log:
@@ -138,7 +138,7 @@ def main():
                 for door in ("portal", "admin"):
                     require(http.post("/_test/arm"))
                     with ThreadPoolExecutor(max_workers=1) as executor:
-                        pending = executor.submit(upload, f"{door}@example.com")
+                        pending = executor.submit(upload, f"{door}@example.com", 422)
                         try:
                             waiting = require(http.get("/_test/entered"))
                             ids = set(waiting["candidate_ids"]) - {bid}
@@ -153,7 +153,8 @@ def main():
                         finally:
                             require(http.post("/_test/release"))
                         cancelled = pending.result(timeout=45)
-                    checks.check(f"{door} in-flight response cancels report", cancelled["report"] is None)
+                    checks.check(f"{door} in-flight upload refuses erased subject",
+                                 cancelled == {"detail": "candidate_erased"})
                     rid = waiting["report_id"]
                     checks.check(f"{door} rejected report unavailable", http.get(f"/report/{rid}").status_code == 404)
                     checks.check(f"{door} stale outcome refused", http.post(
@@ -181,7 +182,8 @@ def main():
         finally:
             stop(proc)
     logs = (scratch / "server.log").read_text(encoding="utf-8")
-    checks.check("race logged without SQL payload", "write_race" in logs and "INSERT INTO reports" not in logs)
+    checks.check("refusal logged without SQL payload", "candidate_erased" in logs
+                 and "INSERT INTO reports" not in logs)
     return checks.summary()
 
 

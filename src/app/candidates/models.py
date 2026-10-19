@@ -18,9 +18,12 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Boolean,
+    Index,
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,13 +39,22 @@ def _utcnow() -> datetime:
 
 
 class CandidateRow(Base):
-    """One human. Identity = salted email/phone hashes (S1.1 hashing module)."""
+    """One candidate subject, asserted contact hints and private mailbox proof."""
 
     __tablename__ = "candidates"
+    __table_args__ = (Index("uq_candidates_login_email_hash", "login_email_hash", unique=True),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     email_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     phone_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    # Authentication proof, separate from extracted contact hints. Set only in
+    # the transaction redeeming a valid mailbox OTP; never by resume ingestion.
+    login_email_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    login_email_verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Older sessions do not record their proved address. Migration flags those
+    # subjects for review without inventing a binding from current resume hints.
+    login_binding_review_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false())
     full_name: Mapped[Optional[str]] = mapped_column(Text)
     # S8.3 Phase B. Set when a REVIEWED DPDP correction wrote `full_name`.
     # `_refresh_identity` is documented "latest non-empty name wins", so

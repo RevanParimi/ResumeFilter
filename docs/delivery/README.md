@@ -1,6 +1,6 @@
 # Remediation delivery plan
 
-Updated: 2026-09-09. This is the execution plan for the approved audit fixes,
+Updated: 2026-10-18. This is the execution plan for the approved audit fixes,
 feature completion and simplification. It adds structure to the existing work;
 it does not claim any pending implementation or validation is complete.
 
@@ -9,9 +9,11 @@ Read [WORKFLOW.md](WORKFLOW.md), that task's PI section and its evidence record.
 Do not load all PIs or the historical roadmap in each session.
 
 Use [FEATURE_STATUS.md](../../FEATURE_STATUS.md) for the common feature summary.
-Detailed children of closed task groups live in the [evidence archive](archive/README.md);
-their group summaries and all open work remain in `tasks/`. Follow links to
-archived evidence only when needed. Archiving does not change completion status.
+Completed task records are consolidated by PI: [R1](EVIDENCE-R1.md),
+[R2](EVIDENCE-R2.md), [R3](EVIDENCE-R3.md), [R4](EVIDENCE-R4.md).
+Task IDs are stable anchors; recorded history does not change completion status.
+Only open work remains in `tasks/`, with child contracts/evidence inline.
+Maintenance reviews reuse the [existing audit](../CODEBASE_REVIEW_2026-09-07.md).
 
 ## Increments and sprint order
 
@@ -52,16 +54,16 @@ sprint. Do not close a parent finding after only its first subtask.
 
 | Finding | Completed baseline or remaining tasks |
 |---|---|
-| F01 | Baseline fix complete; verified binding/identity-change residual R1-S2-T4 |
-| F02 | Baseline isolation fix complete; fetch polarity R2-S1-T3, unused infrastructure R4-S1-T2 |
+| F01 | Baseline and [T4](EVIDENCE-R1.md#r1-s2-t4) binding/refusal residual complete; bounded R1-S2-Q integration complete |
+| F02 | Baseline isolation and fetch polarity complete at R2-S1-Q; unused infrastructure removed by [R4-S1-T2](EVIDENCE-R4.md#r4-s1-t2) |
 | F03 | Baseline snapshot fix complete; preserve it in R1-S2 consent checks and R4 refactors |
-| F04 | Login fix complete; actual PostgreSQL evidence at R1-S2-Q; separate verification race R1-S2-T3 |
+| F04 | Login fix complete; actual PostgreSQL residual gate complete at R1-S2-Q; separate verification race R1-S2-T3 |
 | F05 | R1-S1-T1/T2/T3 and R1-S1-Q; future-media extension R5-S1-T4 |
-| F06 | R1-S2-T1/T2 and R1-S2-Q; future-media extension R5-S1-T4 |
-| F07 | R2-S1-T1/T2/T3 and R2-S1-Q |
-| F08 | R2-S2-T1/T2 and R2-S2-Q |
-| F09 | R1-S2-T3 and R3-S1-T2; corresponding sprint gates |
-| F10 | R3-S1-T1; R3-S2-T1/T2/T3; browser regression R5-S2-T1 |
+| F06 | R1-S2-T1/T2/Q current-system gate complete; future-media extension R5-S1-T4 |
+| F07 | Bounded input/provider/evidence gate complete: [R2-S1-Q](EVIDENCE-R2.md#r2-s1-q), with T1/T2/T3 child evidence |
+| F08 | Bounded style/factual-context gate complete: [R2-S2-Q](EVIDENCE-R2.md#r2-s2-q), with consolidated T1/T2 evidence |
+| F09 | Bounded contact ordering/delivery gate complete: [R1-S2-T3](EVIDENCE-R1.md#r1-s2-t3), [R3-S1-Q](EVIDENCE-R3.md#r3-s1-q), with consolidated T2 evidence; phone delivery explicitly unavailable |
+| F10 | R3-S1-T1 and R3-S2-T1/T2/T3 with [R3-S2-Q](EVIDENCE-R3.md#r3-s2-q) combined operator acceptance complete; broader browser regression remains R5-S2-T1 |
 | F11 | R3-S3-T1/T2/T3; video R5-S1-T1/T2/T3/T4; corresponding gates |
 | F12 | R4-S1-T1 and R4-S1-Q |
 | F13 | R4-S1-T2/T3/T4 and R4-S1-Q |
@@ -80,13 +82,12 @@ labeled as such; additions need explicit task scope and acceptance criteria.
 
 ## Durable context and evidence
 
-- [BASELINE.md](BASELINE.md): what was actually completed/tested before this plan,
-  plus unproven environments and residuals. The latest full suite recorded is
-  2155 passed with 42 warnings; it was not rerun for this documentation task.
+- [BASELINE.md](BASELINE.md): historical pre-plan validation and residuals;
+  current validation belongs to the handoff and linked evidence.
 - [WORKFLOW.md](WORKFLOW.md): development/review/pytest/journey completion gates.
-- [TASK_TEMPLATE.md](TASK_TEMPLATE.md): short reproducible task record, populated
-  when each task starts. PI cards already contain its initial scope/tests.
-- [R1-S1-T2 evidence](tasks/R1-S1-T2.md): legacy-file policy and cleanup validation.
+- [TASK_TEMPLATE.md](TASK_TEMPLATE.md): fields to reuse inline in an existing
+  task; PI cards already contain initial scope/tests. No file per chat.
+- [R1-S1-T2 evidence](EVIDENCE-R1.md#r1-s1-t2): legacy-file policy and cleanup validation.
 - [Original audit](../CODEBASE_REVIEW_2026-09-07.md): detailed evidence, historical.
 - [Feature logic](../FEATURE_LOGIC.md): current scoring/formulas and limitations.
 

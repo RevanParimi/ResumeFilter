@@ -1,5 +1,7 @@
 """S2.4 fusion math: component construction, fusion, banding — pure and offline."""
 
+import pytest
+
 from app.fabrication.risk import build_components
 from app.schemas.fabrication import (
     AIGenerationAssessment,
@@ -38,7 +40,7 @@ def test_one_component_per_evaluable_assessment(settings):
         _ai(AILikelihoodBand.POSSIBLE), _xf(ConsistencyBand.CONSISTENT),
         _rf(DuplicationBand.NEAR_DUPLICATE), settings=settings,
     )
-    assert [c.id for c in comps] == ["ai_generation", "cross_field", "resume_farm"]
+    assert [c.id for c in comps] == ["cross_field", "resume_farm"]
 
 
 def test_none_and_insufficient_are_excluded(settings):
@@ -56,7 +58,7 @@ def test_component_risk_band_mapping(settings):
         _rf(DuplicationBand.NEAR_DUPLICATE), settings=settings,
     )
     by_id = {c.id: c for c in comps}
-    assert by_id["ai_generation"].risk == 0.75
+    assert "ai_generation" not in by_id
     assert by_id["cross_field"].risk == 0.40
     assert by_id["resume_farm"].risk == 0.80
 
@@ -67,15 +69,16 @@ def test_flagged_only_at_top_band(settings):
         _rf(DuplicationBand.SIMILAR), settings=settings,
     )
     by_id = {c.id: c for c in comps}
-    assert by_id["ai_generation"].flagged is False
+    assert "ai_generation" not in by_id
     assert by_id["cross_field"].flagged is True
     assert by_id["resume_farm"].flagged is False
 
 
 def test_weight_is_config_weight_times_confidence(settings):
-    comps = build_components(_ai(AILikelihoodBand.UNLIKELY, conf=0.8), None, None, settings=settings)
-    assert comps[0].weight == 0.8  # fr_weight_ai (1.0) x confidence
-    assert comps[0].band == "unlikely"
+    settings.fr_weight_cross_field = 2.0
+    comps = build_components(None, _xf(ConsistencyBand.CONSISTENT, conf=0.8), None, settings=settings)
+    assert comps[0].weight == 1.6
+    assert comps[0].band == "consistent"
 
 
 from app.fabrication.risk import assess_fabrication_risk, band_for_risk, fuse_components
@@ -92,17 +95,18 @@ def test_fuse_blends_weighted_mean_and_max(settings):
         _rf(DuplicationBand.NEAR_DUPLICATE, conf=0.8), settings=settings,
     )
     score, confidence = fuse_components(comps)
-    # equal weights: mean = (0.75+0.75+0.80)/3; score = 0.7*mean + 0.3*0.80
-    assert abs(score - (0.7 * (0.75 + 0.75 + 0.80) / 3 + 0.3 * 0.80)) < 1e-9
-    assert confidence == 0.75  # min(0.9, 0.30 + 0.15*3)
+    # Only the two factual components count, with equal weights.
+    assert abs(score - (0.7 * (0.75 + 0.80) / 2 + 0.3 * 0.80)) < 1e-9
+    assert confidence == 0.60
 
 
 def test_confidence_follows_coverage(settings):
     two = build_components(
-        _ai(AILikelihoodBand.UNLIKELY), _xf(ConsistencyBand.CONSISTENT), None, settings=settings,
+        _ai(AILikelihoodBand.LIKELY), _xf(ConsistencyBand.CONSISTENT),
+        _rf(DuplicationBand.UNIQUE), settings=settings,
     )
     assert fuse_components(two)[1] == 0.60
-    one = build_components(_ai(AILikelihoodBand.UNLIKELY), None, None, settings=settings)
+    one = build_components(_ai(AILikelihoodBand.LIKELY), _xf(ConsistencyBand.CONSISTENT), None, settings=settings)
     assert fuse_components(one)[1] == 0.45
 
 
@@ -129,7 +133,7 @@ def test_assess_all_clean_is_low(settings):
     )
     assert a.band is FabricationRiskBand.LOW
     assert a.advisory is True
-    assert len(a.components) == 3
+    assert len(a.components) == 2
     assert "never" in a.reasoning  # advisory copy present
 
 
@@ -147,11 +151,11 @@ def test_assess_corroborated_flags_reach_elevated(settings):
         _rf(DuplicationBand.NEAR_DUPLICATE, conf=0.8), settings=settings,
     )
     assert a.band is FabricationRiskBand.ELEVATED
-    assert sum(1 for c in a.components if c.flagged) == 3
+    assert sum(1 for c in a.components if c.flagged) == 2
 
 
 def test_assess_soft_signals_accumulate(settings):
-    # No single subsystem flags loudly, but three soft signals together matter.
+    # The two factual soft signals suffice; style adds no corroboration.
     a = assess_fabrication_risk(
         _ai(AILikelihoodBand.POSSIBLE), _xf(ConsistencyBand.MINOR_ISSUES),
         _rf(DuplicationBand.SIMILAR), settings=settings,
@@ -179,12 +183,12 @@ def test_fuse_zero_total_weight_falls_back_to_plain_mean():
     # Defensive branch: evaluable components with zero confidence carry zero
     # weight; fusion then uses the unweighted mean instead of dividing by zero.
     comps = [
-        RiskComponent(id="ai_generation", band="likely", risk=0.75, confidence=0.0, weight=0.0),
+        RiskComponent(id="resume_farm", band="near_duplicate", risk=0.80, confidence=0.0, weight=0.0),
         RiskComponent(id="cross_field", band="consistent", risk=0.10, confidence=0.0, weight=0.0),
     ]
     score, confidence = fuse_components(comps)
-    mean = (0.75 + 0.10) / 2
-    assert abs(score - (0.7 * mean + 0.3 * 0.75)) < 1e-9
+    mean = (0.80 + 0.10) / 2
+    assert abs(score - (0.7 * mean + 0.3 * 0.80)) < 1e-9
     assert confidence == 0.60
 
 
@@ -197,11 +201,62 @@ def test_band_moderate_needs_corroboration_or_a_flag(settings):
 
 
 def test_assess_single_soft_signal_stays_low(settings):
-    # Live-smoke regression: ai=possible + rf=unique (cross_field dropped out)
-    # fused past 0.30 but must not band MODERATE off one soft signal.
+    # A soft factual signal plus a clean one cannot use style as corroboration.
     a = assess_fabrication_risk(
-        _ai(AILikelihoodBand.POSSIBLE, conf=0.6), None,
-        _rf(DuplicationBand.UNIQUE, conf=0.7), settings=settings,
+        _ai(AILikelihoodBand.LIKELY, conf=1.0), _xf(ConsistencyBand.CONSISTENT, conf=0.5),
+        _rf(DuplicationBand.SIMILAR, conf=0.9), settings=settings,
     )
     assert a.score >= settings.fr_moderate_threshold  # the gate, not the threshold, holds it down
     assert a.band is FabricationRiskBand.LOW
+
+
+@pytest.mark.parametrize("style", [
+    None,
+    _ai(AILikelihoodBand.INSUFFICIENT_TEXT),
+    _ai(AILikelihoodBand.UNLIKELY),
+    _ai(AILikelihoodBand.POSSIBLE),
+    _ai(AILikelihoodBand.LIKELY, conf=0.0),
+    _ai(AILikelihoodBand.LIKELY, conf=1.0),
+])
+@pytest.mark.parametrize("ai_weight", [0.0, 1.0, 100.0])
+@pytest.mark.parametrize("factual", [
+    (None, None),
+    (_xf(ConsistencyBand.MAJOR_ISSUES), None),
+    (_xf(ConsistencyBand.CONSISTENT), _rf(DuplicationBand.UNIQUE)),
+    (_xf(ConsistencyBand.MINOR_ISSUES), _rf(DuplicationBand.SIMILAR)),
+    (_xf(ConsistencyBand.MAJOR_ISSUES), _rf(DuplicationBand.NEAR_DUPLICATE)),
+])
+def test_style_cannot_change_any_factual_risk_output(settings, style, ai_weight, factual):
+    settings.fr_weight_ai = ai_weight
+    baseline = assess_fabrication_risk(None, *factual, settings=settings)
+    observed = assess_fabrication_risk(style, *factual, settings=settings)
+    assert observed == baseline
+    assert all(c.id != "ai_generation" for c in observed.components)
+
+
+def test_direct_fusion_ignores_legacy_style_component():
+    factual = [RiskComponent(id="cross_field", band="consistent", risk=0.10,
+                             confidence=0.8, weight=0.8)]
+    style = RiskComponent(id="ai_generation", band="likely", risk=0.75,
+                          confidence=1.0, weight=0.0, flagged=True)
+    assert fuse_components([style, *factual]) == fuse_components(factual)
+    assert fuse_components([style]) == (0.0, 0.0)
+
+
+@pytest.mark.parametrize("score,confidence,flags,signals,expected", [
+    (0.30, 0.50, 0, 2, "moderate"),
+    (0.299999, 0.50, 0, 2, "low"),
+    (0.60, 0.60, 2, 2, "elevated"),
+    (0.599999, 0.60, 2, 2, "moderate"),
+    (0.80, 0.499999, 2, 2, "insufficient_data"),
+    (0.80, 0.60, 1, 1, "moderate"),
+    (0.40, 0.60, 0, 1, "low"),
+])
+def test_factual_boundary_gates(settings, score, confidence, flags, signals, expected):
+    assert band_for_risk(score, confidence, flags, signals, settings=settings).value == expected
+
+
+def test_new_assessments_always_mark_current_semantics(settings):
+    assert assess_fabrication_risk(None, None, None, settings=settings).scorer_version == 2
+    assert assess_fabrication_risk(None, _xf(ConsistencyBand.CONSISTENT),
+                                   _rf(DuplicationBand.UNIQUE), settings=settings).scorer_version == 2

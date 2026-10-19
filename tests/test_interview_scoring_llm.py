@@ -6,6 +6,7 @@ import pytest
 from app.core.config import Settings
 from app.interview.schema import TurnScore
 from app.interview.scoring import adjust_with_llm
+from app.interview.scoring import SCORER_VERSION, score_turn
 from app.services.llm import LLMClient, NullLLM
 from tests.conftest import FakeLLM
 
@@ -46,9 +47,16 @@ async def test_a_downward_adjustment_is_clamped_the_same_way(s):
     assert out.dimensions["depth"] == pytest.approx(0.3)
 
 
-async def test_scores_stay_inside_0_1_after_adjustment(s):
+async def test_out_of_range_model_score_keeps_the_baseline(s):
     base = TurnScore(dimensions={"depth": 0.95})
     llm = FakeLLM({"Which GPUs?": '{"dimensions": {"depth": 5.0}}'}, settings=s)
+    out = await _adjust(llm, s, base)
+    assert out == base
+
+
+async def test_valid_model_score_stays_inside_0_1_after_adjustment(s):
+    base = TurnScore(dimensions={"depth": 0.95})
+    llm = FakeLLM({"Which GPUs?": '{"dimensions": {"depth": 1.0}}'}, settings=s)
     out = await _adjust(llm, s, base)
     assert out.dimensions["depth"] == 1.0
 
@@ -90,3 +98,23 @@ async def test_the_scoring_tier_is_the_one_actually_requested(s):
 
     await _adjust(Recording(s), s)
     assert seen["model"] == s.model_scoring
+
+
+async def test_v2_adjustment_preserves_version_confidence_and_unknown_axes(s):
+    base = score_turn(transcript="Compared checkpoint logs; restored the prior version; replay tests confirmed recovery.",
+        expected_signals=[], question_text="Which GPUs?", profile=None, settings=s)
+    llm = FakeLLM({"Which GPUs?": '{"dimensions":{"depth":1.0,"ownership":1.0,"consistency":1.0,"specificity":0.0}}'}, settings=s)
+    out = await _adjust(llm, s, base)
+    assert out.scorer_version == base.scorer_version == SCORER_VERSION
+    assert out.evidence_confidence == base.evidence_confidence
+    for dim in ("depth", "ownership", "consistency"):
+        assert out.dimensions[dim] == base.dimensions[dim] == 0.5
+    assert out.dimensions["specificity"] == pytest.approx(base.dimensions["specificity"] - s.interview_llm_max_delta)
+
+
+async def test_v2_keyword_exploit_cannot_be_rescued_by_a_model(s):
+    base = score_turn(transcript="I Python 123 retrieval " * 20,
+        expected_signals=["retrieval"], profile=None, settings=s)
+    assert base.insufficient
+    out = await _adjust(FakeLLM({"Which GPUs?": '{"dimensions":{"depth":1.0}}'}, settings=s), s, base)
+    assert out == base

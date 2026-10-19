@@ -44,6 +44,11 @@ def _questions(n: int = 2) -> list[InterviewQuestion]:
     ]
 
 
+def _assessment(snapshot):
+    return InterviewAssessment(session_id=snapshot.id, candidate_id=snapshot.candidate_id,
+        questions_planned=len(snapshot.questions), questions_answered=len(snapshot.turns))
+
+
 def test_effective_status_derives_abandoned_without_writing_it():
     expires = NOW + timedelta(hours=1)
     assert effective_status(InterviewStatus.IN_PROGRESS, expires, at=NOW) is (
@@ -97,7 +102,7 @@ def test_add_turn_persists_the_transcript_and_the_digest_only(wiring, candidate_
         session.id, question=session.questions[0], channel=AnswerChannel.AUDIO,
         transcript="I ran it on 8 A100s", word_count=6, audio_digest="a" * 64,
         audio_duration_seconds=12.0, score=TurnScore(dimensions={"depth": 1.0}),
-        asked_at=NOW, answered_at=NOW + timedelta(seconds=30),
+        answered_at=NOW + timedelta(seconds=30), assess=_assessment, at=NOW,
     )
     assert turn.transcript == "I ran it on 8 A100s"
     assert turn.audio_digest == "a" * 64
@@ -114,11 +119,11 @@ def test_turns_come_back_in_sequence_order(wiring, candidate_id):
     session = store.create_session(candidate_id=candidate_id, domain="genai",
                                    report_id=None, questions=_questions(3),
                                    assurance_level=0, at=NOW)
-    for q in reversed(session.questions):
+    for q in session.questions:
         store.add_turn(session.id, question=q, channel=AnswerChannel.TEXT,
                        transcript="answer", word_count=1, audio_digest=None,
                        audio_duration_seconds=None, score=TurnScore(),
-                       asked_at=NOW, answered_at=NOW)
+                       answered_at=NOW, assess=_assessment, at=NOW)
     assert [t.sequence for t in store.get_session(session.id).turns] == [1, 2, 3]
 
 
@@ -128,7 +133,7 @@ def test_add_turn_refuses_an_unknown_session(wiring, candidate_id):
         store.add_turn("nope", question=_questions()[0], channel=AnswerChannel.TEXT,
                        transcript="a", word_count=1, audio_digest=None,
                        audio_duration_seconds=None, score=TurnScore(),
-                       asked_at=NOW, answered_at=NOW)
+                       answered_at=NOW, assess=_assessment, at=NOW)
 
 
 def test_complete_session_stores_the_assessment_and_audits(wiring, candidate_id):
@@ -140,7 +145,7 @@ def test_complete_session_stores_the_assessment_and_audits(wiring, candidate_id)
         session_id=session.id, candidate_id=candidate_id, questions_planned=2,
         questions_answered=2, proxy=ProxyRisk(), scorer_version="s73.1", overall=0.6,
     )
-    done = store.complete_session(session.id, assessment=assessment,
+    done = store.complete_session(session.id, assess=lambda _: assessment,
                                   at=NOW + timedelta(minutes=5))
     assert done.status is InterviewStatus.COMPLETED
     assert done.assessment.overall == 0.6
@@ -148,6 +153,27 @@ def test_complete_session_stores_the_assessment_and_audits(wiring, candidate_id)
     assert "interview.complete" in [
         e.action for e in ledger.audit_for_candidate(candidate_id)
     ]
+
+
+def test_legacy_assessment_reads_preserve_exact_json_and_version(wiring, candidate_id):
+    from app.interview.models import InterviewSessionRow
+    from app.interview.session import summarize
+    _, _, store = wiring
+    session = store.create_session(candidate_id=candidate_id, domain="genai", report_id=None,
+        questions=_questions(), assurance_level=0, at=NOW)
+    historical = InterviewAssessment(session_id=session.id, candidate_id=candidate_id,
+        scorer_version="s73.1", overall=0.97, confidence=0.95, band="deep",
+        dimensions=dict.fromkeys(("specificity", "ownership", "depth", "consistency"), 1.0))
+    store.complete_session(session.id, assess=lambda _: historical, at=NOW)
+    with store._session_factory() as db:
+        prior = db.get(InterviewSessionRow, session.id).assessment
+    for _ in range(2):
+        loaded = store.get_session(session.id)
+        assert loaded.assessment == historical
+        assert summarize(loaded, at=NOW).scorer_version == "s73.1"
+    with store._session_factory() as db:
+        row = db.get(InterviewSessionRow, session.id)
+        assert row.assessment == prior and row.scorer_version == "s73.1"
 
 
 def test_live_session_ignores_completed_and_expired_ones(wiring, candidate_id):

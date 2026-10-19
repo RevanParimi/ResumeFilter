@@ -87,7 +87,7 @@ def main() -> int:
             S.check("assessment is advisory", risk_b.get("advisory") is True)
             S.check(
                 "summary carries the fused advisory note",
-                "Unified fabrication risk" in rep_b.get("summary", ""),
+                "Factual review context v2" in rep_b.get("summary", ""),
             )
             S.check(
                 "report still advisory + human-review",

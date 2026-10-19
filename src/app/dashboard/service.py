@@ -109,11 +109,20 @@ class DashboardService:
         return RecordsSection(status=status, data=tuple(records))
 
 
-def build_dashboard_service(settings: Optional[Settings] = None) -> DashboardService:
+def build_dashboard_service(
+    settings: Optional[Settings] = None, *, jobs: Optional[JobStore] = None,
+    comp: Optional[CompService] = None, ledger: Optional[LedgerStore] = None,
+) -> DashboardService:
     settings = settings or get_settings()
+    if ledger is None and comp is not None:
+        ledger = comp._ledger
+    if jobs is None:
+        jobs = build_job_store(settings, session_factory=ledger._session_factory if ledger is not None else None)
+    if ledger is None:
+        ledger = build_ledger_store(settings, session_factory=jobs._session_factory)
     return DashboardService(
-        build_job_store(settings),
-        build_comp_service(settings),
-        build_ledger_store(settings),
+        jobs,
+        comp if comp is not None else build_comp_service(settings, ledger=ledger),
+        ledger,
         settings=settings,
     )

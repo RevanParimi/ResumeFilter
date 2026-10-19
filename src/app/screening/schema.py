@@ -121,9 +121,9 @@ def signals_from_report(
 
 
 _SIGNAL_LABELS = {
-    "ai_generation": "AI-generation signals",
-    "cross_field": "cross-field inconsistency",
-    "resume_farm": "resume farm / near-duplicate",
+    "ai_generation": "writing-style patterns (historical v1 input)",
+    "cross_field": "timeline / structure observations",
+    "resume_farm": "content overlap",
 }
 
 
@@ -149,7 +149,7 @@ def compose_reason(
         return "screened, but the stored signals could not be read"
 
     if signals.risk_band is FabricationRiskBand.INSUFFICIENT_DATA:
-        return "insufficient signal to assess fabrication risk"
+        return "insufficient data for advisory review context"
 
     label = _SIGNAL_LABELS.get(signals.loudest_signal or "", "no single dominant signal")
     tail = (
@@ -158,7 +158,7 @@ def compose_reason(
         else label
     )
     return (
-        f"{signals.risk_band.value} fabrication risk — {tail}; "
+        f"{signals.risk_band.value} advisory review context — {tail}; "
         f"confidence {signals.risk_confidence:.2f}"
     )
 

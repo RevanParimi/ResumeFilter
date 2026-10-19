@@ -43,11 +43,33 @@ ask.
    read under a **new `ConsentPurpose.INTERVIEW_READ`** — a new purpose rather
    than another widening of `VERIFICATION_READ`, whose dated redefinition window
    is closed (`LEDGER.md`).
-3. **Real ASR, deferred TTS.** Candidates answer by audio; questions are
-   delivered as text. OpenRouter serves no TTS and the local option is a GPU
+3. **Real ASR API, deferred TTS.** The API accepts audio; questions are
+   delivered as text. The browser offers typed and microphone answers;
+   [R3-S3-T3](docs/delivery/EVIDENCE-R3.md#r3-s3-t3) owns capture/fallback evidence. OpenRouter serves no TTS and the local option is a GPU
    dependency the offline suite cannot exercise.
 
 ## 3. Structural DPDP
+
+Interview writes serialize on the existing candidate row, with live status and
+current question checked again after provider work and lock acquisition. The
+last answer, saved advisory assessment and completion audit commit together;
+early finish computes from the turns saved under that lock. Conflicting starts,
+duplicate/stale answers, expired sessions and repeated finishes return 409.
+Completed/expired detail responses have no next question. Reload reads saved
+progress; after an uncertain network outcome, read before resubmitting. Provider
+work happens before locking and may be spent on a losing concurrent request.
+See [R3-S3-T2A](docs/delivery/EVIDENCE-R3.md#r3-s3-t2a) for lifecycle validation;
+[T2B](docs/delivery/EVIDENCE-R3.md#r3-s3-t2b) validates the real text browser
+start/list/resume/answer/finish flow, history and saved advisory/version/evidence
+explanations. Conflicts or uncertain writes require a saved-state refresh before
+another submission; no automatic answer replay. Derived abandoned reads are
+labeled expired. Drafts clear on refresh/navigation/account loss.
+[T3](docs/delivery/EVIDENCE-R3.md#r3-s3-t3) connects audio-only microphone capture with
+explicit stop/discard/submit, typed fallback and device cleanup. ASR refusals
+leave the question open; audio request rate limits still apply.
+[R3-S3-Q](docs/delivery/EVIDENCE-R3.md#r3-s3-q) closes combined browser text/audio,
+saved-state restart and consent-permitted employer summary acceptance. This
+uses synthetic media/fake ASR; live codec support and assessment quality remain unproved.
 
 - **No column on either table can hold audio.** The only audio field is
   `audio_digest` (`String(64)`). Asserted by `test_interview_models.py`, which
@@ -78,6 +100,18 @@ rather than degraded silently. `SpeechFailed` (bad format, timeout, upstream
 error) is also 422 — and in both cases **no turn is written**, so a retry is free
 and a vendor outage never costs a candidate their answer.
 
+The browser holds a stopped clip in memory until explicit submission or discard.
+Submission transcribes and scores immediately using the existing endpoint; the
+saved transcript can be inspected afterwards, not edited before scoring. Capture
+is bounded to 5 MB/two minutes, with 20s permission/encoding and 5s stop deadlines.
+Background timer delivery may be delayed; byte checks still precede upload, and
+server settings may impose a lower cap. Navigation, page exit, refresh, mode/account
+changes and unmount stop tracks and discard clips; late permission streams are
+stopped when they resolve. Invalid MIME/base64/ambiguous channels refuse before
+ASR, empty output saves no turn, and provider payloads stay out of HTTP/app logs.
+Only transcript/digest metadata is persisted. Current validation uses fake ASR;
+live codec compatibility and transcription quality are not newly established.
+
 `speech_provider` accepts `openrouter | sarvam | local`; only `openrouter` is
 implemented. The other two build `NullSpeech` **even with a key**, because a
 declared-but-inert provider must answer the same way at every door (the S7.2
@@ -99,25 +133,53 @@ pipeline, not with a seam that has no audio to inspect.
 
 ## 5. Scoring (`scoring.py`)
 
-Four axes, each **neutral when unknown (0.5) rather than zero**:
+New scores use **`s73.2`**, a bounded deterministic content rubric. The frozen
+synthetic development examples are in
+[`interview_rubric_v2.json`](tests/fixtures/interview_rubric_v2.json); they are
+regressions, not held-out quality data or representative accuracy evidence.
+Four axes remain **neutral when unknown (0.5) rather than zero**:
 
 | Axis | Deterministic signal | Neutral when |
 |---|---|---|
-| `specificity` | numerals + tokens the S1.4 skill taxonomy recognises, saturating at `SPECIFICITY_TARGET` | — |
-| `ownership` | first-person singular vs plural agency | neither appears |
-| `depth` | share of the question's `expected_signals` actually covered | the question has no yardstick |
-| `consistency` | an employer/skill from the profile appears in the answer | nothing recognised (v0 **corroborates, never contradicts**) |
+| `specificity` | distinct reported action/object clauses, saturating at three | no usable content produces an insufficient turn |
+| `ownership` | a personal action is explicitly claimed in a substantive clause; pronoun frequency gives no extra credit | team/passive or unspecified individual contribution |
+| `depth` | investigation, change and outcome/rationale stages in context; explicit signal paraphrases provide an anchor | absent yardstick or unconfirmed relevance |
+| `consistency` | remains 0.5; profile-name overlap is not independent factual corroboration | no independent factual comparison is implemented |
 
 That rule is the module's ethic: a scorer that treats *"we have no yardstick"* as
 *"the answer was shallow"* punishes candidates for gaps in the question bank.
-An answer below `interview_min_answer_words` scores **nothing** (an empty
-`dimensions`), which is different from scoring zero — silence is missing
-evidence, not evidence of shallowness.
+Bare tools, numerals, pronouns and copied question clauses earn no content
+credit. Repeated clauses are deduplicated; decimal metrics are not sentence
+boundaries, and coordinated action clauses receive credit like semicolon forms.
+Question topics anchor relevance independently of the depth yardstick. A generic
+profile template needs a specific contextual signal or two distinct procedural
+cues; a universal verb such as "compared" alone is insufficient. Naming the
+profile's employer/tool is not mandatory and never verifies factual consistency.
+Two substantive clauses can make a concise answer usable below
+`interview_min_answer_words`; a shorter single clause or an answer with no usable
+content scores **nothing**, rather than scoring zero for ability.
 
-`confidence = coverage × substance`. Both matter: three thorough answers out of
-eight planned questions is not the evidence eight thorough ones would be, and
-eight one-liners are not either. Below `interview_min_confidence` the band is
-`INSUFFICIENT_SIGNAL` and the assessment asserts nothing.
+`confidence = sum(eligible turn evidence_confidence) / questions planned`, capped
+at 0.95: coverage times mean evidence, with zero contributions from ineligible
+turns and no intermediate rounding. Two or more distinct substantive clauses
+receive `min(0.95, 0.35 + 0.2 × distinct clauses)`; a single clause contributes
+zero assessment evidence at any length. It may still have descriptive turn
+dimensions, with `limited_content`. Repetition or filler crossing the word floor
+does not create confidence. Unconfirmed relevance is disclosed and caps a turn's
+descriptive evidence metadata at 0.4; that turn contributes zero to assessment
+dimensions and confidence. Dimension means use only eligible turns.
+
+An assessment with no relevant usable turn stays `INSUFFICIENT_SIGNAL`, even
+with a zero configured confidence floor. Coverage is answered/planned, including
+answers whose content is insufficient; adding unsupported turns changes this
+progress count without increasing assessment score/confidence.
+
+This is an explicit English action/object and reasoning heuristic with a small
+paraphrase vocabulary, not general semantic understanding or factual verification.
+Unrecognized phrasing may require human review; lexical recognition can also
+over-credit plausible prose. Substantive negative outcomes are still legitimate
+answer content. These limitations require the later empirical-quality gate;
+neither scores nor synthetic fixtures prove fraud or representative effectiveness.
 
 **`InterviewBand` is not `DepthBand`**, though they share members. A resume-depth
 band and a live-interview band must never be silently interchangeable — the S7.2
@@ -128,10 +190,19 @@ beside** them.
 **The LLM is a nudge, never the grader.** `adjust_with_llm` (tier `scoring` →
 `model_scoring`) may move a dimension by at most `interview_llm_max_delta`, can
 never introduce one, can never rescue an insufficient answer, and can never
-produce a band by itself. No key, bad JSON, or an exception all leave the
-deterministic score standing. `scorer_version` is stamped on every stored
-assessment, so a future scoring change is visible in the data instead of
-silently rewriting history.
+produce a band by itself. In v2 it cannot adjust unknown depth/ownership or
+unverified consistency, nor change evidence confidence/version. No key, bad JSON,
+nonfinite/out-of-range members or an exception leave the entire baseline standing.
+
+New turns store `scorer_version` and `evidence_confidence` in existing score JSON;
+new assessments use `s73.2`. Transcript-free candidate/org summaries now include
+`scorer_version`. Completed historical assessments retain their original values
+and versions; reads/restarts perform no rewrite. Wholly legacy active sessions
+retain v1 aggregation over their saved scores/word counts. An active session
+mixing legacy and v2 turns, or containing an unsupported version, completes as
+`mixed/unknown` with empty dimensions, zero confidence and an insufficient band.
+Legacy turn JSON is preserved. There is no working migration or automatic
+rescoring, and no new interview UI behavior; browser wiring remains R3-S3-T2B.
 
 ## 6. Proxy signals (`proxy.py`) — and the no-biometrics decision
 
@@ -214,7 +285,7 @@ All `interview_*` knobs plus `ret_interview_session_days`, `speech_timeout_secon
 and `speech_max_retries` live in `config.yaml`. Band cut-points ARE knobs (the
 `ai_*`/`fr_*`/`rep_*` precedent — a band is a presentation choice over a score).
 The **scorer's internals are not**: `SPECIFICITY_TARGET` and
-`SUBSTANCE_TARGET_WORDS` are module constants versioned by `SCORER_VERSION`,
+`SUBSTANCE_TARGET_WORDS` (legacy aggregation only) are module constants versioned by `SCORER_VERSION`,
 because they define what the number means and a deploy that silently redefined
 them would make two stored assessments incomparable.
 

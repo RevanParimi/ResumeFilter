@@ -24,7 +24,7 @@
 # tests/test_requirements_pinned.py fails the build if a pin goes unbounded or
 # stops satisfying pyproject's range, so the two files cannot drift apart.
 #
-# KNOWN LIMIT: these are the 18 DIRECT dependencies. Transitive packages still
+# KNOWN LIMIT: these are DIRECT dependencies. Transitive packages still
 # float. A full `pip freeze` lock would close that too, at the cost of a file
 # nobody can hand-edit; this is the deliberate middle.
 #
@@ -40,9 +40,6 @@ langchain-core==1.4.8
 # --- API ---
 fastapi==0.138.0
 uvicorn[standard]==0.49.0
-
-# --- Vector store ---
-chromadb==1.5.9
 
 # --- Relational store (candidates; ledger/features later) ---
 sqlalchemy==2.0.51

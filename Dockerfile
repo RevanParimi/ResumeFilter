@@ -41,7 +41,7 @@ COPY frontend ./frontend
 
 # Non-root; /srv/app/data holds sqlite + flywheel (mount a volume in prod).
 RUN useradd --create-home appuser \
-    && mkdir -p data .chroma \
+    && mkdir -p data \
     && chown -R appuser:appuser /srv/app
 USER appuser
 

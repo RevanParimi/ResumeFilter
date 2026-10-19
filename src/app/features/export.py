@@ -1,9 +1,10 @@
 """Export materialized feature vectors to wide CSV / parquet (PI-4 / S4.2).
 
 The 'wide' deliverable is a pivot: fixed columns then one column per feature in
-view.members order. Values are already consent-masked at materialization, so an
-exported file can never leak a consent-withheld value. CSV uses the stdlib;
-parquet requires pyarrow (optional) and raises ParquetUnavailable if absent.
+view.members order. Each consumed row is checked against current consent;
+historical materialization permission cannot authorize a present export. CSV
+uses the stdlib; parquet requires pyarrow (optional) and raises
+ParquetUnavailable if absent.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from typing import Iterable
 from app.features.materialize import MaterializedVector
 from app.features.registry import FeatureRegistry
 from app.features.schema import FeatureDType, FeatureVector, FeatureView
+from app.features.serving import current_consent_vectors
+from app.features.training import current_training_example
 from app.features.training_schema import TrainingExample, TrainingLabel
 from app.ledger.consent import as_utc
 
@@ -35,7 +38,8 @@ def _columns(view: FeatureView) -> list[str]:
 
 def vector_cells(vector: FeatureVector, view: FeatureView, null_token) -> list:
     """Fixed + feature cells for one FeatureVector, in _columns order. Shared by
-    the S4.2 feature export and the S4.4 training export."""
+    the S4.2 feature export and the S4.4 training export. Pure serialization:
+    store-backed writers authorize the row before calling this helper."""
     fixed = {
         "candidate_id": vector.candidate_id,
         "as_of": as_utc(vector.as_of).isoformat(),
@@ -53,14 +57,19 @@ def vector_cells(vector: FeatureVector, view: FeatureView, null_token) -> list:
 
 
 def export_view_csv(
-    rows: Iterable[MaterializedVector], *, view: FeatureView, path: str, null_token: str = ""
+    rows: Iterable[MaterializedVector], *, view: FeatureView, registry: FeatureRegistry,
+    ledger_store, path: str, null_token: str = "", org_id: str | None = None,
 ) -> None:
     columns = _columns(view)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(columns)
         for mv in rows:
-            writer.writerow(vector_cells(mv.vector, view, null_token))
+            vector = current_consent_vectors([mv.vector], registry=registry,
+                                            ledger_store=ledger_store, org_id=org_id)[0]
+            if not ledger_store.candidate_exists(mv.vector.candidate_id):
+                continue
+            writer.writerow(vector_cells(vector, view, null_token))
 
 
 def _pa_type(pa, dtype: FeatureDType):
@@ -74,7 +83,8 @@ def _pa_type(pa, dtype: FeatureDType):
 
 
 def export_view_parquet(
-    rows: Iterable[MaterializedVector], *, view: FeatureView, registry: FeatureRegistry, path: str
+    rows: Iterable[MaterializedVector], *, view: FeatureView, registry: FeatureRegistry,
+    ledger_store, path: str, org_id: str | None = None,
 ) -> None:
     try:
         import pyarrow as pa
@@ -84,12 +94,18 @@ def export_view_parquet(
             "parquet export needs pyarrow; install it (optional extra) or use export_view_csv"
         ) from exc
 
+    # Consume iterators before authorizing buffered output. A revoke during
+    # collection must be visible when constructing the serialized columns.
     rows = list(rows)
     columns = _columns(view)
     specs = {rf.spec.name: rf.spec for rf in view.resolve(registry)}
     data: dict[str, list] = {c: [] for c in columns}
     for mv in rows:
-        for col, cell in zip(columns, vector_cells(mv.vector, view, None)):
+        vector = current_consent_vectors([mv.vector], registry=registry,
+                                        ledger_store=ledger_store, org_id=org_id)[0]
+        if not ledger_store.candidate_exists(mv.vector.candidate_id):
+            continue
+        for col, cell in zip(columns, vector_cells(vector, view, None)):
             data[col].append(cell)
 
     arrays = {}
@@ -128,20 +144,26 @@ def _label_cells(label: TrainingLabel, null_token) -> list:
 
 
 def export_training_csv(
-    examples: Iterable[TrainingExample], *, view: FeatureView, path: str, null_token: str = ""
+    examples: Iterable[TrainingExample], *, view: FeatureView, registry: FeatureRegistry,
+    ledger_store, path: str, null_token: str = "", org_id: str | None = None,
 ) -> None:
     columns = _columns(view) + list(_LABEL_COLUMNS)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(columns)
         for ex in examples:
+            ex = current_training_example(ex, registry=registry, ledger_store=ledger_store,
+                                          org_id=org_id)
+            if ex is None:
+                continue
             writer.writerow(
                 vector_cells(ex.vector, view, null_token) + _label_cells(ex.label, null_token)
             )
 
 
 def export_training_parquet(
-    examples: Iterable[TrainingExample], *, view: FeatureView, registry: FeatureRegistry, path: str
+    examples: Iterable[TrainingExample], *, view: FeatureView, registry: FeatureRegistry,
+    ledger_store, path: str, org_id: str | None = None,
 ) -> None:
     try:
         import pyarrow as pa
@@ -158,6 +180,10 @@ def export_training_parquet(
     fdata: dict[str, list] = {c: [] for c in feat_cols}
     ldata: dict[str, list] = {c: [] for c in _LABEL_COLUMNS}
     for ex in examples:
+        ex = current_training_example(ex, registry=registry, ledger_store=ledger_store,
+                                      org_id=org_id)
+        if ex is None:
+            continue
         for col, cell in zip(feat_cols, vector_cells(ex.vector, view, None)):
             fdata[col].append(cell)
         for col, cell in zip(_LABEL_COLUMNS, _label_cells(ex.label, None)):

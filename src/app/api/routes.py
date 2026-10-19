@@ -1,40 +1,43 @@
-"""HTTP surface: evaluate, fetch reports, and record human outcomes.
+"""Remaining product handlers and ordered API assembly.
 
-Every response is ADVISORY with human_review_required=True — the engine never
-auto-rejects. Reports are persisted through the injected ReportStore; human
-outcomes close the flywheel loop (claim → probe → verdict → OUTCOME).
+Authentication, report, candidate and screening workflows live in separate API modules.
+Shared request/auth dependencies keep the same principal and CSRF boundaries.
 """
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hmac
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app import __version__
-from app.auth.csrf import csrf_matches
-from app.auth.schema import (
-    AdminUser, AuthPlane, LoginPurpose, Principal, PrincipalKind, PrincipalVia,
-    SessionView,
+# Compatibility aliases retain callable identity for existing route guards.
+from app.api.auth import auth_router
+from app.api.screening import org_router as screening_router
+from app.api.candidates import (
+    CandidateCreateRequest, CandidateCreateResponse, ErasureResponse, _ingest_one,
+    router as candidate_admin_router,
 )
-from app.auth.service import (
-    ChallengeRefused, EmailUnavailableError, RegistrationRefused,
+from app.api.reports import (
+    OutcomeListResponse, OutcomeRecordedResponse, OutcomeRequest,
+    _outcome_flywheel_record, _outcome_recorded, evaluation_router, report_router,
 )
-from app.candidates.hashing import contact_hash
-from app.candidates.schema import CandidateProfile
-from app.candidates.store import MatchedOn, ResumeSummary
-from app.core.pdf import pdf_b64_to_text
+from app.api.dependencies import (
+    PUBLIC_PATHS, _rate_limited, _services,
+    require_any_principal, require_api_key, require_candidate, require_org,
+)
+from app.auth.schema import AdminUser
+from app.services.email import EmailSendFailed
+from app.verification.otp import DeliveryUnavailable
 from app.domains.base import get_domain, list_domains
 from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
+from app.features.serving import current_consent_vectors
 from app.ratelimit.service import RateLimited
 from app.comp import bands
 from app.comp.schema import (
@@ -64,12 +67,14 @@ from app.interview.schema import (
 )
 from app.interview.service import AnswerTooLargeError, SessionConflictError
 from app.ledger.store import ConsentError
-from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
-from app.profile_sources.store import SourceSignalErasedError, SourceSubjectErasedError
+from app.profile_sources.store import SourceSubjectErasedError
 from app.curation.schema import (
-    CurationAction, CurationStatus, UnmappedPage, UnmappedTerm,
+    CurationAction, CurationDecision, CurationStatus, UnmappedPage,
 )
+from app.curation.service import AliasConflictError
+from app.curation.store import StaleReviewError
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
+from app.portal.service import PortalSubjectErasedError
 from app.retention.schema import SweepReport
 from app.retention.sweep import run_sweep
 from app.signal_quality.labels import LedgerLabelSource, OutcomesLabelSource
@@ -89,24 +94,9 @@ from app.verification.service import (
     DestinationError, DocumentTooLargeError, MethodNotPermittedError,
 )
 from app.verification.store import ChallengeError
-from app.schemas.extraction import ExtractionCoverage
-from app.schemas.fabrication import ResumeFarmAssessment
-from app.schemas.report import Report
-from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 from app.screening.pagination import InvalidCursor, clamp_limit
-from app.screening.projection import redact_ingest_response_for_org
-from app.screening.schema import (
-    BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
-)
-from app.services import Services
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
-from app.reports.outcomes import OutcomeRefused, build_outcome
-from app.reports.schema import OutcomeLabel, OutcomeRecord, OutcomeSource
-
-
-def _services(request: Request) -> Services:
-    return request.app.state.services
 
 
 # ── Response models for what used to be `-> dict` (S8.4 Phase B, Task 13) ────
@@ -117,20 +107,6 @@ def _services(request: Request) -> Services:
 # renamed. Where a shape is shared (an acknowledgement, the auth 202) one model
 # is shared, because trading an untyped client for an unreadable one is not a
 # trade worth making.
-
-
-class ErasureResponse(BaseModel):
-    """DPDP erasure, from both entry points. `reports_deleted` is a COUNT READ
-    taken before the delete -- a number in a response, not a person's data."""
-
-    candidate_id: str
-    deleted: bool
-    reports_deleted: int = 0
-
-
-class ResumeDeletedResponse(BaseModel):
-    resume_id: str
-    deleted: bool
 
 
 class OrgDeletedResponse(BaseModel):
@@ -148,53 +124,11 @@ class ConsentRevokedResponse(BaseModel):
     revoked: bool
 
 
-class SessionRevokedResponse(BaseModel):
-    session_id: str
-    revoked: bool
-
-
-class CandidateKeyResponse(BaseModel):
-    """Returned ONCE at issuance; only the hash is stored."""
-
-    candidate_id: str
-    access_key: str
-
-
 class OrgKeyResponse(BaseModel):
     """Returned ONCE at issuance; only the hash is stored."""
 
     org_id: str
     api_key: str
-
-
-class OutcomeRequest(BaseModel):
-    """A human closing the loop on a report (or one claim within it).
-
-    Defined up here with the two response models rather than beside the
-    operator's route, because BOTH doors take it and FastAPI resolves a
-    handler's annotations at decoration time -- the org-plane route is
-    registered earlier in this file.
-
-    `notes` is bounded by `max_outcome_notes_chars` inside `build_outcome`, not
-    by a Field constraint here: the cap is config, and it must apply
-    identically on both routes (S8.5 spec §4).
-    """
-
-    outcome: OutcomeLabel
-    claim_id: Optional[str] = None
-    notes: str = ""
-
-
-class OutcomeRecordedResponse(BaseModel):
-    report_id: str
-    claim_id: Optional[str] = None
-    outcome: str
-    recorded_at: str
-
-
-class OutcomeListResponse(BaseModel):
-    report_id: str
-    outcomes: list[OutcomeRecord] = Field(default_factory=list)
 
 
 class OrgInterviewAssessments(BaseModel):
@@ -256,217 +190,6 @@ class ServiceInfo(BaseModel):
     endpoints: list[str] = Field(default_factory=list)
 
 
-class CodeRequestAccepted(BaseModel):
-    """The 202 from every signup/login on all three planes. IDENTICAL for known
-    and unknown addresses on purpose -- see AUTH.md's anti-enumeration rule."""
-
-    status: str = "accepted"
-    #: local env + login_otp_debug_echo ONLY; production can never echo. Every
-    #: code-issuing route sets response_model_exclude_none, so a real deployment
-    #: answers `{"status": "accepted"}` with the key ABSENT, not null -- the
-    #: uniform body this model exists to guarantee is unchanged by the knob.
-    debug_code: Optional[str] = None
-
-
-class SessionEstablished(BaseModel):
-    """A verified code. The session token is a cookie; the CSRF token is in the
-    body because a JS client has to echo it in a header."""
-
-    principal: str
-    csrf_token: str
-    organization_id: Optional[str] = None
-
-
-class AuthMeResponse(BaseModel):
-    kind: str
-    organization_id: Optional[str] = None
-    session_id: Optional[str] = None
-
-
-class LogoutResponse(BaseModel):
-    logged_out: bool
-
-
-# Paths that establish no principal, by definition. Everything else must go
-# through one of the four resolvers below, and tests/test_route_table_guard.py
-# fails the build if it does not. WIDENING THIS SET IS THE REVIEWABLE ACT —
-# it is how "someone forgot a gate" becomes "someone edited a named list".
-PUBLIC_PATHS: set[str] = {
-    "/", "/healthz", "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json",
-    "/auth/org/signup", "/auth/org/login", "/auth/org/verify",
-    "/auth/candidate/signup", "/auth/candidate/login", "/auth/candidate/verify",
-    "/auth/admin/login", "/auth/admin/verify",
-    # S8.3 Phase B. DPDP requires the grievance mechanism to be PUBLISHED, and
-    # a contact reachable only after login is not reachable by the person whose
-    # complaint is that they cannot log in. It discloses four operator-chosen
-    # fields and reads nothing about any data principal.
-    "/grievance",
-}
-
-
-_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-
-
-def _accept(request: Request, principal: Principal) -> Principal:
-    """Record the principal and enforce CSRF in ONE place.
-
-    CSRF lives inside the resolvers rather than beside them as its own
-    dependency, and that is a correctness decision, not tidiness: FastAPI runs
-    router-level dependencies BEFORE route-level ones, so a separate
-    ``Depends(require_csrf)`` on ``org_router`` would execute before
-    ``require_org`` had established the principal, read ``via`` as unset, and
-    skip the check on every request — a fail-open that tests using cookies
-    would never notice. Here the ordering cannot be got wrong.
-
-    The exemption keys on ``principal.via``, NEVER on "was a header present":
-    otherwise a browser carrying a session cookie plus an attacker-supplied
-    ``X-Org-Key`` would skip CSRF entirely. ``AuthService.resolve`` prefers the
-    session when both arrive, so the stronger requirement always wins.
-    """
-    request.state.principal = principal
-    if request.method not in _SAFE_METHODS and principal.via == PrincipalVia.SESSION:
-        settings = _services(request).settings
-        if not csrf_matches(
-            request.cookies.get(settings.csrf_cookie_name),
-            request.headers.get("X-CSRF-Token"),
-        ):
-            raise HTTPException(
-                status_code=403, detail="missing or invalid CSRF token"
-            )
-    return principal
-
-
-async def require_api_key(request: Request) -> Principal:
-    """Admin-plane gate (FR-15). Fail-CLOSED since S8.1; session-capable since S8.2.
-
-    Since S8.2 every plane resolves through ONE service call, so a gate cannot
-    be forgotten at a second door — the bug shape that shipped as a real defect
-    in S7.1, S7.2 and S7.3, and which sessions would otherwise multiply by two.
-
-    An unset ``DEE_API_AUTH_KEY`` is still the MOST refusing state (enforced in
-    ``AuthService._from_key``), and ``verify_launch_config`` stops the process
-    before it can serve in that state at all.
-    """
-    principal = _services(request).auth.resolve(
-        kind=PrincipalKind.ADMIN,
-        session_token=_session_cookie(request),
-        header_key=request.headers.get("X-API-Key"),
-    )
-    if principal is None:
-        raise HTTPException(status_code=401, detail="invalid or missing admin credential")
-    return _accept(request, principal)
-
-
-async def require_org(request: Request) -> str:
-    """Resolve the caller to ONE organization (S3.2), by session or by key.
-
-    The return type is unchanged — every handler still receives ``org_id: str``
-    — which is why sessions reached all 63 endpoints without editing one.
-    """
-    principal = _services(request).auth.resolve(
-        kind=PrincipalKind.ORG,
-        session_token=_session_cookie(request),
-        header_key=request.headers.get("X-Org-Key"),
-    )
-    if principal is None:
-        raise HTTPException(status_code=401, detail="invalid or missing X-Org-Key")
-    return _accept(request, principal).org_id
-
-
-async def require_candidate(request: Request) -> str:
-    """Resolve the caller to ONE candidate (S6.4), by session or by key.
-
-    Always enforced — the portal is the data principal's private surface, and
-    cross-candidate isolation stays structural because handlers still receive
-    the id from here rather than from a path or body param.
-    """
-    principal = _services(request).auth.resolve(
-        kind=PrincipalKind.CANDIDATE,
-        session_token=_session_cookie(request),
-        header_key=request.headers.get("X-Candidate-Key"),
-    )
-    if principal is None:
-        raise HTTPException(status_code=401, detail="invalid or missing X-Candidate-Key")
-    return _accept(request, principal).candidate_id
-
-
-async def require_any_principal(request: Request) -> Principal:
-    """The cross-plane resolver, for the session-lifecycle routes only.
-
-    A candidate, an org user and an operator all need to see and revoke their
-    own sessions through one route. Without a name for that, those four routes
-    would need three copies each or would sit outside the route-table guard —
-    and a route outside the guard is the entire problem.
-
-    SESSION ONLY: a header key has no session to list or revoke, so it 401s
-    here rather than resolving to something that pretends to work.
-    """
-    principal = _services(request).auth.resolve_any(
-        session_token=_session_cookie(request)
-    )
-    if principal is None:
-        raise HTTPException(status_code=401, detail="a session is required")
-    return _accept(request, principal)
-
-
-def _session_cookie(request: Request) -> Optional[str]:
-    return request.cookies.get(_services(request).settings.session_cookie_name)
-
-
-def _client_ip(request: Request) -> Optional[str]:
-    """The caller's address, or None.
-
-    ``X-Forwarded-For`` is IGNORED unless ``rate_limit_trusted_proxy_hops``
-    says how many proxies sit in front of us. This is the decision that
-    determines whether the per-IP scope is worth anything: the header is
-    entirely attacker-controlled, so trusting it by default would hand every
-    caller a free reset of their own scope, and the limiter would pass its
-    tests while bounding nothing.
-
-    With ``hops = n`` we take the n-th entry FROM THE RIGHT -- the rightmost
-    entries are the ones our own infrastructure appended, and everything to the
-    left of them was supplied by the client.
-    """
-    settings = _services(request).settings
-    hops = settings.rate_limit_trusted_proxy_hops
-    if hops > 0:
-        forwarded = request.headers.get("x-forwarded-for", "")
-        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
-        if len(parts) >= hops:
-            return parts[-hops]
-    return request.client.host if request.client else None
-
-
-def _rate_limited(exc: RateLimited) -> HTTPException:
-    """The ONE translation of a refused bound into HTTP (S8.3).
-
-    It was four byte-identical copies before Phase B was about to add a fifth,
-    which is how "a rule applied at one entry point and not the other" starts.
-    The next copy would be the one that forgets `Retry-After`, and a 429 with
-    no header reads to a client author as "stop forever".
-
-    ONE OPAQUE DETAIL, deliberately. Which rule and which scope refused is
-    operator information and goes to the log line the limiter already emits --
-    telling a brute-forcer which of their two axes tripped is telling them
-    which one to change.
-    """
-    return HTTPException(
-        status_code=429,
-        detail="rate_limited",
-        headers={"Retry-After": str(exc.retry_after_seconds)},
-    )
-
-
-def _client_ip_hash(request: Request) -> Optional[str]:
-    """`_client_ip`, hashed. Nothing downstream ever sees a raw address --
-    the `email_hash`/`phone_hash` precedent (PI-8 §7): store what identifies,
-    never what re-identifies."""
-    ip = _client_ip(request)
-    if not ip:
-        return None
-    return contact_hash(ip, _services(request).settings.contact_hash_salt)
-
-
 # Everything except "/" and /healthz sits behind the admin credential.
 # CSRF is enforced inside require_api_key itself (see _accept), so there is no
 # second dependency here whose ordering could be got wrong.
@@ -480,366 +203,29 @@ org_router = APIRouter()
 # session). Every route acts on the candidate resolved from the credential —
 # never a path/body param.
 candidate_router = APIRouter()
-# Login surfaces. Dependency-free by definition: they run BEFORE a principal
-# exists, which is why every path here is listed in PUBLIC_PATHS.
-auth_router = APIRouter()
 
 
-class EvaluateRequest(BaseModel):
-    """Exactly one of resume_text / resume_pdf_b64 is required."""
-
-    resume_text: str | None = None
-    resume_pdf_b64: str | None = None
-    github_url: str | None = Field(default=None, description="First-party link only.")
-    portfolio_url: str | None = Field(default=None, description="First-party link only.")
-    domain: str = "genai"
-
-    @model_validator(mode="after")
-    def _need_one_source(self) -> "EvaluateRequest":
-        if not (self.resume_text or self.resume_pdf_b64):
-            raise ValueError("Provide resume_text or resume_pdf_b64.")
-        return self
+# Compose existing APIRoutes without an extra inherited dependency context.
+router.routes.extend(evaluation_router.routes)
 
 
-@router.post("/evaluate", response_model=Report)
-async def evaluate(req: EvaluateRequest, request: Request) -> Report:
-    services = _services(request)
-    engine = request.app.state.engine
-
-    # Input caps (FR-11): reject oversize payloads before any work happens.
-    caps = services.settings
-    if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resume_text exceeds max_resume_chars={caps.max_resume_chars}",
-        )
-    if req.resume_pdf_b64 and len(req.resume_pdf_b64) > caps.max_pdf_b64_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
-        )
-    # Domain pre-check (FR-12): fail fast, never run the graph on a bad domain.
-    try:
-        get_domain(req.domain)
-    except KeyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    try:
-        report = await engine.evaluate(
-            resume_text=req.resume_text,
-            resume_pdf_b64=req.resume_pdf_b64,
-            github_url=req.github_url,
-            portfolio_url=req.portfolio_url,
-            domain=req.domain,
-        )
-    except KeyError as exc:  # unknown domain
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    services.report_store.save(report)
-    # Report-only deletion can win after save, even without a candidate link.
-    # This is a response snapshot, not a lock across HTTP delivery.
-    if services.report_store.get(report.id) is None:
-        raise HTTPException(status_code=422, detail="report_erased")
-    return report
-
-
-class CandidateCreateRequest(BaseModel):
-    """At least one of resume_text / resume_pdf_b64; resume_text wins when
-    both are sent (same rule as BatchItemInput, on purpose)."""
-
-    resume_text: str | None = None
-    resume_pdf_b64: str | None = None
-    domain: str = "genai"
-    # Auto depth-eval is the default (S1.3 mandate); clients doing bulk import
-    # can opt out and evaluate later.
-    evaluate: bool = True
-
-    @model_validator(mode="after")
-    def _need_one_source(self) -> "CandidateCreateRequest":
-        if not (self.resume_text or self.resume_pdf_b64):
-            raise ValueError("Provide resume_text or resume_pdf_b64.")
-        return self
-
-
-class CandidateCreateResponse(BaseModel):
-    """What one upload did (S1.2 IngestOutcome) + the advisory report, if run."""
-
-    candidate_id: str
-    resume_id: str
-    resume_version: int
-    matched_existing: bool
-    matched_on: Optional[MatchedOn] = None
-    duplicate_resume: bool
-    extraction_method: str  # "llm" | "heuristic"
-    report: Optional[Report] = None
-    # S2.3: cross-candidate near-duplicate signals, computed at ingest so bulk
-    # imports (evaluate=False) still see them. Advisory, like everything else.
-    resume_farm: Optional[ResumeFarmAssessment] = None
-    # S9.2: computed at ingest so bulk imports (evaluate=False) still see it,
-    # for the same reason resume_farm is here.
-    extraction_coverage: Optional[ExtractionCoverage] = None
-
-
-async def _ingest_one(
-    req: CandidateCreateRequest, request: Request, *, org_id: Optional[str] = None
-) -> CandidateCreateResponse:
-    """HTTP adapter over the ONE ingest core (app/screening/ingest.py).
-
-    Shared by the admin route (no owner) and the org route (owner = caller).
-    The pipeline itself moved out so the batch processor runs the same code:
-    duplicating it would be the one-rule-two-doors shape in the sprint that
-    exists to eliminate it.
-    """
-    services = _services(request)
-    caps = services.settings
-
-    if req.resume_text and len(req.resume_text) > caps.max_resume_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resume_text exceeds max_resume_chars={caps.max_resume_chars}",
-        )
-    if req.resume_pdf_b64 and len(req.resume_pdf_b64) > caps.max_pdf_b64_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
-        )
-    # Kept in the route so the 422 detail stays byte-identical to what clients
-    # (and five smokes) already assert.
-    try:
-        get_domain(req.domain)
-    except KeyError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    text = req.resume_text
-    if not text and req.resume_pdf_b64:
-        try:
-            text = pdf_b64_to_text(req.resume_pdf_b64)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422, detail=f"pdf_parse_failed: {exc}"
-            ) from exc
-
-    try:
-        result = await ingest_resume(
-            ingest_deps(services), request.app.state.engine,
-            text=text or "", domain=req.domain, evaluate=req.evaluate, org_id=org_id,
-        )
-    except IngestRefused as exc:
-        raise HTTPException(status_code=422, detail=exc.reason) from exc
-
-    return CandidateCreateResponse(
-        candidate_id=result.candidate_id,
-        resume_id=result.resume_id,
-        resume_version=result.resume_version,
-        matched_existing=result.matched_existing,
-        matched_on=result.matched_on,
-        duplicate_resume=result.duplicate_resume,
-        extraction_method=result.extraction_method,
-        report=result.report,
-        resume_farm=result.resume_farm,
-        extraction_coverage=result.extraction_coverage,
-    )
-
-
-@router.post("/candidates", response_model=CandidateCreateResponse)
-async def create_candidate(
-    req: CandidateCreateRequest, request: Request
-) -> CandidateCreateResponse:
-    """Admin plane: no owner. Cross-tenant by design -- this is the operator's
-    view, and S8.4 deliberately left it alone."""
-    return await _ingest_one(req, request)
-
-
-class CandidateDetail(BaseModel):
-    """Store summary + the newest extracted profile (hashes only — no raw PII)."""
-
-    id: str
-    full_name: Optional[str] = None
-    email_hash: Optional[str] = None
-    phone_hash: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
-    resume_count: int = 0
-    latest_profile: Optional[CandidateProfile] = None
-
-
-class CandidateResumesResponse(BaseModel):
-    candidate_id: str
-    resumes: list[ResumeSummary]
-
-
-@router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
-async def get_candidate(candidate_id: str, request: Request) -> CandidateDetail:
-    services = _services(request)
-    summary = services.candidates.get_candidate(candidate_id)
-    if summary is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    return CandidateDetail(
-        **summary.model_dump(),
-        latest_profile=services.candidates.latest_profile(candidate_id),
-    )
-
-
-@router.get("/candidates/{candidate_id}/resumes", response_model=CandidateResumesResponse)
-async def list_candidate_resumes(
-    candidate_id: str, request: Request
-) -> CandidateResumesResponse:
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    return CandidateResumesResponse(
-        candidate_id=candidate_id,
-        resumes=services.candidates.list_resumes(candidate_id),
-    )
-
-
-@router.get("/candidates/{candidate_id}/reports", response_model=list[Report])
-async def list_candidate_reports(candidate_id: str, request: Request) -> list[Report]:
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    return services.report_store.for_candidate(candidate_id)
-
-
-@router.delete("/candidates/{candidate_id}", response_model=ErasureResponse)
-async def delete_candidate(candidate_id: str, request: Request) -> ErasureResponse:
-    """DPDP erasure: candidate + resumes (raw text) + extractions + all reports
-    derived from them. Hard delete — there is nothing to un-delete.
-
-    Since S8.1 the reports go with the candidate through
-    ``reports.candidate_id ON DELETE CASCADE``, not through a call this handler
-    has to remember. ``reports_deleted`` is a COUNT READ taken before the
-    delete: an entry point that forgets it loses a number in a response, not a
-    person's data.
-    """
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    # ONE erasure path, shared with the portal handler below. Erasure has two
-    # entry points, and a rule applied at one and not the other is this repo's
-    # recurring defect (S7.1, S7.2, S7.3) -- so the steps live in the service.
-    return services.portal.erase(candidate_id)
-
-
-@router.delete("/candidates/{candidate_id}/resumes/{resume_id}", response_model=ResumeDeletedResponse)
-async def delete_candidate_resume(
-    candidate_id: str, resume_id: str, request: Request
-) -> ResumeDeletedResponse:
-    """DPDP erasure of ONE resume version (+ its extractions). The candidate
-    row and other versions stay; ownership is checked so one candidate's URL
-    can never erase another's data."""
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    owned = {r.id for r in services.candidates.list_resumes(candidate_id)}
-    if resume_id not in owned:
-        raise HTTPException(status_code=404, detail="resume not found for candidate")
-    services.candidates.delete_resume(resume_id)
-    return {"resume_id": resume_id, "deleted": True}
-
-
-@router.post("/candidates/{candidate_id}/auth-key", response_model=CandidateKeyResponse)
-async def issue_candidate_key(candidate_id: str, request: Request) -> CandidateKeyResponse:
-    """Admin/system mints (or rotates) a candidate's portal access key, returned
-    ONCE. First-party self-serve registration is a productionization concern
-    (PI-8); this is the offline-deterministic issuance path."""
-    services = _services(request)
-    try:
-        access_key = services.candidates.issue_access_key(candidate_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail="candidate not found") from exc
-    return {"candidate_id": candidate_id, "access_key": access_key}
-
-
-class GitHubSourceRequest(BaseModel):
-    handle: Optional[str] = None
-
-
-class LinkedInSourceRequest(BaseModel):
-    export_b64: str
-
-
-class ProfileSourcesResponse(BaseModel):
-    candidate_id: str
-    sources: list[ProfileSourceSignal]
-
-
-@router.post(
-    "/candidates/{candidate_id}/sources/github", response_model=ProfileSourceSignal
-)
-async def ingest_github_source(
-    candidate_id: str, req: GitHubSourceRequest, request: Request
-) -> ProfileSourceSignal:
-    """Ingest a candidate's public GitHub handle as an advisory skill signal
-    (S6.1). A missing/unreachable handle returns 200 with method='unavailable';
-    a handle that can't be resolved at all is 400."""
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    try:
-        return await services.profile_sources.ingest_github(candidate_id, handle=req.handle)
-    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from None
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post(
-    "/candidates/{candidate_id}/sources/linkedin", response_model=ProfileSourceSignal
-)
-async def ingest_linkedin_source(
-    candidate_id: str, req: LinkedInSourceRequest, request: Request
-) -> ProfileSourceSignal:
-    """Ingest a candidate's uploaded LinkedIn data export (base64 ZIP) as an
-    advisory skill signal (S6.2). Malformed transport (bad base64 / oversize) is
-    422; a valid file with no recognizable LinkedIn CSVs returns 200 with
-    method='unavailable'."""
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    if len(req.export_b64) > services.settings.max_linkedin_b64_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"export_b64 exceeds max_linkedin_b64_chars={services.settings.max_linkedin_b64_chars}",
-        )
-    try:
-        data = base64.b64decode(req.export_b64, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="invalid_base64") from exc
-    try:
-        return await services.profile_sources.ingest_linkedin(candidate_id, data)
-    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from None
-
-
-@router.get(
-    "/candidates/{candidate_id}/sources", response_model=ProfileSourcesResponse
-)
-async def list_candidate_sources(
-    candidate_id: str, request: Request, source_type: Optional[ProfileSourceType] = None
-) -> ProfileSourcesResponse:
-    services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    return ProfileSourcesResponse(
-        candidate_id=candidate_id,
-        sources=services.profile_sources.list_sources(candidate_id, source_type),
-    )
+router.routes.extend(candidate_admin_router.routes)
 
 
 # ── Normalization curation loop (S6.3) ───────────────────────────────────────
 # Admin-plane review of unmapped skill terms surfaced by the profile-source
 # adapters. Resolving a term feeds the deterministic normalize_skill overlay.
-# (Candidate/org auth is S6.4; until then this rides the shared X-API-Key.)
+# The admin router authenticates operator sessions/keys and enforces session CSRF.
 
 
 class CurationResolveRequest(BaseModel):
-    norm_key: str
+    model_config = ConfigDict(extra="forbid")
+    norm_key: str = Field(min_length=1, max_length=128)
     action: CurationAction
-    canonical: Optional[str] = None
-    category: Optional[str] = None
-    note: Optional[str] = None
-    decided_by: Optional[str] = None
+    alias: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    canonical: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    category: Optional[str] = Field(default=None, min_length=1, max_length=32)
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 @router.get(
@@ -862,18 +248,23 @@ async def list_unmapped_terms(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/curation/skills/resolve", response_model=UnmappedTerm)
+@router.post("/curation/skills/resolve", response_model=CurationDecision)
 async def resolve_unmapped_term(
     req: CurationResolveRequest, request: Request
-) -> UnmappedTerm:
+) -> CurationDecision:
     services = _services(request)
     try:
         return services.curation.resolve(
-            req.norm_key, req.action, canonical=req.canonical, category=req.category,
-            note=req.note, decided_by=req.decided_by,
+            req.norm_key, req.action, alias=req.alias, canonical=req.canonical,
+            category=req.category, admin_user_id=request.state.principal.admin_user_id,
+            expected_revision=req.expected_revision,
         )
+    except StaleReviewError:
+        raise HTTPException(status_code=409, detail="review snapshot changed; refresh before deciding") from None
+    except AliasConflictError:
+        raise HTTPException(status_code=409, detail="approved alias already exists") from None
     except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=404, detail="term not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -981,318 +372,8 @@ async def consent_status(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-# ── Screening (S8.4 Phase A) ────────────────────────────────────────────────
-# The wedge, reachable by the org that bought it: upload one resume, read back
-# its own (redacted) report, list its own reports about one person. Batch
-# upload is Phase B.
-
-
-@org_router.post("/screening/candidates", response_model=CandidateCreateResponse)
-async def screening_create_candidate(
-    req: CandidateCreateRequest, request: Request, org_id: str = Depends(require_org)
-) -> CandidateCreateResponse:
-    """The wedge, on the plane that bought it (S8.4 §3.2).
-
-    Synchronous like its admin twin -- this is the one-off upload. Batch is
-    Phase B. The resume and its report are stamped with the caller's org.
-
-    ``_ingest_one`` scans the whole platform's fingerprints for the resume
-    farm check (fraud detection has to, by design); redact the response here
-    before it leaves the org plane so a caller never sees another customer's
-    candidate_id/resume_id. The admin twin (create_candidate) returns the
-    same read unredacted on purpose -- that is the operator's cross-tenant
-    support view.
-    """
-    resp = await _ingest_one(req, request, org_id=org_id)
-    return redact_ingest_response_for_org(resp)
-
-
-@org_router.get("/screening/reports/{report_id}", response_model=Report)
-async def screening_get_report(
-    report_id: str, request: Request, org_id: str = Depends(require_org)
-) -> Report:
-    """404 -- never 403 -- for a report this org did not commission: a 403
-    would confirm it exists."""
-    found = _services(request).screening_scope.report(org_id, report_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return found
-
-
-@org_router.get(
-    "/screening/candidates/{candidate_id}/reports", response_model=list[Report]
-)
-async def screening_candidate_reports(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> list[Report]:
-    """This org's own reports about one person. A person they have never
-    uploaded yields an empty list, not a 404."""
-    return _services(request).screening_scope.reports_for_candidate(
-        org_id, candidate_id
-    )
-
-
-@org_router.post(
-    "/screening/reports/{report_id}/outcome",
-    response_model=OutcomeRecordedResponse,
-)
-async def screening_record_outcome(
-    report_id: str, req: OutcomeRequest, request: Request,
-    org_id: str = Depends(require_org),
-) -> OutcomeRecordedResponse:
-    """The customer closing the loop on a report they commissioned (S8.5).
-
-    The twin of the operator's `POST /report/{id}/outcome`; both validate
-    through `build_outcome`, so neither door can be bounded while the other is
-    not.
-
-    404 -- never 403 -- for a report this org did not commission, on a WRITE
-    as much as on a read. The instinct on a refused write is 403, and it would
-    confirm the report exists to anyone who guessed an id.
-    """
-    services = _services(request)
-    try:
-        rec = services.screening_scope.record_outcome(
-            org_id, report_id,
-            outcome=req.outcome,
-            claim_id=req.claim_id,
-            notes=req.notes,
-            max_notes_chars=services.settings.max_outcome_notes_chars,
-            org_user_id=_org_user_id(request),
-        )
-    except OutcomeRefused as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if rec is None:
-        raise HTTPException(status_code=404, detail="report not found")
-
-    services.flywheel.log(_outcome_flywheel_record(rec))
-    return _outcome_recorded(rec)
-
-
-@org_router.get(
-    "/screening/reports/{report_id}/outcomes",
-    response_model=OutcomeListResponse,
-    description="This organisation's own judgments on a report it commissioned, oldest first.",
-)
-async def screening_list_outcomes(
-    report_id: str, request: Request, org_id: str = Depends(require_org)
-) -> OutcomeListResponse:
-    """THIS org's judgments -- not every judgment on the report.
-
-    An operator's internal note about a customer's report lives on the same
-    report, and the customer is not its audience. The admin twin
-    (`GET /report/{id}/outcomes`) returns everything on purpose; that is the
-    operator's cross-tenant support view.
-    """
-    found = _services(request).screening_scope.outcomes(org_id, report_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return OutcomeListResponse(report_id=report_id, outcomes=found)
-
-
-# ── Screening batches (S8.4 Phase B) ─────────────────────────────────────────
-# The wedge at volume: register what you have, process it in bounded calls,
-# read a ranked queue. Registration is a row insert; PROCESSING is the slow
-# part and the client drives it, because there is no worker anywhere in app/
-# (spec §0.3) and 500 nine-node graph runs cannot happen inside one request.
-
-
-class BatchItemInput(BaseModel):
-    """At least one of resume_text / resume_pdf_b64; resume_text wins when
-    both are sent (same rule as CandidateCreateRequest, on purpose)."""
-
-    resume_text: Optional[str] = None
-    resume_pdf_b64: Optional[str] = None
-
-    @model_validator(mode="after")
-    def _need_one_source(self) -> "BatchItemInput":
-        if not (self.resume_text or self.resume_pdf_b64):
-            raise ValueError("Provide resume_text or resume_pdf_b64.")
-        return self
-
-
-class BatchCreateRequest(BaseModel):
-    name: str = ""
-    domain: str = "genai"
-    items: list[BatchItemInput] = Field(default_factory=list)
-
-
-class BatchDeleteResponse(BaseModel):
-    batch_id: str
-    deleted: bool
-
-
-def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
-    """Decode every item to text AT REGISTRATION -- cheap, deterministic, no LLM.
-
-    A corrupt file therefore fails immediately rather than 400 items later, and
-    it fails the WHOLE registration: a half-registered batch would leave the org
-    unable to tell which files made it in.
-    """
-    # The count cap FIRST: it must cost arithmetic, not work. The service
-    # re-checks it (the invariant lives there); this copy exists so an
-    # over-cap batch is refused before a single PDF is decoded.
-    cap = caps.screening_max_batch_items
-    if len(req.items) > cap:
-        raise HTTPException(
-            status_code=422, detail=f"a batch holds at most {cap} items"
-        )
-    texts: list[str] = []
-    for i, item in enumerate(req.items):
-        if item.resume_text and len(item.resume_text) > caps.max_resume_chars:
-            raise HTTPException(
-                status_code=422,
-                detail=f"item {i}: resume_text exceeds max_resume_chars={caps.max_resume_chars}",
-            )
-        if item.resume_pdf_b64 and len(item.resume_pdf_b64) > caps.max_pdf_b64_chars:
-            raise HTTPException(
-                status_code=422,
-                detail=f"item {i}: resume_pdf_b64 exceeds max_pdf_b64_chars={caps.max_pdf_b64_chars}",
-            )
-        text = item.resume_text
-        if not text and item.resume_pdf_b64:
-            try:
-                text = pdf_b64_to_text(item.resume_pdf_b64)
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=422, detail=f"item {i}: pdf_parse_failed: {exc}"
-                ) from exc
-        texts.append(text or "")
-    return texts
-
-
-def _org_user_id(request: Request) -> Optional[str]:
-    """The human behind the call, or None for a machine credential."""
-    principal = getattr(request.state, "principal", None)
-    return getattr(principal, "org_user_id", None)
-
-
-@org_router.post("/screening/batches", response_model=BatchDetail)
-async def create_screening_batch(
-    req: BatchCreateRequest, request: Request, org_id: str = Depends(require_org)
-) -> BatchDetail:
-    services = _services(request)
-    texts = _batch_texts(req, services.settings)
-    try:
-        return services.screening.register(
-            org_id, name=req.name, domain=req.domain, texts=texts,
-            created_by_org_user_id=_org_user_id(request),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@org_router.get(
-    "/screening/batches", response_model=BatchPage,
-    description="Batches this organisation registered, newest first. Cursor-paginated; pass `next_cursor` back as `cursor`.",
-)
-async def list_screening_batches(
-    request: Request,
-    org_id: str = Depends(require_org),
-    cursor: Optional[str] = None,
-    limit: Optional[int] = None,
-) -> BatchPage:
-    try:
-        return _services(request).screening.list(org_id, cursor=cursor, limit=limit)
-    except (InvalidCursor, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@org_router.get("/screening/batches/{batch_id}", response_model=BatchDetail)
-async def get_screening_batch(
-    batch_id: str, request: Request, org_id: str = Depends(require_org)
-) -> BatchDetail:
-    """404 -- never 403 -- for another org's batch."""
-    found = _services(request).screening.get(org_id, batch_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    return found
-
-
-@org_router.post("/screening/batches/{batch_id}/process", response_model=ProcessResult)
-async def process_screening_batch(
-    batch_id: str, request: Request, org_id: str = Depends(require_org)
-) -> ProcessResult:
-    """Bounded by `screening_max_items_per_call`. Call it until `remaining` is 0.
-
-    An item whose claim goes stale becomes claimable again, so a batch
-    interrupted by a redeploy heals on the next call rather than wedging.
-
-    Bounded per CALLER too since S8.3: `screening_max_items_per_call` caps one
-    request and says nothing about a client in a loop, and every call bills a
-    model.
-    """
-    try:
-        result = await _services(request).screening.process(
-            org_id, batch_id, engine=request.app.state.engine
-        )
-    except RateLimited as exc:
-        raise _rate_limited(exc) from exc
-    if result is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    return result
-
-
-@org_router.post("/screening/batches/{batch_id}/retry", response_model=RetryResult)
-async def retry_screening_batch(
-    batch_id: str, request: Request, org_id: str = Depends(require_org)
-) -> RetryResult:
-    """Re-queue this batch's failed items, then call `process` as usual.
-
-    It RE-QUEUES; it does not process. There is exactly one door that evaluates
-    an item and this is not a second one -- which is also why an item with no
-    remaining text is reported as `skipped` rather than quietly re-queued: a
-    `requeued` count the next process call cannot honour is a lie.
-    """
-    result = _services(request).screening.retry(org_id, batch_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    return result
-
-
-@org_router.get(
-    "/screening/batches/{batch_id}/queue", response_model=QueuePage,
-    description="The fraud-screen queue, riskiest first. Cursor-paginated; pass `next_cursor` back as `cursor`.",
-)
-async def screening_batch_queue(
-    batch_id: str,
-    request: Request,
-    org_id: str = Depends(require_org),
-    cursor: Optional[str] = None,
-    limit: Optional[int] = None,
-) -> QueuePage:
-    """The fraud-screen read-model: riskiest first, unscreened rows last."""
-    try:
-        page = _services(request).screening.queue(
-            org_id, batch_id, cursor=cursor, limit=limit
-        )
-    except (InvalidCursor, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if page is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    return page
-
-
-@org_router.get("/screening/batches/{batch_id}/summary", response_model=BatchSummary)
-async def screening_batch_summary(
-    batch_id: str, request: Request, org_id: str = Depends(require_org)
-) -> BatchSummary:
-    found = _services(request).screening.summary(org_id, batch_id)
-    if found is None:
-        raise HTTPException(status_code=404, detail="batch not found")
-    return found
-
-
-@org_router.delete("/screening/batches/{batch_id}", response_model=BatchDeleteResponse)
-async def delete_screening_batch(
-    batch_id: str, request: Request, org_id: str = Depends(require_org)
-) -> BatchDeleteResponse:
-    """A real delete path on a new table, shipped in the sprint that creates it
-    -- `batch_items.raw_text` is personal data with no candidate to cascade
-    from (spec §4.2)."""
-    if not _services(request).screening.delete(org_id, batch_id):
-        raise HTTPException(status_code=404, detail="batch not found")
-    return BatchDeleteResponse(batch_id=batch_id, deleted=True)
+# Compose already-scoped screening routes at their original org-plane position.
+org_router.routes.extend(screening_router.routes)
 
 
 class RecordSubmitRequest(BaseModel):
@@ -1647,21 +728,30 @@ async def candidate_card(
 
 @candidate_router.get("/portal/me", response_model=MyData)
 async def portal_me(request: Request, candidate_id: str = Depends(require_candidate)) -> MyData:
-    return _services(request).portal.my_data(candidate_id)
+    try:
+        return _services(request).portal.my_data(candidate_id)
+    except (PortalSubjectErasedError, SourceSubjectErasedError):
+        raise HTTPException(status_code=404, detail="candidate not found") from None
 
 
 @candidate_router.get("/portal/access-log", response_model=list[AccessLogEntry])
 async def portal_access_log(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> list[AccessLogEntry]:
-    return _services(request).portal.access_log(candidate_id)
+    try:
+        return _services(request).portal.access_log(candidate_id)
+    except PortalSubjectErasedError:
+        raise HTTPException(status_code=404, detail="candidate not found") from None
 
 
 @candidate_router.get("/portal/consents", response_model=list[ConsentView])
 async def portal_list_consents(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> list[ConsentView]:
-    return _services(request).portal.consents(candidate_id)
+    try:
+        return _services(request).portal.consents(candidate_id)
+    except PortalSubjectErasedError:
+        raise HTTPException(status_code=404, detail="candidate not found") from None
 
 
 class PortalConsentGrantRequest(BaseModel):
@@ -1825,6 +915,10 @@ async def start_verification(
         verification, code = services.verification.start(
             candidate_id, req.method, destination=req.destination
         )
+    except DeliveryUnavailable as exc:
+        raise HTTPException(status_code=503, detail=exc.detail) from None
+    except EmailSendFailed:
+        raise HTTPException(status_code=503, detail="email_send_failed") from None
     except DestinationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except MethodNotPermittedError as exc:  # e.g. self-awarding a manual review
@@ -2065,11 +1159,11 @@ async def submit_answer(
     except SpeechUnavailable as exc:
         # The designed no-key path, said out loud: answer in text instead.
         raise HTTPException(
-            status_code=422, detail=f"speech_unavailable: {exc}"
+            status_code=422, detail="speech_unavailable: answer this question in text"
         ) from exc
     except SpeechFailed as exc:
         # Nothing was recorded, so retrying costs the candidate nothing.
-        raise HTTPException(status_code=422, detail=f"speech_failed: {exc}") from exc
+        raise HTTPException(status_code=422, detail="speech_failed: no answer saved; record again or answer in text") from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="interview not found") from exc
     except ValueError as exc:          # no body, or bad base64
@@ -2162,8 +1256,8 @@ class TalentSearchRequest(BaseModel):
 )
 async def talent_search(req: TalentSearchRequest, request: Request) -> SearchResult:
     """Filter + rank the materialized pool by a composite score. Advisory: it
-    narrows and orders, never auto-rejects. Consent was masked at materialization
-    (S4.2), so a withheld feature is already null and simply drops out of scoring."""
+    narrows and orders, never auto-rejects. Current platform ledger_read consent
+    masks gated values before filters and scoring, independently of as_of."""
     services = _services(request)
     registry = get_feature_registry()
 
@@ -2189,7 +1283,9 @@ async def talent_search(req: TalentSearchRequest, request: Request) -> SearchRes
         if as_of is not None
         else []
     )
-    vectors = [mv.vector for mv in pool]
+    vectors = current_consent_vectors(
+        [mv.vector for mv in pool], registry=registry, ledger_store=services.ledger,
+    )
 
     try:
         filtered = apply_filters(vectors, req.filters, specs_by_name)
@@ -2282,83 +1378,8 @@ async def materialize_features(
     )
 
 
-@router.get("/report/{report_id}", response_model=Report)
-async def get_report(report_id: str, request: Request) -> Report:
-    report = _services(request).report_store.get(report_id)
-    if report is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return report
-
-
-def _outcome_flywheel_record(rec: OutcomeRecord) -> dict:
-    """Minimal outcome event for the optional test observer.
-
-    Production does not retain this event. Notes and labels live in SQL
-    outcomes, erased via outcomes -> reports -> candidates CASCADE.
-
-    It gains provenance instead: a calibration harness must be able to tell a
-    customer's judgment from our own operator's, or it trains on its own echo.
-    """
-    return {
-        "record_type": "outcome",
-        "report_id": rec.report_id,
-        "claim_id": rec.claim_id,
-        "outcome": rec.outcome.value,
-        "recorded_by": rec.recorded_by.value,
-        "org_id": rec.org_id,
-    }
-
-
-def _outcome_recorded(rec: OutcomeRecord) -> OutcomeRecordedResponse:
-    return OutcomeRecordedResponse(
-        report_id=rec.report_id,
-        claim_id=rec.claim_id,
-        outcome=rec.outcome.value,
-        recorded_at=rec.recorded_at.isoformat(),
-    )
-
-
-@router.post("/report/{report_id}/outcome", response_model=OutcomeRecordedResponse)
-async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) -> OutcomeRecordedResponse:
-    """The OPERATOR's door. The customer's is
-    `POST /screening/reports/{id}/outcome`, and both go through
-    `build_outcome` -- a rule enforced at one entry point and forgotten at the
-    second is this repo's signature defect (S8.5 spec §3)."""
-    services = _services(request)
-    report = services.report_store.get(report_id)
-    if report is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    try:
-        rec = build_outcome(
-            report,
-            outcome=req.outcome,
-            claim_id=req.claim_id,
-            notes=req.notes,
-            max_notes_chars=services.settings.max_outcome_notes_chars,
-            recorded_by=OutcomeSource.OPERATOR,
-        )
-    except OutcomeRefused as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    # False means the report was erased between the read above and this write
-    # -- a candidate's own DPDP erasure landing mid-call. 404, which by then is
-    # simply true. The org-plane twin folds the same case into its own None.
-    if not services.report_store.add_outcome(rec):
-        raise HTTPException(status_code=404, detail="report not found")
-    # Same sink as the evaluation rows, so training joins read one stream.
-    services.flywheel.log(_outcome_flywheel_record(rec))
-    return _outcome_recorded(rec)
-
-
-@router.get("/report/{report_id}/outcomes", response_model=OutcomeListResponse)
-async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse:
-    services = _services(request)
-    if services.report_store.get(report_id) is None:
-        raise HTTPException(status_code=404, detail="report not found")
-    return {
-        "report_id": report_id,
-        "outcomes": [o.model_dump(mode="json") for o in services.report_store.outcomes(report_id)],
-    }
+# Keep the existing admin route order; dependencies are already on each route.
+router.routes.extend(report_router.routes)
 
 
 @router.get("/metrics", response_model=str, response_class=PlainTextResponse)
@@ -2528,281 +1549,6 @@ async def healthz(request: Request) -> HealthResponse:
         "llm_mode": "null" if isinstance(services.llm, NullLLM) else "live",
         "domains": list_domains(),
     }
-
-
-# ── Auth: email-OTP signup / login / sessions (S8.2) ─────────────────────────
-# Every route below either sits in PUBLIC_PATHS (it runs BEFORE a principal
-# exists) or depends on require_any_principal. The route-table guard enforces
-# that there is no third option.
-
-
-class OrgSignupRequest(BaseModel):
-    email: str
-    organization_name: str = Field(min_length=1, max_length=200)
-
-
-class EmailOnlyRequest(BaseModel):
-    email: str
-
-
-class VerifyRequest(BaseModel):
-    email: str
-    code: str
-
-
-#: Signup and login always answer 202, whether or not the address is known. An
-#: endpoint that reveals which addresses are registered is an enumeration
-#: oracle, and it is the kind only an attacker ever notices.
-_ACCEPTED = {"status": "accepted"}
-
-
-def _set_session_cookies(
-    response: Response, *, token: str, csrf: str, settings
-) -> None:
-    """One helper for both cookies so their flags cannot drift between planes.
-
-    The session cookie is httpOnly, so XSS cannot read it. The CSRF cookie
-    deliberately is NOT, because the browser client has to read it to echo it
-    back in X-CSRF-Token. That asymmetry IS the double-submit scheme, not an
-    oversight -- a reviewer seeing httponly=False here should read on, not fix.
-    """
-    common = dict(
-        secure=settings.session_cookie_secure,
-        samesite=settings.session_cookie_samesite,
-        max_age=settings.session_ttl_minutes * 60,
-        path="/",
-    )
-    response.set_cookie(settings.session_cookie_name, token, httponly=True, **common)
-    response.set_cookie(settings.csrf_cookie_name, csrf, httponly=False, **common)
-
-
-def _request_code(
-    request: Request,
-    *,
-    email: str,
-    plane: AuthPlane,
-    purpose: LoginPurpose,
-    payload: Optional[dict] = None,
-) -> CodeRequestAccepted:
-    """Shared signup/login handler for all three planes."""
-    services = _services(request)
-    code: Optional[str] = None
-    try:
-        _sent, code = services.auth.issue_code(
-            email=email,
-            plane=plane,
-            purpose=purpose,
-            payload=payload,
-            at=datetime.now(timezone.utc),
-            ip_hash=_client_ip_hash(request),
-        )
-    except RateLimited as exc:
-        # The opaque-detail reasoning that used to live here now lives on
-        # `_rate_limited`, where all five call sites can read it.
-        raise _rate_limited(exc) from exc
-    except EmailUnavailableError as exc:
-        # An honest 503 rather than a 202 that leaves someone waiting forever for
-        # a code that was never sent (the NullSpeech posture from S7.3).
-        raise HTTPException(status_code=503, detail="email_unavailable") from exc
-    except ChallengeRefused:
-        # Includes the cooldown case, and answering 202 anyway keeps the response
-        # uniform. A cooldown can only be triggered by an address that HAS an
-        # account, so surfacing it would be the enumeration oracle by another
-        # door. The previously sent code is still live and still in their inbox,
-        # so the user loses nothing.
-        pass
-
-    # Double-guarded: local env AND the knob -- the verif_otp_debug_echo shape
-    # from S7.1. Every code-issuing route funnels through here, so the echo
-    # cannot be live on one plane and missing on another.
-    #
-    # This IS an enumeration oracle: `code` is None precisely when no code was
-    # sent, so the echoed body distinguishes a registered address from an
-    # unregistered one -- the very thing the uniform 202 above exists to hide.
-    # That is acceptable only because it cannot leave a developer's laptop:
-    # prod REFUSES TO BOOT with the knob on (app/core/boot.py), and staging
-    # ignores it.
-    if (
-        code is not None
-        and services.settings.env == "local"
-        and services.settings.login_otp_debug_echo
-    ):
-        return CodeRequestAccepted(debug_code=code)
-    return CodeRequestAccepted()
-
-
-def _verify(
-    request: Request, response: Response, *, email: str, code: str, plane: AuthPlane
-) -> SessionEstablished:
-    services = _services(request)
-    try:
-        token, csrf, principal = services.auth.verify_code(
-            email=email,
-            plane=plane,
-            code=code,
-            at=datetime.now(timezone.utc),
-            user_agent=request.headers.get("user-agent"),
-            ip_hash=_client_ip_hash(request),
-        )
-    except RateLimited as exc:
-        raise _rate_limited(exc) from exc
-    except RegistrationRefused as exc:
-        # The code was RIGHT. This is a registration failure, and reporting it
-        # as invalid_code is what locked users out of their own signup.
-        raise HTTPException(status_code=409, detail=exc.reason) from exc
-    except ChallengeRefused as exc:
-        # ONE status and ONE detail for every CODE failure mode. Distinguishing
-        # expired from wrong from exhausted tells a brute-forcer which of their
-        # assumptions was right, which is precisely the help not to give.
-        raise HTTPException(status_code=400, detail="invalid_code") from exc
-    _set_session_cookies(response, token=token, csrf=csrf, settings=services.settings)
-    return SessionEstablished(
-        principal=principal.kind.value,
-        csrf_token=csrf,
-        organization_id=principal.org_id,
-    )
-
-
-@auth_router.post("/auth/org/signup", status_code=202, response_model=CodeRequestAccepted,
-                  response_model_exclude_none=True)
-async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeRequestAccepted:
-    """Refuse a taken org name HERE, before a code is ever sent (S8.4 §2.1).
-
-    The old behaviour answered 202, mailed a real code, and then rejected that
-    CORRECT code at verify as `invalid_code` -- because org creation happens in
-    `_establish`, and every ChallengeRefused collapsed into one message. The
-    user burned their attempts and could not onboard.
-
-    This does not re-open the enumeration oracle. What that oracle protects is
-    whether an ADDRESS has an account, and this check never looks at the
-    address: an unknown address still gets 202 exactly like a known one.
-    """
-    if not _services(request).auth.organization_name_available(req.organization_name):
-        raise HTTPException(status_code=409, detail="organization_name_taken")
-    return _request_code(
-        request,
-        email=req.email,
-        plane=AuthPlane.ORG,
-        purpose=LoginPurpose.SIGNUP,
-        payload={"organization_name": req.organization_name},
-    )
-
-
-@auth_router.post("/auth/org/login", status_code=202, response_model=CodeRequestAccepted,
-                  response_model_exclude_none=True)
-async def auth_org_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
-        request, email=req.email, plane=AuthPlane.ORG, purpose=LoginPurpose.LOGIN
-    )
-
-
-@auth_router.post("/auth/org/verify", response_model=SessionEstablished)
-async def auth_org_verify(
-    req: VerifyRequest, request: Request, response: Response
-) -> SessionEstablished:
-    return _verify(
-        request, response, email=req.email, code=req.code, plane=AuthPlane.ORG
-    )
-
-
-@auth_router.post("/auth/candidate/signup", status_code=202, response_model=CodeRequestAccepted,
-                  response_model_exclude_none=True)
-async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
-        request,
-        email=req.email,
-        plane=AuthPlane.CANDIDATE,
-        purpose=LoginPurpose.SIGNUP,
-    )
-
-
-@auth_router.post("/auth/candidate/login", status_code=202, response_model=CodeRequestAccepted,
-                  response_model_exclude_none=True)
-async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
-        request,
-        email=req.email,
-        plane=AuthPlane.CANDIDATE,
-        purpose=LoginPurpose.LOGIN,
-    )
-
-
-@auth_router.post("/auth/candidate/verify", response_model=SessionEstablished)
-async def auth_candidate_verify(
-    req: VerifyRequest, request: Request, response: Response
-) -> SessionEstablished:
-    return _verify(
-        request, response, email=req.email, code=req.code, plane=AuthPlane.CANDIDATE
-    )
-
-
-# NOTE: there is deliberately NO /auth/admin/signup. Operators are created by an
-# existing operator through POST /admin/users, behind the shared admin key.
-
-
-@auth_router.post("/auth/admin/login", status_code=202, response_model=CodeRequestAccepted,
-                  response_model_exclude_none=True)
-async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
-        request, email=req.email, plane=AuthPlane.ADMIN, purpose=LoginPurpose.LOGIN
-    )
-
-
-@auth_router.post("/auth/admin/verify", response_model=SessionEstablished)
-async def auth_admin_verify(
-    req: VerifyRequest, request: Request, response: Response
-) -> SessionEstablished:
-    return _verify(
-        request, response, email=req.email, code=req.code, plane=AuthPlane.ADMIN
-    )
-
-
-# -- session lifecycle: cross-plane, session-only ----------------------------
-
-
-@auth_router.get("/auth/me", response_model=AuthMeResponse)
-async def auth_me(principal: Principal = Depends(require_any_principal)) -> AuthMeResponse:
-    """What the browser client calls on load to learn who it is."""
-    return {
-        "kind": principal.kind.value,
-        "organization_id": principal.org_id,
-        "session_id": principal.session_id,
-    }
-
-
-@auth_router.post("/auth/logout", response_model=LogoutResponse)
-async def auth_logout(
-    request: Request,
-    response: Response,
-    principal: Principal = Depends(require_any_principal),
-) -> LogoutResponse:
-    services = _services(request)
-    revoked = services.auth.logout(principal)
-    response.delete_cookie(services.settings.session_cookie_name, path="/")
-    response.delete_cookie(services.settings.csrf_cookie_name, path="/")
-    return {"logged_out": revoked}
-
-
-@auth_router.get("/auth/sessions", response_model=list[SessionView])
-async def auth_sessions(
-    request: Request, principal: Principal = Depends(require_any_principal)
-) -> list[SessionView]:
-    """The caller's own live sessions. Ownership resolves from the session, never
-    from a parameter, so another principal's devices are simply unreachable."""
-    return _services(request).auth.sessions_for(principal)
-
-
-@auth_router.post("/auth/sessions/{session_id}/revoke", response_model=SessionRevokedResponse)
-async def auth_revoke_session(
-    session_id: str,
-    request: Request,
-    principal: Principal = Depends(require_any_principal),
-) -> SessionRevokedResponse:
-    """Unknown and not-owned both 404 -- indistinguishable, so a session id
-    cannot be probed (the S6.4 rule)."""
-    if not _services(request).auth.revoke_session(principal, session_id):
-        raise HTTPException(status_code=404, detail="session not found")
-    return {"session_id": session_id, "revoked": True}
 
 
 # -- operator accounts (admin plane; decision 0.3) ---------------------------

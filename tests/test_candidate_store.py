@@ -1,11 +1,17 @@
-"""CandidateStore — ingest, identity resolution (email/phone hash), versioning."""
+"""Candidate store regressions, grouped by behavior."""
 
 import pytest
-
 from app.candidates import hashing
 from app.candidates.schema import CandidateProfile, ExtractedStr, ExtractionResult
 from app.candidates.store import CandidateStore
 from app.core.db import Base, make_engine, make_session_factory
+from datetime import datetime, timezone
+from app.candidates.extractor import heuristic_profile
+from tests.conftest import make_candidate_store, set_extraction_created_at
+from app.candidates.models import CandidateRow
+
+
+# Candidate store
 
 SALT = "test-salt"
 
@@ -153,3 +159,96 @@ def test_build_candidate_store_from_settings(settings):
 
     store = build_candidate_store(settings.model_copy(update={"candidates_db_url": "sqlite://"}))
     assert isinstance(store, CandidateStore)
+
+
+# Candidate store asof
+
+RESUME = "Jane Rao\nSenior ML Engineer\nSkills: Python, Spark\nEmail: jane@example.com\n"
+
+
+def _ingest(cs):
+    return cs.ingest(
+        ExtractionResult(profile=heuristic_profile(RESUME), method="heuristic"),
+        resume_text=RESUME,
+    ).candidate_id
+
+
+def test_profile_as_of_none_before_first_extraction():
+    cs = make_candidate_store()
+    cid = _ingest(cs)
+    set_extraction_created_at(cs, cid, datetime(2026, 5, 1, tzinfo=timezone.utc))
+    assert cs.profile_as_of(cid, datetime(2026, 1, 1, tzinfo=timezone.utc)) is None
+
+
+def test_profile_as_of_returns_profile_after_extraction():
+    cs = make_candidate_store()
+    cid = _ingest(cs)
+    set_extraction_created_at(cs, cid, datetime(2026, 5, 1, tzinfo=timezone.utc))
+    prof = cs.profile_as_of(cid, datetime(2026, 6, 1, tzinfo=timezone.utc))
+    assert prof is not None
+    assert prof.full_name  # heuristic pulled a name
+
+
+def test_profile_as_of_unknown_candidate_is_none():
+    cs = make_candidate_store()
+    assert cs.profile_as_of("nope", datetime(2026, 6, 1, tzinfo=timezone.utc)) is None
+
+
+# Candidate auth
+
+def _new_candidate(store) -> str:
+    with store._session_factory() as s:
+        row = CandidateRow(full_name="Asha")
+        s.add(row)
+        s.commit()
+        return row.id
+
+
+def test_issue_and_authenticate_roundtrip():
+    store = make_candidate_store()
+    cid = _new_candidate(store)
+    key = store.issue_access_key(cid)
+    assert isinstance(key, str) and key
+    assert store.authenticate_candidate(key) == cid
+
+
+def test_authenticate_rejects_bad_and_empty_keys():
+    store = make_candidate_store()
+    cid = _new_candidate(store)
+    store.issue_access_key(cid)
+    assert store.authenticate_candidate("nope") is None
+    assert store.authenticate_candidate("") is None
+    assert store.authenticate_candidate("   ") is None
+
+
+def test_issue_rotates_and_old_key_dies():
+    store = make_candidate_store()
+    cid = _new_candidate(store)
+    k1 = store.issue_access_key(cid)
+    k2 = store.issue_access_key(cid)
+    assert k1 != k2
+    assert store.authenticate_candidate(k1) is None   # rotated out
+    assert store.authenticate_candidate(k2) == cid
+    # still exactly one credential row (unique candidate_id upsert, not append)
+    from app.candidates.models import CandidateCredentialRow
+    from sqlalchemy import select, func
+    with store._session_factory() as s:
+        n = s.execute(
+            select(func.count()).select_from(CandidateCredentialRow)
+            .where(CandidateCredentialRow.candidate_id == cid)
+        ).scalar()
+    assert n == 1
+
+
+def test_issue_unknown_candidate_raises():
+    store = make_candidate_store()
+    with pytest.raises(LookupError):
+        store.issue_access_key("does-not-exist")
+
+
+def test_credential_cascades_on_candidate_delete():
+    store = make_candidate_store()
+    cid = _new_candidate(store)
+    key = store.issue_access_key(cid)
+    assert store.delete_candidate(cid) is True
+    assert store.authenticate_candidate(key) is None  # credential gone with candidate

@@ -27,7 +27,8 @@ def test_manifest_json_roundtrips():
     import json
     reg = get_feature_registry()
     data = json.loads(reg.manifest_json())
-    assert len(data) == len(reg.names())
+    assert len(data) == len(reg.specs())
+    assert len({(row["name"], row["version"]) for row in data}) == len(data)
     assert all("dtype" in row and "requires_consent" in row for row in data)
 
 

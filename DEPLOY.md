@@ -107,11 +107,15 @@ holds tunables, never credentials.
 | `DEE_LOGIN_OTP_DEBUG_ECHO` | `false` | Default, and refusal 9. A local-only developer affordance; see OPERATING.md. |
 | `DEE_LOGIN_OTP_STATIC_CODE` | *(unset)* | Default, and refusal 10. A local-only FIXED sign-in code; never set this on a deployment. |
 | `DEE_RATE_LIMIT_TRUSTED_PROXY_HOPS` | **`1`** behind Railway | See §3. The default `0` is wrong behind a proxy. |
-| `DEE_VECTORSTORE_BACKEND` | `memory` | Unless a Chroma volume is mounted: `PersistentClient` can hang, and grounding is best-effort. |
 | `DEE_LOG_JSON` | `true` | Structured logs. |
 | `DEE_LOG_LEVEL` | `INFO` | |
 | `DEE_CORS_ALLOWED_ORIGINS` | **usually empty** | See §4. |
 | `DEE_OPENROUTER_API_KEY` | your key, or unset | Every LLM step has a deterministic fallback; unset means the system still works, with weaker output. |
+
+Legacy provenance settings and their environment overrides are accepted and
+ignored; see the four retired keys in the [configuration reference](FLOW.md).
+There is no Chroma dependency or vector storage. Existing directories are
+preserved; remove the obsolete overrides when convenient.
 
 `DEE_DB_MIGRATE_ON_BOOT` defaults to `true` and should stay there — **the
 container migrates itself on boot**, holding a Postgres advisory lock so

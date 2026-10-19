@@ -14,8 +14,6 @@ dependencies = [
     # API
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
-    # Vector store
-    "chromadb>=0.5.0",
     # Relational store. These were MISSING here while requirements.txt carried
     # them, so `pip install -e .` built an app that could not import: sqlalchemy
     # alone is imported by 31 modules under src/app. Found 2026-08-24 by

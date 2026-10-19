@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 
 from sqlalchemy import create_engine, text
@@ -95,6 +96,42 @@ async def arm(candidate_id: str, mode: str):
     assert mode in ('fetch', 'flush', 'commit', 'source_only', 'after_read')
     armed = {'candidate_id': candidate_id, 'mode': mode}
     return {'armed': True}
+
+@app.post('/_test/aggregate')
+async def aggregate(candidate_id: str, view: str, mode: str):
+    services = app.state.services
+    if mode == 'early':
+        owner, method = ((services.profile_sources, 'list_sources') if view == 'sources'
+                         else (services.portal, {'me': 'my_data', 'access-log': 'access_log',
+                                                 'consents': 'consents'}[view]))
+    else:
+        owner, method = {'sources': (services.profile_sources._store, 'signals_for_candidate'),
+                         'me': (services.ledger, 'consents_for_candidate'),
+                         'access-log': (services.ledger, 'audit_for_candidate'),
+                         'consents': (services.ledger, 'consents_for_candidate')}[view]
+    actual = getattr(owner, method)
+    def read(cid, *args, **kwargs):
+        if cid != candidate_id:
+            return actual(cid, *args, **kwargs)
+        setattr(owner, method, actual)
+        if mode == 'early':
+            erase(cid)
+            return actual(cid, *args, **kwargs)
+        result = actual(cid, *args, **kwargs)
+        if mode == 'snapshot':
+            get_candidate = services.candidates.get_candidate
+            def last_read(subject):
+                value = get_candidate(subject)
+                if subject == cid:
+                    services.candidates.get_candidate = get_candidate
+                    erase(cid)
+                return value
+            services.candidates.get_candidate = last_read
+        else:
+            erase(cid)
+        return result
+    setattr(owner, method, read)
+    return {'armed': True}
 '''
 
 
@@ -147,6 +184,55 @@ def main():
         def body(name):
             return {"resume_text": f"{name}\nEmail: {name.lower()}@example.com\nSKILLS\nPython\n", "evaluate": False}
 
+        if "--aggregates" in sys.argv:
+            erased, survivors = [], []
+            def seed(http, name):
+                cid = require(http.post("/candidates", json=body(name)))["candidate_id"]
+                key = require(http.post(f"/candidates/{cid}/auth-key"))["access_key"]
+                headers = {"X-Candidate-Key": key}
+                require(http.post(f"/candidates/{cid}/sources/github", json={"handle": "synthetic"}))
+                require(http.post("/portal/consents", headers=headers, json={"purpose": "ledger_read"}))
+                return cid, headers
+            with server(True) as http:
+                keeper, keeper_headers = seed(http, "Keeper")
+                survivors.append(keeper)
+                for view in ("sources", "me", "access-log", "consents"):
+                    for mode in ("early", "loaded", "snapshot"):
+                        name = view + mode
+                        cid, headers = seed(http, name)
+                        require(http.post("/_test/aggregate", params={"candidate_id": cid, "view": view, "mode": mode}))
+                        path = f"/candidates/{cid}/sources" if view == "sources" else f"/portal/{view}"
+                        result = require(http.get(path, headers=headers), 200 if mode == "snapshot" else 404)
+                        checks.check(f"{view}/{mode}: bounded aggregate response",
+                                     bool(result) if mode == "snapshot" else result == {"detail": "candidate not found"})
+                        require(http.get(f"/candidates/{cid}"), 404)
+                        require(http.get("/portal/me", headers=headers), 401)
+                        erased.append(cid)
+                        checks.check(f"{view}/{mode}: erasure persists and key dies", True)
+                        fresh, _ = seed(http, name)
+                        assert fresh != cid
+                        survivors.append(fresh)
+                        checks.check(f"{view}/{mode}: fresh upload still works", True)
+                for door in ("portal", "admin"):
+                    cid, headers = seed(http, door + "Erase")
+                    path = "/portal/me" if door == "portal" else f"/candidates/{cid}"
+                    require(http.delete(path, headers=headers))
+                    require(http.get(f"/candidates/{cid}/sources"), 404)
+                    require(http.get("/portal/me", headers=headers), 401)
+                    erased.append(cid)
+                    checks.check(f"{door}: actual HTTP erasure door", True)
+                require(http.get("/portal/me", headers=keeper_headers))
+                checks.check("unrelated principal retains portal access", True)
+            with server(False) as http:
+                for cid in erased:
+                    require(http.get(f"/candidates/{cid}/sources"), 404)
+                checks.check("restart preserves all erasures", True)
+                for cid in survivors:
+                    assert require(http.get(f"/candidates/{cid}/sources"))["sources"]
+                require(http.get("/portal/me", headers=keeper_headers))
+                checks.check("restart preserves survivors and credentials", True)
+            return checks.summary()
+
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
             archive.writestr("Skills.csv", "Name\nSyntheticLang\n")
@@ -197,8 +283,15 @@ def main():
                 checks.check(f"{kind}: org key cannot authorize admin source write", response.status_code == 401)
             terms = require(http.get("/curation/skills/unmapped"))["terms"]
             term = next(t for t in terms if t["norm_key"] == "syntheticlang")
-            checks.check("shared taxonomy observation survives erased ingests",
-                         set(term["source_types"]) == {"github", "linkedin_export"} and term["occurrences"] > len(survivors))
+            args = {"connect_args": {"options": pg_options}} if pg_options else {}
+            queue_engine = create_engine(url, hide_parameters=True, **args)
+            try:
+                with queue_engine.connect() as conn:
+                    live_count = conn.scalar(text("SELECT count(*) FROM curation_observations WHERE norm_key='syntheticlang'"))
+                checks.check("owned taxonomy reflects saved surviving sources",
+                    set(term["source_types"]) == {"github", "linkedin_export"} and term["occurrences"] == live_count)
+            finally:
+                queue_engine.dispose()
 
         with server(False) as http:
             for cid in erased:

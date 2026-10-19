@@ -75,6 +75,9 @@ class TurnScore(BaseModel):
     dimensions: dict[str, float] = Field(default_factory=dict)
     insufficient: bool = False
     codes: list[str] = Field(default_factory=list)
+    # Missing in historical JSON: never imply that old token scores are v2.
+    scorer_version: str = ""
+    evidence_confidence: float = Field(default=0.0, ge=0.0, le=0.95)
 
 
 class InterviewTurn(BaseModel):
@@ -165,6 +168,7 @@ class InterviewSummary(BaseModel):
     overall: float = 0.0
     dimensions: dict[str, float] = Field(default_factory=dict)
     confidence: float = 0.0
+    scorer_version: str = ""
     proxy_band: ProxyBand = ProxyBand.LOW
     questions_planned: int = 0
     questions_answered: int = 0

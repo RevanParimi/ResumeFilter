@@ -25,6 +25,11 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class PortalSubjectErasedError(LookupError):
+    def __init__(self) -> None:
+        super().__init__("candidate not found")
+
+
 class PortalService:
     def __init__(
         self,
@@ -59,10 +64,13 @@ class PortalService:
         self._rights = rights
         self._settings = settings or get_settings()
 
+    def _require_candidate(self, candidate_id: str) -> None:
+        """Existence snapshot only; no lock across response delivery."""
+        if self._candidates.get_candidate(candidate_id) is None:
+            raise PortalSubjectErasedError()
+
     def my_data(self, candidate_id: str) -> MyData:
-        summary = self._candidates.get_candidate(candidate_id)
-        if summary is None:
-            raise LookupError(f"unknown candidate: {candidate_id}")
+        self._require_candidate(candidate_id)
         resumes = self._candidates.list_resumes(candidate_id)
         sources = self._profile_sources.list_sources(candidate_id)
         records = self._ledger.records_for_candidate(candidate_id)
@@ -114,7 +122,7 @@ class PortalService:
             if self._rights is not None
             else []
         )
-        return MyData(
+        result = MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
             resumes=resumes,
@@ -131,6 +139,8 @@ class PortalService:
             grievance=build_grievance_contact(self._settings),
             retention=build_retention_policy(oldest, self._settings),
         )
+        self._require_candidate(candidate_id)
+        return result
 
     def access_log(self, candidate_id: str) -> list[AccessLogEntry]:
         entries = self._ledger.audit_for_candidate(candidate_id)  # ascending
@@ -154,14 +164,17 @@ class PortalService:
                     entity_type=e.entity_type,
                 )
             )
+        self._require_candidate(candidate_id)
         return out
 
     def consents(self, candidate_id: str, *, now: Optional[datetime] = None) -> list[ConsentView]:
         moment = as_utc(now) if now else _utcnow()
-        return [
+        result = [
             ConsentView(grant=g, state=self._state(g, moment))
             for g in self._ledger.consents_for_candidate(candidate_id)
         ]
+        self._require_candidate(candidate_id)
+        return result
 
     @staticmethod
     def _state(grant: ConsentGrant, now: datetime) -> ConsentState:

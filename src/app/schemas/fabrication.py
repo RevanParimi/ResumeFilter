@@ -3,10 +3,10 @@
 S2.1 — AI-generated-resume signals. ADVISORY ONLY: an AI-likelihood band is
 stylistic context for a human reviewer, never a rejection signal. AI-assisted
 resume WRITING is common and legitimate; whether the claims survive depth
-evaluation is a separate question (S2.4 fuses these signals there).
+evaluation is a separate question; current factual-risk fusion excludes style.
 S2.2 — cross-field forensics: deterministic timeline/coherence findings.
 S2.3 — resume-farm detection: cross-candidate near-duplicate signals (MinHash).
-S2.4 — unified fabrication risk: advisory fusion of the three signals above.
+S2.4 — unified fabrication risk: v1 included all three signals; v2 excludes style.
 """
 
 from __future__ import annotations
@@ -41,9 +41,14 @@ class AISignal(BaseModel):
 
 
 class AIGenerationAssessment(BaseModel):
-    """The ai_signals node's output: fused likelihood + band + signal trail."""
+    """Descriptive writing-style patterns with legacy wire field names.
 
-    likelihood: float = Field(default=0.0, ge=0.0, le=1.0)
+    These heuristics cannot establish authorship or dishonesty. Polished and
+    AI-assisted writing is legitimate; factual-risk v2 excludes this assessment.
+    """
+
+    likelihood: float = Field(default=0.0, ge=0.0, le=1.0,
+        description="Legacy writing-style index; uncalibrated, not an authorship probability.")
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     band: AILikelihoodBand = AILikelihoodBand.INSUFFICIENT_TEXT
     signals: list[AISignal] = Field(default_factory=list)
@@ -140,7 +145,7 @@ class FabricationRiskBand(StrEnum):
 class RiskComponent(BaseModel):
     """One subsystem's contribution to the unified fabrication risk."""
 
-    id: str          # "ai_generation" | "cross_field" | "resume_farm"
+    id: str          # "cross_field" | "resume_farm"; historical v1 also "ai_generation"
     band: str        # the component's own band value at fusion time
     risk: float = Field(ge=0.0, le=1.0)        # band-mapped component risk
     confidence: float = Field(ge=0.0, le=1.0)  # component's own confidence
@@ -149,11 +154,14 @@ class RiskComponent(BaseModel):
 
 
 class FabricationRiskAssessment(BaseModel):
-    """S2.4 — unified advisory fusion of ai_generation + cross_field + resume_farm.
+    """Versioned advisory fusion; v2 uses only cross_field + resume_farm.
 
     Computed in the calibration stage (scoring node). ADVISORY ONLY: never
     changes verdicts, depth scores, or bands, and never a rejection signal."""
 
+    # Old stored JSON has no marker. Its original score/components/reasoning
+    # remain intact and are interpreted as v1, never silently upgraded.
+    scorer_version: int = Field(default=1, ge=1)
     score: float = Field(default=0.0, ge=0.0, le=1.0)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     band: FabricationRiskBand = FabricationRiskBand.INSUFFICIENT_DATA

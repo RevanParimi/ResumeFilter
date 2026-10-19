@@ -45,7 +45,7 @@ def test_identity_swapped_copy_flags_near_duplicate(api, farm_resume_a, farm_res
     assert farm["matches"][0]["candidate_id"] == first["candidate_id"]
     assert farm["matches"][0]["similarity"] >= 0.85
     # The advisory note reached the report summary.
-    assert "Resume-farm signals" in second["report"]["summary"]
+    assert "Content overlap" in second["report"]["summary"]
     assert "never a rejection signal" in second["report"]["summary"]
 
 

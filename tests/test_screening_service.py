@@ -1,13 +1,14 @@
-"""S8.4 Phase B: the screening service -- registration, bounded processing,
-and the read-models."""
+"""Screening service regressions, grouped by behavior."""
 
 from __future__ import annotations
 
 import pytest
-
 from app.graph.build import EvaluationEngine
 from app.screening.schema import BatchStatus, ItemStatus
+from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 
+
+# Screening service
 
 def _org(services, name="Acme Staffing"):
     return services.ledger.create_organization(name).id
@@ -79,21 +80,21 @@ async def test_processing_a_finished_batch_is_a_no_op(services, genuine_resume):
 
 @pytest.mark.asyncio
 async def test_a_bad_item_fails_alone_and_the_batch_continues(services, genuine_resume):
-    """A batch of 500 with one corrupt file has to finish."""
+    """Legacy invalid rows still fail alone; new registration refuses them."""
     org = _org(services)
-    batch = services.screening.register(
+    bid = services.screening._store.create_batch(
         org, name="x", domain="genai", texts=["   ", genuine_resume],
         created_by_org_user_id=None,
     )
     engine = EvaluationEngine(services)
-    while (await services.screening.process(org, batch.id, engine=engine)).remaining:
+    while (await services.screening.process(org, bid, engine=engine)).remaining:
         pass
 
-    detail = services.screening.get(org, batch.id)
+    detail = services.screening.get(org, bid)
     assert (detail.counts.done, detail.counts.failed) == (1, 1)
     assert detail.status is BatchStatus.PARTIAL
 
-    rows = services.screening.queue(org, batch.id, cursor=None, limit=10).rows
+    rows = services.screening.queue(org, bid, cursor=None, limit=10).rows
     failed = [r for r in rows if r.status is ItemStatus.FAILED][0]
     assert failed.error == "empty_resume"
     assert "empty_resume" in failed.reason
@@ -259,3 +260,74 @@ def test_every_read_is_none_for_another_org(services, genuine_resume):
     assert services.screening.summary(b, batch.id) is None
     assert services.screening.delete(b, batch.id) is False
     assert services.screening.list(b, cursor=None, limit=10).batches == []
+
+
+# Screening ingest
+
+@pytest.mark.asyncio
+async def test_ingest_resume_stamps_the_owner_and_returns_a_report(services, genuine_resume):
+    org = services.ledger.create_organization("Acme Staffing")
+    result = await ingest_resume(
+        ingest_deps(services), EvaluationEngine(services),
+        text=genuine_resume, domain="genai", evaluate=True, org_id=org.id,
+    )
+    assert result.candidate_id and result.resume_id
+    assert result.report is not None
+    assert services.report_store.get_for_org(org.id, result.report.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_evaluate_false_skips_the_graph_but_still_ingests(services, genuine_resume):
+    result = await ingest_resume(
+        ingest_deps(services), EvaluationEngine(services),
+        text=genuine_resume, domain="genai", evaluate=False, org_id=None,
+    )
+    assert result.report is None
+    assert result.resume_farm is not None, "the farm check runs at ingest, not in the graph"
+
+
+@pytest.mark.asyncio
+async def test_empty_text_raises_a_reason_code_not_an_http_exception(services):
+    """The batch processor writes this onto a row; a route maps it to 422.
+    Neither can use an HTTPException."""
+    with pytest.raises(IngestRefused) as exc:
+        await ingest_resume(
+            ingest_deps(services), EvaluationEngine(services),
+            text="   ", domain="genai", evaluate=True, org_id=None,
+        )
+    assert exc.value.reason == "empty_resume"
+
+
+@pytest.mark.asyncio
+async def test_unknown_domain_is_refused_with_a_reason_code(services, genuine_resume):
+    with pytest.raises(IngestRefused) as exc:
+        await ingest_resume(
+            ingest_deps(services), EvaluationEngine(services),
+            text=genuine_resume, domain="no-such-domain", evaluate=True, org_id=None,
+        )
+    assert exc.value.reason == "unknown_domain"
+
+
+@pytest.mark.asyncio
+async def test_oversize_text_is_refused_with_a_reason_code(services):
+    caps = services.settings
+    with pytest.raises(IngestRefused) as exc:
+        await ingest_resume(
+            ingest_deps(services), EvaluationEngine(services),
+            text="x" * (caps.max_resume_chars + 1), domain="genai",
+            evaluate=True, org_id=None,
+        )
+    assert exc.value.reason == "resume_too_long"
+
+
+@pytest.mark.asyncio
+async def test_the_reason_codes_are_a_closed_vocabulary(services):
+    """batch_items.error is String(64) holding these codes -- never prose and
+    never model output. A code longer than the column is a write that fails at
+    the worst possible moment."""
+    from app.screening import ingest as mod
+
+    for code in ("empty_resume", "unknown_domain", "resume_too_long"):
+        assert len(code) <= 64
+    assert IngestRefused("empty_resume").reason == "empty_resume"
+    assert mod is not None

@@ -3,7 +3,7 @@
 For each claim we combine:
   (a) the active DomainModel's RULE REGISTRY — deterministic, encoded expertise;
   (b) an LLM DOMAIN-EXPERT pass — prompted as a senior engineer with candidate
-      context + provenance, reasoning about whether the claim COHERES.
+      context, reasoning about whether the claim COHERES.
 
 Both produce (coherence, confidence) plus evidence. We fuse them by
 confidence-weighting and emit a fully-explained :class:`CoherenceVerdict`
@@ -12,6 +12,8 @@ absent signals lower confidence rather than manufacturing certainty.
 """
 
 from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.logging import get_logger
 from app.domains.base import get_domain
@@ -26,6 +28,16 @@ _log = get_logger("node.plausibility")
 
 # Bounds keep a single noisy source from dominating the fused score.
 _LLM_MAX_CONFIDENCE = 0.85
+
+
+class _PlausibilityReply(BaseModel):
+    model_config = ConfigDict(strict=True, allow_inf_nan=False)
+
+    coherence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    reasoning: str
+    expected_signals: list[str]
+    missing_signals: list[str]
 
 
 def _fuse(pairs: list[tuple[float, float]]) -> tuple[float, float]:
@@ -43,7 +55,7 @@ def _fuse(pairs: list[tuple[float, float]]) -> tuple[float, float]:
 
 async def _llm_assessment(
     services: Services, domain_key: str, claim: Claim,
-    ctx: CandidateContext, grounding: list[str],
+    ctx: CandidateContext,
 ) -> tuple[tuple[float, float] | None, Evidence | None, list[str], list[str], str]:
     """Returns ((coherence,confidence)|None, evidence|None, expected, missing, reasoning)."""
     domain = get_domain(domain_key)
@@ -51,21 +63,21 @@ async def _llm_assessment(
     prompt = (
         f"CLAIM: {claim.text}\n"
         f"claim_type: {claim.claim_type}; specificity: {claim.specificity}\n"
-        f"PROVENANCE: {grounding or 'none'}\n\n"
+        "Repository availability/metadata does not verify this claim or candidate ownership.\n\n"
         "Return JSON: {coherence: 0..1, confidence: 0..1, reasoning: str, "
         "expected_signals: [str], missing_signals: [str]}."
     )
     try:
         data = await services.llm.acomplete_json(tier="reasoning", system=system, prompt=prompt)
+        if data == {}:  # NullLLM/parser abstention
+            return None, None, [], [], ""
+        reply = _PlausibilityReply.model_validate(data)
     except Exception as exc:  # an LLM outage degrades this claim, loudly
-        _log.warning("plausibility_llm_failed", error=str(exc))
+        _log.warning("plausibility_llm_failed", error_type=type(exc).__name__)
         return None, None, [], [], ""
-    if not data or "coherence" not in data:
-        return None, None, [], [], ""
-
-    coh = max(0.0, min(1.0, float(data.get("coherence", 0.5))))
-    conf = max(0.0, min(_LLM_MAX_CONFIDENCE, float(data.get("confidence", 0.0))))
-    reasoning = str(data.get("reasoning", "")).strip()
+    coh = reply.coherence
+    conf = min(_LLM_MAX_CONFIDENCE, reply.confidence)
+    reasoning = reply.reasoning.strip()
     polarity = (
         Polarity.CONTRADICTS if coh < 0.4 else Polarity.SUPPORTS if coh > 0.65 else Polarity.NEUTRAL
     )
@@ -73,8 +85,8 @@ async def _llm_assessment(
         source=EvidenceSource.LLM, polarity=polarity, detail=reasoning or "LLM coherence pass",
         weight=conf, ref="plausibility.llm",
     )
-    expected = [str(s) for s in data.get("expected_signals", []) if s]
-    missing = [str(s) for s in data.get("missing_signals", []) if s]
+    expected = [s for s in reply.expected_signals if s.strip()]
+    missing = [s for s in reply.missing_signals if s.strip()]
     return (coh, conf), evidence, expected, missing, reasoning
 
 
@@ -87,7 +99,6 @@ def make_plausibility_node(services: Services):
         verdicts: list[CoherenceVerdict] = []
 
         for claim in state.claims:
-            grounding = state.provenance.get(claim.id, [])
             pairs: list[tuple[float, float]] = []
             evidence: list[Evidence] = []
             expected: set[str] = set()
@@ -97,7 +108,8 @@ def make_plausibility_node(services: Services):
 
             # (a) rule registry --------------------------------------------------
             for rule in domain.rules_for(claim):
-                finding = rule.evaluate(claim, ctx, grounding)
+                # The repo API exposes metadata, not claim-specific work or ownership.
+                finding = rule.evaluate(claim, ctx)
                 if finding is None:
                     continue
                 pairs.append((finding.coherence, finding.confidence))
@@ -109,7 +121,7 @@ def make_plausibility_node(services: Services):
 
             # (b) LLM domain-expert pass ----------------------------------------
             llm_pair, llm_ev, llm_exp, llm_miss, llm_reason = await _llm_assessment(
-                services, state.domain, claim, ctx, grounding
+                services, state.domain, claim, ctx
             )
             if llm_pair is not None:
                 pairs.append(llm_pair)
@@ -120,11 +132,17 @@ def make_plausibility_node(services: Services):
                 if llm_reason:
                     reasons.append(f"[llm] {llm_reason}")
 
-            # provenance as supporting evidence (neutral-to-supporting) ---------
-            for line in grounding:
-                pol = Polarity.CONTRADICTS if "does not exist" in line.lower() else Polarity.SUPPORTS
+            # Preserve fetch context for human review without treating it as proof.
+            for line in state.provenance.get(claim.id, []):
                 evidence.append(
-                    Evidence(source=EvidenceSource.GITHUB, polarity=pol, detail=line, weight=0.4)
+                    Evidence(source=EvidenceSource.GITHUB, polarity=Polarity.NEUTRAL,
+                             detail="Repository metadata only; not claim verification. " + line,
+                             weight=0.0, ref="github.repository_metadata")
+                )
+            for line in state.provenance_warnings.get(claim.id, []):
+                evidence.append(
+                    Evidence(source=EvidenceSource.GITHUB, polarity=Polarity.NEUTRAL,
+                             detail=line, weight=0.0, ref="github.unavailable")
                 )
 
             coherence, confidence = _fuse(pairs)

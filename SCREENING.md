@@ -8,6 +8,11 @@ ranked and reasoned risk queue.
 Peer documents: `TENANCY.md` (who may read what), `AUTH.md` (how a principal is
 established), `FABRICATION.md` (what the risk numbers mean).
 
+HTTP handlers and batch transport DTOs live in
+[app/api/screening.py](src/app/api/screening.py). Shared candidate intake remains
+in [app/api/candidates.py](src/app/api/candidates.py); outcome DTOs and helpers
+remain in [app/api/reports.py](src/app/api/reports.py).
+
 Shared-ingest erasure boundary (2026-09-24): admin/org uploads check that the
 candidate and exact resume still exist before evaluation, before saving its
 report, and before returning. Observed disappearance returns the existing 422
@@ -17,14 +22,14 @@ the upload rather than returning stale IDs with report=null. Batches use the
 same refusal codes and scrub retry input under the existing policy; distinct
 fresh uploads remain permitted. These reads are snapshots, not locks across
 HTTP delivery. Resume-only deletion does not erase independently retained
-reports. [D3d1 evidence](docs/delivery/tasks/R1-S1-T3b-D3d1.md).
+reports. [D3d1 evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d1).
 
 Report-only erasure (2026-09-24): after saving, shared ingest and standalone
 `POST /evaluate` also check the report still exists. Observed absence returns
 422 `report_erased`; batches record that failure and clear retry input. Candidate
 and resume records survive report-only deletion. A fresh upload/evaluation remains
 permitted. Deletion after the final read may leave a delivered snapshot, but does
-not restore the deleted report. [Evidence](docs/delivery/tasks/R1-S1-T3b-D3d2a.md).
+not restore the deleted report. [Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2a).
 
 A rule nobody can look up is a rule the next sprint reinvents differently, so
 every section below states the decision **and the alternative it rejected**.
@@ -72,16 +77,17 @@ confirms the thing exists).
 | `DELETE` | `/screening/batches/{id}` | `BatchDeleteResponse` | items CASCADE, text included |
 
 **422 forks:** an empty batch, a batch over `screening_max_batch_items`, an
-oversize item, a malformed cursor, and a PDF that will not parse.
+oversize/whitespace/unreadable item and a malformed cursor. Items follow the
+[shared resume acceptance contract](CANDIDATES.md).
 
-**A corrupt PDF refuses the WHOLE registration**, naming the failing item's
+**An invalid resume refuses the WHOLE registration**, naming the failing item's
 index. Rejected: registering the good items and reporting the bad ones — a
 half-registered batch leaves the org unable to say which files made it in, and
 "which of my 400 files are missing?" is a worse question than "fix item 37 and
 retry".
 
-**PDF decoding happens at registration, not at processing**, because it is
-cheap, deterministic and LLM-free. A corrupt file therefore fails immediately
+**PDF decoding happens at registration, not at processing**, and is
+deterministic and LLM-free. A corrupt file therefore fails immediately
 rather than 400 items later.
 
 **`created_by_org_user_id` is NULL for an `X-Org-Key` caller.** `X-Org-Key` is
@@ -264,7 +270,7 @@ window; quarantine does not identify and immediately erase unknown personal
 data. A new upload remains permitted. Migration 0026 also pauses historical raw
 input and unfinished references with no report association without guessing
 ownership or deleting their content. Completed anonymous counts/scalars stay
-unchanged. [Evidence](docs/delivery/archive/R1-S1-T3b-D3b2b2.md).
+unchanged. [Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2b2).
 
 * **Completion removes the private retry reference.** The text lives in
   `resumes`, where candidate erasure cascades. The completed anonymous
@@ -373,7 +379,7 @@ Two decisions that follow from that:
 * `tests/test_screening_service.py` — registration evaluates nothing, processing
   is bounded and resumable, a bad item fails alone, and a queue row cannot carry
   farm-match identities *on a batch whose report genuinely has them*.
-* `tests/test_screening_tenancy.py` — every batch route 404s for another org,
+* `tests/test_screening_batches_api.py` — every batch route 404s for another org,
   byte-identical to absence.
 * `tests/test_screening_batches_api.py` — the surface over HTTP.
 * `tests/test_org_scope_guard.py` — `screening` is a sanctioned door; the

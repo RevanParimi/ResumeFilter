@@ -9,6 +9,13 @@ the **admin** plane (an operator acting on the candidate's behalf). S6.4 adds a
 evaluation, no LLM, no scoring: this is data access and consent self-service,
 not a new signal. It changes no verdict, depth, or score.
 
+Login changes, contact aliases and profile merges are explicitly unsupported.
+The existing contact correction routes support a reviewed refusal, never an
+identity write; `apply=true` returns 422, while `apply=false` records the decision
+without changing hints, proof, sessions or review flags. [AUTH.md](AUTH.md) owns
+the full proof/refusal policy. An upload preserves proved ownership and stores
+contact values as document claims; it grants no identity assurance.
+
 ## The candidate plane
 
 A candidate authenticates with a minted key, exactly like an org authenticates
@@ -269,7 +276,16 @@ response remains **200** `{candidate_id, deleted: true, reports_deleted: N}`;
 `reports_deleted` is a count read before deletion, not a locked response snapshot.
 An already-reserved send cannot activate after cleanup, including after process
 restart. Fresh signup is still allowed; sent emails cannot be recalled.
-Redemption after an already-committed consume remains open in D3d2c3.
+Redemption commits consumption, principal and session/audit together under the
+same address lock; interrupted transactions restore the uncommitted challenge.
+[Login ordering](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2c).
+
+The access view, access log and consent list check candidate existence after
+assembling their results. If erasure is observed after authentication but before
+that final check, these GETs return **404** `candidate not found`. Later requests
+with the erased credential return **401**. The check is a snapshot, not a lock
+across HTTP delivery or an atomic view of independently deleted child rows.
+[Aggregate-read evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d1).
 
 ## Endpoint contract
 
@@ -308,7 +324,9 @@ Added by S7.1 (contracts in `VERIFICATION.md`):
   third-party method without an `identity_verify` grant · **422** unknown
   method, or a declared-but-unimplemented one (`government_id`) · **429**
   resend inside the cooldown (scoped per candidate + channel, so restarting a
-  verification does not reset it). (`debug_code` appears only when
+  verification does not reset it) · **503** email/phone delivery unavailable or
+  email send failed. [R3-S1-T2](docs/delivery/EVIDENCE-R3.md#r3-s1-t2) owns the captured
+  delivery, rollback and browser evidence. (A non-null `debug_code` appears only when
   `env == "local"` **and**
   `verif_otp_debug_echo` is true — it exists so the sprint smoke can drive the
   two-step flow over plain HTTP.)

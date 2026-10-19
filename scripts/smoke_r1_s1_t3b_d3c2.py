@@ -101,23 +101,23 @@ def worker(scratch):
                     erase()
                     yield vectors[1]
                 initial = stream()
-            examples = build_training_set(initial, ledger_store=training, audit=audit)
+            examples = build_training_set(initial, ledger_store=training, registry=registry, audit=audit)
             assert [ex.vector.candidate_id for ex in examples] == [bid]
             assert examples[0].label.hired is (True if allowed else None)
             assert examples[0].label.withheld is (not allowed)
-            assert build_training_set(vectors, ledger_store=training, audit=audit) == examples
+            assert build_training_set(vectors, ledger_store=training, registry=registry, audit=audit) == examples
             assert ledger.audit_for_candidate(cid) == []
             joins = [a for a in ledger.audit_for_candidate(bid) if a.action == "training.label"]
             assert bool(joins) is audit
             path = scratch / f"training-{index}.csv"
-            export_training_csv(examples, view=view, path=str(path))
+            export_training_csv(examples, view=view, registry=registry, ledger_store=training, path=str(path))
             with path.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
             assert [row["candidate_id"] for row in rows] == [bid]
             assert rows[0]["label_withheld"] == str(not allowed)
             parquet = scratch / f"training-{index}.parquet"
             try:
-                export_training_parquet(examples, view=view, registry=registry, path=str(parquet))
+                export_training_parquet(examples, view=view, registry=registry, ledger_store=training, path=str(parquet))
             except ParquetUnavailable:
                 assert not parquet.exists()
             else:

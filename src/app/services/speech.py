@@ -58,7 +58,7 @@ def format_for_mime(mime: str) -> str:
     """Resolve a mime type, or refuse before any vendor call is made."""
     fmt = AUDIO_FORMATS.get((mime or "").split(";")[0].strip().casefold())
     if not fmt:
-        raise SpeechFailed(f"unsupported audio type: {mime!r}")
+        raise SpeechFailed("unsupported audio type")
     return fmt
 
 
@@ -71,6 +71,9 @@ class Transcript(BaseModel):
 class SpeechClient(ABC):
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
+
+    async def aclose(self) -> None:
+        """No transport in the refusing/fake implementations."""
 
     @abstractmethod
     async def atranscribe(self, *, audio_b64: str, mime: str) -> Transcript:
@@ -89,6 +92,14 @@ class OpenRouterSpeech(SpeechClient):
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         super().__init__(settings)
+        self._client = None
+        self._closed = False
+
+    def _get_client(self):
+        if getattr(self, "_closed", False):
+            raise RuntimeError("Speech client is closed")
+        if self._client is not None:
+            return self._client
         from openai import AsyncOpenAI  # local import; optional at test time
 
         headers: dict[str, str] = {}
@@ -104,12 +115,20 @@ class OpenRouterSpeech(SpeechClient):
             max_retries=self.settings.speech_max_retries,
             default_headers=headers or None,
         )
+        return self._client
+
+    async def aclose(self) -> None:
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
+        if self._client is not None:
+            await self._client.close()
 
     async def atranscribe(self, *, audio_b64: str, mime: str) -> Transcript:
         fmt = format_for_mime(mime)   # refuse before spending a call
         model = self.settings.asr_model
         try:
-            resp = await self._client.chat.completions.create(
+            resp = await self._get_client().chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": self._SYSTEM},
@@ -125,13 +144,12 @@ class OpenRouterSpeech(SpeechClient):
                     },
                 ],
             )
+            text = (resp.choices[0].message.content or "").strip()
+            if not text:
+                raise SpeechFailed("transcription returned no text")
         except Exception as exc:  # noqa: BLE001 -- one failure surface for the caller
-            log.warning("asr_failed", model=model, error=str(exc))
-            raise SpeechFailed(f"transcription failed: {exc}") from exc
-
-        text = (resp.choices[0].message.content or "").strip()
-        if not text:
-            raise SpeechFailed("transcription returned no text")
+            log.warning("asr_failed", error_type=type(exc).__name__)
+            raise SpeechFailed("transcription failed; answer in text or record again") from exc
         return Transcript(text=text, model=model)
 
 

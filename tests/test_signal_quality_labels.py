@@ -252,3 +252,70 @@ def test_consent_is_evaluated_AT_THE_REPORTS_OWN_MOMENT(ledger_world):
     _hire(ledger, cid, org, now + timedelta(days=7))
 
     assert LedgerLabelSource(reports, ledger).labeled() == []
+
+
+@pytest.mark.parametrize('boundary', ['before_read', 'after_outcomes'])
+def test_ledger_label_source_current_revocation_blocks_historical_labels(ledger_world, monkeypatch, boundary):
+    reports, ledger, cid, org = ledger_world
+    now = datetime.now(timezone.utc)
+    early = now - timedelta(days=30)
+    reports.save(Report(domain='genai', candidate_id=cid, created_at=now))
+    _grant(ledger, cid, org, ConsentPurpose.LEDGER_WRITE, early)
+    grant = ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ,
+                                 org_id=org.id, now=early)
+    _hire(ledger, cid, org, now + timedelta(days=7))
+    assert len(LedgerLabelSource(reports, ledger).labeled()) == 1
+    original = ledger.coding_rounds_for_candidate
+
+    def read_then_revoke(subject):
+        rows = original(subject)
+        ledger.revoke_consent(grant.id)
+        return rows
+
+    def forbidden(*_):
+        pytest.fail('revoked metrics outcomes must not be read')
+
+    if boundary == 'before_read':
+        ledger.revoke_consent(grant.id)
+        monkeypatch.setattr(ledger, 'records_for_candidate', forbidden)
+        monkeypatch.setattr(ledger, 'coding_rounds_for_candidate', forbidden)
+    else:
+        monkeypatch.setattr(ledger, 'coding_rounds_for_candidate', read_then_revoke)
+    assert LedgerLabelSource(reports, ledger).labeled() == []
+
+
+@pytest.mark.parametrize('boundary', ['historical_audit', 'final_consent'])
+def test_ledger_label_source_omits_erasure_during_join(ledger_world, monkeypatch, boundary):
+    from app.candidates.store import CandidateStore
+
+    reports, ledger, cid, org = ledger_world
+    now = datetime.now(timezone.utc)
+    early = now - timedelta(days=30)
+    reports.save(Report(domain='genai', candidate_id=cid, created_at=now))
+    _grant(ledger, cid, org, ConsentPurpose.LEDGER_WRITE, early)
+    _grant(ledger, cid, org, ConsentPurpose.LEDGER_READ, early)
+    _hire(ledger, cid, org, now + timedelta(days=7))
+    candidates = CandidateStore(ledger._session_factory)
+    if boundary == 'historical_audit':
+        original = reports.all_reports_with_candidates
+
+        def read_then_erase():
+            rows = original()
+            assert candidates.delete_candidate(cid)
+            return rows
+
+        monkeypatch.setattr(reports, 'all_reports_with_candidates', read_then_erase)
+    else:
+        original = ledger.consents_for_candidate
+        reads = 0
+
+        def consent_then_erase(subject):
+            nonlocal reads
+            grants = original(subject)
+            reads += 1
+            if reads == 3:
+                assert candidates.delete_candidate(cid)
+            return grants
+
+        monkeypatch.setattr(ledger, 'consents_for_candidate', consent_then_erase)
+    assert LedgerLabelSource(reports, ledger).labeled() == []

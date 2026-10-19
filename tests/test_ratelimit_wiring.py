@@ -26,10 +26,18 @@ def real_services(settings, tmp_path):
     one.
     """
     url = f"sqlite:///{tmp_path / 'container.db'}"
-    Base.metadata.create_all(make_engine(url))
-    return build_default_services(settings.model_copy(update={
+    bootstrap = make_engine(url)
+    try:
+        Base.metadata.create_all(bootstrap)
+    finally:
+        bootstrap.dispose()
+    services = build_default_services(settings.model_copy(update={
         "candidates_db_url": url,
     }))
+    try:
+        yield services
+    finally:
+        services.dispose_sql()
 
 
 #: The services that MUST have a limiter. A floor, not the whole list: a

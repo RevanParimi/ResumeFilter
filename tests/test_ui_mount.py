@@ -109,6 +109,18 @@ def test_the_documentation_really_is_unreachable(services):
         assert client.get(path).status_code == 404, path
 
 
+def test_retired_design_assets_are_not_served_if_restored(tmp_path):
+    retired = tmp_path / "_ds"
+    retired.mkdir()
+    (retired / "retired.js").write_text("window.retired = true", encoding="utf-8")
+    (tmp_path / "api.js").write_text("window.currentAsset = true", encoding="utf-8")
+    app = FastAPI()
+    app.mount("/ui", _AllowlistedStaticFiles(directory=tmp_path))
+    with TestClient(app) as client:
+        assert client.get("/ui/_ds/retired.js").status_code == 404
+        assert client.get("/ui/api.js").status_code == 200
+
+
 def test_the_ui_mount_does_not_shadow_the_api(services):
     """/ui is a real prefix, not a catch-all: the API must still answer."""
     # `with`, unlike the two tests above: this is the one assertion in this
@@ -173,14 +185,3 @@ def test_serving_the_index_does_not_weaken_the_allowlist(services):
     client = TestClient(create_app(services))
     assert client.get("/ui/not-an-asset.txt").status_code == 404
     assert client.get("/ui/_ds").status_code == 404      # a directory, not a file
-
-def test_retired_design_assets_are_not_served_if_restored(tmp_path):
-    retired = tmp_path / "_ds"
-    retired.mkdir()
-    (retired / "retired.js").write_text("window.retired = true", encoding="utf-8")
-    (tmp_path / "api.js").write_text("window.currentAsset = true", encoding="utf-8")
-    app = FastAPI()
-    app.mount("/ui", _AllowlistedStaticFiles(directory=tmp_path))
-    with TestClient(app) as client:
-        assert client.get("/ui/_ds/retired.js").status_code == 404
-        assert client.get("/ui/api.js").status_code == 200

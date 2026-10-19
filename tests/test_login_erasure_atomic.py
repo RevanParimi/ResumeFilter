@@ -208,7 +208,8 @@ def test_postgres_consume_waits_for_whole_erasure(database, finish):
             try:
                 assert ready.wait(20)
                 consuming_code = pool.submit(AuthStore(consumer).consume_challenge,
-                    scope, challenge_id=challenge.id, code_hash=challenge.code_hash)
+                    scope, challenge_id=challenge.id, code_hash=challenge.code_hash,
+                    at=datetime.now(timezone.utc))
                 assert consuming.wait(20)
                 blocked = False
                 deadline = monotonic() + 10

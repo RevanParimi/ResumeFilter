@@ -16,7 +16,7 @@ from app.candidates.schema import LinkType
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
-from app.curation.service import CurationService
+from app.curation.service import CurationService, reviewable_raw_term
 from app.profile_sources.github import to_signal as github_to_signal
 from app.profile_sources.linkedin import parse_linkedin_export
 from app.profile_sources.linkedin import to_signal as linkedin_to_signal
@@ -54,8 +54,8 @@ class ProfileSourceService:
         login = self._resolve_handle(candidate_id, handle)
         raw = await self._github.gather_user_signal(login)
         signal = github_to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
-        self._capture_unmapped(signal)
         row_id = self._store.save_signal(candidate_id, signal)
+        self._capture_unmapped(signal, source_id=row_id)
         self._store.require_saved_signal(candidate_id, row_id)
         return signal
 
@@ -68,8 +68,8 @@ class ProfileSourceService:
         signal = linkedin_to_signal(
             raw, self._settings, fetched_at=datetime.now(timezone.utc)
         )
-        self._capture_unmapped(signal)
         row_id = self._store.save_signal(candidate_id, signal)
+        self._capture_unmapped(signal, source_id=row_id, raw_names=raw.skills)
         self._store.require_saved_signal(candidate_id, row_id)
         return signal
 
@@ -77,8 +77,13 @@ class ProfileSourceService:
         self, candidate_id: str, source_type: Optional[ProfileSourceType] = None
     ) -> list[ProfileSourceSignal]:
         if self._candidates.get_candidate(candidate_id) is None:
-            raise LookupError(f"candidate {candidate_id} not found")
-        return self._store.signals_for_candidate(candidate_id, source_type)
+            raise SourceSubjectErasedError()
+        signals = self._store.signals_for_candidate(candidate_id, source_type)
+        # A loaded list is only a snapshot. Refuse erasure observed before
+        # return; this read does not lock subsequent HTTP delivery.
+        if self._candidates.get_candidate(candidate_id) is None:
+            raise SourceSubjectErasedError()
+        return signals
 
     def _resolve_handle(self, candidate_id: str, handle: Optional[str]) -> str:
         if handle and handle.strip():
@@ -105,26 +110,38 @@ class ProfileSourceService:
             return raw
         raise ValueError(f"invalid GitHub handle: {raw}")
 
-    def _capture_unmapped(self, signal: ProfileSourceSignal) -> None:
+    def _capture_unmapped(
+        self, signal: ProfileSourceSignal, *, source_id: str,
+        raw_names: Optional[list[str]] = None,
+    ) -> None:
         """Queue every skill the taxonomy couldn't map (canonical is None) for
         curation review. Best-effort — capture must never break ingestion."""
         if self._curation is None:
             return
-        for skill in signal.skills:
-            if skill.canonical is None:
-                try:
-                    self._curation.record_unmapped(
-                        skill.name, source_type=signal.source_type.value
-                    )
-                except Exception as exc:  # noqa: BLE001 — advisory, never fatal
-                    # Still never fatal. But a capture queue that has stopped
-                    # accepting anything looks exactly like a taxonomy with
-                    # nothing left to map, and those need telling apart.
-                    _log.warning(
-                        "unmapped_skill_capture_failed",
-                        source_type=signal.source_type.value,
-                        error=str(exc),
-                    )
+        names = [skill.name for skill in signal.skills if skill.canonical is None]
+        if raw_names is not None:
+            # LinkedIn display names are trimmed and case-deduplicated. Check
+            # original CSV cells so padding/controls cannot bypass the guard,
+            # retaining at most one valid observation per displayed skill.
+            pending = {name.lower() for name in names}
+            names = []
+            for name in raw_names:
+                if not reviewable_raw_term(name):
+                    continue
+                key = name.strip().lower()
+                if key in pending:
+                    names.append(name)
+                    pending.remove(key)
+        for name in names:
+            try:
+                self._curation.record_unmapped(name, source_id=source_id)
+            except Exception:  # noqa: BLE001 — advisory, never fatal
+                # Keep failures observable without SQL parameters, raw input
+                # or exception details escaping into retained logs.
+                _log.warning(
+                    "unmapped_skill_capture_failed",
+                    source_type=signal.source_type.value,
+                )
 
 
 def build_profile_source_service(
@@ -137,7 +154,7 @@ def build_profile_source_service(
     settings = settings or get_settings()
     candidates = candidates or build_candidate_store(settings)
     github = github or GitHubClient(settings)
-    store = build_profile_source_store(settings)
+    store = build_profile_source_store(settings, session_factory=candidates._session_factory)
     return ProfileSourceService(
         github=github, store=store, candidates=candidates, settings=settings,
         curation=curation,

@@ -128,8 +128,10 @@ for the interview.
 - **FR-21** Client-level resilience: configured retries (`llm_max_retries`,
   default 2) and per-call timeout; any LLM failure degrades that node to its
   deterministic path (never a 500 caused by a provider blip).
-- **FR-22 (M2)** Real embedding model for retrieval (dedicated embedder, never
-  a chat tier), config-switchable from the M0 `HashingEmbedding`.
+- **FR-22 (M2, deferred)** Any future retrieval needs a dedicated embedding
+  model (never a chat tier), a measured need and explicit isolation/lifecycle.
+  Current provenance uses evaluation-local GitHub observations; the unused
+  M0 hashing/vector backend was retired by R4-S1-T2.
 - **FR-23 (M2)** Recorded-fixture tests for the LLM JSON paths (extraction +
   plausibility), so prompt/parse regressions are caught offline.
 

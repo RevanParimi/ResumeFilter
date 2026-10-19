@@ -116,11 +116,11 @@ def main() -> int:
     fs.upsert_vector(mvB)
 
     csv_path = scratch / "features.csv"
-    export_view_csv(fs.vectors_for_view(view.name, view.version, as_of=now), view=view, path=str(csv_path))
+    export_view_csv(fs.vectors_for_view(view.name, view.version, as_of=now), view=view, registry=reg, ledger_store=ls, path=str(csv_path))
     header = csv_path.read_text(encoding="utf-8").splitlines()[0].split(",")
 
     try:
-        export_view_parquet([mvA_now], view=view, registry=reg, path=str(scratch / "features.parquet"))
+        export_view_parquet([mvA_now], view=view, registry=reg, ledger_store=ls, path=str(scratch / "features.parquet"))
         parquet_ok = True
     except ParquetUnavailable:
         parquet_ok = "skipped (pyarrow absent)"

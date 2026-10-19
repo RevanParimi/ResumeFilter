@@ -65,6 +65,39 @@ async def _answer_all(services, cid, session, *, at=NOW):
     return session
 
 
+async def test_v2_turn_evidence_and_summary_versions_survive_store_reload(svc):
+    from app.interview.scoring import SCORER_VERSION
+    services, cid = svc
+    session = services.interview.start(cid, at=NOW)
+    done = await _answer_all(services, cid, session)
+    assert done.assessment.scorer_version == SCORER_VERSION
+    loaded = services.interview.get(cid, done.id, at=NOW)
+    assert loaded.assessment == done.assessment
+    assert all(t.score.scorer_version == SCORER_VERSION for t in loaded.turns)
+    assert all(t.score.evidence_confidence > 0 for t in loaded.turns)
+    assert services.interview.list_for_candidate(cid, at=NOW)[0].scorer_version == SCORER_VERSION
+
+
+async def test_active_legacy_and_current_turns_finish_without_silent_blending(svc):
+    from app.interview.models import InterviewTurnRow
+    services, cid = svc
+    session = services.interview.start(cid, at=NOW)
+    first = services.interview.next_question(session)
+    session, _ = await services.interview.answer(cid, session.id, question_id=first.id, text=GOOD_ANSWER, at=NOW)
+    # Exact shape of a historical score, not a v2 score with an invented label.
+    legacy = {"dimensions": {"specificity": 1.0, "ownership": 1.0, "depth": 1.0, "consistency": 1.0},
+              "insufficient": False, "codes": []}
+    with services.candidates._session_factory() as db:
+        db.get(InterviewTurnRow, session.turns[0].id).scores = legacy
+        db.commit()
+    done = await _answer_all(services, cid, services.interview.get(cid, session.id, at=NOW))
+    assert done.assessment.scorer_version == "mixed/unknown"
+    assert done.assessment.dimensions == {} and done.assessment.confidence == 0
+    assert done.assessment.band is InterviewBand.INSUFFICIENT_SIGNAL
+    with services.candidates._session_factory() as db:
+        assert db.get(InterviewTurnRow, session.turns[0].id).scores == legacy
+
+
 def test_start_builds_a_plan_and_stamps_the_current_assurance_level(svc):
     services, cid = svc
     session = services.interview.start(cid, at=NOW)

@@ -1,4 +1,4 @@
-"""S2.4 — unified fabrication risk: fuse ai_generation + cross_field + resume_farm.
+"""Advisory factual-risk fusion of cross_field + resume_farm (version 2).
 
 Pure functions, no I/O, no LLM. ADVISORY ONLY: the fused band is reviewer
 context computed in the calibration stage — it never changes a verdict, the
@@ -15,7 +15,6 @@ from __future__ import annotations
 from app.core.config import Settings, get_settings
 from app.schemas.fabrication import (
     AIGenerationAssessment,
-    AILikelihoodBand,
     ConsistencyBand,
     CrossFieldAssessment,
     DuplicationBand,
@@ -25,13 +24,12 @@ from app.schemas.fabrication import (
     RiskComponent,
 )
 
+# v1 included writing style; new reports explicitly store v2. Never recompute
+# stored assessments when reading them, or interpret v1 scores as v2 features.
+SCORER_VERSION = 2
+
 # Band -> component risk. Insufficient bands are absent on purpose: they are
 # excluded from fusion entirely. Code constants, not config — change deliberately.
-_AI_RISK = {
-    AILikelihoodBand.UNLIKELY: 0.10,
-    AILikelihoodBand.POSSIBLE: 0.45,
-    AILikelihoodBand.LIKELY: 0.75,
-}
 _XF_RISK = {
     ConsistencyBand.CONSISTENT: 0.10,
     ConsistencyBand.MINOR_ISSUES: 0.40,
@@ -43,7 +41,7 @@ _RF_RISK = {
     DuplicationBand.NEAR_DUPLICATE: 0.80,
 }
 
-# Clean bands (unlikely/consistent/unique) all map to exactly this risk; a
+# Clean factual bands (consistent/unique) map to exactly this risk; a
 # component above it carries an actual signal ("non-clean").
 _CLEAN_RISK = 0.10
 
@@ -61,21 +59,10 @@ def build_components(
     *,
     settings: Settings | None = None,
 ) -> list[RiskComponent]:
-    """One RiskComponent per assessment that has data; insufficient bands are
-    excluded entirely — absence of signal is not evidence of risk."""
+    """One component per usable factual assessment. The legacy ``ai`` argument
+    is accepted for caller compatibility but style never contributes to risk."""
     s = settings or get_settings()
     out: list[RiskComponent] = []
-    if ai is not None and ai.band in _AI_RISK:
-        out.append(
-            RiskComponent(
-                id="ai_generation",
-                band=ai.band.value,
-                risk=_AI_RISK[ai.band],
-                confidence=ai.confidence,
-                weight=s.fr_weight_ai * ai.confidence,
-                flagged=ai.band is AILikelihoodBand.LIKELY,
-            )
-        )
     if cross_field is not None and cross_field.band in _XF_RISK:
         out.append(
             RiskComponent(
@@ -106,6 +93,9 @@ def fuse_components(components: list[RiskComponent]) -> tuple[float, float]:
     component risk (70/30); confidence follows coverage, same shape as
     S2.1/S2.2: min(0.9, 0.30 + 0.15 * evaluated). One component -> 0.45,
     which sits below fr_min_confidence — single-subsystem fusion never asserts."""
+    # Protect direct callers supplying historical components too. Style is
+    # excluded before mean, maximum and coverage, including zero-weight style.
+    components = [c for c in components if c.id != "ai_generation"]
     if not components:
         return 0.0, 0.0
     total_weight = sum(c.weight for c in components)
@@ -115,7 +105,7 @@ def fuse_components(components: list[RiskComponent]) -> tuple[float, float]:
         mean = sum(c.risk for c in components) / len(components)
     score = _MEAN_WEIGHT * mean + _MAX_WEIGHT * max(c.risk for c in components)
     # Coverage-count confidence is safe only because every subsystem floors its
-    # own confidence before emitting an evaluable band (ai/xf >= 0.50, rf >= 0.60)
+    # own confidence before emitting an evaluable band (xf >= 0.50, rf >= 0.60)
     # — a component can never arrive here as evaluable-but-worthless.
     confidence = min(0.9, round(0.30 + 0.15 * len(components), 2))
     return score, confidence
@@ -158,9 +148,10 @@ def assess_fabrication_risk(
     components = build_components(ai, cross_field, resume_farm, settings=s)
     if not components:
         return FabricationRiskAssessment(
+            scorer_version=SCORER_VERSION,
             band=FabricationRiskBand.INSUFFICIENT_DATA,
             reasoning=(
-                "No fabrication subsystem produced an assessable signal; nothing to "
+                "No factual subsystem produced an assessable signal; nothing to "
                 "fuse. Advisory only — never a rejection signal."
             ),
         )
@@ -176,6 +167,7 @@ def assess_fabrication_risk(
         f"verdicts or depth scores, and are never a rejection signal."
     )
     return FabricationRiskAssessment(
+        scorer_version=SCORER_VERSION,
         score=score,
         confidence=confidence,
         band=band,

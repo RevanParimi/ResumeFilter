@@ -225,58 +225,298 @@ entry point and corrected text encoding during consolidation. No documentation
 acceptance blocker remains. Runtime findings above remain open under PI-R4; no
 independent review, application execution or full-codebase correctness claim.
 
-
 ## Follow-up 2026-10-19 — Retire obsolete repository material
 
-R4-M2 tracked-file cleanup validated (2026-10-19). User authorized removal and a push to
-main with commit email revan.datta132@gmail.com. This commit is scoped to cleanup;
-earlier uncommitted application/test work, working data, secrets and editor
-settings are excluded. It does not publish later local feature-completion claims.
+R4-M2 versioned-file retirement and cleanup-only main publication complete (2026-10-19); local ignored-artifact deletion remains blocked. User explicitly authorized removal of the
+previously identified obsolete files and a push to `main`, with commit email
+`revan.datta132@gmail.com`. Publication is scoped to the cleanup-only candidate; earlier application/test
+work, working data, secrets and local editor settings are excluded.
 
-Scope: remove 74 historical implementation plans, two prototype documents under
-docs/ui, UI.md/UI-Spec.md, and 15 unreferenced design-system assets (93 files).
-Retain useful regression/journey scripts, current feature contracts and existing
-task/evidence records. Historical links point to the exact prior Git revision.
-Ignore local review/Windows-cache artifacts and exclude them from build context.
-Automatic approval review blocked their recursive local deletion; they remain.
+Acceptance: remove superseded historical implementation plans, prototype UI
+documents and unreferenced design assets; retain current feature contracts,
+meaningful regression/journey tooling, task IDs/statuses and validation evidence.
+Rebase references to current owners or the exact historical Git revision. Remove
+only verified generated local review/Windows-cache artifacts, after resolving
+their paths inside this workspace. Prevent their accidental addition/build use.
+Preserve unrelated prior edits, the working database and running demo. Record
+the exact reviewed/tested commit and verify the remote main SHA after pushing.
 
-Acceptance: current UI entry/assets still work, restored retired design assets
-return 404, useful API contracts and prior task statuses remain unchanged, all
-documentation links resolve, full regression and relevant real Chrome journeys
-pass, separate self-review is recorded, and the pushed main SHA is verified.
-No database, migration, model-quality or additional feature work is implied.
+Required evidence: source/asset-reference and API-contract preservation, focused
+and full offline pytest, UI bindings/JS syntax, actual scratch Chrome journeys,
+documentation links/status checks and a separate diff self-review. No SQL,
+migration, provider-quality or additional feature work is authorized by this
+cleanup. R4-S1-T3E remains the next feature task, not started here. Historical
+records can be recovered from Git; no published evidence will silently disappear.
 
-Validation of this exact cleanup-only candidate:
+Implementation: 93 versioned files removed: 74 historical implementation
+plans/specifications, two files under docs/ui, UI.md/UI-Spec.md, and 15 design
+assets. Current HTML/API/support files do not reference the retired design
+bundles. Historical references now resolve to exact blobs at
+`54804988f3ead83d727754e4361266a4322655c4`; current feature guides remain.
+The only application behavior change is that restored `_ds` files return 404;
+the UI entry, api.js and support.js remain served. No useful test or journey
+script is removed. Ignore/build rules exclude local retired review/cache paths.
 
-- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py focused -m pytest -q --tb=short tests/test_ui_mount.py tests/test_image_contents.py tests/test_deploy_doc.py tests/test_route_table_guard.py tests/test_org_scope_guard.py`:
-  **44 passed, 1 warning, 14.64s**, exit 0.
-- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py full`
-  (default `-m pytest -q --tb=short`): **2,518 passed, 188 skipped, 44 warnings,
-  568.89s (9:28)**, exit 0. Optional/PostgreSQL skips do not prove those cases;
-  existing dependency and SQLite reflection warnings remain.
-- `.resume/Scripts/python.exe .pytest_cache/run_retire_candidate.py browser scripts/check_ui_screening_browser.py`:
-  **19/19**, exit 0, real Chrome on migrated scratch storage with fake/capture
-  providers and existing CDN access. No live-provider or quality claim.
-- Candidate `node scripts/check_ui_bindings.js`: **402 bindings / 9 states**;
-  `node --check frontend/api.js` and `node --check frontend/support.js`: passed.
-- `.resume/Scripts/python.exe .pytest_cache/verify_retire.py candidate`:
-  **386 local links**, exact historical blobs, all prior PI IDs/statuses and
-  API/function ASTs verified; 649 unrelated files unchanged, including the
-  candidate database. Windows-aware `git diff --check` passed.
+Regression: `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py retire-red -m pytest -q --tb=short tests/test_ui_mount.py::test_retired_design_assets_are_not_served_if_restored`
+failed as intended (**1 failed**, 8.00s): a real file in the retired directory
+was still served with 200. The new allowlist refuses it while api.js returns 200.
+Initial focused checks found one unrelated contract mismatch from a documentation
+rewrite in schema descriptions (**1 failed, 57 passed**); those three source
+files were restored byte-for-byte. The existing API fixture was not regenerated.
 
-The added regression was first run against the old allowlist in the working
-copy: a real restored `_ds/retired.js` returned 200, producing the intended
-**1 failed** result. With the retired directory removed from the allowlist, it
-returns 404 while api.js remains 200. No prior test assertion was removed.
+Current workspace validation:
 
-Separate self-review: base `54804988f3ead83d727754e4361266a4322655c4` plus the
-explicit 112-path diff (93 deletions, 19 related updates). Reviewed current asset
-references, inherited route/ownership behavior, static refusal, package exclusion,
-historical recovery and preservation of prior task statuses. All existing route
-and UI-test function ASTs are retained, except removal of `_ds` from UI_ASSETS and
-one added behavior test. No independent review, database/migration change,
-provider validation, deployment or unrelated local application publication.
-Reviewed code hashes and detailed logs are ignored local artifacts, not portable
-setup guarantees. The final commit is checked against those hashes before push;
-verify origin/main's exact SHA afterwards. Commit author/committer email:
-revan.datta132@gmail.com. Earlier application/test work remains uncommitted.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py retire-focused-final -m pytest -q --tb=short tests/test_ui_mount.py tests/test_image_contents.py tests/test_deploy_doc.py tests/test_api_route_extraction.py tests/test_route_table_guard.py tests/test_org_scope_guard.py tests/test_ui_handlers.py`:
+  **58 passed, 1 warning, 17.65s**, exit 0; full API/dependency contract unchanged.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py retire-browsers .pytest_cache/retire_browsers.py`:
+  actual Chrome screening/reload/error journey **24/24**, evaluation/feedback/
+  contact **31/31**, embedded contract **1/1**, exit 0. Scratch migrated SQL and
+  fake/capture providers; requires existing CDN internet. No live-provider,
+  scoring-quality or PostgreSQL validation claim.
+- `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**; JS syntax
+  checks for frontend/api.js and frontend/support.js pass.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py retire-full`:
+  **3,511 passed, 505 skipped, 127 warnings, 1024.42s (17:04)**, exit 0;
+  wrapper elapsed 1037.65s. Optional/environment skips are not passes; existing
+  SQLite reflection/autogenerate and dependency warnings remain.
+
+Cleanup-only publication candidate, checked out separately from committed
+main (the earlier local application backlog is not copied): focused **44 passed,
+1 warning, 14.64s**, exit 0. Actual candidate Chrome screening **19/19**, exit 0.
+Candidate full regression: **2,518 passed, 188 skipped, 44 warnings,
+568.89s (9:28)**, exit 0; wrapper elapsed 582.77s. Candidate bindings: **402 /
+9 states** and both JS syntax checks passed. `.pytest_cache/run_retire_candidate.py`
+selects its own src/working directory and clears DEE configuration/credentials;
+all Python children use the existing project environment.
+
+Separate self-review covers old main plus the explicit 112-path candidate diff:
+93 removals and 19 related files. API route/function ASTs and all old UI mount
+regressions are preserved; main.py changes only the retired static allowlist
+apart from comments/docstrings. Current task IDs/statuses, relative links and
+historical blobs pass verification; working DB and unrelated prior edits are
+unchanged. Byte/EOL checks distinguish binary data from text. Candidate reviewed
+hashes are retained in ignored local artifacts. No independent review claimed.
+
+Automatic approval review rejected recursive local-artifact deletion as
+"blocked by policy", including a narrower attempt for .superpowers. Those
+ignored review/Windows-cache directories remain on disk; no alternate deletion
+method will bypass that rejection. The owned archive helper was stopped. These
+local artifacts are excluded from the cleanup commit and build context.
+
+Publication: [commit 57a68ec](https://github.com/RevanParimi/ResumeFilter/commit/57a68ecc65603951922657658e14b6567364db26)
+was pushed normally to origin/main and verified with git ls-remote. Author and
+committer are Revan Parimi <revan.datta132@gmail.com>. Local main was advanced
+to the same commit, refreshing only its 112 index paths; all 714 remaining
+project files were unchanged during synchronization. The cleanup-only commit
+contains no earlier local application/test work, working data, secrets or local
+editor settings. Earlier work remains uncommitted and preserved. No deployment
+or next feature task was started. Exact next development task remains T3E.
+
+Final post-publication checks: all 858 current local links resolve, historical
+blobs and PI IDs/statuses are retained, 698 unrelated pre-cleanup files are
+unchanged, and the existing demo /healthz returns 200 without a restart. No staged
+changes remain. The owned temporary checkout is unregistered; Windows denied
+removing its residual ignored directory, which remains as local scratch.
+
+The tracked-file cleanup/publication is complete. Recursive removal of the
+ignored local review/Windows-cache directories remains explicitly blocked by
+automatic approval review; those directories were not silently counted as removed.
+
+### Publication follow-up: previously completed local work
+
+On 2026-10-19 the user explicitly requested committing/pushing the remaining
+completed work as well as its unnecessary-file removals. This expands the
+previous cleanup-only publication scope; it does not start another backlog task.
+The reviewed base is `57a68ecc65603951922657658e14b6567364db26`.
+
+Acceptance: publish the existing completed remediation, migrations, API modules,
+UI flows, regression/journey tooling and R4-M1 test/delivery consolidation as one
+consistent tree. Include the 58 pending tracked deletions (35 delivery records,
+22 test modules and the retired vector-store implementation), retaining their
+replacement evidence/tests. Preserve working data, secrets, editor settings and
+the running demo. Add local editor exclusions to Git/build rules. Verify the
+explicit staged manifest, full offline regression, relevant scratch HTTP/Chrome
+journeys, documentation links/record preservation, whitespace and remote main.
+
+The manifest contains 342 paths; runtime data, secrets, scratch/cache directories
+and local editor settings are excluded. No additional application behavior is
+introduced in this publication step. Staged diff review found one surplus EOF
+blank line in the new candidate router; trimming it preserves the exact AST.
+The remaining source/tests/migrations match the pre-publication snapshot.
+
+Final publication validation (2026-10-19):
+
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py publish-full`:
+  **3,511 passed, 505 skipped, 127 warnings, 1210.98s (20:10)**; exit 0,
+  wrapper elapsed 1231.45s. Existing optional/environment skips are not passes.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py publish-journeys .pytest_cache/publish_journeys.py`:
+  exit 0, 258.04s. Migrated scratch screening HTTP/restart **16/16**, reused HTTP
+  contract **31/31**; actual Chrome screening **24/24**, evaluation **31/31** plus
+  embedded contract **1/1**, interview text/audio/reload/restart **40/40** plus
+  embedded contract **1/1**. Fake/capture providers and synthetic media; Chrome
+  still requires the existing CDN internet. The working demo was not restarted.
+- `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**; both
+  `node --check frontend/api.js` and `node --check frontend/support.js` passed.
+- Existing consolidation verifier preserves all **4,015** original collected
+  cases and **295** moved function/class ASTs; the retirement regression adds
+  one case. All **86** record bodies/IDs survive link rebasing. Current local
+  links, immutable historical Git blobs and unchanged PI status maps pass.
+- Explicit staged scope is **342 paths**, including **58 deletions**. Reviewed
+  credential-pattern/path checks and `git diff --cached --check` pass. Source,
+  tests and migrations match the pre-publication snapshot apart from the
+  AST-identical EOF cleanup; protected DB/credential/editor bytes are unchanged.
+
+Separate same-agent publication review covered the full path manifest and
+recorded acceptance contracts, plus the authentication/CSRF/router composition,
+login proof/erasure, current-consent export/search, provider refusal/fallback,
+bounded PDF parsing, shared resource ownership and interview/UI changes in the
+aggregate diff. The only new finding was the surplus EOF blank line above,
+resolved without behavior change. No publication acceptance blocker remains.
+This is self-review; no independent reviewer or new live-provider, PostgreSQL,
+Docker runtime or empirical-quality validation is claimed. Earlier bounded
+migration/database evidence remains in the linked task records.
+
+Publication candidate is ready for the explicitly authorized main push using
+Revan Parimi <revan.datta132@gmail.com>. The exact commit/remote verification is
+recorded after publication. Remaining development status is unchanged: 29 parent
+tasks done, one in progress and 20 pending. R4-S1-T3E remains next, not started.
+
+## Follow-up 2026-10-18 — Test and delivery consolidation
+
+R4-M1 maintenance, done (2026-10-18). User authorized a bounded consolidation before
+the next route extraction. Baseline: 314 pytest modules and 97 delivery Markdown
+files (9,883 lines). Reuse this audit for the contract and evidence; no new task
+tree. R4-S1-T3E remains the next development task and is not started here.
+
+Acceptance: consolidate related unit/API contract tests and seven repeated Node
+launchers without losing collected cases, assertions, fixture isolation or
+offline behavior. Consolidate completed delivery records by PI, preserving task
+IDs, statuses, decisions, validation results and limitations; rewrite inbound
+links to stable anchors. Keep the active task separate and prefer inline child
+contracts/evidence for future work. Preserve all unrelated edits and working DB.
+
+Validation required: before/after collection mapping and AST comparison of moved
+tests/helpers, focused and full offline pytest, Node bindings, local links and
+task-status/evidence preservation checks, separate diff self-review and file
+hash preservation. Application/frontend/schema code is outside scope, so no
+new HTTP/browser/PostgreSQL execution claim or migration gate is applicable.
+The consolidated API tests still execute their actual TestClient workflows;
+Node handler tests execute the shipped JS harnesses, not Chrome.
+
+Implementation: 47 related modules now use 15 product-area/contract modules;
+pytest module count is **314 -> 282**. Seven repeated Node launchers are one
+parametrized test with the same scripts, skip condition, timeout and failure
+output. Identical screening helpers are shared; colliding report/schema names
+are made explicit. All 295 moved function/class ASTs match the snapshots after
+recorded symbol renames, and collection maps one-for-one across **4,015 cases**.
+No regression assertion, concurrency/erasure scenario or fixture scope removed.
+
+Delivery Markdown is **97 -> 14 files**. All 86 completed task bodies/statuses
+are retained in four PI evidence files, with rebased links and stable task/section
+anchors. Historical commands/next pointers are explicitly dated history. The
+active T3 record remains separate. Repeated sprint instructions now have one
+workflow owner; future child contracts/evidence stay inline and maintenance
+reviews reuse this audit. This reduces file fragmentation; historical evidence
+text is retained, rather than claiming a large reduction in its total length.
+
+Validation run with the existing sanitized offline wrapper:
+
+- Collection before/after: `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py consolidation-before -m pytest --collect-only -q`
+  and the same command with `consolidation-after`: **4,015 collected** each.
+- Focused command (the 15 consolidated modules):
+
+```powershell
+.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py consolidation-focused -m pytest -q --tb=short `
+  tests/test_api_route_extraction.py `
+  tests/test_auth_schema.py `
+  tests/test_candidate_schema.py `
+  tests/test_candidate_store.py `
+  tests/test_candidates_api.py `
+  tests/test_verification_schema.py `
+  tests/test_verification_concurrency.py `
+  tests/test_report.py `
+  tests/test_fabrication_schema.py `
+  tests/test_feature_schema.py `
+  tests/test_verification_assurance.py `
+  tests/test_screening_batches_api.py `
+  tests/test_screening_service.py `
+  tests/test_screening_schema.py `
+  tests/test_ui_handlers.py
+```
+
+Focused result: **279 passed, 16 skipped, 1 warning, 81.79s**, exit 0.
+The warning is Starlette/httpx deprecation; environment/PG skips are not passes.
+Actual TestClient API workflows and all seven Node handler harnesses ran. No
+application, UI contract, script, schema or migration change requires a new
+HTTP/subprocess/browser/PG journey here; no Chrome/live-provider claim is made.
+
+- Full pytest: `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py consolidation-full`
+  (default `-m pytest -q --tb=short`): **3,510 passed, 505 skipped, 127 warnings,
+  891.56s (14:51)**, exit 0; wrapper elapsed 902.07s. Warnings retain existing
+  SQLite expression-index reflection/autogenerate and Starlette/httpx limits.
+  Skipped optional/environment cases are not validation of those environments.
+- `.resume/Scripts/python.exe .pytest_cache/verify_consolidation_tests.py` and
+  `verify_consolidation_docs.py`: collection/AST/body/status preservation, **893
+  local links with no missing file/anchor**, and **765 unrelated baseline files**
+  unchanged, including runtime source/scripts/frontend and working DB. Only five
+  new durable files exist: the four evidence collections and Node launcher.
+- `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, passed.
+- Windows-aware `git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check`: passed.
+  Five new files also have no whitespace diagnostics/trailing whitespace.
+
+Separate self-review: HEAD `5480498` plus this session's snapshot-relative diff,
+15 consolidated modules and documentation rebasing. Checked import origins,
+constant/helper collisions, fixture/async scope, parameter IDs, subprocess failure
+reporting, task/status preservation, links and future documentation ownership.
+Code hashes are recorded in `.pytest_cache/consolidation-reviewed-code.json`;
+logs/maps/snapshots are ignored local artifacts, not portable setup guarantees.
+No acceptance-blocking finding remains; this is not independent review. Earlier
+raw-CRLF whitespace output and a regex inside a historical code fence were
+checker issues; corrected checks above pass. No working-data cleanup, demo
+restart, commit, deployment or next route extraction was performed.
+
+Post-suite preservation/links passed again; all 15 reviewed test-module hashes
+match the full-suite state. The existing demo's `/healthz` returned 200 without
+a restart. Durable additions remain exactly the five consolidated files.
+
+Done: acceptance, focused/full regression, static/preservation checks and review
+are complete. Exact next development task remains **R4-S1-T3E**, not started;
+write its contract/evidence inline in the active T3 record.
+
+## Follow-up 2026-10-11 — local demo readiness
+
+User requested a working URL and a short nontechnical demo. Acceptance: verify
+hosting evidence, demonstrate actual browser operations, preserve working data
+and distinguish simulated UI/model quality from functional execution.
+
+`DEPLOY.md` records no public deployment; `railway.cmd status --json` reports no
+linked project. No Veritas listener existed initially. Started the real app at
+`http://127.0.0.1:8000/ui/` with a newly migrated scratch SQLite database, four
+fictional resumes, memory vectors, NullLLM and local captured/auto-filled login.
+No provider/mail delivery, cloud resource or working migration. Organization
+demo login: `demo@veritas.example`; no credentials retained in documentation.
+Ignored `.pytest_cache/demo-runtime-2026-10-11.json` records the owned PID/storage;
+the URL is local to this machine and valid while that process runs.
+
+Present three flows: upload/process a batch into the review queue; open a report
+with reasons, similarity signals and follow-up questions; record a reviewer
+decision and reload its saved history. Instant check/interview UI remain
+simulations (`runEvaluate` timer/local interview state), excluded from the demo.
+Style/factual-risk remediation and representative scoring quality remain open.
+
+Validation using `.resume/Scripts/python.exe`: existing
+`scripts/check_ui_screening_browser.py` passes **19/19**, exit 0 (captured through
+`subprocess.run` to disambiguate PowerShell's first redirected stderr result), and ignored
+`.pytest_cache/check_local_demo_20261011.py` passes **9/9** actual Chrome checks
+against the running demo, including login, four reports, questions, similarity,
+saved outcome/reload and no console errors. `node scripts/check_ui_bindings.js`
+passes 425 bindings across 10 states. Final `/healthz` and `/ui/` both return 200;
+health reports `llm_mode=null`. `git diff --check` passes. Full pytest was not
+rerun: tracked changes are documentation only. Working DB SHA256 remains the
+handoff value.
+
+Same-agent review scope: HEAD `5480498` plus this three-document delta and the
+ignored session launch/browser helpers; checked isolation, secret handling,
+claimed behavior versus browser evidence, and unchanged task/status pointers.
+No independent/provider/accuracy or deployment claim. No remediation ID closed;
+PI/task evidence is unchanged, and **R2-S1-T2B** remains awaiting Linux validation.

@@ -30,15 +30,16 @@ from starlette.routing import Match, Mount
 from starlette.staticfiles import StaticFiles
 
 from app import __version__
+from app.api.auth import auth_router
 from app.api.routes import (
-    ServiceInfo, auth_router, candidate_router, org_router, public_router, router,
+    ServiceInfo, candidate_router, org_router, public_router, router,
 )
 from app.core.boot import verify_launch_config
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.migrate import upgrade_to_head
 from app.graph.build import EvaluationEngine
-from app.services import Services, build_default_services
+from app.services import Services, ServiceCleanupError, build_default_services
 
 log = get_logger("main")
 
@@ -252,17 +253,33 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         # against no schema at all.
         if services is None and boot_settings.db_migrate_on_boot:
             upgrade_to_head(boot_settings)
-        svc = services or build_default_services()
-        app.state.services = svc
-        app.state.engine = EvaluationEngine(svc)
-        log.info(
-            "startup_complete",
-            llm=type(svc.llm).__name__,
-            db=svc.settings.candidates_db_url.split("://", 1)[0],
-            env=svc.settings.env,
-        )
-        yield
-        log.info("shutdown")
+        svc = services if services is not None else build_default_services(boot_settings)
+        failed = False
+        try:
+            app.state.services = svc
+            app.state.engine = EvaluationEngine(svc)
+            log.info(
+                "startup_complete",
+                llm=type(svc.llm).__name__,
+                db=svc.settings.candidates_db_url.split("://", 1)[0],
+                env=svc.settings.env,
+            )
+            yield
+        except BaseException:
+            failed = True
+            raise
+        finally:
+            app.state.engine = None
+            app.state.services = None
+            try:
+                if services is None:
+                    try:
+                        await svc.aclose()
+                    except ServiceCleanupError:
+                        if not failed:
+                            raise
+            finally:
+                log.info("shutdown")
 
     app = FastAPI(
         title="depth-eval-engine",

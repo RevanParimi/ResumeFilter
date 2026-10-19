@@ -45,7 +45,8 @@ async def test_scoring_emits_fabrication_risk(settings):
     risk = out["fabrication_risk"]
     assert risk is not None
     assert risk.band is FabricationRiskBand.ELEVATED
-    assert [c.id for c in risk.components] == ["ai_generation", "cross_field", "resume_farm"]
+    assert [c.id for c in risk.components] == ["cross_field", "resume_farm"]
+    assert risk.scorer_version == 2
 
 
 async def test_all_inputs_absent_means_not_assessed(settings):

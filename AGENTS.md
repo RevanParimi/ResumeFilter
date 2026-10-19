@@ -16,8 +16,9 @@ Missing required evidence leaves the task awaiting validation, not done.
 The user wants exactly one task per chat session (confirmed 9 September 2026).
 Complete and test the next task, update the handoff, then stop. Do not start
 another backlog task in the same chat unless the user explicitly requests it.
-If an item is too large for a focused session, split it into bounded subtasks
-in the handoff and complete only the next subtask. Record unfinished work
+If an item is too large for a focused session, define bounded child sections
+in its existing task record and name the next one in the handoff. Complete only
+that subtask. Record unfinished work
 honestly; do not mark the parent task complete until all its subtasks are done.
 Read only the source, tests, and design notes relevant to that task; the long
 `docs/ROADMAP.md` is historical reference, not required reading end to end.
@@ -43,8 +44,9 @@ modified `data/veritas.db` or previously uncommitted work.
 
 Before finishing a chat, update `docs/PROGRESS.md` with completed task IDs,
 tests actually run, changed behavior, remaining risks, and the exact next task.
-Update the task's PI status and `docs/delivery/tasks/<id>.md` evidence record.
-Keep that file short. Add detailed evidence to the relevant task document and
+Update the task's PI status and its existing evidence section. Active tasks live
+in `docs/delivery/tasks/`; completed records use PI evidence anchors. Keep the
+handoff short. Add detailed evidence to the relevant existing record and
 a brief session entry to `docs/ROADMAP.md` when appropriate.
 
 Avoid documentation duplication: parents link to child evidence instead of

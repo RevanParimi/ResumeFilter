@@ -42,7 +42,9 @@ from app.ledger.store import ConsentError, LedgerStore
 from app.verification.documents import assess, parse_document
 from app.verification.methods import get_adapter
 from app.verification.moonlighting import assess_concurrent_employment
-from app.verification.otp import Notifier, NullNotifier
+from app.services.email import EmailClient, EmailSendFailed, build_email
+from app.verification.delivery import EmailNotifier
+from app.verification.otp import DeliveryUnavailable, Notifier, NullNotifier
 from app.verification.schema import (
     CLAIM_REF_MAX_CHARS, METHOD_SUBJECT, ClaimEvidence, DocumentFinding,
     DocumentType, IdentityAssurance, Verification, VerificationMethod,
@@ -156,17 +158,28 @@ class VerificationService:
 
         if adapter.challenge_based:
             destination_hash = self._bind_destination(summary, adapter, destination)
+            channel = adapter.channel or ""
+            self._notifier.check_available(channel=channel)
+            normalized = normalize_email(destination) if channel == "email" else normalize_phone(destination)
             verification = self._store.create_verification(
                 candidate_id=candidate_id, method=method, consent_id=consent_id, at=moment
             )
-            code = self._store.create_challenge(
-                verification_id=verification.id,
-                channel=adapter.channel or "",
-                destination_hash=destination_hash,
-                rng=rng,
-                at=moment,
-            )
-            self._notifier.send(destination or "", code, channel=adapter.channel or "")
+            try:
+                code = self._store.create_challenge(
+                    verification_id=verification.id, channel=channel,
+                    destination_hash=destination_hash, rng=rng, at=at,
+                    # Store samples the default clock after acquiring its lock.
+                    dispatch=lambda code: self._notifier.send(normalized, code, channel=channel),
+                )
+            except (DeliveryUnavailable, EmailSendFailed):
+                # The issuance transaction has rolled back: this attempt cannot
+                # be confirmed. Keep a failed outcome, never a pending/sent one.
+                try:
+                    self._store.complete_verification(verification.id,
+                        status=VerificationStatus.FAILED, details={"reason": "delivery_failed"}, at=at)
+                except LookupError:
+                    pass  # Candidate erasure already removed this attempt.
+                raise
             return verification, code
 
         # Everything below marks an outcome VERIFIED on the strength of the
@@ -331,7 +344,8 @@ class VerificationService:
         # Parse and assess BEFORE writing anything: a body we cannot read must
         # not leave a dangling `pending` row behind (an S7.1 deferred minor
         # that there is no reason to repeat here).
-        parsed = parse_document(content_b64, max_pages=self._settings.doc_max_pages)
+        parsed = parse_document(content_b64, max_pages=self._settings.doc_max_pages,
+                                settings=self._settings)
         profile = self._candidates.latest_profile(candidate_id)
         assessment = assess(
             parsed, profile, doc_type, at=moment,
@@ -407,11 +421,13 @@ def build_verification_service(
     candidates: CandidateStore,
     ledger: LedgerStore,
     profile_sources=None,
+    email: Optional[EmailClient] = None,
 ) -> VerificationService:
     settings = settings or get_settings()
     store = VerificationStore(
         candidates._session_factory, ledger=ledger, settings=settings
     )
     return VerificationService(
-        store, candidates, ledger, profile_sources=profile_sources, settings=settings
+        store, candidates, ledger, profile_sources=profile_sources, settings=settings,
+        notifier=EmailNotifier(email if email is not None else build_email(settings)),
     )

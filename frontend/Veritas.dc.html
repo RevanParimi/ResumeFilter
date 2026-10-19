@@ -77,7 +77,7 @@
           <div style="display:flex; gap:34px; margin-top:22px;">
             <div>
               <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">4</div>
-              <div style="font-size:11px; color:#7d97a8;">fabrication subsystems</div>
+              <div style="font-size:11px; color:#7d97a8;">advisory checks</div>
             </div>
             <div>
               <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:19px;">500</div>
@@ -199,6 +199,7 @@
         <sc-if value="{{ isOperatorPlane }}" hint-placeholder-val="{{ false }}">
           <div style="display:flex; flex-direction:column; gap:1px;">
             <div style="{{ navGroup }}">Operator</div>
+            <button onClick="{{ goEvaluate }}" style="{{ navEvaluate }}" style-hover="background:var(--hover)">Instant check</button>
             <button onClick="{{ goAdminOrgs }}" style="{{ navAdminOrgs }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat;"></span><span>Organisations</span></button>
             <button onClick="{{ goAdminUsers }}" style="{{ navAdminUsers }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat;"></span><span>Operator accounts</span></button>
             <button onClick="{{ goCuration }}" style="{{ navCuration }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat;"></span><span>Curation queue</span></button>
@@ -284,7 +285,7 @@
                 <div style="flex:1; min-width:300px;">
                   <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);">Batch · {{ batchMeta }}</div>
                   <h1 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:26px; line-height:1.15; letter-spacing:-0.025em; margin:6px 0 0 0; color:var(--heading);">{{ batchName }}</h1>
-                  <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:62ch;">Riskiest first; anything not screened sorts last. Each row carries its reasoning; none carries a verdict.</p>
+                  <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:62ch;">Ordered by advisory review index; anything not screened sorts last. An index is not a fraud probability. Open the report for its scorer version and available evidence.</p>
                 </div>
                 <div style="display:flex; gap:8px;">
                   <div style="{{ statCard }}">
@@ -372,16 +373,18 @@
           </sc-if>
 
           <sc-if value="{{ isReport }}" hint-placeholder-val="{{ false }}">
-            <button onClick="{{ goQueue }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">← Back to screening queue</button>
+            <button onClick="{{ backFromReport }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">{{ reportBackLabel }}</button>
 
             <sc-if value="{{ reportLoading }}" hint-placeholder-val="{{ false }}">
               <div style="padding:22px; font-size:12.5px; color:var(--muted);">Loading the report…</div>
             </sc-if>
             <sc-if value="{{ reportError }}" hint-placeholder-val="{{ false }}">
               <div style="{{ uploadErrorBox }}">{{ reportErrorText }}</div>
+              <button onClick="{{ retryReport }}" style="{{ smallGhost }}">Reload saved report</button>
             </sc-if>
 
             <sc-if value="{{ hasReport }}" hint-placeholder-val="{{ true }}">
+            <p style="font-size:11px; color:var(--muted);">Saved report: {{ reportReference }}</p>
             <div style="display:grid; grid-template-columns:minmax(0,1fr) 200px; gap:28px; align-items:center; margin-top:12px; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
               <div>
                 <div style="display:flex; align-items:center; gap:10px;">
@@ -391,18 +394,20 @@
                     <div style="font-size:11.5px; color:var(--muted); margin-top:2px;">{{ reportRole }}</div>
                   </div>
                 </div>
-                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:12px 0 0 0; max-width:66ch;">{{ reportSummary }}</p>
+                <p role="note" style="font-size:12.5px; line-height:1.6; color:var(--text); margin:12px 0 0 0; max-width:66ch;">{{ reportVersionNote }}</p>
+                <div style="font-size:11px; color:var(--muted); margin-top:10px;">{{ reportSummaryLabel }}</div>
+                <p style="font-size:13px; line-height:1.6; color:var(--muted); margin:5px 0 0 0; max-width:66ch;">{{ reportSummary }}</p>
                 <div style="display:inline-flex; align-items:center; gap:7px; margin-top:10px; padding:4px 9px; border-radius:6px; background:var(--panel2); border:1px solid var(--border);">
                   <span style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);">Depth</span>
                   <span style="font-size:11.5px; color:var(--text);">{{ reportDepth }}</span>
                 </div>
               </div>
               <div style="display:grid; place-items:center;">
-                <div style="{{ gaugeRing }}">
+                <div data-review-index="" aria-label="{{ reportIndexLabel }}" style="{{ gaugeRing }}">
                   <div style="width:88px; height:88px; border-radius:50%; background:var(--panel); display:grid; place-items:center; text-align:center;">
                     <div>
                       <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; line-height:1; color:var(--heading);">{{ reportScore }}</div>
-                      <div style="font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-top:3px;">Fab. risk</div>
+                      <div style="font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-top:3px;">Review index</div>
                     </div>
                   </div>
                 </div>
@@ -416,10 +421,12 @@
               </div>
             </div>
 
+            <p role="status" style="font-size:12.5px; line-height:1.6; color:var(--muted); max-width:90ch;">{{ reportRiskExplanation }}</p>
+
             <h2 style="{{ h2 }}">What drove it</h2>
-            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">The headline is a fusion of these three, weighted by their own confidence — one conclusion, three inputs, never four equal peers.</p>
-            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
-              <sc-for list="{{ reportComponents }}" as="k" hint-placeholder-count="3">
+            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:90ch;">{{ reportComponentHelp }}</p>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px;">
+              <sc-for list="{{ reportComponents }}" as="k" hint-placeholder-count="2">
                 <div style="padding:14px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
                   <div style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--link);">{{ k.title }}</div>
                   <div style="font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:15px; letter-spacing:-0.01em; margin:6px 0 2px 0; color:var(--heading);">{{ k.band }}</div>
@@ -429,9 +436,27 @@
               </sc-for>
             </div>
 
+            <sc-for list="{{ reportTimelineFindings }}" as="f" hint-placeholder-count="1">
+              <div style="padding:12px; margin-top:10px; border:1px solid var(--border); border-radius:8px; background:var(--panel);">
+                <strong>{{ f.title }}</strong>
+                <p style="font-size:12.5px; line-height:1.6; margin:6px 0;">{{ f.detail }}</p>
+                <p style="font-size:12px; line-height:1.6; color:var(--muted); margin:0;">{{ f.clarify }}</p>
+              </div>
+            </sc-for>
+
             <sc-if value="{{ hasFarmMatches }}" hint-placeholder-val="{{ false }}">
               <p style="font-size:12px; line-height:1.6; color:var(--muted); margin:10px 0 0 0; max-width:80ch;">{{ reportFarmLine }}</p>
+              <sc-for list="{{ reportFarmMatches }}" as="m" hint-placeholder-count="1">
+                <p style="font-size:12px; color:var(--muted); margin:6px 0;">{{ m }}</p>
+              </sc-for>
             </sc-if>
+
+            <h2 style="{{ h2 }}">Writing-style observations</h2>
+            <p style="font-size:12.5px; line-height:1.6; color:var(--muted); max-width:90ch;">Polished or AI-assisted writing is common. Style patterns cannot establish authorship or dishonesty and do not affect factual review context v2, depth or claim verdicts. Review the candidate's specific work and evidence.</p>
+            <p role="status" style="font-size:12.5px; color:var(--text);">{{ reportStyleStatus }}</p>
+            <sc-for list="{{ reportStyleSignals }}" as="s" hint-placeholder-count="2">
+              <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:6px 0;">{{ s }}</p>
+            </sc-for>
 
             <h2 style="{{ h2 }}">Claim by claim</h2>
 
@@ -445,7 +470,7 @@
             </sc-if>
 
             <sc-if value="{{ hasVerdicts }}" hint-placeholder-val="{{ true }}">
-              <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Missing signals say what a genuine version of the claim would have shown and didn't — that is the sentence worth repeating to your client.</p>
+              <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Missing signals are details to clarify with the candidate. An unavailable source or omitted detail does not establish dishonesty; ask for context and first-party evidence.</p>
               <div style="display:flex; flex-direction:column; gap:10px;">
                 <sc-for list="{{ reportVerdicts }}" as="v" hint-placeholder-count="3">
                   <div style="display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:22px; padding:16px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
@@ -518,6 +543,7 @@
 
                 <sc-if value="{{ outcomeError }}" hint-placeholder-val="{{ false }}">
                   <div style="{{ uploadErrorBox }}">{{ outcomeErrorText }}</div>
+                  <button onClick="{{ retryReport }}" style="{{ smallGhost }}">Reload saved feedback</button>
                 </sc-if>
 
                 <sc-if value="{{ hasOutcomes }}" hint-placeholder-val="{{ true }}">
@@ -758,13 +784,53 @@
             <h2 style="{{ h2 }}">Identity assurance</h2>
             <div style="{{ listCard }}">
               <sc-for list="{{ portalAssurance }}" as="a" hint-placeholder-count="3">
-                <div style="{{ kvRow }}">
+                <div style="{{ kvRow }}" data-assurance-method="{{ a.key }}">
                   <span style="font-size:12.5px; color:var(--heading);">{{ a.method }}</span>
                   <span style="{{ a.chip }}">{{ a.status }}</span>
                 </div>
               </sc-for>
             </div>
             <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:10px 0 0 0; max-width:84ch;">Outcomes only. No document, image or biometric is ever stored — the sole evidence field is a sha256 digest. Retention windows above are the surfaced policy; there is no automatic purge job yet, so use erasure if you want your data gone today.</p>
+            <h2 style="{{ h2 }}">Verify a contact</h2>
+            <p style="font-size:12.5px; color:var(--muted); max-width:76ch;">Enter a contact already on your candidate record. This separate check proves contact control; it does not sign you in or verify employment.</p>
+            <div style="{{ listCard }}">
+              <div style="padding:14px; max-width:580px;">
+                <div style="display:flex; gap:6px; margin-bottom:10px;">
+                  <button onClick="{{ contactEmail }}" disabled="{{ contactBusy }}" style="{{ smallGhost }}">Email contact</button>
+                  <button onClick="{{ contactPhone }}" disabled="{{ contactBusy }}" style="{{ smallGhost }}">Phone contact</button>
+                </div>
+                <label for="contact-destination" style="font-size:12px; color:var(--text);">{{ contactDestinationLabel }}</label>
+                <input id="contact-destination" value="{{ contactDestination }}" onInput="{{ setContactDestination }}" disabled="{{ contactBusy }}" placeholder="Contact on your candidate record" style="{{ field }}">
+                <button onClick="{{ startContactVerification }}" disabled="{{ contactBusy }}" style="{{ smallPrimary }}">{{ contactStartLabel }}</button>
+                <sc-if value="{{ contactNotice }}" hint-placeholder-val="{{ false }}">
+                  <div role="status" style="{{ evalNoticeBox }}">{{ contactNotice }}</div>
+                </sc-if>
+                <sc-if value="{{ contactError }}" hint-placeholder-val="{{ false }}">
+                  <div role="alert" style="{{ evalErrorBox }}">{{ contactErrorText }}</div>
+                </sc-if>
+                <sc-if value="{{ contactPending }}" hint-placeholder-val="{{ false }}">
+                  <label for="contact-code" style="display:block; font-size:12px; margin-top:12px; color:var(--text);">Delivered verification code</label>
+                  <input id="contact-code" inputMode="numeric" value="{{ contactCode }}" onInput="{{ setContactCode }}" disabled="{{ contactBusy }}" autocomplete="one-time-code" style="{{ field }}">
+                  <button onClick="{{ confirmContactVerification }}" disabled="{{ contactBusy }}" style="{{ smallPrimary }}">Confirm contact code</button>
+                </sc-if>
+                <p style="font-size:11.5px; color:var(--muted);">Expired or replaced codes require a new request. Pending records do not guarantee an active code. Delivery may be unavailable for a contact type.</p>
+                <button onClick="{{ loadContacts }}" disabled="{{ contactBusy }}" style="{{ smallGhost }}">Refresh contact status</button>
+                <sc-if value="{{ contactListLoading }}" hint-placeholder-val="{{ false }}">
+                  <p role="status" style="font-size:12px; color:var(--muted);">Loading contact status…</p>
+                </sc-if>
+                <sc-if value="{{ contactListError }}" hint-placeholder-val="{{ false }}">
+                  <div role="alert" style="{{ evalErrorBox }}">{{ contactListErrorText }}</div>
+                </sc-if>
+                <sc-for list="{{ contactRecords }}" as="v" hint-placeholder-count="1">
+                  <div style="{{ kvRow }}" data-contact-record="{{ v.id }}">
+                    <span style="font-size:11.5px; color:var(--text);">{{ v.label }}</span>
+                    <sc-if value="{{ v.pending }}" hint-placeholder-val="{{ false }}">
+                      <button onClick="{{ v.continue }}" disabled="{{ contactBusy }}" style="{{ smallGhost }}">Enter delivered code</button>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
           </sc-if>
 
           <sc-if value="{{ isAccessLog }}" hint-placeholder-val="{{ false }}">
@@ -829,85 +895,47 @@
 
           <sc-if value="{{ isEvaluate }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Instant check</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:70ch;">Paste one resume and get the whole assessment back. <strong style="color:var(--heading);">Nothing is stored</strong> — no candidate record is created, no resume is fingerprinted, and this run never enters anyone's screening queue. Use it to try the engine on a resume you are holding right now.</p>
-
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:70ch;">{{ evalStorageCopy }} Assessments are advisory and require human review.</p>
             <div style="display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:20px; max-width:1060px; align-items:start;">
               <div>
-                <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Resume text</label>
-                <textarea placeholder="Paste the resume here, or drop a PDF below." style="{{ textArea }}"></textarea>
-                <div style="display:flex; align-items:center; gap:9px; margin-top:8px;">
-                  <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Attach a PDF instead</button>
-                  <span style="font-size:11px; color:var(--muted);">PDF is sent as base64 and parsed in memory.</span>
-                </div>
+                <label for="instant-resume" style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Resume text</label>
+                <textarea id="instant-resume" value="{{ evalText }}" onInput="{{ setEvalText }}" disabled="{{ evalBusy }}" placeholder="Paste one resume here, or select a PDF below." style="{{ textArea }}"></textarea>
+                <label for="instant-pdf" style="display:block; font-size:11.5px; color:var(--text); margin-top:8px;">Attach a PDF instead</label>
+                <input id="instant-pdf" type="file" accept=".pdf,application/pdf" onChange="{{ pickEvalFile }}" disabled="{{ evalBusy }}" style="{{ fileInput }}">
+                <p style="font-size:11px; color:var(--muted);">{{ evalFileLabel }}</p>
+                <sc-if value="{{ hasEvalFile }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ clearEvalFile }}" disabled="{{ evalBusy }}" style="{{ smallGhost }}">Remove PDF</button>
+                </sc-if>
               </div>
-
               <div style="display:flex; flex-direction:column; gap:12px;">
                 <div>
                   <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Domain</label>
                   <div style="display:grid; grid-template-columns:1fr 1fr; gap:3px; padding:3px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
-                    <button onClick="{{ setDataEng }}" style="{{ domDataEng }}">Data Eng</button>
-                    <button onClick="{{ setGenai }}" style="{{ domGenai }}">GenAI</button>
+                    <button onClick="{{ setDataEng }}" disabled="{{ evalBusy }}" style="{{ domDataEng }}">Data Eng</button>
+                    <button onClick="{{ setGenai }}" disabled="{{ evalBusy }}" style="{{ domGenai }}">GenAI</button>
                   </div>
                 </div>
                 <div>
-                  <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">GitHub URL <span style="font-weight:400; color:var(--muted);">optional</span></label>
-                  <input placeholder="github.com/their-handle" style="{{ field }}">
+                  <label for="instant-github" style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">GitHub URL (optional)</label>
+                  <input id="instant-github" value="{{ evalGithub }}" onInput="{{ setEvalGithub }}" disabled="{{ evalBusy }}" placeholder="github.com/their-handle" style="{{ field }}">
                 </div>
                 <div>
-                  <label style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Portfolio URL <span style="font-weight:400; color:var(--muted);">optional</span></label>
-                  <input placeholder="their-site.dev" style="{{ field }}">
+                  <label for="instant-portfolio" style="display:block; font-size:11.5px; font-weight:600; color:var(--text); margin-bottom:5px;">Portfolio URL (optional)</label>
+                  <input id="instant-portfolio" value="{{ evalPortfolio }}" onInput="{{ setEvalPortfolio }}" disabled="{{ evalBusy }}" placeholder="their-site.dev" style="{{ field }}">
                 </div>
-                <p style="font-size:11px; line-height:1.5; color:var(--muted); margin:0;">First-party links only. Anchored claims are grounded against these; the engine never scrapes a third-party profile.</p>
-                <button onClick="{{ runEvaluate }}" style="{{ primaryBtn }}" style-hover="filter:brightness(1.08)">{{ evaluateAction }}</button>
+                <p style="font-size:11px; line-height:1.5; color:var(--muted); margin:0;">First-party links only. GitHub metadata is review context; it does not verify claimed experience.</p>
+                <button onClick="{{ runEvaluate }}" disabled="{{ evalBusy }}" style="{{ primaryBtn }}" style-hover="filter:brightness(1.08)">{{ evaluateAction }}</button>
               </div>
             </div>
-
             <sc-if value="{{ evalRunning }}" hint-placeholder-val="{{ false }}">
-              <h2 style="{{ h2 }}">Running</h2>
-              <p style="font-size:12.5px; color:var(--muted); margin:0 0 12px 0; max-width:76ch;">Nine stages, and the reasoning ones are the slow ones. This is the same graph a batch upload runs per resume.</p>
-              <div style="display:flex; flex-direction:column; gap:5px; max-width:560px;">
-                <sc-for list="{{ evalNodes }}" as="n" hint-placeholder-count="9">
-                  <div style="display:grid; grid-template-columns:18px 150px minmax(0,1fr); gap:11px; align-items:center; padding:6px 10px; border-radius:7px; background:var(--panel); border:1px solid var(--border);">
-                    <span style="{{ n.dot }}"></span>
-                    <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--heading);">{{ n.id }}</span>
-                    <span style="font-size:11.5px; color:var(--muted);">{{ n.label }}</span>
-                  </div>
-                </sc-for>
-              </div>
+              <div role="status" style="{{ evalNoticeBox }}">{{ evalProgress }}</div>
             </sc-if>
-
-            <sc-if value="{{ evalDone }}" hint-placeholder-val="{{ false }}">
-              <h2 style="{{ h2 }}">Result — not saved</h2>
-              <div style="display:flex; align-items:center; gap:9px; padding:7px 11px; border-radius:8px; background:var(--advisoryBg); border:1px solid var(--advisoryEdge); margin-bottom:12px; max-width:900px;">
-                <span style="font-family:'JetBrains Mono',monospace; font-size:8.5px; letter-spacing:0.14em; text-transform:uppercase; padding:3px 7px; border-radius:5px; background:var(--advisoryChip); color:var(--advisoryText);">Advisory</span>
-                <span style="font-size:12px; color:var(--muted);">Leaving this page discards it. To keep a report, upload the resume as a candidate instead.</span>
-              </div>
-
-              <div style="display:grid; grid-template-columns:minmax(0,1fr) 200px; gap:28px; align-items:center; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border); max-width:900px;">
-                <div>
-                  <div style="font-size:15px; font-weight:600; color:var(--heading);">Ad-hoc evaluation · genai</div>
-                  <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:8px 0 0 0; max-width:60ch;">Two claims cohere with the detail given. One asserts a fine-tuning run with no infrastructure behind it, and one deferred for want of grounding.</p>
-                  <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
-                    <span style="{{ evalChipElev }}">1 incoherent</span>
-                    <span style="{{ evalChipMod }}">1 deferred</span>
-                    <span style="{{ evalChipLow }}">2 coherent</span>
-                  </div>
-                </div>
-                <div style="display:grid; place-items:center;">
-                  <div style="{{ evalGauge }}">
-                    <div style="width:88px; height:88px; border-radius:50%; background:var(--panel); display:grid; place-items:center; text-align:center;">
-                      <div>
-                        <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; line-height:1; color:var(--heading);">0.61</div>
-                        <div style="font-family:'JetBrains Mono',monospace; font-size:8px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin-top:3px;">Fab. risk</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div style="{{ evalBandChip }}">Elevated</div>
-                  <div style="font-size:10.5px; color:var(--muted); margin-top:8px; text-align:center;">confidence 0.58 · moderate</div>
-                </div>
-              </div>
-
-              <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:12px 0 0 0; max-width:84ch;">No resume-farm signal is available on an ad-hoc run — near-duplicate detection needs the stored corpus, and this resume was never fingerprinted against it.</p>
+            <sc-if value="{{ evalError }}" hint-placeholder-val="{{ false }}">
+              <div role="alert" style="{{ evalErrorBox }}">{{ evalErrorText }}</div>
+            </sc-if>
+            <sc-if value="{{ hasEvalReport }}" hint-placeholder-val="{{ false }}">
+              <div style="{{ evalNoticeBox }}">Saved report: {{ evalReportId }}</div>
+              <button onClick="{{ viewEvaluation }}" disabled="{{ evalBusy }}" style="{{ smallGhost }}">Open saved report</button>
             </sc-if>
           </sc-if>
 
@@ -938,7 +966,7 @@
 
             <sc-if value="{{ hasJobs }}" hint-placeholder-val="{{ true }}">
             <h2 style="{{ h2 }}">Top matches</h2>
-            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Match score is skill and role fit. It is shown beside the fraud screen, never fused with it — a good match with an elevated risk band is still a good match that needs a conversation.</p>
+            <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px 0; max-width:76ch;">Match score measures skill and role fit. The separate advisory review band is heuristic context, not a fraud probability. Check the report's scorer version and ask the candidate about the observations before making a decision.</p>
 
             <sc-if value="{{ boardEmptyPool }}" hint-placeholder-val="{{ false }}">
               <div style="max-width:640px; padding:16px; border-radius:10px; background:var(--panel); border:1px dashed var(--border);">
@@ -1039,146 +1067,234 @@
 
           <sc-if value="{{ isAdminOrgs }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Organisations</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Org lifecycle is operator-run. An organisation self-registers, an operator confirms it.</p>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:76ch;">Create an organisation, inspect its saved details or manage reliability and access. New organisations are active immediately. Reliability is an operator-set multiplier, not a measured accuracy score.</p>
+            <sc-if value="{{ orgAdminDenied }}"><p role="alert">An operator account is required.</p></sc-if>
+            <sc-if value="{{ orgAdminAllowed }}">
+            <div style="display:flex; gap:8px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+              <div><label for="org-name" style="font-size:12px; color:var(--text);">New organisation name</label><input id="org-name" value="{{ orgName }}" onInput="{{ setOrgName }}" maxlength="200" disabled="{{ orgBusy }}" style="{{ field }}"></div>
+              <button onClick="{{ createOrg }}" disabled="{{ orgBusy }}" style="{{ smallPrimary }}">Create organisation</button>
+              <button onClick="{{ reloadOrgs }}" disabled="{{ orgBusy }}" style="{{ smallGhost }}">Refresh organisations</button>
+            </div>
+            <sc-if value="{{ orgActionError }}"><div role="alert" style="{{ uploadErrorBox }}">{{ orgActionErrorText }}</div></sc-if>
+            <sc-if value="{{ orgNotice }}"><p role="status">{{ orgNotice }}</p></sc-if>
+            <sc-if value="{{ orgBusy }}"><p role="status">Waiting for the server change…</p></sc-if>
+            <sc-if value="{{ orgHasKey }}">
+              <div style="{{ listCard }}">
+                <p style="padding:10px 14px; font-size:12px;">New API key for {{ orgKeyOwner }}. Save it securely now; it cannot be retrieved later. Leaving this screen, selecting another organisation or reloading clears it.</p>
+                <input id="org-key" type="{{ orgKeyType }}" value="{{ orgKey }}" readonly autocomplete="off" style="{{ field }}">
+                <button onClick="{{ toggleOrgKey }}" style="{{ smallGhost }}">{{ orgKeyToggleLabel }}</button>
+                <button onClick="{{ dismissOrgKey }}" style="{{ smallGhost }}">Clear displayed key</button>
+              </div>
+            </sc-if>
+            <label for="org-filter" style="font-size:12px;">Filter by name or ID</label>
+            <input id="org-filter" value="{{ orgFilter }}" onInput="{{ setOrgFilter }}" style="{{ field }}">
+            <sc-if value="{{ orgListLoading }}"><p role="status">Loading organisations…</p></sc-if>
+            <sc-if value="{{ orgListError }}"><div role="alert" style="{{ uploadErrorBox }}">{{ orgListErrorText }}</div></sc-if>
+            <sc-if value="{{ orgEmpty }}"><p>No organisations found.</p></sc-if>
             <div style="{{ listCard }}">
-              <sc-for list="{{ adminOrgs }}" as="o" hint-placeholder-count="3">
-                <div style="display:grid; grid-template-columns:minmax(0,1fr) 120px 110px 90px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+              <sc-for list="{{ adminOrgs }}" as="o" hint-placeholder-count="0">
+                <div data-org-record="{{ o.id }}" style="display:grid; grid-template-columns:minmax(0,1fr) 120px 110px 90px 80px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
                   <div>
                     <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ o.name }}</div>
                     <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:2px;">{{ o.id }}</div>
                   </div>
-                  <span style="font-size:11.5px; color:var(--muted);">{{ o.seats }}</span>
-                  <span style="font-size:11.5px; color:var(--muted);">{{ o.joined }}</span>
+                  <span style="font-size:11.5px; color:var(--muted);">Reliability {{ o.reliability_weight }}</span>
+                  <span style="font-size:11.5px; color:var(--muted);">{{ o.created }}</span>
                   <span style="{{ o.chip }}">{{ o.status }}</span>
+                  <button onClick="{{ o.inspect }}" disabled="{{ orgControlsDisabled }}" style="{{ smallGhost }}">Inspect</button>
                 </div>
               </sc-for>
             </div>
+            <div style="display:flex; align-items:center; gap:12px; margin-top:10px;">
+              <button onClick="{{ prevOrgs }}" disabled="{{ orgPrevDisabled }}" style="{{ smallGhost }}">Previous organisations</button>
+              <span>{{ orgPageLabel }}</span>
+              <button onClick="{{ nextOrgs }}" disabled="{{ orgNextDisabled }}" style="{{ smallGhost }}">Next organisations</button>
+            </div>
+            <sc-if value="{{ orgSelected }}">
+              <div style="{{ listCard }}">
+                <h2 style="{{ h2 }}">Selected: {{ orgSelected.name }}</h2>
+                <p style="font-size:12px;">ID {{ orgSelected.id }} · Status {{ orgSelected.status }} · Created {{ orgSelected.created }} · Saved reliability {{ orgSelected.reliability_weight }}</p>
+                <label for="org-weight" style="font-size:12px;">Reliability multiplier (0 or greater)</label>
+                <input id="org-weight" type="number" min="0" step="any" value="{{ orgWeight }}" onInput="{{ setOrgWeight }}" disabled="{{ orgControlsDisabled }}" style="{{ field }}">
+                <p style="font-size:11.5px; color:var(--muted);">1 is neutral. 0 mutes this organisation's evidence in reputation aggregation; it does not suspend its accounts.</p>
+                <button onClick="{{ saveOrgReliability }}" disabled="{{ orgControlsDisabled }}" style="{{ smallPrimary }}">Save reliability</button>
+                <button onClick="{{ armOrgRotate }}" disabled="{{ orgControlsDisabled }}" style="{{ smallGhost }}">Rotate organisation key</button>
+                <button onClick="{{ armOrgDelete }}" disabled="{{ orgControlsDisabled }}" style="{{ dangerBtn }}">Offboard organisation</button>
+                <sc-if value="{{ orgConfirm }}">
+                  <p role="alert">{{ orgConfirmCopy }}</p>
+                  <button onClick="{{ cancelOrgConfirm }}" disabled="{{ orgBusy }}" style="{{ smallGhost }}">Keep organisation unchanged</button>
+                  <button onClick="{{ confirmOrgAction }}" disabled="{{ orgControlsDisabled }}" style="{{ dangerBtn }}">{{ orgConfirmLabel }}</button>
+                </sc-if>
+              </div>
+            </sc-if>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isAdminUsers }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Operator accounts</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">There is no operator self-signup. Accounts are created by an operator, and the admin plane can mint any candidate's access key — treat this list as privileged.</p>
+            <sc-if value="{{ usersAdminDenied }}"><p role="alert">An operator sign-in is required to administer operator accounts.</p></sc-if>
+            <sc-if value="{{ usersAdminAllowed }}">
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">All these accounts have platform operator permissions, including creating accounts and candidate access keys. Tenant owners and members are separate. There is no operator self-signup. Stored emails cannot be read back; identify accounts by label and ID. Role edits, suspension and other operators' device management are unavailable here.</p>
+            <button onClick="{{ reloadUsers }}" disabled="{{ usersBusy }}" style="{{ smallGhost }}">Refresh operator accounts</button>
+            <sc-if value="{{ usersLoading }}"><p role="status">Loading operator accounts…</p></sc-if>
+            <sc-if value="{{ usersListError }}"><p role="alert" style="{{ uploadErrorBox }}">{{ usersListErrorText }}</p></sc-if>
+            <sc-if value="{{ usersActionError }}"><p role="alert" style="{{ uploadErrorBox }}">{{ usersActionErrorText }}</p></sc-if>
+            <sc-if value="{{ usersNotice }}"><p role="status">{{ usersNotice }}</p></sc-if>
+            <div style="{{ listCard }}">
+              <h2 style="{{ h2 }}">Create operator account</h2>
+              <label for="operator-email">Email for sign-in</label>
+              <input id="operator-email" type="email" value="{{ usersEmail }}" onInput="{{ setUsersEmail }}" disabled="{{ usersControlsDisabled }}" style="{{ field }}">
+              <label for="operator-label">Label (optional)</label>
+              <input id="operator-label" maxlength="200" value="{{ usersLabel }}" onInput="{{ setUsersLabel }}" disabled="{{ usersControlsDisabled }}" style="{{ field }}">
+              <p style="font-size:12px; color:var(--muted);">Creates a full platform operator. No invitation is sent; the person requests a sign-in code on the Operator sign-in screen.</p>
+              <button onClick="{{ createUser }}" disabled="{{ usersControlsDisabled }}" style="{{ smallPrimary }}">Create operator</button>
+            </div>
+            <label for="operator-filter">Filter by label or ID</label>
+            <input id="operator-filter" value="{{ usersFilter }}" onInput="{{ setUsersFilter }}" style="{{ field }}">
+            <sc-if value="{{ usersEmpty }}"><p>No operator accounts found.</p></sc-if>
             <div style="{{ listCard }}">
               <sc-for list="{{ adminUsers }}" as="u" hint-placeholder-count="3">
-                <div style="display:grid; grid-template-columns:minmax(0,1fr) 130px 90px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
-                  <div style="font-size:12.5px; color:var(--heading);">{{ u.email }}</div>
-                  <span style="font-size:11.5px; color:var(--muted);">{{ u.lastSeen }}</span>
-                  <div style="text-align:right;"><button style="{{ smallGhost }}" style-hover="background:var(--hover)">Revoke</button></div>
+                <div data-operator-record="{{ u.id }}" style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+                  <div style="flex:1; font-size:12.5px; color:var(--heading);">{{ u.displayLabel }}<div style="font-size:11px; color:var(--muted);">{{ u.id }}</div></div>
+                  <span>{{ u.role }} · {{ u.status }}</span>
+                  <span style="font-size:11.5px; color:var(--muted);">Created {{ u.created }}</span>
+                  <button onClick="{{ u.remove }}" disabled="{{ usersControlsDisabled }}" style="{{ dangerBtn }}">Delete operator</button>
                 </div>
               </sc-for>
             </div>
+            <button onClick="{{ prevUsers }}" disabled="{{ usersPrevDisabled }}" style="{{ smallGhost }}">Previous operator accounts</button>
+            <span>{{ usersPageLabel }}</span>
+            <button onClick="{{ nextUsers }}" disabled="{{ usersNextDisabled }}" style="{{ smallGhost }}">Next operator accounts</button>
+            <sc-if value="{{ usersConfirm }}">
+              <div style="{{ listCard }}">
+                <p role="alert">{{ usersConfirmCopy }}</p>
+                <button onClick="{{ cancelUserDelete }}" disabled="{{ usersBusy }}" style="{{ smallGhost }}">Keep operator</button>
+                <button onClick="{{ confirmUserDelete }}" disabled="{{ usersControlsDisabled }}" style="{{ dangerBtn }}">Confirm operator deletion</button>
+              </div>
+            </sc-if>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isCuration }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Curation queue</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Skill terms the taxonomy could not map. Resolving one writes an overlay that every later normalisation reads.</p>
+            <sc-if value="{{ curationDenied }}"><p role="alert">Only a signed-in operator can review the shared curation queue.</p></sc-if>
+            <sc-if value="{{ curationAllowed }}">
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Review terms from saved sources. Unreviewed terms expire after 30 days or when their source is deleted. Supply the vocabulary alias you approve; approval is a human judgment.</p>
+            <button onClick="{{ reloadCuration }}" disabled="{{ curationBusy }}" style="{{ smallGhost }}">Refresh queue</button>
+            <sc-if value="{{ curationLoading }}"><p role="status">Loading review queue…</p></sc-if>
+            <sc-if value="{{ curationError }}"><p role="alert" style="{{ uploadErrorBox }}">{{ curationErrorText }}</p></sc-if>
+            <sc-if value="{{ curationNotice }}"><p role="status">{{ curationNotice }}</p></sc-if>
+            <sc-if value="{{ curationNeedsRefresh }}"><p role="status">Refresh queue to check the saved result before another decision. Your draft is read-only until refresh succeeds.</p></sc-if>
+            <sc-if value="{{ curationHasData }}"><p role="status">Loaded {{ curationLoaded }} terms. Counts show surviving source observations.</p></sc-if>
+            <sc-if value="{{ curationEmpty }}"><p>No terms awaiting review.</p></sc-if>
             <div style="{{ listCard }}">
               <sc-for list="{{ curation }}" as="t" hint-placeholder-count="4">
-                <div style="display:grid; grid-template-columns:minmax(0,1fr) 90px 190px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
+                <div data-curation-key="{{ t.key }}" style="display:grid; grid-template-columns:minmax(0,1fr) 90px 190px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
                   <div>
                     <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ t.term }}</div>
-                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ t.suggestion }}</div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ t.sources }}</div>
                   </div>
                   <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted);">{{ t.count }}×</span>
                   <div style="display:flex; gap:6px; justify-content:flex-end;">
-                    <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Map</button>
-                    <button style="{{ smallGhost }}" style-hover="background:var(--hover)">Reject</button>
+                    <button onClick="{{ t.review }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Review</button>
+                    <button onClick="{{ t.ignore }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Ignore</button>
                   </div>
                 </div>
               </sc-for>
             </div>
+            <sc-if value="{{ curationMore }}"><button onClick="{{ moreCuration }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Load more terms</button></sc-if>
+            <sc-if value="{{ curationSelected }}">
+              <div style="{{ listCard }}">
+                <h2 style="{{ h2 }}">Review: {{ curationSelectedName }}</h2>
+                <label>Action <select aria-label="Curation action" value="{{ curationAction }}" onChange="{{ setCurationAction }}" disabled="{{ curationControlsDisabled }}" style="{{ field }}"><option value="map">Map to existing canonical</option><option value="create">Create canonical</option></select></label>
+                <label>Approved alias <input aria-label="Approved alias" value="{{ curationAlias }}" onInput="{{ setCurationAlias }}" disabled="{{ curationControlsDisabled }}" maxlength="128" style="{{ field }}" /></label>
+                <label>Canonical ID <input aria-label="Canonical ID" value="{{ curationCanonical }}" onInput="{{ setCurationCanonical }}" disabled="{{ curationControlsDisabled }}" maxlength="64" style="{{ field }}" /></label>
+                <label>Category <input aria-label="Category" value="{{ curationCategory }}" onInput="{{ setCurationCategory }}" disabled="{{ curationControlsDisabled }}" maxlength="32" style="{{ field }}" /></label>
+                <p style="font-size:12px;">Use the canonical's category when mapping. New IDs use snake_case. Categories: language, web, mobile, data, ml, cloud, devops, database, testing, analytics.</p>
+                <button onClick="{{ approveCuration }}" disabled="{{ curationControlsDisabled }}" style="{{ smallPrimary }}">Approve vocabulary</button>
+                <button onClick="{{ cancelCuration }}" disabled="{{ curationBusy }}" style="{{ smallGhost }}">Cancel review</button>
+              </div>
+            </sc-if>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isInterview }}" hint-placeholder-val="{{ false }}">
-            <div style="display:flex; align-items:flex-start; gap:20px; flex-wrap:wrap;">
-              <div style="flex:1; min-width:300px;">
-                <h1 style="{{ h1 }}">Your interview</h1>
-                <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 0 0; max-width:64ch;">{{ plannedCopy }} Answer by voice or by typing — the rubric is the same either way.</p>
+            <h1 style="{{ h1 }}">Your interview</h1>
+            <p style="{{ pageSub }}">Answer by typing or voice. Describe your actions, reasoning and context in your own words. These advisory assessments require human review.</p>
+            <sc-if value="{{ interviewDenied }}"><p style="{{ authErrorBox }}">Sign in as a candidate to access your interviews.</p></sc-if>
+            <sc-if value="{{ interviewAllowed }}">
+              <div style="display:flex; gap:6px; align-items:center; margin-top:16px;">
+                <span style="{{ fieldLabel }}">Domain for a new interview</span>
+                <button onClick="{{ setDataEng }}" disabled="{{ interviewWorking }}" style="{{ domDataEng }}">Data Engineering</button>
+                <button onClick="{{ setGenai }}" disabled="{{ interviewWorking }}" style="{{ domGenai }}">GenAI</button>
               </div>
-              <div style="text-align:right;">
-                <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);">Question</div>
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:20px; color:var(--heading);">{{ turnCounter }}</div>
-                <div style="display:inline-flex; align-items:center; gap:6px; margin-top:6px; padding:3px 8px; border-radius:6px; background:var(--panel2); border:1px solid var(--border);">
-                  <span style="width:12px; height:12px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/clock.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/clock.svg) center/contain no-repeat;"></span>
-                  <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">Session ends in 1:52</span>
-                </div>
+              <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+                <button onClick="{{ refreshInterviews }}" disabled="{{ interviewWorking }}" style="{{ smallGhost }}">Refresh saved interviews</button>
+                <button onClick="{{ startInterview }}" disabled="{{ interviewStartDisabled }}" style="{{ smallPrimaryFlat }}">Start new interview</button>
               </div>
-            </div>
-
-            <div style="display:flex; gap:5px; margin-top:14px;">
-              <sc-for list="{{ turnPips }}" as="p" hint-placeholder-count="5">
-                <div style="{{ p.style }}"></div>
-              </sc-for>
-            </div>
-
-            <div style="margin-top:18px; padding:20px; border-radius:12px; background:var(--panel); border:1px solid var(--border); max-width:820px;">
-              <div style="font-family:'JetBrains Mono',monospace; font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:var(--link);">{{ turnClaimType }}</div>
-              <p style="font-family:'Space Grotesk',sans-serif; font-weight:500; font-size:19px; line-height:1.45; color:var(--heading); margin:10px 0 0 0; max-width:52ch;">{{ turnQuestion }}</p>
-              <p style="font-size:12px; color:var(--muted); margin:8px 0 0 0;">Questions are text only — nothing is read aloud to you.</p>
-
-              <div style="display:inline-flex; gap:3px; padding:3px; margin-top:16px; background:var(--panel2); border:1px solid var(--border); border-radius:8px;">
-                <button onClick="{{ setAudio }}" style="{{ chanAudio }}">Answer by voice</button>
-                <button onClick="{{ setText }}" style="{{ chanText }}">Type instead</button>
+              <sc-if value="{{ interviewWorking }}"><p style="{{ pageSub }}">Loading or saving interview…</p></sc-if>
+              <sc-if value="{{ interviewErrorText }}"><p role="alert" style="{{ authErrorBox }}">{{ interviewErrorText }}</p></sc-if>
+              <sc-if value="{{ interviewNeedsRefresh }}"><p style="{{ noticeBox }}">Read-only until saved state is refreshed. A write may have completed. Refresh before deciding whether to submit again; answers are never replayed automatically.</p></sc-if>
+              <sc-if value="{{ interviewEmpty }}"><p style="{{ pageSub }}">No saved interviews. Start one using the selected domain and the profile on your candidate record.</p></sc-if>
+              <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+                <sc-for list="{{ interviewHistory }}" as="i">
+                  <button data-interview-id="{{ i.id }}" onClick="{{ i.open }}" disabled="{{ interviewWorking }}" style="{{ smallGhost }}">{{ i.label }}</button>
+                </sc-for>
               </div>
-
-              <sc-if value="{{ speechDown }}" hint-placeholder-val="{{ false }}">
-                <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 14px; margin-top:14px; border-radius:9px; background:var(--panel2); border:1px solid var(--border);">
-                  <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic-off.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/mic-off.svg) center/contain no-repeat;"></span>
-                  <div>
-                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">Voice answers are unavailable right now</div>
-                    <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0 0; max-width:62ch;">No speech provider is configured, so audio is being refused rather than silently dropped. The interview continues in text and nothing about your score changes.</p>
-                  </div>
-                </div>
-              </sc-if>
-
-              <sc-if value="{{ showRecorder }}" hint-placeholder-val="{{ true }}">
-                <div style="display:flex; align-items:center; gap:16px; margin-top:16px; padding:16px; border-radius:10px; background:var(--panel2); border:1px solid var(--border);">
-                  <button onClick="{{ toggleRecord }}" style="{{ micBtn }}">
-                    <span style="{{ micGlyph }}"></span>
-                  </button>
-                  <div style="flex:1; min-width:0;">
-                    <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ recordLabel }}</div>
-                    <div style="display:flex; align-items:center; gap:3px; height:22px; margin-top:7px;">
-                      <sc-for list="{{ levelBars }}" as="b" hint-placeholder-count="28">
-                        <div style="{{ b.style }}"></div>
-                      </sc-for>
+              <sc-if value="{{ interviewHasSession }}">
+                <div data-interview-session="{{ interviewId }}" style="margin-top:18px; padding:20px; border-radius:12px; background:var(--panel); border:1px solid var(--border); max-width:820px;">
+                  <p style="{{ pageSub }}">{{ interviewStatus }}</p>
+                  <p style="{{ pageSub }}">{{ interviewProgress }}</p>
+                  <sc-if value="{{ interviewActive }}">
+                    <p style="{{ pageSub }}">{{ interviewExpiry }}</p>
+                    <p data-interview-question="{{ interviewQuestionId }}" style="font-size:19px; line-height:1.45; color:var(--heading);">{{ interviewQuestion }}</p>
+                    <div style="display:flex; gap:8px; margin-top:12px;">
+                      <button onClick="{{ selectInterviewText }}" disabled="{{ interviewWriteDisabled }}" style="{{ smallGhost }}">Type answer</button>
+                      <button onClick="{{ selectInterviewAudio }}" disabled="{{ interviewWriteDisabled }}" style="{{ smallGhost }}">Voice answer</button>
                     </div>
-                    <div style="font-size:11px; color:var(--muted); margin-top:5px;">{{ recordHint }}</div>
-                  </div>
+                    <sc-if value="{{ interviewTextMode }}">
+                      <label for="interview-answer" style="{{ fieldLabel }}">Your answer</label>
+                      <textarea id="interview-answer" value="{{ interviewDraft }}" onInput="{{ setInterviewDraft }}" disabled="{{ interviewWriteDisabled }}" style="{{ textArea }}" placeholder="Describe what you did, why, and what happened."></textarea>
+                      <p style="{{ pageSub }}">{{ interviewDraftCount }} / 20,000 characters. Brief or limited answers may provide insufficient evidence; missing evidence is not poor ability.</p>
+                    </sc-if>
+                    <sc-if value="{{ interviewAudioMode }}">
+                      <p role="status" data-interview-recording="{{ interviewAudioStatus }}" style="{{ pageSub }}">{{ interviewAudioLabel }}</p>
+                      <button onClick="{{ startInterviewRecording }}" disabled="{{ interviewRecordDisabled }}" style="{{ smallPrimaryFlat }}">Record voice answer</button>
+                      <button onClick="{{ stopInterviewRecording }}" disabled="{{ interviewStopDisabled }}" style="{{ smallGhost }}">Stop recording</button>
+                      <button onClick="{{ discardInterviewRecording }}" disabled="{{ interviewWorking }}" style="{{ smallGhost }}">Discard recording</button>
+                      <sc-if value="{{ interviewAudioError }}"><p role="alert" style="{{ authErrorBox }}">{{ interviewAudioError }}</p></sc-if>
+                      <p style="{{ pageSub }}">Up to two minutes and 5 MB. Stop keeps the clip in this page until you submit or discard it. Submitting transcribes and scores immediately; inspect the saved transcript afterwards. You cannot edit that transcript before scoring. The app stores the transcript and an audio digest, not the recording. Speech providers receive the clip for transcription.</p>
+                    </sc-if>
+                    <div style="display:flex; gap:10px; margin-top:12px;">
+                      <button onClick="{{ submitInterviewAnswer }}" disabled="{{ interviewSubmitDisabled }}" style="{{ smallPrimaryFlat }}">{{ interviewSubmitLabel }}</button>
+                      <button onClick="{{ armInterviewFinish }}" disabled="{{ interviewFinishDisabled }}" style="{{ smallGhost }}">Finish interview early</button>
+                    </div>
+                    <sc-if value="{{ interviewConfirm }}">
+                      <p style="{{ pageSub }}">Finish using saved answers? Unanswered questions reduce coverage. Any unsent text or recording will be discarded.</p>
+                      <button onClick="{{ finishInterview }}" disabled="{{ interviewWriteDisabled }}" style="{{ smallPrimaryFlat }}">Confirm finish</button>
+                      <button onClick="{{ cancelInterviewFinish }}" style="{{ smallGhost }}">Keep answering</button>
+                    </sc-if>
+                  </sc-if>
+                  <sc-if value="{{ interviewExpired }}"><p style="{{ pageSub }}">This interview expired. Saved answers remain available; start a new interview to continue. Expiry is not an assessment of ability.</p></sc-if>
+                  <sc-if value="{{ interviewHasAssessment }}">
+                    <h2 style="{{ h2 }}">Saved assessment</h2>
+                    <p data-interview-assessment style="{{ pageSub }}">{{ interviewAssessmentText }}</p>
+                    <p style="{{ pageSub }}">{{ interviewVersionText }}</p>
+                    <p style="{{ pageSub }}">{{ interviewEvidenceText }}</p>
+                    <p style="{{ pageSub }}">Advisory only; human review is required. Content heuristics are not measured assessment quality or proof of factual truth. Factual consistency remains neutral in the current rubric.</p>
+                  </sc-if>
+                  <h2 style="{{ h2 }}">Your saved answers</h2>
+                  <sc-for list="{{ interviewTurns }}" as="t">
+                    <div data-interview-turn="{{ t.id }}" style="margin-top:14px; border-top:1px solid var(--border); padding-top:12px;">
+                      <p style="font-weight:600;">{{ t.question }}</p>
+                      <p style="white-space:pre-wrap; overflow-wrap:anywhere;">{{ t.transcript }}</p>
+                      <p style="{{ pageSub }}">{{ t.evidence }}</p>
+                    </div>
+                  </sc-for>
                 </div>
               </sc-if>
-
-              <sc-if value="{{ showTextBox }}" hint-placeholder-val="{{ false }}">
-                <textarea placeholder="Type your answer. Be specific — the scoring rewards detail a fabricator would not have." style="{{ textArea }}"></textarea>
-                <div style="display:flex; align-items:center; gap:12px; margin-top:7px;">
-                  <span style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">7 / 20,000 characters</span>
-                  <span style="{{ wordFloorChip }}">{{ wordFloorLabel }}</span>
-                </div>
-                <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:7px 0 0 0; max-width:62ch;">An answer under twelve words is not scored at all — that is different from scoring zero, and it leaves the claim unaddressed rather than answered badly.</p>
-              </sc-if>
-
-              <sc-if value="{{ turnFailed }}" hint-placeholder-val="{{ false }}">
-                <div style="display:flex; gap:10px; align-items:flex-start; padding:12px 14px; margin-top:14px; border-radius:9px; background:var(--missBg); border:1px solid var(--missEdge);">
-                  <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--c-elev); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/rotate-ccw.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/rotate-ccw.svg) center/contain no-repeat;"></span>
-                  <div style="flex:1;">
-                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">We couldn't transcribe that — this retry is free</div>
-                    <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:4px 0 0 0; max-width:62ch;">The failure was on our side, so it does not count as your answer and this question is still open. Record it again, or switch to typing.</p>
-                    <button onClick="{{ retryTurn }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Try again</button>
-                  </div>
-                </div>
-              </sc-if>
-
-              <div style="display:flex; align-items:center; gap:10px; margin-top:16px;">
-                <button onClick="{{ submitTurn }}" style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">{{ submitLabel }}</button>
-                <button onClick="{{ skipTurn }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Skip this question</button>
-                <span style="font-size:11px; color:var(--muted); margin-left:auto;">{{ turnStatus }}</span>
-              </div>
-            </div>
-
-            <div style="display:flex; gap:10px; align-items:flex-start; margin-top:14px; max-width:820px; padding:12px 14px; border-radius:9px; background:var(--panel); border:1px solid var(--border);">
-              <span style="width:15px; height:15px; flex:none; margin-top:1px; display:inline-block; background:currentColor; color:var(--muted); -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/lock.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/lock.svg) center/contain no-repeat;"></span>
-              <p style="font-size:12px; line-height:1.55; color:var(--muted); margin:0;">Your audio is transcribed and then discarded — it is never stored. <strong style="color:var(--heading);">The transcript is yours.</strong> An organisation receives a summary of how the answers scored, never the transcript and never the individual turns.</p>
-            </div>
+              <p style="{{ pageSub }}">Your saved answers are visible to you. An organisation with current interview-read consent receives only a summary, never your transcript or individual turns.</p>
+            </sc-if>
           </sc-if>
 
           <sc-if value="{{ isErasure }}" hint-placeholder-val="{{ false }}">
@@ -1203,7 +1319,7 @@
 </div>
 
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;speechEnabled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Interview&quot;,&quot;label&quot;:&quot;Speech provider configured&quot;}}">
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440},&quot;orgName&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Sampoorna Staffing&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 const DARK = {
   "--bg": "#070d14", "--panel": "#0d1620", "--panel2": "#111c27", "--rail": "#0a121b",
   "--border": "rgba(255,255,255,0.09)", "--hover": "rgba(255,255,255,0.05)",
@@ -1254,17 +1370,17 @@ const RISK_BAND = {
 // The three fixed component ids. `loudest_signal` is one of these or null —
 // never free text, because the item row cannot hold prose (SCREENING.md §5).
 const SIGNAL_LABEL = {
-  ai_generation: "AI-generation signals",
-  cross_field: "Cross-field inconsistency",
-  resume_farm: "Resume farm / near-duplicate"
+  ai_generation: "Writing-style patterns (historical v1 input)",
+  cross_field: "Timeline / structure observations",
+  resume_farm: "Content overlap"
 };
 // Each subsystem has its own vocabulary; the queue shows the loudest one's own
 // band, so all three have to be spellable.
 const SUB_BAND_LABEL = {
-  insufficient_text: "Insufficient text", unlikely: "Unlikely", possible: "Possible", likely: "Likely",
+  insufficient_text: "Insufficient text", unlikely: "Few style patterns", possible: "Some style patterns", likely: "Several style patterns",
   insufficient_data: "Insufficient data", consistent: "Consistent",
   minor_issues: "Minor issues", major_issues: "Major issues",
-  unique: "Unique", similar: "Similar", near_duplicate: "Near-duplicate"
+  unique: "No notable overlap found", similar: "Some content overlap", near_duplicate: "High content overlap"
 };
 const DEPTH_LABEL = {
   insufficient_signal: "insufficient signal", superficial: "superficial",
@@ -1384,7 +1500,6 @@ const tabBtn = (active) => ({
   background: "transparent", color: active ? "var(--heading)" : "var(--muted)",
   borderBottom: "2px solid " + (active ? "var(--a1)" : "transparent"), marginBottom: "-1px"
 });
-const LEVELS = [4,9,15,7,20,12,6,17,22,10,5,14,19,8,13,21,9,6,16,11,18,7,12,20,8,5,14,10];
 
 const TEXT_AREA = {
   width: "100%", minHeight: "150px", marginTop: "10px", padding: "12px 13px", fontSize: "13px",
@@ -1418,7 +1533,7 @@ const PLANE_HINT = {
 };
 
 const TITLES = {
-  queue: "Screening queue", report: "Candidate risk detail", summary: "Batch summary",
+  queue: "Screening queue", report: "Candidate review context", summary: "Batch summary",
   upload: "Upload", batches: "Batches", portal: "Your data", accesslog: "Access log",
   consents: "Consents", devices: "Signed-in devices", erasure: "Delete everything",
   adminorgs: "Organisations", adminusers: "Operator accounts", curation: "Curation queue",
@@ -1487,40 +1602,13 @@ const CONSENTS = [
 ];
 const RISK_SCREENS = ["queue", "report", "summary", "batches", "roles", "evaluate"];
 
-const EVAL_NODES = [
-  { id: "ingest", label: "Parse the resume, capture first-party links" },
-  { id: "ai_signals", label: "Four stylometry detectors — advisory only" },
-  { id: "cross_field", label: "Timeline forensics, pure date math" },
-  { id: "claim_extraction", label: "Atomic claims tagged by type and specificity" },
-  { id: "provenance", label: "Fetch GitHub signals for anchored claims" },
-  { id: "plausibility", label: "Senior-engineer reasoning pass — the slow one" },
-  { id: "probe_generation", label: "Questions a fabricator can't survive" },
-  { id: "scoring", label: "Conservative calibration, defer when unsure" },
-  { id: "report", label: "Assemble verdicts, evidence and bands" }
-];
-
-const TURNS = [
-  { type: "fine_tuning", q: "Which base checkpoint did you start from, and who hosted the training run?" },
-  { type: "fine_tuning", q: "How did you build the eval set the 34% is measured against — and what was the baseline?" },
-  { type: "rag", q: "What sat in front of the vector store to hold p95 under 200ms?" },
-  { type: "rag", q: "How did you measure retrieval quality separately from generation quality?" },
-  { type: "multi_agent", q: "Where did the agent loop most often get stuck, and what did you do about it?" }
-];
+const EVAL_TIMEOUT_MS = 180000;
 
 const nodeDot = (state) => ({
   width: "10px", height: "10px", borderRadius: "50%", justifySelf: "center",
   background: state === "done" ? "var(--c-low)" : state === "active" ? "var(--a1)" : "var(--track)",
   boxShadow: state === "active" ? "0 0 0 4px color-mix(in srgb, var(--a1) 22%, transparent)" : "none"
 });
-const pip = (state) => ({
-  height: "4px", flex: 1, borderRadius: "99px", maxWidth: "70px",
-  background: state === "done" ? "var(--c-low)" : state === "active" ? "linear-gradient(92deg,var(--a1),var(--a2))" : "var(--track)"
-});
-const levelBar = (h, live) => ({
-  width: "3px", height: h + "px", borderRadius: "99px",
-  background: live ? "linear-gradient(180deg,var(--a1),var(--a2))" : "var(--track)"
-});
-
 // State vocabularies that are NOT fabrication risk keep their own neutral
 // treatment — the green/amber/rose ramp stays reserved for risk alone.
 const stateChip = (strong) => ({
@@ -1547,27 +1635,11 @@ const JOBS = [
 ];
 
 const SHORTLIST = [
-  { name: "Sneha Kulkarni", role: "Data Engineer · Chennai", score: "0.86", cover: "coverage 0.82", band: "low", note: "Low fabrication risk · deep" },
+  { name: "Sneha Kulkarni", role: "Data Engineer · Chennai", score: "0.86", cover: "coverage 0.82", band: "low", note: "Low advisory review band · deep" },
   { name: "Priya Nandakumar", role: "Data Engineer · Bengaluru", score: "0.79", cover: "coverage 0.74", band: "moderate", note: "One timeline overlap to raise" },
   { name: "Divya Raghunathan", role: "Lead Data Engineer · Noida", score: "0.74", cover: "coverage 0.71", band: "moderate", note: "Seniority ahead of tenure" }
 ];
 
-const ADMIN_ORGS = [
-  { name: "Sampoorna Staffing", id: "org_a91c4f", seats: "12 batches", joined: "12 Mar 2026", status: "Active", band: "low" },
-  { name: "Meridian Talent", id: "org_5be720", seats: "5 batches", joined: "2 May 2026", status: "Active", band: "low" },
-  { name: "Northline Recruit", id: "org_c3f8d1", seats: "0 batches", joined: "28 Jul 2026", status: "Pending", band: "moderate" }
-];
-const ADMIN_USERS = [
-  { email: "ops@veritas.in", lastSeen: "Active now" },
-  { email: "kavya@veritas.in", lastSeen: "Yesterday 17:22" },
-  { email: "arun@veritas.in", lastSeen: "29 Jul 2026" }
-];
-const CURATION = [
-  { term: "pyspark3", suggestion: "closest match: Apache Spark", count: 41 },
-  { term: "gen-ai engg", suggestion: "closest match: Generative AI", count: 27 },
-  { term: "adf pipelines", suggestion: "closest match: Azure Data Factory", count: 19 },
-  { term: "langraph", suggestion: "closest match: LangGraph", count: 12 }
-];
 const SESSIONS = [
   { agent: "Chrome 128 · Windows 11 · Pune", id: "sess_7f2a…", lastSeen: "Active now", status: "This device", current: true },
   { agent: "Safari 18 · iPhone · Pune", id: "sess_b910…", lastSeen: "26 minutes ago", status: "Live", current: false },
@@ -1670,7 +1742,21 @@ const fieldValue = (f) => {
 
 class Component extends DCLogic {
   state = { screen: "boot", plane: "org", authMode: "signin", domain: "data_eng",
-    copied: null, theme: "dark", evalStage: 0, turn: 0, turnState: "idle", channel: "audio",
+    copied: null, theme: "dark",
+    interviewList: IDLE, interviewBody: null, interviewDraft: "", interviewBusy: false,
+    interviewError: null, interviewNeedsRefresh: false, interviewConfirm: false,
+    interviewAnswerMode: "text", interviewAudioStatus: "idle", interviewAudioError: "",
+    interviewAudioSeconds: 0, interviewAudioSize: 0,
+    evalText: "", evalFile: null, evalGithub: "", evalPortfolio: "",
+    evalBusy: false, evalProgress: "", evalError: null, evalReportId: null,
+    contactList: IDLE, contactMethod: "otp_email", contactDestination: "", contactCode: "",
+    contactId: null, contactBusy: false, contactError: null, contactNotice: "",
+    orgList: IDLE, orgSelection: null, orgName: "", orgWeight: "", orgFilter: "", orgPage: 0,
+    orgBusy: false, orgError: null, orgNotice: "", orgConfirm: null,
+    orgKey: "", orgKeyOwner: "", orgKeyVisible: false,
+    usersList: IDLE, usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0,
+    usersBusy: false, usersError: null, usersNotice: "", usersConfirm: null,
+    reportOrigin: "queue",
     // auth
     emailInput: "", orgNameInput: "", otp: ["", "", "", "", "", ""],
     authBusy: false, authError: null, authNotice: null,
@@ -1680,6 +1766,9 @@ class Component extends DCLogic {
     jobList: IDLE, board: IDLE, comp: IDLE,
     batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
     outcomes: IDLE,
+    curationList: IDLE, curationSelection: null, curationAction: "map",
+    curationAlias: "", curationCanonical: "", curationCategory: "",
+    curationBusy: false, curationError: null, curationNotice: "", curationNeedsRefresh: false,
     selectedJob: null, busyId: null, erasureConfirm: "",
     // screening
     selectedBatch: null, moreBusy: null, deleteArmed: null,
@@ -1718,14 +1807,20 @@ class Component extends DCLogic {
   };
 
   componentDidMount() {
+    window.addEventListener?.("pagehide", this.clearInterview);
     API.onSessionLost(this.handleSessionLost);
     // GET /auth/me on load is the whole boot sequence: it is the only thing
     // that knows whether a cookie from a previous visit is still alive.
     API.get("/auth/me").then(
       (me) => {
         const plane = KIND_TO_PLANE[me.kind] || "org";
-        this.setState({ me, plane, screen: LANDING[plane] });
-        this.loadForScreen(LANDING[plane]);
+        this.setState({ me, plane, screen: LANDING[plane] }, () => {
+          const target = new URLSearchParams(window.location.hash.slice(1));
+          const id = target.get("report");
+          if (id && (me.kind === "org" || me.kind === "admin")) {
+            this.openReport(id, target.get("from") === "evaluate" ? "evaluate" : "queue")();
+          } else { this.clearReportLocation(); this.loadForScreen(LANDING[plane]); }
+        });
       },
       (err) => {
         // 401 here is the ordinary "not signed in yet" case, not a failure.
@@ -1741,7 +1836,32 @@ class Component extends DCLogic {
   handleSessionLost = () => {
     // Rule 3: never retry, never leave a half-populated screen behind.
     this._driving = false;
+    this.clearInterview();
+    this._curationLoad = (this._curationLoad || 0) + 1;
+    this._curationReview = null;
+    this._evaluating = null;
+    this._viewReport = null;
+    this._recording = null;
+    this._contactAction = null;
+    this._contactLoad = null;
+    this._orgLoad = null;
+    this._orgAction = null;
+    this._usersLoad = null;
+    this._usersAction = null;
+    this.clearReportLocation();
     this.setState({
+      evalText: "", evalFile: null, evalGithub: "", evalPortfolio: "",
+      evalBusy: false, evalProgress: "", evalError: null, evalReportId: null,
+      contactList: IDLE, contactMethod: "otp_email", contactDestination: "", contactCode: "",
+      contactId: null, contactBusy: false, contactError: null, contactNotice: "",
+      orgList: IDLE, orgSelection: null, orgName: "", orgWeight: "", orgFilter: "", orgPage: 0,
+      orgBusy: false, orgError: null, orgNotice: "", orgConfirm: null,
+      orgKey: "", orgKeyOwner: "", orgKeyVisible: false,
+      usersList: IDLE, usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0,
+      usersBusy: false, usersError: null, usersNotice: "", usersConfirm: null,
+      curationList: IDLE, curationSelection: null, curationAlias: "",
+      curationCanonical: "", curationCategory: "", curationBusy: false,
+      curationError: null, curationNotice: "", curationNeedsRefresh: false, curationAction: "map",
       screen: "login", me: null, otp: ["", "", "", "", "", ""], authBusy: false,
       authError: null,
       authNotice: "Your session ended. Sign in again to continue.",
@@ -1756,7 +1876,7 @@ class Component extends DCLogic {
   // Fetch exactly what a screen renders, when it is opened. No global
   // prefetch: an org session hitting /portal/me would 401 and log the user out.
   loadForScreen = (screen) => {
-    if (screen === "portal") this.load("portal", () => API.get("/portal/me"));
+    if (screen === "portal") { this.load("portal", () => API.get("/portal/me")); this.loadContacts(); }
     else if (screen === "accesslog") this.load("accessLog", () => API.get("/portal/access-log"));
     else if (screen === "consents") this.load("consentList", () => API.get("/portal/consents"));
     else if (screen === "devices") this.load("sessionList", () => API.get("/auth/sessions"));
@@ -1764,9 +1884,312 @@ class Component extends DCLogic {
     else if (screen === "comp") this.loadComp();
     else if (screen === "queue" || screen === "summary") this.loadScreening();
     else if (screen === "batches") this.loadBatches();
+    else if (screen === "curation") this.reloadCuration();
+    else if (screen === "adminorgs") this.loadOrgAdmin();
+    else if (screen === "adminusers") this.loadUserAdmin();
+    else if (screen === "interview") this.refreshInterviews();
+  };
+
+  // Operator accounts have one fixed platform role; emails are hashed at rest.
+  validUser = (u) => u && typeof u.id === "string" && u.id && typeof u.label === "string"
+    && typeof u.created_at === "string" && (u.disabled_at === null || typeof u.disabled_at === "string");
+  usersErrorCopy = (err) => err?.status === 403 && err.kind !== "csrf"
+    ? "This account is not permitted to administer operator accounts." : errorCopy(err);
+  loadUserAdmin = () => {
+    const me = this.state.me;
+    if (this._gone || me?.kind !== "admin" || this.state.screen !== "adminusers") return;
+    const token = this._usersLoad = {};
+    const current = () => !this._gone && this.state.me === me && this._usersLoad === token
+      && this.state.screen === "adminusers";
+    this.setState({ usersConfirm: null });
+    return this.load("usersList", () => API.get("/admin/users", { timeoutMs: EVAL_TIMEOUT_MS }).then(rows => {
+      if (!Array.isArray(rows) || !rows.every(this.validUser) || new Set(rows.map(u => u.id)).size !== rows.length)
+        throw { detail: "The server returned invalid operator data. Refresh before making changes." };
+      return rows;
+    }), current).then(rows => {
+      if (!rows || !current()) return;
+      const count = rows.filter(u => (u.label + " " + u.id).toLowerCase().includes(this.state.usersFilter.toLowerCase())).length;
+      this.setState({ usersPage: Math.min(this.state.usersPage, Math.max(0, Math.ceil(count / 20) - 1)) });
+    });
+  };
+  reloadUsers = () => { if (!this._usersAction) return this.loadUserAdmin(); };
+  setUsersEmail = (e) => { if (!this._usersAction) this.setState({ usersEmail: e.target.value, usersError: null, usersNotice: "" }); };
+  setUsersLabel = (e) => { if (!this._usersAction) this.setState({ usersLabel: e.target.value, usersError: null, usersNotice: "" }); };
+  setUsersFilter = (e) => this.setState({ usersFilter: e.target.value, usersPage: 0 });
+  prevUsers = () => this.setState(s => ({ usersPage: Math.max(0, s.usersPage - 1) }));
+  nextUsers = () => { if (!this.renderVals().usersNextDisabled) this.setState(s => ({ usersPage: s.usersPage + 1 })); };
+  armUserDelete = (id) => () => {
+    const st = this.state;
+    if (st.me?.kind !== "admin" || st.screen !== "adminusers" || this._usersAction
+        || st.usersList.loading || st.usersList.error || !(st.usersList.data || []).some(u => u.id === id)) return;
+    this.setState({ usersConfirm: id, usersError: null, usersNotice: "" });
+  };
+  cancelUserDelete = () => { if (!this._usersAction) this.setState({ usersConfirm: null }); };
+  confirmUserDelete = () => { if (this.state.usersConfirm) return this.changeUser("delete"); };
+  createUser = () => this.changeUser("create");
+  changeUser = async (action) => {
+    const st = this.state, me = st.me;
+    if (this._gone || this._usersAction || me?.kind !== "admin" || st.screen !== "adminusers"
+        || st.usersList.loading || st.usersList.error) return;
+    const email = st.usersEmail.trim(), label = st.usersLabel.trim();
+    const target = (st.usersList.data || []).find(u => u.id === st.usersConfirm);
+    if (action === "delete" && !target || !["create", "delete"].includes(action)) return;
+    if (action === "create" && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || label.length > 200)) {
+      this.setState({ usersError: { detail: "Enter a valid sign-in email (up to 254 characters) and a label of up to 200 characters." } }); return;
+    }
+    const token = this._usersAction = {};
+    const current = () => !this._gone && this._usersAction === token && this.state.me === me
+      && this.state.screen === "adminusers";
+    this.setState({ usersBusy: true, usersError: null, usersNotice: "", usersConfirm: null });
+    try {
+      const opts = { timeoutMs: EVAL_TIMEOUT_MS };
+      const result = action === "create" ? await API.post("/admin/users", { email, label }, opts)
+        : await API.del("/admin/users/" + encodeURIComponent(target.id), opts);
+      if (!current()) return;
+      if (action === "create" ? !this.validUser(result) : result?.admin_user_id !== target.id || result.deleted !== true)
+        throw { detail: "The server returned an unexpected change result. Refresh before retrying; the change may have completed." };
+      this.setState({ usersNotice: action === "create" ? "Operator account created. The person can request a sign-in code."
+          : "Operator account deleted. Its sessions have been revoked.",
+        ...(action === "create" ? { usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0 } : {}) });
+      // This also detects self deletion: the next authenticated read is a 401.
+      await this.loadUserAdmin();
+    } catch (err) {
+      if (!current() || err?.kind === "session_lost") return;
+      this.setState({ usersError: err });
+    } finally {
+      if (current()) { this._usersAction = null; this.setState({ usersBusy: false }); }
+    }
+  };
+
+  // Existing org APIs return all rows; paging/filtering here is local.
+  validOrg = (o) => o && typeof o.id === "string" && o.id && typeof o.name === "string"
+    && typeof o.status === "string" && typeof o.created_at === "string"
+    && Number.isFinite(o.reliability_weight) && o.reliability_weight >= 0;
+  orgErrorCopy = (err) => err?.status === 403 && err.kind !== "csrf"
+    ? "This account is not permitted to administer organisations." : errorCopy(err);
+  loadOrgAdmin = () => {
+    const me = this.state.me;
+    if (!me || me.kind !== "admin" || this._gone) return;
+    const token = this._orgLoad = {};
+    const current = () => !this._gone && this.state.me === me && this._orgLoad === token
+      && this.state.screen === "adminorgs";
+    return this.load("orgList", () => API.get("/ledger/orgs", { timeoutMs: EVAL_TIMEOUT_MS }).then(rows => {
+      if (!Array.isArray(rows) || !rows.every(this.validOrg) || new Set(rows.map(o => o.id)).size !== rows.length)
+        throw { detail: "The server returned invalid organisation data. Refresh before making changes." };
+      return rows;
+    }), current).then(rows => {
+      if (!rows || !current()) return;
+      const selected = rows.find(o => o.id === this.state.orgSelection);
+      if (!selected) this.setState({ orgSelection: null, orgWeight: "", orgConfirm: null });
+      else this.setState({ orgWeight: String(selected.reliability_weight) });
+      const count = rows.filter(o => (o.name + " " + o.id).toLowerCase().includes(this.state.orgFilter.toLowerCase())).length;
+      this.setState({ orgPage: Math.min(this.state.orgPage, Math.max(0, Math.ceil(count / 20) - 1)) });
+    });
+  };
+  reloadOrgs = () => { if (!this._orgAction) { this.dismissOrgKey(); this.setState({ orgConfirm: null }); return this.loadOrgAdmin(); } };
+  setOrgName = (e) => { if (!this._orgAction) this.setState({ orgName: e.target.value, orgError: null, orgNotice: "" }); };
+  setOrgWeight = (e) => { if (!this._orgAction) this.setState({ orgWeight: e.target.value, orgError: null, orgNotice: "" }); };
+  setOrgFilter = (e) => this.setState({ orgFilter: e.target.value, orgPage: 0 });
+  prevOrgs = () => this.setState(s => ({ orgPage: Math.max(0, s.orgPage - 1) }));
+  nextOrgs = () => { if (!this.renderVals().orgNextDisabled) this.setState(s => ({ orgPage: s.orgPage + 1 })); };
+  dismissOrgKey = () => this.setState({ orgKey: "", orgKeyOwner: "", orgKeyVisible: false });
+  toggleOrgKey = () => this.setState(s => ({ orgKeyVisible: !s.orgKeyVisible }));
+  selectOrg = (id) => () => {
+    if (this._orgAction || this.state.orgList.loading || this.state.me?.kind !== "admin") return;
+    const row = (this.state.orgList.data || []).find(o => o.id === id);
+    if (!row) return;
+    this.dismissOrgKey();
+    this.setState({ orgSelection: id, orgWeight: String(row.reliability_weight), orgConfirm: null,
+      orgError: null, orgNotice: "" });
+  };
+  armOrgRotate = () => this.armOrgAction("rotate");
+  armOrgDelete = () => this.armOrgAction("delete");
+  armOrgAction = (action) => {
+    if (this.state.me?.kind === "admin" && this.state.orgSelection && !this._orgAction && !this.state.orgList.loading)
+      this.setState({ orgConfirm: { id: this.state.orgSelection, action }, orgError: null, orgNotice: "" });
+  };
+  cancelOrgConfirm = () => { if (!this._orgAction) this.setState({ orgConfirm: null }); };
+  confirmOrgAction = () => {
+    const choice = this.state.orgConfirm;
+    if (choice && choice.id === this.state.orgSelection) return this.changeOrg(choice.action);
+  };
+  createOrg = () => this.changeOrg("create");
+  saveOrgReliability = () => this.changeOrg("reliability");
+  changeOrg = async (action) => {
+    const st = this.state, me = st.me;
+    if (this._gone || this._orgAction || me?.kind !== "admin" || st.screen !== "adminorgs") return;
+    const name = st.orgName.trim(), weight = Number(st.orgWeight);
+    const target = (st.orgList.data || []).find(o => o.id === st.orgSelection);
+    if (action !== "create" && (!target || st.orgList.loading || st.orgList.error)) return;
+    if (action === "create" && (!name || name.length > 200)) {
+      this.setState({ orgError: { detail: "Enter an organisation name of 1 to 200 characters." } }); return;
+    }
+    if (action === "reliability" && (!st.orgWeight.trim() || !Number.isFinite(weight) || weight < 0)) {
+      this.setState({ orgError: { detail: "Enter a finite reliability multiplier of 0 or greater." } }); return;
+    }
+    if (["rotate", "delete"].includes(action) && (st.orgConfirm?.id !== target.id || st.orgConfirm?.action !== action)) return;
+    const token = this._orgAction = {};
+    const current = () => !this._gone && this._orgAction === token && this.state.me === me;
+    const visible = () => current() && this.state.screen === "adminorgs";
+    this.setState({ orgBusy: true, orgError: null, orgNotice: "", orgConfirm: null,
+      orgKey: "", orgKeyOwner: "", orgKeyVisible: false });
+    try {
+      const path = "/ledger/orgs" + (target && action !== "create" ? "/" + encodeURIComponent(target.id) : "");
+      const opts = { timeoutMs: EVAL_TIMEOUT_MS };
+      const result = action === "delete" ? await API.del(path, opts)
+        : await API.post(path + (action === "rotate" ? "/api-key" : action === "reliability" ? "/reliability" : ""),
+            action === "create" ? { name } : action === "reliability" ? { weight } : {}, opts);
+      if (!visible()) return;
+      if (action === "create" && (!this.validOrg(result?.org) || typeof result.api_key !== "string" || !result.api_key)
+          || action === "reliability" && (!this.validOrg(result) || result.id !== target.id)
+          || action === "rotate" && (result?.org_id !== target.id || typeof result.api_key !== "string" || !result.api_key)
+          || action === "delete" && (result?.org_id !== target.id || result.deleted !== true))
+        throw { detail: "The server returned an unexpected change result. Refresh before retrying; the change may have completed." };
+      const id = action === "create" ? result.org.id : target.id;
+      this.setState({ orgNotice: action === "create" ? "Organisation created." : action === "reliability" ? "Reliability saved."
+          : action === "rotate" ? "Organisation key rotated. The previous key no longer works." : "Organisation offboarded.",
+        orgSelection: action === "delete" ? null : id,
+        ...(action === "create" ? { orgName: "", orgFilter: "", orgPage: 0 } : {}),
+        ...(["create", "rotate"].includes(action) ? { orgKey: result.api_key, orgKeyOwner: action === "create" ? result.org.name : target.name } : {}) });
+      await this.loadOrgAdmin();
+    } catch (err) {
+      if (!visible() || err?.kind === "session_lost") return;
+      this.setState({ orgError: err });
+    } finally {
+      if (current()) { this._orgAction = null; this.setState({ orgBusy: false }); }
+    }
   };
 
   // ── screening ─────────────────────────────────────────────────────────────
+  // Source-owned curation snapshots and explicit reviewer vocabulary.
+  validCurationTerm = (t) => t && typeof t.norm_key === "string" && t.norm_key
+    && Array.from(t.norm_key).length <= 128
+    && typeof t.display_name === "string" && t.display_name && Array.from(t.display_name).length <= 128
+    && typeof t.review_revision === "string" && /^[0-9a-f]{64}$/.test(t.review_revision)
+    && Number.isSafeInteger(t.occurrences) && t.occurrences > 0
+    && Array.isArray(t.source_types) && t.source_types.length > 0
+    && t.source_types.every(s => typeof s === "string" && s && s.length <= 64)
+    && new Set(t.source_types).size === t.source_types.length && t.status === "pending"
+    && typeof t.first_seen === "string" && Number.isFinite(Date.parse(t.first_seen))
+    && typeof t.last_seen === "string" && Number.isFinite(Date.parse(t.last_seen))
+    && Date.parse(t.first_seen) <= Date.parse(t.last_seen);
+  curationReady = () => !this._gone && this.state.me?.kind === "admin" && this.state.screen === "curation"
+    && !this._curationReview && !this.state.curationList.loading && !this.state.curationList.error
+    && !!this.state.curationList.data && !this.state.curationNeedsRefresh;
+  curationErrorCopy = (err) => err?.status === 403 && err.kind !== "csrf"
+    ? "This account is not permitted to review the shared curation queue."
+    : errorCopy(err) + (err?.ambiguous ? " The decision may have completed. Refresh queue before reviewing again." : "");
+  clearCuration = () => {
+    const pending = !!this._curationReview;
+    this._curationLoad = null; this._curationReview = null;
+    this.setState({ curationList: IDLE, curationSelection: null, curationAction: "map",
+      curationAlias: "", curationCanonical: "", curationCategory: "", curationBusy: false,
+      curationError: null, curationNeedsRefresh: false,
+      curationNotice: pending ? "A prior decision may have completed. Refresh queue before reviewing again." : "" });
+  };
+  reloadCuration = () => {
+    if (this._curationReview || this.state.curationList.loading) return;
+    this.setState({ curationError: null });
+    return this.loadCuration(false);
+  };
+  moreCuration = () => this.loadCuration(true);
+  loadCuration = async (append) => {
+    const st = this.state, me = st.me;
+    if (this._gone || me?.kind !== "admin" || st.screen !== "curation"
+        || this._curationReview || st.curationList.loading) return;
+    const old = append ? st.curationList.data : null;
+    if (append && (!old?.next_cursor || st.curationNeedsRefresh)) return;
+    const token = this._curationLoad = {};
+    const current = () => !this._gone && this._curationLoad === token && this.state.me === me
+      && this.state.screen === "curation";
+    this.setState({ curationList: { loading: true, data: old, error: null } });
+    const path = "/curation/skills/unmapped?status=pending&limit=20"
+      + (old ? "&cursor=" + encodeURIComponent(old.next_cursor) : "");
+    try {
+      const page = await API.get(path, { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      if (!page || !Array.isArray(page.terms) || page.terms.length > 20 || !page.terms.every(this.validCurationTerm)
+          || new Set(page.terms.map(t => t.norm_key)).size !== page.terms.length
+          || !(page.next_cursor === null || typeof page.next_cursor === "string" && page.next_cursor && page.next_cursor.length <= 2048)
+          || !page.terms.length && page.next_cursor !== null
+          || old && page.next_cursor === old.next_cursor)
+        throw { detail: "The server returned invalid review data. Refresh queue before deciding." };
+      const terms = [...new Map((old ? old.terms.concat(page.terms) : page.terms).map(t => [t.norm_key, t])).values()];
+      const selected = this.state.curationSelection;
+      const retained = selected && terms.find(t => t.norm_key === selected.norm_key && t.review_revision === selected.review_revision);
+      this.setState({ curationList: { loading: false, data: { terms, next_cursor: page.next_cursor }, error: null },
+        curationNeedsRefresh: false,
+        ...(selected && !retained ? { curationSelection: null, curationAlias: "", curationCanonical: "", curationCategory: "" }
+          : retained ? { curationSelection: retained } : {}) });
+    } catch (err) {
+      if (!current() || err?.kind === "session_lost") return;
+      this.setState({ curationList: { loading: false, data: null, error: err },
+        ...(!this.state.curationNeedsRefresh ? { curationSelection: null, curationAlias: "", curationCanonical: "", curationCategory: "" } : {}) });
+    } finally { if (current()) this._curationLoad = null; }
+  };
+  selectCuration = (term) => () => {
+    if (!this.curationReady() || !this.state.curationList.data.terms.includes(term)) return;
+    this.setState({ curationSelection: term, curationAction: "map", curationAlias: "", curationCanonical: "",
+      curationCategory: "", curationError: null, curationNotice: "" });
+  };
+  cancelCuration = () => {
+    if (this._curationReview) return;
+    this.setState({ curationSelection: null, curationAlias: "", curationCanonical: "", curationCategory: "" });
+  };
+  setCurationAction = (e) => { if (this.curationReady()) this.setState({ curationAction: e.target.value }); };
+  setCurationAlias = (e) => { if (this.curationReady()) this.setState({ curationAlias: e.target.value }); };
+  setCurationCanonical = (e) => { if (this.curationReady()) this.setState({ curationCanonical: e.target.value }); };
+  setCurationCategory = (e) => { if (this.curationReady()) this.setState({ curationCategory: e.target.value }); };
+  approveCuration = () => {
+    const st = this.state;
+    if (!st.curationSelection) return;
+    return this.decideCuration({ norm_key: st.curationSelection.norm_key,
+      expected_revision: st.curationSelection.review_revision, action: st.curationAction,
+      alias: st.curationAlias.trim(), canonical: st.curationCanonical.trim(), category: st.curationCategory.trim() });
+  };
+  ignoreCuration = (term) => () => this.decideCuration({ norm_key: term.norm_key,
+    expected_revision: term.review_revision, action: "ignore" });
+  decideCuration = async (body) => {
+    const me = this.state.me;
+    if (!this.curationReady() || !this.state.curationList.data.terms.some(t =>
+        t.norm_key === body.norm_key && t.review_revision === body.expected_revision && this.validCurationTerm(t))) return;
+    if (!["map", "create", "ignore"].includes(body.action) || body.action !== "ignore"
+        && (!body.alias || !body.canonical || !body.category)) {
+      this.setState({ curationError: { detail: "Supply an approved alias, canonical ID and category." } }); return;
+    }
+    const token = this._curationReview = {};
+    const current = () => !this._gone && this._curationReview === token && this.state.me === me
+      && this.state.screen === "curation";
+    this.setState({ curationBusy: true, curationError: null, curationNotice: "" });
+    let refresh = false;
+    try {
+      const result = await API.post("/curation/skills/resolve", body, { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      if (!result || result.action !== body.action || result.alias !== (body.alias ?? null)
+          || result.canonical !== (body.canonical ?? null) || result.category !== (body.category ?? null)
+          || typeof result.decided_at !== "string" || !Number.isFinite(Date.parse(result.decided_at))
+          || !(result.admin_user_id === null || typeof result.admin_user_id === "string" && result.admin_user_id)
+          || Object.keys(result).some(k => !["action", "alias", "canonical", "category", "decided_at", "admin_user_id"].includes(k)))
+        throw { kind: "invalid_response", detail: "The server returned an invalid decision receipt." };
+      this.setState({ curationSelection: null, curationAlias: "", curationCanonical: "", curationCategory: "",
+        curationNotice: body.action === "ignore" ? "Term ignored." : "Vocabulary approved." });
+      refresh = true;
+    } catch (err) {
+      if (!current() || err?.kind === "session_lost") return;
+      const stale = err?.status === 409 && /^review snapshot changed/.test(err.detail || "");
+      const missing = err?.kind === "not_found" || err?.status === 404;
+      const ambiguous = ["timeout", "network", "invalid_response"].includes(err?.kind) || err?.status >= 500;
+      this.setState({ curationError: missing ? { detail: "Term is no longer available. Refresh or select another term." }
+        : stale ? { detail: "The review changed. Select the term again from the refreshed queue before deciding." }
+        : { ...err, ambiguous }, curationNeedsRefresh: ambiguous || stale || missing,
+        ...(stale || missing ? { curationSelection: null, curationAlias: "", curationCanonical: "", curationCategory: "" } : {}) });
+      refresh = stale || missing;
+    } finally {
+      if (current()) { this._curationReview = null; this.setState({ curationBusy: false }); }
+    }
+    if (refresh && !this._gone && this.state.me === me && this.state.screen === "curation") return this.loadCuration(false);
+  };
+
   // Opening the queue with no batch chosen picks the newest, because the list
   // is newest-first server-side. An org that has uploaded nothing lands on an
   // EMPTY QUEUE, not an error — the first screen every new customer sees
@@ -1894,9 +2317,19 @@ class Component extends DCLogic {
     );
   };
 
-  openReport = (reportId) => () => {
+  reportPath = (reportId) => (this.state.me && this.state.me.kind === "admin"
+    ? "/report/" : "/screening/reports/") + encodeURIComponent(reportId);
+  clearReportLocation = () => {
+    if (window.location.hash.indexOf("report=") !== -1) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  };
+  openReport = (reportId, origin = "queue") => () => {
+    const me = this.state.me;
+    if (!me || (me.kind !== "org" && me.kind !== "admin")) return;
+    if (me.kind === "admin") origin = "evaluate";
     this.setState({
-      screen: "report", report: IDLE, outcomes: IDLE,
+      screen: "report", report: IDLE, outcomes: IDLE, reportOrigin: origin,
       // Notes belong to the report you were looking at. Carrying them onto the
       // next candidate is how a sentence about one person ends up filed
       // against another.
@@ -1906,15 +2339,20 @@ class Component extends DCLogic {
     // Same late-reply guard as the batch reads: two quick clicks must not leave
     // the slower report rendered under the faster one's heading.
     this._viewReport = reportId;
-    const still = () => this._viewReport === reportId;
-    this.load("report", () => API.get("/screening/reports/" + reportId), still);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search
+      + "#report=" + encodeURIComponent(reportId) + "&from=" + origin);
+    const path = this.reportPath(reportId);
+    const still = () => !this._gone && this.state.me === me && this._viewReport === reportId;
+    this.load("report", () => API.get(path, { timeoutMs: EVAL_TIMEOUT_MS }), still);
     // The report and its judgments are two reads because they are two routes;
     // both carry the SAME guard, or a late outcome list lands on the report you
     // navigated to next.
     this.load("outcomes",
-              () => API.get("/screening/reports/" + reportId + "/outcomes"), still);
+              () => API.get(path + "/outcomes", { timeoutMs: EVAL_TIMEOUT_MS }), still);
     window.scrollTo(0, 0);
   };
+  retryReport = () => { if (this._viewReport) this.openReport(this._viewReport, this.state.reportOrigin)(); };
+  backFromReport = () => this.nav(this.state.reportOrigin === "evaluate" ? "evaluate" : "queue")();
   openReportKey = (reportId) => (e) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.openReport(reportId)(); }
   };
@@ -1928,6 +2366,7 @@ class Component extends DCLogic {
   // people to click through confirms.
   recordOutcome = (label) => () => {
     const reportId = this._viewReport;
+    const me = this.state.me;
     // The in-flight guard is an INSTANCE FIELD rather than state — but be
     // precise about why, because the obvious reason is WRONG and was measured
     // to be wrong. The process driver needs a field because its loop consults
@@ -1942,26 +2381,29 @@ class Component extends DCLogic {
     // and because it is the same spelling as `_driving` and `_viewReport`
     // beside it. It is belt-and-braces, not a bug fix, and the check in
     // scripts/check_ui_screening_browser.py says so.
-    if (!reportId || this._recording) return;
-    this._recording = label;
+    if (this._gone || !reportId || this._recording || !me || !["org", "admin"].includes(me.kind)) return;
+    const token = this._recording = {};
+    const path = this.reportPath(reportId);
+    const current = () => !this._gone && this.state.me === me && this._viewReport === reportId;
     this.setState({ outcomeBusy: label, outcomeError: null });
-    API.post("/screening/reports/" + reportId + "/outcome",
-             { outcome: label, notes: this.state.outcomeNotes }).then(
+    API.post(path + "/outcome",
+             { outcome: label, notes: this.state.outcomeNotes }, { timeoutMs: EVAL_TIMEOUT_MS }).then(
       () => {
         // Released whatever happened next, including a navigation away: a
         // guard that only clears on the path the user stayed on would leave
         // the next report unable to record anything at all.
+        if (this._recording !== token) return;
         this._recording = null;
-        if (this._viewReport !== reportId) return;
+        if (!current()) return;
         this.setState({ outcomeBusy: null, outcomeNotes: "" });
         this.load("outcomes",
-                  () => API.get("/screening/reports/" + reportId + "/outcomes"),
-                  () => this._viewReport === reportId);
+                  () => API.get(path + "/outcomes", { timeoutMs: EVAL_TIMEOUT_MS }), current);
       },
       (err) => {
+        if (this._recording !== token) return;
         this._recording = null;
         if (err && err.kind === "session_lost") return;
-        if (this._viewReport !== reportId) return;
+        if (!current()) return;
         // The notes are NOT cleared on failure: they are the thing that was
         // just refused, and retyping them is the user paying for our error.
         this.setState({ outcomeBusy: null, outcomeError: err });
@@ -2115,7 +2557,28 @@ class Component extends DCLogic {
       });
   };
 
-  nav = (screen) => () => { this.setState({ screen }); this.loadForScreen(screen); window.scrollTo(0, 0); };
+  nav = (screen) => () => {
+    if (screen !== "interview") this.clearInterview();
+    this._viewReport = null;
+    if (screen !== "curation") this.clearCuration();
+    if (screen !== "adminusers") {
+      const pendingUserChange = !!this._usersAction;
+      this._usersLoad = null;
+      this._usersAction = null;
+      this.setState({ usersConfirm: null, usersBusy: false, usersEmail: "", usersLabel: "",
+        ...(pendingUserChange ? { usersNotice: "A prior change may have completed. Refresh operator accounts before retrying." } : {}) });
+    }
+    if (screen !== "adminorgs") {
+      this._orgLoad = null;
+      const pendingOrgChange = !!this._orgAction;
+      this._orgAction = null;
+      this.dismissOrgKey();
+      this.setState({ orgConfirm: null, orgBusy: false,
+        ...(pendingOrgChange ? { orgNotice: "A prior change may have completed. Refresh organisations before retrying." } : {}) });
+    }
+    this.clearReportLocation();
+    this.setState({ screen }); this.loadForScreen(screen); window.scrollTo(0, 0);
+  };
   goQueue = this.nav("queue");
   goBatches = this.nav("batches");
   goSummary = this.nav("summary");
@@ -2129,37 +2592,391 @@ class Component extends DCLogic {
   goInterview = this.nav("interview");
   goRoles = this.nav("roles");
 
-  runEvaluate = () => {
-    clearInterval(this._evalTimer);
-    this.setState({ evalStage: 0 });
-    this._evalTimer = setInterval(() => {
-      this.setState((s) => {
-        const next = (s.evalStage || 0) + 1;
-        if (next > EVAL_NODES.length) { clearInterval(this._evalTimer); return { evalStage: 99 }; }
-        return { evalStage: next };
-      });
-    }, 520);
-  };
-
-  setAudio = () => this.setState({ channel: "audio" });
-  setText = () => this.setState({ channel: "text" });
-  toggleRecord = () => this.setState((s) => ({ turnState: s.turnState === "recording" ? "recorded" : "recording" }));
-  retryTurn = () => this.setState({ turnState: "idle" });
-  skipTurn = () => this.advance();
-  submitTurn = () => {
-    // turn 3 demonstrates a transcription failure: it must not consume the turn
-    if (this.state.channel === "audio" && this.state.turn === 2 && this.state.turnState !== "failed") {
-      this.setState({ turnState: "processing" });
-      clearTimeout(this._turnTimer);
-      this._turnTimer = setTimeout(() => this.setState({ turnState: "failed" }), 900);
+  setEvalText = (e) => { if (!this._evaluating) this.setState({ evalText: e.target.value, evalFile: null, evalError: null }); };
+  setEvalGithub = (e) => { if (!this._evaluating) this.setState({ evalGithub: e.target.value }); };
+  setEvalPortfolio = (e) => { if (!this._evaluating) this.setState({ evalPortfolio: e.target.value }); };
+  pickEvalFile = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file || this._evaluating) return;
+    if (!/\.pdf$/i.test(file.name)) {
+      this.setState({ evalError: { detail: "Choose a PDF, or paste plain text." } });
       return;
     }
-    this.setState({ turnState: "processing" });
-    clearTimeout(this._turnTimer);
-    this._turnTimer = setTimeout(() => this.advance(), 900);
+    this.setState({ evalFile: file, evalText: "", evalError: null });
   };
-  advance = () => {
-    this.setState((s) => ({ turn: Math.min(s.turn + 1, TURNS.length - 1), turnState: "idle" }));
+  clearEvalFile = () => { if (!this._evaluating) this.setState({ evalFile: null, evalError: null }); };
+  viewEvaluation = () => { if (this.state.evalReportId) this.openReport(this.state.evalReportId, "evaluate")(); };
+  runEvaluate = async () => {
+    if (this._evaluating || this._gone) return;
+    const st = this.state, me = st.me;
+    if (!me || (me.kind !== "org" && me.kind !== "admin")) {
+      this.setState({ evalError: { detail: "Instant check requires an organisation or operator session." } });
+      return;
+    }
+    if (!st.evalFile && !st.evalText.trim()) {
+      this.setState({ evalError: { detail: "Paste readable resume text or attach a PDF." } });
+      return;
+    }
+    const token = this._evaluating = {};
+    const current = () => !this._gone && this._evaluating === token && this.state.me === me;
+    this.setState({ evalBusy: true, evalError: null, evalReportId: null,
+      evalProgress: st.evalFile ? "Reading the selected PDF…" : "Waiting for the server assessment…" });
+    try {
+      const source = st.evalFile ? await this._readFile({ file: st.evalFile, name: st.evalFile.name, kind: "pdf" })
+        : { resume_text: st.evalText };
+      if (!current()) return;
+      this.setState({ evalProgress: "Waiting for the server assessment. No stage progress is available." });
+      const body = Object.assign({}, source, { domain: st.domain,
+        github_url: st.evalGithub.trim() || null, portfolio_url: st.evalPortfolio.trim() || null });
+      if (me.kind === "org") body.evaluate = true;
+      const result = await API.post(me.kind === "org" ? "/screening/candidates" : "/evaluate",
+        body, { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      const report = me.kind === "org" ? result && result.report : result;
+      if (!report || typeof report.id !== "string" || !report.id) {
+        throw { detail: "The server returned no report reference. This run may have been saved; check before submitting again." };
+      }
+      this.setState({ evalReportId: report.id });
+      if (this.state.screen === "evaluate") this.openReport(report.id, "evaluate")();
+    } catch (err) {
+      if (!current() || err.kind === "session_lost") return;
+      this.setState({ evalError: err });
+    } finally {
+      if (current()) {
+        this._evaluating = null;
+        this.setState({ evalBusy: false, evalProgress: "" });
+      }
+    }
+  };
+
+  clearInterview = () => {
+    this.clearInterviewAudio();
+    this._interviewAction = null;
+    this._interviewLoad = null;
+    this.setState({ interviewList: IDLE, interviewBody: null, interviewDraft: "",
+      interviewBusy: false, interviewError: null, interviewNeedsRefresh: false, interviewConfirm: false,
+      interviewAnswerMode: "text", interviewAudioStatus: "idle", interviewAudioError: "", interviewAudioSize: 0, interviewAudioSeconds: 0 });
+  };
+  stopInterviewTracks = (stream) => {
+    for (const track of stream?.getTracks() || []) {
+      track.onended = null;
+      try { track.stop(); } catch (_err) { /* still release the other tracks */ }
+    }
+  };
+  clearInterviewAudio = () => {
+    const capture = this._interviewCapture;
+    this._interviewCapture = null;
+    this._interviewAudio = null;
+    if (capture) {
+      window.clearTimeout(capture.timer); window.clearInterval(capture.interval);
+      if (capture.recorder) {
+        capture.recorder.ondataavailable = capture.recorder.onstop = capture.recorder.onerror = null;
+        try { if (capture.recorder.state !== "inactive") capture.recorder.stop(); } catch (_err) { /* release tracks below */ }
+      }
+      this.stopInterviewTracks(capture.stream);
+      capture.chunks = [];
+    }
+    if (this._interviewReader) {
+      try { this._interviewReader.abort(); } catch (_err) { /* pending read has its own deadline */ }
+      this._interviewReader = null;
+    }
+  };
+  discardInterviewRecording = () => {
+    this.clearInterviewAudio();
+    this.setState({ interviewAudioStatus: "idle", interviewAudioError: "", interviewAudioSeconds: 0, interviewAudioSize: 0 });
+  };
+  selectInterviewMode = (mode) => {
+    if (this._interviewAction || this.state.interviewNeedsRefresh || this.state.interviewList.loading) return;
+    this.discardInterviewRecording();
+    this.setState({ interviewAnswerMode: mode, interviewConfirm: false });
+  };
+  selectInterviewText = () => this.selectInterviewMode("text");
+  selectInterviewAudio = () => this.selectInterviewMode("audio");
+  startInterviewRecording = async () => {
+    const st = this.state, me = st.me, body = st.interviewBody;
+    if (!this.interviewCurrent(me) || this._interviewCapture || this._interviewAction || st.interviewList.loading
+      || st.interviewNeedsRefresh || st.interviewAnswerMode !== "audio" || body?.session.status !== "in_progress" || !body.next_question) return;
+    this.discardInterviewRecording();
+    const recorderType = window.MediaRecorder;
+    const devices = window.navigator?.mediaDevices;
+    const mime = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find(m => recorderType?.isTypeSupported?.(m));
+    if (!devices?.getUserMedia || !mime) {
+      this.setState({ interviewAudioError: "Microphone recording is unavailable in this browser or page. Use Type answer." }); return;
+    }
+    const token = this._interviewCapture = { me, sid: body.session.id, qid: body.next_question.id, chunks: [], bytes: 0 };
+    const current = () => this._interviewCapture === token && this.interviewCurrent(me)
+      && this.state.interviewBody?.session.id === token.sid && this.state.interviewBody?.next_question?.id === token.qid;
+    const fail = message => {
+      if (!current()) return;
+      this.clearInterviewAudio();
+      this.setState({ interviewAudioStatus: "idle", interviewAudioSize: 0, interviewAudioError: message });
+    };
+    token.fail = fail;
+    this.setState({ interviewAudioStatus: "requesting", interviewAudioError: "" });
+    token.timer = window.setTimeout(() => fail("Microphone permission timed out. You can record again or use Type answer."), 20000);
+    try {
+      const stream = await devices.getUserMedia({ audio: true, video: false });
+      if (!current()) { this.stopInterviewTracks(stream); return; }
+      window.clearTimeout(token.timer);
+      token.stream = stream;
+      if (!stream.getTracks().length || stream.getTracks().some(t => t.readyState === "ended")) {
+        fail("The microphone is disconnected. Record again or use Type answer."); return;
+      }
+      const recorder = token.recorder = new recorderType(stream, { mimeType: mime, audioBitsPerSecond: 64000 });
+      token.mime = recorder.mimeType || mime;
+      if (!["audio/webm", "audio/ogg", "audio/mp4"].includes(token.mime.split(";")[0].toLowerCase())) {
+        fail("This recording format is unsupported. Use Type answer."); return;
+      }
+      recorder.ondataavailable = event => {
+        if (!current() || !event.data?.size) return;
+        token.bytes += event.data.size;
+        if (token.bytes > 5000000) { fail("Recording exceeded 5 MB and was discarded. Record a shorter answer or type it."); return; }
+        token.chunks.push(event.data);
+      };
+      recorder.onerror = () => fail("Recording failed. Record again or use Type answer.");
+      recorder.onstop = () => {
+        if (!current()) return;
+        if (this.state.interviewAudioStatus !== "stopping") { fail("Recording ended unexpectedly. Record again or use Type answer."); return; }
+        const blob = new window.Blob(token.chunks, { type: token.mime });
+        const clip = { blob, mime: token.mime, me, sid: token.sid, qid: token.qid };
+        this.clearInterviewAudio();
+        if (!blob.size || blob.size > 5000000) {
+          this.setState({ interviewAudioStatus: "idle", interviewAudioError: "No usable recording was captured. Record again or type your answer." }); return;
+        }
+        this._interviewAudio = clip;
+        this.setState({ interviewAudioStatus: "ready", interviewAudioSize: blob.size });
+      };
+      for (const track of stream.getTracks()) track.onended = () => {
+        if (this.state.interviewAudioStatus !== "stopping") fail("The microphone disconnected. Record again or use Type answer.");
+      };
+      recorder.start(500);
+      token.started = Date.now();
+      this.setState({ interviewAudioStatus: "recording" });
+      token.interval = window.setInterval(() => {
+        if (current()) this.setState({ interviewAudioSeconds: Math.floor((Date.now() - token.started) / 1000) });
+      }, 1000);
+      token.timer = window.setTimeout(() => { if (current()) this.stopInterviewRecording(); }, 120000);
+    } catch (err) {
+      fail(err?.name === "NotAllowedError" || err?.name === "SecurityError"
+        ? "Microphone permission was denied. Allow it in your browser or use Type answer."
+        : "Could not open the microphone. Check your device or use Type answer.");
+    }
+  };
+  stopInterviewRecording = () => {
+    const token = this._interviewCapture;
+    if (!token?.recorder || this.state.interviewAudioStatus !== "recording") return;
+    this.setState({ interviewAudioStatus: "stopping" });
+    window.clearTimeout(token.timer); window.clearInterval(token.interval);
+    token.timer = window.setTimeout(() => token.fail("Recording could not finish. Record again or use Type answer."), 5000);
+    try { token.recorder.stop(); this.stopInterviewTracks(token.stream); }
+    catch (_err) { token.fail("Recording could not finish. Record again or use Type answer."); }
+  };
+  encodeInterviewAudio = (clip) => new Promise((resolve, reject) => {
+    const reader = this._interviewReader = new window.FileReader();
+    const finish = (error) => {
+      window.clearTimeout(timer);
+      const result = reader.result;
+      reader.onload = reader.onerror = reader.onabort = null;
+      if (this._interviewReader === reader) this._interviewReader = null;
+      if (error || typeof result !== "string" || !result.includes(";base64,")) reject({ kind: "audio_encoding" });
+      else resolve({ audio_b64: result.split(";base64,")[1], mime: clip.mime });
+    };
+    const timer = window.setTimeout(() => { finish(true); reader.abort(); }, 20000);
+    reader.onload = () => finish(false);
+    reader.onerror = reader.onabort = () => finish(true);
+    try { reader.readAsDataURL(clip.blob); } catch (_err) { finish(true); }
+  });
+  interviewCurrent = (me) => !this._gone && this.state.screen === "interview"
+    && this.state.me === me && me?.kind === "candidate";
+  validInterviewBody = (body, id) => {
+    const s = body?.session, q = body?.next_question;
+    if (!s || typeof s.id !== "string" || !s.id || (id && s.id !== id)
+      || !["in_progress", "completed", "abandoned"].includes(s.status)
+      || !Array.isArray(s.questions) || !Array.isArray(s.turns)
+      || !s.questions.every(q => q && typeof q.id === "string" && typeof q.text === "string")
+      || !s.turns.every(t => t && typeof t.id === "string" && typeof t.transcript === "string"
+        && t.score && typeof t.score.insufficient === "boolean" && Array.isArray(t.score.codes)
+        && t.score.codes.every(c => typeof c === "string"))
+      || new Set(s.questions.map(q => q.id)).size !== s.questions.length
+      || new Set(s.turns.map(t => t.question_id)).size !== s.turns.length
+      || s.turns.some((t, i) => t.question_id !== s.questions[i]?.id)) return false;
+    const expected = s.status === "in_progress" ? s.questions[s.turns.length] : null;
+    const a = s.assessment;
+    if (a && (!["insufficient_signal", "superficial", "emerging", "solid", "deep"].includes(a.band)
+      || ![a.overall, a.confidence, a.coverage].every(n => Number.isFinite(n) && n >= 0 && n <= 1)
+      || typeof a.scorer_version !== "string")) return false;
+    return s.status === "in_progress" ? !!expected && q?.id === expected.id && q?.text === expected.text
+      : q === null && (s.status !== "completed" || !!a);
+  };
+  interviewErrorCopy = (err) => {
+    if (!err) return "";
+    if (err?.kind === "csrf") return CSRF_COPY;
+    if (err?.status === 409) return "Saved interview state changed or expired. Refresh saved interviews before continuing.";
+    if (err?.status === 404) return "This interview is unavailable to this account. Refresh saved interviews.";
+    if (err?.status === 403) return "This account is not permitted to perform this interview action.";
+    if (String(err?.detail || "").startsWith("speech_unavailable")) return "Speech transcription is unavailable. No answer was saved. Refresh saved interviews, then use Type answer.";
+    if (String(err?.detail || "").startsWith("speech_failed")) return "Speech transcription failed. No answer was saved. Refresh saved interviews, then record again or use Type answer.";
+    if (err?.status === 429) return "The transcription request limit was reached. Refresh saved state and use Type answer, or wait before recording again.";
+    if (String(err?.detail || "").startsWith("audio exceeds")) return "Audio exceeds this server's size limit. Refresh saved state, then record a shorter answer or use Type answer.";
+    if (err?.status === 422) return "The interview request was refused. Check the selected domain, saved profile and answer length, then refresh.";
+    if (err?.kind === "invalid_response") return "The server response could not be read safely. Refresh saved interviews.";
+    return "The interview request could not be confirmed. Refresh saved interviews before trying again.";
+  };
+  refreshInterviews = () => this.loadInterviews();
+  openInterview = (id) => () => {
+    if (this._interviewAction || this.state.interviewList.loading) return;
+    this.setState({ interviewDraft: "", interviewConfirm: false, interviewBody: null });
+    return this.loadInterviews(id);
+  };
+  loadInterviews = async (preferredId) => {
+    const me = this.state.me;
+    if (!this.interviewCurrent(me) || this._interviewAction) return;
+    this.discardInterviewRecording();
+    this.setState({ interviewAnswerMode: "text" });
+    const token = this._interviewLoad = {};
+    const current = () => this.interviewCurrent(me) && this._interviewLoad === token;
+    const previous = this.state.interviewBody;
+    this.setState({ interviewList: { ...this.state.interviewList, loading: true, error: null },
+      interviewNeedsRefresh: true, interviewConfirm: false, interviewError: null });
+    try {
+      const data = await API.get("/portal/interviews", { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      if (!Array.isArray(data?.interviews) || !data.interviews.every(i => i && typeof i.id === "string" && i.id
+        && ["in_progress", "completed", "abandoned"].includes(i.status))
+        || new Set(data.interviews.map(i => i.id)).size !== data.interviews.length)
+        throw { kind: "invalid_response" };
+      const rows = data.interviews.slice().sort((a, b) => String(b.started_at).localeCompare(String(a.started_at)));
+      const requested = preferredId || previous?.session.id;
+      const id = rows.find(i => i.id === requested)?.id || rows.find(i => i.status === "in_progress")?.id || rows[0]?.id;
+      const body = id ? await API.get("/portal/interviews/" + encodeURIComponent(id), { timeoutMs: EVAL_TIMEOUT_MS }) : null;
+      if (!current()) return;
+      if (body && !this.validInterviewBody(body, id)) throw { kind: "invalid_response" };
+      this.setState({ interviewList: { loading: false, data: rows, error: null }, interviewBody: body,
+        interviewDraft: "", interviewNeedsRefresh: false, interviewError: null });
+    } catch (err) {
+      if (!current() || err?.kind === "session_lost") return;
+      this.setState({ interviewList: { ...this.state.interviewList, loading: false, error: err },
+        interviewNeedsRefresh: true, interviewError: err });
+    }
+  };
+  setInterviewDraft = (e) => {
+    if (!this._interviewAction && !this.state.interviewNeedsRefresh && !this.state.interviewList.loading)
+      this.setState({ interviewDraft: e.target.value, interviewConfirm: false });
+  };
+  startInterview = () => this.writeInterview("start");
+  submitInterviewAnswer = () => this.writeInterview("answer");
+  armInterviewFinish = () => {
+    if (!this._interviewCapture && !this.state.interviewBusy && !this.state.interviewNeedsRefresh) this.setState({ interviewConfirm: true });
+  };
+  cancelInterviewFinish = () => this.setState({ interviewConfirm: false });
+  finishInterview = () => { if (this.state.interviewConfirm) return this.writeInterview("finish"); };
+  writeInterview = async (action) => {
+    const me = this.state.me, st = this.state, body = st.interviewBody;
+    if (!this.interviewCurrent(me) || this._interviewAction || st.interviewNeedsRefresh || st.interviewList.loading
+      || this._interviewCapture || !st.interviewList.data) return;
+    if (action === "start" && st.interviewList.data.some(i => i.status === "in_progress")) return;
+    if (action !== "start" && (body?.session.status !== "in_progress" || !body.next_question)) return;
+    const voice = action === "answer" && st.interviewAnswerMode === "audio";
+    const clip = voice ? this._interviewAudio : null;
+    if (voice && (st.interviewAudioStatus !== "ready" || !clip || clip.me !== me || clip.sid !== body.session.id || clip.qid !== body.next_question.id)) return;
+    if (action === "answer" && !voice && (!st.interviewDraft.trim() || st.interviewDraft.length > 20000)) {
+      this.setState({ interviewError: { status: 422 } }); return;
+    }
+    const token = this._interviewAction = {};
+    this._interviewLoad = null;
+    const current = () => this.interviewCurrent(me) && this._interviewAction === token;
+    const path = "/portal/interviews" + (action === "start" ? "" : "/" + encodeURIComponent(body.session.id)
+      + (action === "answer" ? "/answers" : "/finish"));
+    let payload = action === "start" ? { domain: st.domain } : action === "answer"
+      ? { question_id: body.next_question.id, text: st.interviewDraft } : {};
+    this.setState({ interviewBusy: true, interviewError: null, interviewConfirm: false });
+    try {
+      if (voice) {
+        this._interviewAudio = null;
+        this.setState({ interviewAudioStatus: "idle", interviewAudioSize: 0 });
+        let encoded;
+        try { encoded = await this.encodeInterviewAudio(clip); } catch (_err) { throw { kind: "audio_encoding" }; }
+        if (!current()) return;
+        payload = { question_id: body.next_question.id, ...encoded };
+      }
+      const result = await API.post(path, payload, { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      if (!this.validInterviewBody(result, action === "start" ? null : body.session.id)) throw { kind: "invalid_response" };
+      this.setState({ interviewBody: result, interviewDraft: "" });
+      this._interviewAction = null;
+      this.setState({ interviewBusy: false });
+      await this.loadInterviews(result.session.id);
+    } catch (err) {
+      if (!current() || err?.kind === "session_lost") return;
+      if (err?.kind === "audio_encoding") this.setState({ interviewAudioError: "The recording could not be prepared. Record again or use Type answer." });
+      else this.setState({ interviewError: err, interviewNeedsRefresh: true });
+    } finally {
+      if (current()) { this._interviewAction = null; this.setState({ interviewBusy: false }); }
+    }
+  };
+  interviewValues = () => {
+    const st = this.state, body = st.interviewBody, session = body?.session, a = session?.assessment;
+    const rows = st.interviewList.data || [], active = session?.status === "in_progress";
+    const working = st.interviewBusy || st.interviewList.loading;
+    const disabled = working || st.interviewNeedsRefresh || !active;
+    const voice = st.interviewAnswerMode === "audio";
+    const capturing = ["requesting", "recording", "stopping"].includes(st.interviewAudioStatus);
+    const version = a?.scorer_version || "unknown";
+    const comparable = ["s73.1", "s73.2"].includes(version) && a?.band !== "insufficient_signal";
+    const band = comparable ? String(a.band) : "Insufficient evidence";
+    const status = s => s === "abandoned" ? "Expired" : s === "completed" ? "Completed" : "In progress";
+    return {
+      pageSub: { fontSize: "12.5px", lineHeight: 1.6, color: "var(--muted)", marginTop: "10px", maxWidth: "75ch" },
+      fieldLabel: { display: "block", fontSize: "12px", color: "var(--heading)", marginTop: "12px" },
+      noticeBox: NOTICE_BOX,
+      interviewAllowed: st.me?.kind === "candidate", interviewDenied: st.me?.kind !== "candidate",
+      interviewWorking: working, interviewNeedsRefresh: st.interviewNeedsRefresh,
+      interviewErrorText: this.interviewErrorCopy(st.interviewError),
+      interviewEmpty: !!st.interviewList.data && !rows.length && !working,
+      interviewStartDisabled: working || st.interviewNeedsRefresh || !st.interviewList.data || rows.some(i => i.status === "in_progress"),
+      refreshInterviews: this.refreshInterviews, startInterview: this.startInterview,
+      interviewHistory: rows.map(i => ({ id: i.id, label: status(i.status) + " · " + i.domain + " · " + fmtDateTime(i.started_at), open: this.openInterview(i.id) })),
+      interviewHasSession: !!session, interviewId: session?.id || "", interviewStatus: session ? status(session.status) + " · " + session.domain : "",
+      interviewProgress: session ? session.turns.length + " of " + session.questions.length + " saved answers" : "",
+      interviewExpiry: "Expires: " + fmtDateTime(session?.expires_at), interviewActive: active,
+      interviewExpired: session?.status === "abandoned", interviewQuestion: body?.next_question?.text || "",
+      interviewQuestionId: body?.next_question?.id || "", interviewDraft: st.interviewDraft,
+      interviewDraftCount: st.interviewDraft.length, setInterviewDraft: this.setInterviewDraft,
+      interviewWriteDisabled: disabled, interviewSubmitDisabled: disabled || capturing || (voice
+        ? st.interviewAudioStatus !== "ready" : !st.interviewDraft.trim() || st.interviewDraft.length > 20000),
+      interviewSubmitLabel: voice ? "Submit voice answer" : "Submit answer",
+      interviewTextMode: !voice, interviewAudioMode: voice,
+      selectInterviewAudio: this.selectInterviewAudio, selectInterviewText: this.selectInterviewText,
+      interviewAudioStatus: st.interviewAudioStatus, interviewAudioError: st.interviewAudioError,
+      interviewAudioLabel: st.interviewAudioStatus === "requesting" ? "Waiting for microphone permission…"
+        : st.interviewAudioStatus === "recording" ? "Microphone on · Recording " + st.interviewAudioSeconds + " seconds"
+        : st.interviewAudioStatus === "stopping" ? "Microphone off · Finishing recording…"
+        : st.interviewAudioStatus === "ready" ? "Microphone off · Ready to submit · " + st.interviewAudioSize + " bytes recorded"
+        : "Microphone off · No recording",
+      interviewRecordDisabled: disabled || capturing, interviewStopDisabled: st.interviewAudioStatus !== "recording",
+      interviewFinishDisabled: disabled || capturing,
+      startInterviewRecording: this.startInterviewRecording, stopInterviewRecording: this.stopInterviewRecording,
+      discardInterviewRecording: this.discardInterviewRecording,
+      submitInterviewAnswer: this.submitInterviewAnswer, armInterviewFinish: this.armInterviewFinish,
+      interviewConfirm: st.interviewConfirm, finishInterview: this.finishInterview, cancelInterviewFinish: this.cancelInterviewFinish,
+      interviewHasAssessment: !!a,
+      interviewAssessmentText: a ? band + (comparable ? " · Saved index " + a.overall : " · No ability conclusion")
+        + " · Confidence " + a.confidence + " · Coverage " + a.coverage + " (answered fraction, not evidence quality)" : "",
+      interviewVersionText: "Saved scorer version: " + version + ". " + (version === "s73.2"
+        ? "Current bounded English content heuristic; not calibrated assessment quality."
+        : version === "s73.1" ? "Historical v1 rubric. Original values are preserved and cannot be compared directly with v2."
+        : "Mixed or unknown rubric versions cannot support a comparable assessment. No confident blend is available."),
+      interviewEvidenceText: "Missing or limited evidence is not poor ability. Unconfirmed relevance is excluded from current assessment evidence; human clarification may be needed.",
+      interviewTurns: (session?.turns || []).map(t => ({ id: t.id, question: t.question_text, transcript: t.transcript,
+        evidence: "Saved rubric: " + (t.score.scorer_version || "historical v1 / unknown") + ". "
+          + (t.score.insufficient ? "Insufficient evidence; no ability conclusion. " : "")
+          + ((t.score.codes || []).includes("limited_content") ? "Limited content evidence. " : "")
+          + ((t.score.codes || []).includes("relevance_unconfirmed") ? "Relevance unconfirmed; excluded from current assessment evidence. " : "")
+          + ((t.score.codes || []).includes("ownership_unknown") ? "Individual ownership is unconfirmed. " : "")
+          + ((t.score.codes || []).includes("depth_unknown") ? "No confirmed depth yardstick. " : "")
+          + ((t.score.codes || []).includes("transcript_truncated") ? "Saved transcript was truncated to the server's text limit. " : "") }))
+    };
   };
   goComp = this.nav("comp");
   goAdminOrgs = this.nav("adminorgs");
@@ -2300,7 +3117,8 @@ class Component extends DCLogic {
   signOut = () => {
     // Ask the server to kill the session, then clear locally either way — a
     // failed logout must not strand someone in a signed-in-looking shell.
-    API.post("/auth/logout").then(this.handleSessionLost, this.handleSessionLost);
+    API.post("/auth/logout").catch(() => {});
+    this.handleSessionLost();
     this.setState({ authNotice: null });
   };
   // Goes through nav() like every other door onto the queue. It used to set
@@ -2311,6 +3129,78 @@ class Component extends DCLogic {
   noop = (e) => { if (e && e.preventDefault) e.preventDefault(); };
 
   // ── portal / devices / roles / comp ───────────────────────────────────────
+  loadContacts = () => {
+    const me = this.state.me;
+    if (!me || me.kind !== "candidate") return;
+    const token = this._contactLoad = {};
+    const current = () => !this._gone && this.state.me === me && this._contactLoad === token;
+    return this.load("contactList", () => API.get("/portal/verifications", { timeoutMs: EVAL_TIMEOUT_MS }), current)
+      .then(data => {
+        if (!data || !current()) return;
+        const selected = (data.verifications || []).find(v => v.id === this.state.contactId);
+        if (selected && selected.status !== "pending") this.setState({ contactId: null, contactCode: "" });
+      });
+  };
+  contactEmail = () => this.setContactMethod("otp_email");
+  contactPhone = () => this.setContactMethod("otp_phone");
+  setContactMethod = (method) => {
+    if (!this._contactAction) this.setState({ contactMethod: method, contactId: null,
+      contactCode: "", contactError: null, contactNotice: "" });
+  };
+  setContactDestination = (e) => { if (!this._contactAction) this.setState({ contactDestination: e.target.value,
+    contactId: null, contactCode: "", contactError: null, contactNotice: "" }); };
+  setContactCode = (e) => { if (!this._contactAction) this.setState({ contactCode: e.target.value }); };
+  continueContact = (id, method) => () => {
+    if (!this._contactAction) this.setState({ contactId: id, contactMethod: method, contactDestination: "",
+      contactCode: "", contactError: null, contactNotice: "Enter the previously delivered code. It may have expired or been replaced." });
+  };
+  contactErrorCopy = (err) => {
+    if (!err) return "";
+    if (err.detail === "email_unavailable") return "Email delivery is unavailable. Request a new code when it is available.";
+    if (err.detail === "phone_unavailable") return "Phone delivery is unavailable. Use email if an email contact is on your record.";
+    if (err.detail === "email_send_failed") return "The code request failed. You can request a new code.";
+    if (["network", "timeout"].includes(err.kind)) return "The request could not be completed here. It may have completed on the server; refresh contact status before retrying.";
+    if (err.status === 403 && err.kind !== "csrf") return "This account cannot perform this contact check.";
+    if (err.status >= 500) return "Contact verification is unavailable. Try again later.";
+    return errorCopy(err);
+  };
+  startContactVerification = () => this.contactRequest(false);
+  confirmContactVerification = () => this.contactRequest(true);
+  contactRequest = async (confirm) => {
+    const st = this.state, me = st.me;
+    if (this._gone || this._contactAction || !me || me.kind !== "candidate") return;
+    if (confirm ? !st.contactId || !st.contactCode.trim() : !st.contactDestination.trim()) {
+      this.setState({ contactError: { detail: confirm ? "Enter the delivered verification code." : "Enter the contact on your candidate record." } });
+      return;
+    }
+    const token = this._contactAction = {};
+    const current = () => !this._gone && this._contactAction === token && this.state.me === me;
+    const id = st.contactId;
+    const body = confirm ? { code: st.contactCode.trim() }
+      : { method: st.contactMethod, destination: st.contactDestination.trim() };
+    this.setState({ contactBusy: true, contactError: null, contactNotice: "",
+      contactCode: "", ...(confirm ? {} : { contactId: null }) });
+    try {
+      const result = await API.post(confirm ? "/portal/verifications/" + encodeURIComponent(id) + "/confirm" : "/portal/verifications",
+        body, { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!current()) return;
+      const verification = confirm ? result : result && result.verification;
+      if (!verification || typeof verification.id !== "string" || !verification.id
+          || verification.method !== st.contactMethod || verification.status !== (confirm ? "verified" : "pending")
+          || (confirm && verification.id !== id)) throw { detail: "The server did not return the expected verification state. Refresh contact status." };
+      this.setState({ contactId: confirm ? null : verification.id,
+        contactNotice: confirm ? "Contact verified. This proves contact control, not employment." : "Code sent. Enter the code delivered to your contact." });
+      this.loadContacts();
+      if (confirm) this.load("portal", () => API.get("/portal/me"), () => !this._gone && this.state.me === me);
+    } catch (err) {
+      if (!current() || err.kind === "session_lost") return;
+      this.setState({ contactError: err, ...(confirm && (err.status === 404
+        || (err.status === 400 && err.detail !== "incorrect code")) ? { contactId: null } : {}) });
+      this.loadContacts();
+    } finally {
+      if (current()) { this._contactAction = null; this.setState({ contactBusy: false }); }
+    }
+  };
   revokeConsent = (id) => () => {
     this.setState({ busyId: id });
     API.post("/portal/consents/" + id + "/revoke").then(
@@ -2400,10 +3290,22 @@ class Component extends DCLogic {
   componentWillUnmount() {
     // The driver outlives a render; it must not outlive the component.
     this._gone = true;
+    window.removeEventListener?.("pagehide", this.clearInterview);
+    this.clearInterviewAudio();
     this._driving = false;
     clearTimeout(this._copyTimer);
-    clearTimeout(this._turnTimer);
-    clearInterval(this._evalTimer);
+    this._interviewAction = null;
+    this._interviewLoad = null;
+    this._evaluating = null;
+    this._contactAction = null;
+    this._contactLoad = null;
+    this._recording = null;
+    this._orgAction = null;
+    this._orgLoad = null;
+    this._usersAction = null;
+    this._usersLoad = null;
+    this._curationLoad = null;
+    this._curationReview = null;
   }
 
   renderVals() {
@@ -2412,10 +3314,6 @@ class Component extends DCLogic {
     // so a returning user with a live cookie never sees the login screen flash.
     const authed = s !== "login" && s !== "verify" && s !== "boot";
     const dark = this.state.theme === "dark";
-    const stage = this.state.evalStage || 0;
-    const audio = this.state.channel !== "text";
-    const speechOk = this.props.speechEnabled ?? true;
-    const recording = this.state.turnState === "recording";
     const st = this.state;
     return Object.assign({
       themeVars: dark ? DARK : LIGHT,
@@ -2490,60 +3388,28 @@ class Component extends DCLogic {
       goEvaluate: this.goEvaluate,
       runEvaluate: this.runEvaluate,
       textArea: TEXT_AREA,
-      evaluateAction: stage === 0 || stage === undefined ? "Evaluate this resume" : stage === 99 ? "Run it again" : "Running…",
-      evalRunning: stage > 0 && stage < 99,
-      evalDone: stage === 99,
-      evalNodes: EVAL_NODES.map((n, i) => Object.assign({}, n, {
-        dot: nodeDot(stage === 99 || stage > i + 1 ? "done" : stage === i + 1 ? "active" : "idle")
-      })),
-      evalGauge: {
-        width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
-        background: "conic-gradient(from 180deg, var(--c-elev) 0deg, var(--c-elev) 220deg, var(--track) 220deg)"
-      },
-      evalBandChip: Object.assign(chip(BAND.elevated), { marginTop: "9px" }),
-      evalChipElev: chip(BAND.elevated),
-      evalChipMod: chip(BAND.moderate),
-      evalChipLow: chip(BAND.low),
+      evaluateAction: st.evalBusy ? "Evaluating…" : st.evalError ? "Retry evaluation" : "Evaluate this resume",
+      evalRunning: st.evalBusy, evalBusy: st.evalBusy, evalProgress: st.evalProgress,
+      evalNoticeBox: NOTICE_BOX, evalErrorBox: ERROR_BOX,
+      evalText: st.evalText, evalGithub: st.evalGithub, evalPortfolio: st.evalPortfolio,
+      setEvalText: this.setEvalText, setEvalGithub: this.setEvalGithub, setEvalPortfolio: this.setEvalPortfolio,
+      pickEvalFile: this.pickEvalFile, clearEvalFile: this.clearEvalFile,
+      hasEvalFile: !!st.evalFile, evalFileLabel: st.evalFile ? st.evalFile.name : "PDF or pasted text; selecting one replaces the other.",
+      evalError: !!st.evalError,
+      evalErrorText: st.evalError ? (st.evalError.status === 403 && st.evalError.kind !== "csrf"
+        ? "This account is not permitted to evaluate this resume."
+        : errorCopy(st.evalError)) + (["network", "timeout"].includes(st.evalError.kind) || st.evalError.status >= 500
+          ? " The server may have saved the run. Retrying may create another saved evaluation; retry only when ready." : "") : "",
+      hasEvalReport: !!st.evalReportId, evalReportId: st.evalReportId || "", viewEvaluation: this.viewEvaluation,
+      evalStorageCopy: st.me && st.me.kind === "admin"
+        ? "Paste text or attach a PDF. This operator check saves a report, without creating a candidate or fingerprinting the resume."
+        : "Paste text or attach a PDF. This saves a candidate, resume and report for your organisation, outside a batch.",
+      backFromReport: this.backFromReport, retryReport: this.retryReport,
+      reportBackLabel: st.reportOrigin === "evaluate" ? "← Back to Instant check" : "← Back to screening queue",
 
       isInterview: s === "interview",
       navInterview: navBtn(s === "interview"),
       goInterview: this.goInterview,
-      turnCounter: (this.state.turn + 1) + " of " + TURNS.length,
-      plannedCopy: TURNS.length + " questions were planned for you (the engine plans between three and eight, depending on how many claims are worth probing).",
-      wordFloorChip: stateChip(false),
-      wordFloorLabel: "under the 12-word floor",
-      turnPips: TURNS.map((_t, i) => ({
-        style: pip(i < this.state.turn ? "done" : i === this.state.turn ? "active" : "idle")
-      })),
-      turnClaimType: TURNS[this.state.turn].type,
-      turnQuestion: TURNS[this.state.turn].q,
-      chanAudio: modeBtn(audio),
-      chanText: modeBtn(!audio),
-      setAudio: this.setAudio, setText: this.setText,
-      speechDown: audio && !speechOk,
-      showRecorder: audio && speechOk,
-      showTextBox: !audio || !speechOk,
-      micBtn: {
-        width: "46px", height: "46px", flex: "none", borderRadius: "50%", cursor: "pointer",
-        display: "grid", placeItems: "center", border: 0, color: "#ffffff",
-        background: recording ? "var(--c-elev)" : "linear-gradient(140deg,var(--a1),var(--a2))"
-      },
-      micGlyph: {
-        width: "18px", height: "18px", display: "inline-block", background: "currentColor",
-        WebkitMask: "url(https://unpkg.com/lucide-static@0.460.0/icons/" + (recording ? "square" : "mic") + ".svg) center/contain no-repeat",
-        mask: "url(https://unpkg.com/lucide-static@0.460.0/icons/" + (recording ? "square" : "mic") + ".svg) center/contain no-repeat"
-      },
-      recordLabel: recording ? "Recording — 00:14" : this.state.turnState === "recorded" ? "Recorded — 00:22" : "Ready when you are",
-      recordHint: recording ? "Tap to stop. Audio is transcribed, then discarded." : "Asked for once, at the first question. Up to about six minutes per answer.",
-      levelBars: LEVELS.map((h) => ({ style: levelBar(recording ? h : 3, recording) })),
-      turnFailed: this.state.turnState === "failed",
-      retryTurn: this.retryTurn, submitTurn: this.submitTurn, skipTurn: this.skipTurn,
-      toggleRecord: this.toggleRecord,
-      submitLabel: this.state.turnState === "processing" ? "Scoring…" : "Submit answer",
-      turnStatus: this.state.turnState === "processing" ? "Scoring deterministically — a model may nudge, never grade."
-        : this.state.turnState === "failed" ? "This question is still open."
-        : "Answers are scored one turn at a time.",
-
       isRoles: s === "roles",
       isComp: s === "comp",
       navRoles: navBtn(s === "roles"),
@@ -2563,9 +3429,6 @@ class Component extends DCLogic {
       navAdminUsers: navBtn(s === "adminusers"),
       navCuration: navBtn(s === "curation"),
       goAdminOrgs: this.goAdminOrgs, goAdminUsers: this.goAdminUsers, goCuration: this.goCuration,
-      adminOrgs: ADMIN_ORGS.map((o) => Object.assign({}, o, { chip: stateChip(o.status === "Active") })),
-      adminUsers: ADMIN_USERS,
-      curation: CURATION,
       smallGhost: SMALL_GHOST,
       accountName: this.state.plane === "candidate" ? "Priya Nandakumar"
         : this.state.plane === "operator" ? "ops@veritas.in"
@@ -2609,6 +3472,8 @@ class Component extends DCLogic {
     const st = this.state;
     const me = st.me || {};
     const busy = (id) => st.busyId === id;
+    const curationAllowed = me.kind === "admin" && st.screen === "curation";
+    const curationData = curationAllowed ? st.curationList.data : null;
 
     const screening = this.screeningVals();
 
@@ -2638,7 +3503,8 @@ class Component extends DCLogic {
 
     // S7.1 assurance ladder. `identity` is null until the candidate verifies
     // anything, which is the common case and not an error.
-    const held = new Set(((my && my.identity && my.identity.methods_held) || []).map(String));
+    const held = new Set(((my && my.identity && my.identity.methods) || []).map(String));
+    const expired = new Set(((my && my.identity && my.identity.expired_methods) || []).map(String));
     const portalAssurance = my ? [
       ["Self-attestation", "self_attested"],
       ["Contact-control OTP (email)", "otp_email"],
@@ -2647,8 +3513,9 @@ class Component extends DCLogic {
       ["Government ID", "government_id"]
     ].map(([label, key]) => {
       const isHeld = held.has(key);
-      const status = key === "government_id" && !isHeld ? "Not implemented" : (isHeld ? "Held" : "Not held");
-      return { method: label, status, chip: stateChip(isHeld) };
+      const status = isHeld ? "Held" : expired.has(key) ? "Expired"
+        : key === "government_id" ? "Not implemented" : "Not held";
+      return { key, method: label, status, chip: stateChip(isHeld) };
     }) : [];
 
     const accessRows = st.accessLog.data;
@@ -2741,16 +3608,72 @@ class Component extends DCLogic {
       return (15 + frac * 70).toFixed(2) + "%";
     })();
 
-    // Screens this org session has no endpoint for. They keep their mock data
-    // and must SAY so on screen (spec 0.4). Three different reasons, none of
-    // them "not built yet" any more: `evaluate`, `adminorgs`, `adminusers` and
-    // `curation` are ADMIN-plane routes an org session gets 401 from, and
-    // `interview` is candidate-plane.
-    const MOCK_SCREENS = {
-      evaluate: 1, interview: 1, adminorgs: 1, adminusers: 1, curation: 1
-    };
+    const orgAllowed = me.kind === "admin";
+    const orgRows = orgAllowed && !st.orgList.error ? (st.orgList.data || []) : [];
+    const orgFiltered = orgRows.filter(o => (o.name + " " + o.id).toLowerCase().includes(st.orgFilter.toLowerCase()));
+    const orgPages = Math.max(1, Math.ceil(orgFiltered.length / 20));
+    const orgPage = Math.min(st.orgPage, orgPages - 1);
+    const orgSelected = orgRows.find(o => o.id === st.orgSelection);
+    const orgDisabled = st.orgBusy || st.orgList.loading || !!st.orgList.error;
+    const usersAllowed = me.kind === "admin";
+    const usersRows = usersAllowed && !st.usersList.error ? (st.usersList.data || []) : [];
+    const usersFiltered = usersRows.filter(u => (u.label + " " + u.id).toLowerCase().includes(st.usersFilter.toLowerCase()));
+    const usersPages = Math.max(1, Math.ceil(usersFiltered.length / 20));
+    const usersPage = Math.min(st.usersPage, usersPages - 1);
+    const usersTarget = usersRows.find(u => u.id === st.usersConfirm);
+    // Remaining prototype screens still identify their sample data.
+    const MOCK_SCREENS = {};
 
-    return Object.assign(screening, {
+    return Object.assign(screening, this.interviewValues(), {
+      showSearch: st.plane !== "candidate" && !["adminorgs", "adminusers"].includes(st.screen),
+      usersAdminAllowed: usersAllowed, usersAdminDenied: !usersAllowed,
+      adminUsers: usersFiltered.slice(usersPage * 20, (usersPage + 1) * 20).map(u => ({
+        id: u.id, displayLabel: u.label || "Unlabelled operator", role: "Operator",
+        status: u.disabled_at === null ? "Enabled" : "Disabled", created: fmtDate(u.created_at), remove: this.armUserDelete(u.id) })),
+      usersEmail: usersAllowed ? st.usersEmail : "", usersLabel: usersAllowed ? st.usersLabel : "", usersFilter: st.usersFilter,
+      setUsersEmail: this.setUsersEmail, setUsersLabel: this.setUsersLabel, setUsersFilter: this.setUsersFilter,
+      createUser: this.createUser, reloadUsers: this.reloadUsers, usersBusy: st.usersBusy,
+      usersControlsDisabled: st.usersBusy || st.usersList.loading || !!st.usersList.error,
+      usersLoading: st.usersList.loading, usersListError: !!st.usersList.error,
+      usersListErrorText: this.usersErrorCopy(st.usersList.error),
+      usersActionError: !!st.usersError, usersActionErrorText: this.usersErrorCopy(st.usersError) + (st.usersError &&
+        (["network", "timeout"].includes(st.usersError.kind) || st.usersError.status >= 500)
+        ? " The change may have completed. Refresh operator accounts before retrying." : ""),
+      usersNotice: st.usersNotice,
+      usersEmpty: usersAllowed && !!st.usersList.data && !st.usersList.loading && !st.usersList.error && !usersFiltered.length,
+      usersPageLabel: "Page " + (usersPage + 1) + " of " + usersPages + " · " + usersFiltered.length + " operator accounts",
+      usersPrevDisabled: usersPage === 0, usersNextDisabled: usersPage + 1 >= usersPages,
+      prevUsers: this.prevUsers, nextUsers: this.nextUsers,
+      usersConfirm: !!usersTarget, cancelUserDelete: this.cancelUserDelete, confirmUserDelete: this.confirmUserDelete,
+      usersConfirmCopy: "Permanently delete " + (usersTarget?.label || "this operator") + " (" + (usersTarget?.id || "")
+        + ")? All its sessions are revoked. If this is your own account, your sign-in ends immediately. The API allows deleting the last operator; recovery needs another operator or the configured machine admin key. This cannot be undone.",
+      orgAdminAllowed: orgAllowed, orgAdminDenied: !orgAllowed,
+      adminOrgs: orgFiltered.slice(orgPage * 20, (orgPage + 1) * 20).map(o => ({ ...o,
+        created: fmtDate(o.created_at), chip: stateChip(o.status === "active"), inspect: this.selectOrg(o.id) })),
+      orgSelected: orgSelected ? { ...orgSelected, created: fmtDate(orgSelected.created_at) } : null,
+      orgName: st.orgName, orgWeight: st.orgWeight, orgFilter: st.orgFilter,
+      setOrgName: this.setOrgName, setOrgWeight: this.setOrgWeight, setOrgFilter: this.setOrgFilter,
+      createOrg: this.createOrg, saveOrgReliability: this.saveOrgReliability, reloadOrgs: this.reloadOrgs,
+      orgBusy: st.orgBusy, orgControlsDisabled: orgDisabled,
+      orgNotice: st.orgNotice, orgActionError: !!st.orgError,
+      orgActionErrorText: this.orgErrorCopy(st.orgError) + (st.orgError &&
+        (["network", "timeout"].includes(st.orgError.kind) || st.orgError.status >= 500)
+        ? " The change may have completed. Refresh organisations before retrying. A lost key response cannot be retrieved; rotation needs another explicit confirmation." : ""),
+      orgListLoading: st.orgList.loading, orgListError: !!st.orgList.error,
+      orgListErrorText: this.orgErrorCopy(st.orgList.error),
+      orgEmpty: orgAllowed && !!st.orgList.data && !st.orgList.loading && !st.orgList.error && !orgFiltered.length,
+      orgPrevDisabled: orgPage === 0, orgNextDisabled: orgPage + 1 >= orgPages,
+      orgPageLabel: "Page " + (orgPage + 1) + " of " + orgPages + " · " + orgFiltered.length + " organisations",
+      prevOrgs: this.prevOrgs, nextOrgs: this.nextOrgs,
+      orgConfirm: !!st.orgConfirm, armOrgRotate: this.armOrgRotate, armOrgDelete: this.armOrgDelete,
+      cancelOrgConfirm: this.cancelOrgConfirm, confirmOrgAction: this.confirmOrgAction,
+      orgConfirmLabel: st.orgConfirm?.action === "rotate" ? "Confirm key rotation" : "Confirm offboarding",
+      orgConfirmCopy: st.orgConfirm?.action === "rotate"
+        ? "Rotate the key for " + (orgSelected?.name || "this organisation") + "? The previous machine key stops working immediately. Existing sign-in sessions remain. Save the replacement securely when returned."
+        : "Permanently offboard " + (orgSelected?.name || "this organisation") + "? This deletes its dependent records, jobs, grants and memberships. Candidates and historical reports/judgements can remain. This cannot be undone.",
+      orgHasKey: orgAllowed && !!st.orgKey, orgKey: orgAllowed ? st.orgKey : "", orgKeyOwner: orgAllowed ? st.orgKeyOwner : "",
+      orgKeyType: st.orgKeyVisible ? "text" : "password", orgKeyToggleLabel: st.orgKeyVisible ? "Conceal API key" : "Reveal API key",
+      toggleOrgKey: this.toggleOrgKey, dismissOrgKey: this.dismissOrgKey,
       authAction: st.authBusy
         ? "Sending…"
         : (st.authMode === "signup" && st.plane !== "operator" ? "Create account and send code" : "Send code"),
@@ -2770,9 +3693,48 @@ class Component extends DCLogic {
       mockNote: API.MOCK_NOTE,
       isMockScreen: !!MOCK_SCREENS[st.screen],
 
+      curationAllowed, curationDenied: st.screen === "curation" && !curationAllowed,
+      curation: (curationData?.terms || []).map(t => ({
+        key: t.norm_key, term: t.display_name, sources: t.source_types.join(", "), count: t.occurrences,
+        review: this.selectCuration(t), ignore: this.ignoreCuration(t)
+      })),
+      curationLoading: curationAllowed && st.curationList.loading,
+      curationBusy: curationAllowed && (st.curationBusy || st.curationList.loading),
+      curationControlsDisabled: !this.curationReady(),
+      curationError: curationAllowed && !!(st.curationError || st.curationList.error),
+      curationErrorText: curationAllowed ? this.curationErrorCopy(st.curationError || st.curationList.error) : "",
+      curationNotice: curationAllowed ? st.curationNotice : "",
+      curationNeedsRefresh: curationAllowed && st.curationNeedsRefresh,
+      curationHasData: !!curationData, curationLoaded: curationData?.terms.length || 0,
+      curationEmpty: !!curationData && !curationData.terms.length,
+      curationMore: !!curationData?.next_cursor,
+      curationSelected: curationAllowed && !!st.curationSelection,
+      curationSelectedName: curationAllowed && st.curationSelection ? st.curationSelection.display_name : "",
+      curationAlias: curationAllowed ? st.curationAlias : "", curationCanonical: curationAllowed ? st.curationCanonical : "",
+      curationCategory: curationAllowed ? st.curationCategory : "", curationAction: curationAllowed ? st.curationAction : "map",
+      reloadCuration: this.reloadCuration, moreCuration: this.moreCuration,
+      setCurationAlias: this.setCurationAlias, setCurationCanonical: this.setCurationCanonical,
+      setCurationCategory: this.setCurationCategory, setCurationAction: this.setCurationAction,
+      approveCuration: this.approveCuration, cancelCuration: this.cancelCuration,
       portalLoading: st.portal.loading,
       portalError: !!st.portal.error,
       portalErrorText: errorCopy(st.portal.error),
+      contactDestination: st.contactDestination, contactCode: st.contactCode,
+      contactDestinationLabel: st.contactMethod === "otp_phone" ? "Phone contact on record" : "Email contact on record",
+      contactBusy: st.contactBusy, contactStartLabel: st.contactBusy ? "Working…" : "Send contact code",
+      contactEmail: this.contactEmail, contactPhone: this.contactPhone,
+      setContactDestination: this.setContactDestination, setContactCode: this.setContactCode,
+      startContactVerification: this.startContactVerification, confirmContactVerification: this.confirmContactVerification,
+      contactPending: !!st.contactId, contactNotice: st.contactNotice,
+      contactError: !!st.contactError, contactErrorText: this.contactErrorCopy(st.contactError),
+      loadContacts: this.loadContacts, contactListLoading: st.contactList.loading,
+      contactListError: !!st.contactList.error, contactListErrorText: this.contactErrorCopy(st.contactList.error),
+      contactRecords: ((st.contactList.data && st.contactList.data.verifications) || [])
+        .filter(v => v.method === "otp_email" || v.method === "otp_phone").map(v => ({
+          id: v.id, pending: v.status === "pending",
+          label: (v.method === "otp_email" ? "Email" : "Phone") + " · " + v.status + " · " + fmtDateTime(v.requested_at),
+          continue: this.rowHandler("contact", v.id, () => this.continueContact(v.id, v.method))
+        })),
       portalProfile, portalReports, portalAssurance,
       portalCounts: {
         resumes: my ? (my.resumes || []).length : 0,
@@ -2912,6 +3874,7 @@ class Component extends DCLogic {
       const sig = r.signals || null;
       const b = (sig && RISK_BAND[sig.risk_band]) || BAND.insufficient;
       const scored = r.risk_score !== null && r.risk_score !== undefined;
+      const assessable = scored && sig && sig.risk_band !== "insufficient_data";
       const loud = sig && sig.loudest_signal
         ? (SIGNAL_LABEL[sig.loudest_signal] || sig.loudest_signal)
             + (sig.loudest_band ? " — " + (SUB_BAND_LABEL[sig.loudest_band] || sig.loudest_band).toLowerCase() : "")
@@ -2927,8 +3890,8 @@ class Component extends DCLogic {
         chip: chip(b), bandLabel: scored ? b.label : "Not screened",
         reason: r.reason,
         loudest: loud,
-        scoreLabel: num(r.risk_score),
-        riskBar: riskBar(scored ? r.risk_score : 0, b),
+        scoreLabel: assessable ? num(r.risk_score) : "—",
+        riskBar: riskBar(assessable ? r.risk_score : 0, b),
         confBar: confBarStyle(sig ? sig.risk_confidence : 0),
         confLabel: sig ? "conf " + num(sig.risk_confidence) : "conf —",
         // A row with no report has nothing to open — an affordance that always
@@ -2942,26 +3905,41 @@ class Component extends DCLogic {
     // -- report ------------------------------------------------------------
     const ctx = (rep && rep.candidate_context) || {};
     const fab = (rep && rep.fabrication_risk) || null;
-    const repBand = (fab && RISK_BAND[fab.band]) || BAND.insufficient;
-    const deg = Math.round((fab && fab.score ? fab.score : 0) * 360);
+    const version = fab ? (fab.scorer_version == null ? 1 : fab.scorer_version) : null;
+    const repBand = (fab && (version === 1 || version === 2) && RISK_BAND[fab.band]) || BAND.insufficient;
+    const assessable = fab && (version === 1 || version === 2) && fab.band !== "insufficient_data";
+    const deg = Math.round((assessable ? fab.score : 0) * 360);
     const subs = rep ? {
-      ai_generation: { title: "AI generation", a: rep.ai_generation, n: (x) => "likelihood " + num(x.likelihood) },
-      cross_field: { title: "Cross-field", a: rep.cross_field, n: (x) => "score " + num(x.score) },
-      resume_farm: { title: "Resume farm", a: rep.resume_farm, n: (x) => "score " + num(x.score) }
+      cross_field: { title: "Timeline / structure", a: rep.cross_field,
+        help: "Extracted dates and structure may be incomplete. Ask about date precision, concurrent or part-time roles and the context of each finding." },
+      resume_farm: { title: "Content overlap", a: rep.resume_farm,
+        help: "Similarity estimates text overlap in the stored comparison corpus. Shared templates are legitimate; ask which contributions and results are the candidate's own." }
     } : {};
-    // The component list is the FUSION's own record of what it weighed, so it
-    // drives the cards; each card's prose comes from that subsystem's own
-    // reasoning, which is the only place the API puts a sentence.
-    const reportComponents = fab ? fab.components.map((c) => {
-      const s = subs[c.id] || { title: c.id, a: null, n: () => "" };
+    // Always show missing factual checks, even when fusion excluded them.
+    // Historical contributors are documented separately without recomputing.
+    const reportComponents = Object.keys(subs).map((id) => {
+      const s = subs[id];
       const a = s.a;
+      const c = fab && (fab.components || []).find((x) => x.id === id);
+      const usable = a && a.band !== "insufficient_data";
       return {
         title: s.title,
-        band: SUB_BAND_LABEL[c.band] || c.band,
-        meta: (a ? s.n(a) + " · " : "") + "conf " + num(c.confidence) + " · weight " + num(c.weight),
-        detail: (a && a.reasoning) || "No reasoning was recorded for this component."
+        band: usable ? (SUB_BAND_LABEL[a.band] || a.band) : "Insufficient data",
+        meta: usable ? "Check confidence " + num(a.confidence) + (c ? " · fusion weight " + num(c.weight) : " · excluded from index") : "Excluded from index: check unavailable",
+        detail: ((a && a.reasoning) || "No assessment was recorded for this check.") + " " + s.help
       };
-    }) : [];
+    });
+    const timeline = rep && rep.cross_field;
+    const reportTimelineFindings = ((timeline && timeline.findings) || []).map((f) => ({
+      title: f.id.replace(/_/g, " ") + " · " + f.severity + " observation",
+      detail: f.detail,
+      clarify: f.id === "timeline_overlap"
+        ? "Clarify the dates and whether the roles were concurrent, contract or part-time; an overlap alone does not establish dishonesty."
+        : "Confirm the extracted dates and role context with the candidate before drawing a conclusion."
+    }));
+    const style = rep && rep.ai_generation;
+    const styleSignals = ((style && style.signals) || []).filter((s) => s.source === "deterministic");
+    const modelStyleCount = ((style && style.signals) || []).filter((s) => s.source === "llm").length;
     const farm = rep && rep.resume_farm;
     const matches = (farm && farm.matches) || [];
     // Similarity and count only. The org plane nulls the ids before they leave
@@ -3137,30 +4115,51 @@ class Component extends DCLogic {
       reportLoading: st.report.loading,
       reportError: !!st.report.error,
       reportErrorText: errorCopy(st.report.error),
+      reportReference: rep ? rep.id : "",
       hasReport: !!rep,
       reportName: ctx.full_name || "Name not extracted",
       reportRole: [ctx.role_title, ctx.seniority, rep && rep.domain].filter(Boolean).join(" · ") || "—",
       reportSummary: rep ? (rep.summary || "No summary was generated for this report.") : "",
+      reportSummaryLabel: version === 1 ? "Stored historical summary (original wording)" : "Assessment summary",
+      reportVersionNote: version === 2
+        ? "Current factual review context · v2. Timeline and content overlap only; writing style is excluded. The review index is a heuristic, not a fraud probability."
+        : version === 1
+          ? "Historical assessment · v1. This stored index included writing style. Its original score and wording are retained; it is not comparable to current factual context v2 and cannot establish authorship or dishonesty."
+          : fab ? "Unsupported scorer version " + version + ". Stored data is retained; its index cannot be interpreted by this UI."
+            : "No factual review assessment was recorded. No index is available.",
+      reportRiskExplanation: !assessable
+        ? "Cannot assess factual risk: insufficient data or unsupported assessment. This is not a low score. Review the unavailable checks below and request missing dates or comparison context."
+        : "This advisory index is based on the checks available when the report was created. Low means few concerns were observed, not verified experience. Confidence describes available check coverage, not the probability of dishonesty.",
+      reportComponentHelp: version === 1
+        ? "Historical fusion contributors: " + (fab.components || []).map((c) => SIGNAL_LABEL[c.id] || c.id).join(", ") + ". The original index is preserved; these factual observations and style notes are shown separately for clarification."
+        : "Timeline and content-overlap checks contribute only when assessable. Missing coverage can prevent an assessment. Writing-style observations are shown separately and never supply factual evidence.",
       reportDepth: rep
         ? (DEPTH_LABEL[rep.depth_band] || rep.depth_band) + " · depth " + num(rep.depth_score)
         : "—",
       reportInitials: ctx.full_name ? initials(ctx.full_name) : "··",
       reportAvatar: avatar(repBand, 36),
-      reportScore: fab ? num(fab.score) : "—",
-      reportBandLabel: repBand.label,
+      reportScore: assessable ? num(fab.score) : "—",
+      reportIndexLabel: assessable ? "Advisory review index " + num(fab.score) : "Review index unavailable",
+      reportBandLabel: version && version !== 1 && version !== 2 ? "Unsupported version" : repBand.label,
       reportChip: Object.assign(chip(repBand), { marginTop: "9px" }),
       gaugeRing: {
         width: "108px", height: "108px", borderRadius: "50%", display: "grid", placeItems: "center",
-        background: "conic-gradient(from 180deg, " + repBand.c + " 0deg, " + repBand.c + " " + deg + "deg, var(--track) " + deg + "deg)"
+        background: assessable ? "conic-gradient(from 180deg, " + repBand.c + " 0deg, " + repBand.c + " " + deg + "deg, var(--track) " + deg + "deg)" : "var(--track)"
       },
-      reportConfBar: gradBar(fab ? fab.confidence : 0),
-      reportConfLabel: fab ? num(fab.confidence) + " · " + confWord(fab.confidence) : "—",
+      reportConfBar: gradBar(assessable ? fab.confidence : 0),
+      reportConfLabel: assessable ? num(fab.confidence) + " · " + confWord(fab.confidence) : "insufficient coverage",
       reportComponents,
+      reportTimelineFindings,
+      reportStyleStatus: !style ? "No style assessment was recorded."
+        : style.band === "insufficient_text" ? "Insufficient text for style observations."
+          : styleSignals.length ? styleSignals.length + " text pattern(s) recorded." : "No deterministic style patterns were recorded; this does not verify authorship.",
+      reportStyleSignals: styleSignals.map((s) => "Text observation: " + s.detail).concat(modelStyleCount
+        ? [modelStyleCount + " model suggestion(s) were also recorded, unverified; model opinions do not establish authorship."] : []),
       reportFarmLine: matches.length
-        ? matches.length + (matches.length === 1 ? " near-duplicate" : " near-duplicates")
-          + " in a corpus of " + (farm.corpus_size || 0) + ", top similarity " + num(topSimilarity)
-          + ". Whose resume matched is never disclosed."
+        ? matches.length + " content match(es) in a corpus of " + (farm.corpus_size || 0)
+          + "; highest estimated text overlap " + pct(topSimilarity) + ". Match identities are withheld. Similarity is not proof of copied experience."
         : "",
+      reportFarmMatches: matches.map((m, i) => "Content match " + (i + 1) + ": " + pct(m.similarity) + " estimated text overlap."),
       hasFarmMatches: matches.length > 0,
       reportVerdicts: verdicts,
       hasVerdicts: verdicts.length > 0,
@@ -3176,7 +4175,9 @@ class Component extends DCLogic {
       outcomeNotesCount: st.outcomeNotes.length + " / " + OUTCOME_NOTES_MAX,
       outcomeButtons,
       outcomeError: !!st.outcomeError,
-      outcomeErrorText: errorCopy(st.outcomeError),
+      outcomeErrorText: errorCopy(st.outcomeError) + (st.outcomeError &&
+        (["network", "timeout"].includes(st.outcomeError.kind) || st.outcomeError.status >= 500)
+        ? " Your judgement may have been saved. Reload saved feedback before recording again." : ""),
       // The RECORD action and the LIST read fail separately and are shown
       // separately. A failed list used to render nothing at all — no history,
       // no empty state, no error — which invites recording the same judgement

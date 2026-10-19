@@ -56,7 +56,7 @@ honesty about its own reach:
   to it. That matters: ``POST /jobs/{id}/match`` and ``GET /jobs/{id}/board``
   are org-plane routes reading the global feature store unfiltered (TENANCY.md
   §8), and this guard would not notice.
-* ONE hop, within ``routes.py`` only -- helpers in other modules are skipped
+* ONE hop, within each endpoint's module only -- helpers in other modules are skipped
   outright. A read two hops of delegation deep passes unseen.
 * Line-level, not dataflow. A store handed to a local and called on a later
   line through an alias of the ATTRIBUTE (rather than of the services
@@ -305,7 +305,7 @@ def _one_hop_sources(route) -> list[tuple[str, str]]:
     unscoped read is a real but rarer shape, and unbounded traversal would
     make the guard fragile -- which frame owns a violation, and does the walk
     ever terminate for code that isn't a strict DAG? One hop already covers
-    this codebase's actual anti-duplication shape: routes.py extracts a
+    this codebase's actual anti-duplication shape: an API module extracts a
     handler's body into a module-level ``_helper`` shared by two routes
     (``_ingest_one`` is exactly this), and that is the shape a future
     violation would arrive through -- a helper extracted from a route that

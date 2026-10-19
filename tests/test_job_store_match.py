@@ -1,7 +1,10 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from app.core.config import Settings
-from app.features.materialize import materialize_candidate
+from app.features import default_view
+from app.features.materialize import MaterializedVector, materialize_candidate
 from app.features.store import FeatureStore
 from app.ledger.store import LedgerStore
 from app.matching.schema import JobRequisitionInput
@@ -98,3 +101,64 @@ def test_dpdp_erasure_sweeps_match_surface_audit():
     assert [a for a in ledger.audit_for_candidate(cid) if a.action == "match.surface"]
     cands.delete_candidate(cid)
     assert ledger.audit_for_candidate(cid) == []  # candidate-linked rows CASCADE
+
+
+@pytest.mark.parametrize("denial", ["foreign_org", "revoked", "expired", "wrong_purpose"])
+@pytest.mark.parametrize("filter_gated", [False, True])
+def test_direct_match_authorizes_gated_ranking_for_asking_org(monkeypatch, denial, filter_gated):
+    # Shipped requisitions rank first-party terms only. Extend the real pure
+    # compiler in this probe so the direct-store authorization boundary is
+    # observable through scores, contributions and filters, not a spy on inputs.
+    import importlib
+    engine = importlib.import_module("app.matching.match")
+    from app.features.ranking_schema import FeatureFilter, FilterOp, RankingSpec, RankingTerm
+    from app.ledger.schema import ConsentPurpose
+
+    original_ranking = engine.compile_ranking
+    def ranking(req, settings):
+        base = original_ranking(req, settings)
+        return RankingSpec(terms=(*base.terms, RankingTerm(feature="reputation.score", weight=1.0)))
+    monkeypatch.setattr(engine, "compile_ranking", ranking)
+    monkeypatch.setattr("app.matching.store.compile_ranking", ranking)
+    if filter_gated:
+        monkeypatch.setattr(engine, "compile_filters", lambda req: [
+            FeatureFilter(feature="reputation.score", op=FilterOp.GTE, value=0.1),
+        ])
+
+    cands, ledger, features, jobs, settings = _wire()
+    a = ledger.create_organization("Asking A")
+    b = ledger.create_organization("Other B")
+    denied = _seed_candidate(cands, features, ledger, "Denied", "denied@x.io", ("python",))
+    allowed = _seed_candidate(cands, features, ledger, "Allowed", "allowed@x.io", ("python",))
+    current = AS_OF + timedelta(days=1)
+    monkeypatch.setattr("app.features.serving._utcnow", lambda: current)
+    for cid, org, value in [(denied, b if denial == "foreign_org" else a, 0.99), (allowed, a, 0.2)]:
+        grant = ledger.grant_consent(
+            candidate_id=cid, org_id=org.id,
+            purpose=ConsentPurpose.VERIFICATION_READ if cid == denied and denial == "wrong_purpose"
+                    else ConsentPurpose.LEDGER_READ,
+            now=AS_OF, expires_at=current if cid == denied and denial == "expired"
+                    else current + timedelta(days=7),
+        )
+        if cid == denied and denial == "revoked":
+            ledger.revoke_consent(grant.id, now=current)
+        raw = features.get_vector(cid, view_name="core_v1",
+            view_version=default_view(settings=settings).version, as_of=AS_OF)
+        values = {**raw.vector.values, "reputation.score": value}
+        features.upsert_vector(MaterializedVector(raw.vector.model_copy(update={"values": values}),
+                                                  {"allowed": True}, raw.materialized_at))
+    req = jobs.create_requisition(a.id, JobRequisitionInput(title="BE", must_have_skills=("python",)))
+    result = jobs.run_match(a.id, req.id, as_of=AS_OF)
+    rows = {r.candidate_id: r for r in result.ranked}
+    assert result.pool_size == 2
+    assert rows[allowed].contributions[-1].feature == "reputation.score"
+    assert rows[allowed].contributions[-1].raw == 0.2
+    if filter_gated:
+        assert result.filtered_size == 1 and set(rows) == {allowed}
+    else:
+        assert set(rows) == {denied, allowed}
+        assert rows[denied].score == 1.0  # present skill term; withheld term drops
+        assert [c.feature for c in rows[denied].contributions] == ["match.skill_coverage"]
+        assert rows[denied].missing == ("reputation.score",)
+    assert features.get_vector(denied, view_name="core_v1", view_version=default_view(settings=settings).version,
+                               as_of=AS_OF).vector.values["reputation.score"] == 0.99

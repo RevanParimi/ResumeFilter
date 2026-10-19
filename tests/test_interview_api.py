@@ -114,6 +114,8 @@ def test_another_candidates_session_is_404_not_403(app_client):
     assert client.get(f"/portal/interviews/{sid}",
                       headers={"X-Candidate-Key": key_two}).status_code == 404
     assert _answer(client, key_two, sid, "whatever", text=ANSWER).status_code == 404
+    assert client.post(f"/portal/interviews/{sid}/finish",
+                       headers={"X-Candidate-Key": key_two}).status_code == 404
 
 
 def test_a_text_answer_is_scored_and_advances(app_client):
@@ -137,6 +139,98 @@ def test_the_wrong_question_id_is_409(app_client):
     sid = body["session"]["id"]
     later = body["session"]["questions"][1]["id"]
     assert _answer(client, key, sid, later, text=ANSWER).status_code == 409
+
+
+def test_finish_during_scoring_refuses_late_answer_without_changing_outcome(app_client, monkeypatch):
+    client, services = app_client
+    cid, key = _candidate(services)
+    body = _start(client, key)
+    sid = body["session"]["id"]
+    saved = []
+
+    async def finish_before_save(*args, base, **kwargs):
+        saved.append(services.interview.finish(cid, sid).assessment.model_dump())
+        return base
+
+    monkeypatch.setattr("app.interview.service.adjust_with_llm", finish_before_save)
+    response = _answer(client, key, sid, body["next_question"]["id"], text=ANSWER)
+    assert response.status_code == 409
+    loaded = client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key": key}).json()
+    assert loaded["session"]["turns"] == []
+    assert loaded["session"]["assessment"] == saved[0]
+    assert loaded["next_question"] is None
+
+
+def test_duplicate_during_scoring_is_409_and_reload_advances_once(app_client, monkeypatch):
+    client, services = app_client
+    cid, key = _candidate(services)
+    body = _start(client, key)
+    sid, qid = body["session"]["id"], body["next_question"]["id"]
+    first = True
+
+    async def save_competitor(*args, base, **kwargs):
+        nonlocal first
+        if first:
+            first = False
+            await services.interview.answer(cid, sid, question_id=qid, text=ANSWER)
+        return base
+
+    monkeypatch.setattr("app.interview.service.adjust_with_llm", save_competitor)
+    assert _answer(client, key, sid, qid, text=ANSWER).status_code == 409
+    loaded = client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key": key}).json()
+    assert len(loaded["session"]["turns"]) == 1
+    assert loaded["next_question"]["sequence"] == 2
+    assert _answer(client, key, sid, qid, text=ANSWER).status_code == 409
+
+
+def test_expiry_during_provider_work_refuses_the_write(app_client, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    client, services = app_client
+    _, key = _candidate(services)
+    body = _start(client, key)
+    sid = body["session"]["id"]
+
+    async def expire_before_save(*args, base, **kwargs):
+        later = datetime.now(timezone.utc) + timedelta(days=1)
+        monkeypatch.setattr("app.interview.store._utcnow", lambda: later)
+        monkeypatch.setattr("app.interview.service._utcnow", lambda: later)
+        return base
+
+    monkeypatch.setattr("app.interview.service.adjust_with_llm", expire_before_save)
+    response = _answer(client, key, sid, body["next_question"]["id"], text=ANSWER)
+    assert response.status_code == 409 and "abandoned" in response.json()["detail"]
+    loaded = client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key": key}).json()
+    assert loaded["session"]["status"] == "abandoned"
+    assert loaded["session"]["turns"] == [] and loaded["next_question"] is None
+
+
+def test_last_answer_and_completion_audit_roll_back_together(app_client, monkeypatch):
+    client, services = app_client
+    _, key = _candidate(services)
+    body = _start(client, key)
+    sid = body["session"]["id"]
+    while body["next_question"]["sequence"] < len(body["session"]["questions"]):
+        body = _answer(client, key, sid, body["next_question"]["id"], text=ANSWER).json()
+    last = body["next_question"]["id"]
+    original = services.ledger._audit
+
+    def fail_completion(session, **kwargs):
+        if kwargs["action"] == "interview.complete":
+            raise RuntimeError("synthetic audit failure")
+        return original(session, **kwargs)
+
+    monkeypatch.setattr(services.ledger, "_audit", fail_completion)
+    with pytest.raises(RuntimeError, match="synthetic audit failure"):
+        _answer(client, key, sid, last, text=ANSWER)
+    loaded = client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key": key}).json()
+    assert loaded == body
+    assert loaded["session"]["assessment"] is None
+    monkeypatch.setattr(services.ledger, "_audit", original)
+    done = _answer(client, key, sid, last, text=ANSWER).json()
+    assert done["session"]["status"] == "completed" and done["next_question"] is None
+    assert done["session"]["assessment"]["questions_answered"] == len(done["session"]["turns"])
+    assert len([a for a in services.ledger.audit_for_candidate(done["session"]["candidate_id"])
+                if a.action == "interview.complete"]) == 1
 
 
 def test_audio_with_no_provider_is_422_speech_unavailable(app_client):
@@ -164,6 +258,43 @@ def test_audio_is_transcribed_when_a_provider_exists(settings):
         assert turn["transcript"] == ANSWER
         assert len(turn["audio_digest"]) == 64
         assert AUDIO_B64 not in resp.text        # the payload never comes back
+
+
+@pytest.mark.parametrize("payload,status", [
+    ({"audio_b64": AUDIO_B64, "mime": "application/pdf"}, 422),
+    ({"audio_b64": "%%%not-base64%%%", "mime": "audio/webm"}, 400),
+    ({"audio_b64": AUDIO_B64, "mime": "audio/webm", "text": "ambiguous"}, 400),
+])
+def test_invalid_audio_refuses_before_asr_and_preserves_the_question(settings, payload, status):
+    speech = FakeSpeech(text=ANSWER, settings=settings)
+    services = make_services(settings, speech=speech)
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as client:
+        _, key = _candidate(services)
+        body = _start(client, key)
+        sid, qid = body["session"]["id"], body["next_question"]["id"]
+        response = _answer(client, key, sid, qid, **payload)
+        assert response.status_code == status
+        assert speech.calls == []
+        current = client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key":key}).json()
+        assert current["session"]["turns"] == []
+        assert current["next_question"]["id"] == qid
+
+
+def test_asr_failure_detail_is_safe_and_an_empty_transcript_does_not_consume_a_turn(settings):
+    from app.services.speech import SpeechFailed
+    speech = FakeSpeech(fail=SpeechFailed("synthetic-private-payload-secret"), settings=settings)
+    services = make_services(settings, speech=speech)
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as client:
+        _, key = _candidate(services)
+        body = _start(client, key)
+        sid, qid = body["session"]["id"], body["next_question"]["id"]
+        response = _answer(client, key, sid, qid, audio_b64=AUDIO_B64, mime="audio/webm;codecs=opus")
+        assert response.status_code == 422
+        assert "synthetic-private" not in response.text
+        speech.fail, speech.text = None, " \n "
+        response = _answer(client, key, sid, qid, audio_b64=AUDIO_B64, mime="audio/webm")
+        assert response.status_code == 422
+        assert client.get(f"/portal/interviews/{sid}", headers={"X-Candidate-Key":key}).json()["next_question"]["id"] == qid
 
 
 def test_oversize_answers_are_422(app_client):

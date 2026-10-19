@@ -2,7 +2,7 @@
 
 One call to :func:`configure_logging` at process start wires structlog to emit
 either JSON (prod) or pretty console (dev) lines, and routes the stdlib logging
-used by our dependencies (openai, httpx, chromadb, uvicorn) through the same
+used by our dependencies (openai, httpx, uvicorn) through the same
 pipeline. Everywhere else, just::
 
     from app.core.logging import get_logger
@@ -72,7 +72,7 @@ def configure_logging() -> None:
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(level)
-    for noisy in ("httpx", "httpcore", "chromadb", "urllib3"):
+    for noisy in ("httpx", "httpcore", "urllib3"):
         logging.getLogger(noisy).setLevel(max(level, logging.WARNING))
 
     _CONFIGURED = True

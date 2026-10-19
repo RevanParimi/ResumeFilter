@@ -3,11 +3,13 @@
 Deterministic stylometry FIRST (app/fabrication/ai_text.py), an LLM pass
 SECOND (best-effort, confidence-capped), fused conservatively. The band is
 context for a human reviewer: it never touches claim verdicts or depth
-scoring here (S2.4 owns fusion into calibration), and LIKELY requires at
+scoring or factual-risk fusion, and LIKELY requires at
 least two independent deterministic tells — the LLM alone can never flag.
 """
 
 from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.logging import get_logger
 from app.fabrication.ai_text import assess_deterministic, band_for, fuse_pairs
@@ -17,6 +19,16 @@ from app.services import Services
 
 # Stylometry-by-LLM is weak evidence — capped below plausibility's 0.85.
 _LLM_MAX_CONFIDENCE = 0.75
+
+
+class _StyleReply(BaseModel):
+    model_config = ConfigDict(strict=True, allow_inf_nan=False)
+
+    likelihood: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
+    indicators: list[str]
+    reasoning: str
+
 
 # MODULE level, because the swallow below lives in a module-level helper while
 # the node factory binds its own logger locally. That scope mismatch -- not a
@@ -46,19 +58,20 @@ async def _llm_assessment(
     # flagship-model spend the way plausibility's per-claim reasoning does.
     try:
         data = await services.llm.acomplete_json(tier="parsing", system=system, prompt=prompt)
+        if data == {}:
+            return None, [], ""
+        reply = _StyleReply.model_validate(data)
     except Exception as exc:  # an LLM outage degrades this signal, loudly
-        _log.warning("ai_signals_llm_failed", error=str(exc))
+        _log.warning("ai_signals_llm_failed", error_type=type(exc).__name__)
         return None, [], ""
-    if not data or "likelihood" not in data:
-        return None, [], ""
-    likelihood = max(0.0, min(1.0, float(data.get("likelihood", 0.0))))
-    confidence = max(0.0, min(_LLM_MAX_CONFIDENCE, float(data.get("confidence", 0.0))))
+    likelihood = reply.likelihood
+    confidence = min(_LLM_MAX_CONFIDENCE, reply.confidence)
     signals = [
-        AISignal(id="llm_indicator", detail=str(i), score=likelihood, source=SignalSource.LLM)
-        for i in list(data.get("indicators", []))[:5]
-        if str(i).strip()
+        AISignal(id="llm_indicator", detail=i, score=likelihood, source=SignalSource.LLM)
+        for i in reply.indicators[:5]
+        if i.strip()
     ]
-    return (likelihood, confidence), signals, str(data.get("reasoning", "")).strip()
+    return (likelihood, confidence), signals, reply.reasoning.strip()
 
 
 def make_ai_signals_node(services: Services):

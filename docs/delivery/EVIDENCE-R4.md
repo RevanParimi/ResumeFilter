@@ -1,0 +1,927 @@
+# PI-R4 completed evidence
+
+Reference history, consolidated 2026-10-18. Start with [the handoff](../PROGRESS.md)
+and [PI-R4](PI-R4.md) for current status. Each task's original contract,
+decisions, validation and limits are retained below; historical next-task pointers
+and commands describe their recorded date, not today's execution order or paths.
+Moved pytest cases now live in their product-area modules. No old result is a new
+execution, independent review, live-provider check or broader quality claim.
+
+- [R4-S1-T1](#r4-s1-t1)
+- [R4-S1-T1A](#r4-s1-t1a)
+- [R4-S1-T1B](#r4-s1-t1b)
+- [R4-S1-T2](#r4-s1-t2)
+- [R4-S1-T3A](#r4-s1-t3a)
+- [R4-S1-T3B](#r4-s1-t3b)
+- [R4-S1-T3C](#r4-s1-t3c)
+- [R4-S1-T3D](#r4-s1-t3d)
+
+## <a id="r4-s1-t1"></a>R4-S1-T1 — Share database and service resources
+
+Status: done (2026-10-16). Parent: [PI-R4](PI-R4.md), F12.
+Prerequisite: [R3-S3-Q](EVIDENCE-R3.md#r3-s3-q), done.
+
+Split before implementation into SQL topology/engine ownership and provider
+transport cleanup. Both bounded contracts passed; child records own exact
+acceptance criteria, red regressions, final checks, review and preservation.
+
+- [T1A](#r4-s1-t1a), done: default composition shares one runtime SQL factory
+  and stores/services, disposes owned engines on failure/shutdown and preserves
+  explicit borrowed factories/bundles and separate app databases.
+- [T1B](#r4-s1-t1b), done: lazy owned GitHub/LLM/speech transports, asynchronous
+  cleanup across normal/error/canceled exits, borrowed clients preserved and
+  accessible/late Chroma results closed through the public per-client API.
+  EvaluationEngine requires an explicit bundle; callers own manual bundle cleanup.
+
+Actual migrated SQLite/PostgreSQL HTTP with graceful restarts exercised shared
+SQL and provider transport closure plus evaluation/search/portal/audio, tenant
+denials, current consent and erasure/survivor behavior. Final focused/full pytest,
+real Chrome/contracts/static checks and separate same-agent self-review passed.
+T1A owns SQL lock/migration gates; B changes no SQL/schema/transaction behavior.
+
+This proves bounded ownership/cleanup, not forced recovery from drivers/closers
+that never return or raise. Chroma's indefinitely blocked SDK constructor remains
+T2's unused-path removal. No zero-leak, live-provider, quality, performance or
+independent-review claim. Prior work/data/demo preserved; owned validation
+processes stopped. Detailed children archived at group closure.
+
+F12 stays open for R4-S1-Q; R4-S1/PI-R4 remain open. Exact next **R4-S1-T2 — Remove
+unused provenance infrastructure**, not started. Stop after T1B this session.
+
+## <a id="r4-s1-t1a"></a>R4-S1-T1A — Shared SQL topology and engine ownership
+
+Status: done (2026-10-16). Parent: [T1](#r4-s1-t1), F12.
+
+### <a id="r4-s1-t1a--contract"></a>Contract
+
+Production currently builds independent engines and duplicate candidate/feature/
+ledger/job/comp stores behind its services. Tests hide the topology difference.
+Use explicit factory/dependency parameters in existing builders and one per-app
+factory; preserve each store's settings and all consent/erasure/tenant gates.
+No global URL cache or new injection framework. Standalone builders remain usable.
+
+- AC1: Production and fake-provider test containers share the same SQL topology:
+  candidate/report/ledger/feature/job/source/curation/auth/interview/verification/
+  screening/rights stores and limiters use one factory; dashboard/jobs/comp reuse
+  the container's store/service instances. Spy construction and exercise writes.
+- AC2: An explicit external factory is borrowed, and two separately configured
+  app databases remain isolated. No hidden global settings redirect dependencies.
+- AC3: The SQL engine created by default composition is disposed once on app
+  shutdown, exceptional lifespan exit, and failed composition; borrowed factories
+  survive. Repeated fresh startup/shutdown constructs and disposes matching pools.
+- AC4: Actual production composition on migrated scratch storage supports
+  evaluation, search and portal flows across child-app restart, including tenant/
+  current-consent/erasure denials. Run meaningful red/final regressions, full
+  project pytest, affected HTTP/browser contracts, static checks and a separate
+  recorded same-agent diff review. PostgreSQL gates revalidate shared-pool
+  transactions/locks and relevant existing migrations; no working migration.
+
+T1B owns provider-client cleanup and complete startup resource ownership. No UI,
+SQL/schema/scoring change, Chroma removal, background-worker rewrite, deployment,
+live-provider or independent-review claim. Preserve prior edits/data and demo.
+
+### <a id="r4-s1-t1a--evidence-and-review"></a>Evidence and review
+
+Initial snapshot preserves 899 prior files/status/HEAD under
+`.pytest_cache/r4-s1-t1a-before/`. Safe project runner:
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t1a.py <tag> <Python arguments>`;
+omitted arguments run `-m pytest -q --tb=short`. It clears inherited DEE config
+and disables live providers. No working DB/demo restart or migration.
+
+Reproduction: confirmed original-source run `red-baseline-confirmed -m pytest -q
+--tb=short -o pythonpath=.pytest_cache/r4-s1-t1a-before/src
+tests/test_services_features.py::test_real_and_fake_composition_share_sql_and_service_instances[True]
+tests/test_services_features.py::test_default_composition_constructs_one_runtime_pool`
+through the baseline runner: **2 intended failures**, 5.24s. Production allocated
+**16 runtime engines**, and store identities differed. The first broad red run
+also included a fixture wrapper signature error; it is not counted as the
+reproducer. The first baseline helper selected current code through pytest's
+configured pythonpath; the explicit override above proves original-source failure.
+
+Existing builders now accept a borrowed factory/dependencies, default composition
+owns one engine and shares stores/services, and lifespan passes its exact boot
+settings. `ExitStack` disposes an owned engine on composition failure; transfer
+to the bundle occurs only after construction. `dispose_sql()` is idempotent;
+app-owned SQL is disposed on normal/exceptional exit and app references clear.
+Explicit factories and injected bundles remain caller-owned; standalone store
+builders still leave their engine lifecycle to the caller. No global URL cache.
+
+Separate same-agent specification/correctness review: 18 executable/test/journey
+hashes plus bounded diff in `.pytest_cache/r4-s1-t1a-reviewed.json` /
+`r4-s1-t1a-session.diff`, captured with project `review_r4_s1_t1a.py`. Review maps
+AC1-4 to real/default and fake topology, actual engine/connection events, separate
+databases/borrowed resources and migrated restart/data denials. Checked builder
+callers/default compatibility, preserved key/TTL/settings values, factory identity
+through all SQL consumers/limiters, candidate/tenant/consent/erasure boundaries,
+exception ownership transfer and shutdown ordering. SQL statements/schema/scoring
+and provider construction are unchanged. No unresolved acceptance-blocking finding
+within T1A. Provider-client closure/partial-startup leaks and Chroma's late startup
+remain T1B/T2; this is self-review, not independent review or full F12 closure.
+
+Initial focused topology/rate wiring: 21 passed; affected services: 75 passed,
+1 warning; extended topology/lifespan: 13 passed. Initial migrated SQLite HTTP
+`scripts/smoke_r4_s1_t1a.py`: **12/12**, including actual graceful uvicorn shutdown
+and two pool-disposal events. Final reviewed gates passed below.
+
+Final focused arguments: `-m pytest -q --tb=short tests/test_services_features.py
+tests/test_ratelimit_wiring.py tests/test_job_store_match.py
+tests/test_dashboard_service.py tests/test_comp_service.py
+tests/test_profile_sources_service.py tests/test_screening_service.py
+tests/test_ui_mount.py tests/test_verification_delivery.py`.
+
+| Layer | Actual final command/result | Artifact |
+|---|---|---|
+| Focused | Safe runner `focused` with arguments above: **83 passed, 1 warning, 52.09s**, exit 0 | `.pytest_cache/r4-s1-t1a-focused.txt` |
+| Migrated SQLite HTTP/graceful restart | Safe runner `http scripts/smoke_r4_s1_t1a.py`: **12/12**, exit 0, 31.13s; actual default SQL composition with fake providers, evaluation/search/portal/report ownership, revoked consent, erasure/survivor, two graceful uvicorn shutdowns with DBAPI-close/pool-dispose events | `.pytest_cache/r4-s1-t1a-http.txt` |
+| Evaluation Chrome | Safe runner `evaluate-browser scripts/check_ui_evaluate_browser.py`: **31/31**, exit 0, 63.49s | `.pytest_cache/r4-s1-t1a-evaluate-browser.txt` |
+| Combined interview Chrome | Safe runner `interview-browser scripts/check_ui_interview_integration_browser.py`: **40/40**, exit 0, 118.35s; actual text/synthetic microphone, saved version/evidence, employer consent, process restart, uncertain-write recovery and actor cleanup | `.pytest_cache/r4-s1-t1a-interview-browser.txt` |
+| Cookie/CSRF contracts | Safe runner `contract scripts/check_ui_screening_contract.py`: **32/32**, exit 0, 53.14s | `.pytest_cache/r4-s1-t1a-contract.txt` |
+| PostgreSQL locks/migrations | Project Python `.pytest_cache/run_r4_s1_t1a_postgres.py`, selecting services/features, jobs, current consent, interview lifecycle/erasure, screening erasure, candidate-login and curation migrations: **208 passed, 59 skipped, 21 warnings, 482.86s**, exit 0; PG 18.6 / READ COMMITTED / Asia/Calcutta; actual competing connections and existing up/down/up | `.pytest_cache/r4-s1-t1a-pg-focused.txt` |
+| Migrated PostgreSQL HTTP/graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t1a.py --postgres`: **12/12**, exit 0, 51.68s | `.pytest_cache/r4-s1-t1a-pg-http.txt` |
+| Full pytest | Safe runner `full`, project `-m pytest -q --tb=short`: **3471 passed, 505 skipped, 127 warnings, 1343.86s**, exit 0, on reviewed source | `.pytest_cache/r4-s1-t1a-full.txt` |
+| Static | `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**; `node --check frontend/api.js`, `frontend/support.js`; project `-m compileall -q src/app/services/__init__.py src/app/main.py scripts/smoke_r4_s1_t1a.py`; `git -c core.safecrlf=false diff --check`: passed | No frontend changes; bindings are separate from Chrome |
+
+Owned PG's initial `pg_ctl stop` timed out (exit 1, 66.88s) during checkpoint;
+the server subsequently completed shutdown. Project Python
+`.pytest_cache/recheck_r4_s1_t1a_postgres.py` confirmed status exit 3 (no server),
+no postmaster PID file and refused connection on the owned port. Runtime metadata
+retains the original timeout and records `shutdown_confirmed`; server log records
+completed shutdown. No forced kill, application change or test rerun was needed.
+
+Chrome needs
+internet for its existing CDN assets; provider/media fixtures do not establish
+live-provider compatibility or measured quality. No schema migration was added.
+
+### <a id="r4-s1-t1a--handoff"></a>Handoff
+
+AC1-4 and final gates passed. Default app composition now builds **one runtime SQL
+engine instead of 16**, with shared stores/services and explicit borrowed-resource
+ownership. Actual warmed DBAPI connections close on graceful shutdown; failed
+composition/lifespan and repeated app cycles have regression coverage. No HTTP contract,
+SQL/schema/scoring, dependency or working-data migration change. Warning summaries
+are existing Starlette/httpx and SQLite expression-index warnings; optional
+Parquet and environment/lock-inspection skips do not prove omitted cases.
+
+Final project Python `.pytest_cache/verify_r4_s1_t1a.py --closed`: **878 unrelated
+prior files**, working DB/HEAD/unrelated status and **18 reviewed hashes** preserved;
+demo health 200, owned PG shutdown confirmed. **6 documents / 206 local links**,
+added-line whitespace and current/parent/next-task status checks passed. Final
+`git -c core.safecrlf=false diff --check` passed; changed executable-line whitespace
+was checked by the review capture. Owned app/Chrome/PG stopped; synthetic evidence
+retained. No user-data cleanup, deployment or live-provider claim.
+
+**T1A is done; parent T1/F12, R4-S1 and PI-R4 remain open.** Provider-client
+closure/partial startup and the Chroma timeout path remain T1B/T2. Exact next:
+**R4-S1-T1B — Provider-client ownership and cleanup**, not started. Read the parent,
+write B's contract before implementation, preserve T1A's SQL ownership/injection,
+and validate complete shutdown/failure paths. Stop after T1A this session.
+
+## <a id="r4-s1-t1b"></a>R4-S1-T1B — Provider-client ownership and cleanup
+
+Status: done (2026-10-16). Parent: [T1](#r4-s1-t1), F12.
+Prerequisite: [T1A](#r4-s1-t1a), done.
+
+### <a id="r4-s1-t1b--contract"></a>Contract
+
+Keep synchronous service composition compatible while making transport creation
+lazy: startup performs no provider requests and needs no opened HTTP transports.
+The app closes its constructed clients asynchronously; explicitly injected
+clients/factories/bundles remain borrowed. Preserve T1A's SQL topology and disposal.
+Use direct ownership fields and existing seams, without a new injection framework.
+`EvaluationEngine` now requires explicit Services (all repository callers already
+inject them); remove its unused no-op close stub. Manual bundle owners await
+`Services.aclose()`. An indefinitely hanging closer cannot be forcibly settled;
+other available closers and SQL are attempted independently.
+
+- AC1: Owned GitHub HTTP and LLM/speech SDK transports open on first use and close
+  exactly once; unused providers create no transport. Failure during composition
+  opens no HTTP transports and disposes owned SQL. Provider settings and fallback
+  behavior remain intact. Borrowed resources survive normal/error exits.
+- AC2: Normal shutdown, startup after composition failure, exceptional serving,
+  concurrent/repeated close and cancellation settle all available owned cleanup
+  operations. One failing closer cannot prevent other clients or SQL disposal;
+  report failures with fixed diagnostics, without provider payloads or secrets.
+- AC3: An accessible Chroma client closes through its public close API, including
+  collection-construction failure and results arriving after fallback. Use a
+  synchronized timeout handoff; preserve per-client SDK ownership rather than
+  stopping shared systems globally. An indefinitely stuck SDK constructor remains
+  uninterruptible; T2 removes the unused startup path. No new worker framework.
+- AC4: Meaningful offline regressions, separate recorded diff self-review, final
+  full pytest and actual default-composition HTTP/graceful restart on migrated
+  scratch storage prove transport and SQL cleanup plus evaluation/portal/consent/
+  tenant/erasure behavior. Relevant browser/contracts/static checks revalidate
+  consumers. No SQL/schema/transaction change means no new migration/lock gate;
+  run existing PostgreSQL HTTP compatibility without a working-data migration.
+
+Inspect installed SDK source for close contracts; use local fake SDKs and HTTP
+transports, not paid/live providers. No accuracy, deployment, no-resource-leak or
+independent-review claim. Preserve prior changes, working DB and running demo.
+Complete only B; T2 is not started in this session.
+
+### <a id="r4-s1-t1b--evidence-and-review"></a>Evidence and review
+
+Snapshot: 902 prior files/status/HEAD, `.pytest_cache/r4-s1-t1b-before/`.
+Runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t1b.py <tag> <Python
+arguments>` clears DEE config/secrets, forces memory vectors and disables live
+providers; no arguments runs `-m pytest -q --tb=short`. Logs use the matching
+`.pytest_cache/r4-s1-t1b-<tag>.txt`. Final full gates passed; final handoff preservation is recorded below.
+
+GitHub/LLM/speech allocate HTTP/SDK transports lazily and expose idempotent close.
+Default composition records owned clients; `Services.aclose()` shares one shielded
+cleanup task, disposes SQL and attempts independent provider closers concurrently.
+Repeated cancellation waits for available cleanup, then propagates cancellation.
+Cleanup errors use fixed messages/type-only logs; primary app/build failures win.
+Injected clients/factories/bundles remain borrowed. Synchronous partial build
+opens no HTTP transport; ExitStack closes available vectors/SQL on failure.
+Chroma uses public per-client close on collection failure, shutdown and late
+construction results; a lock coordinates timeout ownership. No global SDK stop.
+
+Red: initial `red -m pytest -q --tb=short tests/test_service_lifecycle.py` had 14
+failures (40.67s): 13 intended lifecycle defects, plus a masked-backend fixture
+failure excluded from reproduction. Corrected `late-red-confirmed` against the
+saved source, with `-o pythonpath=.pytest_cache/r4-s1-t1b-before/src`, failed at
+the missing late-result close (7.34s). `graph-red` failed the forbidden implicit
+builder assertion (5.47s), with a stub protecting working data. Initial focused
+run: 95 passed/one masked late-result fixture failure; corrected run: 97 passed.
+
+Separate same-agent specification/correctness review: HEAD plus the 12-file
+session diff and SHA256 inventory captured by `review_r4_s1_t1b.py`; no independent
+review. Checked ownership transfer, every repository graph constructor, lazy SDK
+settings, cancellation/error precedence, Chroma timeout handoff and diagnostics.
+Installed OpenAI 2.43.0 async `close()` closes its HTTP transport; Chroma 1.5.9's
+public `close()` releases this client's shared-system reference. No global stop.
+No schema, scoring, auth, consent or UI behavior changes. No acceptance-blocking
+application finding remains in this reviewed scope; final regressions below passed.
+Review also added partial vector-build failure/error-precedence and
+borrowed-vector checks. The preliminary full run was stopped after 184.91s and
+restarted to include these final tests and EOF whitespace cleanup; it supplies no
+completion evidence. Final hashes were captured before that restart.
+Validation review corrected the old vector timeout/error fixtures:
+the sanitized runner's memory backend had bypassed their patched Chroma branches;
+explicit Chroma settings now exercise those fakes. The corrected late-result test
+also fails against the saved pre-change source. The implicit graph constructor
+was a second ownership entry point; requiring explicit Services closes it without
+changing any repository caller, and removes the unused no-op cleanup method.
+
+Final focused arguments: `-m pytest -q --tb=short tests/test_service_lifecycle.py
+tests/test_services_features.py tests/test_vectorstore_build.py
+tests/test_llm_config.py tests/test_speech_seam.py tests/test_github_repo_evidence.py
+tests/test_github_user_signal.py tests/test_ratelimit_wiring.py`.
+
+| Layer | Actual command/result |
+|---|---|
+| Focused | Runner `focused-final` with arguments above: **111 passed, 67.71s**, exit 0; final added tests/borrowed vector rechecked by `lifecycle-final -m pytest -q --tb=short tests/test_service_lifecycle.py tests/test_llm_config.py tests/test_vectorstore_build.py`: **42 passed, 37.21s**, exit 0 |
+| Migrated SQLite HTTP/graceful restart | Runner `http scripts/smoke_r4_s1_t1b.py`: **15/15**, exit 0, 57.77s; default composition, real wrappers/local SDK and httpx fakes, two opened/closed transport sets and disposed SQL pools; saved report/portal/search, org denial, current consent and erasure/survivor |
+| Evaluation Chrome | Runner `browser-evaluate scripts/check_ui_evaluate_browser.py`: **31/31**, exit 0, 54.80s |
+| Combined interview Chrome | Runner `browser-interview scripts/check_ui_interview_integration_browser.py`: **40/40**, exit 0, 117.51s; text/synthetic microphone, saved assessment/version, restart, permitted employer summaries and actor/device cleanup |
+| Cookie/CSRF contracts | Runner `contracts scripts/check_ui_screening_contract.py`: **32/32**, exit 0, 36.47s |
+| PostgreSQL HTTP compatibility | Owned project-Python `.pytest_cache/run_r4_s1_t1b_postgres.py` invokes `scripts/smoke_r4_s1_t1b.py --postgres`: **15/15**, exit 0, 62.29s; PG 18.6 / READ COMMITTED / Asia/Calcutta, migrated isolated schema and two graceful lifespans. Auxiliary topology/lifecycle tests: **33 passed, 53.71s** (their production fixtures select scratch SQLite; not PG lock proof). No new SQL/schema/transaction changes; T1A owns lock/migration evidence |
+| Full pytest | Runner `full-final`, project `-m pytest -q --tb=short`: **3493 passed, 505 skipped, 127 warnings in 1795.09s (0:29:55)**, exit 0; final 12-file reviewed code state |
+| Static | Node bindings **589 / 18 states**, frontend api/support JS syntax; project compileall for changed services/main/graph/tests/journey scripts; `git -c core.safecrlf=false diff --check`: passed. Review capture checks added-line whitespace, including untracked files |
+
+Chrome uses internet for existing CDN assets. Synthetic SDK/ASR/httpx fixtures
+prove lifecycle mechanics, not live-provider/codec compatibility or quality.
+Warnings are existing Starlette/httpx deprecation and SQLite expression-index
+reflection notices; optional/environment skips do not prove omitted cases.
+Chroma constructors/closers that never return cannot be forcibly interrupted;
+T2 removes the unused startup path. A driver/closer that raises is reported, not
+proof of successful release. No blanket leak-free/performance/independent claim.
+
+### <a id="r4-s1-t1b--handoff"></a>Handoff
+
+AC1-4 and required gates passed within the available-client/transport scope.
+Owned PG stopped successfully (5.51s); no postmaster PID/owned port remains.
+Final project Python `.pytest_cache/verify_r4_s1_t1b.py --closed` passed: **885
+unrelated prior files**, working DB/HEAD/unrelated status and all **12 reviewed
+hashes** preserved; demo health 200, owned PG stopped/PID absent/port closed.
+**8 documents / 241 local links**, added-line whitespace, archived IDs/counts,
+A's original evidence apart from its repaired parent link, and current/parent/
+next-task statuses passed. T1's two leaves are archived; the handoff was condensed
+to current scope/setup/risks with historical evidence linked.
+Owned app/Chrome/PG stopped; synthetic artifacts retained. Final diff check passed.
+
+**T1B and parent T1 are done. F12 remains open for R4-S1-Q; sprint/PI remain
+open.** Exact next: **R4-S1-T2 — Remove unused provenance infrastructure**,
+not started. T2 must address the uninterruptible unused Chroma startup path.
+No SQL/schema/scoring/UI/dependency or working-data migration; no data cleanup,
+demo restart, deployment, live-provider or independent-review claim. Stop after B.
+
+## <a id="r4-s1-t2"></a>R4-S1-T2 — Remove unused provenance infrastructure
+
+Status: done (2026-10-16). PI/sprint: PI-R4 / R4-S1. Audit: F13; F02 cleanup.
+Prerequisite: [T1](#r4-s1-t1) done; F13/sprint/PI remain open.
+
+### <a id="r4-s1-t2--contract"></a>Contract
+
+Before T2, default composition built Chroma (or a hashing-based memory fallback)
+although provenance used only evaluation-local GitHub observations. Remove that
+unused service, embedding code and direct dependency after checking callers.
+Retire `vectorstore_backend`, `vectorstore_init_timeout_seconds`,
+`chroma_persist_dir`, `chroma_collection`: old constructor/YAML/.env/DEE_ entries
+are accepted and ignored through existing extra-setting compatibility; no vector
+storage is opened, read, migrated or deleted. Remove shipped defaults/docs that
+advertise retrieval. Internal Python vector-store imports/injection are removed;
+retain the historical report evidence enum so saved reports still deserialize.
+
+Keep the current typed nine-node graph: its async invocation/state merging and
+existing pipeline contracts work, and replacing them offers no required behavior
+for this cleanup. No checkpoint/branch/performance claim. No scorer, SQL/schema,
+auth/consent/erasure, UI or provider-transport changes. Preserve working data and
+all prior edits; do not restart the existing demo.
+
+### <a id="r4-s1-t2--acceptance-and-validation"></a>Acceptance and validation
+
+| ID | Observable criterion | Evidence |
+|---|---|---|
+| AC1 | Production build/evaluation/cleanup succeeds without any Chroma import or init, including old backend settings | New runtime regression and migrated subprocess HTTP journey |
+| AC2 | Retired settings from constructor, YAML, dotenv and environment cannot restore storage; other settings keep their precedence | Config regressions |
+| AC3 | Candidate/repo evidence remains scoped; provider refusal and historical `vectorstore` report values still work | Existing provenance/GitHub/pipeline tests; historical report regression |
+| AC4 | No unused vector/hash service or dependency; graph choice documented; resource effect measured | Caller/dependency/import checks and controlled before/after construction probe |
+
+Required: focused and full offline pytest, real migrated scratch-app HTTP with
+restart/shutdown, dependency/import and diff checks, separate recorded self-review.
+Browser execution is not required (no visible handler/contract changes); run UI
+bindings as a guard. PostgreSQL competing-transaction/migration gates do not apply
+(no SQL, constraints, transactions or migrations change). This does not prove
+live providers, fresh dependency resolution, Docker execution or scoring quality.
+
+### <a id="r4-s1-t2--evidence"></a>Evidence
+
+Caller inventory before removal: only production builder and test container
+constructed vectors; provenance has no add/query consumer.
+`embedding_model` is a separate future model slot and numeric feature vectors are
+live SQL-backed product data; neither belongs to this removal. Historical smoke
+backend overrides may remain as ignored compatibility inputs, not live settings.
+
+Red: project Python `.pytest_cache/run_r4_s1_t2.py red -m pytest -q --tb=short
+tests/test_provenance_runtime.py`: **10 failed, 2 passed, 9.56s**. Default/legacy
+Chroma attempts and still-active settings failed their intended assertions;
+evaluation/report setup succeeded. Removed the obsolete vector builder tests
+and three late-client lifecycle tests with the implementation; retained failed
+composition SQL cleanup and borrowed GitHub/LLM/speech coverage.
+
+All runners use `.resume/Scripts/python.exe`; sanitized runner clears inherited
+DEE settings/keys, selects absent YAML and no vector override. Logs use
+`.pytest_cache/r4-s1-t2-<tag>.txt`. Final focused arguments (`focused-final`):
+`-m pytest -q --tb=short tests/test_provenance_runtime.py tests/test_provenance.py
+tests/test_github_repo_evidence.py tests/test_service_lifecycle.py
+tests/test_services_features.py tests/test_integration.py tests/test_plausibility.py
+tests/test_scoring.py tests/test_requirements_pinned.py tests/test_image_contents.py
+tests/test_config.py tests/test_smoke_harness.py`: **224 passed, 65.93s**, exit 0.
+Initial focused selection named nonexistent `tests/test_domains.py` (exit 4, no
+tests); corrected selection passed 106 tests before final preservation/harness
+checks. No invalid selection is counted as a successful gate.
+
+| Final gate | Actual result |
+|---|---|
+| Migrated HTTP | Runner `journey-final scripts/smoke_r4_s1_t2.py`: **12/12**, exit 0, 32.39s. Default then legacy Chroma settings; blocked imports, zero vector threads/directory creation. Revision 0029, two graceful SQL shutdowns; evaluation, two employers/subjects, report/job ownership, portal/search/restart, consent revocation and erasure |
+| Packaging | `.resume/Scripts/python.exe .pytest_cache/build_r4_s1_t2.py` builds wheel with isolated scratch Hatchling tools; `pip wheel --no-deps --no-build-isolation --no-index --wheel-dir .pytest_cache/r4-s1-t2-wheel .`. `wheel-import -I .pytest_cache/verify_wheel_r4_s1_t2.py`: metadata excludes Chroma, archive excludes vector module, app/services/graph import from wheel under blocked Chroma imports; exit 0 |
+| Static | Project `-m compileall -q` on changed service/config/logging/schema, harness/journey and test files; `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**; `git -c core.safecrlf=false diff --check`: exit 0 |
+| Documentation fix | `docs-final -m pytest -q --tb=short tests/test_deploy_doc.py tests/test_provenance_runtime.py`: **18 passed, 1 warning, 10.64s**, exit 0 |
+| Full pytest | Runner `full-repeat-final` (no extra args): project `-m pytest -q --tb=short`: **3499 passed, 505 skipped, 127 warnings, 1454.36s (0:24:14)**, exit 0. Warnings: Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate limitations. Skips do not validate omitted environments |
+| Preservation | `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t2.py`: **880 unrelated baseline files unchanged**, including working DB; **16 reviewed code hashes match**. Existing demo health **200**, never restarted. Scratch HTTP processes exited gracefully; no owned app/PG/Chrome left running |
+
+Controlled resource probe (`before-probe` / `after-probe
+.pytest_cache/probe_r4_s1_t2.py`): same scratch production builder, three builds,
+synthetic Chroma constructor sleeps 0.05s. Before: **3 constructions on 3
+`chroma-init` threads**, build seconds **[0.1838, 0.0619, 0.0621]**. After:
+**0 constructions/threads**, **[0.1849, 0.0138, 0.0141]**. This measures eliminated
+synthetic work; cold import noise is visible. No measured live-Chroma latency,
+memory reduction, universal speedup or clean-install claim.
+
+### <a id="r4-s1-t2--review-and-handoff"></a>Review and handoff
+
+Separate same-agent review on HEAD `5480498` plus this session's service/config,
+dependency/Docker/CI, smoke harness, tests and current documentation edits. Read
+the removed path and its callers before deletion; prior T1 lifecycle/SQL and
+earlier remediation edits remain outside this session's change. AC1–4 map to the
+runtime/config/evidence tests, packaging and migrated HTTP. Checked default and
+legacy sources, saved enum values, borrowed-provider cleanup, failure paths and
+legacy-directory preservation. No SQL/schema/API/scorer/visible UI changes.
+No remaining acceptance-blocking source finding; this is self-review, not an
+independent review. Final full pytest and preservation gates passed on the same
+reviewed code; only documentation changed after the initial full run.
+
+Final regression exposed one low-severity documentation finding at `DEPLOY.md`
+Expected variables: listing retired settings there conflicted with the active
+configuration contract/guard. Moved the compatibility note to separate prose
+linked to FLOW's canonical keys. No guard weakened or runtime change introduced;
+affected documentation/config checks and full suite passed after correction.
+Initial `full-final`: **1 failed, 3498 passed, 505 skipped, 127 warnings,
+1199.38s**; only failure was this documentation guard, now resolved.
+
+An optional initial wheel command could not import `hatchling.build` from the
+project environment. Installed build tools only into ignored scratch storage;
+the same no-deps/no-index wheel build then succeeded without changing `.resume`.
+This is packaging evidence, not a clean transitive dependency resolution.
+
+AC1–4 and required gates complete. No schema/data migration or cleanup; existing
+legacy directories and installed environments are preserved. Graph retained for
+the rationale above. No browser/PG/live-provider/quality or Docker execution
+claim; dependency resolution/reproducibility remains R4-S3-T3.
+
+Stop after T2. Exact next task: R4-S1-T3, split routes by product area (partition
+the first cohesive router into a bounded contract before implementing).
+
+Final handoff checks: **122 local links** resolve across the changed handoff,
+PI/delivery/task/feature/deployment/requirements records; T1/T2 done, T3 pending,
+PI in progress. New-file whitespace and final diff checks passed. Preservation
+was repeated after these updates with the same 880/16 hashes and demo HTTP 200.
+
+## <a id="r4-s1-t3a"></a>R4-S1-T3A — Extract authentication/session routes
+
+Status: done (2026-10-17). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1; F13.
+Prerequisite: [T2](#r4-s1-t2), done. Only child authorized for this session.
+
+### <a id="r4-s1-t3a--contract"></a>Contract
+
+Move the 12 `/auth/*` operations, their request/response DTOs and OTP/cookie
+helpers into `app.api.auth`. Move existing principal resolution, CSRF enforcement,
+request-service lookup, client-IP hashing and 429 translation into
+`app.api.dependencies`, imported by remaining handlers. No behavior redesign.
+Keep the resolvers/allowlist imported from `routes` as identity-preserving aliases
+for existing guards/callers; the app explicitly imports the extracted auth router.
+Preserve OpenAPI schema names, operation IDs, router ordering, statuses, generic
+OTP/anti-enumeration responses, cookie flags, session-first CSRF and revocation.
+No admin-account/product routes, SQL/migrations, service logic, UI or dependencies
+changed. Never read/migrate working storage or restart the running demo.
+
+This is a pure extraction, with no runtime defect claimed. Characterize the
+current behavior before moving it, rather than labeling an absent module/import
+as a behavioral reproduction. Compare the same wire contracts after extraction.
+
+### <a id="r4-s1-t3a--acceptance-and-tests"></a>Acceptance and tests
+
+| ID | Observable criterion | Evidence planned |
+|---|---|---|
+| AC1 | Full OpenAPI and ordered method/path/ID/auth-dependency contracts unchanged | Captured pre-move runtime contract, repository digest fixture and comparison regression |
+| AC2 | Candidate, org and admin login/session flows preserve cookies, CSRF and ownership | Auth/session/CSRF/rate-limit pytest and migrated real HTTP restart journey |
+| AC3 | Extracted auth router can register independently with the same dependency identities and no duplicate app routes | Standalone router HTTP test; existing all-route/auth-plane guards |
+| AC4 | Existing candidate/employer/admin product handlers keep shared resolver behavior | Route/OpenAPI/auth guards; two-actor cross-plane API journey and actual Chrome login/reload/logout |
+
+Required: focused/full offline pytest, migrated scratch subprocess HTTP, actual
+Chrome for affected auth navigation, UI bindings, import/compile/diff checks and
+separate self-review. PostgreSQL lock/migration gates do not apply: no SQL,
+constraints, transaction semantics or migrations change. Fakes prove mechanics,
+not provider delivery or assessment quality. No independent review claimed.
+
+### <a id="r4-s1-t3a--evidence-and-review"></a>Evidence and review
+
+Pre-move runtime snapshot: **102 operations**, full OpenAPI and ordered recursive
+dependency contract. Baseline `baseline-final` passed **66 tests, 1 warning,
+34.48s**. Two early baseline attempts failed only because capture had not written
+the fixture yet (65 passed/one missing-fixture failure each); a capture runner
+import-path error and a shell Unicode marker error were corrected before moving
+source. These are setup failures, not a behavioral defect reproduction.
+
+Moved handlers/DTOs into `api/auth.py` and shared helpers into `api/dependencies.py`;
+main imports auth explicitly; existing route aliases retain identity. Existing
+product handlers remain in place. `routes.py` shrinks to 2,370 lines (from 2,871).
+The capture's full document stays in ignored scratch; its digest/operation count
+is in `tests/fixtures/api_contract_r4_s1_t3.json`. Final tests compare
+the same full wire contract, not just bindings or source text.
+
+Separate same-agent review: HEAD `5480498` plus this session's API modules/main,
+new contract/standalone test, fixture and migrated smoke. Compared **185 original
+function/class ASTs**, all unchanged; reviewed imports and the actual moved bodies,
+CSRF/session-before-header ordering, model names, auth registration, denial paths,
+ownership, and deferred `CandidateCreateResponse` import. No circular imports or
+duplicate registration; no remaining acceptance-blocking source finding. A quoted
+read-only search briefly escaped its intended folders; stopped it and repeated
+with literal, bounded paths. No files changed from that search. Self-review is
+not independent review; no SQL/scorer/provider/visible UI implementation changed.
+
+Seven reviewed code/contract files have recorded hashes. Logs use
+`.pytest_cache/r4-s1-t3a-<tag>.txt`; runner is
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3a.py <tag> <Python args>`
+(no extra arguments runs `-m pytest -q --tb=short`). It clears inherited DEE
+settings/keys, selects absent YAML, and uses scratch/fake-provider setups.
+
+Final focused arguments (`focused-final`): `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_auth_api.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py
+tests/test_api_auth_gate.py tests/test_org_scope_guard.py tests/test_ratelimit_auth.py
+tests/test_cookie_posture.py tests/test_auth_debug_echo.py
+tests/test_auth_org_name_taken.py tests/test_portal_sessions.py
+tests/test_candidate_login_binding.py tests/test_login_redemption_validity.py
+tests/test_error_logging.py`.
+
+| Final gate | Actual evidence |
+|---|---|
+| Focused | **144 passed, 12 skipped, 1 warning, 86.19s**, exit 0. Starlette/httpx deprecation; skipped environment cases are not proof of those environments |
+| Migrated HTTP | `journey-final scripts/smoke_r4_s1_t3a.py`: **20/20**, exit 0, 55.06s. All three planes, second employer/device, cookie posture, CSRF/header precedence, ownership, anti-enumeration, generic invalid code, revocation/logout and restart; two revision-0029 graceful SQL lifespans |
+| Actual Chrome | `browser-final scripts/check_ui_evaluate_browser.py`: **31/31** plus **1/1** startup, exit 0, 48.68s. Org/admin/candidate login, report/feedback/reload, expiry/old-session handling, contact path and no console exceptions. Migrated scratch app with captured mail/fake providers; existing CDN internet required |
+| Imports | `import-final -I .pytest_cache/check_import_r4_s1_t3a.py`: exit 0, 14.74s. Auth imports without product routes loaded, registers 12 standalone operations; legacy resolver/allowlist/router identities preserved |
+| Static | Project `-m compileall -q src/app/api/routes.py src/app/api/auth.py src/app/api/dependencies.py src/app/main.py tests/test_api_route_extraction.py scripts/smoke_r4_s1_t3a.py`; Node UI bindings **589/18 states**; `git -c core.safecrlf=false diff --check`: passed |
+| Full pytest | `full-final`, no extra arguments: **3502 passed, 505 skipped, 127 warnings, 1096.23s (0:18:16)**, exit 0. Warnings: Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate limits. Skips do not prove omitted environments |
+| Preservation | `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3a.py`: **897 unrelated baseline files unchanged**, including working DB; **7 reviewed code hashes match**; existing demo health **200**. Scratch HTTP processes exited gracefully; owned browser/app processes stopped |
+
+OpenAPI/ordered dependency contract remains the captured 102-operation digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`.
+AST comparison is supporting move-review evidence; runtime/HTTP/Chrome checks
+above supply separate behavior evidence. Final full pytest passed on the reviewed
+code hashes; no application code changed afterward. Preserve this fixture through
+the remaining pure extractions; intentional wire changes require explicit review.
+
+### <a id="r4-s1-t3a--handoff"></a>Handoff
+
+AC1–4 and required gates passed. No database/schema/API/scorer/UI behavior change,
+working-data migration, new live-provider/PG/quality or independent-review claim.
+No deployment/commit/push. Parent T3/F13/sprint/PI remain open; remaining product
+handlers are still in `routes.py`. Stop after T3A. Exact next child: T3B,
+evaluation and operator reports/outcomes; write its bounded contract first.
+
+Final handoff verification: **96 local links** resolve across the current
+handoff/PI/parent/child/feature/auth records; A done, twelve children pending,
+parent/PI open and next B are consistent. New-file whitespace and final diff
+checks passed. Preservation repeated after documentation updates: same 897
+unrelated files, seven reviewed hashes and existing demo HTTP 200.
+
+## <a id="r4-s1-t3b"></a>R4-S1-T3B — Extract evaluation and operator report/outcome routes
+
+Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1; F13.
+Prerequisite: [T3A](#r4-s1-t3a), done. Only current-session child.
+
+### <a id="r4-s1-t3b--contract"></a>Contract
+
+Move `POST /evaluate`, `GET /report/{report_id}`, and the operator outcome
+write/list handlers into `app.api.reports`, with their request/response DTOs and
+shared outcome helpers. Remaining employer handlers import those same models and
+helpers, preserving one validation/provenance path. Candidate ingest, screening,
+services/stores, scorer, SQL/migrations, UI and dependencies remain out of scope.
+
+Preserve the 102-operation full OpenAPI and ordered dependency digest from A,
+including schema text, route order and one admin resolver per moved operation.
+The four operations occupy two positions in the existing admin sequence: use
+two small registration groups in this one cohesive report-workflow module.
+Compose their already-guarded APIRoute lists at the original positions in the
+existing aggregate router. This retains the exact route/dependency structure,
+without nested include contexts, duplicate gates, route copies or slice indexes.
+Each group also registers independently through normal FastAPI inclusion.
+
+No runtime defect is claimed for this pure extraction. Add/execute behavioral
+characterization before moving definitions; import/setup failures are not a red
+defect reproduction. Keep original handler/model bodies and supported aliases.
+Preserve advisory/human review, domain independence, malformed-input refusals,
+saved-report rechecks, outcome bounds/provenance and erasure races. Never migrate
+working storage, discard prior edits, or restart the existing demo.
+
+### <a id="r4-s1-t3b--acceptance-and-evidence-mapping"></a>Acceptance and evidence mapping
+
+| ID | Observable criterion | Validation |
+|---|---|---|
+| AC1 | Full OpenAPI and ordered route/auth dependency contract unchanged | Existing digest/route/OpenAPI guards; exact move comparison |
+| AC2 | Four report-workflow operations run independently and keep admin/CSRF boundaries, persistence and failure behavior | New standalone workflow regression; API/auth/input/outcome/erasure tests |
+| AC3 | Employer report/outcome ownership and shared DTO/helper behavior stay intact | Two-employer outcomes/provenance tests and migrated HTTP/restart |
+| AC4 | Real operator/employer evaluation, feedback and reload/error journeys remain usable | Actual Chrome evaluation journey, migrated scratch HTTP, import/static checks |
+
+Required: focused/full offline pytest; real migrated scratch HTTP/restart; actual
+Chrome; UI bindings; import/compile/diff checks; separate self-review and final
+preservation. No PostgreSQL lock/migration gate (no SQL, constraint, transaction
+or migration change). Fakes do not establish live delivery/provider quality.
+Same-agent review is not independent review; parent/sprint/PI remain open.
+
+### <a id="r4-s1-t3b--evidence-and-review"></a>Evidence and review
+
+Pre-move characterization (`baseline`) passed **53 tests, 1 warning, 22.49s**,
+including the new workflow test and existing full-contract/ownership guards.
+This is green characterization, not a defect reproduction. Extracted the four
+operations plus four DTOs/two shared helpers into `api/reports.py`. Remaining
+employer handlers import the shared contracts/helpers. `routes.py` shrinks from
+2,370 to **2,223 lines**; registration positions stay unchanged.
+
+Separate same-agent review on HEAD `5480498` plus this session's route/report
+module, standalone test and current source-map/task docs. Compared **152 original
+class/function bodies and function signatures**, unchanged; reviewed the moved
+code and actual callers, guarded route-list composition, parent router options,
+deferred candidate projection import, CSRF/identity, error/erasure snapshots,
+notes bounds and operator/employer provenance. Full 102-operation contract passes
+without regenerating its fixture. No blocking source finding remains; this is
+self-review, not independent review. Four reviewed code/contract hashes recorded.
+No SQL/service/scorer/UI implementation, deployment, commit or push change.
+
+Initial post-move focus: **285 passed, 2 skipped, 1 warning, 36.92s**.
+Runners use `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t3b.py <tag> <Python args>`; no extra args run
+`-m pytest -q --tb=short`. Runner clears inherited DEE keys/config and selects
+absent YAML; journeys use isolated stores and fake/capture providers. Logs:
+`.pytest_cache/r4-s1-t3b-<tag>.txt`.
+
+Reuse `scripts/smoke_r3_s1_q.py` for migrated three-plane evaluation, operator/
+employer outcomes, ownership and restart. Its Windows stop uses process terminate;
+that proves restart/persistence, not graceful lifespan cleanup. No SQL/provider
+lifecycle code changes here; prior T1 evidence owns that separate contract.
+
+Final focused arguments (`focused-final`): `-m pytest -q --tb=short
+tests/test_operator_report_extraction.py tests/test_api_route_extraction.py
+tests/test_api.py tests/test_screening_outcome_api.py tests/test_api_auth_gate.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py
+tests/test_report_outcomes.py tests/test_report_response_erasure.py
+tests/test_report_review_context.py tests/test_model_output_boundaries.py
+tests/test_error_logging.py`.
+
+| Final gate | Actual evidence |
+|---|---|
+| Focused | **285 passed, 2 skipped, 1 warning, 55.07s**, exit 0. Starlette/httpx deprecation; environment skips do not prove omitted cases |
+| Migrated HTTP | `journey-final scripts/smoke_r3_s1_q.py`: **20/20**, exit 0, 53.70s. Revision 0029; all three cookie planes, operator report/outcomes and exact restart persistence, two-employer ownership/provenance, invalid/PDF input, CSRF, contact/erasure and safe logs. Windows termination qualifier above applies |
+| Actual Chrome | `browser-final scripts/check_ui_evaluate_browser.py`: **31/31** plus **1/1** startup, exit 0, 48.22s. Actual operator/employer report/feedback/reload, candidate/auth/contact and timeout/error/expiry flows; no console exceptions. Scratch app, fake/capture providers; existing CDN internet required |
+| Imports | `import-final -I .pytest_cache/check_import_r4_s1_t3b.py`: exit 0, 8.73s. Report workflow imports without remaining product routes, groups contain 1+3 operations with one admin dependency each; shared object identities and single composition preserved |
+| Static | Project `-m compileall -q src/app/api/routes.py src/app/api/reports.py tests/test_operator_report_extraction.py`; `node scripts/check_ui_bindings.js`: **589/18 states**; `git -c core.safecrlf=false diff --check`: passed |
+| Full pytest | `full-final`, no extra arguments: **3503 passed, 505 skipped, 127 warnings, 926.85s (0:15:26)**, exit 0. Warnings: Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate limits. Skips do not prove omitted environments |
+| Preservation | `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3b.py`: **903 unrelated baseline files unchanged**, including working DB; **4 reviewed code/contract hashes match**; existing demo health **200**. Scratch app/browser processes stopped; existing demo never restarted |
+
+Captured contract remains **102 operations**, digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`.
+AST comparison supports the move review; separate runtime/HTTP/Chrome checks
+above provide behavior evidence. No guard weakened or fixture regenerated. Full
+pytest passed on the reviewed hashes; only documentation changed afterward.
+
+### <a id="r4-s1-t3b--handoff"></a>Handoff
+
+AC1–4 and required gates passed. No schema/data migration or cleanup, SQL/service/
+scorer/UI behavior change, live-provider/quality/PG or independent-review claim.
+No deployment, commit or push. Parent T3/F13/sprint/PI remain open; other product
+handlers remain in `routes.py`. Stop after B. Exact next child: R4-S1-T3C,
+candidate intake/resume management and profile sources. Write C's bounded contract
+before implementation.
+
+Final handoff checks: **218 local links** resolve across the changed operational
+records/source maps; A/B done, eleven children pending, parent/PI open and next C
+are consistent. New-file whitespace and final diff checks passed. Preservation
+repeated after documentation updates: same 903 unrelated files, four reviewed
+code/contract hashes and existing demo HTTP 200.
+
+## <a id="r4-s1-t3c"></a>R4-S1-T3C — Extract candidate intake, resumes and profile-source routes
+
+Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+F13. Prerequisite: [T3B](#r4-s1-t3b), done. Only this child this session.
+
+### <a id="r4-s1-t3c--contract"></a>Contract
+
+Move the ten contiguous admin candidate operations (intake, detail, resumes,
+reports, candidate/resume erasure, key issuance and GitHub/LinkedIn source
+ingestion/listing) and their DTOs/shared intake adapter into `app.api.candidates`.
+Keep employer screening handlers and portal erasure in the aggregate module;
+they import the same intake and erasure contracts. Update projection's deferred
+type import to the new owner without adding a runtime import cycle.
+
+Compose the guarded candidate router's existing APIRoutes at their original
+position. Preserve the captured full 102-operation OpenAPI/ordered dependency
+contract, one admin resolver per operation, central CSRF, ownership/error
+responses and supported aliases. No service/store/SQL/migration/scorer/frontend
+change, routing framework or new DTO layer. Working storage, prior edits and
+the running demo remain preserved.
+
+This is a pure extraction, with green pre-move behavioral characterization;
+no runtime defect or red defect reproducer is claimed. Test the workflow using
+the aggregate router before the move and the standalone area router afterward.
+
+### <a id="r4-s1-t3c--acceptance-and-evidence-mapping"></a>Acceptance and evidence mapping
+
+| ID | Observable criterion | Validation |
+|---|---|---|
+| AC1 | Full API schemas, ordered routes/dependencies and shared DTO identity unchanged | Existing full contract/route/OpenAPI guards; move comparison and isolated import |
+| AC2 | Candidate lifecycle works independently with admin/header/session CSRF gates, dedup/versioning and resume ownership | New standalone workflow; candidate/auth/input/erasure regressions |
+| AC3 | Source advisory behavior, malformed transport, filtered reads and erasure preserved | Source API/service/erasure regressions and migrated HTTP/restart |
+| AC4 | Employer intake uses the same adapter with tenant isolation/redaction; visible intake still works | Screening/projection regressions, two-employer HTTP and actual Chrome evaluation/reload/error journey |
+
+Required: final focused/full offline pytest, migrated scratch HTTP/restart,
+actual Chrome, UI bindings, import/compile/diff checks, separate self-review and
+preservation. PostgreSQL lock/migration gate does not apply: no SQL, constraint,
+transaction or migration changes. Synthetic providers prove mechanics; no live
+provider/quality or independent-review claim. Parent/sprint/PI stay open.
+
+### <a id="r4-s1-t3c--evidence-and-review"></a>Evidence and review
+
+Pre-move characterization (`pre-move`) passed **39 tests, 1 warning, 26.08s**.
+It used the aggregate router; afterward the new workflow uses the standalone
+candidate router. Initial draft assertions were corrected to the existing admin
+profile/contact schema; those failures are test corrections, not defect evidence.
+The move extracts ten operations, ten DTOs and the shared `_ingest_one` adapter.
+`routes.py` shrinks from 2,223 to **1,929 lines**; `api/candidates.py` is 325 lines.
+Employer intake and portal erasure retain shared object identity. Projection's
+type import remains deferred, with its pointer updated to the new DTO owner.
+
+Separate same-agent review: HEAD `5480498` plus the candidate/aggregate/projection
+diff, standalone tests, HTTP runner and source maps. Specification review covers
+AC1–4, unchanged full contract and original registration position. Correctness
+review covers import callers/cycles, admin/CSRF versus candidate/employer gates,
+dedup/versioning, cross-candidate resume refusal, source transport/unavailability,
+report/key/source erasure, tenant redaction, snapshots and restart persistence.
+All **142 original class/function definitions, signatures and decorators** compare
+unchanged across the aggregate and area module. Follow-up import/reference review
+confirms no removed aggregate import is still referenced by its handlers.
+Six reviewed code/contract hashes
+are recorded; this supports move review, not runtime/browser evidence.
+
+Resolved review/validation findings:
+
+- **Medium, `routes.py:portal_me`:** removing the source-store import also removed
+  `SourceSubjectErasedError`, still used in the portal's exception tuple. Erasure
+  during an aggregate read returned 500 instead of 404. Existing controlled
+  `tests/test_aggregate_erasure.py` reproduced it in `full-diagnostic -m pytest
+  -q -x --tb=short`: **1 failed, 4 passed, 1 warning, 27.65s**; restore that remaining import. Superseded focused/full runs
+  were stopped after diagnosis; they are not passing runs.
+- **Test harness, `smoke_r4_s1_t3c.py`:** the long fixture has a GitHub link, so
+  no explicit handle resolves successfully. Use an invalid explicit handle for
+  the 400 case. Check the full recorded revision `0029_candidate_login_binding`,
+  rather than the abbreviated `0029`. Prior journey ran 20/21 behavior checks;
+  the lifecycle assertion was false despite both actual graceful shutdowns.
+- **Low, `CANDIDATES.md`:** its existing T2B evidence link still pointed at
+  `tasks/` after archival. Link validation found it while updating the source
+  map; point it at the existing archived record. No application change.
+
+No blocking finding remains in the reviewed scope. Final validation below passed
+on the reviewed fix; no independent review, SQL/service/scorer/UI implementation,
+live-provider/quality/PG, deployment, commit or push claim.
+
+Runners use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3c.py <tag>
+<Python args>`; omitted args run `-m pytest -q --tb=short`. Inherited DEE settings/
+keys are cleared and an absent YAML is selected. Logs are
+`.pytest_cache/r4-s1-t3c-<tag>.txt`. All journeys use isolated migrated storage and
+fake/capture providers; Chrome uses the existing CDN runtime internet.
+
+Post-move contract focus: **75 passed, 1 warning, 32.11s** (`post-move`), before
+the broader suite exposed the portal import finding above. Final validation
+uses the corrected import and the following focused arguments (`focused-reviewed`):
+`-m pytest -q --tb=short tests/test_candidate_route_extraction.py
+tests/test_api_route_extraction.py tests/test_candidates_api.py
+tests/test_profile_sources_api.py tests/test_screening_api.py
+tests/test_screening_projection.py tests/test_screening_ingest.py
+tests/test_ingest_response_erasure.py tests/test_ingest_erasure_concurrency.py
+tests/test_profile_source_erasure.py tests/test_aggregate_erasure.py
+tests/test_resume_input_boundary.py tests/test_candidate_auth_api.py
+tests/test_candidate_auth.py tests/test_portal_api.py tests/test_api_auth_gate.py
+tests/test_route_table_guard.py tests/test_org_scope_guard.py
+tests/test_openapi_contract.py tests/test_model_output_boundaries.py`.
+
+| Final gate | Actual evidence |
+|---|---|
+| Focused | `focused-reviewed`: **469 passed, 49 skipped, 1 warning, 230.65s (0:03:50)**, exit 0. Includes controlled aggregate/source/ingest erasure and standalone candidate lifecycle/CSRF. Starlette/httpx deprecation; PostgreSQL skips do not validate those cases |
+| Migrated HTTP | `journey-reviewed scripts/smoke_r4_s1_t3c.py`: **21/21**, exit 0, 46.31s. Production SQL composition, revision 0029, admin cookie/CSRF and candidate key, dedup/versioning, resume ownership, source ingestion/history, two-employer isolation/redaction, exact restart state, erasure and graceful cleanup |
+| Actual Chrome | `browser-reviewed scripts/check_ui_evaluate_browser.py`: **31/31** plus **1/1** startup, exit 0, 39.15s. Employer shared intake/report/feedback/reload and timeout/error/expiry, operator evaluation, candidate/auth/contact flow; no console exceptions. Profile sources are API-only; no source-management UI claim |
+| Imports | `import-reviewed -I .pytest_cache/check_import_r4_s1_t3c.py`: exit 0, 4.50s. Standalone candidate import without remaining product routes, ten operations with one admin dependency each, shared DTO/adapter identity, single ordered composition |
+| Static | Project `-m compileall -q src/app/api/routes.py src/app/api/candidates.py src/app/screening/projection.py tests/test_candidate_route_extraction.py scripts/smoke_r4_s1_t3c.py`; `node scripts/check_ui_bindings.js`: **589/18 states**; `git -c core.safecrlf=false diff --check`: passed |
+| Full pytest | `full-reviewed`, no extra arguments: **3506 passed, 505 skipped, 127 warnings, 1494.16s (0:24:54)**, exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate warnings; omitted environments are not validated |
+| Preservation | `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3c.py`: **903 unrelated baseline files unchanged**, including working DB; six reviewed code/contract hashes match; existing demo health **200**. Scratch HTTP/browser processes stopped; final handoff checks recorded below |
+
+The full captured contract stays **102 operations**, digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`;
+its fixture was not regenerated. Two successful final HTTP starts/shutdowns were
+graceful; Chrome's Windows process stop is forced. Earlier browser run also passed
+31/31; final browser reran after restoring the portal exception import. No broader
+provider-cleanup, live compatibility or assessment-quality claim.
+
+### <a id="r4-s1-t3c--handoff"></a>Handoff
+
+AC1–4 and all required gates passed. The full suite ran on the reviewed code;
+only documentation changed afterward. No SQL/schema/scorer/UI behavior or working
+data change. Synthetic providers and environment skips retain the limits above.
+No deployment, commit or push. Parent T3/F13/sprint/PI remain open. Stop after C.
+
+Exact next child: R4-S1-T3D, employer screening/batches/queue and scoped
+reports/outcomes, not started. Write its bounded contract first; trace the shared
+candidate adapter, report/outcome helpers, batch DTOs and org-scope guard before
+moving handlers. Retain the full contract and central auth/CSRF. T4 remains
+unstarted.
+
+Final handoff checks: **324 local links** resolve across the changed operational
+records/source maps; A/B/C done, ten children pending, parent/PI open and next D
+are consistent. New-file trailing-space and final diff checks passed. Preservation
+repeated after documentation updates: the same 903 unrelated files, six reviewed
+code/contract hashes and existing demo HTTP 200. No scratch HTTP/CDP processes
+remain. The existing demo was never restarted.
+
+## <a id="r4-s1-t3d"></a>R4-S1-T3D — Extract employer screening, batches, queue and scoped reports
+
+Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+F13. Prerequisite: [T3C](#r4-s1-t3c), done. Only this child this session.
+
+### <a id="r4-s1-t3d--contract"></a>Contract
+
+Move the thirteen contiguous employer screening operations (single intake,
+scoped report/candidate-report reads, outcome write/list, batch registration,
+list/detail/process/retry/queue/summary/delete), three batch DTOs and two helpers
+into `app.api.screening`. Preserve each handler's explicit `require_org` and
+central principal/CSRF resolution. Compose that router's existing APIRoutes at
+their original position in the aggregate org router, without another dependency
+context. Reuse candidate intake DTOs/adapter and report/outcome DTOs/helpers.
+Retain aliases used by existing callers and the captured full 102-operation
+OpenAPI/ordered dependency contract. Do not regenerate its fixture.
+
+No runtime defect is claimed for the extraction. Add and run green workflow
+characterization using the aggregate org router before moving definitions, then
+run it using the standalone screening router. Trace actual imports and remaining
+global references before removing imports. The org-scope guard still inspects
+each endpoint and its same-module helpers; preserve its existing limits and
+non-vacuity assertions. No new dependency/routing abstraction or SQL, migration,
+service, scorer, auth policy or frontend implementation change. Preserve prior
+edits, working storage and the existing demo.
+
+### <a id="r4-s1-t3d--acceptance-and-validation"></a>Acceptance and validation
+
+| ID | Observable criterion | Evidence |
+|---|---|---|
+| AC1 | Full API schemas, operation order and dependency/auth contract unchanged; no duplicate/unguarded routes or import cycles | Full contract/route/OpenAPI guards, move/import review and isolated import |
+| AC2 | Standalone screening preserves intake/redaction, scoped report/outcome reads/writes and two-employer non-disclosure | New complete workflow, screening/outcome/projection/auth regressions; migrated HTTP/restart |
+| AC3 | Batches retain atomic input refusal, bounded processing, cursor/error/retry behavior, safe queue summaries and deletion | Standalone batch workflow, batch/retry/rate/erasure tests; migrated HTTP |
+| AC4 | Cookie CSRF and human/machine provenance remain correct; actual screening screens and reload/error journeys work | Standalone cookie workflow, actual Chrome batch journey and UI HTTP contract |
+
+Required: focused/full offline pytest; migrated scratch HTTP/restart; actual
+Chrome; UI bindings; import/compile/diff checks; separate same-agent review and
+preservation. No PostgreSQL lock/migration gate: no SQL/constraint/transaction/
+migration changes. Environment skips are not evidence for omitted cases; fake
+providers and browser CDN access do not establish live-provider quality. No
+independent review, deployment, commit/push or parent/sprint/PI closure implied.
+
+### <a id="r4-s1-t3d--evidence-and-review"></a>Evidence and review
+
+Green pre-move characterization (`characterization`) passed **50 tests,
+1 warning, 13.16s** using the aggregate org router. Initial draft assertions
+returned **2 failed, 48 passed, 1 warning, 15.04s** (`pre-move`): malformed PDF
+transport uses `item 1: pdf_parse_failed`, and `/auth/me` intentionally omits
+the human ID. Corrected those assertions and read the verified signup account
+from the isolated auth store for provenance. These were test corrections, not
+runtime defect reproductions. After extraction, the same workflow runs with
+the standalone router. Post-move API/auth/guard focus: **72 passed, 1 warning,
+14.76s** (`post-move`).
+
+Extracted thirteen operations, three DTOs and `_batch_texts`/`_org_user_id` into
+the 332-line `api/screening.py`. The aggregate shrinks from 1,929 to **1,626
+lines**. Candidate/report shared contracts and legacy aliases retain identity;
+the new module has no remaining-product-route import. Org-scope guard changes
+only clarify its actual endpoint-module scope; no detector/allowlist/floor change.
+
+Separate same-agent review: HEAD `5480498` plus the aggregate/screening diff,
+workflow/guard tests, HTTP/browser runners and source maps. Specification review
+maps AC1–4 to contract, standalone API, real HTTP and actual Chrome evidence.
+Correctness review checked principal/CSRF order, imported globals/cycles, source
+caps and atomic refusal, human/machine attribution, tenant 404 behavior, private
+operator judgments, report/farm projection, cursors, retry/erasure snapshots,
+restart and cleanup. **121 original class/function definitions, signatures and
+decorators are unchanged** across the two modules. No removed import remains
+referenced by aggregate handlers. Seven reviewed code/contract hashes recorded;
+this supports move review and does not replace behavior/journey evidence.
+
+Review finding (low, browser harness): `Page.reload` acknowledgement can arrive
+before the old document disappears, so visible authenticated text alone can
+match the old page. Add a pre-reload window marker and wait for its removal
+plus authenticated text in the new document before continuing. Final actual
+Chrome rerun passed. No blocking source finding remains in this reviewed scope;
+this is self-review, not independent review. No SQL/service/scorer/UI behavior,
+live-provider/quality/PG, deployment, commit or push claim.
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3d.py <tag>
+<Python args>`; omitted args run `-m pytest -q --tb=short`. Inherited DEE config/
+keys are cleared and an absent YAML selected. Logs are
+`.pytest_cache/r4-s1-t3d-<tag>.txt`. Journeys use migrated disposable stores and
+fake/capture providers. Chrome requires the existing CDN runtime internet.
+
+Final focus (`focused-reviewed`): `-m pytest -q --tb=short
+tests/test_screening_route_extraction.py tests/test_api_route_extraction.py
+tests/test_screening_api.py tests/test_screening_batches_api.py
+tests/test_screening_outcome_api.py tests/test_screening_tenancy.py
+tests/test_screening_scope.py tests/test_screening_retry.py
+tests/test_screening_refusal_retention.py tests/test_screening_unresolved_input.py
+tests/test_screening_erasure_concurrency.py tests/test_screening_durable_input.py
+tests/test_screening_report_input.py tests/test_asserted_contact_api.py
+tests/test_asserted_contact_batch.py tests/test_ingest_response_erasure.py
+tests/test_ingest_erasure_concurrency.py tests/test_org_scope_guard.py
+tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py tests/test_ratelimit_wiring.py`.
+
+| Final gate | Actual evidence |
+|---|---|
+| Focused | `focused-reviewed`: **247 passed, 83 skipped, 3 warnings, 110.01s (0:01:50)**, exit 0. Starlette/httpx deprecation and SQLite expression-index reflection warnings; PostgreSQL skips do not validate those cases |
+| Migrated HTTP | `journey scripts/smoke_r4_s1_t3d.py`: **31/31** reused UI HTTP contract plus **16/16** screening/restart checks, exit 0, 26.24s. Revision 0029; real cookie/CSRF and human attribution, two-tenant privacy, operator-note exclusion, configured one-item processing bound, exact batch/queue/summary/report/outcome restart state and graceful SQL disposal. HTTP contract simulation is not Chrome |
+| Actual Chrome | `browser-reviewed scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0, 26.42s. File picker/text/PDF, bounded driver, queue privacy, report feedback/history, summary, actual batch deletion, second file intake, authenticated new-document reload and injected 503 read/recovery; no console exceptions |
+| Imports | `import-reviewed -I .pytest_cache/check_import_r4_s1_t3d.py`: exit 0, 3.76s. Standalone screening import without aggregate routes, thirteen explicit single-org dependencies, shared/legacy object identities and single ordered composition |
+| Static | Project `-m compileall -q` on the two API modules, workflow/guard tests and HTTP/browser runners; `node scripts/check_ui_bindings.js`: **589/18 states**; tracked `git -c core.safecrlf=false diff --check` and no-index whitespace checks on all five new files passed |
+| Full pytest | `full-reviewed`, no extra arguments: **3510 passed, 505 skipped, 127 warnings, 783.67s (0:13:03)**, exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate warnings; omitted environments are not validated |
+| Preservation | `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3d.py`: **908 unrelated baseline files unchanged**, including working DB; seven reviewed code/contract hashes match; existing demo health **200**. Final documentation/process checks recorded below |
+
+The full contract remains **102 operations**, digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`;
+the fixture was not regenerated. Actual Chrome's Windows process stop is forced;
+HTTP's two application lifespans shut down gracefully. Neither proves general
+live-provider cleanup or assessment quality.
+
+### <a id="r4-s1-t3d--handoff"></a>Handoff
+
+AC1–4 and required gates passed. Full pytest ran on the reviewed code; only
+documentation changed afterward. No SQL/schema/scorer/UI behavior or working
+data change. Environment skips, synthetic-provider limits and same-agent review
+qualifications above remain. No deployment, commit or push. Parent
+T3/F13/sprint/PI remain open. Stop after D.
+
+Exact next child: R4-S1-T3E, ledger organizations, consent, records, coding and
+reputation, not started. Write its bounded contract first; trace the admin/org
+plane split, shared ledger schemas/helpers and remaining request/response DTOs.
+Retain the full contract and central auth/CSRF. T4 remains unstarted.
+
+Final handoff checks: **323 local links** resolve across changed operational
+records/source maps; A/B/C/D done, nine children pending, parent/PI open and next E
+are consistent. Tracked diff and all five new-file whitespace checks passed.
+Preservation repeated after documentation updates: the same 908 unrelated files,
+seven reviewed code/contract hashes and existing demo HTTP 200. Scratch HTTP/CDP
+processes are absent; the existing demo was never restarted.

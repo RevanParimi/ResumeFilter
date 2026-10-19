@@ -33,39 +33,48 @@ def make_report_node(services: Services):
         ai = state.ai_generation
         if ai is not None and ai.band in (AILikelihoodBand.POSSIBLE, AILikelihoodBand.LIKELY):
             summary += (
-                f" AI-generation signals: {ai.band.value} "
-                f"(likelihood {ai.likelihood:.2f}, confidence {ai.confidence:.2f}) — "
-                f"stylistic context only; AI-assisted writing is common and this "
-                f"is never a rejection signal."
+                f" Writing-style observations: {len(ai.signals)} pattern(s) recorded. "
+                "Polished or AI-assisted writing is common; these patterns cannot "
+                "establish authorship or dishonesty and are never a rejection signal."
             )
         xf = state.cross_field
         if xf is not None and xf.band is ConsistencyBand.MAJOR_ISSUES:
             majors = sum(1 for f in xf.findings if f.severity is FindingSeverity.MAJOR)
             summary += (
                 f" Cross-field consistency: {xf.band.value} ({majors} major of "
-                f"{len(xf.findings)} findings) — timeline observations for the "
-                f"reviewer to probe in conversation; never a rejection signal."
+                f"{len(xf.findings)} findings). Ask the candidate to clarify "
+                "dates and concurrent or part-time roles; extraction may be incomplete. "
+                "These observations are never a rejection signal."
             )
         rf = state.resume_farm
         if rf is not None and rf.band is DuplicationBand.NEAR_DUPLICATE:
             summary += (
-                f" Resume-farm signals: {len(rf.matches)} stored resume(s) from "
+                f" Content overlap: {len(rf.matches)} stored resume(s) from "
                 f"other candidates share up to {rf.score:.0%} estimated content "
-                f"overlap — shared templates are common and legitimate; reviewer "
-                f"context only, never a rejection signal."
+                "overlap. Shared templates are common and legitimate; clarify the "
+                "candidate's own contributions. Similarity does not establish copied "
+                "experience and is never a rejection signal."
             )
         risk = state.fabrication_risk
-        if risk is not None and risk.band in (
-            FabricationRiskBand.MODERATE,
-            FabricationRiskBand.ELEVATED,
-        ):
-            summary += (
-                f" Unified fabrication risk: {risk.band.value} (score "
-                f"{risk.score:.2f}, confidence {risk.confidence:.2f}) across "
-                f"{len(risk.components)} signal(s) — fused advisory context for "
-                f"the reviewer; it never changes the depth evaluation and is "
-                f"never a rejection signal."
-            )
+        if risk is not None:
+            if risk.scorer_version == 2:
+                summary += (
+                    " Factual review context v2 combines timeline and content-overlap "
+                    "checks; writing style is excluded. The index is a heuristic, "
+                    "not a fraud probability."
+                )
+            elif risk.scorer_version == 1:
+                summary += " Historical review context v1 includes writing style; its stored interpretation is retained."
+            else:
+                summary += f" Review context version {risk.scorer_version} has an unsupported interpretation."
+            if risk.band is FabricationRiskBand.INSUFFICIENT_DATA:
+                summary += " Insufficient data: available checks cannot assess factual risk; request missing dates or comparison context."
+            else:
+                summary += (
+                    f" Band: {risk.band.value} (index {risk.score:.2f}, confidence "
+                    f"{risk.confidence:.2f}). This never changes depth evaluation "
+                    "and is never a rejection signal."
+                )
         cov = state.extraction_coverage
         if cov is not None and cov.band is CoverageBand.MAJOR_GAPS:
             fields = sorted({g.field for g in cov.gaps if g.field})
@@ -165,6 +174,7 @@ def make_report_node(services: Services):
             services.flywheel.log(
                 {
                     "record_type": "fabrication_risk",
+                    "scorer_version": state.fabrication_risk.scorer_version,
                     "evaluation_id": state.evaluation_id,
                     "report_id": rep.id,
                     "domain": state.domain,
