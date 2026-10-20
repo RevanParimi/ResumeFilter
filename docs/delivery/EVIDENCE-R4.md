@@ -1231,3 +1231,170 @@ Subsequent completion workflow/final-review/publication follow-up (2026-10-20):
 [the existing audit](../CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
 owns that later evidence; the no-publication statements above describe E/F's
 original completion sessions.
+
+## <a id="r4-s1-t3g"></a>R4-S1-T3G - Extract feature materialization and talent search routes
+
+Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [F](#r4-s1-t3f), done.
+Only G is authorized for this continuation; T3/F13/sprint/PI remain open.
+
+### <a id="r4-s1-t3g--contract"></a>Contract
+
+Move `POST /talent/search`, `POST /features/materialize` and their three DTOs
+into `app/api/features.py`, using the existing shared admin dependency and
+service resolver. Compose the existing APIRoutes at the original admin position.
+Keep handler names, signatures, bodies, ordered dependencies, all 102 operations
+and the full OpenAPI fixture unchanged. No service/store/schema/SQL, scorer,
+frontend, provider or running-demo change. Keep shared feature/ranking schemas
+with their current owners; preserve aggregate aliases only where callers need them.
+
+Acceptance preserves key/cookie admin-only access, cookie-first principal and
+CSRF handling, empty advisory search, known/unknown feature and filter errors,
+limits, default/explicit view and historical cuts, partial materialization and
+unknown/erased subject skips. Current platform ledger_read consent must mask
+historical values before filtering/scoring without altering stored cuts or
+first-party values; consent storage failure must refuse the response.
+
+### <a id="r4-s1-t3g--validation"></a>Required validation
+
+- Characterize both operations before the move in the existing
+  `tests/test_api_route_extraction.py`, then run the same behavior through the
+  standalone feature/auth routers. Include two subjects, scoped consent,
+  revocation, erasure, cookie/key/CSRF boundaries and input errors.
+- Run focused route/materialization/search/consent/ownership/auth regressions and
+  the complete offline pytest suite with isolated stores and project Python.
+  This is a pure refactor, so passing pre-move characterization is expected;
+  no existing functional defect or expected red regression is invented.
+- Extend the existing migrated auth/ledger HTTP/graceful-restart journey for
+  actual search/materialization, historical persistence and consent revocation.
+  Reuse the actual Roles Chrome journey, which consumes materialized features;
+  no direct search/materialization screen exists. Include reload/error recovery
+  and console checks. Run UI bindings, Python import/compile and diff checks.
+- Record an implementation self-review of the diff, original AST/DTO/dependency
+  identity and independent module imports. No PG migration/concurrency gate
+  applies to unchanged stores/transactions/schema. After completion records,
+  perform a distinct final self-review, commit/push scoped changes and verify
+  the remote SHA under the user's standing instruction.
+
+### <a id="r4-s1-t3g--evidence-and-review"></a>Evidence and review
+
+The pure move places two operations/three DTOs in the 175-line `api/features.py`;
+aggregate `routes.py` is 1,009 lines (formerly 1,163). Their unchanged APIRoutes
+compose in the original position with exactly one shared admin resolver each.
+Caller search found no aggregate DTO/helper consumers requiring aliases.
+The complete 102-operation OpenAPI/ordered dependency fixture remains unchanged
+(`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`).
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3g.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. The local runner
+clears inherited DEE settings/keys, points at absent YAML and uses null/fake/capture
+providers and isolated stores. Logs: `.pytest_cache/r4-s1-t3g-<tag>.txt`. These
+ignored artifacts are evidence aids, not portable setup guarantees.
+
+Pre-move `characterization`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_features_materialize_api.py
+tests/test_talent_search_api.py`: **34 passed, 1 warning, 18.81s**, exit 0.
+Three new behavioral tests first ran through the assembled application and now
+mount only feature/auth routers. No behavioral defect is claimed for this refactor.
+
+Post-move `focused`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_features_materialize_api.py
+tests/test_talent_search_api.py tests/test_features_materialize.py
+tests/test_features_current_consent.py tests/test_feature_serving_consent.py
+tests/test_ledger_store_materialize_consent.py tests/test_ranking.py
+tests/test_ranking_filters.py tests/test_ranking_score.py tests/test_ranking_config.py
+tests/test_api_auth_gate.py tests/test_auth_api.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py`:
+**177 passed, 101 skipped, 1 warning, 141.13s**, exit 0. Environment/optional skips
+do not prove omitted cases; Starlette/httpx deprecation warning.
+
+After the review's non-vacuity assertion, `focused-reviewed`: `-m pytest -q
+--tb=short tests/test_api_route_extraction.py -k feature_`: **3 passed,
+11 deselected, 1 warning, 2.58s**, exit 0. Full pytest ran on that final code.
+
+Migrated HTTP (`journey-corrected scripts/smoke_r4_s1_t3a.py`): **51/51**, exit 0,
+37.14s. Two revision-0029 lifespans, captured admin/org/candidate cookies,
+wrong-plane refusals, admin cookie plus valid key CSRF refusal, partial refresh
+with unknown-ID skips, malformed-view/feature/ranking errors, consented advisory
+historical contributions, exact search body across graceful restart, then
+revocation masking before filtering while first-party values remain available.
+Existing ledger/employer ownership/consent/shutdown checks remain green.
+Initial `journey`: **50/51**, exit 1; its bare portal subject had no resume and
+therefore no first-party skill count to preserve. Added a synthetic SQL resume
+to that exact verified subject (identity asserted). This corrects the fixture;
+no production logic changed to satisfy a test assumption.
+
+Actual Chrome (`browser scripts/check_ui_review_context_browser.py`): **28/28**,
+exit 0, 40.26s. The existing Roles journey consumes the new materialization
+composition and renders actual ranked candidate IDs, with successful empty state,
+new-document reload, injected 503/recovery and no console exceptions. Existing
+report review/ownership/erasure checks remain green. There is no direct feature
+or talent-search UI. Chrome/CDN internet is required; external providers are
+fake/capture. Browser cleanup is forced on Windows; HTTP proves graceful shutdown.
+
+Static checks: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**,
+passed. `node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q` for the two API files, extended route tests and HTTP script,
+and `git diff --check` pass. No frontend source change.
+
+Implementation self-review: HEAD `ea2ee86` plus aggregate/features, consolidated
+route tests and extended existing HTTP journey. Specification review maps both
+unchanged operations and three DTOs to full-contract and behavioral checks.
+Correctness review traces current-consent masking before filters/normalization,
+historical/partial refresh reads, unknown/erased subject skips, consent read
+failure, auth-plane isolation and cookie/CSRF precedence. All **64** original
+aggregate class/function definitions (decorators/signatures/bodies included)
+are AST-identical across aggregate/features. `review-corrected -I
+.pytest_cache/review_r4_s1_t3g.py`: exit 0, 5.22s; isolated import needs no aggregate,
+shared dependency/service identity is retained and five code/contract hashes
+are recorded. No schema/store/SQL/scorer/provider changes or import cycle.
+Low review finding: make the initial consented ranking assertion non-vacuous
+with both exact candidate IDs before checking coverage; resolved in the existing
+test. HTTP fixture gap resolved as above. No blocking implementation finding
+remains; this is self-review, not independent review or measured ranking quality.
+
+Preservation check (`.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3g.py`):
+**707 unrelated tracked files**, including working `data/veritas.db`, and the
+five reviewed code/contract hashes unchanged. After completion consolidation,
+all **157 local links/anchors in five scoped Markdown files**, source whitespace
+and `git diff --check` pass. Scratch HTTP/Chrome processes exited.
+The existing demo health read refused its connection and no listener was found
+on port 8000. No demo was started/restarted; no deployment or working migration.
+No live-provider, PG concurrency/migration, independent-review or empirical
+quality claim. Current consent checks remain snapshots, not delivery locks.
+
+Full pytest (`full-reviewed`, no extra runner arguments): **3518 passed, 505 skipped, 127 warnings in 833.54s (0:13:53)**,
+exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; skipped environment/optional cases are not proof
+of those cases. Full pytest ran on the reviewed code; only documentation changed
+afterward. Acceptance and required runtime/static gates are complete.
+
+### <a id="r4-s1-t3g--completion-review-and-publication"></a>Completion review and publication
+
+After full pytest and the completion/evidence/handoff updates, a distinct final
+same-agent self-review examined HEAD `ea2ee86` plus the exact nine staged files:
+`api/routes.py`, new `api/features.py`, the existing route-test/HTTP-journey
+modules, and `PROGRESS`, `ROADMAP`, `PI-R4`, `EVIDENCE-R4`, active T3 records.
+Specification review confirmed G's two-operation/three-DTO scope, required
+evidence, unchanged 102-operation contract and H-only next pointer. Correctness
+review rechecked dependency order/identity, current-consent historical serving,
+erasure/refusals, fixture realism, resource cleanup and retained limitations.
+`completion-review -I .pytest_cache/review_r4_s1_t3g.py` again confirmed all 64
+original definitions, standalone import and single shared admin gates. Final
+code/contract hashes match the validated state. Scoped staging contains no
+working DB, secrets, generated artifacts or unrelated changes. No blocking
+finding remains. This later review is distinct from implementation self-review;
+no independent review is claimed. Documentation tense/pending-check wording was
+updated to match completed evidence; only documentation changed after full pytest.
+
+Publication uses configured tracking branch `origin/main` under the user's
+standing authorization. The session's final response reports the resulting
+task commit and actual remote-SHA verification after commit/push; no deployment
+or next backlog task is included.
+
+### <a id="r4-s1-t3g--handoff"></a>Handoff
+
+Only G completed in this continuation. T3/F13/sprint/PI stay open. Exact next
+child: **R4-S1-T3H - Extract candidate portal, consent/access and data-principal
+request routes**, not started. Add its bounded contract/evidence inline in the
+existing T3 record and reuse consolidated route tests. T4 has not started.
+No next-backlog implementation or deployment during publication.

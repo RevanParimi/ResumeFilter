@@ -4,50 +4,48 @@ Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3F complete: employer routes extracted and Roles API bindings repaired.**
-Eleven operations/four DTOs now live in `api/employer.py`; the aggregate is
-1,163 lines. Full 102-operation OpenAPI/dependency contract unchanged. Roles
-now renders the actual ranked candidates/nested skill coverage and successful
-empty pools; errors remain separate. Focused/full offline pytest, migrated
-HTTP/graceful restart, actual Chrome, static/preservation checks and self-review
-passed. [F evidence](delivery/EVIDENCE-R4.md#r4-s1-t3f) owns commands, results,
-bounded scope refinement and limits. Prior E work, working DB and demo preserved.
+**R4-S1-T3G complete: feature materialization and talent search routes extracted.**
+Two operations/three DTOs now live in `api/features.py`; the aggregate is 1,009
+lines. The full 102-operation OpenAPI/ordered auth contract, admin/CSRF gates,
+historical cuts and current-consent masking remain unchanged. Focused/full
+offline pytest, migrated HTTP/graceful restart, actual Roles Chrome and static/
+preservation/implementation self-review passed.
+[G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g) owns commands, results and limits.
+Completion review/publication is recorded there; the final response reports the
+verified task commit on configured tracking branch `origin/main`.
 
-**Exact next development task: R4-S1-T3G - Extract feature materialization and
-talent search routes, not started.** Read [PI-R4](delivery/PI-R4.md),
+**Exact next development task: R4-S1-T3H - Extract candidate portal, consent/access
+and data-principal request routes, not started.** Read [PI-R4](delivery/PI-R4.md),
 [WORKFLOW.md](delivery/WORKFLOW.md), [T3](delivery/tasks/R4-S1-T3.md) and
-[F evidence](delivery/EVIDENCE-R4.md#r4-s1-t3f). Write G's contract/evidence inline
-in T3; reuse `tests/test_api_route_extraction.py`. Trace feature/ranking schemas,
-materialization helpers, admin dependencies and current-consent serving; preserve
-the full OpenAPI/ordered auth, ownership, consent and error contracts.
-Complete only G next session. T3/F13/sprint/PI remain open; T4 is not started.
-E/F work and the new completion workflow are committed/pushed as `369ead1` on
-`origin/main`, after a distinct final self-review; the remote SHA was verified.
-[The audit](CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
-owns that later review/publication evidence. This documentation-only confirmation
-records the verified push. No deployment/demo restart; G has not started.
+[G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g). Write H's contract/evidence inline
+in T3; reuse `tests/test_api_route_extraction.py`. Preserve candidate principal
+ownership, consent/access audit and erasure/request behavior plus full ordered
+auth/OpenAPI contracts. Complete only H next session. T3/F13/sprint/PI remain
+open; T4 is not started. No next task or deployment started this session.
 
 ## Latest work
 
-F preserves job ownership, offer/card consent and advisory matching/compensation.
-Actual Chrome exposed obsolete Roles response/status assumptions; the recorded
-bounded fix aligns the UI with the unchanged API. A-F evidence is in
-[PI-R4 evidence](delivery/EVIDENCE-R4.md). R4-M1/M2 maintenance and prior publication
-are complete; [the existing audit](CODEBASE_REVIEW_2026-09-07.md#publication-follow-up-previously-completed-local-work)
-owns that history. Ignored local-artifact removal remains outside this task.
-[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+G's standalone feature/auth regressions cover partial refreshes, historical cuts,
+unknown/erased subject skips, two-subject consent revocation, first-party values,
+consent storage failure and key/cookie/CSRF/other-plane refusals. HTTP search
+survives graceful restart and masks revoked historical values before filtering.
+Working DB and unrelated tracked files match the baseline. No demo was started
+or restarted; its health connection was refused and port 8000 had no listener.
+A-G evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md). Ignored local-artifact
+removal remains outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the
+feature overview. Existing scoring, provider and consent-snapshot limits remain.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3f.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3g.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
   Candidate/source/ownership/graceful restart: `scripts/smoke_r4_s1_t3c.py`.
   Evaluation/report/outcome/restart journey: `scripts/smoke_r3_s1_q.py`
-  (Windows stop is forced). Auth/ledger/employer/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
+  (Windows stop is forced). Auth/ledger/employer/features/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
   Contract fixture: `tests/fixtures/api_contract_r4_s1_t3.json`; pure extractions
   retain it. Provenance journey: `scripts/smoke_r4_s1_t2.py` (blocked Chroma imports,
   default/legacy settings, migrated HTTP and graceful restart). Provider lifecycle
@@ -76,7 +74,7 @@ owns that history. Ignored local-artifact removal remains outside this task.
   (user instruction 2026-10-20; recorded in AGENTS/workflow). No fresh routine
   permission request. Deployment, external messages and working-data/legacy
   cleanup remain outside scope. Preserve unrelated work and `data/veritas.db`.
-- Do not restart the running `http://127.0.0.1:8000/ui/` demo. Its older,
+- Do not start/restart the `http://127.0.0.1:8000/ui/` demo. Its last recorded,
   reload-disabled backend still needs a separately controlled restart for earlier
   backend/PDF/rubric/lifecycle changes. Scratch validation does not update it.
   Working DB remains at 0023; only scratch stores were migrated to 0029.

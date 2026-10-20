@@ -19,6 +19,7 @@ from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
 from tests.test_ledger_api import _coding_payload, _ingest_candidate
 from tests.test_dashboard_api import _candidate as dashboard_candidate, _materialize, AS_OF
+from tests.test_talent_search_api import _seed as seed_search_vector, _AS_OF as SEARCH_CUT
 
 
 # Api route extraction
@@ -648,3 +649,132 @@ def test_employer_cookie_requires_csrf_and_retains_tenant_precedence(cfg, captur
             assert machine.get("/jobs").json() == []
             assert admin.get("/dashboard/overview").status_code == 401
             assert admin.post("/jobs", json=spec).status_code == 401
+
+
+# Feature materialization and talent search extraction
+
+
+def feature_app(services):
+    from app.api.auth import auth_router
+    from app.api.features import router
+
+    app = FastAPI()
+    app.state.services = services
+    app.include_router(auth_router)
+    app.include_router(router)
+    return app
+
+
+def test_feature_workflow_preserves_cuts_partial_refresh_errors_and_erasure(services):
+    ids = [dashboard_candidate(services, name=name, email=name + "@example.in", skills=skills)
+           for name, skills in (("FeatureOne", ("python",)), ("FeatureTwo", ("python", "sql")))]
+    ranking = {"terms": [{"feature": "candidate.num_skills", "weight": 1}]}
+    with TestClient(feature_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as client:
+        empty = client.post("/talent/search", json={"ranking": ranking})
+        assert empty.status_code == 200
+        assert empty.json()["advisory"] and empty.json()["pool_size"] == 0
+        assert empty.json()["as_of"] is None and empty.json()["ranked"] == []
+        for path, body, status in (
+            ("/features/materialize", {"view_name": "unknown-view"}, 422),
+            ("/features/materialize", {"as_of": "bad-time"}, 422),
+            ("/talent/search", {"ranking": {"terms": []}}, 422),
+            ("/talent/search", {"ranking": ranking, "limit": 0}, 422),
+            ("/talent/search", {"ranking": {"terms": [{"feature": "unknown.feature", "weight": 1}]}}, 400),
+            ("/talent/search", {"ranking": ranking, "filters": [{"feature": "unknown.feature", "op": "exists"}]}, 400),
+        ):
+            assert client.post(path, json=body).status_code == status
+        first = client.post("/features/materialize", json={})
+        assert first.status_code == 200, first.text
+        cut = first.json()
+        assert cut["materialized"] == 2 and cut["skipped"] == 0
+        assert cut["view_name"] == services.settings.feat_default_view and cut["as_of"]
+        body = {"ranking": ranking, "as_of": cut["as_of"], "view_name": cut["view_name"],
+                "view_version": cut["view_version"]}
+        historical = client.post("/talent/search", json=body).json()
+        assert historical["advisory"] and historical["pool_size"] == historical["filtered_size"] == 2
+        assert [row["candidate_id"] for row in historical["ranked"]] == ids[::-1]
+        assert historical["ranked"][0]["contributions"][0]["raw"] == 2
+        refreshed = client.post("/features/materialize", json={"candidate_ids": [ids[0], "missing"]})
+        assert refreshed.status_code == 200
+        assert refreshed.json()["materialized"] == refreshed.json()["skipped"] == 1
+        latest = client.post("/talent/search", json={"ranking": ranking, "limit": 1}).json()
+        assert latest["pool_size"] == 2 and latest["ranked"][0]["candidate_id"] == ids[1]
+        assert len(latest["ranked"]) == 1
+        assert client.post("/talent/search", json=body).json() == historical
+        assert client.post("/talent/search", json={**body, "as_of": SEARCH_CUT.isoformat()}).json()["pool_size"] == 0
+        malformed = client.post("/talent/search", json={"ranking": ranking, "filters": [
+            {"feature": "candidate.num_skills", "op": "gt", "value": "many"}]})
+        assert malformed.status_code == 400
+        services.portal.erase(ids[0])
+        retry = client.post("/features/materialize", json={"candidate_ids": ids, "as_of": cut["as_of"]})
+        assert retry.status_code == 200
+        assert retry.json()["materialized"] == retry.json()["skipped"] == 1
+        assert [row["candidate_id"] for row in client.post("/talent/search", json=body).json()["ranked"]] == ids[1:]
+
+
+def test_feature_search_masks_revoked_historical_values_and_refuses_consent_failure(services, monkeypatch):
+    ids = [asyncio.run(seed_search_vector(services, name, {
+        "candidate.years_experience": years, "reputation.score": reputation}))
+        for name, years, reputation in (("feature-a", 8, .9), ("feature-b", 2, .2))]
+    orgs = [services.ledger.create_organization(name) for name in ("Feature A", "Feature B")]
+    grants = [services.ledger.grant_consent(candidate_id=cid, org_id=org.id,
+        purpose="ledger_read", now=SEARCH_CUT) for cid, org in zip(ids, orgs)]
+    body = {"as_of": SEARCH_CUT.isoformat(), "ranking": {"terms": [
+        {"feature": name, "weight": 1} for name in ("candidate.years_experience", "reputation.score")]}}
+    with TestClient(feature_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as client:
+        allowed = client.post("/talent/search", json=body)
+        assert allowed.status_code == 200
+        assert {row["candidate_id"] for row in allowed.json()["ranked"]} == set(ids)
+        assert all(row["coverage"] == 1 for row in allowed.json()["ranked"])
+        assert services.ledger.revoke_consent(grants[0].id)
+        masked = {row["candidate_id"]: row for row in client.post("/talent/search", json=body).json()["ranked"]}
+        assert masked[ids[0]]["coverage"] == .5 and masked[ids[1]]["coverage"] == 1
+        assert masked[ids[0]]["missing"] == ["reputation.score"]
+        assert [term["feature"] for term in masked[ids[0]]["contributions"]] == ["candidate.years_experience"]
+        filtered = client.post("/talent/search", json={**body, "filters": [{"feature": "reputation.score", "op": "exists"}]})
+        assert [row["candidate_id"] for row in filtered.json()["ranked"]] == ids[1:]
+        stored = services.features.get_vector(ids[0], view_name="core_v1", view_version=allowed.json()["view_version"], as_of=SEARCH_CUT)
+        assert stored.consent_state["allowed"] and stored.vector.values["reputation.score"] == .9
+        def unavailable(_):
+            raise RuntimeError("synthetic feature consent store failure")
+        monkeypatch.setattr(services.ledger, "consents_for_candidate", unavailable)
+        refused = client.post("/talent/search", json=body)
+        assert refused.status_code == 500
+        assert "ranked" not in refused.text and "synthetic feature consent store failure" not in refused.text
+
+
+def test_feature_routes_preserve_admin_cookie_csrf_and_other_plane_refusals(cfg, capture_path):
+    services = make_services(cfg)
+    email = "feature-admin@example.in"
+    services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
+    org = services.ledger.create_organization("Feature machine employer")
+    org_key = services.ledger.issue_api_key(org.id)
+    writes = (("/features/materialize", {}), ("/talent/search", {"ranking": {"terms": [
+        {"feature": "candidate.num_skills", "weight": 1}]}}))
+    with TestClient(feature_app(services), raise_server_exceptions=False) as admin, \
+            TestClient(feature_app(services), raise_server_exceptions=False) as other:
+        for path, body in writes:
+            assert other.post(path, json=body).status_code == 401
+            assert other.post(path, json=body, headers={"X-Org-Key": org_key}).status_code == 401
+            assert other.post(path, json=body, headers=ADMIN_HEADERS).status_code == 200
+        assert admin.post("/auth/admin/login", json={"email": email}).status_code == 202
+        verified = admin.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
+        assert verified.status_code == 200
+        admin.headers.update(ADMIN_HEADERS)
+        for path, body in writes:
+            assert admin.post(path, json=body).status_code == 403
+            assert admin.post(path, json=body, headers={"X-CSRF-Token": "wrong"}).status_code == 403
+        admin.headers.pop("X-API-Key")
+        admin.headers["X-CSRF-Token"] = verified.json()["csrf_token"]
+        for path, body in writes:
+            assert admin.post(path, json=body).status_code == 200
+        for plane in ("org", "candidate"):
+            other.cookies.clear()
+            login = {"email": f"feature-{plane}@example.in"}
+            if plane == "org":
+                login["organization_name"] = "Feature cookie employer"
+            assert other.post(f"/auth/{plane}/signup", json=login).status_code == 202
+            verified = other.post(f"/auth/{plane}/verify", json={"email": login["email"], "code": _code(capture_path)})
+            assert verified.status_code == 200
+            for path, body in writes:
+                assert other.post(path, json=body, headers={"X-CSRF-Token": verified.json()["csrf_token"]}).status_code == 401
