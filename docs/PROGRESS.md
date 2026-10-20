@@ -21,9 +21,11 @@ in T3; reuse `tests/test_api_route_extraction.py`. Trace feature/ranking schemas
 materialization helpers, admin dependencies and current-consent serving; preserve
 the full OpenAPI/ordered auth, ownership, consent and error contracts.
 Complete only G next session. T3/F13/sprint/PI remain open; T4 is not started.
-E/F commit/push follow-up is in progress under the user's 2026-10-20 instruction:
-task completion -> distinct final review -> scoped commit/push -> verify remote.
-No deployment or working-demo restart. G has not started.
+E/F work and the new completion workflow are committed/pushed as `369ead1` on
+`origin/main`, after a distinct final self-review; the remote SHA was verified.
+[The audit](CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
+owns that later review/publication evidence. This documentation-only confirmation
+records the verified push. No deployment/demo restart; G has not started.
 
 ## Latest work
 

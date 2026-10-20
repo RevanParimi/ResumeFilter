@@ -432,9 +432,18 @@ Fresh final-review command:
 **54 passed, 1 warning, 14.14s**, exit 0. Starlette/httpx deprecation warning.
 Existing environment, CDN, synthetic-provider and same-agent-review limits remain.
 
-Publication: final focused result and separate staged review passed; commit/push
-pending. Remote main was verified at the base SHA above before preparing this
-follow-up.
+Publication complete: [commit 369ead1](https://github.com/RevanParimi/ResumeFilter/commit/369ead1dd1a62293a65b03fcb966c46a214b7cd6)
+contains all 17 reviewed paths and was pushed normally to `origin/main`.
+`git ls-remote --heads origin refs/heads/main` matched the exact local SHA
+`369ead1dd1a62293a65b03fcb966c46a214b7cd6`; the working tree was clean afterwards.
+Author and committer: Revan Parimi <revan.datta132@gmail.com>. Push used the
+existing RevanParimi account; no credential was changed or disclosed.
+
+This subsequent documentation-only confirmation records that verified result.
+Its final diff review covers the published SHA, authorization, validation reuse
+and unchanged next-task/status pointers. No application code changed, and no
+additional application tests are claimed for this prose. Working data and demo
+are preserved; no deployment or next-task work. T3G remains next, not started.
 
 ## Follow-up 2026-10-18 — Test and delivery consolidation
 
