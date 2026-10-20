@@ -319,6 +319,57 @@ void 0;
         checks.check("combined app logs omit destination and delivered contact code",
             all(value not in (scratch / "server.log").read_text(encoding="utf-8")
                 for value in (email, contact_code)))
+        # T3H reuses this actual candidate session for portal/consent/erasure.
+        def portal_response(response, status=200):
+            assert response.status_code == status, (response.request.url.path, response.status_code)
+            return response.json()
+        subject = (await tab.js("window.VeritasAPI.get('/portal/me')"))["candidate_id"]
+        organization = portal_response(admin.post("/ledger/orgs", json={"name": "Synthetic Portal Browser"}))
+        oid = organization["org"]["id"]
+        grant = await tab.js("window.VeritasAPI.post('/portal/consents'," + json.dumps({
+            "purpose": "ledger_read", "org_id": oid}) + ")")
+        assert grant["candidate_id"] == subject
+        ledger_path = f"/ledger/candidates/{subject}/records"
+        org_headers = {"X-Org-Key": organization["api_key"]}
+        portal_response(admin.get(ledger_path, headers=org_headers))
+        assert await tab.js("window.__click('button', 'Consents')")
+        checks.check("portal browser renders its own active consent", await tab.wait(
+            f"window.__has({json.dumps(oid)}) && [...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Revoke')", 20))
+        assert await tab.js("window.__click('button', 'Revoke')")
+        checks.check("portal browser revoke persists before the next employer read", await tab.wait(
+            "window.__has('Revoked') && ![...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Revoke')", 20)
+            and admin.get(ledger_path, headers=org_headers).status_code == 403)
+        assert await tab.js("window.__click('button', 'Who accessed it')")
+        checks.check("portal browser shows allowed and refused access with the actor", await tab.wait(
+            "window.__has('Synthetic Portal Browser') && window.__has('record.query') && window.__has('Allowed') && window.__has('Refused')", 20))
+        await reload()
+        assert await tab.wait("window.__has('Sign out')", 20)
+        assert await tab.js("window.__click('button', 'Consents')")
+        checks.check("new document reload retains revoked portal consent", await tab.wait("window.__has('Revoked')", 20)
+            and (await tab.js("window.VeritasAPI.get('/portal/consents')"))[0]["grant"]["id"] == grant["id"])
+        await tab.js("""window.__portalFetch = window.fetch;
+window.fetch = (url, init) => String(url).endsWith('/portal/me')
+ ? Promise.resolve(new Response(JSON.stringify({detail:'synthetic portal read failure'}), {status:503, headers:{'Content-Type':'application/json'}}))
+ : window.__portalFetch(url, init);""")
+        assert await tab.js("window.__click('button', 'Overview')")
+        checks.check("portal browser renders failed access-view read", await tab.wait("window.__has('synthetic portal read failure')", 20))
+        await tab.js("window.fetch = window.__portalFetch")
+        assert await tab.js("window.__click('button', 'Consents')")
+        assert await tab.js("window.__click('button', 'Overview')")
+        checks.check("portal browser recovers from failed access-view read", await tab.wait(
+            "window.__has('Everything Veritas holds about you') && !window.__has('synthetic portal read failure') && document.querySelector('#contact-destination')", 20))
+        survivor = portal_response(admin.post("/candidates", json={"evaluate": False, "resume_text":
+            "Synthetic Portal Survivor\nEmail: portal-survivor@example.in\nSKILLS\nSQL"}))["candidate_id"]
+        survivor_key = portal_response(admin.post(f"/candidates/{survivor}/auth-key"))["access_key"]
+        own_key = portal_response(admin.post(f"/candidates/{subject}/auth-key"))["access_key"]
+        assert await tab.js("window.__click('button', 'Delete everything')")
+        assert await tab.js("window.__type('input[placeholder=\"DELETE\"]', 'DELETE')")
+        assert await tab.wait("document.querySelector('input[placeholder=\"DELETE\"]').parentElement.querySelector('button')", 10)
+        assert await tab.js("document.querySelector('input[placeholder=\"DELETE\"]').parentElement.querySelector('button').click(); true")
+        checks.check("portal browser erasure ends the session and preserves another subject", await tab.wait(
+            "window.__has('Your data has been deleted') && document.querySelector('input[type=email]')", 20)
+            and admin.get("/portal/me", headers={"X-Candidate-Key": own_key}).status_code == 401
+            and portal_response(admin.get("/portal/me", headers={"X-Candidate-Key": survivor_key}))["candidate_id"] == survivor)
         checks.check("browser journeys have no console exceptions", not tab.console, "; ".join(tab.console[:2]))
         (scratch / "database-url.txt").write_text(state["db"], encoding="utf-8")
 

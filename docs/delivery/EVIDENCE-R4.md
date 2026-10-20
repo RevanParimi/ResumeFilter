@@ -1443,3 +1443,171 @@ child: **R4-S1-T3H - Extract candidate portal, consent/access and data-principal
 request routes**, not started. Add its bounded contract/evidence inline in the
 existing T3 record and reuse consolidated route tests. T4 has not started.
 No next-backlog implementation or deployment during publication.
+
+## <a id="r4-s1-t3h"></a>R4-S1-T3H - Extract candidate portal and data-principal request routes
+
+Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [G](#r4-s1-t3g), done/published.
+Only H is in scope for this continuation; T3/F13/sprint/PI remain open.
+
+### <a id="r4-s1-t3h--contract"></a>Contract
+
+Extract nine candidate portal operations (access view/log, consent list/grant/
+revoke, corrections, grievances, request list and self-erasure), two operator
+request list/resolve operations and their four DTOs into `app/api/portal.py`.
+Keep explicit shared candidate resolvers and one shared admin gate per operator
+route. Compose APIRoutes at their original candidate/admin positions without
+changing any handler body/decorator/signature or the full 102-operation ordered
+auth/OpenAPI fixture. Keep shared erasure/revocation DTOs with candidates/ledger;
+public grievance contact stays in the aggregate for M. No service/store/SQL,
+migration, scoring, provider, frontend or working-demo changes are implied.
+
+Preserve first-party ownership from credentials, mixed cookie/key precedence and
+CSRF; uniform absent/foreign consent 404s; allowed/denied access audit and current
+consent; reviewed corrections with default `apply=false`, explicit name-only
+application and unchanged extraction evidence; private human/machine resolution
+provenance; queue limits/status validation and 400/404/409/422/429 translations
+where applicable; request rate budgets, and erasure of own data/credentials while
+another subject remains accessible. Retain concurrent-erasure refusals.
+
+### <a id="r4-s1-t3h--validation"></a>Required validation
+
+- Extend existing `tests/test_api_route_extraction.py` before the move to
+  characterize two-subject portal/rights/erasure and cookie/admin workflows;
+  rerun the same assertions with standalone portal/auth routers. Pure refactoring
+  expects passing characterization, not an invented functional red regression.
+- Run focused portal/rights/auth/ownership/full-contract pytest and full offline
+  pytest with project Python, isolated stores and fake/capture providers.
+- Extend the existing migrated auth/ledger HTTP/graceful-restart journey for
+  candidate requests, operator review and erasure. Extend the existing evaluation
+  Chrome journey's candidate session for rendered portal, consent revocation,
+  allowed/denied access log, reload, injected read failure/recovery and erasure.
+  Rights list/resolve have no existing UI; real HTTP owns those operations.
+- Run bindings, relevant JS syntax, Python compile/import and diff checks.
+  Review definition/DTO/dependency identity, import cycles and preservation.
+  No PG migration/concurrency gate applies to unchanged stores/transactions.
+- Record implementation self-review and a distinct final review after completion
+  records; commit/push reviewed scoped changes and verify the tracking remote.
+  Use per-command authenticated repository-owner selection for GitHub's two
+  Credential Manager accounts (G publication evidence). Do not start I or T4.
+
+### <a id="r4-s1-t3h--evidence-and-review"></a>Evidence and review
+
+The pure extraction moves eleven operations/four DTOs into the 266-line
+`api/portal.py`; aggregate `routes.py` shrinks from 1,009 to 772 lines. Candidate
+and operator routes compose at their original positions, preserving one shared
+candidate/admin resolver per operation. Shared response DTO identity stays with
+`api/candidates.py` and `api/ledger.py`; caller search found no moved aggregate
+DTO/handler consumers requiring aliases. Public grievance contact remains for M.
+The full 102-operation OpenAPI/ordered dependency fixture is unchanged (digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`).
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3h.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. The local runner
+clears inherited DEE config/keys, points to absent YAML and uses isolated stores
+and fake/null/capture providers. Logs: `.pytest_cache/r4-s1-t3h-<tag>.txt`; ignored
+local artifacts are not portable setup guarantees.
+
+Pre-move `characterization`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_portal_api.py tests/test_rights_api.py
+tests/test_rights_admin_api.py`: **47 passed, 1 warning, 15.86s**, exit 0.
+Three new behavioral tests first mounted the aggregate, then switched to just
+portal/auth routers. Pure refactoring expects passing characterization; no
+functional defect or expected-red result is claimed.
+
+Post-move `focused`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_portal_api.py tests/test_portal_sessions.py
+tests/test_portal_service.py tests/test_portal_identity.py tests/test_rights_api.py
+tests/test_rights_admin_api.py tests/test_rights_service.py tests/test_rights_store.py
+tests/test_api_auth_gate.py tests/test_auth_api.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py`:
+**171 passed, 1 warning, 39.50s**, exit 0 (Starlette/httpx deprecation).
+New standalone workflows cover exact two-subject ownership/credential semantics,
+absent/foreign consent 404 equality, allowed/refused audit, correction review and
+explicit application without extraction rewrites, machine/human provenance,
+queue bounds/status, 404/409/422/429 responses, budget charging before validation,
+cookie/foreign-key precedence, CSRF and erasure with a surviving second subject.
+Controlled service erasure exceptions prove 404 translations; they are not new
+database concurrency evidence.
+
+Migrated HTTP (`journey scripts/smoke_r4_s1_t3a.py`): **58/58**, exit 0, 37.59s.
+The captured admin/candidate/org composition verifies owned portal requests,
+cookie plus foreign-key precedence and CSRF refusal, operator queue bounds/auth,
+persisted request body/grant ID over graceful restart, named reviewed application,
+repeat-decision 409, revocation, request/credential erasure and another subject's
+survival. Prior ledger/employer/feature contracts remain green. Two revision-0029
+lifespans dispose/detach owned SQL; no working migration or demo restart.
+
+Actual Chrome (`browser scripts/check_ui_evaluate_browser.py`): **38/38**, plus
+**1/1** startup/UI-host harness, exit 0, 38.64s. The existing real candidate
+session now grants consent through browser API plumbing, renders/revokes it
+through the actual Consents screen, sees allowed/refused employer accesses with
+actor name, reloads a new document preserving revocation, renders an injected
+503 on Overview and recovers by navigation, then performs visible confirmed
+erasure, loses its credential/session and preserves a second subject. No console
+exceptions. Existing evaluation/report/outcome/OTP journeys stay green. Rights
+submission/review have no current UI; HTTP owns those operations. Chrome needs
+existing CDN internet; providers/mail are fake/capture, not live validation.
+Browser cleanup is forced on Windows; HTTP owns graceful lifecycle evidence.
+
+Static checks: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**,
+passed. `node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q` for aggregate/portal, extended route tests and both existing
+journeys, and `git diff --check` passed. No frontend source change.
+
+Implementation self-review: HEAD `fd668e9` plus aggregate/portal, consolidated
+route tests and the two extended existing journeys. Specification review maps
+all eleven operations/four DTOs to full-contract, standalone, HTTP and actual
+browser assertions. Correctness review traces subject isolation, shared response/
+dependency identities, CSRF order, uniform foreign/missing refusals, current
+consent/audit, reviewed identity-only changes without rewriting extraction,
+rate/queue bounds, resolution provenance/error ordering, erasure and lifecycle.
+All **59** original aggregate class/function definitions, including decorators,
+signatures and bodies, are AST-identical across aggregate/portal. `review -I
+.pytest_cache/review_r4_s1_t3h.py`: exit 0, 5.78s; isolated module import succeeds
+without aggregate, both shared response identities and single appropriate gates
+pass; six code/contract hashes recorded. No blocking implementation finding
+remains. This is self-review, not independent review or scoring-quality proof.
+
+Preservation (`.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3h.py`):
+**707 unrelated tracked files**, working DB and **six reviewed code/contract
+hashes** unchanged; **162 local links/anchors across five scoped Markdown files**
+and whitespace pass after completion consolidation. No SQL/
+transaction/schema/provider changes, so no PG migration/concurrency gate applies.
+Existing final-read snapshot/concurrent-erasure and advisory limitations remain.
+
+Full pytest (`full-reviewed`, no extra runner arguments): **3521 passed, 505 skipped, 127 warnings in 742.32s (0:12:22)**,
+exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; environment/optional skips do not prove omitted
+cases. The full suite ran on the reviewed code, with only documentation changed
+afterward. Acceptance and required runtime/static gates are complete.
+
+### <a id="r4-s1-t3h--completion-review-and-publication"></a>Completion review and publication
+
+After full pytest and completion/evidence/handoff updates, a distinct final
+same-agent self-review examined HEAD `fd668e9` plus the exact ten staged files:
+aggregate/new portal, consolidated route tests, existing migrated HTTP and
+evaluation Chrome journeys, and the five handoff/PI/task/evidence/roadmap records.
+Specification review confirmed eleven operations/four DTOs, all required
+validation, unchanged ordered API/auth contract and the I-only next pointer.
+Correctness review rechecked subject/tenant and auth-plane boundaries, cookie/
+CSRF precedence, shared DTO/dependency identity, reviewed correction/provenance,
+rate/error order, erasure and audit visibility, test fixtures and lifecycle.
+`completion-review -I .pytest_cache/review_r4_s1_t3h.py`: exit 0, 3.58s, reconfirms
+all 59 original definitions, independent import, both shared responses and one
+appropriate gate per operation. Six code/contract hashes match the validated
+state. No blocking finding remains; this later self-review is separate from
+implementation review, and no independent review is claimed. Only documentation
+changed after full pytest. Scoped staging excludes working data, secrets,
+generated artifacts and unrelated files. Final scoped whitespace/link and
+preservation checks pass. Commit/push uses configured tracking branch
+`origin/main` and per-command authenticated account selection as recorded in G.
+Remote verification/publication result follows the commit; no I or deployment.
+
+### <a id="r4-s1-t3h--handoff"></a>Handoff
+
+Only H completed in this continuation. T3/F13/sprint/PI remain open. Exact next
+child: **R4-S1-T3I - Extract verification, documents and employer assurance
+routes**, not started. Add I's bounded contract/evidence inline in the existing
+T3 record and reuse consolidated route tests. Trace verification/OTP/document
+schemas and manual-review/assurance consumers before refining the boundary.
+T4 has not started. No next backlog task or deployment during publication.

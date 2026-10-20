@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import pytest
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -778,3 +779,153 @@ def test_feature_routes_preserve_admin_cookie_csrf_and_other_plane_refusals(cfg,
             assert verified.status_code == 200
             for path, body in writes:
                 assert other.post(path, json=body, headers={"X-CSRF-Token": verified.json()["csrf_token"]}).status_code == 401
+
+
+# Candidate portal and data-principal requests extraction
+
+
+def portal_app(services):
+    from app.api.auth import auth_router
+    from app.api.portal import candidate_router, router
+
+    app = FastAPI()
+    app.state.services = services
+    app.include_router(auth_router)
+    app.include_router(candidate_router)
+    app.include_router(router)
+    return app
+
+
+def test_portal_workflow_preserves_subject_consent_review_audit_and_erasure(services):
+    from app.ledger.store import ConsentError
+
+    ids = [dashboard_candidate(services, name=name, email=name + "@example.in")
+           for name in ("PortalOne", "PortalTwo")]
+    keys = [services.candidates.issue_access_key(cid) for cid in ids]
+    org = services.ledger.create_organization("Portal disclosure employer")
+    with TestClient(portal_app(services), headers={"X-Candidate-Key": keys[0]}, raise_server_exceptions=False) as one, \
+            TestClient(portal_app(services), headers={"X-Candidate-Key": keys[1]}, raise_server_exceptions=False) as two, \
+            TestClient(portal_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as admin:
+        assert one.get("/portal/me", params={"candidate_id": ids[1]}).json()["candidate_id"] == ids[0]
+        assert admin.get("/portal/me").status_code == 401
+        assert one.get("/admin/requests").status_code == 401
+        grant = one.post("/portal/consents", json={"candidate_id": ids[1], "purpose": "ledger_read", "org_id": org.id})
+        assert grant.status_code == 200 and grant.json()["candidate_id"] == ids[0]
+        gid = grant.json()["id"]
+        assert one.get("/portal/consents").json()[0]["state"] == "active"
+        assert two.get("/portal/consents").json() == []
+        assert one.post("/portal/consents", json={"purpose": "ledger_read", "org_id": "missing"}).status_code == 404
+        assert one.post("/portal/consents", json={"purpose": "unknown"}).status_code == 422
+        foreign, absent = [two.post(f"/portal/consents/{value}/revoke") for value in (gid, "missing")]
+        assert foreign.status_code == absent.status_code == 404
+        assert foreign.json() == absent.json() == {"detail": "consent grant not found"}
+        assert services.ledger.query_records_for_org(org_id=org.id, candidate_id=ids[0]) == []
+        assert one.post(f"/portal/consents/{gid}/revoke").json() == {"consent_id": gid, "revoked": True}
+        assert one.get("/portal/consents").json()[0]["state"] == "revoked"
+        with pytest.raises(ConsentError):
+            services.ledger.query_records_for_org(org_id=org.id, candidate_id=ids[0])
+        queries = [row for row in one.get("/portal/access-log").json() if row["action"] == "record.query"]
+        assert {row["allowed"] for row in queries} == {True, False}
+        assert all(row["actor_name"] == org.name for row in queries)
+        original = services.candidates.latest_profile(ids[0]).model_dump(mode="json")
+        correction = one.post("/portal/corrections", json={"field": "full_name", "requested_value": "Reviewed Name"})
+        assert correction.status_code == 200 and correction.json()["status"] == "open" and not correction.json()["applied"]
+        grievance = two.post("/portal/grievances", json={"note": "Other subject's private complaint"})
+        assert grievance.status_code == 200
+        rid = correction.json()["id"]
+        assert [row["id"] for row in one.get("/portal/requests", params={"candidate_id": ids[1]}).json()] == [rid]
+        assert one.get("/portal/me").json()["requests"] == [correction.json()]
+        assert {row["id"] for row in admin.get("/admin/requests").json()} == {rid, grievance.json()["id"]}
+        assert len(admin.get("/admin/requests", params={"status": "open", "limit": 1}).json()) == 1
+        for query in ({"limit": -1}, {"limit": 0}, {"status": "unknown"}):
+            assert admin.get("/admin/requests", params=query).status_code == 422
+        path = f"/admin/requests/{rid}/resolve"
+        assert one.post(path, json={"status": "resolved", "resolution": "Denied"}).status_code == 401
+        assert admin.post(path, json={"status": "rejected", "resolution": " "}).status_code == 422
+        decided = admin.post(path, json={"status": "resolved", "resolution": "Human review recorded"})
+        assert decided.status_code == 200 and not decided.json()["applied"]
+        assert decided.json()["resolved_by"] == "operator_key"
+        assert services.candidates.get_candidate(ids[0]).full_name == "PortalOne"
+        assert admin.post(path, json={"status": "resolved", "resolution": "Again"}).status_code == 409
+        assert admin.post("/admin/requests/missing/resolve", json={"status": "resolved", "resolution": "Unknown"}).status_code == 404
+        second = one.post("/portal/corrections", json={"field": "full_name", "requested_value": "Reviewed Name"}).json()
+        applied = admin.post(f"/admin/requests/{second['id']}/resolve", json={
+            "status": "resolved", "resolution": "Explicitly reviewed", "apply": True})
+        assert applied.status_code == 200 and applied.json()["applied"]
+        assert services.candidates.get_candidate(ids[0]).full_name == "Reviewed Name"
+        assert services.candidates.latest_profile(ids[0]).model_dump(mode="json") == original
+        request_audit = [row["action"] for row in one.get("/portal/access-log").json()
+                         if row["entity_type"] == "data_principal_request"]
+        assert request_audit.count("request.submit") == request_audit.count("request.resolve") == 2
+        erased = one.delete("/portal/me")
+        assert erased.status_code == 200 and erased.json()["candidate_id"] == ids[0] and erased.json()["deleted"]
+        assert one.get("/portal/me").status_code == 401 and one.get("/portal/requests").status_code == 401
+        assert two.get("/portal/me").json()["candidate_id"] == ids[1]
+        assert admin.get("/admin/requests").json() == [grievance.json()]
+
+
+def test_portal_request_budget_and_erasure_errors_preserve_http_contract(settings, monkeypatch):
+    services = make_services(settings.model_copy(update={"rate_limit_request_per_hour_per_candidate": 2}))
+    cid = dashboard_candidate(services)
+    key = services.candidates.issue_access_key(cid)
+    with TestClient(portal_app(services), headers={"X-Candidate-Key": key}, raise_server_exceptions=False) as actor:
+        assert actor.post("/portal/grievances", json={"note": " "}).status_code == 422
+        assert actor.post("/portal/grievances", json={"note": "Valid request"}).status_code == 200
+        refused = actor.post("/portal/corrections", json={"field": "full_name", "requested_value": "Name"})
+        assert refused.status_code == 429 and refused.json() == {"detail": "rate_limited"}
+        assert int(refused.headers["Retry-After"]) > 0
+        from app.portal.service import PortalSubjectErasedError
+        def erased(*args, **kwargs):
+            raise PortalSubjectErasedError()
+        for method, path in (("my_data", "/portal/me"), ("access_log", "/portal/access-log"), ("consents", "/portal/consents")):
+            monkeypatch.setattr(services.portal, method, erased)
+            assert actor.get(path).status_code == 404
+
+
+def test_portal_cookie_precedence_csrf_named_review_and_erasure(cfg, capture_path):
+    services = make_services(cfg)
+    email = "portal-reviewer@example.in"
+    services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
+    with TestClient(portal_app(services), raise_server_exceptions=False) as one, \
+            TestClient(portal_app(services), raise_server_exceptions=False) as two, \
+            TestClient(portal_app(services), raise_server_exceptions=False) as admin:
+        subjects, tokens = [], []
+        for actor, address in ((one, "portal-one@example.in"), (two, "portal-two@example.in")):
+            assert actor.post("/auth/candidate/signup", json={"email": address}).status_code == 202
+            verified = actor.post("/auth/candidate/verify", json={"email": address, "code": _code(capture_path)})
+            assert verified.status_code == 200
+            tokens.append(verified.json()["csrf_token"])
+            subjects.append(actor.get("/portal/me").json()["candidate_id"])
+        keys = [services.candidates.issue_access_key(cid) for cid in subjects]
+        one.headers["X-Candidate-Key"] = keys[1]
+        assert one.get("/portal/me").json()["candidate_id"] == subjects[0]
+        writes = (("POST", "/portal/consents", {"purpose": "ledger_read"}),
+                  ("POST", "/portal/corrections", {"field": "full_name", "requested_value": "Reviewed"}),
+                  ("POST", "/portal/grievances", {"note": "Review me"}), ("DELETE", "/portal/me", None))
+        for method, path, body in writes:
+            assert one.request(method, path, json=body).status_code == 403
+        one.headers["X-CSRF-Token"] = tokens[0]
+        grant = one.post("/portal/consents", json={"purpose": "ledger_read"})
+        assert grant.status_code == 200 and grant.json()["candidate_id"] == subjects[0]
+        one.headers.pop("X-CSRF-Token")
+        assert one.post(f"/portal/consents/{grant.json()['id']}/revoke").status_code == 403
+        one.headers["X-CSRF-Token"] = tokens[0]
+        assert one.post(f"/portal/consents/{grant.json()['id']}/revoke").status_code == 200
+        submitted = one.post("/portal/grievances", json={"note": "Named review"}).json()
+        assert admin.post("/auth/admin/login", json={"email": email}).status_code == 202
+        verified = admin.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
+        assert verified.status_code == 200
+        path = f"/admin/requests/{submitted['id']}/resolve"
+        admin.headers.update(ADMIN_HEADERS)
+        assert admin.post(path, json={"status": "resolved", "resolution": "Reviewed"}).status_code == 403
+        admin.headers.pop("X-API-Key")
+        admin.headers["X-CSRF-Token"] = verified.json()["csrf_token"]
+        resolved = admin.post(path, json={"status": "resolved", "resolution": "Named human decision"})
+        assert resolved.status_code == 200 and resolved.json()["resolved_by"] == "admin_user"
+        assert "admin_user_id" not in resolved.text and email not in resolved.text
+        assert one.get("/portal/requests").json() == [resolved.json()]
+        one.headers.pop("X-Candidate-Key")
+        assert one.delete("/portal/me").json()["deleted"]
+        assert one.get("/portal/me").status_code == 401
+        assert admin.get("/portal/me", headers={"X-Candidate-Key": keys[0]}).status_code == 401
+        assert two.get("/portal/me").json()["candidate_id"] == subjects[1]

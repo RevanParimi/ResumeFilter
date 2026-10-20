@@ -4,53 +4,50 @@ Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3G complete and published: feature materialization/search extraction.**
-Two operations/three DTOs now live in `api/features.py`; the aggregate is 1,009
-lines. The full 102-operation OpenAPI/ordered auth contract, admin/CSRF gates,
-historical cuts and current-consent masking remain unchanged. Focused/full
-offline pytest, migrated HTTP/graceful restart, actual Roles Chrome and static/
-preservation/implementation self-review passed.
-[G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g) owns commands, results and limits.
-Implementation `dc4b871` and its blocker record `41d0342` are now pushed to
-`origin/main`; remote `41d0342986b4a0d29f61d3ae9c498d8c47f69346` was verified.
-After user sign-in, selecting the repository owner's authenticated account
-resolved Credential Manager's two-account prompt. [G publication evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g--completion-review-and-publication)
-owns the exact command and review. This documentation-only confirmation records
-successful publication; the final response reports its remote SHA. No deployment
-or T3H work occurred during publication.
+**R4-S1-T3H complete: candidate portal/data-principal request routes extracted.**
+Eleven operations/four DTOs now live in `api/portal.py`; aggregate `routes.py`
+is 772 lines. Full 102-operation OpenAPI/ordered auth, first-party ownership,
+cookie/CSRF, consent/audit, reviewed corrections and erasure remain unchanged.
+Focused/full offline pytest, migrated HTTP/graceful restart, actual candidate
+Chrome and static/preservation/implementation self-review passed.
+[H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h) owns commands, results and limits.
+The distinct final completion self-review is complete with no blocking findings.
+Scoped commit/push follows; no next task starts during publication.
 
-**Exact next development task: R4-S1-T3H - Extract candidate portal, consent/access
-and data-principal request routes, not started.** Read [PI-R4](delivery/PI-R4.md),
+**Exact next development task: R4-S1-T3I - Extract verification, documents and
+employer assurance routes, not started.** Read [PI-R4](delivery/PI-R4.md),
 [WORKFLOW.md](delivery/WORKFLOW.md), [T3](delivery/tasks/R4-S1-T3.md) and
-[G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g). Write H's contract/evidence inline
-in T3; reuse `tests/test_api_route_extraction.py`. Preserve candidate principal
-ownership, consent/access audit and erasure/request behavior plus full ordered
-auth/OpenAPI contracts. Complete only H next session. T3/F13/sprint/PI remain
-open; T4 is not started. No next task or deployment started this session.
+[H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h). Write I's contract/evidence inline
+in T3; reuse `tests/test_api_route_extraction.py`. Trace OTP/document/manual-review
+schemas and employer assurance consumers; preserve full ordered auth/OpenAPI,
+subject/tenant ownership, current consent, refusal and content-only assessment
+contracts. Complete only I next session. T3/F13/sprint/PI remain open; T4 has not
+started. No I work or deployment in this continuation.
 
 ## Latest work
 
-G's standalone feature/auth regressions cover partial refreshes, historical cuts,
-unknown/erased subject skips, two-subject consent revocation, first-party values,
-consent storage failure and key/cookie/CSRF/other-plane refusals. HTTP search
-survives graceful restart and masks revoked historical values before filtering.
-Working DB and unrelated tracked files match the baseline. No demo was started
-or restarted; its health connection was refused and port 8000 had no listener.
-A-G evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md). Ignored local-artifact
-removal remains outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the
-feature overview. Existing scoring, provider and consent-snapshot limits remain.
+H's standalone workflows preserve two-subject consent/audit/request isolation,
+default non-applying review and explicit name-only application without rewriting
+extractions, machine/human provenance, queue/rate bounds, cookie/CSRF and erasure.
+HTTP requests survive graceful restart. Chrome renders/revokes consent, shows
+allowed/refused access, reloads, recovers from a failed Overview read and erases
+one subject while another survives. Working DB and unrelated tracked files match
+the baseline; no demo restart. A-H evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md).
+Publication uses per-command GitHub account selection from G's evidence for the
+existing two-account Credential Manager setup. Ignored artifact removal stays
+outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3g.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3h.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
   Candidate/source/ownership/graceful restart: `scripts/smoke_r4_s1_t3c.py`.
   Evaluation/report/outcome/restart journey: `scripts/smoke_r3_s1_q.py`
-  (Windows stop is forced). Auth/ledger/employer/features/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
+  (Windows stop is forced). Auth/ledger/employer/features/portal/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
   Contract fixture: `tests/fixtures/api_contract_r4_s1_t3.json`; pure extractions
   retain it. Provenance journey: `scripts/smoke_r4_s1_t2.py` (blocked Chroma imports,
   default/legacy settings, migrated HTTP and graceful restart). Provider lifecycle
@@ -61,6 +58,7 @@ feature overview. Existing scoring, provider and consent-snapshot limits remain.
   `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`. These local artifacts are not
   portable setup guarantees. PG HTTP proves PG behavior; SQLite fixtures and
   skipped lock cases do not. T1A owns the actual controlled lock/migration gate.
+- Candidate portal/consent/access/erasure Chrome: `scripts/check_ui_evaluate_browser.py`.
 - Employer Roles/compensation/report Chrome: `scripts/check_ui_review_context_browser.py`.
 - Actual Chrome: `scripts/check_ui_evaluate_browser.py` and
   `scripts/check_ui_interview_integration_browser.py`; screening contracts:

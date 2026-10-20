@@ -236,6 +236,35 @@ def main():
                 and employer_comp["advisory"] and employer_overview["total_requisitions"] == 1)
             checks.check("consented employer card exposes saved record coding and reputation", all(
                 employer_card[section]["status"] == "available" for section in ("records", "coding_rounds", "reputation")))
+            # T3H: subject-owned requests and operator review across restart.
+            sibling.headers["X-CSRF-Token"] = sibling_csrf
+            own_portal_key = require(control.post(f"/candidates/{subject}/auth-key"))["access_key"]
+            other_portal_key = require(control.post(f"/candidates/{employer_candidate}/auth-key"))["access_key"]
+            sibling.headers["X-Candidate-Key"] = other_portal_key
+            checks.check("portal cookie keeps subject ownership over a different valid key",
+                require(sibling.get("/portal/me", params={"candidate_id": employer_candidate}))["candidate_id"] == subject)
+            sibling.headers.pop("X-CSRF-Token")
+            checks.check("portal cookie plus another key cannot bypass write CSRF", all(
+                sibling.request(method, path, json=body).status_code == 403 for method, path, body in (
+                    ("POST", "/portal/corrections", {"field": "full_name", "requested_value": "Refused"}),
+                    ("POST", "/portal/grievances", {"note": "Refused"}),
+                    ("POST", "/portal/consents", {"purpose": "verification_read"}),
+                    ("DELETE", "/portal/me", None))))
+            sibling.headers["X-CSRF-Token"] = sibling_csrf
+            portal_grant = require(sibling.post("/portal/consents", json={"purpose": "verification_read"}))
+            correction = require(sibling.post("/portal/corrections", json={
+                "field": "full_name", "requested_value": "Reviewed Portal Name"}))
+            complaint = require(control.post("/portal/grievances", headers={"X-Candidate-Key": other_portal_key},
+                json={"note": "Synthetic other subject request"}))
+            checks.check("portal requests await review and stay isolated by subject",
+                correction["status"] == "open" and not correction["applied"]
+                and [row["id"] for row in require(sibling.get("/portal/requests"))] == [correction["id"]]
+                and [row["id"] for row in require(control.get("/portal/requests", headers={"X-Candidate-Key": other_portal_key}))] == [complaint["id"]]
+                and {row["id"] for row in require(operator.get("/admin/requests"))} == {correction["id"], complaint["id"]})
+            checks.check("portal operator queue validates limit and auth plane",
+                operator.get("/admin/requests", params={"limit": -1}).status_code == 422
+                and sibling.get("/admin/requests").status_code == 401
+                and org.get("/admin/requests").status_code == 401)
         with server():
             checks.check("all planes and tenant data survive graceful restart", operator.get("/admin/users").status_code == 200
                 and org.get(f"/jobs/{job['id']}").status_code == 200 and sibling.get("/portal/me").status_code == 200
@@ -252,6 +281,17 @@ def main():
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
             checks.check("historical feature search survives graceful restart exactly",
                 require(operator.post("/talent/search", json=gated_search)) == saved_search)
+            checks.check("subject requests and grants survive graceful restart exactly",
+                require(sibling.get("/portal/requests")) == [correction]
+                and portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
+            decision_path = f"/admin/requests/{correction['id']}/resolve"
+            decision = require(operator.post(decision_path, json={"status": "resolved", "resolution": "Human checked", "apply": True}))
+            checks.check("named operator can apply only reviewed correction and repeat is conflict",
+                decision["applied"] and decision["resolved_by"] == "admin_user"
+                and require(control.get(f"/candidates/{subject}"))["full_name"] == "Reviewed Portal Name"
+                and require(sibling.get("/portal/requests")) == [decision]
+                and operator.post(decision_path, json={"status": "resolved", "resolution": "Again"}).status_code == 409)
+            require(sibling.post(f"/portal/consents/{portal_grant['id']}/revoke"))
             for purpose, grant in grants.items():
                 require(operator.post(f"/ledger/consent/{grant['id']}/revoke"))
             checks.check("revoked persisted consent immediately denies reads and new writes", all(
@@ -287,6 +327,12 @@ def main():
                 assert require(http.post("/auth/logout")) == {"logged_out": True}
                 assert http.get("/auth/me").status_code == 401
             checks.check("logout clears all four sessions across planes", True)
+            erased = require(control.delete("/portal/me", headers={"X-Candidate-Key": own_portal_key}))
+            checks.check("portal erasure removes own requests and credential while another subject survives",
+                erased["deleted"] and erased["candidate_id"] == subject
+                and control.get("/portal/me", headers={"X-Candidate-Key": own_portal_key}).status_code == 401
+                and require(control.get("/portal/me", headers={"X-Candidate-Key": other_portal_key}))["candidate_id"] == employer_candidate
+                and require(control.get("/admin/requests")) == [complaint])
         rows = [json.loads(line) for line in events.read_text().splitlines()]
         checks.check("two migrated lifespans close and detach owned SQL", sum(row["event"] == "stopped" for row in rows) == 2
             and sum(row["event"] == "disposed" for row in rows) == 2

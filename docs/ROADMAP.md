@@ -6,6 +6,15 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-20 - R4-S1-T3H completed; portal/request route extraction.**
+  Eleven candidate/operator operations and four DTOs move to `api/portal.py`;
+  full API/ordered auth, consent/audit, reviewed correction and erasure contracts
+  remain unchanged. [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h) owns focused/
+  full pytest, migrated HTTP/graceful restart, actual candidate Chrome, static/
+  preservation and self-review/publication records. Working storage/demo preserved.
+  T3/F13/sprint/PI stay open; exact next T3I (verification/documents/assurance),
+  not started. Stop after H's scoped publication; T4 has not started.
+
 - **Session 2026-10-20 - R4-S1-T3G completed/published; feature/search extraction.**
   Two operations/three DTOs move to `api/features.py`, preserving the full API/
   dependency and current-consent historical-serving contracts.
