@@ -4,15 +4,19 @@ Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3G complete: feature materialization and talent search routes extracted.**
+**R4-S1-T3G complete locally; push awaiting GitHub authentication.**
 Two operations/three DTOs now live in `api/features.py`; the aggregate is 1,009
 lines. The full 102-operation OpenAPI/ordered auth contract, admin/CSRF gates,
 historical cuts and current-consent masking remain unchanged. Focused/full
 offline pytest, migrated HTTP/graceful restart, actual Roles Chrome and static/
 preservation/implementation self-review passed.
 [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g) owns commands, results and limits.
-Completion review/publication is recorded there; the final response reports the
-verified task commit on configured tracking branch `origin/main`.
+Implementation and distinct final self-review are committed as `dc4b871`.
+`git push` stalled in Credential Manager; its noninteractive retry confirms
+authentication is required. Remote `origin/main` is still `ea2ee86` (verified).
+**Resume publication first after GitHub sign-in; do not redo validation or start
+H while finishing G's push.** [G publication evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g--completion-review-and-publication)
+owns the blocker and recovery command. No deployment.
 
 **Exact next development task: R4-S1-T3H - Extract candidate portal, consent/access
 and data-principal request routes, not started.** Read [PI-R4](delivery/PI-R4.md),

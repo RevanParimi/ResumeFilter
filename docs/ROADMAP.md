@@ -6,12 +6,13 @@
 
 ## ▶ Current state
 
-- **Session 2026-10-20 - R4-S1-T3G completed; feature/search route extraction.**
+- **Session 2026-10-20 - R4-S1-T3G completed locally; feature/search extraction.**
   Two operations/three DTOs move to `api/features.py`, preserving the full API/
   dependency and current-consent historical-serving contracts.
   [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g) owns focused/full pytest, migrated
   HTTP/graceful restart, actual Roles Chrome, static/preservation and separate
-  self-review/publication records. Working storage preserved; demo untouched.
+  self-review/publication records. Commit `dc4b871` is local; push awaits GitHub
+  authentication. Resume publication first. Working storage preserved; demo untouched.
   T3/F13/sprint/PI remain open. Exact next T3H (candidate portal, consent/access
   and data-principal requests), not started. Stop after scoped G publication.
 

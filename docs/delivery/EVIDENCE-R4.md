@@ -1234,7 +1234,8 @@ original completion sessions.
 
 ## <a id="r4-s1-t3g"></a>R4-S1-T3G - Extract feature materialization and talent search routes
 
-Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [F](#r4-s1-t3f), done.
+Status: done locally (2026-10-20); publication awaiting GitHub authentication.
+Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [F](#r4-s1-t3f), done.
 Only G is authorized for this continuation; T3/F13/sprint/PI remain open.
 
 ### <a id="r4-s1-t3g--contract"></a>Contract
@@ -1386,10 +1387,32 @@ finding remains. This later review is distinct from implementation self-review;
 no independent review is claimed. Documentation tense/pending-check wording was
 updated to match completed evidence; only documentation changed after full pytest.
 
-Publication uses configured tracking branch `origin/main` under the user's
-standing authorization. The session's final response reports the resulting
-task commit and actual remote-SHA verification after commit/push; no deployment
-or next backlog task is included.
+The reviewed nine-file task scope is committed as **`dc4b871`** on local `main`.
+Publication to configured tracking branch `origin/main` is **blocked by GitHub
+authentication**. Initial `git push` stalled in its owned Credential Manager
+process tree; after verifying the process identity, that attempt was terminated.
+Retry with `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=never` exits 1:
+`Cannot prompt because user interactivity has been disabled` / `could not read
+Username for 'https://github.com': terminal prompts disabled`. GitHub CLI is
+not installed. Read-only `git ls-remote origin refs/heads/main` succeeds and
+confirms remote **`ea2ee86a7a1eb3b192e40a29a400c3b035df83bb`**, not the task commit.
+No successful push or verified publication is claimed.
+
+The user was asked to sign in while the blocker record was prepared. Local
+Credential Manager help confirms `git credential-manager github login --device
+--no-ui` as an available interactive-terminal recovery command. After sign-in,
+retry `git push`, then compare `git rev-parse HEAD` with `git ls-remote origin
+refs/heads/main`. The standing publication authorization remains sufficient;
+authentication, not a new permission request, is needed. Preserve this completed
+task and resume publication before H. No deployment or next task is included.
+
+Publication-blocker documentation follow-up: separately self-reviewed the five
+changed handoff/evidence/status/roadmap files after the failed push. Their status
+now distinguishes local completion from remote publication and directs the next
+session to finish publication first. No blocking documentation finding remains.
+Final local links/anchors: **158**, all valid; whitespace, **707** unrelated-file
+hashes and all five reviewed code/contract hashes still pass. This prose-only
+follow-up does not require another application test run or change validated code.
 
 ### <a id="r4-s1-t3g--handoff"></a>Handoff
 

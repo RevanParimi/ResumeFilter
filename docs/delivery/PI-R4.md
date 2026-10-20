@@ -75,11 +75,12 @@ restart, actual org-admin Chrome, static/preservation checks and self-review.
 [T3F](EVIDENCE-R4.md#r4-s1-t3f) is done (2026-10-20): eleven employer routes/four
 DTOs extracted; existing Roles API-binding drift corrected. Focused/full pytest,
 migrated HTTP/graceful restart, actual Chrome and static/preservation/self-review
-gates passed. [T3G](EVIDENCE-R4.md#r4-s1-t3g) is done (2026-10-20): two
+gates passed. [T3G](EVIDENCE-R4.md#r4-s1-t3g) is done locally (2026-10-20): two
 feature materialization/search operations and three DTOs extracted; full API and
 current-consent serving contracts unchanged. Focused/full pytest, migrated
 HTTP/graceful restart, actual Roles Chrome, static/preservation and self-review
-gates passed. Next: T3H, candidate portal, consent/access and data-principal
+gates passed; its scoped commit's push awaits GitHub authentication. Resume G
+publication first. Next development: T3H, candidate portal, consent/access and data-principal
 requests; not started. The parent, remaining children, finding and sprint stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
