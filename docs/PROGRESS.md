@@ -4,19 +4,20 @@ Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3G complete locally; push awaiting GitHub authentication.**
+**R4-S1-T3G complete and published: feature materialization/search extraction.**
 Two operations/three DTOs now live in `api/features.py`; the aggregate is 1,009
 lines. The full 102-operation OpenAPI/ordered auth contract, admin/CSRF gates,
 historical cuts and current-consent masking remain unchanged. Focused/full
 offline pytest, migrated HTTP/graceful restart, actual Roles Chrome and static/
 preservation/implementation self-review passed.
 [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g) owns commands, results and limits.
-Implementation and distinct final self-review are committed as `dc4b871`.
-`git push` stalled in Credential Manager; its noninteractive retry confirms
-authentication is required. Remote `origin/main` is still `ea2ee86` (verified).
-**Resume publication first after GitHub sign-in; do not redo validation or start
-H while finishing G's push.** [G publication evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g--completion-review-and-publication)
-owns the blocker and recovery command. No deployment.
+Implementation `dc4b871` and its blocker record `41d0342` are now pushed to
+`origin/main`; remote `41d0342986b4a0d29f61d3ae9c498d8c47f69346` was verified.
+After user sign-in, selecting the repository owner's authenticated account
+resolved Credential Manager's two-account prompt. [G publication evidence](delivery/EVIDENCE-R4.md#r4-s1-t3g--completion-review-and-publication)
+owns the exact command and review. This documentation-only confirmation records
+successful publication; the final response reports its remote SHA. No deployment
+or T3H work occurred during publication.
 
 **Exact next development task: R4-S1-T3H - Extract candidate portal, consent/access
 and data-principal request routes, not started.** Read [PI-R4](delivery/PI-R4.md),
