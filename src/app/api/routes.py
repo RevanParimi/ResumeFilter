@@ -1,6 +1,6 @@
 """Remaining product handlers and ordered API assembly.
 
-Authentication, report, candidate and screening workflows live in separate API modules.
+Auth, reports, candidates, screening, ledger and employer workflows have API modules.
 Shared request/auth dependencies keep the same principal and CSRF boundaries.
 """
 
@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app import __version__
 # Compatibility aliases retain callable identity for existing route guards.
 from app.api.auth import auth_router
+from app.api.employer import org_router as employer_router
+from app.api.ledger import (
+    ConsentRevokedResponse, router as ledger_admin_router, org_router as ledger_org_router,
+)
 from app.api.screening import org_router as screening_router
 from app.api.candidates import (
     CandidateCreateRequest, CandidateCreateResponse, ErasureResponse, _ingest_one,
@@ -39,27 +43,9 @@ from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, RankingSpec, SearchResult
 from app.features.serving import current_consent_vectors
 from app.ratelimit.service import RateLimited
-from app.comp import bands
-from app.comp.schema import (
-    CITY_TIERS, ROLE_FAMILIES, CompBandEstimate, CompBenchmark, SeniorityBand,
-)
-from app.dashboard.schema import CandidateCard, DashboardOverview, RequisitionBoard
-from app.matching.schema import (
-    JobRequisition, JobRequisitionInput, MatchResult, RequisitionStatus,
-)
 from app.ledger.schema import (
-    CodingPlatform,
-    CodingRoundResult,
-    ConsentDecision,
     ConsentGrant,
     ConsentPurpose,
-    EvaluationEvent,
-    InterviewOutcome,
-    InterviewRecord,
-    InterviewStage,
-    ObservedOffer,
-    Organization,
-    ReputationAssessment,
 )
 from app.interview.questions import NothingToAskError
 from app.interview.schema import (
@@ -109,26 +95,9 @@ from app.services.speech import SpeechFailed, SpeechUnavailable
 # trade worth making.
 
 
-class OrgDeletedResponse(BaseModel):
-    org_id: str
-    deleted: bool
-
-
 class AdminUserDeletedResponse(BaseModel):
     admin_user_id: str
     deleted: bool
-
-
-class ConsentRevokedResponse(BaseModel):
-    consent_id: str
-    revoked: bool
-
-
-class OrgKeyResponse(BaseModel):
-    """Returned ONCE at issuance; only the hash is stored."""
-
-    org_id: str
-    api_key: str
 
 
 class OrgInterviewAssessments(BaseModel):
@@ -275,449 +244,17 @@ async def resolve_unmapped_term(
 # on `org_router` below.
 
 
-class OrgCreateRequest(BaseModel):
-    name: str
-
-
-class OrgCreateResponse(BaseModel):
-    org: Organization
-    api_key: str  # returned once; only its hash is stored
-
-
-@router.post("/ledger/orgs", response_model=OrgCreateResponse)
-async def create_org(req: OrgCreateRequest, request: Request) -> OrgCreateResponse:
-    ledger = _services(request).ledger
-    try:
-        org = ledger.create_organization(req.name)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return OrgCreateResponse(org=org, api_key=ledger.issue_api_key(org.id))
-
-
-@router.get("/ledger/orgs", response_model=list[Organization])
-async def list_orgs(request: Request) -> list[Organization]:
-    return _services(request).ledger.list_organizations()
-
-
-@router.post("/ledger/orgs/{org_id}/api-key", response_model=OrgKeyResponse)
-async def rotate_org_key(org_id: str, request: Request) -> OrgKeyResponse:
-    try:
-        api_key = _services(request).ledger.issue_api_key(org_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"org_id": org_id, "api_key": api_key}
-
-
-@router.delete("/ledger/orgs/{org_id}", response_model=OrgDeletedResponse)
-async def delete_org(org_id: str, request: Request) -> OrgDeletedResponse:
-    if not _services(request).ledger.delete_organization(org_id):
-        raise HTTPException(status_code=404, detail="organization not found")
-    return {"org_id": org_id, "deleted": True}
-
-
-class ReliabilityRequest(BaseModel):
-    weight: float = Field(ge=0.0)
-
-
-@router.post("/ledger/orgs/{org_id}/reliability", response_model=Organization)
-async def set_org_reliability(
-    org_id: str, req: ReliabilityRequest, request: Request
-) -> Organization:
-    """Admin: set an org's per-org reliability multiplier for S3.4 reputation
-    aggregation (neutral default 1.0). A negative weight is a 422 at the
-    boundary."""
-    try:
-        return _services(request).ledger.set_org_reliability(org_id, req.weight)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class ConsentGrantRequest(BaseModel):
-    purpose: ConsentPurpose
-    org_id: Optional[str] = None  # None = any member org
-    expires_at: Optional[datetime] = None  # None ⇒ default TTL
-
-
-@router.post("/ledger/candidates/{candidate_id}/consent", response_model=ConsentGrant)
-async def grant_consent(
-    candidate_id: str, req: ConsentGrantRequest, request: Request
-) -> ConsentGrant:
-    ledger = _services(request).ledger
-    try:
-        return ledger.grant_consent(
-            candidate_id=candidate_id,
-            purpose=req.purpose,
-            org_id=req.org_id,
-            expires_at=req.expires_at,
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.post("/ledger/consent/{consent_id}/revoke", response_model=ConsentRevokedResponse)
-async def revoke_consent(consent_id: str, request: Request) -> ConsentRevokedResponse:
-    revoked = _services(request).ledger.revoke_consent(consent_id)
-    return {"consent_id": consent_id, "revoked": revoked}
-
-
-@router.get("/ledger/candidates/{candidate_id}/consent", response_model=ConsentDecision)
-async def consent_status(
-    candidate_id: str, request: Request, org_id: str, purpose: ConsentPurpose
-) -> ConsentDecision:
-    try:
-        return _services(request).ledger.consent_status(
-            candidate_id, org_id=org_id, purpose=purpose
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+router.routes.extend(ledger_admin_router.routes)
 
 
 # Compose already-scoped screening routes at their original org-plane position.
 org_router.routes.extend(screening_router.routes)
 
 
-class RecordSubmitRequest(BaseModel):
-    candidate_id: str
-    stage: InterviewStage
-    outcome: InterviewOutcome
-    interviewed_at: datetime
-    summary: Optional[str] = None
+org_router.routes.extend(ledger_org_router.routes)
 
 
-@org_router.post("/ledger/records", response_model=InterviewRecord)
-async def submit_record(
-    req: RecordSubmitRequest, request: Request, org_id: str = Depends(require_org)
-) -> InterviewRecord:
-    ledger = _services(request).ledger
-    try:
-        return ledger.submit_interview_record(
-            org_id=org_id,
-            candidate_id=req.candidate_id,
-            stage=req.stage,
-            outcome=req.outcome,
-            interviewed_at=req.interviewed_at,
-            summary=req.summary,
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class EventAppendRequest(BaseModel):
-    event_type: str
-    payload: dict = Field(default_factory=dict)
-
-
-@org_router.post("/ledger/records/{record_id}/events", response_model=EvaluationEvent)
-async def append_event(
-    record_id: str,
-    req: EventAppendRequest,
-    request: Request,
-    org_id: str = Depends(require_org),
-) -> EvaluationEvent:
-    ledger = _services(request).ledger
-    record = ledger.get_record(record_id)
-    if record is None or record.org_id != org_id:
-        raise HTTPException(status_code=404, detail="record not found")
-    return ledger.append_event(record_id, event_type=req.event_type, payload=req.payload)
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/records", response_model=list[InterviewRecord]
-)
-async def query_records(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> list[InterviewRecord]:
-    """Query-time ledger_read enforcement. The store audits every attempt."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.query_records_for_org(org_id=org_id, candidate_id=candidate_id)
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class CodingRoundSubmitRequest(BaseModel):
-    candidate_id: str
-    platform: CodingPlatform
-    score: float = Field(ge=0)
-    taken_at: datetime
-    assessment_name: Optional[str] = None
-    platform_name: Optional[str] = None
-    max_score: Optional[float] = Field(default=None, ge=0)
-    percentile: Optional[float] = Field(default=None, ge=0, le=100)
-    problem_tags: list[str] = Field(default_factory=list)
-    raw: dict = Field(default_factory=dict)
-
-
-@org_router.post("/ledger/coding-rounds", response_model=CodingRoundResult)
-async def submit_coding_round(
-    req: CodingRoundSubmitRequest, request: Request, org_id: str = Depends(require_org)
-) -> CodingRoundResult:
-    ledger = _services(request).ledger
-    try:
-        return ledger.submit_coding_round(
-            org_id=org_id,
-            candidate_id=req.candidate_id,
-            platform=req.platform,
-            score=req.score,
-            taken_at=req.taken_at,
-            assessment_name=req.assessment_name,
-            platform_name=req.platform_name,
-            max_score=req.max_score,
-            percentile=req.percentile,
-            problem_tags=req.problem_tags,
-            raw=req.raw,
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/coding-rounds",
-    response_model=list[CodingRoundResult],
-)
-async def query_coding_rounds(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> list[CodingRoundResult]:
-    """Query-time ledger_read enforcement. The store audits every attempt."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.query_coding_rounds_for_org(
-            org_id=org_id, candidate_id=candidate_id
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/reputation",
-    response_model=ReputationAssessment,
-)
-async def candidate_reputation(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> ReputationAssessment:
-    """Advisory cross-company reputation. Query-time ledger_read enforcement;
-    the store audits every attempt. Never a rejection signal."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.reputation_for_org(org_id=org_id, candidate_id=candidate_id)
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-# ── Demand side: job requisitions + role-conditioned matching (S5.1) ─────────
-# Org plane (X-Org-Key). Requisitions are org-owned; match is advisory and
-# audits every surfaced candidate as a disclosure. Consent was masked at S4.2.
-
-
-class JobUpdateRequest(BaseModel):
-    status: Optional[RequisitionStatus] = None
-    spec: Optional[JobRequisitionInput] = None
-
-
-class JobMatchRequest(BaseModel):
-    as_of: Optional[datetime] = None
-    limit: Optional[int] = Field(default=None, ge=1)
-
-
-@org_router.post("/jobs", response_model=JobRequisition)
-async def create_job(
-    req: JobRequisitionInput, request: Request, org_id: str = Depends(require_org)
-) -> JobRequisition:
-    try:
-        return _services(request).jobs.create_requisition(org_id, req)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@org_router.get("/jobs", response_model=list[JobRequisition])
-async def list_jobs(request: Request, org_id: str = Depends(require_org)) -> list[JobRequisition]:
-    return _services(request).jobs.list_requisitions(org_id)
-
-
-@org_router.get("/jobs/{req_id}", response_model=JobRequisition)
-async def get_job(
-    req_id: str, request: Request, org_id: str = Depends(require_org)
-) -> JobRequisition:
-    r = _services(request).jobs.get_requisition(org_id, req_id)
-    if r is None:
-        raise HTTPException(status_code=404, detail="requisition not found")
-    return r
-
-
-@org_router.patch("/jobs/{req_id}", response_model=JobRequisition)
-async def update_job(
-    req_id: str, body: JobUpdateRequest, request: Request, org_id: str = Depends(require_org)
-) -> JobRequisition:
-    try:
-        r = _services(request).jobs.update_requisition(
-            org_id, req_id, status=body.status, spec=body.spec
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if r is None:
-        raise HTTPException(status_code=404, detail="requisition not found")
-    return r
-
-
-@org_router.post(
-    "/jobs/{req_id}/match",
-    response_model=MatchResult,
-    description=(
-        "Top-N advisory ranking. NOT paginated: the pool is re-ranked on every request, so there is no stable key to page on and a cursor would promise an ordering this endpoint cannot keep. Use `limit`."
-    ),
-)
-async def match_job(
-    req_id: str, body: JobMatchRequest, request: Request, org_id: str = Depends(require_org)
-) -> MatchResult:
-    jobs = _services(request).jobs
-    try:
-        result = jobs.run_match(org_id, req_id, as_of=body.as_of, limit=body.limit)
-    except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if result is None:
-        raise HTTPException(status_code=404, detail="requisition not found")
-    if result.pool_size == 0:
-        # 200, not 422: an empty feature store is a server-side state and the
-        # caller cannot fix it. Mirrors GET /candidates/{id}/card's
-        # 200-with-status pattern (SCREENING.md (batch processing)).
-        return result.model_copy(update={"reason": "no_materialized_candidates"})
-    return result
-
-
-# ── Comp intelligence (S5.2) ─────────────────────────────────────────────────
-# Org plane (X-Org-Key). Advisory static bands blended with consent-gated
-# ledger-observed offers. Submit an offer, estimate a role, benchmark a req.
-
-
-class OfferSubmitRequest(BaseModel):
-    candidate_id: str
-    role_family: str
-    seniority: SeniorityBand
-    city_tier: str
-    ctc_fixed: float = Field(ge=0)
-    ctc_variable: Optional[float] = Field(default=None, ge=0)
-    currency: str = "INR"
-    offered_at: datetime
-
-
-@org_router.post("/ledger/offers", response_model=ObservedOffer)
-async def submit_offer(
-    req: OfferSubmitRequest, request: Request, org_id: str = Depends(require_org)
-) -> ObservedOffer:
-    if req.role_family not in ROLE_FAMILIES or req.city_tier not in CITY_TIERS:
-        raise HTTPException(status_code=400, detail="invalid role_family or city_tier")
-    ledger = _services(request).ledger
-    try:
-        return ledger.submit_observed_offer(
-            org_id=org_id, candidate_id=req.candidate_id, role_family=req.role_family,
-            seniority=req.seniority.value, city_tier=req.city_tier,
-            ctc_fixed=req.ctc_fixed, ctc_variable=req.ctc_variable,
-            currency=req.currency, offered_at=req.offered_at,
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class CompEstimateRequest(BaseModel):
-    skills: tuple[str, ...] = ()
-    title: Optional[str] = None
-    years_experience: Optional[float] = Field(default=None, ge=0)
-    location_tiers: Optional[tuple[str, ...]] = None
-    remote: bool = False
-    role_family: Optional[str] = None
-    seniority: Optional[SeniorityBand] = None
-
-
-@org_router.post("/comp/estimate", response_model=CompBenchmark)
-async def comp_estimate(
-    body: CompEstimateRequest, request: Request, org_id: str = Depends(require_org)
-) -> CompBenchmark:
-    """One shape from both comp endpoints (S8.4 Phase B §1.12).
-
-    `GET /jobs/{id}/comp` has always returned a CompBenchmark WRAPPING the
-    estimate; this returned the bare estimate, and during the UI wiring session
-    assuming one shape rendered a band made entirely of dashes. The three
-    positioning fields are None because there is no requisition to position
-    against -- honest, where a 0.0 would read as 'exactly at market'.
-    """
-    services = _services(request)
-    try:
-        signal = bands.role_signal_from_input(
-            skills=body.skills, title=body.title, years=body.years_experience,
-            location_tiers=body.location_tiers, remote=body.remote,
-            role_family=body.role_family, seniority=body.seniority, settings=services.settings,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return CompBenchmark(
-        estimate=services.comp.estimate(signal, org_id=org_id),
-        requisition_band=None, position=None, delta_pct=None,
-        reasoning="ad-hoc estimate: no requisition to position against",
-    )
-
-
-@org_router.get("/jobs/{req_id}/comp", response_model=CompBenchmark)
-async def job_comp(
-    req_id: str, request: Request, org_id: str = Depends(require_org)
-) -> CompBenchmark:
-    services = _services(request)
-    req = services.jobs.get_requisition(org_id, req_id)
-    if req is None:
-        raise HTTPException(status_code=404, detail="requisition not found")
-    return services.comp.benchmark(req, org_id=org_id)
-
-
-# ── Employer dashboard (S5.3) ────────────────────────────────────────────────
-# Org plane (X-Org-Key). Read-only composition over jobs/comp/ledger. Advisory;
-# no new state, no new consent purpose, no new audit path (the card reuses the
-# ledger's already-audited reads and degrades per section on missing consent).
-
-
-@org_router.get("/dashboard/overview", response_model=DashboardOverview)
-async def dashboard_overview(
-    request: Request, org_id: str = Depends(require_org)
-) -> DashboardOverview:
-    return _services(request).dashboard.overview(org_id)
-
-
-@org_router.get("/jobs/{req_id}/board", response_model=RequisitionBoard)
-async def job_board(
-    req_id: str, request: Request, org_id: str = Depends(require_org)
-) -> RequisitionBoard:
-    board = _services(request).dashboard.board(org_id, req_id)
-    if board is None:
-        raise HTTPException(status_code=404, detail="requisition not found")
-    if board.match.pool_size == 0:
-        # The SAME change as match_job above, in the same commit: fixing one
-        # entry point and leaving the other is this repo's signature defect.
-        board = board.model_copy(update={
-            "match": board.match.model_copy(
-                update={"reason": "no_materialized_candidates"}
-            )
-        })
-    return board
-
-
-@org_router.get("/candidates/{candidate_id}/card", response_model=CandidateCard)
-async def candidate_card(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> CandidateCard:
-    try:
-        return _services(request).dashboard.card(org_id, candidate_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+org_router.routes.extend(employer_router.routes)
 
 
 # ── Candidate DPDP portal (S6.4) ─────────────────────────────────────────────

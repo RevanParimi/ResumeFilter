@@ -68,8 +68,14 @@ F13 and sprint/PI closure remain open.
 Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
 [T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
-contracts/evidence. A-D are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
-retains their exact validation. Next: T3E, ledger/consent/records/coding/reputation.
+contracts/evidence. A-F are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
+retains their exact validation. [T3E](EVIDENCE-R4.md#r4-s1-t3e) is done
+(2026-10-20): ledger extraction, focused/full pytest, migrated HTTP/graceful
+restart, actual org-admin Chrome, static/preservation checks and self-review.
+[T3F](EVIDENCE-R4.md#r4-s1-t3f) is done (2026-10-20): eleven employer routes/four
+DTOs extracted; existing Roles API-binding drift corrected. Focused/full pytest,
+migrated HTTP/graceful restart, actual Chrome and static/preservation/self-review
+gates passed. Next: T3G, feature materialization and talent search; not started.
 The parent, remaining children, finding and sprint stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.

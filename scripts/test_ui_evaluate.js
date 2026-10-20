@@ -36,6 +36,51 @@ function component(kind = "org", post) {
   return { c, calls, window };
 }
 
+test("employer board consumes ranked candidates and nested skill coverage", () => {
+  const { c } = component();
+  c.state.board = { loading: false, error: null, data: { match: {
+    ranked: [{ candidate_id: "subject-server-id", score: 0.75, coverage: 0.93,
+      skill: { coverage: 0.5, matched: ["python"], missing_must_have: ["django"] } }],
+    pool_size: 1, reason: null
+  } } };
+  const view = c.renderVals();
+  assert.equal(view.shortlist.length, 1);
+  assert.equal(view.shortlist[0].name, "subject-server-id");
+  assert.equal(view.shortlist[0].score, "0.75");
+  assert.equal(view.shortlist[0].cover, "coverage 0.50");
+  assert.equal(view.boardEmptyPool, false);
+});
+
+test("successful empty employer pool differs from a failed read and recovers", async () => {
+  const { c, window } = component();
+  c.state.board = { loading: false, error: null, data: {
+    match: { ranked: [], pool_size: 0, reason: "no_materialized_candidates" }
+  } };
+  assert.equal(c.renderVals().boardEmptyPool, true);
+  assert.equal(c.renderVals().boardError, false);
+  assert.equal(c.renderVals().shortlist.length, 0);
+  window.VeritasAPI.get = async () => { throw { status: 503, detail: "Temporary board failure" }; };
+  c.selectJob("job-owned")(); await settle();
+  assert.equal(c.renderVals().boardEmptyPool, false);
+  assert.equal(c.renderVals().boardError, true);
+  assert.equal(c.renderVals().shortlist.length, 0);
+  assert.equal(c.renderVals().boardErrorText, "Temporary board failure");
+  window.VeritasAPI.get = async () => ({ match: { ranked: [
+    { candidate_id: "restored-subject", score: 0.8, skill: { coverage: 0 } }
+  ], pool_size: 1, reason: null } });
+  c.selectJob("job-owned")(); await settle();
+  assert.equal(c.renderVals().boardError, false);
+  assert.equal(c.renderVals().boardEmptyPool, false);
+  assert.equal(c.renderVals().shortlist[0].name, "restored-subject");
+  assert.equal(c.renderVals().shortlist[0].cover, "coverage 0.00");
+  c.state.board = { loading: false, data: null, error: { kind: "unprocessable", detail: "Invalid board request" } };
+  assert.equal(c.renderVals().boardError, true);
+  assert.equal(c.renderVals().boardEmptyPool, false);
+  c.state.board.error = { kind: "consent" };
+  assert.equal(c.renderVals().boardConsentBlocked, true);
+  assert.equal(c.renderVals().boardError, false);
+});
+
 test("organisation submits once to its own plane and opens the saved server report", async () => {
   let resolve;
   const { c, calls, window } = component("org", () => new Promise(r => { resolve = r; }));

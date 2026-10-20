@@ -3239,10 +3239,8 @@ class Component extends DCLogic {
 
   selectJob = (id) => () => {
     this.setState({ selectedJob: id });
-    // The board 422s with "no materialized candidates to match" when the
-    // feature store is empty. Materialization has NO HTTP route today, so for
-    // a self-registered org that is permanent, not transient — it renders as
-    // an empty state, never as a failure.
+    // An empty pool is a successful board with a reason; render that separately
+    // from denied access and failed requests.
     this.load("board", () => API.get("/jobs/" + id + "/board"));
   };
 
@@ -3574,14 +3572,14 @@ class Component extends DCLogic {
 
     const boardData = st.board.data;
     const boardErr = st.board.error;
-    const shortlist = boardData && boardData.match && boardData.match.matches
-      ? boardData.match.matches.map((m) => {
+    const shortlist = boardData && boardData.match && boardData.match.ranked
+      ? boardData.match.ranked.map((m) => {
           const b = BAND[m.risk_band] || BAND.insufficient;
           return {
             name: m.candidate_id,
             role: "match " + (m.score !== undefined && m.score !== null ? m.score.toFixed(2) : "—"),
             score: m.score !== undefined && m.score !== null ? m.score.toFixed(2) : "—",
-            cover: "coverage " + (m.skill_coverage !== undefined && m.skill_coverage !== null ? m.skill_coverage.toFixed(2) : "—"),
+            cover: "coverage " + (m.skill && m.skill.coverage !== undefined && m.skill.coverage !== null ? m.skill.coverage.toFixed(2) : "—"),
             chip: chip(b), bandLabel: b.label + " risk",
             note: m.reasoning || ""
           };
@@ -3765,13 +3763,11 @@ class Component extends DCLogic {
       jobsEmpty: !!jobRows && jobRows.length === 0,
       hasJobs: jobs.length > 0,
       shortlist,
-      // The board's three real outcomes, kept apart: a consent 403 is the
-      // designed "not shared with you" block; a 422 is an empty pool, which is
-      // permanent today because materialization has no HTTP route at all.
+      // A successful empty pool, consent refusal and failed read are distinct.
       boardConsentBlocked: !!(boardErr && boardErr.kind === "consent"),
-      boardEmptyPool: !!(boardErr && boardErr.kind === "unprocessable"),
-      boardEmptyPoolText: "No candidates have been materialised into the feature store yet, so there is nothing to rank. There is no API route that does this today — it lands in S8.4.",
-      boardError: !!(boardErr && boardErr.kind !== "consent" && boardErr.kind !== "unprocessable"),
+      boardEmptyPool: !!(boardData && boardData.match && boardData.match.reason === "no_materialized_candidates"),
+      boardEmptyPoolText: "No candidates are ready to rank yet. Ask an operator to refresh candidate data, then select the role again.",
+      boardError: !!(boardErr && boardErr.kind !== "consent"),
       boardErrorText: errorCopy(boardErr),
       boardLoading: st.board.loading,
 

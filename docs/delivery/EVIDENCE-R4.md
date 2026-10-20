@@ -925,3 +925,309 @@ are consistent. Tracked diff and all five new-file whitespace checks passed.
 Preservation repeated after documentation updates: the same 908 unrelated files,
 seven reviewed code/contract hashes and existing demo HTTP 200. Scratch HTTP/CDP
 processes are absent; the existing demo was never restarted.
+
+## <a id="r4-s1-t3e"></a>R4-S1-T3E - Extract ledger administration and employer evidence routes
+
+Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+F13. Prerequisite: [T3D](#r4-s1-t3d), done. Only E completed this session.
+
+### <a id="r4-s1-t3e--contract"></a>Contract
+
+Trigger: production composition or standalone ledger-router mounting. Move the
+eight admin organization/consent operations and six organization record/event,
+coding and reputation operations into `app/api/ledger.py`, with their ten DTOs.
+Keep admin `require_api_key` and explicit per-operation `require_org` dependencies,
+their order, endpoint names and the complete 102-operation OpenAPI contract.
+Compose the extracted routes at their existing positions without adding inherited
+dependencies. The portal reuses `ConsentRevokedResponse` from its new owner;
+consent schemas/errors still used by other areas retain their current owners.
+No dependency framework or new service layer is needed.
+
+Preserve one-time key output, rotation/offboarding invalidation, duplicate-org
+409, missing-resource 404, invalid-input 422, cookie CSRF (including session
+precedence over keys), event ownership, purpose/org/expiry/revocation consent
+gates, allowed/denied read audits and advisory reputation. Consent-gated ledger
+reads are intentionally cross-company; possession of another org's key alone
+does not authorize them. Offers/compensation remain T3F. No store, transaction,
+migration, scoring, frontend or working-demo change is in scope.
+
+### <a id="r4-s1-t3e--acceptance-and-validation"></a>Acceptance and validation
+
+- Extend `tests/test_api_route_extraction.py` with the ledger workflow and
+  admin/org cookie tests; establish behavior on assembled routes before the move,
+  then run the same assertions against standalone extracted routers.
+  This is a pure extraction, with no pre-existing behavioral defect claimed.
+- Retain the full OpenAPI/ordered dependency fixture unchanged; run ledger API,
+  auth/CSRF/route/ownership guards, shared portal-consent regressions and full
+  offline pytest using the project interpreter and isolated fake-provider stores.
+- Run migrated scratch HTTP with two organizations, captured admin/org login,
+  records/events/coding/reputation, revocation, key lifecycle and graceful restart.
+  Reuse the actual org-admin Chrome journey for its existing affected UI contract;
+  run UI bindings/syntax checks. Browser actions and HTTP checks are separate.
+- Review the final diff for specification compliance, dependency identity/order,
+  shared schemas, import cycles and ownership/error preservation; record a separate
+  self-review. PostgreSQL/migration concurrency gates do not apply to unchanged
+  store/schema/transaction code. Missing required evidence leaves E open.
+
+### <a id="r4-s1-t3e--evidence-and-review"></a>Evidence and review
+
+Extracted fourteen operations and ten DTOs into the 276-line `api/ledger.py`;
+the aggregate shrinks from 1,626 to 1,374 lines. `ConsentRevokedResponse` retains
+object identity through the aggregate for portal use. The other retained ledger
+schemas/errors support portal/verification/interview/compensation handlers.
+The original full contract fixture is unchanged: 102 operations, digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`.
+
+Pre-move characterization on assembled routers: initial draft **1 failed,
+32 passed, 1 warning, 30.32s** (`characterization`); the new test expected a
+short consent reason instead of the existing grant/purpose-specific text.
+Corrected that assertion; **33 passed, 1 warning, 14.89s**
+(`characterization-corrected`). This was a test correction, not a runtime defect
+reproducer. The same ledger assertions now run on standalone ledger/auth routers.
+
+Validation uses `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3e.py <tag>
+<Python args>`; omitted args run `-m pytest -q --tb=short`. The sanitized runner
+clears inherited DEE settings/keys, selects absent config and fake/null providers.
+Logs: `.pytest_cache/r4-s1-t3e-<tag>.txt`; local artifacts are not portable setup.
+
+Focused command (`focused`): `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_ledger_api.py tests/test_auth_api.py
+tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py
+tests/test_portal_api.py tests/test_portal_sessions.py tests/test_ledger_consent.py
+tests/test_ledger_store_records.py tests/test_ledger_store_coding.py
+tests/test_ledger_store_reputation.py`.
+**149 passed, 1 warning, 39.58s**, exit 0. Starlette/httpx deprecation warning.
+
+Migrated HTTP (`journey-fresh scripts/smoke_r4_s1_t3a.py`): **35/35**, exit 0,
+21.85s. Extended the existing captured-login/auth/graceful restart journey with
+two employers' ledger consent/records/events/coding/reputation, tenant precedence
+over another valid key, wrong-plane/CSRF/ownership refusals, exact persisted
+record/coding bodies, revocation after restart, subject-visible allowed/denied
+query audits and rotation/offboarding invalidation. Both actual application
+lifespans use revision 0029 and dispose/detach SQL. Initial `journey` stopped on
+a harness-only `candidate_id` lookup: `/auth/me` deliberately omits that field;
+read it from `/portal/me` instead. `journey-corrected` stalled for hours around
+restart and then lost valid session behavior; it is failed evidence, not a
+successful restart. The fresh scratch run passed without application changes.
+
+Actual Chrome (`browser scripts/check_ui_admin_orgs_browser.py`): **28/28**
+org-admin checks plus the shared runner's **1/1**, exit 0, 32.02s. Captured operator
+login; actual create/list/filter/page/inspect/reliability/rotate/offboard actions;
+one-time key disposal, pending/timeout/503/denial recovery, new-document reload,
+backend restart, credential invalidation, session expiry and no console exceptions
+or generated keys in logs. Failure injection uses synthetic transport; ordinary
+actions use real HTTP. Browser reload verifies changed `performance.timeOrigin`.
+Windows browser harness shutdown is forced; graceful lifecycle evidence is HTTP.
+Chrome uses existing CDN internet; neither journey calls live model/mail vendors.
+
+Separate same-agent review: HEAD `756caad` plus the aggregate/new ledger source,
+standalone tests, existing HTTP extension and reused browser source. Specification
+review maps the fourteen operations, auth planes, shared portal response and
+full contract to focused/API/browser assertions. Correctness review traced key
+rotation/offboarding, cookie-first resolution and CSRF ordering, event ownership,
+purpose/org/expiry/revocation checks, audited cross-company reads, deterministic
+advisory reputation, errors and restart. No SQL/transaction/service/scorer/UI
+implementation changed. All **103** original class/function definitions,
+decorators, signatures and bodies remain identical across the two API modules.
+Isolated ledger import without aggregate routes passes; eight admin/six org
+operations each have exactly one original resolver; composition includes each
+APIRoute once. Review command: `review -I .pytest_cache/review_r4_s1_t3e.py`,
+exit 0, 3.52s; six code/contract hashes recorded locally. No blocking source
+finding remains. This is self-review, not independent review.
+
+Static: project `-m compileall -q` on both API modules, changed tests and HTTP
+runner; `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**;
+`node --check frontend/api.js`, `node --check frontend/support.js` and tracked
+`git -c core.safecrlf=false diff --check` passed.
+
+Full pytest (`full-reviewed`, no extra arguments): **3513 passed, 505 skipped, 127 warnings in 793.57s (0:13:13)**,
+exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings; environment/optional skips do not validate omitted cases.
+All code checks ran on the reviewed code; only documentation changed afterward.
+
+Final preservation: `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3e.py`
+confirms **705 unrelated tracked baseline files unchanged**, including working DB,
+and **six reviewed code/contract hashes match**. Handoff/PI/task/evidence local
+links and anchors resolve; tracked and new-source whitespace checks pass. Existing
+demo health is **200**; it was not restarted. Scratch HTTP/browser processes are
+stopped. No deployment, commit or push.
+
+### <a id="r4-s1-t3e--handoff"></a>Handoff
+
+E acceptance and required gates are complete. No application behavior, schema,
+SQL transaction, service, scoring or frontend change is claimed. Synthetic
+providers, Chrome CDN access, omitted environments and same-agent review retain
+the limits above. Parent T3/F13/sprint/PI stay open. Exact next child:
+**R4-S1-T3F - Extract employer jobs, compensation (including ledger offers) and
+dashboard routes**, not started. Add its contract/evidence inline in the existing
+T3 record; reuse the consolidated extraction tests. Stop after E; no T4.
+
+
+Subsequent completion workflow/final-review/publication follow-up (2026-10-20):
+[the existing audit](../CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
+owns that later evidence; the no-publication statements above describe E/F's
+original completion sessions.
+
+## <a id="r4-s1-t3f"></a>R4-S1-T3F - Extract employer jobs, compensation and dashboard routes
+
+Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+F13. Prerequisite: [T3E](#r4-s1-t3e), done. Only F completed this continuation.
+
+### <a id="r4-s1-t3f--contract"></a>Contract
+
+Move eleven contiguous org-plane operations (job create/list/get/update/match,
+ledger offer submission, ad-hoc/job compensation, overview/board/candidate card)
+and four request DTOs into `app/api/employer.py`. Keep every handler's explicit
+shared `require_org`, names, signatures, error translations and original ordered
+composition. Retain the unchanged 102-operation OpenAPI/dependency fixture.
+Shared matching, compensation, dashboard and ledger schemas keep their owners;
+no aggregate import or new routing/service abstraction is needed.
+
+Preserve tenant-owned jobs and uniform missing/other-tenant 404s, normalized
+skills, 200 empty-pool match/board explanations, materialized advisory ranking,
+consent-degraded card sections, consent-gated offers, invalid-input 400/422s,
+advisory compensation wrappers with null ad-hoc positioning, and cookie-first
+principal/CSRF behavior. The Python extraction is a pure move. No store,
+SQL/migration/transaction, scorer, live-provider or working-demo changes.
+Preserve the existing uncommitted E work and all working data.
+
+Scope refinement from actual Chrome (before UI implementation): existing Roles
+bindings still expect `match.matches`, top-level `skill_coverage` and empty-pool
+HTTP 422, although the preserved API returns `ranked`, `skill.coverage` and 200
+with a reason. This leaves both empty and populated boards blank. Correct only
+these API consumers and stale empty-state copy/comments as F acceptance blockers;
+add actual browser regressions. No component extraction or other T4 work starts.
+Reload restores the authenticated landing screen by existing design; the browser
+must reopen compensation after confirming a new document, not invent deep links.
+
+### <a id="r4-s1-t3f--acceptance-and-validation"></a>Acceptance and validation
+
+- Extend `tests/test_api_route_extraction.py`: characterize the assembled routes
+  before extraction, then use the standalone employer/auth routers. Exercise all
+  eleven operations with two employers, key/cookie auth, CSRF, malformed inputs,
+  empty/materialized ranking, compensation and consent grant/revoke behavior.
+- Run jobs/comp/dashboard API/service regressions, shared auth/ownership/OpenAPI
+  guards and full offline pytest using isolated stores/fakes/project Python.
+- Extend the existing migrated auth/ledger HTTP/graceful-restart journey for
+  employer workflows. Exercise the actual affected Roles/compensation/board UI
+  in Chrome with reload/error recovery and console checks; use the existing
+  Chrome/CDP harness. Run bindings/syntax/import/compile/diff checks.
+- Separately self-review the final source/test/journey diff, dependency identity,
+  shared DTO globals and import cycles. Record all evidence and limits. No PG
+  migration/concurrency gate applies to unchanged SQL/schema/transaction code.
+  Missing required evidence leaves F awaiting validation; T3/F13/sprint/PI stay open.
+
+### <a id="r4-s1-t3f--evidence-and-review"></a>Evidence and review
+
+The Python move extracts eleven operations/four request DTOs into the 231-line
+`api/employer.py`; aggregate `routes.py` shrinks from 1,374 to 1,163 lines.
+The full 102-operation contract fixture remains unchanged (digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`).
+Roles now reads `ranked` and `skill.coverage`, and renders a successful empty pool
+from its reason. Genuine 422 errors remain errors; consent refusals stay separate.
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3f.py <tag>
+<Python args>`; omitted args run `-m pytest -q --tb=short`. Sanitized inherited
+DEE config/keys, absent YAML, fake/null/capture providers and isolated stores.
+Logs: `.pytest_cache/r4-s1-t3f-<tag>.txt`; local artifacts are not portable setup.
+
+Pre-move (`characterization`): `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_jobs_api.py tests/test_comp_api.py
+tests/test_dashboard_api.py`: **26 passed, 1 warning, 18.53s**, exit 0. Same
+behavioral assertions now mount only employer/auth routers. Initial post-move
+focus (`focused`): **108 passed, 1 warning, 47.32s**, exit 0.
+
+Final focus (`focused-reviewed`): `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_jobs_api.py tests/test_comp_api.py
+tests/test_dashboard_api.py tests/test_dashboard_service.py tests/test_comp_service.py
+tests/test_api_auth_gate.py tests/test_auth_api.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py
+tests/test_ledger_store_offers.py tests/test_ui_handlers.py`:
+**115 passed, 1 warning, 51.54s**, exit 0. Starlette/httpx deprecation warning.
+
+Migrated HTTP (`journey-corrected scripts/smoke_r4_s1_t3a.py`): **44/44**, exit 0,
+40.29s. Existing captured-login/auth/ledger journey now includes tenant-owned
+jobs, 404s across all job doors, empty/populated match/board, advisory compensation
+and null ad-hoc positioning, consented offers/cards and revocation after restart.
+Exact job/overview/as-of-match/compensation bodies survive graceful restart.
+Two revision-0029 lifespans dispose/detach owned SQL. Initial `journey` refused
+to run the new block before `job` was assigned; corrected harness ordering.
+The first extraction command failed its Unicode-comment lookup before changing
+source; ASCII boundaries fixed that local command. Neither is a runtime defect.
+
+Actual Chrome (`browser-reviewed scripts/check_ui_review_context_browser.py`):
+**28/28**, exit 0, 34.85s. Reused captured org login and report review journey;
+new empty board, actual ranked candidate ID from HTTP, compensation wrapper,
+new-document reload/reopening, injected 503 without stale rows and recovery pass.
+Report version/style/ownership/erasure checks remain green; no console exceptions.
+Requires existing Chrome/CDN internet; vendors are fake/capture. Browser process
+shutdown is forced on Windows; HTTP owns graceful lifecycle evidence.
+
+Pre-fix `browser`/`browser-corrected` failed empty/populated Roles assertions,
+reproducing existing API/UI drift. Draft harness also used a broad parent-div
+click and incorrectly expected reload to restore the comp screen. Exact role-row
+selection and reopening after an authenticated landing correct those harness
+expectations. `browser-ui-fix` then passed 28/28; final reviewed rerun above adds
+an actual ranked-ID assertion. No browser failure is counted as successful proof.
+
+Offline UI regressions extend `scripts/test_ui_evaluate.js`'s existing shared
+component/API harness: ranked/nested coverage, zero coverage, empty/error/consent
+separation and recovery. `node --test scripts/test_ui_evaluate.js`: **24 passed**.
+The same new tests loaded against the original `HEAD` frontend via the isolated
+local loader (`node --test .pytest_cache/check_ui_before_r4_s1_t3f.js`) produce
+**2 failed, 22 passed**: missing ranked rows and successful empty state. No working
+frontend file was overwritten for that expected pre-fix reproducer.
+Initial bindings failed seven shortlist mappings because its fixture also used
+the retired `matches` shape. Updated that fixture to the actual response shape;
+`node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, passed.
+JS syntax (`frontend/api.js`, `frontend/support.js`, changed Node tests), project
+`-m compileall -q` on changed Python and tracked diff whitespace passed.
+
+Separate same-agent review: HEAD `756caad` plus preserved uncommitted E work and
+the F aggregate/employer, tests, frontend consumer and existing journey changes.
+Specification review maps eleven unchanged operations, four DTOs and bounded UI
+scope refinement to API/browser/handler assertions. Correctness review traced
+tenant/CSRF precedence, job ownership/404s, offer grants/revocation, card read
+degradation/audits, advisory ranking/compensation, shared schemas/imports, empty
+versus failed reads, reload and resource shutdown. All **79** pre-F Python
+class/function definitions (including decorators/signatures/bodies) are unchanged
+across the two modules. Isolated employer import succeeds without aggregate
+routes; eleven explicit original org resolvers compose once. Review command:
+`review-final -I .pytest_cache/review_r4_s1_t3f.py`, exit 0, 6.17s; ten reviewed
+code/contract hashes recorded. No SQL/transaction/service/scorer changes.
+
+Review findings resolved: **medium**, `Veritas.dc.html` Roles projection expected
+obsolete API fields/status, leaving real empty/populated boards blank; corrected
+those bindings/copy, with pre-fix Chrome and passing browser/offline regressions.
+**Low**, `check_ui_bindings.js`'s matching obsolete fixture concealed that drift;
+actual API-shaped data restores non-vacuous shortlist coverage. Harness ordering,
+row selection and reload assumptions corrected as above. No blocking finding
+remains; this is self-review, not independent review or empirical quality proof.
+
+Full pytest (`full-reviewed`, no extra arguments): **3515 passed, 505 skipped, 127 warnings in 826.93s (0:13:46)**,
+exit 0. Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings; environment/optional skips do not prove omitted cases.
+Checks ran on the reviewed code; only documentation changed afterward.
+
+Final preservation: `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3f.py`
+confirms **702 unrelated baseline files unchanged**, including the working DB
+and prior uncommitted `api/ledger.py`, plus **ten reviewed code/contract hashes**.
+Handoff/PI/task/evidence links and anchors and tracked/new-source whitespace pass.
+Existing demo health is **200**; no restart. Scratch HTTP/browser processes have
+stopped. No deployment, commit or push; E work is preserved.
+
+### <a id="r4-s1-t3f--handoff"></a>Handoff
+
+F acceptance and required gates are complete, including the explicitly recorded
+Roles binding correction. Python HTTP behavior, SQL/services/scorers are unchanged.
+No live-provider, PG/concurrency, independent-review or empirical-quality claim.
+T3/F13/sprint/PI remain open. Exact next child: **R4-S1-T3G - Extract feature
+materialization and talent search routes**, not started. Add its contract/evidence
+inline in the existing T3 record and reuse the consolidated route tests. Stop
+after F; no G or T4 implementation this continuation.
+
+Subsequent completion workflow/final-review/publication follow-up (2026-10-20):
+[the existing audit](../CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
+owns that later evidence; the no-publication statements above describe E/F's
+original completion sessions.

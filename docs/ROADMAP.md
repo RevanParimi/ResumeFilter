@@ -6,6 +6,31 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-20 - Completion workflow and E/F publication follow-up.**
+  User now requests a distinct final review after completion, followed by scoped
+  commit/push and remote verification. AGENTS/workflow record the standing
+  sequence; [the existing audit](CODEBASE_REVIEW_2026-09-07.md#task-completion-publication-2026-10-20)
+  owns the separate final review and publication result. No next task starts;
+  T3G remains next. Working data/demo are preserved.
+
+- **Session 2026-10-20 - R4-S1-T3F completed; employer route extraction.** Eleven
+  operations/four DTOs move to `api/employer.py` with unchanged HTTP contracts.
+  Actual Chrome found and reproduced existing Roles API-binding drift; the
+  bounded fix renders ranked candidates/skill coverage and successful empty
+  pools. [F evidence](delivery/EVIDENCE-R4.md#r4-s1-t3f) owns full/focused pytest,
+  migrated HTTP/graceful restart, actual Chrome, offline UI red/green regressions,
+  review and preservation. Prior E work/working DB/demo preserved; no publication.
+  T3/F13/sprint/PI stay open. Exact next T3G (features/search), not started; stop.
+
+- **Session 2026-10-20 - R4-S1-T3E completed; ledger extraction.** Fourteen
+  admin/org operations and ten DTOs now live in `api/ledger.py`, retaining the
+  shared portal-revocation response and full API/dependency contract.
+  [E evidence](delivery/EVIDENCE-R4.md#r4-s1-t3e) owns focused/full offline pytest,
+  migrated two-employer HTTP/graceful restart, actual org-admin Chrome, import/
+  static/preservation checks and separate self-review. Working DB/demo preserved;
+  no SQL/scorer/UI change, deployment, commit or push. T3/F13/sprint/PI remain
+  open. Exact next T3F (jobs/compensation/dashboard), not started; stop after E.
+
 - Session 2026-10-19 publication follow-up: include previously completed local
   remediation and R4-M1 consolidation, record the 58 pending tracked deletions,
   and preserve working data/local settings. Final full pytest and actual scratch

@@ -71,9 +71,15 @@ recreate a parallel spec/plan tree.
    relevant API/browser/subprocess journey; database concurrency/migrations when
    required. Checks apply to the final reviewed code state. Changes after a
    check require the affected checks to be rerun.
-7. **Record and stop.** Update the task record, PI status and short handoff.
-   State completed behavior, evidence, open risks and the exact next task. Do
-   not start that next task in the same chat.
+7. **Record completion.** Update the task record, PI status and short handoff.
+   State completed behavior, evidence, open risks and the exact next task.
+8. **Review the completed work separately, then publish and stop.** User standing
+   instruction, 2026-10-20: perform a distinct final review after task completion,
+   resolve blocking findings and rerun affected checks. Review the exact scoped
+   staged changes, commit and push to the configured tracking branch, and verify
+   the remote commit. Record/report publication or its actual blocker. No further
+   routine permission request is needed for this sequence. Exclude secrets,
+   working data and unrelated edits. Do not start the next backlog task.
 
 ## Sprint closure
 
@@ -145,6 +151,11 @@ Record a separate review pass after implementation, naming the reviewed code
 state (commit if available plus relevant uncommitted diff/files). This workflow
 does not authorize spawning sub-agents; label a same-agent review as self-review
 and never claim an independent review that did not happen.
+
+After the task's required checks and completion record, also perform the distinct
+final review requested on 2026-10-20. Identify that later review and the exact
+staged scope separately; an earlier implementation review or green test run does
+not substitute for it. Commit/push only after its blocking findings are resolved.
 
 First check specification compliance: every acceptance criterion has a working
 implementation and evidence, with no hidden scope changes. Then check correctness

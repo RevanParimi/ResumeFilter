@@ -10,6 +10,7 @@ from copy import deepcopy
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import tempfile
 
@@ -27,6 +28,12 @@ async def main():
     browser.S = checks = Smoke("R2-S2-T2 rendered review context / API compatibility")
     owned, state = [], {}
     log = (scratch / "server.log").open("w", encoding="utf-8")
+    for attr in ("API_PORT", "CDP_PORT"):
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            setattr(browser, attr, sock.getsockname()[1])
+    browser.API_BASE = f"http://localhost:{browser.API_PORT}"
+    browser.UI_URL = browser.API_BASE + "/ui/Veritas.dc.html"
 
     def launch(args, **kwargs):
         if "app.main:app" in args:
@@ -77,6 +84,10 @@ async def main():
             return text.replace("Synthetic Taylor", "Synthetic Taylor\nEmail: " + email)
 
         with browser._org_client(admin) as org:
+            require(org.post("/jobs", json={"title": "Synthetic Review Role", "must_have_skills": ["python"]}))
+            await tab.js("window.__click('button', 'Roles')")
+            checks.check("employer empty board renders an honest state", await tab.wait("window.__has('Nothing to rank yet')", 20))
+            await tab.js("window.__click('button', 'Batches')")
             require(admin.post("/candidates", json={"evaluate": False, "resume_text":
                 "Synthetic Botanical\nEmail: botanical@example.com\n" + " ".join(f"botanical{i} specimen{i} catalog{i}" for i in range(60))}))
 
@@ -189,9 +200,36 @@ async def main():
             checks.check("real missing-report error renders without stale assessment", await tab.wait("window.__has('not found') || window.__has('no longer')", 20, "report 404") and not await tab.js("window.__has('Claim by claim')"))
             await tab.js("window.__click('button', 'Batches')")
             checks.check("UI recovers to remaining batch after error", await tab.wait(f"window.__has({json.dumps(clean_batch['name'])})", 20))
-            require(org.post("/jobs", json={"title": "Synthetic Review Role", "domain": "data_eng", "must_have_skills": ["python"]}))
             await tab.js("window.__click('button', 'Roles')")
             checks.check("real role view explains advisory ranking context", await tab.wait("window.__has('Synthetic Review Role') && window.__has('Match score measures skill and role fit')", 20) and not await tab.js("window.__has('fraud screen')"))
+            require(admin.post("/features/materialize", json={}))
+            # Re-select through the visible saved role to fetch its new board.
+            assert await tab.js("[...document.querySelectorAll('div')].find(e => e.textContent.trim() === 'Synthetic Review Role').click(); true")
+            role = require(org.get("/jobs"))[0]
+            ranked = require(org.get(f"/jobs/{role['id']}/board"))["match"]["ranked"]
+            assert ranked
+            checks.check("materialized employer board renders actual candidates", await tab.wait(
+                f"!window.__has('Nothing to rank yet') && window.__has({json.dumps(ranked[0]['candidate_id'])}) && window.__has('coverage')", 20))
+            await tab.js("window.__click('button', 'Comp intelligence')")
+            checks.check("compensation screen renders the wrapped static benchmark", await tab.wait("window.__has('p50') && window.__has('static prior alone')", 20)
+                and not await tab.js("window.__has('NaN')"))
+            before = await tab.js("performance.timeOrigin")
+            await tab.send("Page.reload")
+            assert await tab.wait(f"performance.timeOrigin !== {before} && document.readyState === 'complete'", 60)
+            await tab.js(browser.HELPERS)
+            assert await tab.wait("window.__has('Sign out')", 30)
+            assert await tab.js("window.__click('button', 'Comp intelligence')")
+            checks.check("new document reload retains employer compensation", await tab.wait("window.__has('p50') && window.__has('static prior alone')", 30))
+            await tab.js("""window.__employerFetch = window.fetch;
+window.fetch = (url, init) => String(url).endsWith('/board')
+  ? Promise.resolve(new Response(JSON.stringify({detail:'synthetic employer read failure'}), {status:503, headers:{'Content-Type':'application/json'}}))
+  : window.__employerFetch(url, init);""")
+            await tab.js("window.__click('button', 'Roles')")
+            assert await tab.js("[...document.querySelectorAll('div')].find(e => e.textContent.trim() === 'Synthetic Review Role').click(); true")
+            checks.check("employer board error renders without a stale shortlist", await tab.wait("window.__has('synthetic employer read failure') && !window.__has('coverage')", 20))
+            await tab.js("window.fetch = window.__employerFetch")
+            assert await tab.js("[...document.querySelectorAll('div')].find(e => e.textContent.trim() === 'Synthetic Review Role').click(); true")
+            checks.check("employer board recovers after failed read", await tab.wait("window.__has('coverage') && !window.__has('synthetic employer read failure')", 20))
             await tab.js("window.__click('button', 'Instant check')")
             await tab.js("window.__click('button', 'Evaluate this resume')")
             checks.check("Instant check refuses empty input without a fictional result",

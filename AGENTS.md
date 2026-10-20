@@ -26,8 +26,18 @@ Read only the source, tests, and design notes relevant to that task; the long
 Standing authorization (7 September 2026): fix the findings in
 `docs/CODEBASE_REVIEW_2026-09-07.md`, complete the unfinished feature flows, and
 simplify unnecessary code. Prefer small direct fixes over new abstraction
-layers. This does not authorize publishing, deployment, sending messages, or
-discarding existing user data.
+layers. This does not authorize deployment, sending messages, or discarding
+existing user data.
+
+Standing completion workflow (20 October 2026): after the task's implementation,
+required validation and completion record, perform a distinct final review of the
+completed work. Resolve blocking findings and rerun affected checks, then commit
+and push the scoped reviewed changes to the configured tracking branch. The user
+authorizes this commit/push sequence for completed tasks without another routine
+permission request. Verify the remote commit and report it. Preserve unrelated
+work and exclude secrets, working data and local artifacts. This final review is
+separate from implementation review; call it self-review unless another reviewer
+actually performed it. Do not start another backlog task as part of publication.
 
 Use `.resume/Scripts/python.exe` on Windows for Python commands. System Python
 is not the project environment. Tests: `.resume/Scripts/python.exe -m pytest -q`.

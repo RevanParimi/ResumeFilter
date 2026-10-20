@@ -389,6 +389,53 @@ credentials were changed or disclosed. Remaining development status is unchanged
 not started. Previously blocked ignored local-artifact deletion is still not
 counted as completed or bypassed by this publication.
 
+## <a id="task-completion-publication-2026-10-20"></a>Task completion review and publication - 2026-10-20
+
+The user requested a persistent completion sequence: complete the task and its
+required checks, perform a distinct final review of the completed work, resolve
+blockers, then commit/push the scoped changes and verify the remote. AGENTS.md
+and the delivery workflow now record that authorization. This follow-up publishes
+completed R4-S1-T3E/F; it does not start G or T4, deploy, restart the demo or
+change working data.
+
+Separate final self-review performed after E/F completion, against base
+`756caad1ca83d633828341f4e2e534b5578f6261` and the completed working diff.
+Specification review covered both child contracts and their evidence, the
+25 extracted operations/14 DTOs, unchanged full API/dependency contract and the
+bounded Roles consumer fix. Correctness review checked admin/org dependency
+identity/order, portal response reuse, event ownership, job tenancy, cookie/CSRF
+precedence, consent expiry/revocation and audit behavior, advisory rendering,
+empty/error/recovery states, persisted HTTP restart and fake-provider isolation.
+The combined three API modules retain all **103** original definitions,
+decorators/signatures/bodies. The ten application/test/contract hashes still
+match F's final reviewed/full-tested state. No new blocking finding remains;
+this is a later same-agent final review, not an independent review.
+
+The reviewed staged manifest is **17 paths**: the E/F source, tests, existing journey
+scripts and five delivery/handoff documents, plus AGENTS.md, WORKFLOW.md and
+this audit. No working DB, secret, local environment, scratch/cache file or
+unrelated edit is included. Indexed/workspace content matches, credential/path
+checks and whitespace pass. All ten tested hashes match; **698 unrelated
+baseline files**, including working DB, are unchanged. **161 local documentation
+links/anchors** resolve. These checks include the exact staged scope.
+
+The existing full regression result is **3515 passed, 505 skipped, 127 warnings
+in 826.93s**, with HTTP **44/44** and actual Chrome **28/28** recorded in
+[F evidence](delivery/EVIDENCE-R4.md#r4-s1-t3f). Those checks were run earlier in
+this same conversation on the exact application/test hashes verified here;
+no repeat full-suite or browser run is claimed for this publication follow-up.
+Fresh final-review command:
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3f.py publication-final-review
+-m pytest -q --tb=short tests/test_api_route_extraction.py
+ tests/test_route_table_guard.py tests/test_openapi_contract.py
+ tests/test_api_auth_gate.py tests/test_org_scope_guard.py tests/test_ui_handlers.py`:
+**54 passed, 1 warning, 14.14s**, exit 0. Starlette/httpx deprecation warning.
+Existing environment, CDN, synthetic-provider and same-agent-review limits remain.
+
+Publication: final focused result and separate staged review passed; commit/push
+pending. Remote main was verified at the base SHA above before preparing this
+follow-up.
+
 ## Follow-up 2026-10-18 — Test and delivery consolidation
 
 R4-M1 maintenance, done (2026-10-18). User authorized a bounded consolidation before
