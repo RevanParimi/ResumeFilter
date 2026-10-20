@@ -1446,7 +1446,8 @@ No next-backlog implementation or deployment during publication.
 
 ## <a id="r4-s1-t3h"></a>R4-S1-T3H - Extract candidate portal and data-principal request routes
 
-Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [G](#r4-s1-t3g), done/published.
+Status: done and published (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md).
+Prerequisite: [G](#r4-s1-t3g), done/published.
 Only H is in scope for this continuation; T3/F13/sprint/PI remain open.
 
 ### <a id="r4-s1-t3h--contract"></a>Contract
@@ -1601,7 +1602,22 @@ changed after full pytest. Scoped staging excludes working data, secrets,
 generated artifacts and unrelated files. Final scoped whitespace/link and
 preservation checks pass. Commit/push uses configured tracking branch
 `origin/main` and per-command authenticated account selection as recorded in G.
-Remote verification/publication result follows the commit; no I or deployment.
+Scoped task commit **`4b516f3`** was created and `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`fd668e9` to `4b516f3`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`4b516f3960e9b43dbde39c4d414f270230ba727f`**. Working tree was clean.
+No I work or deployment occurred.
+
+The following two-file documentation-only confirmation records that verified
+publication in the handoff and this existing evidence section. A separate final
+self-review against `4b516f3` checked the exact documentation diff, successful
+remote evidence, unchanged task limits and I-only next pointer; no blocking
+finding remains. Scoped links/whitespace and preservation checks pass. Application
+code is unchanged from the full pytest/API/Chrome validated state, so no application
+tests were rerun for prose. The final response reports the verified remote SHA
+after this confirmation's commit/push.
 
 ### <a id="r4-s1-t3h--handoff"></a>Handoff
 

@@ -4,15 +4,18 @@ Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3H complete: candidate portal/data-principal request routes extracted.**
+**R4-S1-T3H complete and published: portal/data-principal request extraction.**
 Eleven operations/four DTOs now live in `api/portal.py`; aggregate `routes.py`
 is 772 lines. Full 102-operation OpenAPI/ordered auth, first-party ownership,
 cookie/CSRF, consent/audit, reviewed corrections and erasure remain unchanged.
 Focused/full offline pytest, migrated HTTP/graceful restart, actual candidate
 Chrome and static/preservation/implementation self-review passed.
 [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h) owns commands, results and limits.
-The distinct final completion self-review is complete with no blocking findings.
-Scoped commit/push follows; no next task starts during publication.
+The distinct final completion self-review found no blocking issues. Scoped task
+commit `4b516f3` is pushed to `origin/main`; remote
+`4b516f3960e9b43dbde39c4d414f270230ba727f` was verified. This documentation-only
+confirmation records publication; the final response reports its remote SHA.
+No next task or deployment started during publication.
 
 **Exact next development task: R4-S1-T3I - Extract verification, documents and
 employer assurance routes, not started.** Read [PI-R4](delivery/PI-R4.md),
