@@ -1630,7 +1630,7 @@ T4 has not started. No next backlog task or deployment during publication.
 
 ## <a id="r4-s1-t3i"></a>R4-S1-T3I - Verification, documents and employer assurance
 
-Status: done (2026-10-21). Parent: [T3](tasks/R4-S1-T3.md).
+Status: done and published (2026-10-21). Parent: [T3](tasks/R4-S1-T3.md).
 Prerequisite: [H](#r4-s1-t3h), done/published.
 Only I is in scope; T3/F13/sprint/PI remain open.
 
@@ -1785,8 +1785,23 @@ claimed. Only documentation changed after full pytest. Final scoped preservation
 Staging excludes secrets, working data, generated artifacts and unrelated files.
 Configured tracking branch is `origin/main`; its remote still matched the starting
 HEAD before publication. Commit/push will use per-command account selection from
-G's existing two-account Credential Manager evidence. Scoped publication pending;
-no J work, demo restart or deployment.
+G's existing two-account Credential Manager evidence. Scoped task commit
+**`bd4e556`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`5b3c6c4` to `bd4e556`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`bd4e556cd4f5d8ea9d301c99cb0421e18c9618ab`**. Working tree was clean.
+No J work, demo restart or deployment occurred.
+
+This two-file documentation-only confirmation records that verified
+publication in the handoff and this existing evidence section. Its separate final
+self-review against `bd4e556` checks the exact prose diff, actual remote evidence,
+unchanged task limits and J-only next pointer; no blocking finding remains.
+Scoped link/whitespace and preservation checks pass. Application code remains at
+the full pytest/API/Chrome validated state, so no tests were rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push.
 
 ### <a id="r4-s1-t3i--handoff"></a>Handoff
 

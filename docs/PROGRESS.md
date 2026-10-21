@@ -4,7 +4,7 @@ Updated: 2026-10-21. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3I complete: verification, documents and employer assurance extraction.**
+**R4-S1-T3I complete and published: verification/documents/assurance extraction.**
 Seven operations/seven DTOs now live in `api/verification.py`; aggregate
 `routes.py` is 547 lines. Full 102-operation ordered auth/OpenAPI, candidate/
 tenant ownership, cookie/CSRF, delivery, current consent/audit, document privacy
@@ -12,8 +12,11 @@ and distinct identity/claim ladders remain unchanged. Focused/full offline pytes
 migrated HTTP/graceful restart, actual contact/assurance Chrome and static/
 preservation/implementation self-review passed.
 [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t3i) owns commands, results and limits.
-Distinct final completion self-review found no blocking issues. Scoped commit/push
-and remote verification remain pending; no next task or deployment started.
+Distinct final completion self-review found no blocking issues. Scoped task commit
+`bd4e556` is pushed to `origin/main`; remote
+`bd4e556cd4f5d8ea9d301c99cb0421e18c9618ab` was verified. This documentation-only
+confirmation records publication; the final response reports its remote SHA.
+No next task or deployment started during publication.
 
 **Exact next development task: R4-S1-T3J - Extract candidate interviews and
 employer assessment summaries, not started.** Read [PI-R4](delivery/PI-R4.md),
