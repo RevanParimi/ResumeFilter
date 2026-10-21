@@ -1627,3 +1627,173 @@ routes**, not started. Add I's bounded contract/evidence inline in the existing
 T3 record and reuse consolidated route tests. Trace verification/OTP/document
 schemas and manual-review/assurance consumers before refining the boundary.
 T4 has not started. No next backlog task or deployment during publication.
+
+## <a id="r4-s1-t3i"></a>R4-S1-T3I - Verification, documents and employer assurance
+
+Status: done (2026-10-21). Parent: [T3](tasks/R4-S1-T3.md).
+Prerequisite: [H](#r4-s1-t3h), done/published.
+Only I is in scope; T3/F13/sprint/PI remain open.
+
+### <a id="r4-s1-t3i--contract"></a>Contract
+
+Extract seven operations and seven request/response DTOs into `api/verification.py`:
+candidate start/confirm/list verification and document submission, employer
+assurance/claim reads and operator manual review. Compose separate candidate,
+org and admin routers at their original positions with identical handler bodies,
+decorators, signatures and shared auth dependencies. Preserve the complete
+102-operation ordered auth/OpenAPI fixture; no service/store/SQL, migration,
+scorer/provider/frontend or working-demo changes are included.
+
+Acceptance: standalone routers preserve two-subject OTP ownership and one-use
+confirmation, unavailable/failed delivery and debug-echo policy, first-party
+document ownership, parse/size/label bounds, separate identity/claim ladders,
+manual-review auth and cookie/CSRF precedence. Two organizations retain current
+consent, allowed/denied audit and redacted assurance/claim summaries; revocation
+and erasure refuse access without affecting another subject. Keep unsupported
+method and 400/403/404/422/429/503 translations.
+
+Validation: extend consolidated route tests before extraction for passing
+characterization, then mount only verification/auth routers. Pure extraction
+does not imply a functional defect or expected-red reproduction. Run focused
+verification/auth/contract tests and full offline pytest with project Python;
+extend the existing migrated HTTP/graceful restart journey for documents, manual
+review, employer reads, revocation and erasure. Run actual verification Chrome
+for contact/assurance, reload and failure recovery, plus bindings, JS syntax,
+compile/import, AST identity and preservation/diff checks. Unchanged SQL does
+not require new PostgreSQL concurrency/migration evidence. Record implementation
+self-review and a distinct completion review before scoped commit/push and remote
+verification. Complete only I; next is J, interviews/assessment summaries.
+
+### <a id="r4-s1-t3i--evidence-and-review"></a>Evidence and review
+
+Pure extraction moves seven operations/seven DTOs into the 256-line
+`api/verification.py`; aggregate `routes.py` shrinks from 772 to 547 lines.
+The complete 102-operation ordered auth/OpenAPI fixture is unchanged (digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`).
+Caller search found no moved handler/DTO imports requiring compatibility aliases.
+Candidate/org/admin routers compose at their original positions and keep one
+appropriate shared principal/CSRF gate each. No service/store/SQL/scorer/provider
+or frontend behavior changes.
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3i.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. This local runner
+clears inherited DEE config/keys, points at absent YAML and uses fake/null/capture
+providers and isolated stores. Logs are `.pytest_cache/r4-s1-t3i-<tag>.txt`;
+ignored artifacts are not portable setup guarantees.
+
+Pre-move `characterization`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py -k 'verification or full_openapi'`:
+**4 passed, 16 deselected, 1 warning, 3.46s**, exit 0. The three new workflows
+first mounted the aggregate and then switched to verification/auth routers only.
+Initial test setup assumptions were corrected: the reused candidate has no phone,
+and a cooldown refusal may retain an additional pending attempt. These were
+characterization adjustments, not application defects or expected-red evidence.
+
+Post-move `focused`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_verification_api.py
+tests/test_verification_org_api.py tests/test_verification_claim_api.py
+tests/test_verification_service.py tests/test_verification_claim_service.py
+tests/test_verification_delivery.py tests/test_verification_consent.py
+tests/test_verification_erasure.py tests/test_verification_documents_parse.py
+tests/test_verification_documents_letter.py tests/test_verification_documents_payslip.py
+tests/test_api_auth_gate.py tests/test_auth_api.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py`:
+**209 passed, 1 warning, 32.55s**, exit 0 (Starlette/httpx deprecation).
+Standalone workflows prove owned single-use OTP, indistinguishable foreign/absent
+404s, method refusals/cooldown, separate identity/claim ladders, document parse/
+label bounds and no raw document echo, operator-only review, two-employer consent,
+redacted summaries and allowed/denied audit, revocation/erasure, and mixed cookie/
+foreign-key precedence and CSRF on start/confirm/document/manual writes. Existing
+delivery/claim tests preserve production debug policy, unavailable/failed dispatch,
+size bounds, consent and erasure. Fakes prove mechanics, not live delivery or
+document-forensics accuracy.
+
+Migrated HTTP (`journey scripts/smoke_r4_s1_t3a.py`): **70/70**, exit 0, 16.54s.
+The existing captured-login/auth/ledger journey adds document parse refusal and
+owned intake, manual-review auth/CSRF, distinct ladders, scoped employer summaries
+and redaction, exact saved attempts/summaries across graceful restart, revocation,
+allowed/denied audit and erased-subject refusals with another subject surviving.
+Both revision-0029 lifespans dispose/detach owned SQL. No working migration or
+demo restart.
+
+Contact HTTP (`contact scripts/smoke_r3_s1_t2.py`): **20/20**, exit 0, 23.72s.
+Captured delivery covers wrong contact, phone unavailability, cooldown, provider
+failure/rollback/retry, foreign confirmation, one-use/expired/exhausted challenges,
+no plaintext echo, persisted contact assurance after restart and erasure/privacy.
+Its Windows process cleanup is forced; the separate journey owns graceful
+lifecycle evidence.
+
+Actual Chrome (`browser scripts/check_ui_verification_browser.py`): **19/19**,
+plus **1/1** startup/UI-host harness, exit 0, 23.56s. Real candidate signup,
+contact/assurance rendering, empty/contact/provider/CSRF failures and recovery,
+duplicate clicks, captured code, incorrect/foreign/expired/exhausted confirmation,
+new-document reload, held/expired assurance, logout/session loss and no console
+exceptions all pass. App logs omit addresses/codes. Chrome needs existing CDN
+internet; delivery is synthetic/capture. Documents, manual review and employer
+summaries have no dedicated current UI; HTTP owns their runtime evidence.
+
+Static checks: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**,
+passed. `node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q src/app/api/routes.py src/app/api/verification.py
+tests/test_api_route_extraction.py scripts/smoke_r4_s1_t3a.py`, and
+`git diff --check` pass. No frontend source change.
+
+Implementation self-review: HEAD `5b3c6c4` plus aggregate/new verification,
+consolidated route tests and the existing extended migrated HTTP journey.
+Specification review maps all seven operations/DTOs to full-contract, standalone,
+HTTP and actual Chrome checks. Correctness review traces shared schema/dependency
+identity, auth-plane order, candidate/tenant ownership, cookie precedence/CSRF,
+destination binding, delivery/confirmation errors, current consent/audit,
+document privacy, distinct ladders, operator review, erasure and lifecycle.
+`review -I .pytest_cache/review_r4_s1_t3i.py`: exit 0, 2.21s. All **44** original
+aggregate class/function definitions, including decorators, signatures and bodies,
+are AST-identical across aggregate/verification. Independent module import, three
+shared domain schemas and exactly one appropriate gate per operation pass; five
+code/contract hashes recorded. No blocking finding remains. Same-agent self-review
+is not independent review or an accuracy claim. No SQL/transaction/migration
+change, so no new PostgreSQL concurrency/migration gate applies.
+
+Full pytest (`full-reviewed`, no extra runner arguments): **3524 passed, 505 skipped, 127 warnings in 867.60s (0:14:27)**,
+exit 0. Existing Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; optional/environment skips do not prove omitted
+cases. It ran on the reviewed code; only documentation changed afterward.
+
+Preservation (`.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3i.py`):
+709 unrelated tracked files, working DB and five reviewed code/contract hashes
+are unchanged. Scoped Markdown links/anchors and tracked/staged whitespace pass.
+Existing final-read snapshot, concurrent-erasure and advisory limitations remain.
+Acceptance and required validation are complete.
+
+### <a id="r4-s1-t3i--completion-review-and-publication"></a>Completion review and publication
+
+After required checks and completion/evidence/PI/handoff updates, a distinct final
+same-agent self-review examined HEAD `5b3c6c4` plus the exact nine staged files:
+aggregate/new verification, consolidated route tests, the existing extended
+migrated HTTP journey and five handoff/roadmap/PI/task/evidence records.
+Specification review confirms all seven operations/seven DTOs, unchanged full
+API/auth contract, completed validation and the J-only next pointer. Correctness
+review rechecks principal/schema identity and gate order, first-party ownership,
+cookie/CSRF precedence, destination binding/one-use confirmation, delivery/error
+policy, document privacy and bounds, distinct advisory ladders, operator review,
+current scoped consent/audit, revocation/erasure and graceful lifecycle.
+`completion-review -I .pytest_cache/review_r4_s1_t3i.py`: exit 0, 1.82s; all 44
+original definitions, independent import, three shared schemas, single appropriate
+gates and five reviewed hashes match. No blocking finding remains. This later
+self-review is separate from implementation review; no independent review is
+claimed. Only documentation changed after full pytest. Final scoped preservation,
+163 local links/anchors across five Markdown files and staged whitespace pass.
+Staging excludes secrets, working data, generated artifacts and unrelated files.
+Configured tracking branch is `origin/main`; its remote still matched the starting
+HEAD before publication. Commit/push will use per-command account selection from
+G's existing two-account Credential Manager evidence. Scoped publication pending;
+no J work, demo restart or deployment.
+
+### <a id="r4-s1-t3i--handoff"></a>Handoff
+
+Only I completed in this continuation. T3/F13/sprint/PI remain open. Exact next:
+**R4-S1-T3J - Extract candidate interviews and employer assessment summaries**,
+not started. Add J's bounded contract/evidence inline in the existing T3 record;
+reuse consolidated route tests and existing interview HTTP/Chrome journeys.
+Preserve content-only advisory scoring, transcript privacy, ownership/current
+consent, scorer-version fields, ASR bounds/fallbacks and conflict/error contracts.
+T4 has not started. No next task or deployment during publication.

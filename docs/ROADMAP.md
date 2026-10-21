@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-21 - R4-S1-T3I completed; verification route extraction.**
+  Seven operations/seven DTOs move to `api/verification.py`, preserving the full
+  API/auth, candidate ownership, current employer consent/audit, delivery,
+  document privacy and separate identity/claim ladders.
+  [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t3i) owns focused/full pytest,
+  migrated HTTP/graceful restart, actual contact/assurance Chrome, static/
+  preservation and separate review/publication records. Working storage/demo
+  preserved. T3/F13/sprint/PI remain open; exact next T3J (candidate interviews
+  and employer assessment summaries), not started. Stop after I; T4 not started.
+
 - **Session 2026-10-20 - R4-S1-T3H completed; portal/request route extraction.**
   Eleven candidate/operator operations and four DTOs move to `api/portal.py`;
   full API/ordered auth, consent/audit, reviewed correction and erasure contracts

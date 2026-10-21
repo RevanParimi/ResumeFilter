@@ -929,3 +929,154 @@ def test_portal_cookie_precedence_csrf_named_review_and_erasure(cfg, capture_pat
         assert one.get("/portal/me").status_code == 401
         assert admin.get("/portal/me", headers={"X-Candidate-Key": keys[0]}).status_code == 401
         assert two.get("/portal/me").json()["candidate_id"] == subjects[1]
+
+
+# Verification, documents and employer assurance extraction
+
+
+def verification_app(services):
+    from app.api.auth import auth_router
+    from app.api.verification import candidate_router, org_router, router
+
+    app = FastAPI()
+    app.state.services = services
+    app.include_router(auth_router)
+    app.include_router(candidate_router)
+    app.include_router(org_router)
+    app.include_router(router)
+    return app
+
+
+def test_verification_otp_preserves_ownership_delivery_and_single_use(cfg, capture_path):
+    from tests.test_verification_claim_api import _candidate
+
+    services = make_services(cfg)
+    cid, key = _candidate(services, email="verify-one@example.in")
+    other_id, other_key = _candidate(services, email="verify-two@example.in")
+    with TestClient(verification_app(services), raise_server_exceptions=False) as one, \
+            TestClient(verification_app(services), raise_server_exceptions=False) as two:
+        one.headers["X-Candidate-Key"] = key
+        two.headers["X-Candidate-Key"] = other_key
+        assert one.get("/portal/verifications", headers={"X-Candidate-Key": "bad"}).status_code == 401
+        for method, status in (("manual_review", 403), ("experience_letter", 403),
+                               ("payslip", 403), ("government_id", 422), ("epfo_employment", 422)):
+            assert one.post("/portal/verifications", json={"method": method}).status_code == status
+        assert one.post("/portal/verifications", json={"method": "otp_phone", "destination": "+919876543210"}).status_code == 400
+        assert one.post("/portal/verifications", json={"method": "otp_email", "destination": "wrong@example.in"}).status_code == 400
+        body = {"method": "otp_email", "destination": "verify-one@example.in", "candidate_id": other_id}
+        started = one.post("/portal/verifications", json=body)
+        assert started.status_code == 200 and started.json().get("debug_code") is None
+        row = started.json()["verification"]
+        assert row["candidate_id"] == cid and row["status"] == "pending"
+        code = _code(capture_path)
+        assert one.post("/portal/verifications", json=body).status_code == 429
+        path = f"/portal/verifications/{row['id']}/confirm"
+        foreign = two.post(path, json={"code": code})
+        absent = two.post("/portal/verifications/missing/confirm", json={"code": code})
+        assert foreign.status_code == absent.status_code == 404
+        assert foreign.json() == absent.json() == {"detail": "verification not found"}
+        wrong = "000000" if code != "000000" else "111111"
+        assert one.post(path, json={"code": wrong}).status_code == 400
+        confirmed = one.post(path, json={"code": code})
+        assert confirmed.status_code == 200 and confirmed.json()["status"] == "verified"
+        assert one.post(path, json={"code": code}).status_code == 400
+        listed = one.get("/portal/verifications").json()
+        assert [row for row in listed["verifications"] if row["status"] == "verified"] == [confirmed.json()]
+        assert listed["assurance"]["level"] == 2 and listed["assurance"]["advisory"]
+        assert listed["claims"]["strength"] == 0
+        assert two.get("/portal/verifications").json()["verifications"] == []
+
+
+def test_verification_documents_manual_review_consent_audit_and_erasure(services):
+    from app.ledger.schema import ConsentPurpose
+    from tests.test_verification_claim_api import _b64, _candidate
+
+    cid, key = _candidate(services, email="document-one@example.in")
+    other_id, other_key = _candidate(services, email="document-two@example.in")
+    orgs = [services.ledger.create_organization(name) for name in ("Verification employer", "Other employer")]
+    org_keys = [services.ledger.issue_api_key(org.id) for org in orgs]
+    with TestClient(verification_app(services), raise_server_exceptions=False) as client:
+        own = {"X-Candidate-Key": key}
+        org = {"X-Org-Key": org_keys[0]}
+        document = {"doc_type": "experience_letter", "content_b64": _b64(), "claim_ref": other_id}
+        review = f"/candidates/{cid}/verifications/manual-review"
+        assert client.post("/portal/documents", json=document, headers=org).status_code == 401
+        for change, status in (({"content_b64": "!!!"}, 400), ({"doc_type": "unknown"}, 422),
+                               ({"claim_ref": "x" * 129}, 422)):
+            assert client.post("/portal/documents", json={**document, **change}, headers=own).status_code == status
+        assert client.get("/portal/verifications", headers=own).json()["verifications"] == []
+        submitted = client.post("/portal/documents", json=document, headers=own)
+        assert submitted.status_code == 200
+        body = submitted.json()
+        assert body["verification"]["candidate_id"] == cid
+        assert body["verification"]["subject"] == "employment_claim" and body["claims"]["strength"] == 2
+        assert "ACME TECHNOLOGIES" not in submitted.text and "hr@acme.com" not in submitted.text
+        assert client.get("/portal/verifications", headers=own).json()["assurance"]["level"] == 0
+        assert client.get("/portal/verifications", headers={"X-Candidate-Key": other_key}).json()["verifications"] == []
+        for headers in ({}, own, org):
+            assert client.post(review, json={"outcome": "verified"}, headers=headers).status_code == 401
+        assert client.post(review, json={"outcome": "unknown"}, headers=ADMIN_HEADERS).status_code == 422
+        assert client.post("/candidates/missing/verifications/manual-review", json={"outcome": "verified"}, headers=ADMIN_HEADERS).status_code == 404
+        reviewed = client.post(review, json={"outcome": "verified", "note": "Private human review", "evidence_digest": "a" * 64}, headers=ADMIN_HEADERS)
+        assert reviewed.status_code == 200 and reviewed.json()["assurance_level"] == 3
+        assert client.get("/portal/verifications", headers=own).json()["claims"]["strength"] == 2
+        for suffix, field, value in (("assurance", "level", 3), ("claims", "strength", 2)):
+            path = f"/verification/candidates/{cid}/{suffix}"
+            assert client.get(path, headers=own).status_code == 401
+            assert client.get(path, headers=org).status_code == 403
+            grant = services.ledger.grant_consent(candidate_id=cid, org_id=orgs[0].id, purpose=ConsentPurpose.VERIFICATION_READ)
+            allowed = client.get(path, headers=org)
+            assert allowed.status_code == 200 and allowed.json()[field] == value and allowed.json()["advisory"]
+            for secret in ("evidence_digest", "destination_hash", "claim_ref", "Private human review", "a" * 64, other_id):
+                assert secret not in allowed.text
+            assert client.get(path, headers={"X-Org-Key": org_keys[1]}).status_code == 403
+            services.ledger.revoke_consent(grant.id)
+            assert client.get(path, headers=org).status_code == 403
+            assert client.get(f"/verification/candidates/missing/{suffix}", headers=org).status_code == 404
+        audit = services.portal.access_log(cid)
+        for action in ("verification.query", "claim.query"):
+            assert {row.allowed for row in audit if row.action == action} == {True, False}
+        services.portal.erase(cid)
+        assert client.get("/portal/verifications", headers=own).status_code == 401
+        for suffix in ("assurance", "claims"):
+            assert client.get(f"/verification/candidates/{cid}/{suffix}", headers=org).status_code == 404
+        assert client.get("/portal/verifications", headers={"X-Candidate-Key": other_key}).status_code == 200
+
+
+def test_verification_cookie_precedence_csrf_and_manual_review(cfg, capture_path):
+    from tests.test_verification_claim_api import _b64, _candidate
+
+    services = make_services(cfg)
+    cid, _ = _candidate(services, email="verify-cookie@example.in")
+    other_id, other_key = _candidate(services, email="verify-foreign@example.in")
+    email = "verify-operator@example.in"
+    services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
+    with TestClient(verification_app(services), raise_server_exceptions=False) as candidate, \
+            TestClient(verification_app(services), raise_server_exceptions=False) as admin:
+        assert candidate.post("/auth/candidate/login", json={"email": "verify-cookie@example.in"}).status_code == 202
+        logged = candidate.post("/auth/candidate/verify", json={"email": "verify-cookie@example.in", "code": _code(capture_path)})
+        assert logged.status_code == 200
+        candidate.headers["X-Candidate-Key"] = other_key
+        assert candidate.get("/portal/verifications").json()["assurance"]["candidate_id"] == cid
+        writes = (("/portal/verifications", {"method": "self_attested"}),
+                  ("/portal/documents", {"doc_type": "experience_letter", "content_b64": _b64(), "claim_ref": other_id}))
+        for path, body in writes:
+            assert candidate.post(path, json=body).status_code == 403
+            result = candidate.post(path, json=body, headers={"X-CSRF-Token": logged.json()["csrf_token"]})
+            assert result.status_code == 200 and result.json()["verification"]["candidate_id"] == cid
+        candidate.headers["X-CSRF-Token"] = logged.json()["csrf_token"]
+        started = candidate.post("/portal/verifications", json={"method": "otp_email", "destination": "verify-cookie@example.in"})
+        assert started.status_code == 200
+        path = f"/portal/verifications/{started.json()['verification']['id']}/confirm"
+        code = _code(capture_path)
+        candidate.headers.pop("X-CSRF-Token")
+        assert candidate.post(path, json={"code": code}).status_code == 403
+        assert candidate.post(path, json={"code": code}, headers={"X-CSRF-Token": logged.json()["csrf_token"]}).json()["status"] == "verified"
+        assert admin.post("/auth/admin/login", json={"email": email}).status_code == 202
+        logged = admin.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
+        assert logged.status_code == 200
+        admin.headers.update(ADMIN_HEADERS)
+        path = f"/candidates/{cid}/verifications/manual-review"
+        assert admin.post(path, json={"outcome": "verified"}).status_code == 403
+        admin.headers.pop("X-API-Key")
+        assert admin.post(path, json={"outcome": "verified"}, headers={"X-CSRF-Token": logged.json()["csrf_token"]}).json()["assurance_level"] == 3

@@ -1,41 +1,38 @@
 # Current handoff
 
-Updated: 2026-10-20. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-21. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3H complete and published: portal/data-principal request extraction.**
-Eleven operations/four DTOs now live in `api/portal.py`; aggregate `routes.py`
-is 772 lines. Full 102-operation OpenAPI/ordered auth, first-party ownership,
-cookie/CSRF, consent/audit, reviewed corrections and erasure remain unchanged.
-Focused/full offline pytest, migrated HTTP/graceful restart, actual candidate
-Chrome and static/preservation/implementation self-review passed.
-[H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h) owns commands, results and limits.
-The distinct final completion self-review found no blocking issues. Scoped task
-commit `4b516f3` is pushed to `origin/main`; remote
-`4b516f3960e9b43dbde39c4d414f270230ba727f` was verified. This documentation-only
-confirmation records publication; the final response reports its remote SHA.
-No next task or deployment started during publication.
+**R4-S1-T3I complete: verification, documents and employer assurance extraction.**
+Seven operations/seven DTOs now live in `api/verification.py`; aggregate
+`routes.py` is 547 lines. Full 102-operation ordered auth/OpenAPI, candidate/
+tenant ownership, cookie/CSRF, delivery, current consent/audit, document privacy
+and distinct identity/claim ladders remain unchanged. Focused/full offline pytest,
+migrated HTTP/graceful restart, actual contact/assurance Chrome and static/
+preservation/implementation self-review passed.
+[I evidence](delivery/EVIDENCE-R4.md#r4-s1-t3i) owns commands, results and limits.
+Distinct final completion self-review found no blocking issues. Scoped commit/push
+and remote verification remain pending; no next task or deployment started.
 
-**Exact next development task: R4-S1-T3I - Extract verification, documents and
-employer assurance routes, not started.** Read [PI-R4](delivery/PI-R4.md),
+**Exact next development task: R4-S1-T3J - Extract candidate interviews and
+employer assessment summaries, not started.** Read [PI-R4](delivery/PI-R4.md),
 [WORKFLOW.md](delivery/WORKFLOW.md), [T3](delivery/tasks/R4-S1-T3.md) and
-[H evidence](delivery/EVIDENCE-R4.md#r4-s1-t3h). Write I's contract/evidence inline
-in T3; reuse `tests/test_api_route_extraction.py`. Trace OTP/document/manual-review
-schemas and employer assurance consumers; preserve full ordered auth/OpenAPI,
-subject/tenant ownership, current consent, refusal and content-only assessment
-contracts. Complete only I next session. T3/F13/sprint/PI remain open; T4 has not
-started. No I work or deployment in this continuation.
+[I evidence](delivery/EVIDENCE-R4.md#r4-s1-t3i). Write J's contract/evidence inline
+in T3; reuse consolidated route tests and existing interview HTTP/Chrome journeys.
+Preserve transcript privacy, subject/tenant ownership, present consent, content-only
+advisory scoring, scorer versions and ASR/fallback/conflict contracts. Complete only
+J next session. T3/F13/sprint/PI remain open; T4 has not started.
 
 ## Latest work
 
-H's standalone workflows preserve two-subject consent/audit/request isolation,
-default non-applying review and explicit name-only application without rewriting
-extractions, machine/human provenance, queue/rate bounds, cookie/CSRF and erasure.
-HTTP requests survive graceful restart. Chrome renders/revokes consent, shows
-allowed/refused access, reloads, recovers from a failed Overview read and erases
-one subject while another survives. Working DB and unrelated tracked files match
-the baseline; no demo restart. A-H evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md).
+Standalone verification/auth routers preserve OTP one-use and ownership/refusal
+behavior, method/delivery/debug policy, document bounds/privacy, operator-only
+manual review, distinct ladders and scoped redacted employer summaries. Migrated
+HTTP preserves attempts/summaries over graceful restart, revokes consent and erases
+one subject while another survives. Actual Chrome renders contact/assurance and
+failure/reload/session-loss states. Working DB and unrelated tracked files match
+the baseline; no demo restart. A-I evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md).
 Publication uses per-command GitHub account selection from G's evidence for the
 existing two-account Credential Manager setup. Ignored artifact removal stays
 outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
@@ -44,7 +41,7 @@ outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overvi
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3h.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3i.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

@@ -1,6 +1,7 @@
 """Remaining product handlers and ordered API assembly.
 
-Auth, reports, candidates, screening, ledger, employer, features and portal have API modules.
+Auth, reports, candidates, screening, ledger, employer, features, portal and verification
+have API modules.
 Shared request/auth dependencies keep the same principal and CSRF boundaries.
 """
 
@@ -16,6 +17,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app import __version__
 # Compatibility aliases retain callable identity for existing route guards.
 from app.api.auth import auth_router
+from app.api.verification import (
+    candidate_router as verification_candidate_router, org_router as verification_org_router,
+    router as verification_admin_router,
+)
 from app.api.employer import org_router as employer_router
 from app.api.features import router as feature_router
 from app.api.portal import candidate_router as portal_candidate_router, router as portal_admin_router
@@ -36,8 +41,6 @@ from app.api.dependencies import (
     require_any_principal, require_api_key, require_candidate, require_org,
 )
 from app.auth.schema import AdminUser
-from app.services.email import EmailSendFailed
-from app.verification.otp import DeliveryUnavailable
 from app.domains.base import get_domain, list_domains
 from app.ratelimit.service import RateLimited
 from app.interview.questions import NothingToAskError
@@ -60,15 +63,6 @@ from app.signal_quality.service import measure
 from app.rights.schema import (
     GrievanceContact, build_grievance_contact,
 )
-from app.verification.documents import DocumentParseError
-from app.verification.schema import (
-    CLAIM_REF_MAX_CHARS, ClaimEvidence, DocumentFinding, DocumentType,
-    IdentityAssurance, Verification, VerificationMethod, VerificationStatus,
-)
-from app.verification.service import (
-    DestinationError, DocumentTooLargeError, MethodNotPermittedError,
-)
-from app.verification.store import ChallengeError
 from app.screening.pagination import InvalidCursor
 from app.services.llm import NullLLM
 from app.services.speech import SpeechFailed, SpeechUnavailable
@@ -94,25 +88,6 @@ class OrgInterviewAssessments(BaseModel):
 
     attempts: int = 0
     assessments: list[InterviewSummary] = Field(default_factory=list)
-
-
-class StartVerificationResponse(BaseModel):
-    verification: Verification
-    #: local env + verif_otp_debug_echo ONLY; production can never echo.
-    debug_code: Optional[str] = None
-
-
-class VerificationListResponse(BaseModel):
-    verifications: list[Verification] = Field(default_factory=list)
-    assurance: IdentityAssurance
-    #: S7.2: a SECOND number beside assurance, never folded into it.
-    claims: ClaimEvidence
-
-
-class DocumentSubmitResponse(BaseModel):
-    verification: Verification
-    findings: list[DocumentFinding] = Field(default_factory=list)
-    claims: ClaimEvidence
 
 
 class InterviewTurnResponse(BaseModel):
@@ -249,193 +224,8 @@ org_router.routes.extend(employer_router.routes)
 candidate_router.routes.extend(portal_candidate_router.routes)
 
 
-# ── Identity verification, candidate plane (S7.1) ───────────────────────────
-# Candidate-initiated by design. Every handler resolves candidate_id from the
-# key — never a path/body param — so cross-candidate isolation is structural.
-
-
-class StartVerificationRequest(BaseModel):
-    """`destination` is required for OTP methods and must match the contact
-    hash already on the candidate's record."""
-
-    method: VerificationMethod
-    destination: str | None = None
-
-
-class ConfirmVerificationRequest(BaseModel):
-    code: str
-
-
-class ManualReviewRequest(BaseModel):
-    """Operator-recorded verification outcome. `evidence_digest` is a hash of
-    whatever was checked out of band -- never the artifact itself."""
-
-    outcome: VerificationStatus
-    note: str | None = None
-    evidence_digest: str | None = None
-
-
-@candidate_router.post("/portal/verifications", response_model=StartVerificationResponse)
-async def start_verification(
-    req: StartVerificationRequest,
-    request: Request,
-    candidate_id: str = Depends(require_candidate),
-) -> StartVerificationResponse:
-    services = _services(request)
-    try:
-        verification, code = services.verification.start(
-            candidate_id, req.method, destination=req.destination
-        )
-    except DeliveryUnavailable as exc:
-        raise HTTPException(status_code=503, detail=exc.detail) from None
-    except EmailSendFailed:
-        raise HTTPException(status_code=503, detail="email_send_failed") from None
-    except DestinationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except MethodNotPermittedError as exc:  # e.g. self-awarding a manual review
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ChallengeError as exc:
-        raise HTTPException(status_code=429, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    body: dict = {"verification": verification.model_dump(mode="json")}
-    # Double-guarded: local env AND the knob. Exists so the sprint smoke can
-    # drive the two-step flow over plain HTTP; production can never echo.
-    if (
-        code is not None
-        and services.settings.env == "local"
-        and services.settings.verif_otp_debug_echo
-    ):
-        body["debug_code"] = code
-    return body
-
-
-@candidate_router.post("/portal/verifications/{verification_id}/confirm", response_model=Verification)
-async def confirm_verification(
-    verification_id: str,
-    req: ConfirmVerificationRequest,
-    request: Request,
-    candidate_id: str = Depends(require_candidate),
-) -> Verification:
-    services = _services(request)
-    try:
-        verification = services.verification.confirm(
-            candidate_id, verification_id, req.code
-        )
-    except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
-        raise HTTPException(status_code=404, detail="verification not found") from exc
-    except ChallengeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return verification.model_dump(mode="json")
-
-
-@candidate_router.get("/portal/verifications", response_model=VerificationListResponse)
-async def list_verifications(
-    request: Request, candidate_id: str = Depends(require_candidate)
-) -> VerificationListResponse:
-    services = _services(request)
-    verifications, assurance = services.verification.list_for_candidate(candidate_id)
-    return {
-        "verifications": [v.model_dump(mode="json") for v in verifications],
-        "assurance": assurance.model_dump(mode="json"),
-        # S7.2: a SECOND number beside the first, never folded into it.
-        "claims": services.verification.claims_for_candidate(
-            candidate_id
-        ).model_dump(mode="json"),
-    }
-
-
-@org_router.get("/verification/candidates/{candidate_id}/assurance", response_model=IdentityAssurance)
-async def org_candidate_assurance(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> IdentityAssurance:
-    """Consent-gated identity assurance. Every attempt — allowed or denied — is
-    audited by the store. Returns the advisory roll-up only: never the evidence
-    digests, the destination hashes, or the individual attempt rows."""
-    try:
-        assurance = _services(request).verification.assurance_for_org(
-            org_id=org_id, candidate_id=candidate_id
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return assurance.model_dump(mode="json")
-
-
-# ── Employment-claim documents, candidate plane (S7.2) ──────────────────────
-# First-party intake: the candidate submits their OWN letter or payslip. The
-# document is parsed in memory and discarded — only a sha256 digest and finding
-# CODES survive the request. Org-supplied documents ABOUT a candidate are
-# third-party data under DPDP and are deliberately out of scope.
-
-
-class SubmitDocumentRequest(BaseModel):
-    """`content_b64` is a base64 PDF or plain-text body. It is parsed in memory
-    and discarded -- only a sha256 digest and finding CODES are stored.
-    `claim_ref` is a free-text LABEL (employer + interval), never a selector:
-    the candidate is always resolved from the key."""
-
-    doc_type: DocumentType
-    content_b64: str
-    # Bounded to the column width: SQLite would happily store a whole document
-    # in an unbounded VARCHAR(128), and this table's design claim is that no
-    # column can hold one. The service enforces the same cap for non-HTTP
-    # callers.
-    claim_ref: str | None = Field(default=None, max_length=CLAIM_REF_MAX_CHARS)
-
-
-@candidate_router.post("/portal/documents", response_model=DocumentSubmitResponse)
-async def submit_document(
-    req: SubmitDocumentRequest,
-    request: Request,
-    candidate_id: str = Depends(require_candidate),
-) -> DocumentSubmitResponse:
-    services = _services(request)
-    try:
-        verification, findings, claims = services.verification.submit_document(
-            candidate_id, req.doc_type, req.content_b64, claim_ref=req.claim_ref
-        )
-    except DocumentTooLargeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except DocumentParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except MethodNotPermittedError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {
-        "verification": verification.model_dump(mode="json"),
-        "findings": [f.model_dump(mode="json") for f in findings],
-        "claims": claims.model_dump(mode="json"),
-    }
-
-
-@org_router.get("/verification/candidates/{candidate_id}/claims", response_model=ClaimEvidence)
-async def org_candidate_claims(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> ClaimEvidence:
-    """Consent-gated employment-claim evidence. Every attempt — allowed or
-    denied — is audited by the store. Returns the advisory roll-up only: never
-    an evidence digest, never a claim_ref, never a document."""
-    try:
-        claims = _services(request).verification.claims_for_org(
-            org_id=org_id, candidate_id=candidate_id
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return claims.model_dump(mode="json")
+candidate_router.routes.extend(verification_candidate_router.routes)
+org_router.routes.extend(verification_org_router.routes)
 
 
 # ── AI interviews, candidate plane (S7.3) ───────────────────────────────────
@@ -578,22 +368,7 @@ async def org_candidate_interviews(
     }
 
 
-@router.post("/candidates/{candidate_id}/verifications/manual-review", response_model=Verification)
-async def record_manual_review(
-    candidate_id: str, req: ManualReviewRequest, request: Request
-) -> Verification:
-    """Admin plane: an operator checked something out of band (L3 REVIEWED).
-    Only a digest of what was checked is stored, never the artifact."""
-    try:
-        verification = _services(request).verification.record_manual_review(
-            candidate_id,
-            outcome=req.outcome,
-            note=req.note,
-            evidence_digest=req.evidence_digest,
-        )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return verification.model_dump(mode="json")
+router.routes.extend(verification_admin_router.routes)
 
 
 router.routes.extend(feature_router.routes)

@@ -68,25 +68,15 @@ F13 and sprint/PI closure remain open.
 Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
 [T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
-contracts/evidence. A-H are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
-retains their exact validation. [T3E](EVIDENCE-R4.md#r4-s1-t3e) is done
-(2026-10-20): ledger extraction, focused/full pytest, migrated HTTP/graceful
-restart, actual org-admin Chrome, static/preservation checks and self-review.
-[T3F](EVIDENCE-R4.md#r4-s1-t3f) is done (2026-10-20): eleven employer routes/four
-DTOs extracted; existing Roles API-binding drift corrected. Focused/full pytest,
-migrated HTTP/graceful restart, actual Chrome and static/preservation/self-review
-gates passed. [T3G](EVIDENCE-R4.md#r4-s1-t3g) is done (2026-10-20): two
-feature materialization/search operations and three DTOs extracted; full API and
-current-consent serving contracts unchanged. Focused/full pytest, migrated
-HTTP/graceful restart, actual Roles Chrome, static/preservation and self-review
-gates passed. Publication completed after authenticated account selection;
-the remote commit was verified. [T3H](EVIDENCE-R4.md#r4-s1-t3h) is done
-(2026-10-20): eleven portal/operator-request operations and four DTOs extracted;
-full API, subject ownership, consent/audit, reviewed correction and erasure
-contracts unchanged. Focused/full pytest, migrated HTTP/graceful restart, actual
-candidate Chrome, static/preservation and implementation self-review gates pass.
-Next: T3I, verification, documents and employer assurance; not started. The
-parent, remaining children, finding and sprint stay open.
+contracts/evidence. A-I are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
+retains their contracts and exact validation. [T3I](EVIDENCE-R4.md#r4-s1-t3i)
+is done (2026-10-21): seven verification/document/employer-assurance operations
+and seven DTOs extracted; full API, ownership, current consent/audit, delivery
+and distinct advisory ladder contracts unchanged. Focused/full pytest, migrated
+HTTP/graceful restart, actual contact/assurance Chrome, static/preservation and
+implementation self-review gates pass. The child evidence owns the distinct
+completion review/publication record. Next: T3J, interviews/employer assessment
+summaries; not started. Parent, remaining children, finding and sprint stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 
