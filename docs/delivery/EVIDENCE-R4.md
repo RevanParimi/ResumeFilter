@@ -3453,7 +3453,7 @@ implementation in the next session. Stop after D publication.
 
 ## <a id="r4-s1-t4e"></a>R4-S1-T4E - Extract screening UI handlers and view values
 
-Status: done (2026-10-23); reviewed, publication pending. Parent:
+Status: done and published (2026-10-23). Parent:
 [T4](tasks/R4-S1-T4.md). Prerequisite: [D](#r4-s1-t4d), done/published.
 
 ### Contract and acceptance
@@ -3649,7 +3649,23 @@ tracked files, working DB and 18 reviewed hashes unchanged; 283 scoped local
 links/anchors and tracked/staged/source whitespace pass. Only documentation
 changed during/after full pytest. The review-record prose is checked separately
 for scope/evidence/status accuracy before publication; application tests do not
-need rerunning for prose. Commit/push/remote verification pending.
+need rerunning for prose.
+
+Scoped task commit **`6677a8d`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`a8dd784` to `6677a8d`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`6677a8da2d73d0a68b395c01985142199903b5e5`**. Working tree was clean.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this evidence section. Separate final same-agent self-review
+against `6677a8d` checks the exact prose diff, actual remote evidence, open T4
+parent and F-only next pointer; no blocking finding remains. Scoped links,
+whitespace and preservation pass. Application/test/harness code remains at the
+full pytest/HTTP/Chrome validated state; no application tests are rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push. No F work, working-data change, demo restart or deployment occurred.
 
 ### Handoff
 

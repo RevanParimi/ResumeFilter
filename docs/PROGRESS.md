@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4E complete: screening UI extraction; reviewed, publication pending.**
+**R4-S1-T4E complete and published: screening UI extraction.**
 The 22 handler fields and screening/report view composition now live in
 `frontend/screening.js`; shared state/lifecycle/row cache/file reader, template
 and API/auth behavior are preserved. Before/after Node (45), focused pytest
@@ -13,8 +13,13 @@ bindings/syntax, actual Chrome (24/24 screening; 38/38 evaluation), migrated
 HTTP/graceful restart (20/20 plus 31/31 HTTP contract), preservation and
 implementation self-review pass. [E evidence](delivery/EVIDENCE-R4.md#r4-s1-t4e)
 owns exact commands/counts/limits and the distinct final completion review/
-publication record. Only E completed this session; [T4](delivery/tasks/R4-S1-T4.md),
-F13 and sprint/PI remain open. Working storage/demo are preserved.
+publication record. Distinct final completion self-review found no blocking
+issues. Scoped task commit `6677a8d` is pushed to `origin/main`; remote
+`6677a8da2d73d0a68b395c01985142199903b5e5` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation. Only E completed this session;
+[T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
+Working storage/demo are preserved.
 
 **Exact next development task: R4-S1-T4F - Extract candidate portal and
 authentication UI logic**, not started. Read [PI-R4](delivery/PI-R4.md),
