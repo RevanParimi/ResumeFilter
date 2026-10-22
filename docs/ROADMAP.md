@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T4B completed; organization UI extraction.**
+  The 20 handlers/view mapping move to `frontend/organization-admin.js` using
+  A's plain-script seam; shared state/lifecycle/template and API/auth behavior
+  are preserved. Detached callbacks, same-class instances, key isolation and
+  static serving are covered. [B evidence](delivery/EVIDENCE-R4.md#r4-s1-t4b)
+  owns baseline/final Node, focused/full pytest, migrated HTTP/graceful restart,
+  actual Chrome, bindings/syntax, preservation and separate review/publication
+  records. Working data/demo preserved. Only B completed; T4/F13/sprint/PI stay
+  open. Exact next T4C (curation), not started. Stop after B.
+
 - **Session 2026-10-22 - R4-S1-T4A completed; operator-account UI extraction.**
   The handlers/view mapping move to `frontend/operator-accounts.js`; existing
   state/lifecycle/template and API behavior remain unchanged. Named static

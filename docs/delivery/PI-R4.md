@@ -89,13 +89,14 @@ the parent is now done. Next: T4, not started. F13/sprint/PI stay open.
 Status: in progress (split before implementation, 2026-10-22). Audit mapping: F13. Prerequisites: R4-S1-T3.
 
 [T4 parent](tasks/R4-S1-T4.md) owns the bounded child sequence and active
-contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a) is done (2026-10-22): account
-handlers/view values live in a plain script with the same shared lifecycle,
+contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a) and
+[T4B](EVIDENCE-R4.md#r4-s1-t4b) are done (2026-10-22): account and organization
+handlers/view values live in plain scripts with the same shared lifecycle,
 API/auth and rendered behavior. Focused/full pytest, migrated HTTP/restart,
 actual Chrome, bindings/syntax, preservation and implementation self-review
-pass. A owns the distinct final review/publication record. Only A completed;
-exact next T4B (organization administration), not started. The parent, F13
-and sprint/PI remain open.
+pass. B owns the distinct final completion review/publication record. Only B
+completed this session; exact next T4C (curation), not started. The parent,
+F13 and sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

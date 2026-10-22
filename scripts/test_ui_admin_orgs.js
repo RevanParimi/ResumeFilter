@@ -104,6 +104,7 @@ for (const error of [{ status: 409, detail: "organization name already exists" }
     { status: 403, detail: "missing or invalid CSRF token", kind: "csrf" },
     { status: 403, detail: "operation refused", kind: "consent" },
     { status: 0, detail: "Request timed out", kind: "timeout" },
+    { status: 0, detail: "Network unavailable", kind: "network" },
     { status: 503, detail: "Service unavailable" }]) {
   test("failure retains input, settles and avoids success: " + error.status, async () => {
     const { c, window } = setup(); c.loadOrgAdmin(); await settle();
@@ -113,7 +114,7 @@ for (const error of [{ status: 409, detail: "organization name already exists" }
     assert.equal(c.state.orgKey, ""); assert.equal(c.state.orgNotice, "");
     assert(c.renderVals().orgActionErrorText);
     if (error.kind === "consent") assert.match(c.renderVals().orgActionErrorText, /not permitted.*administer organisations/i);
-    if (error.kind === "timeout" || error.status >= 500) assert.match(c.renderVals().orgActionErrorText, /refresh.*before retry/i);
+    if (["timeout", "network"].includes(error.kind) || error.status >= 500) assert.match(c.renderVals().orgActionErrorText, /refresh.*before retry/i);
   });
 }
 
@@ -145,4 +146,99 @@ test("malformed success and navigation/unmount never advertise a key or mutate a
   c.state.screen = "adminorgs"; c.createOrg(); c.componentWillUnmount();
   finish({ org: org("new"), api_key: "late-key" }); await settle();
   assert.equal(c.state.orgKey, "");
+});
+
+test("detached org callbacks keep their receiver, saved values and one-time key per instance", async () => {
+  const first = setup(), second = setup();
+  await first.c.loadOrgAdmin(); await second.c.loadOrgAdmin();
+  const view = first.c.renderVals();
+  assert.notEqual(view.createOrg, second.c.renderVals().createOrg);
+  view.setOrgName({ target: { value: "Detached organization" } });
+  await view.createOrg();
+  assert.equal(first.c.renderVals().orgSelected.name, "Detached organization");
+  assert.equal(first.c.renderVals().orgKey, "synthetic-new-key");
+  assert.equal(first.c.renderVals().orgKeyType, "password");
+  view.toggleOrgKey();
+  assert.equal(first.c.renderVals().orgKeyType, "text");
+  assert.equal(second.c.renderVals().orgKey, "");
+  assert.equal(second.c.state.orgName, "");
+  assert.equal(second.c.renderVals().adminOrgs.length, 2);
+  assert.equal(second.calls.filter(row => row[0] === "POST").length, 0);
+  assert.equal(first.c.renderVals().createOrg, view.createOrg);
+  const inspect = first.c.renderVals().adminOrgs.find(row => row.id === "b").inspect;
+  inspect();
+  assert.equal(first.c.renderVals().orgSelected.id, "b");
+  assert.equal(first.c.state.orgKey, "");
+  const selectedView = first.c.renderVals();
+  selectedView.setOrgWeight({ target: { value: "0" } });
+  await selectedView.saveOrgReliability();
+  assert.equal(first.c.renderVals().orgSelected.reliability_weight, 0);
+  assert.equal(second.c.state.orgSelection, null);
+});
+
+test("stale org reads and key responses cannot cross component or account boundaries", async () => {
+  const first = setup(), second = setup();
+  let finishRead, finishCreate;
+  first.window.VeritasAPI.get = () => new Promise(resolve => { finishRead = resolve; });
+  first.window.VeritasAPI.post = () => new Promise(resolve => { finishCreate = resolve; });
+  const pendingRead = first.c.loadOrgAdmin();
+  first.c.state.orgName = "Pending organization";
+  const pendingCreate = first.c.createOrg();
+  await second.c.loadOrgAdmin();
+  second.c.state.orgName = "Second organization";
+  await second.c.createOrg();
+  first.c.handleSessionLost();
+  first.c.setState({ me: { kind: "admin" }, screen: "adminorgs", orgName: "New account draft" });
+  finishRead([org("stale-first")]);
+  finishCreate({ org: org("stale-created"), api_key: "stale-key" });
+  await Promise.all([pendingRead, pendingCreate]);
+  assert.equal(first.c.state.orgList.data, null);
+  assert.equal(first.c.state.orgName, "New account draft");
+  assert.equal(first.c.renderVals().orgKey, "");
+  assert.equal(second.c.renderVals().orgSelected.name, "Second organization");
+  assert.equal(second.c.renderVals().orgKey, "synthetic-new-key");
+  assert.equal(second.c.state.orgBusy, false);
+});
+
+test("wrong planes mask cached organization rows and one-time keys", () => {
+  for (const kind of ["org", "candidate"]) {
+    const { c, calls } = setup(kind);
+    Object.assign(c.state, { orgList: { data: [org("private")], loading: false, error: null },
+      orgSelection: "private", orgKey: "private-key", orgKeyOwner: "Private organization" });
+    const view = c.renderVals();
+    assert.equal(view.orgAdminAllowed, false);
+    assert.equal(view.orgAdminDenied, true);
+    assert.deepEqual(view.adminOrgs, []);
+    assert.equal(view.orgSelected, null);
+    assert.equal(view.orgHasKey, false);
+    assert.equal(view.orgKey, "");
+    assert.equal(view.orgKeyOwner, "");
+    view.createOrg(); view.reloadOrgs(); c.selectOrg("private")();
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("instances of the same composed class keep independent org callbacks and pending changes", async () => {
+  const { c, window } = setup();
+  const sibling = new c.constructor();
+  Object.assign(sibling.state, { screen: "adminorgs", plane: "operator", me: { kind: "admin" } });
+  await c.loadOrgAdmin(); await sibling.loadOrgAdmin();
+  const siblingView = sibling.renderVals();
+  assert.notEqual(c.renderVals().createOrg, siblingView.createOrg);
+  assert.notEqual(c.state.orgList, sibling.state.orgList);
+  let finish;
+  window.VeritasAPI.post = () => new Promise(resolve => { finish = resolve; });
+  c.state.orgName = "First pending";
+  const pending = c.createOrg();
+  assert.equal(c.state.orgBusy, true);
+  assert.equal(sibling.state.orgBusy, false);
+  siblingView.setOrgName({ target: { value: "Sibling draft" } });
+  siblingView.adminOrgs.find(row => row.id === "b").inspect();
+  assert.equal(sibling.state.orgSelection, "b");
+  assert.equal(c.state.orgSelection, null);
+  finish({ org: org("created"), api_key: "first-only-key" }); await pending;
+  assert.equal(c.renderVals().orgKey, "first-only-key");
+  assert.equal(sibling.renderVals().orgKey, "");
+  assert.equal(sibling.state.orgName, "Sibling draft");
+  assert.equal(sibling.state.orgSelection, "b");
 });

@@ -108,13 +108,14 @@ def main():
                 a, b, stranger = [actors.enter_context(client(base)) for _ in range(3)]
                 def public_ui():
                     page = stranger.get("/ui/")
-                    module = stranger.get("/ui/operator-accounts.js")
-                    checks.check("anonymous UI delivers its declared extracted account module",
-                        page.status_code == module.status_code == 200
-                        and '<script src="./operator-accounts.js"></script>' in page.text
-                        and module.content == (ROOT / "frontend/operator-accounts.js").read_bytes()
-                        and "javascript" in module.headers["content-type"]
-                        and stranger.get("/ui/not-an-asset.txt").status_code == 404)
+                    for name in ("operator-accounts.js", "organization-admin.js"):
+                        module = stranger.get(f"/ui/{name}")
+                        checks.check(f"anonymous UI delivers its declared extracted module {name}",
+                            page.status_code == module.status_code == 200
+                            and f'<script src="./{name}"></script>' in page.text
+                            and module.content == (ROOT / "frontend" / name).read_bytes()
+                            and "javascript" in module.headers["content-type"]
+                            and stranger.get("/ui/not-an-asset.txt").status_code == 404)
                 with server() as (admin, restart_app):
                     public_ui()
                     with engine.connect() as conn:
