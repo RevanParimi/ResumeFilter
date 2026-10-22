@@ -4,15 +4,18 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4B complete: organization-administration UI extraction.**
+**R4-S1-T4B complete and published: organization-administration UI extraction.**
 The 20 handlers/view mapping now live in `frontend/organization-admin.js`;
 shared state/lifecycle/template and API/auth behavior are preserved. Baseline/
 final Node, focused/full offline pytest, bindings/syntax, migrated HTTP/graceful
 restart (48/48), actual Chrome (28/28), preservation and implementation
 self-review pass. [B evidence](delivery/EVIDENCE-R4.md#r4-s1-t4b) owns exact
 commands/counts/limits and the distinct final completion review/publication
-record. Distinct final completion self-review found no blocking issues;
-scoped commit/push is next. Only B completed this session;
+record. Distinct final completion self-review found no blocking issues. Scoped
+task commit `d7e7500` is pushed to `origin/main`; remote
+`d7e7500a12a3c62fb0f38187de24771eab12c805` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation. Only B completed this session;
 [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
