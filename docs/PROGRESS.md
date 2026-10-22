@@ -4,7 +4,7 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4D complete: evaluation/report UI extraction.**
+**R4-S1-T4D complete and published: evaluation/report UI extraction.**
 The 16 handlers, probe cache and evaluation/report/feedback mappings now live
 in `frontend/evaluation-report.js`; shared state/lifecycle/PDF reader, template
 and API/auth behavior are preserved. Before/after Node, focused/full offline
@@ -13,8 +13,11 @@ migrated HTTP (20/20 evaluation; 18/18 screening/graceful restart plus 31/31
 HTTP contract), preservation and implementation self-review pass.
 [D evidence](delivery/EVIDENCE-R4.md#r4-s1-t4d) owns exact commands/counts/limits
 and the distinct final completion review/publication record. Distinct final
-completion self-review found no blocking issues; scoped commit/push is next.
-Only D completed this session;
+completion self-review found no blocking issues. Scoped task commit `06b45c5`
+is pushed to `origin/main`; remote `06b45c50afa67d590cb6ab82428fb6d54d21cb0e`
+was verified. This documentation-only confirmation records publication; the
+final response reports the remote SHA after this confirmation. Only D completed
+this session;
 [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
