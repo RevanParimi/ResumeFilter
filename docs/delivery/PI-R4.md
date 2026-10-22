@@ -68,15 +68,15 @@ F13 and sprint/PI closure remain open.
 Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
 [T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
-contracts/evidence. A-I are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
-retains their contracts and exact validation. [T3I](EVIDENCE-R4.md#r4-s1-t3i)
-is done (2026-10-21): seven verification/document/employer-assurance operations
-and seven DTOs extracted; full API, ownership, current consent/audit, delivery
-and distinct advisory ladder contracts unchanged. Focused/full pytest, migrated
-HTTP/graceful restart, actual contact/assurance Chrome, static/preservation and
-implementation self-review gates pass. The child evidence owns the distinct
-completion review/publication record. Next: T3J, interviews/employer assessment
-summaries; not started. Parent, remaining children, finding and sprint stay open.
+contracts/evidence. A-J are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
+retains their contracts and exact validation. [T3J](EVIDENCE-R4.md#r4-s1-t3j)
+is done (2026-10-22): six interview operations, five DTOs and one response helper
+extracted; full API/auth, candidate/tenant ownership, transcript privacy, current
+consent/audit and versioned advisory content scoring remain unchanged. Focused/
+full pytest, migrated mixed-channel HTTP/graceful restart, actual interview Chrome,
+static/preservation and implementation self-review gates pass. The child evidence
+owns the distinct completion review/publication record. Next: T3K, curation;
+not started. Parent, remaining children, finding and sprint stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 

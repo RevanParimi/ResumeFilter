@@ -1812,3 +1812,179 @@ reuse consolidated route tests and existing interview HTTP/Chrome journeys.
 Preserve content-only advisory scoring, transcript privacy, ownership/current
 consent, scorer-version fields, ASR bounds/fallbacks and conflict/error contracts.
 T4 has not started. No next task or deployment during publication.
+
+## <a id="r4-s1-t3j"></a>R4-S1-T3J - Candidate interviews and employer assessment summaries
+
+Status: done (2026-10-22). Parent: [T3](tasks/R4-S1-T3.md).
+Prerequisite: [I](#r4-s1-t3i), done/published.
+Only J is in scope; T3/F13/sprint/PI remain open.
+
+### <a id="r4-s1-t3j--contract"></a>Contract
+
+Extract six operations, five DTOs and `_interview_body` into `api/interviews.py`:
+candidate start/list/detail/answer/finish and employer assessment summaries.
+Compose the candidate/org routers at their original positions; keep every
+decorator, signature, body, response schema and ordered auth dependency unchanged.
+Retain the full 102-operation ordered auth/OpenAPI fixture. Shared dependencies
+remain in `api/dependencies.py`; no moved aggregate imports require aliases in
+current callers. No service/store/SQL/migration, rubric/scorer/provider/frontend
+or working-demo changes are included.
+
+Acceptance: standalone routers preserve credential-derived candidate ownership,
+foreign/absent 404 equality, cookie/key precedence and CSRF on all candidate
+writes; start/answer/finish conflicts and invalid-domain/no-question refusals;
+text/audio exclusivity, bounds, safe ASR failures, transcription budgets and typed
+fallback; persisted versioned content-only advisory scores and candidate-only
+transcripts. Employer reads require current employer-scoped `interview_read`
+consent, retain allowed/denied audit, expose summaries without transcripts/media,
+and refuse on revocation/erasure while another subject remains authorized.
+
+Validation: extend `tests/test_api_route_extraction.py` before extraction for
+passing characterization, then mount only interview/auth routers. Pure extraction
+does not imply a functional defect or an expected-red result. Run focused
+interview/auth/rate/contract pytest and full offline pytest with project Python,
+fake providers and isolated stores. Reuse/extend the migrated mixed text/audio HTTP
+journey with graceful restart and run actual combined interview Chrome for input,
+failure/recovery, persisted rendering/reload and employer summary privacy. Run
+bindings, JS syntax, compile/import, AST identity, preservation and diff checks.
+Unchanged SQL needs no new PostgreSQL migration/concurrency gate. Record an
+implementation self-review and a distinct completion review, then commit/push
+scoped changes and verify the tracking remote. Complete only J; K is next.
+
+### <a id="r4-s1-t3j--evidence-and-review"></a>Evidence and review
+
+Pure extraction moves six operations, five DTOs and one response helper into the
+182-line `api/interviews.py`; aggregate `routes.py` shrinks from 547 to 387 lines.
+The complete 102-operation ordered auth/OpenAPI fixture remains unchanged (digest
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5`).
+Candidate/org routers compose at their original positions, sharing one appropriate
+principal/CSRF gate per operation. Caller search found no moved DTO/handler/helper
+imports requiring aggregate aliases. Existing auth aliases used by route guards
+remain. No service/store/SQL/rubric/provider/frontend behavior changed.
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3j.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. This local runner
+clears inherited DEE config/keys, points at absent YAML and uses fake/null/capture
+providers and isolated stores. Logs are `.pytest_cache/r4-s1-t3j-<tag>.txt`;
+ignored artifacts are not portable setup guarantees.
+
+Pre-move `characterization`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py -k 'interview or full_openapi'`:
+**5 passed, 19 deselected, 1 warning, 4.46s**, exit 0. Four new cases first mounted
+the aggregate, then switched to only interview/auth routers. An initial test budget
+assumption was corrected: malformed audio consumes transcription budget before
+parsing even when no provider is called. This is passing characterization of
+existing behavior, not an application defect or expected-red reproduction.
+
+Post-move `focused`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_interview_api.py
+tests/test_interview_org_api.py tests/test_interview_service.py
+tests/test_interview_org.py tests/test_interview_review.py tests/test_interview_erasure.py
+tests/test_interview_erasure_concurrency.py tests/test_interview_lifecycle_concurrency.py
+tests/test_interview_scoring.py tests/test_interview_scoring_llm.py
+tests/test_interview_schema.py tests/test_ratelimit_spend.py
+tests/test_api_auth_gate.py tests/test_auth_api.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py`:
+**248 passed, 16 skipped, 1 warning, 88.01s**, exit 0 (Starlette/httpx deprecation).
+Standalone workflows exercise credential-derived ownership/foreign-absent 404s,
+unknown-domain and start/duplicate/finish conflicts, malformed/exclusive audio,
+pre-provider rate refusal with Retry-After, typed fallback, saved mixed channels
+and scorer-version/advisory fields. They retain candidate-only transcripts and
+summary projections, exact-purpose/two-employer current consent, audit,
+revocation/erasure, cookie plus foreign candidate/org key precedence and CSRF on
+all candidate writes. Controlled unavailable/failed ASR keeps the same question
+and allows typed recovery without leaking provider detail. Existing focused tests
+cover no-question/bounds, historical score semantics and concurrent lifecycle/
+erasure behavior; they do not establish measured assessment quality.
+
+Migrated HTTP (`journey scripts/smoke_r3_s3_t3.py --combined`): **25/25**, exit 0,
+42.73s. The existing synthetic mixed-channel journey now reuses the stop-file
+uvicorn loop from `smoke_r4_s1_t1a.py` and checks both normal shutdown exits.
+It verifies revision-0029 startup, candidate isolation, invalid media and provider
+refusals without saved turns, typed/audio continuation and duplicate refusal,
+transcript truncation, saved advisory versioned content scoring, repeated-keyword
+insufficiency, consent-gated transcript-free employer summaries, exact turns/
+assessment across graceful restart, revocation and erasure with a surviving
+subject. Logs omit raw media, transcript and private provider error. No working
+migration/demo restart; normal exits are not new SQL-disposal instrumentation.
+
+Actual Chrome (`browser scripts/check_ui_interview_integration_browser.py`):
+**40/40**, plus **1/1** startup/UI-host harness, exit 0, 87.13s. Browser actions
+exercise denied/late microphone permission, typed fallback, unsupported format,
+oversize recording, visible ASR failures and recovery, duplicate/stale requests,
+saved transcript/truncation and advisory assessment, mixed channels and repeated
+keywords, reload and actual process restart, exact employer summary fields/privacy,
+scoped consent and revocation, navigation/logout during recording, new-account
+isolation and no console errors. App logs omit transcript/private provider error.
+Chrome needs existing CDN internet and uses a synthetic microphone
+and fake ASR/capture mail; no live-provider or representative scoring-quality claim.
+Employer summary assertions use actual HTTP, not a dedicated employer interview UI.
+Browser process cleanup/restart is forced on Windows; HTTP owns graceful evidence.
+
+Static checks: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**,
+passed. `node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q src/app/api/routes.py src/app/api/interviews.py
+tests/test_api_route_extraction.py scripts/smoke_r3_s3_t3.py`, and
+`git diff --check` pass. No frontend source change.
+
+Implementation self-review: HEAD `4b59ac9` plus aggregate/new interviews,
+consolidated route tests and the existing modified interview HTTP harness.
+Specification review maps six operations/five DTOs/helper to full-contract,
+standalone, HTTP and actual Chrome validation. Correctness review traces shared
+schema/dependency and rate-translation identity, auth-plane order, subject/tenant
+ownership, cookie precedence/CSRF, method/error/budget ordering, typed fallback,
+transcript/media privacy, content-only advisory/versioned scoring, exact current
+consent/audit, revocation/erasure and owned child-process shutdown/restart.
+`review -I .pytest_cache/review_r4_s1_t3j.py`: exit 0, 7.15s. All **30** original
+aggregate class/function definitions, including decorators, signatures and bodies,
+are AST-identical across aggregate/interviews. Independent module import, shared
+three domain schemas/rate translator and exactly one appropriate gate per route
+pass; five reviewed code/contract hashes recorded. No blocking finding remains.
+Same-agent self-review is not independent review or empirical quality evidence.
+No SQL/transaction/migration change, so no new PostgreSQL concurrency/migration
+gate applies.
+
+Preservation (`.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3j.py`):
+710 unrelated tracked files, working DB and five reviewed code/contract hashes
+unchanged; scoped links/anchors and tracked/staged whitespace pass.
+
+Full pytest (`full-reviewed`, no extra runner arguments): **3528 passed, 505 skipped, 127 warnings in 768.08s (0:12:48)**,
+exit 0. Existing Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; environment/optional skips do not prove omitted
+cases. The full suite ran on the reviewed code; only documentation changed later.
+Acceptance and required validation are complete. Existing final-read snapshots,
+concurrent-erasure and bounded/uncalibrated assessment limitations remain.
+
+### <a id="r4-s1-t3j--completion-review-and-publication"></a>Completion review and publication
+
+After required checks and completion/evidence/PI/handoff updates, a distinct final
+same-agent self-review examined HEAD `4b59ac9` plus the exact nine staged files:
+aggregate/new interviews, consolidated route tests, the existing modified
+interview HTTP harness and five handoff/roadmap/PI/task/evidence records.
+Specification review confirms six operations/five DTOs/helper, unchanged full
+ordered API/auth contract, required validation and the K-only next pointer.
+Correctness review rechecks shared schemas/principal and rate-translation identity,
+candidate/tenant ownership, cookie/CSRF precedence, conflict/error/budget ordering,
+typed recovery, candidate-only transcripts, employer summary projection and scoped
+current consent/audit, revocation/erasure, versioned advisory content scoring,
+owned subprocess shutdown/restart and retained limitations. No blocking finding
+remains. `completion-review -I .pytest_cache/review_r4_s1_t3j.py`: exit 0, 2.38s;
+all 30 original definitions, independent import, shared schemas/translator,
+single appropriate gates and five reviewed hashes match. This later self-review
+is separate from implementation review; no independent review is claimed.
+Only documentation changed after full pytest. Final preservation, 167 local
+links/anchors across five Markdown files and staged whitespace pass. Staging
+excludes secrets, working data, generated artifacts and unrelated files.
+Configured tracking branch is `origin/main`; remote matched the starting HEAD
+before publication. Commit/push will use per-command account selection from G's
+existing two-account Credential Manager evidence. Scoped publication pending;
+no K work, demo restart or deployment.
+
+### <a id="r4-s1-t3j--handoff"></a>Handoff
+
+Only J completed in this continuation. T3/F13/sprint/PI remain open. Exact next:
+**R4-S1-T3K - Extract curation routes**, not started. Add K's bounded contract/
+evidence inline in the existing T3 record; reuse consolidated route tests and
+existing curation HTTP/Chrome journeys. Preserve operator auth/CSRF, paginated
+queue/status/cursor contracts, revision conflicts, alias decisions and curated
+overlay behavior. T4 has not started. No next task or deployment during publication.

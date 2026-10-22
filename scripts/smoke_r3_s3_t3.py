@@ -19,7 +19,8 @@ import sys
 
 from sqlalchemy import create_engine, select, text
 
-from _smoke import Smoke, base_env, client, uvicorn_argv, wait_healthy
+from _smoke import Smoke, base_env, client, wait_healthy
+from smoke_r4_s1_t1a import serve
 from app.services.speech import SpeechClient, SpeechFailed, SpeechUnavailable, Transcript
 from app.interview.models import InterviewSessionRow, InterviewTurnRow
 from smoke_r1_s1_t3a_v1 import database
@@ -70,6 +71,7 @@ def main():
 
 def run(scratch, url, pg_options, checks, *, combined):
     mailbox = scratch/"mail.jsonl"
+    stop = scratch/"stop"
     control = Path(str(mailbox) + ".speech-control")
     env = {k:v for k,v in base_env().items() if not k.startswith("DEE_")}
     env.update({"DEE_CONFIG_FILE":str(scratch/"no-config.yaml"), "DEE_ENV":"local", "DEE_CANDIDATES_DB_URL":url,
@@ -80,7 +82,7 @@ def run(scratch, url, pg_options, checks, *, combined):
         "DEE_FLYWHEEL_PATH":str(scratch/"flywheel.jsonl"), "DEE_VECTORSTORE_BACKEND":"memory",
         "DEE_LOGIN_OTP_DEBUG_ECHO":"false", "DEE_VERIF_OTP_DEBUG_ECHO":"false", "DEE_LOGIN_OTP_STATIC_CODE":"",
         "DEE_SESSION_COOKIE_SECURE":"false", "DEE_SESSION_COOKIE_SAMESITE":"lax", "NO_PROXY":"localhost,127.0.0.1",
-        "PGOPTIONS":pg_options,
+        "PGOPTIONS":pg_options, "VERITAS_SQL_SMOKE_FACTORY":"smoke_r3_s3_t3:create_smoke_app",
         "PYTHONPATH":os.pathsep.join(str(p) for p in (ROOT/"src", ROOT/"scripts", ROOT))})
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
@@ -88,17 +90,24 @@ def run(scratch, url, pg_options, checks, *, combined):
 
     @contextmanager
     def server():
+        stop.unlink(missing_ok=True)
         with (scratch/"server.log").open("a", encoding="utf-8") as log:
-            proc = subprocess.Popen(uvicorn_argv(port,target="smoke_r3_s3_t3:create_smoke_app") + ["--factory"],
+            proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--serve", str(port), str(stop)],
                 env=env,cwd=scratch,stdout=log,stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             try:
                 with client(base,headers={"X-API-Key":"synthetic-audio-admin"}) as admin:
                     assert wait_healthy(admin); yield admin
             finally:
-                proc.terminate()
-                try: proc.wait(timeout=10)
-                except subprocess.TimeoutExpired: proc.kill(); proc.wait(timeout=10)
+                stop.write_text("stop", encoding="utf-8")
+                try:
+                    proc.wait(timeout=30)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    proc.wait(timeout=10)
+                    raise AssertionError("interview scratch app failed graceful shutdown")
+                assert proc.returncode == 0, "interview scratch lifespan failed"
+                checks.check("interview scratch lifespan shuts down gracefully", True)
 
     def require(response, status=200):
         assert response.status_code == status, (response.request.url.path,response.status_code)
@@ -199,4 +208,7 @@ def run(scratch, url, pg_options, checks, *, combined):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if "--serve" in sys.argv:
+        asyncio.run(serve(int(sys.argv[2]), Path(sys.argv[3])))
+    else:
+        raise SystemExit(main())

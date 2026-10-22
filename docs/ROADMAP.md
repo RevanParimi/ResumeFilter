@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T3J completed; interview route extraction.**
+  Six operations, five DTOs and one response helper move to `api/interviews.py`;
+  full API/auth, ownership, transcript privacy, current scoped consent/audit and
+  versioned advisory content scoring remain unchanged.
+  [J evidence](delivery/EVIDENCE-R4.md#r4-s1-t3j) owns focused/full pytest,
+  migrated mixed-channel HTTP/graceful restart, actual interview Chrome, static/
+  preservation and separate review/publication records. Working storage/demo
+  preserved. T3/F13/sprint/PI remain open; exact next T3K (curation), not started.
+  Stop after J; T4 has not started.
+
 - **Session 2026-10-21 - R4-S1-T3I completed; verification route extraction.**
   Seven operations/seven DTOs move to `api/verification.py`, preserving the full
   API/auth, candidate ownership, current employer consent/audit, delivery,

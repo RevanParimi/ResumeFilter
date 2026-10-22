@@ -1080,3 +1080,172 @@ def test_verification_cookie_precedence_csrf_and_manual_review(cfg, capture_path
         assert admin.post(path, json={"outcome": "verified"}).status_code == 403
         admin.headers.pop("X-API-Key")
         assert admin.post(path, json={"outcome": "verified"}, headers={"X-CSRF-Token": logged.json()["csrf_token"]}).json()["assurance_level"] == 3
+
+
+# Candidate interviews and employer assessment summaries extraction
+
+
+def interview_app(services):
+    from app.api.auth import auth_router
+    from app.api.interviews import candidate_router, org_router
+
+    app = FastAPI()
+    app.state.services = services
+    app.include_router(auth_router)
+    app.include_router(candidate_router)
+    app.include_router(org_router)
+    return app
+
+
+def test_interview_workflow_preserves_ownership_budget_scores_privacy_and_consent(settings):
+    from app.ledger.schema import ConsentPurpose
+    from tests.conftest import FakeSpeech
+    from tests.test_interview_api import ANSWER, AUDIO_B64, _candidate
+
+    # Three malformed audio submissions consume budget before parsing, then one
+    # valid transcription is allowed. Typed answers never consume that budget.
+    tuned = settings.model_copy(update={"rate_limit_asr_per_hour_per_candidate": 4})
+    speech = FakeSpeech(text=ANSWER, settings=tuned)
+    services = make_services(tuned, speech=speech)
+    cid, key = _candidate(services, "Interview One")
+    other_id, other_key = _candidate(services, "Interview Two")
+    orgs = [services.ledger.create_organization(name) for name in ("Interview employer", "Other employer")]
+    org_keys = [services.ledger.issue_api_key(org.id) for org in orgs]
+    with TestClient(interview_app(services), raise_server_exceptions=False) as actor, \
+            TestClient(interview_app(services), raise_server_exceptions=False) as other:
+        assert actor.get("/portal/interviews").status_code == 401
+        actor.headers["X-Candidate-Key"] = key
+        other.headers["X-Candidate-Key"] = other_key
+        assert actor.post("/portal/interviews", json={"domain": "missing"}).status_code == 422
+        started = actor.post("/portal/interviews", json={"candidate_id": other_id})
+        assert started.status_code == 200 and started.json()["session"]["candidate_id"] == cid
+        body = started.json()
+        sid, qid = body["session"]["id"], body["next_question"]["id"]
+        base = f"/portal/interviews/{sid}"
+        assert actor.post("/portal/interviews", json={}).status_code == 409
+        for method, suffix, payload in (("GET", "", None), ("POST", "/answers", {"question_id": qid, "text": ANSWER}),
+                                        ("POST", "/finish", {})):
+            foreign = other.request(method, base + suffix, json=payload)
+            absent = other.request(method, "/portal/interviews/missing" + suffix, json=payload)
+            assert foreign.status_code == absent.status_code == 404
+            assert foreign.json() == absent.json() == {"detail": "interview not found"}
+        for payload, status in (({"question_id": "wrong", "text": ANSWER}, 409),
+                                ({"question_id": qid}, 400),
+                                ({"question_id": qid, "audio_b64": "%%%", "mime": "audio/wav"}, 400),
+                                ({"question_id": qid, "audio_b64": AUDIO_B64, "mime": "application/pdf"}, 422),
+                                ({"question_id": qid, "text": ANSWER, "audio_b64": AUDIO_B64}, 400)):
+            assert actor.post(base + "/answers", json=payload).status_code == status
+        assert speech.calls == [] and actor.get(base).json() == body
+        typed = actor.post(base + "/answers", json={"question_id": qid, "text": ANSWER})
+        assert typed.status_code == 200 and typed.json()["session"]["turns"][0]["channel"] == "text"
+        assert speech.calls == []
+        qid = typed.json()["next_question"]["id"]
+        audio = actor.post(base + "/answers", json={"question_id": qid, "audio_b64": AUDIO_B64, "mime": "audio/webm;codecs=opus"})
+        assert audio.status_code == 200 and len(speech.calls) == 1
+        saved = audio.json()
+        assert [row["channel"] for row in saved["session"]["turns"]] == ["text", "audio"]
+        assert saved["session"]["turns"][-1]["transcript"] == ANSWER
+        assert AUDIO_B64 not in audio.text and saved["session"]["turns"][-1]["audio_digest"]
+        assert actor.post(base + "/answers", json={"question_id": qid, "audio_b64": AUDIO_B64}).status_code == 409
+        qid = saved["next_question"]["id"]
+        refused = actor.post(base + "/answers", json={"question_id": qid, "audio_b64": AUDIO_B64})
+        assert refused.status_code == 429 and refused.json() == {"detail": "rate_limited"}
+        assert int(refused.headers["Retry-After"]) > 0 and len(speech.calls) == 1
+        assert actor.get(base).json() == saved
+        fallback = actor.post(base + "/answers", json={"question_id": qid, "text": ANSWER})
+        assert fallback.status_code == 200 and len(speech.calls) == 1
+        done = actor.post(base + "/finish", json={})
+        assert done.status_code == 200 and done.json()["next_question"] is None
+        assessment = done.json()["session"]["assessment"]
+        assert assessment["scorer_version"] == "s73.2" and assessment["advisory"] and assessment["human_review_required"]
+        assert actor.post(base + "/finish", json={}).status_code == 409
+        assert actor.get(base).json() == done.json()
+        listed = actor.get("/portal/interviews")
+        assert [row["id"] for row in listed.json()["interviews"]] == [sid]
+        assert ANSWER not in listed.text and "transcript" not in listed.text and "audio_digest" not in listed.text
+        assert other.get("/portal/interviews").json() == {"interviews": []}
+        path = f"/interview/candidates/{cid}/assessments"
+        assert actor.get(path).status_code == 401
+        org = {"X-Org-Key": org_keys[0]}
+        assert other.get(path, headers=org).status_code == 403
+        services.ledger.grant_consent(candidate_id=cid, org_id=orgs[0].id, purpose=ConsentPurpose.VERIFICATION_READ)
+        assert other.get(path, headers=org).status_code == 403
+        grant = services.ledger.grant_consent(candidate_id=cid, org_id=orgs[0].id, purpose=ConsentPurpose.INTERVIEW_READ)
+        allowed = other.get(path, headers=org)
+        assert allowed.status_code == 200 and allowed.json()["attempts"] == 1
+        summary = allowed.json()["assessments"][0]
+        assert all(summary[field] == assessment[field] for field in ("band", "overall", "dimensions", "confidence", "scorer_version", "questions_planned", "questions_answered", "advisory"))
+        assert all(secret not in allowed.text for secret in (ANSWER, AUDIO_B64, "transcript", '"turns"', "audio_digest"))
+        assert other.get(path, headers={"X-Org-Key": org_keys[1]}).status_code == 403
+        services.ledger.revoke_consent(grant.id)
+        assert other.get(path, headers=org).status_code == 403
+        audit = [row for row in services.portal.access_log(cid) if row.action == "interview.query"]
+        assert {row.allowed for row in audit} == {True, False}
+        services.portal.erase(cid)
+        assert actor.get(base).status_code == 401
+        assert other.get(path, headers=org).status_code == 404
+        assert other.get("/portal/interviews").status_code == 200
+
+
+@pytest.mark.parametrize("failure,detail", [
+    ("unavailable", "speech_unavailable: answer this question in text"),
+    ("failed", "speech_failed: no answer saved; record again or answer in text"),
+])
+def test_interview_asr_refusal_keeps_question_and_allows_typed_recovery(settings, failure, detail):
+    from app.services.speech import SpeechFailed, SpeechUnavailable
+    from tests.conftest import FakeSpeech
+    from tests.test_interview_api import ANSWER, AUDIO_B64, _candidate
+
+    error = SpeechUnavailable if failure == "unavailable" else SpeechFailed
+    speech = FakeSpeech(fail=error("private-provider-error"), settings=settings)
+    services = make_services(settings, speech=speech)
+    _, key = _candidate(services)
+    with TestClient(interview_app(services), headers={"X-Candidate-Key": key}) as actor:
+        started = actor.post("/portal/interviews", json={}).json()
+        path = f"/portal/interviews/{started['session']['id']}"
+        qid = started["next_question"]["id"]
+        refused = actor.post(path + "/answers", json={"question_id": qid, "audio_b64": AUDIO_B64})
+        assert refused.status_code == 422 and refused.json() == {"detail": detail}
+        assert actor.get(path).json() == started
+        assert actor.post(path + "/answers", json={"question_id": qid, "text": ANSWER}).status_code == 200
+        assert len(speech.calls) == 1
+
+
+def test_interview_cookie_ownership_csrf_and_employer_key_precedence(cfg, capture_path):
+    from app.ledger.schema import ConsentPurpose
+    from tests.test_interview_api import ANSWER
+    from tests.test_verification_claim_api import _candidate
+
+    services = make_services(cfg)
+    cid, _ = _candidate(services, email="interview-cookie@example.in")
+    other_id, other_key = _candidate(services, email="interview-foreign@example.in")
+    with TestClient(interview_app(services), raise_server_exceptions=False) as actor, \
+            TestClient(interview_app(services), raise_server_exceptions=False) as employer:
+        address = "interview-cookie@example.in"
+        assert actor.post("/auth/candidate/login", json={"email": address}).status_code == 202
+        verified = actor.post("/auth/candidate/verify", json={"email": address, "code": _code(capture_path)})
+        assert verified.status_code == 200
+        token = verified.json()["csrf_token"]
+        actor.headers["X-Candidate-Key"] = other_key
+        assert actor.post("/portal/interviews", json={}).status_code == 403
+        started = actor.post("/portal/interviews", json={"candidate_id": other_id}, headers={"X-CSRF-Token": token})
+        assert started.status_code == 200 and started.json()["session"]["candidate_id"] == cid
+        path = f"/portal/interviews/{started.json()['session']['id']}"
+        answer = {"question_id": started.json()["next_question"]["id"], "text": ANSWER}
+        for suffix, payload in (("/answers", answer), ("/finish", {})):
+            assert actor.post(path + suffix, json=payload).status_code == 403
+        assert actor.post(path + "/answers", json=answer, headers={"X-CSRF-Token": token}).status_code == 200
+        assert actor.post(path + "/finish", json={}, headers={"X-CSRF-Token": token}).status_code == 200
+        login = {"email": "interview-employer@example.in", "organization_name": "Interview cookie employer"}
+        assert employer.post("/auth/org/signup", json=login).status_code == 202
+        assert employer.post("/auth/org/verify", json={"email": login["email"], "code": _code(capture_path)}).status_code == 200
+        org_id = employer.get("/auth/me").json()["organization_id"]
+        other_org = services.ledger.create_organization("Foreign interview employer")
+        foreign_key = services.ledger.issue_api_key(other_org.id)
+        employer.headers["X-Org-Key"] = foreign_key
+        services.ledger.grant_consent(candidate_id=cid, org_id=org_id, purpose=ConsentPurpose.INTERVIEW_READ)
+        response = employer.get(f"/interview/candidates/{cid}/assessments")
+        assert response.status_code == 200 and response.json()["attempts"] == 1
+        assert employer.post("/portal/interviews", json={}).status_code == 401
+        employer.cookies.clear()
+        assert employer.get(f"/interview/candidates/{cid}/assessments").status_code == 403
