@@ -4,15 +4,17 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4A complete: operator-account UI extraction.**
+**R4-S1-T4A complete and published: operator-account UI extraction.**
 The 14 handlers and view mapping now live in `frontend/operator-accounts.js`;
 shared state/lifecycle/template and API/auth behavior are unchanged. Node,
 focused/full offline pytest, bindings/syntax, migrated HTTP/graceful restart
 (46/46), actual Chrome (29/29), preservation and implementation self-review pass.
 [A evidence](delivery/EVIDENCE-R4.md#r4-s1-t4a) owns exact commands/counts/limits
 and the distinct final completion review/publication record. Final completion
-self-review found no blocking issues. Scoped commit/push/remote verification
-follow; publication is not yet claimed.
+self-review found no blocking issues. Scoped task commit `439ee10` is pushed to
+`origin/main`; remote `439ee10695dcabbd984531d51196eb2be3488e33` was verified.
+This documentation-only confirmation records publication; the final response
+reports the remote SHA after this confirmation.
 Only A completed. [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
