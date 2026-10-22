@@ -2406,7 +2406,7 @@ owns its acceptance and validation. No additional route extraction in that task.
 
 ## <a id="r4-s1-t3m"></a>R4-S1-T3M - Public surface and final composition
 
-Status: done (2026-10-22). Prerequisite: [L](#r4-s1-t3l), done/published.
+Status: done and published (2026-10-22). Prerequisite: [L](#r4-s1-t3l), done/published.
 
 ### Contract and acceptance
 
@@ -2573,9 +2573,23 @@ AST definitions, standalone import, shared guards/helpers, original route order,
 full contract and six final reviewed hashes. Final preservation confirms **711**
 unrelated tracked files, working DB and six reviewed hashes unchanged; scoped
 links/anchors and whitespace pass. Secrets, working data and local artifacts are
-excluded. Tracking branch is `origin/main`; publication uses G's existing
-per-command account selection. Scoped commit/push and remote verification
-follow; publication is not yet claimed. No T4 work or deployment started.
+excluded. Tracking branch is `origin/main`; publication used G's existing
+per-command account selection. No T4 work or deployment started.
+
+Scoped task commit **`73a9870`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`172c8b2` to `73a9870`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`73a98701fbe83abdc8eee4a7d555ced9edfd924a`**. Working tree was clean.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this evidence section. Separate final same-agent self-review
+against `73a9870` checks the exact prose diff, actual remote evidence, completed
+T3 status and T4-only next pointer; no blocking finding remains. Scoped links,
+whitespace and preservation pass. Application/test/harness code remains at the
+validated state, so no application tests are rerun for prose. The final response
+reports the verified remote SHA after this confirmation's commit/push.
 
 ### Handoff
 
