@@ -13,6 +13,7 @@ execution, independent review, live-provider check or broader quality claim.
 - [R4-S1-T2](#r4-s1-t2)
 - [R4-S1-T3](#r4-s1-t3)
 - [R4-S1-T3M](#r4-s1-t3m)
+- [R4-S1-T4A](#r4-s1-t4a)
 - [R4-S1-T3A](#r4-s1-t3a)
 - [R4-S1-T3B](#r4-s1-t3b)
 - [R4-S1-T3C](#r4-s1-t3c)
@@ -2596,3 +2597,183 @@ reports the verified remote SHA after this confirmation's commit/push.
 Exact next development task: **R4-S1-T4 - Extract frontend components and remove
 dead handlers**, not started. Read its PI section and workflow and define a
 bounded first child before implementation in the next session. Stop after M.
+
+## <a id="r4-s1-t4a"></a>R4-S1-T4A - Extract operator-account UI logic
+
+Status: done (2026-10-22). Parent: [T4](tasks/R4-S1-T4.md).
+
+### Contract and acceptance
+
+Move the operator-account handlers and their view-value mapping out of the
+4,209-line `frontend/Veritas.dc.html` logic class into the plain script
+`frontend/operator-accounts.js`. Expose a single factory that extends the supplied
+DCLogic base; pass existing API/date/error/timeout helpers explicitly. The
+component retains its shared state, navigation, session-loss/unmount cleanup,
+template and stable bound handler names. This small inheritance seam preserves
+the existing class-field semantics without a controller/dependency framework.
+Compose its values into `liveVals()` at the original precedence. Load the script
+before logic evaluation and add only this named asset to the static allowlist;
+keep generated `support.js` unchanged. Update the two existing offline execution
+entry points so they load the actual extracted script.
+
+Acceptance: operator list/status/filter/pagination, create/confirmation/delete,
+server refresh and self-deletion/session revocation behave unchanged. No user
+email/hash/sample rows render as account data. Non-admin planes refuse both
+handlers and privileged values. Duplicate clicks send one mutation; malformed
+responses, CSRF/4xx/5xx/timeouts and uncertain writes retain existing recovery
+copy and drafts. Navigation/session change/unmount invalidate late results.
+Detached template callbacks retain their component receiver, and two component
+instances share no handlers, requests or state. All shipped bindings still
+resolve. Anonymous `/ui/` can fetch the declared module, while unrelated files
+remain refused. Full ordered API/auth contract remains unchanged.
+
+No duplicate mock/live source or dead operator-account handler was found in this
+bounded area; do not remove other screens' fixtures/handlers in A. Inspect the
+original/moved bodies during review and preserve current lifecycle behavior.
+
+### Required validation
+
+Extend `scripts/test_ui_admin_users.js` with pre-move detached-callback and
+two-instance characterizations, then run the existing account/evaluation suites
+against extracted composition. Extend `tests/test_ui_mount.py` for anonymous
+module delivery. Run focused UI/mount/image/auth/API-contract pytest, full
+offline pytest, bindings and JS syntax (including extracted inline logic).
+Use `scripts/check_ui_admin_users_browser.py` for the real migrated-scratch
+account journey with reload/errors/CSRF/plane denial/session revocation and
+restart; its Windows process restart is forced, not graceful-lifecycle evidence.
+Reuse `scripts/smoke_r3_s2_q.py` for migrated HTTP/graceful restart and static
+asset delivery. Record implementation self-review, preservation/docs/diff checks,
+completion and a distinct final self-review before scoped commit/push/remote
+verification. No SQL/transaction/schema changes; no new PostgreSQL gate applies.
+Preserve working storage, unrelated edits and the existing demo.
+
+### Evidence
+
+Starting HEAD `0a21b2bff199a6b1a2deda8957f843aac98498a7`; initial worktree clean.
+Pure extraction uses passing before/after characterizations, not a product-defect
+reproduction. Sanitized runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t4a.py <tag> <Python args>` clears inherited DEE config/
+keys, ignores `.env`, blocks external GitHub and uses existing fake providers
+and isolated stores. No arguments after the tag runs project `-m pytest -q
+--tb=short`. Python logs use `.pytest_cache/r4-s1-t4a-<tag>.txt`; Node logs use
+the same prefix. Baseline hashes cover 721 tracked files including working DB.
+
+Pre-move `node --test scripts/test_ui_admin_users.js`: **40 passed, 0 failed,
+0 skipped, 481.95ms**; post-move same command: **40 passed, 0 failed, 0 skipped,
+451.93ms**, both exit 0. This includes the imported evaluation/API suite. New
+characterizations verify detached callbacks retain their original receiver and
+stable identity, separate component instances never share changes/handlers, and
+a stale read after session loss cannot replace another instance's current rows.
+Existing tests cover actual-row mapping, paging/filtering, double-submit,
+confirmation/cancel, encoded IDs, response validation, draft preservation,
+CSRF/policy/timeout/network/5xx errors, plane refusals and late-result guards.
+
+Focused `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py
+tests/test_api_route_extraction.py tests/test_auth_api.py
+tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py`: **110 passed, 1 warning, 59.86s**, exit 0
+(65.94s runner). Includes all seven offline handler subprocesses, anonymous
+delivery of every declared local script with exact bytes/JavaScript media type,
+static confinement, image COPY/ignore contracts and the unchanged full ordered
+102-operation API/auth/OpenAPI digest. Image contract tests are not an image build.
+
+Actual Chrome `browser scripts/check_ui_admin_users_browser.py`: **29/29**,
+exit 0, 39.83s runner, plus the shared harness's **1/1** app-contract check.
+Migrated scratch composition (0029), captured sign-in, enabled/disabled actual
+rows, empty/filter/page, input validation, double-click/create/persistence,
+new-operator login, duplicate/CSRF/refusal/timeout/503 recovery, stale deletion,
+cancel/confirm/session revocation, navigation/document reload, backend restart,
+plane denials, expiry/self-deletion and no console exceptions pass. Fault
+transports are synthetic; ordinary mutations/auth use real HTTP. Existing CDN
+internet is required. Windows app/browser stop/restart is forced here; no
+graceful-lifecycle claim from that script. No live provider or quality claim.
+
+Migrated HTTP `journey scripts/smoke_r3_s2_q.py`: **46/46**, exit 0, 26.79s runner.
+The existing journey now also checks anonymous declared-module delivery with
+exact source bytes/media type and an unrelated-path refusal before and after
+restart. Existing account/session, retention, metrics, signal, org/curation,
+consent/ownership, restart/revocation and log privacy checks pass. Both scratch
+server lifespans require graceful exit 0. Working DB/demo are untouched.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass;
+`node --check frontend/api.js`, `frontend/support.js` and
+`frontend/operator-accounts.js` pass. Review also runs `node --check` over both
+changed Node behavior scripts, the binding checker and extracted inline logic
+(`.pytest_cache/r4-s1-t4a-inline.js`). Tracked diff and new source/task whitespace
+pass. Generated runtime, API client and Dockerfile are unchanged.
+
+Project `-m compileall -q src/app/main.py tests/test_ui_mount.py
+scripts/smoke_r3_s2_q.py` also passes. Docker COPY/ignore inspection includes the
+new module; no Docker image build is claimed.
+
+Implementation self-review: HEAD `0a21b2b` plus the HTML/new account module,
+named static allowlist, existing Node/checker/HTTP entry points and mount test.
+Specification review maps the bounded account behavior to pre/post Node,
+focused/API, real Chrome and migrated HTTP checks. Correctness review traces
+field initialization and receiver identity through the supplied-base subclass,
+explicit helper capture, value precedence, shared lifecycle invalidation,
+per-instance tokens, non-admin masking, request recovery and static confinement.
+`review -I .pytest_cache/review_r4_s1_t4a.py`: exit 0, 0.90s runner. All 14
+handler bodies and complete view inputs/mapping are text-identical; the rest of
+the template/state/lifecycle/logic is identical after normalizing only the three
+script/base/value composition edits. Main's AST changes only the named asset
+allowlist. All shipped/test/inline JS parses and eleven reviewed source/contract
+hashes are recorded. No blocking finding remains. This same-agent self-review
+is not independent review. No SQL/transaction/migration changes or new PostgreSQL
+gate apply. No dead operator-account handler or sample/live duplicate was found;
+other screens' prototype material remains for their bounded children.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4a.py`:
+**709** unrelated tracked files, working DB and eleven reviewed hashes unchanged;
+251 scoped local Markdown links/anchors and tracked/staged whitespace pass.
+Full pytest `full-reviewed` (no extra runner args; project
+`-m pytest -q --tb=short`): **3539 passed, 505 skipped, 127 warnings in
+1066.39s (0:17:46)**, exit 0 (1077.03s runner).
+Existing Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; optional/environment skips do not prove omitted
+cases. Eleven reviewed source/contract hashes remain unchanged. Only documents
+changed after the reviewed full run started.
+
+All bounded A acceptance and required validation gates are complete. The
+operator-account handlers and values have one live implementation in the new
+plain script. Shared state/lifecycle, all other screen logic and API behavior
+are preserved. No dead account handler/sample duplicate was removed because
+none was found in this area. Only A completed; T4/F13/sprint/PI remain open.
+Working storage/demo preserved. No B work or deployment started.
+
+### Completion review and publication
+
+After required validation and completion records, a distinct final same-agent
+self-review examined HEAD `0a21b2b` plus the exact fourteen staged files: HTML/new
+account module, static allowlist, existing Node/checker/HTTP entry points, mount
+test, feature overview, handoff, roadmap, PI/evidence and active T4 parent record.
+Specification review confirms the bounded extraction and all required validation,
+unchanged ordered API/auth contract, one account implementation, child evidence
+ownership and the B-only next pointer with T4/F13/sprint/PI still open.
+Correctness review rechecks subclass field initialization (handlers capture the
+receiver before shared state initializes, but read it only when called), explicit
+helper capture, callback identity, value precedence, per-instance load/action
+tokens, navigation/session/unmount invalidation, plane masking, no optimistic
+mutation success, ambiguous-write recovery, static allowlisting and packaging.
+The generated runtime/API client and all other screen logic remain unchanged.
+No blocking finding remains. This final self-review is separate from the earlier
+implementation review; no independent review is claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4a.py`: exit 0, 0.69s runner;
+all fourteen original handler bodies and complete view inputs/mapping match,
+template/state/lifecycle and main AST comparisons pass, and all shipped/test/
+inline JS syntax plus eleven source/contract hashes match. Final preservation
+confirms **709** unrelated tracked files, working DB and eleven reviewed hashes
+unchanged; **259** scoped local links/anchors and tracked/staged whitespace pass.
+Only documentation changed after full pytest started. The exact staged scope
+excludes secrets, working data and local artifacts. Tracking branch is
+`origin/main`; its pre-publication remote matches starting HEAD. Publication
+uses G's existing per-command account selection. Scoped commit/push/remote
+verification follow; publication is not yet claimed. No B work or deployment.
+
+### Handoff
+
+Exact next: **R4-S1-T4B - Extract organization-administration UI handlers and
+view values**, not started. Define its contract in the existing T4 record before
+implementation in the next session. Stop after A publication.

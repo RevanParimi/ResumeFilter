@@ -163,3 +163,33 @@ test("deleted target 404 does not remove cached row optimistically; encoded ID s
   assert(c.renderVals().adminUsers.some(u => u.id === "slash /?#"));
   assert.equal(c.state.usersNotice, ""); assert.equal(c.state.usersBusy, false);
 });
+
+test("detached account callbacks keep their receiver and separate component instances", async () => {
+  const first = setup(), second = setup();
+  await first.c.loadUserAdmin(); await second.c.loadUserAdmin();
+  const view = first.c.renderVals();
+  assert.notEqual(view.createUser, second.c.renderVals().createUser);
+  view.setUsersEmail({ target: { value: "detached@example.com" } });
+  view.setUsersLabel({ target: { value: "Detached callback" } });
+  await view.createUser();
+  assert(first.c.renderVals().adminUsers.some(u => u.displayLabel === "Detached callback"));
+  assert.equal(second.c.renderVals().adminUsers.length, 2);
+  assert.equal(second.c.state.usersEmail, "");
+  assert.equal(second.calls.filter(row => row[0] === "POST").length, 0);
+  assert.equal(first.c.renderVals().createUser, view.createUser);
+});
+
+test("one component's stale account read cannot replace another component's current rows", async () => {
+  const first = setup(), second = setup();
+  let finish;
+  first.window.VeritasAPI.get = () => new Promise(resolve => { finish = resolve; });
+  second.window.VeritasAPI.get = async () => [user("second-only")];
+  const pending = first.c.loadUserAdmin();
+  await second.c.loadUserAdmin();
+  first.c.handleSessionLost();
+  first.c.setState({ me: { kind: "admin" }, screen: "adminusers" });
+  finish([user("stale-first")]); await pending;
+  assert.equal(first.c.state.usersList.data, null);
+  assert.deepEqual(second.c.renderVals().adminUsers.map(u => u.id), ["second-only"]);
+  assert.equal(second.c.state.usersBusy, false);
+});

@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T4A completed; operator-account UI extraction.**
+  The handlers/view mapping move to `frontend/operator-accounts.js`; existing
+  state/lifecycle/template and API behavior remain unchanged. Named static
+  serving, detached callbacks and per-instance isolation are covered.
+  [A evidence](delivery/EVIDENCE-R4.md#r4-s1-t4a) owns Node/focused/full pytest,
+  migrated HTTP/graceful restart, actual Chrome, bindings/syntax, preservation
+  and separate review/publication records. Working data/demo preserved. Only A
+  completed; T4/F13/sprint/PI stay open. Exact next T4B (organization administration),
+  not started. Stop after A.
+
 - **Session 2026-10-22 - R4-S1-T3M completed; route composition finalized.**
   Four operations/three DTOs and endpoint discovery move to `api/public.py`;
   aggregate `routes.py` now contains only ordered assembly. The full 102-operation

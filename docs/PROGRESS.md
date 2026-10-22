@@ -4,35 +4,32 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3M complete and published: public surface and final route composition.**
-Four operations/three DTOs and endpoint discovery now live in `api/public.py`;
-`routes.py` is 69 lines of ordered assembly. The full 102-operation API/auth
-contract, public allowlist, `/domains` admin guard, effective liveness mode,
-published contact and advisory/human-review service response are unchanged.
-Focused/full offline pytest, migrated HTTP/graceful restart (83/83), actual
-Chrome (38/38), static/preservation and implementation self-review pass.
-[M evidence](delivery/EVIDENCE-R4.md#r4-s1-t3m) owns exact commands/counts/limits
-and the separate final completion review/publication record. Distinct final
-completion self-review found no blocking issues. Scoped task commit `73a9870`
-is pushed to `origin/main`; remote `73a98701fbe83abdc8eee4a7d555ced9edfd924a`
-was verified. This documentation-only confirmation records publication; the
-final response reports the remote SHA after this confirmation.
-Only M completed this session; A-M now close [T3](delivery/EVIDENCE-R4.md#r4-s1-t3).
-Working storage/demo are preserved. F13/sprint/PI remain open.
+**R4-S1-T4A complete: operator-account UI extraction.**
+The 14 handlers and view mapping now live in `frontend/operator-accounts.js`;
+shared state/lifecycle/template and API/auth behavior are unchanged. Node,
+focused/full offline pytest, bindings/syntax, migrated HTTP/graceful restart
+(46/46), actual Chrome (29/29), preservation and implementation self-review pass.
+[A evidence](delivery/EVIDENCE-R4.md#r4-s1-t4a) owns exact commands/counts/limits
+and the distinct final completion review/publication record. Final completion
+self-review found no blocking issues. Scoped commit/push/remote verification
+follow; publication is not yet claimed.
+Only A completed. [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
+Working storage/demo are preserved.
 
-**Exact next development task: R4-S1-T4 - Extract frontend components and remove
-dead handlers, not started.** Read [PI-R4](delivery/PI-R4.md),
-[WORKFLOW.md](delivery/WORKFLOW.md) and [M evidence](delivery/EVIDENCE-R4.md#r4-s1-t3m).
-Define its first bounded child contract before implementation in the next chat.
-No T4 work or deployment started in this session.
+**Exact next development task: R4-S1-T4B - Extract organization-administration
+UI handlers and view values, not started.** Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and A evidence.
+Define B's bounded contract before implementation in the next session. Preserve
+key secrecy/rotation/offboarding, operator/CSRF guards, reliability validation,
+navigation and pending-result invalidation. No B work or deployment started.
 
 ## Latest work
 
-Public reads work with anonymous/invalid credentials and no auth/store services;
-health invokes no model. Domain metadata retains admin key/session access and
-org/candidate refusals. Service endpoint discovery follows the requesting app's
-current routes. HTTP verifies unchanged public bodies and guarded domains after
-graceful restart; Chrome checks evaluation/auth/portal recovery and erasure.
+Detached account callbacks retain their component and separate instances share
+no handlers or pending results. Existing list/status/filter/page/create/delete,
+CSRF/plane refusals, ambiguous-write copy, draft recovery and late-result guards
+remain unchanged. HTTP proves module delivery/restart; actual Chrome exercises
+persisted accounts, reload/errors, navigation, revocation and self-deletion.
 Working DB/unrelated tracked files match the baseline; no demo restart.
 Publication uses G's existing per-command GitHub account selection. Ignored
 artifact removal stays outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md)
@@ -42,7 +39,7 @@ owns the feature overview.
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3m.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4a.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

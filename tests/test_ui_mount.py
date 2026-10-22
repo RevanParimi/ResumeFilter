@@ -11,6 +11,8 @@ every check already runs (tests/test_cookie_posture.py).
 from __future__ import annotations
 
 from pathlib import Path
+import re
+from urllib.parse import urljoin
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -29,6 +31,18 @@ def test_the_ui_is_served_without_authentication(services):
     resp = client.get("/ui/api.js")
     assert resp.status_code == 200
     assert "veritas" in resp.text[:400].lower()
+
+
+def test_entry_page_delivers_each_declared_local_script_without_authentication(services):
+    client = TestClient(create_app(services))
+    page = client.get("/ui/")
+    scripts = re.findall(r'<script\s+src="(\./[^"]+)"', page.text)
+    assert "./operator-accounts.js" in scripts
+    for source in scripts:
+        response = client.get(urljoin("/ui/", source))
+        assert response.status_code == 200, source
+        assert response.content == (ROOT / "frontend" / source.removeprefix("./")).read_bytes()
+        assert "javascript" in response.headers["content-type"], source
 
 
 def test_the_mount_root_is_the_frontend_directory(services):

@@ -10,6 +10,7 @@ const html = fs.readFileSync(path.join(ROOT, "frontend/Veritas.dc.html"), "utf8"
 const open = html.indexOf('<script type="text/x-dc"');
 const start = html.indexOf(">", open) + 1;
 const logic = html.slice(start, html.indexOf("</script>", start));
+const operatorAccountsSource = fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(ROOT, "frontend/api.js"), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const report = { id: "rep_server_123", domain: "genai", verdicts: [] };
@@ -27,6 +28,7 @@ function component(kind = "org", post) {
   class Reader {
     readAsDataURL(file) { this.result = "data:application/pdf;base64," + file.payload; queueMicrotask(() => this.onload()); }
   }
+  new Function("window", operatorAccountsSource)(window);
   const C = new Function("DCLogic", "window", "document", "navigator", "FileReader",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval", logic + "\nreturn Component;")(
     DCLogic, window, window.document = {}, {}, Reader, setTimeout, clearTimeout, () => 0, () => {});

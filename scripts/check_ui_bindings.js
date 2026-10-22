@@ -42,6 +42,8 @@ const fakeWindow = {
 };
 new Function("window", fs.readFileSync(API_JS, "utf8"))(fakeWindow);
 
+new Function("window", fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8"))(fakeWindow);
+
 class DCLogic {
   setState() {}
 }

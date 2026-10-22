@@ -95,5 +95,8 @@ general measured performance claim.
 [R4-S1-T3](docs/delivery/EVIDENCE-R4.md#r4-s1-t3) is complete: API handlers
 and DTOs live in product modules, with `routes.py` limited to ordered assembly.
 The full API/auth contract, tenant/subject ownership, consent/erasure and
-advisory responses are preserved. A-M own their validation evidence. Frontend
-extraction T4 and sprint integration remain pending; F13/sprint/PI stay open.
+advisory responses are preserved. A-M own their validation evidence.
+Frontend extraction T4 is in progress: [T4A](docs/delivery/EVIDENCE-R4.md#r4-s1-t4a)
+moves operator-account handlers/view values into a plain script while preserving
+their actual account and recovery flows. Other frontend areas and sprint
+integration remain pending; T4/F13/sprint/PI stay open.

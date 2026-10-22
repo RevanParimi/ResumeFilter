@@ -57,7 +57,9 @@ log = get_logger("main")
 #: the filesystem, so git's opinion of a file has no bearing on whether it is
 #: public. Retired design-system bundles are not application assets; restoring
 #: an old `_ds` directory must not make its files public again.
-UI_ASSETS = frozenset({"api.js", "support.js", "Veritas.dc.html"})
+UI_ASSETS = frozenset({
+    "api.js", "support.js", "Veritas.dc.html", "operator-accounts.js",
+})
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open
 #: `/ui`, and until this existed that redirected to `/ui/` and 404'd: there is

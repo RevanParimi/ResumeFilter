@@ -106,7 +106,17 @@ def main():
         try:
             with ExitStack() as actors:
                 a, b, stranger = [actors.enter_context(client(base)) for _ in range(3)]
+                def public_ui():
+                    page = stranger.get("/ui/")
+                    module = stranger.get("/ui/operator-accounts.js")
+                    checks.check("anonymous UI delivers its declared extracted account module",
+                        page.status_code == module.status_code == 200
+                        and '<script src="./operator-accounts.js"></script>' in page.text
+                        and module.content == (ROOT / "frontend/operator-accounts.js").read_bytes()
+                        and "javascript" in module.headers["content-type"]
+                        and stranger.get("/ui/not-an-asset.txt").status_code == 404)
                 with server() as (admin, restart_app):
+                    public_ui()
                     with engine.connect() as conn:
                         checks.check("scratch schema is migrated to current head", conn.scalar(
                             text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
@@ -279,6 +289,7 @@ def main():
 
                 env["DEE_RETENTION_SWEEP_ENABLED"] = "true"
                 with server() as (admin, restart_app):
+                    public_ui()
                     before_apply = resume_ids()
                     applied = require(b.post("/admin/retention/sweep", json={"dry_run": False}))
                     checks.check("enabled sweep after graceful restart deletes exactly previewed expired resumes",
