@@ -108,7 +108,7 @@ def main():
                 a, b, stranger = [actors.enter_context(client(base)) for _ in range(3)]
                 def public_ui():
                     page = stranger.get("/ui/")
-                    for name in ("operator-accounts.js", "organization-admin.js"):
+                    for name in ("operator-accounts.js", "organization-admin.js", "curation.js"):
                         module = stranger.get(f"/ui/{name}")
                         checks.check(f"anonymous UI delivers its declared extracted module {name}",
                             page.status_code == module.status_code == 200

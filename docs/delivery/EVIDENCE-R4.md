@@ -3006,3 +3006,198 @@ commit/push. No C work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4C - Extract curation UI handlers and view values**, not
 started. Define its bounded contract in the existing T4 record before
 implementation in the next session. Stop after B publication.
+
+## <a id="r4-s1-t4c"></a>R4-S1-T4C - Extract curation UI logic
+
+Status: done (2026-10-22); publication follows final completion review. Parent:
+[T4](tasks/R4-S1-T4.md). Prerequisite: [T4B](#r4-s1-t4b), done/published.
+
+### Contract and acceptance
+
+Move curation handlers and the curation-only view mapping from
+`frontend/Veritas.dc.html` into `frontend/curation.js` using the existing
+plain-script factory/subclass seam. Pass API, timeout, error and idle-resource
+helpers explicitly and compose values at their existing precedence. Keep shared
+state, navigation, session-loss/unmount invalidation, template, API client,
+generated runtime and backend behavior unchanged. Add only this named module to
+public static delivery and load it in the existing offline execution entry points.
+
+Acceptance: the operator sees actual pending terms/counts/source types and
+cursor pages, with correct loading/empty/error states. Review starts with a blank
+alias, and map/create/ignore sends the exact loaded revision only after an
+explicit action. Stale/missing snapshots clear drafts and require selection of
+the refreshed term. Ambiguous writes and malformed receipts require a successful
+read before another explicit decision; never replay automatically or advertise
+optimistic success. Known CSRF/policy/conflict/validation refusals retain drafts
+where appropriate. Wrong planes and other screens cannot fetch/mutate or render
+raw terms, private errors or editor drafts. Navigation, session loss and unmount
+invalidate late reads/decisions. Detached callbacks keep their receiver and
+identity; component instances have separate mutable state and pending tokens,
+and separate factory compositions retain supplied helpers. All shipped bindings
+and the ordered API/auth contract remain intact. Remove only proven dead or
+duplicate curation code in this bounded area.
+
+### Required validation
+
+Extend `scripts/test_ui_curation.js` with before/after detached-callback and
+instance-isolation characterizations. Retain its revision/receipt/error/lifecycle
+coverage. Extend existing mount and migrated HTTP module-delivery checks. Run
+focused UI/mount/image, curation/revision/auth and ordered API-contract pytest;
+full offline pytest; bindings and JS syntax including extracted inline logic.
+Reuse `scripts/smoke_curation_activation.py --browser` for migrated scratch HTTP,
+real Chrome review/reload/error/auth recovery and graceful app restart. Existing
+`scripts/smoke_r3_s2_q.py` covers module delivery and combined operator restart.
+Record implementation self-review, preservation/docs checks, completion and a
+distinct final self-review before scoped commit/push/remote verification. No
+schema/transaction/concurrency changes; no new PostgreSQL gate applies. Preserve
+working storage, unrelated work and the existing demo. Stop after C; next child
+D will extract evaluation/report UI logic under a contract defined next session.
+T4/F13/sprint/PI remain open.
+
+### Evidence
+
+Starting HEAD `036e1e1f4030e630a69b2b1f7ec1f8f654a6e300`; initial worktree clean.
+This pure extraction uses passing before/after characterizations, not a
+product-defect reproduction. Sanitized runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t4c.py <tag> <Python args>` clears inherited DEE config/
+keys, ignores `.env`, blocks external GitHub and uses existing fake providers
+and isolated stores. No arguments after the tag runs project `-m pytest -q
+--tb=short`; logs use `.pytest_cache/r4-s1-t4c-<tag>.txt`. Baseline hashes cover
+724 tracked files including the working DB; local artifacts stay ignored.
+
+Pre-move `node --test scripts/test_ui_curation.js`: **45 passed, 0 failed,
+0 skipped, 627.11ms**; post-move same command: **45 passed, 0 failed,
+0 skipped, 388.92ms**, both exit 0. Counts include the imported evaluation/API
+suite. New characterizations exercise detached callback receivers and stable
+identity, separate factory helpers/drafts/decisions, and same-class instances
+with concurrent decisions, account-loss invalidation and another instance's
+pending editor. Existing checks cover map/create/ignore with exact revisions
+and blank aliases, cursor encoding and overlap/revision changes, malformed pages
+and receipts, known/ambiguous refusals, successful read before explicit retry,
+no automatic replay, duplicate-submit/racing edits, stale/missing snapshots,
+wrong-plane masking and navigation/session/unmount guards.
+
+Focused `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py
+tests/test_api_route_extraction.py tests/test_curation_api.py
+tests/test_curation_review_revisions.py tests/test_auth_api.py
+tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py`: **131 passed, 17 skipped, 15 warnings in
+75.17s (0:01:15)**, exit 0 (82.39s runner). Includes all seven offline handler
+subprocesses, anonymous module delivery with exact bytes/media type, static
+confinement, image COPY/ignore contracts and unchanged ordered 102-operation
+API/auth/OpenAPI contract. Curation revision coverage retains its isolated
+stores and ownership/expiry/erasure boundaries; optional environment skips do
+not prove PostgreSQL or omitted cases. Image contract checks are not a build.
+
+Migrated HTTP plus actual Chrome `browser-journey
+scripts/smoke_curation_activation.py --browser`: **53/53 combined checks**,
+exit 0, 57.75s runner. Scratch SQLite migrates to 0029; real captured sign-in,
+actual queue, explicit map/create/ignore, revision binding, persisted approved
+alias/operator and subsequent normalization pass. Actual Chrome covers blank
+alias, validation/conflict, reload, synthetic network/timeout/503 and failed
+read recovery, navigation/late success, 20/25-row pagination, refused/malformed
+reads, actual stale expiry/erasure/reviewer revocation, org/candidate denials,
+raw-state clearing and no console exceptions. HTTP covers capture/ownership,
+erasure, raw-free receipts, CSRF, legacy/expired-state handling and
+maintenance. Three scratch app lifespans exit gracefully; subsequent restart
+preserves Chrome-approved decisions and normalization. Browser transport faults
+and GitHub evidence are synthetic; ordinary auth/decisions use real HTTP.
+Chrome requires existing CDN internet. No live-provider or measured-quality
+claim. Working storage and the existing demo are untouched.
+
+Combined operator HTTP `operator-journey scripts/smoke_r3_s2_q.py`: **50/50**,
+exit 0, 30.79s runner. Anonymous module delivery now includes curation alongside
+the account/organization modules, exact bytes/media type and unrelated-path
+refusal before/after restart. Existing account/session, retention, metrics,
+signal, organization/curation, consent/ownership, restart/revocation and
+log-privacy checks pass. Both scratch app lifespans require graceful exit 0.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass.
+`review -I .pytest_cache/review_r4_s1_t4c.py`: exit 0, 2.80s runner; `node
+--check` covers API client, generated runtime, account/organization/curation
+modules, changed Node behavior scripts, binding checker and extracted inline
+logic (`.pytest_cache/r4-s1-t4c-inline.js`). Project `compile -m compileall -q
+src/app/main.py tests/test_ui_mount.py scripts/smoke_r3_s2_q.py`: exit 0,
+0.32s runner. Existing frontend COPY/ignore includes the named module;
+Dockerfile, generated runtime and API client are unchanged. No image build is
+claimed. Tracked/source whitespace passes.
+
+Implementation self-review: HEAD `036e1e1` plus HTML/new curation module, named
+static allowlist, Node/checker/HTTP entry points and mount test. Specification
+review maps the bounded curation contract to baseline/final Node, focused API/
+revision/route checks, actual Chrome and migrated HTTP. Correctness review
+traces composed-class initialization, receiver identity, supplied helper/IDLE
+capture, view precedence, review-revision binding and raw-free receipts,
+per-instance read/review tokens, draft recovery, stale/missing snapshots,
+navigation/session/unmount cleanup, non-admin/off-screen masking, no optimistic
+decision success or automatic replay, static confinement and packaging.
+All **16** handler bodies and complete view inputs/mapping are text-identical;
+template/state/lifecycle and other logic are identical after normalizing the
+script/base/value composition edits. Main's AST changes only the named static
+allowlist entry. Thirteen reviewed source/contract hashes are recorded. No
+blocking finding remains. This same-agent self-review is not independent
+review. No schema/transaction/concurrency changes or new PostgreSQL gate apply.
+No dead handler or sample/live curation duplicate was found to remove in this
+bounded area; other screens remain for later children.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4c.py`:
+**711** unrelated tracked files, working DB and **13** reviewed hashes unchanged;
+**265** scoped local Markdown links/anchors and tracked/staged/source whitespace
+pass. Tracking branch is `origin/main`; its pre-publication remote matches
+starting HEAD.
+
+Full pytest `full-reviewed` (no extra runner arguments; project `-m pytest -q
+--tb=short`): **3539 passed, 505 skipped, 127 warnings in 953.17s (0:15:53)**,
+exit 0 (966.32s runner). Existing Starlette/httpx deprecation
+and SQLite expression-index reflection/autogenerate warnings remain. Optional
+and environment skips do not prove omitted cases. Thirteen reviewed source/
+contract hashes remain unchanged; only documentation changed during the run.
+
+All bounded C acceptance and required validation gates are complete. Curation
+handlers/view values have one implementation in the new plain script. Shared
+state/lifecycle/template and API/auth behavior remain unchanged. No dead curation
+handler or sample/live duplicate was found to remove. C alone completed this
+session; T4/F13/sprint/PI remain open. Working storage/demo are preserved.
+No D implementation or deployment started.
+
+### Completion review and publication
+
+After required validation and completion records, a distinct final same-agent
+self-review examined HEAD `036e1e1` plus the exact fourteen staged files: HTML/new
+curation module, named static allowlist, existing Node/checker/HTTP entry points,
+mount test, feature overview, handoff, roadmap, PI/evidence and active T4 parent
+record. Specification review confirms the bounded extraction, required
+validation, unchanged ordered API/auth contract, single curation implementation,
+child evidence ownership and D-only next pointer, with T4/F13/sprint/PI open.
+
+Correctness review rechecks composed-class field initialization (bound handlers
+capture their receiver before shared state initializes but read it only when
+called), supplied API/error/timeout/IDLE capture, view precedence, exact revision
+binding, receipt allowlisting, explicit blank-alias review, per-instance load/
+decision tokens, stale/missing snapshots, uncertain writes without replay,
+read recovery before explicit retry, navigation/session/unmount cleanup,
+non-admin/off-screen masking, static confinement and packaging. Generated
+runtime/API client and other screen logic remain unchanged. No blocking finding
+remains. This final self-review is separate from implementation review; no
+independent review is claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4c.py`: exit 0, 1.28s runner;
+all sixteen original handler bodies and complete view inputs/mapping match,
+template/state/lifecycle and main AST comparisons pass, and shipped/test/inline
+JS syntax plus thirteen reviewed source/contract hashes match. Final preservation
+confirms **711** unrelated tracked files, working DB and **13** reviewed hashes
+unchanged; **271** scoped local links/anchors and tracked/staged whitespace pass.
+Only documentation changed during/after full pytest. Exact staged scope excludes
+secrets, working data and local artifacts. Tracking branch is `origin/main`;
+its pre-publication remote matches starting HEAD. Publication uses G's existing
+per-command account selection. No D work, demo restart or deployment started.
+
+Scoped commit/push and remote verification follow this recorded completion
+review.
+
+### Handoff
+
+Exact next: **R4-S1-T4D - Extract evaluation/report UI handlers and view values**,
+not started. Define its bounded contract in the existing T4 record before
+implementation in the next session. Stop after C publication.

@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T4C completed; curation UI extraction.**
+  The 16 handlers/view mapping move to `frontend/curation.js`; shared state,
+  lifecycle, template and API/auth behavior are preserved. Explicit approval,
+  revision binding, stale/uncertain-write recovery and instance isolation remain
+  covered. [C evidence](delivery/EVIDENCE-R4.md#r4-s1-t4c) owns before/after Node,
+  focused/full pytest, migrated HTTP/graceful restart and actual Chrome,
+  bindings/syntax, preservation and separate review/publication records. Working
+  data/demo preserved. Only C completed; T4/F13/sprint/PI stay open. Exact next
+  T4D (evaluation/report), not started. Stop after C.
+
 - **Session 2026-10-22 - R4-S1-T4B completed; organization UI extraction.**
   The 20 handlers/view mapping move to `frontend/organization-admin.js` using
   A's plain-script seam; shared state/lifecycle/template and API/auth behavior

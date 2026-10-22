@@ -210,3 +210,52 @@ test("session loss and unmount invalidate stale success/error reads and writes",
   window.VeritasAPI.get = () => new Promise(r => { finish = r; }); c.reloadCuration(); c.handleSessionLost();
   finish({ terms: [term("old account raw")], next_cursor: null }); await settle(); assert.equal(c.state.curationList.data, null);
 });
+
+test("detached curation callbacks keep their receiver and separate factory drafts and decisions", async () => {
+  const first = setup(), second = setup();
+  await first.c.reloadCuration(); await second.c.reloadCuration();
+  const view = first.c.renderVals();
+  assert.notEqual(view.approveCuration, second.c.renderVals().approveCuration);
+  view.curation[0].review();
+  assert.equal(first.c.state.curationAlias, "");
+  view.setCurationAlias({ target: { value: "Detached approved alias" } });
+  view.setCurationCanonical({ target: { value: "python" } });
+  view.setCurationCategory({ target: { value: "language" } });
+  await view.approveCuration();
+  assert.equal(first.c.renderVals().curationNotice, "Vocabulary approved.");
+  const post = first.calls.find(row => row[0] === "POST");
+  assert.equal(post[2].alias, "Detached approved alias");
+  assert.equal(post[2].expected_revision, "a".repeat(64));
+  assert.equal(second.c.renderVals().curation.length, 1);
+  assert.equal(second.c.state.curationSelection, null);
+  assert.equal(second.c.state.curationAlias, "");
+  assert.equal(second.calls.filter(row => row[0] === "POST").length, 0);
+  assert.equal(first.c.renderVals().approveCuration, view.approveCuration);
+});
+
+test("same-class instances keep pending curation decisions and stale account responses separate", async () => {
+  const { c, window } = setup();
+  const sibling = new c.constructor();
+  Object.assign(sibling.state, { screen: "curation", plane: "operator", me: { kind: "admin" } });
+  await review(c); await review(sibling);
+  assert.notEqual(c.state.curationList, sibling.state.curationList);
+  assert.notEqual(c.renderVals().approveCuration, sibling.renderVals().approveCuration);
+  const pending = [];
+  window.VeritasAPI.post = (_p, body) => new Promise(resolve => { pending.push(() => resolve(receipt(body))); });
+  const firstDecision = c.approveCuration();
+  assert(c.state.curationBusy); assert.equal(sibling.state.curationBusy, false);
+  sibling.renderVals().setCurationAlias({ target: { value: "Sibling approved alias" } });
+  const siblingDecision = sibling.renderVals().approveCuration();
+  c.handleSessionLost();
+  c.setState({ screen: "curation", me: { kind: "admin" }, curationAlias: "New account draft" });
+  pending[0](); await firstDecision;
+  assert.equal(c.state.curationList.data, null);
+  assert.equal(c.state.curationAlias, "New account draft");
+  assert.equal(c.state.curationNotice, "");
+  assert(sibling.state.curationBusy);
+  assert.equal(sibling.state.curationAlias, "Sibling approved alias");
+  pending[1](); await siblingDecision;
+  assert.equal(sibling.state.curationBusy, false);
+  assert.equal(sibling.state.curationNotice, "Vocabulary approved.");
+  assert.equal(c.state.curationAlias, "New account draft");
+});

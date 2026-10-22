@@ -4,45 +4,42 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4B complete and published: organization-administration UI extraction.**
-The 20 handlers/view mapping now live in `frontend/organization-admin.js`;
-shared state/lifecycle/template and API/auth behavior are preserved. Baseline/
-final Node, focused/full offline pytest, bindings/syntax, migrated HTTP/graceful
-restart (48/48), actual Chrome (28/28), preservation and implementation
-self-review pass. [B evidence](delivery/EVIDENCE-R4.md#r4-s1-t4b) owns exact
-commands/counts/limits and the distinct final completion review/publication
-record. Distinct final completion self-review found no blocking issues. Scoped
-task commit `d7e7500` is pushed to `origin/main`; remote
-`d7e7500a12a3c62fb0f38187de24771eab12c805` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation. Only B completed this session;
+**R4-S1-T4C complete: curation UI extraction.**
+The 16 handlers/view mapping now live in `frontend/curation.js`; shared state,
+lifecycle/template and API/auth behavior are preserved. Before/after Node,
+focused/full offline pytest, bindings/syntax, migrated HTTP/actual Chrome
+(53/53 combined), operator HTTP/graceful restart (50/50), preservation and
+implementation self-review pass. [C evidence](delivery/EVIDENCE-R4.md#r4-s1-t4c)
+owns exact commands/counts/limits and the distinct final completion review/
+publication record. Distinct final completion self-review found no blocking
+issues; scoped commit/push is next. Only C completed this session;
 [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
-**Exact next development task: R4-S1-T4C - Extract curation UI handlers and
-view values, not started.** Read [PI-R4](delivery/PI-R4.md),
-[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and B evidence.
-Define C's bounded contract before implementation in the next session. Preserve
-review-revision/ownership guards, explicit human approval, request recovery,
-navigation and pending-result invalidation. No C work or deployment started.
+**Exact next development task: R4-S1-T4D - Extract evaluation/report UI handlers
+and view values, not started.** Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and C evidence.
+Define D's bounded contract before implementation in the next session. Preserve
+plane/ownership/consent boundaries, advisory results, uncertain-write recovery
+and navigation/session invalidation. No D work or deployment started.
 
 ## Latest work
 
-Organization handlers retain their component receiver, including instances of
-the same composed class. Pending reads/mutations and one-time keys remain
-isolated; creation, reliability, rotation/offboarding, confirmations, key
-clearing, plane/CSRF refusals and uncertain-write recovery are unchanged.
-HTTP proves module delivery/graceful restart; Chrome proves the actual rendered
-workflow, persistence/reload/errors and session expiry. Working DB/unrelated
-tracked files match baseline; no demo restart. Publication uses G's existing
-per-command GitHub account selection. Ignored-artifact removal remains outside
-scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+Detached curation callbacks retain their receiver, and same-class instances
+keep pending decisions/drafts separate. Exact loaded revisions, blank approved
+aliases, explicit map/create/ignore, stale/missing snapshot handling and read
+recovery before an explicit retry are preserved. HTTP/Chrome proves persisted
+vocabulary and normalization, errors/reload, stale expiry/erasure, revocation,
+plane refusal and graceful app restart. Working DB/unrelated tracked files match
+baseline; no demo restart. Publication uses G's existing per-command GitHub
+account selection. Ignored-artifact removal stays outside scope;
+[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4b.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4c.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

@@ -12,6 +12,7 @@ const start = html.indexOf(">", open) + 1;
 const logic = html.slice(start, html.indexOf("</script>", start));
 const operatorAccountsSource = fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8");
 const organizationAdminSource = fs.readFileSync(path.join(ROOT, "frontend/organization-admin.js"), "utf8");
+const curationSource = fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(ROOT, "frontend/api.js"), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const report = { id: "rep_server_123", domain: "genai", verdicts: [] };
@@ -31,6 +32,7 @@ function component(kind = "org", post) {
   }
   new Function("window", operatorAccountsSource)(window);
   new Function("window", organizationAdminSource)(window);
+  new Function("window", curationSource)(window);
   const C = new Function("DCLogic", "window", "document", "navigator", "FileReader",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval", logic + "\nreturn Component;")(
     DCLogic, window, window.document = {}, {}, Reader, setTimeout, clearTimeout, () => 0, () => {});

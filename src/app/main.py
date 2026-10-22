@@ -58,7 +58,7 @@ log = get_logger("main")
 #: public. Retired design-system bundles are not application assets; restoring
 #: an old `_ds` directory must not make its files public again.
 UI_ASSETS = frozenset({
-    "api.js", "support.js", "Veritas.dc.html", "operator-accounts.js", "organization-admin.js",
+    "api.js", "support.js", "Veritas.dc.html", "operator-accounts.js", "organization-admin.js", "curation.js",
 })
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open
