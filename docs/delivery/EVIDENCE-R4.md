@@ -2176,7 +2176,7 @@ deployment during publication.
 
 ## <a id="r4-s1-t3l"></a>R4-S1-T3L - Extract operator routes
 
-Status: done (2026-10-22). Only L completed this session; publication pending.
+Status: done and published (2026-10-22). Only L completed this session.
 
 ### Contract and acceptance
 
@@ -2325,6 +2325,23 @@ generated artifacts are excluded. Tracking branch is `origin/main`; publication
 uses G's existing per-command account selection. Scoped commit/push and remote
 verification follow; actual publication will be recorded here.
 No M/T4 work, demo restart or deployment started.
+
+Scoped task commit **`26d9515`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`f981714` to `26d9515`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`26d9515bf122b73be549ce9ad1eafd05539fe1b8`**. Working tree was clean.
+No M work, demo restart or deployment occurred.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this evidence section. Its separate final self-review against
+`26d9515` checks the exact prose diff, actual remote evidence, unchanged task
+limits and M-only next pointer; no blocking finding remains. Scoped links,
+whitespace and preservation pass. Application code remains at the full
+pytest/HTTP/Chrome validated state, so no application tests are rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push.
 
 ### Handoff
 

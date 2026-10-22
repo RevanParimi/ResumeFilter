@@ -4,7 +4,7 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3L complete: operator route extraction. Final review complete; publication pending.**
+**R4-S1-T3L complete and published: operator route extraction.**
 Six operations/three DTOs now live in `api/operator.py`; aggregate `routes.py`
 is 200 lines. Full 102-operation ordered auth/OpenAPI, account/session revocation,
 retention safeguards, Prometheus media type and advisory signal labels/refusals
@@ -12,7 +12,10 @@ remain unchanged. Focused/full offline pytest, migrated HTTP/graceful restart
 (44/44), actual Chrome combined journey (62/62), static/preservation and
 implementation self-review pass. [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l)
 owns exact commands/counts/limits. Distinct final completion self-review found no
-blocking issues; scoped commit/push and remote verification follow.
+blocking issues. Scoped task commit `26d9515` is pushed to `origin/main`; remote
+`26d9515bf122b73be549ce9ad1eafd05539fe1b8` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation. Only L completed this session.
 Working storage/demo are preserved; no M/T4 work or deployment started.
 
 **Exact next development task: R4-S1-T3M - Extract public health/domain/grievance/
