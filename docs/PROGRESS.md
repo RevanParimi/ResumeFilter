@@ -4,7 +4,7 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3K complete: curation route extraction.**
+**R4-S1-T3K complete and published: curation route extraction.**
 Two operations and one DTO now live in `api/curation.py`; aggregate `routes.py`
 is 328 lines. Full 102-operation ordered auth/OpenAPI, operator key/session CSRF
 and decision identity, source ownership/erasure, paging/status/cursors,
@@ -12,8 +12,11 @@ revision/alias rollback and normalization behavior remain unchanged. Focused/
 full offline pytest, migrated HTTP/graceful restart (20/20), actual Chrome combined
 journey (53/53), static/preservation and implementation self-review passed.
 [K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k) owns commands, counts and limits.
-Distinct final completion self-review found no blocking issues. Scoped commit/push
-and remote verification are the remaining publication steps; only K completed.
+Distinct final completion self-review found no blocking issues. Scoped task commit
+`f4e41dc` is pushed to `origin/main`; remote
+`f4e41dc1df27da646b66ad6ed9a8032b873e6b81` was verified. This documentation-only
+confirmation records publication; the final response reports its remote SHA.
+Only K completed; no next task or deployment started during publication.
 
 **Exact next development task: R4-S1-T3L - Extract operator accounts, retention,
 metrics and signal-quality routes, not started.** Read
