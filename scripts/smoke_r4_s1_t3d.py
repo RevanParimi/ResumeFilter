@@ -87,13 +87,14 @@ def main():
     def public_ui():
         with client(base) as page:
             entry = page.get("/ui/")
-            module = page.get("/ui/evaluation-report.js")
-            checks.check("anonymous UI delivers its declared evaluation/report module",
-                entry.status_code == module.status_code == 200
-                and '<script src="./evaluation-report.js"></script>' in entry.text
-                and module.content == (ROOT / "frontend/evaluation-report.js").read_bytes()
-                and "javascript" in module.headers["content-type"]
-                and page.get("/ui/not-an-asset.txt").status_code == 404)
+            for name in ("evaluation-report.js", "screening.js"):
+                module = page.get(f"/ui/{name}")
+                checks.check(f"anonymous UI delivers its declared {name} module",
+                    entry.status_code == module.status_code == 200
+                    and f'<script src="./{name}"></script>' in entry.text
+                    and module.content == (ROOT / "frontend" / name).read_bytes()
+                    and "javascript" in module.headers["content-type"]
+                    and page.get("/ui/not-an-asset.txt").status_code == 404)
 
     with client(base, headers={"X-API-Key": ADMIN}) as control, client(base) as actor, client(base) as other:
         with server():

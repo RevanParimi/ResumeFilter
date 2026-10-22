@@ -8,7 +8,7 @@ import pytest
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="offline UI behavior requires Node")
 @pytest.mark.parametrize("screen", [
-    "admin_orgs", "admin_users", "curation", "evaluate", "interview",
+    "admin_orgs", "admin_users", "curation", "evaluate", "screening", "interview",
     "interview_audio", "verification",
 ])
 def test_shipped_handlers_offline(screen):

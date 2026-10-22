@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-10-16. This is the common feature summary. For the exact next
+Updated: 2026-10-23. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -98,9 +98,10 @@ The full API/auth contract, tenant/subject ownership, consent/erasure and
 advisory responses are preserved. A-M own their validation evidence.
 Frontend extraction T4 is in progress: [T4A](docs/delivery/EVIDENCE-R4.md#r4-s1-t4a),
 [T4B](docs/delivery/EVIDENCE-R4.md#r4-s1-t4b),
-[T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c) and
-[T4D](docs/delivery/EVIDENCE-R4.md#r4-s1-t4d) move account, organization,
-curation and evaluation/report handlers/view values into plain scripts,
+[T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c),
+[T4D](docs/delivery/EVIDENCE-R4.md#r4-s1-t4d) and
+[T4E](docs/delivery/EVIDENCE-R4.md#r4-s1-t4e) move account, organization,
+curation, evaluation/report and screening handlers/view values into plain scripts,
 preserving saved operations, advisory context, human review and recovery flows.
-Screening extraction is next; other frontend areas and sprint integration remain
-pending. T4/F13/sprint/PI stay open.
+Candidate portal/auth extraction is next; other frontend areas and sprint
+integration remain pending. T4/F13/sprint/PI stay open.

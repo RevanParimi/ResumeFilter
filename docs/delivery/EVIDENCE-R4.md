@@ -3450,3 +3450,209 @@ commit/push. No E work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4E - Extract screening UI handlers and view values**, not
 started. Define its bounded contract in the existing T4 record before
 implementation in the next session. Stop after D publication.
+
+## <a id="r4-s1-t4e"></a>R4-S1-T4E - Extract screening UI handlers and view values
+
+Status: done (2026-10-23); reviewed, publication pending. Parent:
+[T4](tasks/R4-S1-T4.md). Prerequisite: [D](#r4-s1-t4d), done/published.
+
+### Contract and acceptance
+
+Move batch/queue/summary loading, pagination, sequential processing, two-step
+deletion, file intake/registration and `screeningVals()` into
+`frontend/screening.js`, using the existing plain-script factory/subclass seam.
+Pass API/resource/display helpers explicitly. Keep shared state, resource loader,
+navigation/session/unmount lifecycle, row callback cache, `_readFile()` (also
+used by Instant check), report handlers/template, generated runtime and backend
+unchanged. Retain the current screening/report mapping precedence. No database,
+schema, API/auth, visual or processing-policy change is in scope.
+
+Acceptance: text/PDF intake keeps filename/type/error recovery and registration
+payloads; unsupported/empty/unreadable files refuse without invented success.
+Only registration or an explicit start drives processing. Calls stay sequential,
+duplicate starts do not add a concurrent call, any process error stops without
+automatic retry, stop/batch-switch/unmount/session loss retain existing pending
+successful process-result invalidation. In-app summary navigation retains the
+current driver without switching screens on completion. Switching/deleting a
+selected batch prevents an older detail/queue/summary read from restoring its
+view. Paging appends server
+cursors and preserves existing error/retry behavior. Delete propagation and
+two-step UI remain intact. Queue callbacks still open owned reports/feedback;
+rows without reports remain inert. Whole-batch summaries, screened denominators,
+unassessed/pending rows and advisory/human-review wording remain unchanged.
+Detached callbacks retain their receiver/identity; instances isolate mutable
+state, row caches, pending processing and batch-view guards. Preserve existing
+API plane/tenant/CSRF/consent/erasure contracts and exact static delivery.
+Remove only code proven dead in this area; no unrelated hardening or new worker.
+
+### Required validation
+
+Add screening characterizations beside the existing offline handler suites,
+reusing their composed-component fixture; run before and after extraction.
+Cover intake, sequential/error/late processing, batch read switching/deletion,
+paging, callback/instance isolation and rendered mapping semantics. Extend the
+existing handler pytest parametrization, anonymous module delivery/mount and
+migrated HTTP checks. Run focused UI/mount/image/screening/API-route/auth tests,
+full offline pytest, bindings, shipped/extracted JS syntax and diff checks.
+Run actual Chrome `scripts/check_ui_screening_extraction_browser.py` plus
+`scripts/check_ui_evaluate_browser.py` for shared file/report/session callers;
+reuse `scripts/smoke_r4_s1_t3d.py` for migrated scratch HTTP and graceful restart.
+Fake providers prove mechanics, not live-provider quality. No SQL transaction,
+concurrency or migration change means no new PostgreSQL gate. Record
+implementation self-review, preservation, completion and distinct final
+self-review before scoped commit/push/remote verification. Preserve working
+storage, unrelated work and the existing demo. Stop after E. Next child:
+**R4-S1-T4F - Extract candidate portal and authentication UI logic**, with its
+bounded contract defined next session. T4/F13/sprint/PI remain open.
+
+### Evidence
+
+Starting HEAD `a8dd784`; initial worktree clean. Sanitized runner
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t4e.py <tag> <Python args>`
+clears inherited DEE config/keys, ignores `.env`, blocks external GitHub and
+uses existing fake providers/isolated stores. Omitted Python args run project
+`-m pytest -q --tb=short`; logs use `.pytest_cache/r4-s1-t4e-<tag>.txt`.
+Baseline hashes cover 726 tracked files including the working DB. This pure
+extraction uses before/after characterizations, not a product-defect reproducer.
+
+`node --test scripts/test_ui_screening.js`: before **45 passed, 0 failed,
+0 skipped, 334.59ms**; after **45 passed, 0 failed, 0 skipped, 463.79ms**, exit 0.
+The screening suite reuses the existing component fixture and includes its 27
+evaluation/report cases plus 18 screening cases. Tests cover actual fake-reader
+text/PDF payloads, unsupported/empty/disk/indexed failures, explicit start,
+sequential/duplicate starts, counters, failure/manual restart, late successful
+process suppression after stop/batch switch/session/unmount, in-app summary
+navigation, all three batch read guards on switch/delete, paging/encoded
+cursors/refusal recovery, deletion propagation/errors, whole-batch denominators,
+inert/insufficient queue rows, report callbacks and same-class isolation.
+These are offline handler checks, not actual browser rendering.
+An initial draft run had one fixture-timing failure (42/43): the snapshot was
+taken before the newly selected batch's own reads settled. Waiting for those
+reads corrected the characterization; it was not a product-defect reproducer.
+
+Focused `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py tests/test_screening_api.py
+tests/test_screening_batches_api.py tests/test_screening_outcome_api.py
+tests/test_screening_unresolved_input.py tests/test_api_route_extraction.py
+tests/test_auth_api.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py`: **168 passed, 11 skipped, 1 warning in 51.49s**,
+exit 0. Covers eight offline handler subprocesses, anonymous exact module bytes/
+JavaScript media type, static confinement/packaging, tenant/CSRF/report/erasure
+boundaries and unchanged ordered 102-operation API/auth/OpenAPI contract.
+Environment skips do not prove PostgreSQL/omitted cases; no image build claimed.
+
+Actual Chrome `screening-browser scripts/check_ui_screening_extraction_browser.py`:
+**24/24**, exit 0, 22.65s runner. Migrated scratch SQLite (0029), captured sign-in,
+actual file picker/reading, browser-driven processing, private queue identities,
+summary counts, owned report/feedback/history, duplicate feedback clicks,
+two-step deletion, second intake, authenticated document reload, persisted batch
+list and injected 503 read/recovery all pass with no console exceptions. Requires
+existing CDN internet; Windows process stop is forced. Synthetic providers and
+transport faults prove mechanics, not live-provider behavior/quality.
+
+Migrated HTTP `http-journey scripts/smoke_r4_s1_t3d.py`: **20/20** plus reused
+screening HTTP contract **31/31**, exit 0, 27.78s runner. Both named modules
+are anonymously declared/delivered byte-for-byte with JavaScript media type
+before/after restart; unrelated static paths refuse. Named reviewer, private
+operator notes, tenant/CSRF/cursor/error/advisory boundaries, one-item processing
+bound, retry without replaying successful items and exact saved batch/queue/
+summary/report/outcomes survive restart. Both migrated scratch SQL app starts
+exit gracefully with disposal; the HTTP contract is not Chrome evidence.
+
+Implementation self-review: HEAD `a8dd784` plus HTML/new screening module,
+named static allowlist and offline/mount/HTTP entry points. Specification review
+maps the bounded extraction to before/after Node, focused API/auth/erasure,
+actual screening Chrome and migrated HTTP/restart. Correctness review traces
+subclass field initialization (`loadMore` exists before `moreBatches`, state is
+read only on invocation), explicit helper capture, unchanged mapping precedence
+and report callbacks, per-instance row cache/driver/view guards, filename/index
+errors, no automatic process retry, delete propagation, paging and existing
+navigation/session/unmount behavior. No dead handler or duplicate sample/live
+screening implementation was found to remove. No blocking finding remains;
+same-agent self-review is not independent review. Existing cancellation/paging
+semantics are preserved; this extraction adds no broader race-safety guarantee.
+
+`review -I .pytest_cache/review_r4_s1_t4e.py`: exit 0, 2.36s runner. All **22**
+handler fields and full screening/report view composition are text-identical;
+template/shared state/lifecycle/row cache/file reader/other screens are identical
+after normalizing only script/base composition. Main's AST changes only the
+named static allowlist entry. Shipped/test/checker/inline JS syntax passes;
+**18** reviewed source/harness/contract hashes recorded. Bindings:
+`node scripts/check_ui_bindings.js`, **589 bindings / 18 states**, pass.
+
+Actual Chrome `evaluation-browser scripts/check_ui_evaluate_browser.py`:
+**38/38**, plus shared harness **1/1**, exit 0, 33.34s runner. Organization
+text/PDF/duplicate/error recovery, saved report/feedback/hash reload, lost-write
+acknowledgement/read-only recovery, domain selection, navigation/late results,
+erasure/404/session expiry/stale 401, operator ad-hoc routes, candidate refusal,
+captured contact and portal consent/access/erasure pass with no console exceptions.
+Transport faults are synthetic; ordinary auth/mutations use real migrated
+scratch HTTP. CDN internet and forced Windows stop limitations remain.
+
+`compile -m compileall -q src/app/main.py tests/test_ui_mount.py
+tests/test_ui_handlers.py scripts/smoke_r4_s1_t3d.py`: exit 0, 0.17s runner.
+Full pytest `full-reviewed` (no extra runner arguments; project `-m pytest -q
+--tb=short`): **3540 passed, 505 skipped, 127 warnings in 753.45s (0:12:33)**,
+exit 0 (763.87s runner). Existing
+Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate
+warnings remain; optional/environment skips do not prove omitted cases. The
+eighteen reviewed source/harness/contract hashes are unchanged; only task
+documentation changed during the full run.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4e.py`:
+**713** unrelated tracked files, working DB and **18** reviewed hashes unchanged;
+scoped local Markdown links/anchors and tracked/staged/source whitespace pass.
+Tracking branch is `origin/main`; its pre-publication remote matched starting
+HEAD `a8dd784286e7ff04a42ec0c9f615a06afb6bcf6d`.
+
+All bounded E acceptance and required validation gates are complete. The 22
+handler fields and screening/report view composition now have one implementation
+in the new plain script. Shared state/lifecycle/row cache/file reader, template,
+API/auth and other screen logic remain unchanged. No dead handler or duplicate
+sample/live screening source was found to remove. No SQL transaction, concurrency
+or migration changes and no new PostgreSQL gate apply. Existing cancellation/
+paging semantics and browser-driven processing remain; durable continuation is
+R4-S2-T4. No broader race-safety, live-provider or accuracy claim is made.
+Working storage/demo are preserved. Only E completed this session;
+T4/F13/sprint/PI remain open. No F implementation or deployment started.
+
+### Completion review and publication
+
+After required checks and completion records, a distinct final same-agent
+self-review examined HEAD `a8dd784` plus the exact fifteen staged files:
+HTML/new screening module, named static allowlist, existing Node/checker/HTTP
+entry points, mount/handler tests, feature overview, handoff, roadmap,
+PI/evidence and active T4 parent. Specification review confirms the bounded
+extraction, required validation, unchanged ordered API/auth contract, one
+screening implementation, child evidence ownership and F-only next pointer,
+with T4/F13/sprint/PI still open.
+
+Correctness review rechecks base/derived field ordering and deferred state
+reads, explicit helper capture, stable detached callbacks, per-instance file/
+row-cache/driver/view state, report-map precedence, shared file-reader reuse,
+filename/index error recovery, sequential processing/no automatic retry,
+stop/batch-switch/session/unmount successful-result guards, in-app navigation,
+delete propagation and stale-read invalidation, paging/cursor/error recovery,
+whole-batch summary denominators, insufficient rows, advisory/human review,
+static confinement and packaging. Existing cancellation/paging limitations are
+preserved and disclosed; no new worker or backend semantics entered the diff.
+No blocking finding remains. This final self-review is separate from the
+implementation review; no independent review is claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4e.py --staged`: exit 0,
+2.18s runner. All 22 original handler fields and full screening/report mapping
+match; template/state/lifecycle/row cache/file reader and main AST comparisons
+pass. Shipped/test/checker/inline JS syntax and all 18 reviewed hashes match.
+The exact 15-file staged scope matches the reviewed files, excluding working
+data, secrets and local artifacts. Final preservation confirms 713 unrelated
+tracked files, working DB and 18 reviewed hashes unchanged; 283 scoped local
+links/anchors and tracked/staged/source whitespace pass. Only documentation
+changed during/after full pytest. The review-record prose is checked separately
+for scope/evidence/status accuracy before publication; application tests do not
+need rerunning for prose. Commit/push/remote verification pending.
+
+### Handoff
+
+Exact next: **R4-S1-T4F - Extract candidate portal and authentication UI logic**,
+not started. Define its bounded contract in the existing T4 record next session.
+Stop after E publication.

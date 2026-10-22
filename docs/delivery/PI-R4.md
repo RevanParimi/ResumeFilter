@@ -93,10 +93,14 @@ contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a), [T4B](EVIDENCE-R4.md#r4-s1-t4b),
 [T4C](EVIDENCE-R4.md#r4-s1-t4c) and [T4D](EVIDENCE-R4.md#r4-s1-t4d) are done
 (2026-10-22): account, organization, curation and evaluation/report logic live
 in plain scripts with the same shared lifecycle, API/auth and rendered behavior.
-Focused/full pytest, migrated HTTP/restart, actual Chrome, bindings/syntax,
-preservation and implementation self-review pass. D owns the distinct final
-completion review/publication record. Only D completed this session; exact next
-T4E (screening), not started. The parent, F13 and sprint/PI remain open.
+[T4E](EVIDENCE-R4.md#r4-s1-t4e) is done (2026-10-23): screening intake,
+batch/queue/summary loading, paging, processing, deletion and view composition
+live in `frontend/screening.js`, preserving shared lifecycle/file reading and
+API/auth behavior. Before/after Node, focused/full pytest, migrated HTTP/graceful
+restart, actual Chrome, bindings/syntax, preservation and implementation
+self-review pass. E owns its distinct final completion review/publication
+record. Only E completed this session; exact next T4F (candidate portal/auth),
+not started. The parent, F13 and sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

@@ -14,6 +14,7 @@ const operatorAccountsSource = fs.readFileSync(path.join(ROOT, "frontend/operato
 const organizationAdminSource = fs.readFileSync(path.join(ROOT, "frontend/organization-admin.js"), "utf8");
 const curationSource = fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8");
 const evaluationReportSource = fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8");
+const screeningSource = fs.readFileSync(path.join(ROOT, "frontend/screening.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(ROOT, "frontend/api.js"), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const report = { id: "rep_server_123", domain: "genai", verdicts: [] };
@@ -30,11 +31,13 @@ function component(kind = "org", post) {
   class DCLogic { props = {}; setState(update, callback) { Object.assign(this.state, typeof update === "function" ? update(this.state) : update); if (callback) callback(); } }
   class Reader {
     readAsDataURL(file) { this.result = "data:application/pdf;base64," + file.payload; queueMicrotask(() => this.onload()); }
+    readAsText(file) { this.result = file.text; queueMicrotask(() => this.onload()); }
   }
   new Function("window", operatorAccountsSource)(window);
   new Function("window", organizationAdminSource)(window);
   new Function("window", curationSource)(window);
   new Function("window", evaluationReportSource)(window);
+  new Function("window", screeningSource)(window);
   const C = new Function("DCLogic", "window", "document", "navigator", "FileReader",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval", logic + "\nreturn Component;")(
     DCLogic, window, window.document = {}, {}, Reader, setTimeout, clearTimeout, () => 0, () => {});

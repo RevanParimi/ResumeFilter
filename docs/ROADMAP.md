@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-T4E completed; screening UI extraction.**
+  The 22 handler fields and screening/report view composition move to
+  `frontend/screening.js`; shared state/lifecycle/row cache/file reader,
+  template and API/auth behavior are preserved.
+  [E evidence](delivery/EVIDENCE-R4.md#r4-s1-t4e) owns before/after Node,
+  focused/full pytest, both actual Chrome journeys, migrated HTTP/graceful
+  restart, bindings/syntax, preservation and separate review/publication records.
+  Existing processing/cancellation/paging semantics remain unchanged. Working
+  data/demo preserved. Only E completed; T4/F13/sprint/PI stay open. Exact next
+  T4F (candidate portal/auth), not started. Stop after E.
+
 - **Session 2026-10-22 - R4-S1-T4D completed; evaluation/report UI extraction.**
   The 16 handlers, probe cache and evaluation/report/feedback mappings move to
   `frontend/evaluation-report.js`; shared state/lifecycle/PDF reader, template
