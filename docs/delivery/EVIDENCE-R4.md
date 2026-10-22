@@ -2173,3 +2173,164 @@ route tests and existing operator HTTP/Chrome journeys. Preserve admin auth/CSRF
 account/session revocation, dry-run retention defaults and refusal, metrics media
 type and advisory label/report behavior. T4 has not started. No next task or
 deployment during publication.
+
+## <a id="r4-s1-t3l"></a>R4-S1-T3L - Extract operator routes
+
+Status: done (2026-10-22). Only L completed this session; publication pending.
+
+### Contract and acceptance
+
+Move six operations and three DTOs from `api/routes.py` into `api/operator.py`:
+`GET /metrics`, `POST /admin/retention/sweep`, `POST/GET /admin/users`,
+`DELETE /admin/users/{admin_user_id}` and `GET /admin/signal-quality`.
+Keep existing method/path, operation IDs, schemas, descriptions, status/error
+bodies and ordered dependency/OpenAPI contract. The module uses three guarded
+router segments (metrics, retention, accounts/report), because the existing
+portal/domain routes interleave them. Compose their existing APIRoutes at their
+original positions without another inherited dependency context or route slices.
+
+Acceptance: machine credentials and operator cookies retain shared admin auth,
+session precedence/CSRF and other-plane refusals. Account creation retains hashed
+email, duplicate 409, missing-delete 404 and deletion revokes every target session
+without revoking another operator. Retention keeps the empty-body dry-run default,
+disabled-apply 409 without mutation, bounded preview/apply parity and recent-row
+preservation. Metrics keep Prometheus media type/text and bounded private labels.
+Signal quality keeps outcomes/ledger selection, configured sample floor,
+operator-label opt-in and explicit refusal shapes without exposing source rows.
+
+Extend consolidated route characterizations before moving code; first run against
+the aggregate, then standalone operator/auth routers. Reuse existing focused
+auth/retention/metrics/signal tests and full 102-operation contract fixture.
+Run full offline pytest, migrated scratch HTTP with actual process restart and
+real operator-account Chrome actions using `smoke_r3_s2_q.py --browser`.
+Extend that existing HTTP harness for retention/metrics/signal behavior and reuse
+the shared graceful stop-file server pattern. Run bindings, syntax/import,
+whitespace, documentation/preservation checks and implementation self-review,
+then record completion and a distinct final self-review before scoped commit/push.
+No SQL/schema/transaction/provider/frontend changes; no new PostgreSQL migration
+or concurrency gate applies. Working storage/demo and unrelated files stay intact.
+
+### Evidence
+
+Starting HEAD `f981714`; initial worktree clean. Sanitized local runner
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3l.py <tag> <Python args>`
+clears inherited DEE settings/secrets, ignores `.env`, uses isolated test stores
+and blocks external GitHub; no arguments after the tag means full pytest.
+Baseline hashes cover 720 tracked files including working storage.
+
+Pre-move `characterization -m pytest -q --tb=short
+tests/test_api_route_extraction.py -k 'operator_accounts_preserve or
+operator_retention_preserves or operator_signal_quality_preserves or
+product_extraction'`: **4 passed, 26 deselected, 1 warning, 7.66s**, exit 0
+(15.87s runner). Characterizations ran against the original aggregate, then
+switched to standalone auth/operator routers. Pure extraction expects passing
+characterization; no reproduced product defect is claimed.
+
+Post-move `focused -m pytest -q --tb=short tests/test_api_route_extraction.py
+tests/test_auth_api.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py
+tests/test_retention_api.py tests/test_retention_sweep.py tests/test_retention_plan.py
+tests/test_retention_cli_contract.py tests/test_metrics.py
+tests/test_signal_quality_route.py tests/test_signal_quality_labels.py
+tests/test_signal_quality_service.py tests/test_signal_quality_metrics.py
+tests/test_signal_quality_schema.py tests/test_signal_quality_signals.py
+tests/test_signal_quality_cli.py`: **240 passed, 14 warnings, 76.78s**, exit 0
+(81.45s runner). Full 102-operation ordered auth/OpenAPI fixture is unchanged.
+New standalone workflows verify all six operations' plane refusals, cookie/key
+CSRF, hashed account identity, duplicate/missing refusals, both target sessions'
+revocation and another operator's survival; retention defaults/refusal/cap/parity,
+recent-row survival and private Prometheus text; actual saved human labels,
+opt-in/configured floor, outcomes/ledger refusal shapes and input validation.
+
+Initial migrated scratch HTTP `journey scripts/smoke_r3_s2_q.py`: **44/44**,
+exit 0, 17.66s. Existing harness now uses the shared stop-file uvicorn loop;
+normal exit 0 is required at shutdown/restart. Added expired/recent-resume preview,
+disabled apply/CSRF refusals without mutation, enabled apply after restart,
+operator-label persistence/opt-in, ledger mismatch, malformed queries, metrics
+media type/privacy and revoked-operator access. Final expanded plane-denial
+checks also pass in the combined Chrome invocation. No working migration
+or demo restart; normal exits do not add SQL disposal probes.
+
+Actual Chrome `browser scripts/smoke_r3_s2_q.py --browser`: **62/62 combined
+HTTP/browser checks**, exit 0, 42.51s. Real operator sign-in, create/list/delete,
+another session's revocation, account persistence across restart, navigation/cache
+clearing, revoked-operator recovery, denied org/candidate cookies, backend
+org/curation integration and no console exceptions pass. All three app lifespans
+require graceful exit 0; browser process cleanup is forced on Windows. Chrome
+uses existing CDN internet and fake/capture providers/mail. No live-provider,
+measured-quality or cross-worker claims.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass;
+`node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q src/app/api/routes.py src/app/api/operator.py
+tests/test_api_route_extraction.py scripts/smoke_r3_s2_q.py` and `git diff --check`
+pass. No frontend source change.
+
+Implementation self-review: HEAD `f981714` plus aggregate/new operator,
+consolidated route tests and existing operator HTTP harness. Specification review
+maps six operations/three DTOs to characterization, standalone/full-contract and
+migrated HTTP assertions; recorded full/Chrome evidence completes the runtime gates.
+Correctness review traces principal/dependency order and CSRF, account identity
+and multi-session revocation, retention defaults/configuration/bounds/mutation,
+metric privacy/media type, report label provenance/refusals and graceful restart.
+`review -I .pytest_cache/review_r4_s1_t3l.py`: exit 0, 2.49s. All **15** original
+aggregate class/function definitions are AST-identical across aggregate/operator,
+normalizing only two decorator router variable names. Independent import, shared
+contracts/services and exactly one admin dependency per operation pass; five
+reviewed code/contract hashes recorded. No blocking finding remains. Same-agent
+self-review is not independent review. No SQL/transaction/migration change;
+no new PostgreSQL concurrency/migration gate applies.
+
+Initial preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3l.py`:
+712 unrelated tracked files, working DB and five reviewed code/contract hashes
+unchanged; 169 local Markdown links/anchors and tracked/staged whitespace pass.
+Remote `origin/main` matches starting HEAD
+`f9817141dee48da2c8fad0c40444db44843eb516`.
+
+Full pytest `full-reviewed` (no extra runner arguments; project
+`-m pytest -q --tb=short`): **3534 passed, 505 skipped, 127 warnings in 973.25s
+(0:16:13)**, exit 0 (983.51s runner). Existing Starlette/httpx deprecation and
+SQLite expression-index reflection/autogenerate warnings remain. Environment/
+optional skips do not prove omitted cases. Five reviewed code/contract hashes
+remain unchanged; only documentation changed after full pytest started.
+Acceptance and required validation are complete. Aggregate `routes.py` is now
+200 lines (328 before L); `operator.py` contains six operations and three DTOs.
+Metrics remain process-local, retention still needs an external schedule and
+synthetic fixtures do not establish measured signal quality.
+
+### Completion review and publication
+
+After required validation and completion/evidence/PI/handoff updates, a distinct
+final same-agent self-review examined HEAD `f981714` plus the exact nine staged
+files: aggregate/new operator, consolidated route tests, existing operator HTTP
+harness and five handoff/roadmap/PI/task/evidence records. Specification review
+confirms six operations/three DTOs, unchanged 102-operation ordered API/auth
+contract, all required validation layers, single evidence ownership and M-only
+next pointer. Correctness review rechecks principal/dependency order and cookie/
+key CSRF, hashed identity and target/other-operator session lifecycles, retention
+preview/configuration/cap/parity/recent-row survival, metrics privacy/media type,
+advisory label provenance/refusals and graceful process restart. No blocking
+finding remains. Two documentation phrases were clarified to describe shared
+server-loop reuse and recorded runtime evidence accurately; code is unchanged.
+`completion-review -I .pytest_cache/review_r4_s1_t3l.py`: exit 0, 6.17s. All
+15 original definitions (normalizing two decorator router variable names),
+independent import, shared contracts/services, single admin gates and five
+reviewed code/contract hashes match. This later self-review is separate from
+implementation review; no independent review is claimed. Only documentation
+changed after the full regression run began. Final preservation confirms 712
+unrelated tracked files, working DB and five reviewed code/contract hashes
+unchanged; 171 local Markdown links/anchors and tracked/staged whitespace pass.
+All changes are staged in the named nine-file scope; secrets, working data and
+generated artifacts are excluded. Tracking branch is `origin/main`; publication
+uses G's existing per-command account selection. Scoped commit/push and remote
+verification follow; actual publication will be recorded here.
+No M/T4 work, demo restart or deployment started.
+
+### Handoff
+
+Only L completed. T3/F13/sprint/PI remain open. Exact next development task:
+**R4-S1-T3M - Extract public health/domain/grievance/service surface and finalize
+composition**, not started. Write M's bounded contract/evidence inline in the
+existing T3 record; preserve the full ordered API/auth contract, named public
+allowlist, `/domains` admin guard, liveness mode and advisory/human-review service
+response. T4 has not started. No next task starts during L publication.

@@ -1380,3 +1380,164 @@ def test_curation_operator_auth_cookie_csrf_identity_and_revocation(cfg, capture
         assert services.auth.delete_admin_user(operator.id)
         assert client.get("/curation/skills/unmapped").status_code == 401
         assert client.post("/curation/skills/resolve", json=body).status_code == 401
+
+
+# Operator operations extraction
+
+
+def operator_app(services):
+    from app.api.auth import auth_router
+    from app.api.operator import metrics_router, retention_router, router
+
+    app = FastAPI()
+    app.state.services = services
+    for segment in (auth_router, metrics_router, retention_router, router):
+        app.include_router(segment)
+    return app
+
+
+def test_operator_accounts_preserve_planes_cookie_csrf_and_target_session_revocation(cfg, capture_path):
+    from tests.curation_helpers import saved_source
+
+    services = make_services(cfg)
+    org = services.ledger.create_organization("Operator isolation")
+    org_key = services.ledger.issue_api_key(org.id)
+    cid, _ = saved_source(services.session_factory)
+    candidate_key = services.candidates.issue_access_key(cid)
+    reads = ("/admin/users", "/metrics", "/admin/signal-quality")
+    with TestClient(operator_app(services), raise_server_exceptions=False) as root, \
+            TestClient(operator_app(services)) as actor, TestClient(operator_app(services)) as other:
+        for headers in ({}, {"X-API-Key": "invalid"}, {"X-Org-Key": org_key}, {"X-Candidate-Key": candidate_key}):
+            assert all(root.get(path, headers=headers).status_code == 401 for path in reads)
+            assert root.post("/admin/users", json={"email": "denied@example.in"}, headers=headers).status_code == 401
+            assert root.delete("/admin/users/missing", headers=headers).status_code == 401
+            assert root.post("/admin/retention/sweep", json={}, headers=headers).status_code == 401
+        root.headers.update(ADMIN_HEADERS)
+        email = "operator-extracted@example.in"
+        created = root.post("/admin/users", json={"email": email, "label": "Extracted operator"})
+        assert created.status_code == 200 and email not in created.text
+        account = created.json()
+        assert account["email_hash"] == services.auth.hash_email(email) and account["label"] == "Extracted operator"
+        duplicate = root.post("/admin/users", json={"email": email.upper()})
+        assert duplicate.status_code == 409 and duplicate.json() == {"detail": "operator already exists"}
+        assert root.post("/admin/users", json={}).status_code == 422
+        missing = root.delete("/admin/users/missing")
+        assert missing.status_code == 404 and missing.json() == {"detail": "operator not found"}
+
+        def sign_in(client, address):
+            assert client.post("/auth/admin/login", json={"email": address}).status_code == 202
+            login = client.post("/auth/admin/verify", json={"email": address, "code": _code(capture_path)})
+            assert login.status_code == 200
+            return login.json()["csrf_token"]
+
+        csrf = sign_in(actor, email)
+        sign_in(other, email)
+        assert actor.get("/auth/me").json()["session_id"] != other.get("/auth/me").json()["session_id"]
+        # A cookie retains precedence even alongside a valid machine credential.
+        actor.headers.update(ADMIN_HEADERS)
+        assert all(actor.get(path).status_code == 200 for path in reads)
+        before = root.get("/admin/users").json()
+        for token in (None, "wrong"):
+            headers = {} if token is None else {"X-CSRF-Token": token}
+            assert actor.post("/admin/users", json={"email": "survivor@example.in"}, headers=headers).status_code == 403
+            assert actor.delete(f"/admin/users/{account['id']}", headers=headers).status_code == 403
+            assert actor.post("/admin/retention/sweep", json={}, headers=headers).status_code == 403
+            assert root.get("/admin/users").json() == before
+        actor.headers["X-CSRF-Token"] = csrf
+        survivor = actor.post("/admin/users", json={"email": "survivor@example.in"}).json()
+        assert actor.post("/admin/retention/sweep", json={}).json()["dry_run"] is True
+        with TestClient(operator_app(services)) as retained:
+            sign_in(retained, "survivor@example.in")
+            deleted = actor.delete(f"/admin/users/{account['id']}")
+            assert deleted.status_code == 200 and deleted.json() == {"admin_user_id": account["id"], "deleted": True}
+            actor.headers.pop("X-API-Key")
+            for client in (actor, other):
+                assert client.get("/auth/me").status_code == 401
+                assert all(client.get(path).status_code == 401 for path in reads)
+                assert client.post("/admin/retention/sweep", json={}).status_code == 401
+            assert retained.get("/admin/users").json() == [survivor]
+        assert root.get("/admin/users").json() == [survivor]
+
+
+def test_operator_retention_preserves_safe_preview_refusal_cap_and_metrics(services):
+    from sqlalchemy import select
+    from app.candidates.models import CandidateRow, ResumeRow
+    from tests.test_retention_api import ALL_CLASSES
+
+    now = datetime.now(timezone.utc)
+    with services.session_factory() as session:
+        candidate = CandidateRow(full_name="Retention fixture")
+        session.add(candidate)
+        session.flush()
+        rows = [ResumeRow(candidate_id=candidate.id, version=i + 1,
+            raw_text="private retention fixture", text_sha256=str(i) * 64,
+            created_at=now - timedelta(days=age)) for i, age in enumerate((2000, 2000, 1))]
+        session.add_all(rows)
+        session.flush()
+        expired, recent = {r.id for r in rows[:2]}, rows[2].id
+        session.commit()
+
+    def remaining():
+        with services.session_factory() as session:
+            return set(session.scalars(select(ResumeRow.id)))
+
+    services.settings.retention_sweep_enabled = False
+    services.settings.sweep_max_rows_per_class = 1
+    with TestClient(operator_app(services), headers=ADMIN_HEADERS) as client:
+        preview = client.post("/admin/retention/sweep", json={})
+        assert preview.status_code == 200 and preview.json()["dry_run"] is True
+        body = preview.json()
+        assert {r["data_class"] for r in body["by_class"]} == ALL_CLASSES and body["truncated"] is True
+        resume = next(r for r in body["by_class"] if r["data_class"] == "resumes")
+        assert resume["affected"] == 1 and resume["truncated"] is True
+        assert remaining() == expired | {recent}
+        refused = client.post("/admin/retention/sweep", json={"dry_run": False})
+        assert refused.status_code == 409 and refused.json() == {"detail": "retention_sweep_disabled"}
+        assert client.post("/admin/retention/sweep", json={"dry_run": "invalid"}).status_code == 422
+        assert remaining() == expired | {recent}
+        services.settings.retention_sweep_enabled = True
+        applied = client.post("/admin/retention/sweep", json={"dry_run": False})
+        assert applied.status_code == 200 and applied.json()["dry_run"] is False
+        applied_resume = next(r for r in applied.json()["by_class"] if r["data_class"] == "resumes")
+        assert applied_resume == resume
+        assert len(remaining() & expired) == 1 and recent in remaining()
+        assert client.post("/admin/retention/sweep", json={"dry_run": False}).status_code == 200
+        assert remaining() == {recent}
+        metrics = client.get("/metrics")
+        assert metrics.status_code == 200
+        assert metrics.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
+        assert 'veritas_retention_deleted_total{data_class="resumes"} 2' in metrics.text
+        assert all(value not in metrics.text for value in (*expired, recent, "private retention fixture"))
+
+
+def test_operator_signal_quality_preserves_label_opt_in_floor_refusals_and_privacy(services):
+    from tests.test_signal_quality_labels import _saved, _judge
+
+    services.settings.min_signal_quality_samples = 3
+    store = services.report_store
+    genuine, fabricated, inconclusive = [_saved(store) for _ in range(3)]
+    _judge(store, genuine, OutcomeLabel.VERIFIED_GENUINE)
+    _judge(store, fabricated, OutcomeLabel.VERIFIED_FABRICATED, source=OutcomeSource.OPERATOR)
+    _judge(store, inconclusive, OutcomeLabel.INCONCLUSIVE)
+    with TestClient(operator_app(services), headers=ADMIN_HEADERS) as client:
+        response = client.get("/admin/signal-quality")
+        assert response.status_code == 200
+        default = response.json()
+        assert default["population"]["label_source"] == "outcomes"
+        assert default["population"]["label_kind"] == "fraud"
+        assert default["population"]["include_operator_labels"] is False
+        assert default["population"]["labels_usable"] == 1
+        opted = client.get("/admin/signal-quality?include_operator_labels=true").json()
+        assert opted["population"]["include_operator_labels"] is True and opted["population"]["labels_usable"] == 2
+        for body in (default, opted):
+            assert len(body["signals"]) == 12 and all(not s["sufficient"] for s in body["signals"])
+            fraud = next(s for s in body["signals"] if s["signal"] == "fabrication_risk.score")
+            assert fraud["reason"] == "insufficient_samples" and fraud["detail"].endswith("need 3")
+            assert set(fraud) == {"signal", "sufficient", "reason", "n", "detail"}
+        ledger = client.get("/admin/signal-quality?source=ledger").json()
+        assert ledger["population"]["label_source"] == "ledger" and ledger["population"]["label_kind"] == "hire"
+        fraud = next(s for s in ledger["signals"] if s["signal"] == "fabrication_risk.score")
+        assert fraud["reason"] == "label_kind_mismatch" and "auc" not in fraud
+        assert client.get("/admin/signal-quality?source=unknown").status_code == 422
+        assert client.get("/admin/signal-quality?include_operator_labels=invalid").status_code == 422
+        assert all(report.id not in response.text for report in (genuine, fabricated, inconclusive))

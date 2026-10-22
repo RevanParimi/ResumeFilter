@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T3L completed; operator route extraction.**
+  Six operations/three DTOs move to `api/operator.py`, preserving full API/auth,
+  account/session revocation, retention safeguards, metrics format and advisory
+  signal-label/refusal behavior. [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l)
+  owns focused/full pytest, migrated HTTP/graceful restart, actual operator Chrome,
+  static/preservation and separate review/publication records. Working storage/demo
+  preserved. T3/F13/sprint/PI remain open; exact next T3M (public health/domain/
+  grievance/service surface and final composition), not started. Stop after L;
+  T4 has not started.
+
 - **Session 2026-10-22 - R4-S1-T3K completed; curation route extraction.**
   Two operations and one DTO move to `api/curation.py`, preserving full API/auth,
   operator CSRF/identity, source ownership, queue/revision/alias contracts and

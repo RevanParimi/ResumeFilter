@@ -4,38 +4,34 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3K complete and published: curation route extraction.**
-Two operations and one DTO now live in `api/curation.py`; aggregate `routes.py`
-is 328 lines. Full 102-operation ordered auth/OpenAPI, operator key/session CSRF
-and decision identity, source ownership/erasure, paging/status/cursors,
-revision/alias rollback and normalization behavior remain unchanged. Focused/
-full offline pytest, migrated HTTP/graceful restart (20/20), actual Chrome combined
-journey (53/53), static/preservation and implementation self-review passed.
-[K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k) owns commands, counts and limits.
-Distinct final completion self-review found no blocking issues. Scoped task commit
-`f4e41dc` is pushed to `origin/main`; remote
-`f4e41dc1df27da646b66ad6ed9a8032b873e6b81` was verified. This documentation-only
-confirmation records publication; the final response reports its remote SHA.
-Only K completed; no next task or deployment started during publication.
+**R4-S1-T3L complete: operator route extraction. Final review complete; publication pending.**
+Six operations/three DTOs now live in `api/operator.py`; aggregate `routes.py`
+is 200 lines. Full 102-operation ordered auth/OpenAPI, account/session revocation,
+retention safeguards, Prometheus media type and advisory signal labels/refusals
+remain unchanged. Focused/full offline pytest, migrated HTTP/graceful restart
+(44/44), actual Chrome combined journey (62/62), static/preservation and
+implementation self-review pass. [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l)
+owns exact commands/counts/limits. Distinct final completion self-review found no
+blocking issues; scoped commit/push and remote verification follow.
+Working storage/demo are preserved; no M/T4 work or deployment started.
 
-**Exact next development task: R4-S1-T3L - Extract operator accounts, retention,
-metrics and signal-quality routes, not started.** Read
+**Exact next development task: R4-S1-T3M - Extract public health/domain/grievance/
+service surface and finalize composition, not started.** Read
 [PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
-[T3](delivery/tasks/R4-S1-T3.md) and [K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k).
-Write L's contract/evidence inline in T3; reuse consolidated route tests and
-existing operator HTTP/Chrome journeys. Preserve admin auth/CSRF, account/session
-revocation, dry-run retention defaults/refusal, metrics media type and advisory
-report/label behavior. Complete only L next session. T3/F13/sprint/PI remain open;
-T4 has not started.
+[T3](delivery/tasks/R4-S1-T3.md) and [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l).
+Write M's bounded contract/evidence inline in T3. Preserve the full ordered API/
+auth contract, named public allowlist, `/domains` admin guard, liveness mode and
+advisory/human-review service response. Only L completed this session;
+T3/F13/sprint/PI remain open. T4 has not started.
 
 ## Latest work
 
-Standalone curation/auth workflows retain source-owned queue snapshots, raw-free
-receipts, required revisions, 404/409/422 refusals without mutation, map/create/
-ignore and immediate overlay refresh. HTTP preserves exact live review state over
-graceful restart; Chrome verifies real decisions, paging, stale/error recovery,
-erasure and session revocation/isolation. Working DB/unrelated tracked files
-match the baseline; no demo restart. A-K evidence is in
+Standalone operator/auth workflows retain hashed account identity, duplicate/
+missing refusals, cookie/key CSRF, multi-session revocation and other-operator
+survival. Retention preserves dry-run defaults, disabled-apply refusal, bounded
+preview/apply parity and recent rows. HTTP preserves human labels/sessions over
+graceful restart; Chrome verifies real account persistence, deletion and recovery.
+Working DB/unrelated tracked files match the baseline; no demo restart. A-L evidence is in
 [PI-R4 evidence](delivery/EVIDENCE-R4.md). Publication uses per-command GitHub
 account selection from G's existing two-account Credential Manager evidence.
 Ignored artifact removal stays outside scope;
@@ -45,7 +41,7 @@ Ignored artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3k.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3l.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
@@ -64,6 +60,8 @@ Ignored artifact removal stays outside scope;
   skipped lock cases do not. T1A owns the actual controlled lock/migration gate.
 - Curation migrated HTTP/graceful restart: `scripts/smoke_curation_activation.py`;
   add `--browser` for real Chrome, including process restart and auth recovery.
+- Operator accounts/retention/metrics/signal-quality migrated HTTP/graceful restart:
+  `scripts/smoke_r3_s2_q.py`; add `--browser` for real account/curation Chrome.
 - Interview mixed-channel/graceful restart: `scripts/smoke_r3_s3_t3.py --combined`.
 - Candidate portal/consent/access/erasure Chrome: `scripts/check_ui_evaluate_browser.py`.
 - Employer Roles/compensation/report Chrome: `scripts/check_ui_review_context_browser.py`.

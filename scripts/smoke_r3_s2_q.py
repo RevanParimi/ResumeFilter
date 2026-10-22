@@ -1,4 +1,4 @@
-"""Combined operator org/user/guarded curation on migrated scratch SQL/restart.
+"""Operator accounts, retention, metrics and curation on migrated scratch SQL.
 
 SQLite by default; --postgres needs disposable DEE_TEST_DB_URL. Uses existing
 fake-model/captured-email composition. No working data or live providers.
@@ -16,8 +16,9 @@ import tempfile
 
 from sqlalchemy import create_engine, select, text, update
 
+from app.candidates.models import ResumeRow
 from app.curation.models import CurationAliasRow, CurationObservationRow
-from _smoke import Smoke, base_env, client, uvicorn_argv, wait_healthy
+from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_curation_input import export
 from smoke_r1_s1_t3a_v1 import database
 
@@ -58,36 +59,47 @@ def main():
             "DEE_LOGIN_OTP_STATIC_CODE": "", "DEE_VERIF_OTP_DEBUG_ECHO": "false",
             "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
             "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
+            "DEE_RETENTION_SWEEP_ENABLED": "false",
+            "VERITAS_SQL_SMOKE_FACTORY": "smoke_r3_s1_t2:create_smoke_app",
             "PGOPTIONS": pg_options, "NO_PROXY": "127.0.0.1,localhost",
             "PYTHONPATH": os.pathsep.join(str(p) for p in (ROOT / "src", ROOT / "scripts", ROOT)),
         })
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
         base = f"http://127.0.0.1:{port}"
+        stop = scratch / "stop"
 
         @contextmanager
         def server():
             with (scratch / "server.log").open("a", encoding="utf-8") as log:
-                proc = subprocess.Popen(uvicorn_argv(port, target="smoke_r3_s1_t2:create_smoke_app") + ["--factory"],
-                    env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                def launch():
+                    stop.unlink(missing_ok=True)
+                    return subprocess.Popen([sys.executable, str(ROOT / "scripts/smoke_r4_s1_t1a.py"),
+                        "--serve", str(port), str(stop)], env=env, cwd=scratch,
+                        stdout=log, stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+
+                def shutdown():
+                    stop.write_text("stop", encoding="utf-8")
+                    try:
+                        proc.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        proc.terminate(); proc.wait(timeout=10)
+                        raise AssertionError("scratch app failed graceful shutdown")
+                    assert proc.returncode == 0, "scratch app failed during lifespan"
+
+                proc = launch()
                 try:
                     with client(base, headers={"X-API-Key": ADMIN}) as admin:
                         assert wait_healthy(admin), "scratch app failed to start"
                         def restart():
                             nonlocal proc
-                            proc.terminate()
-                            try: proc.wait(timeout=15)
-                            except subprocess.TimeoutExpired: proc.kill(); proc.wait(timeout=10)
-                            proc = subprocess.Popen(uvicorn_argv(port, target="smoke_r3_s1_t2:create_smoke_app") + ["--factory"],
-                                env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT,
-                                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                            shutdown()
+                            proc = launch()
                             assert wait_healthy(admin), "restarted scratch app failed to start"
                         yield admin, restart
                 finally:
-                    proc.terminate()
-                    try: proc.wait(timeout=15)
-                    except subprocess.TimeoutExpired: proc.kill(); proc.wait(timeout=10)
+                    shutdown()
 
         engine = create_engine(url, hide_parameters=True,
             connect_args={"options": pg_options} if pg_options else {})
@@ -104,6 +116,53 @@ def main():
                         "resume_text": f"Synthetic {i}\nEmail: revision-candidate-{i}@example.com\nSkills: Python SQL"}))["candidate_id"]
                         for i in range(2)]
                     first, second = candidates
+
+                    retained = require(admin.post("/candidates", json={"evaluate": False,
+                        "resume_text": "Synthetic retention\nEmail: retention@example.com\nSkills: Python"}))["candidate_id"]
+                    with engine.begin() as conn:
+                        conn.execute(update(ResumeRow).where(ResumeRow.candidate_id == retained).values(
+                            created_at=datetime.now(timezone.utc) - timedelta(days=2000)))
+
+                    def resume_ids():
+                        with engine.connect() as conn:
+                            return set(conn.scalars(select(ResumeRow.id)))
+
+                    all_resumes = resume_ids()
+                    preview = require(a.post("/admin/retention/sweep", json={}))
+                    preview_resumes = next(r for r in preview["by_class"] if r["data_class"] == "resumes")
+                    checks.check("empty HTTP sweep body previews expired resume without mutation",
+                        preview["dry_run"] is True and preview_resumes["affected"] == 1 and resume_ids() == all_resumes)
+                    checks.check("disabled apply refuses over HTTP without deleting rows",
+                        require(a.post("/admin/retention/sweep", json={"dry_run": False}), 409)
+                        == {"detail": "retention_sweep_disabled"} and resume_ids() == all_resumes)
+                    csrf = a.headers.pop("X-CSRF-Token")
+                    try:
+                        checks.check("retention cookie plus machine key cannot bypass CSRF",
+                            a.post("/admin/retention/sweep", json={}, headers={"X-API-Key": ADMIN}).status_code == 403
+                            and resume_ids() == all_resumes)
+                    finally:
+                        a.headers["X-CSRF-Token"] = csrf
+
+                    report = require(admin.post("/evaluate", json={"domain": "genai",
+                        "resume_text": "Synthetic signal report\nSkills: Python SQL\nBuilt an API and tested its behavior."}))
+                    require(a.post(f"/report/{report['id']}/outcome", json={"outcome": "verified_genuine"}))
+                    quality = require(a.get("/admin/signal-quality"))
+                    opted = require(a.get("/admin/signal-quality?include_operator_labels=true"))
+                    ledger_quality = require(a.get("/admin/signal-quality?source=ledger"))
+                    checks.check("signal HTTP report retains operator-label opt-in and insufficient-sample refusals",
+                        quality["population"]["labels_usable"] == 0 and opted["population"]["labels_usable"] == 1
+                        and opted["population"]["include_operator_labels"] is True
+                        and len(opted["signals"]) == 12 and all(not s["sufficient"] for s in opted["signals"]))
+                    checks.check("ledger signal source keeps hire labels and mismatch refusal; malformed queries refuse",
+                        ledger_quality["population"]["label_kind"] == "hire"
+                        and next(s for s in ledger_quality["signals"] if s["signal"] == "fabrication_risk.score")["reason"] == "label_kind_mismatch"
+                        and a.get("/admin/signal-quality?source=unknown").status_code == 422
+                        and a.get("/admin/signal-quality?include_operator_labels=invalid").status_code == 422)
+                    metrics = a.get("/metrics")
+                    checks.check("metrics HTTP response retains Prometheus media type and omits source identities",
+                        metrics.status_code == 200 and metrics.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
+                        and "veritas_http_requests_total" in metrics.text
+                        and all(secret not in metrics.text for secret in (*emails, *candidates, retained, report["id"])))
 
                     org_a = require(a.post("/ledger/orgs", json={"name": "Combined HTTP agency A"}))
                     org_b = require(b.post("/ledger/orgs", json={"name": "Combined HTTP agency B"}))
@@ -202,9 +261,10 @@ def main():
                             "/curation/skills/resolve", json=body, headers=headers).status_code == 401)
                     for label, headers in (("anonymous", {}), ("organization", {"X-Org-Key": org_b["api_key"]}),
                                            ("candidate", {"X-Candidate-Key": key})):
-                        checks.check(label + " cannot inspect/mutate operator orgs or accounts",
-                            stranger.get("/ledger/orgs", headers=headers).status_code == 401
-                            and stranger.get("/admin/users", headers=headers).status_code == 401
+                        checks.check(label + " cannot inspect/mutate operator surfaces",
+                            all(stranger.get(path, headers=headers).status_code == 401
+                                for path in ("/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality"))
+                            and stranger.post("/admin/retention/sweep", json={}, headers=headers).status_code == 401
                             and stranger.post(f"/ledger/orgs/{oid}/reliability", json={"weight": 99}, headers=headers).status_code == 401
                             and stranger.delete(f"/admin/users/{operators[1]['id']}", headers=headers).status_code == 401)
                     checks.check("refused requests leave org weight and accounts unchanged",
@@ -217,7 +277,20 @@ def main():
                     ingest(second, "Restart review raw")
                     restart, = queue()
 
+                env["DEE_RETENTION_SWEEP_ENABLED"] = "true"
                 with server() as (admin, restart_app):
+                    before_apply = resume_ids()
+                    applied = require(b.post("/admin/retention/sweep", json={"dry_run": False}))
+                    checks.check("enabled sweep after graceful restart deletes exactly previewed expired resumes",
+                        applied["dry_run"] is False
+                        and next(r for r in applied["by_class"] if r["data_class"] == "resumes") == preview_resumes
+                        and len(before_apply - resume_ids()) == 1)
+                    with engine.connect() as conn:
+                        checks.check("retention preserves the active candidate resume and clears the expired one",
+                            not list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == retained)))
+                            and bool(list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == second)))))
+                    checks.check("operator label and signal refusal survive graceful restart",
+                        require(b.get("/admin/signal-quality?include_operator_labels=true"))["population"] == opted["population"])
                     checks.check("queue revision survives real app restart", queue(b) == [restart])
                     checks.check("combined restart preserves sessions/accounts/org settings and keys",
                         len(require(b.get("/admin/users"))) == 2
@@ -246,8 +319,9 @@ def main():
                         and {o["id"] for o in require(b.get("/ledger/orgs"))} == {org_b["org"]["id"]})
                     require(b.delete(f"/admin/users/{operators[0]['id']}"))
                     checks.check("revoked operator cannot reuse revision and other operator remains",
-                        all(a.get(p).status_code == 401 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users"))
-                        and all(b.get(p).status_code == 200 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users")))
+                        all(a.get(p).status_code == 401 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality"))
+                        and a.post("/admin/retention/sweep", json={}).status_code == 401
+                        and all(b.get(p).status_code == 200 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality")))
             logged = (scratch / "server.log").read_text(encoding="utf-8")
             checks.check("HTTP logs omit captured codes and operator emails", all(value not in logged for value in [*emails, *codes]))
         finally:

@@ -68,16 +68,16 @@ F13 and sprint/PI closure remain open.
 Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
 [T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
-contracts/evidence. A-K are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
-retains their contracts and exact validation. [T3K](EVIDENCE-R4.md#r4-s1-t3k)
-is done (2026-10-22): two curation operations and one DTO extracted; full
-API/auth, operator CSRF/identity, source ownership, queue/revision/alias contracts
-and normalization overlay behavior remain unchanged. Focused/full pytest,
-migrated HTTP/graceful restart, actual curation Chrome, static/preservation and
-implementation self-review gates pass. The child evidence owns the distinct
-completion review/publication record. Next: T3L, operator accounts, retention,
-metrics and signal quality; not started. Parent, remaining children, finding and
-sprint stay open.
+contracts/evidence. A-L are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
+retains their contracts and exact validation. [T3L](EVIDENCE-R4.md#r4-s1-t3l)
+is done (2026-10-22): six operator operations and three DTOs extracted; full
+API/auth, account/session revocation, retention safeguards, Prometheus media type
+and advisory signal-label/refusal behavior remain unchanged. Focused/full pytest,
+migrated HTTP/graceful restart, actual operator Chrome, static/preservation and
+implementation self-review gates pass. Its child evidence owns the distinct final
+completion review/publication record. Next: T3M, public health/domain/grievance/
+service surface and final composition; not started.
+Parent, remaining child, finding and sprint stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 
