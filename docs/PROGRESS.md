@@ -4,7 +4,7 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4C complete: curation UI extraction.**
+**R4-S1-T4C complete and published: curation UI extraction.**
 The 16 handlers/view mapping now live in `frontend/curation.js`; shared state,
 lifecycle/template and API/auth behavior are preserved. Before/after Node,
 focused/full offline pytest, bindings/syntax, migrated HTTP/actual Chrome
@@ -12,7 +12,10 @@ focused/full offline pytest, bindings/syntax, migrated HTTP/actual Chrome
 implementation self-review pass. [C evidence](delivery/EVIDENCE-R4.md#r4-s1-t4c)
 owns exact commands/counts/limits and the distinct final completion review/
 publication record. Distinct final completion self-review found no blocking
-issues; scoped commit/push is next. Only C completed this session;
+issues. Scoped task commit `5221f9f` is pushed to `origin/main`; remote
+`5221f9f8f215933d9af7bd3bad07c2e795631e3a` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation. Only C completed this session;
 [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 

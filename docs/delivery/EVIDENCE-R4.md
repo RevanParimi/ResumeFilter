@@ -3009,7 +3009,7 @@ implementation in the next session. Stop after B publication.
 
 ## <a id="r4-s1-t4c"></a>R4-S1-T4C - Extract curation UI logic
 
-Status: done (2026-10-22); publication follows final completion review. Parent:
+Status: done and published (2026-10-22). Parent:
 [T4](tasks/R4-S1-T4.md). Prerequisite: [T4B](#r4-s1-t4b), done/published.
 
 ### Contract and acceptance
@@ -3193,8 +3193,21 @@ secrets, working data and local artifacts. Tracking branch is `origin/main`;
 its pre-publication remote matches starting HEAD. Publication uses G's existing
 per-command account selection. No D work, demo restart or deployment started.
 
-Scoped commit/push and remote verification follow this recorded completion
-review.
+Scoped task commit **`5221f9f`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`036e1e1` to `5221f9f`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`5221f9f8f215933d9af7bd3bad07c2e795631e3a`**. Working tree was clean.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this evidence section. Separate final same-agent self-review
+against `5221f9f` checks the exact prose diff, actual remote evidence, open T4
+parent and D-only next pointer; no blocking finding remains. Scoped links,
+whitespace and preservation pass. Application/test/harness code remains at the
+full pytest/HTTP/Chrome validated state; no application tests are rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push. No D work, working-data change, demo restart or deployment occurred.
 
 ### Handoff
 
