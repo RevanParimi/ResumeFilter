@@ -4,47 +4,45 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3J complete and published: interviews/employer assessment extraction.**
-Six operations, five DTOs and one helper now live in `api/interviews.py`;
-aggregate `routes.py` is 387 lines. Full 102-operation ordered auth/OpenAPI,
-subject/tenant ownership, cookie/CSRF, transcript privacy, current consent/audit,
-ASR refusal/budget/fallback and versioned advisory content scoring remain unchanged.
-Focused/full offline pytest, migrated mixed-channel HTTP/graceful restart,
-actual interview Chrome and static/preservation/implementation self-review passed.
-[J evidence](delivery/EVIDENCE-R4.md#r4-s1-t3j) owns commands, results and limits.
-Distinct final completion self-review found no blocking issues. Scoped task commit
-`7a2f7be` is pushed to `origin/main`; remote
-`7a2f7be4b5869cf94d2e53d4faa490ee0471a623` was verified. This documentation-only
-confirmation records publication; the final response reports its remote SHA.
-No next task or deployment started during publication.
+**R4-S1-T3K complete: curation route extraction.**
+Two operations and one DTO now live in `api/curation.py`; aggregate `routes.py`
+is 328 lines. Full 102-operation ordered auth/OpenAPI, operator key/session CSRF
+and decision identity, source ownership/erasure, paging/status/cursors,
+revision/alias rollback and normalization behavior remain unchanged. Focused/
+full offline pytest, migrated HTTP/graceful restart (20/20), actual Chrome combined
+journey (53/53), static/preservation and implementation self-review passed.
+[K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k) owns commands, counts and limits.
+Distinct final completion self-review found no blocking issues. Scoped commit/push
+and remote verification are the remaining publication steps; only K completed.
 
-**Exact next development task: R4-S1-T3K - Extract curation routes, not started.**
-Read [PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
-[T3](delivery/tasks/R4-S1-T3.md) and [J evidence](delivery/EVIDENCE-R4.md#r4-s1-t3j).
-Write K's contract/evidence inline in T3; reuse consolidated route tests and
-existing curation HTTP/Chrome journeys. Preserve operator auth/CSRF, queue
-pagination/status/cursors, expected revisions, alias conflicts and overlay behavior.
-Complete only K next session. T3/F13/sprint/PI remain open; T4 has not started.
+**Exact next development task: R4-S1-T3L - Extract operator accounts, retention,
+metrics and signal-quality routes, not started.** Read
+[PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
+[T3](delivery/tasks/R4-S1-T3.md) and [K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k).
+Write L's contract/evidence inline in T3; reuse consolidated route tests and
+existing operator HTTP/Chrome journeys. Preserve admin auth/CSRF, account/session
+revocation, dry-run retention defaults/refusal, metrics media type and advisory
+report/label behavior. Complete only L next session. T3/F13/sprint/PI remain open;
+T4 has not started.
 
 ## Latest work
 
-Standalone interview/auth workflows preserve two-subject/two-employer ownership,
-cookie/key precedence and CSRF, owned mixed-channel state, conflicts, safe ASR
-refusal, pre-provider budget and typed recovery, versioned advisory assessments,
-transcript-free employer summaries, exact-purpose current consent/audit,
-revocation and erasure. Migrated HTTP survives graceful restart. Chrome performs
-real recording, error recovery, reload/restart, completion and session isolation.
-Working DB and unrelated tracked files match the baseline; no demo restart.
-A-J evidence is in [PI-R4 evidence](delivery/EVIDENCE-R4.md). Publication uses
-per-command GitHub account selection from G's evidence for the existing two-account
-Credential Manager setup. Ignored artifact removal stays outside scope;
+Standalone curation/auth workflows retain source-owned queue snapshots, raw-free
+receipts, required revisions, 404/409/422 refusals without mutation, map/create/
+ignore and immediate overlay refresh. HTTP preserves exact live review state over
+graceful restart; Chrome verifies real decisions, paging, stale/error recovery,
+erasure and session revocation/isolation. Working DB/unrelated tracked files
+match the baseline; no demo restart. A-K evidence is in
+[PI-R4 evidence](delivery/EVIDENCE-R4.md). Publication uses per-command GitHub
+account selection from G's existing two-account Credential Manager evidence.
+Ignored artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3j.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3k.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
@@ -61,6 +59,8 @@ Credential Manager setup. Ignored artifact removal stays outside scope;
   `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`. These local artifacts are not
   portable setup guarantees. PG HTTP proves PG behavior; SQLite fixtures and
   skipped lock cases do not. T1A owns the actual controlled lock/migration gate.
+- Curation migrated HTTP/graceful restart: `scripts/smoke_curation_activation.py`;
+  add `--browser` for real Chrome, including process restart and auth recovery.
 - Interview mixed-channel/graceful restart: `scripts/smoke_r3_s3_t3.py --combined`.
 - Candidate portal/consent/access/erasure Chrome: `scripts/check_ui_evaluate_browser.py`.
 - Employer Roles/compensation/report Chrome: `scripts/check_ui_review_context_browser.py`.

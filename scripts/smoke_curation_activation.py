@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import sqlite3
 import subprocess
@@ -16,8 +17,9 @@ import sys
 import tempfile
 import time
 
-from _smoke import Smoke, base_env, client, uvicorn_argv, wait_healthy
+from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_curation_input import export
+from smoke_r4_s1_t1a import serve
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-activation-admin"
@@ -48,6 +50,9 @@ def save(self, candidate_id, signal):
 GitHubClient.gather_user_signal = github
 CurationStore.record_observation = record
 ProfileSourceStore.save_signal = save
+
+def create_smoke_app():
+    return app
 '''
 
 
@@ -61,6 +66,7 @@ def main(browser=False, legacy_disposition=False):
     checks = Smoke("owned curation activation HTTP/restart" + ("/browser" if browser else ""))
     scratch = Path(tempfile.mkdtemp(prefix="curation-activation-"))
     dbpath = scratch / "app.db"
+    stop = scratch / "stop"
     print(f"Synthetic artifacts: {scratch}", flush=True)
     (scratch / "gate_app.py").write_text(GATE_APP, encoding="utf-8")
     env = {k: v for k, v in base_env().items() if not k.startswith("DEE_")}
@@ -75,6 +81,7 @@ def main(browser=False, legacy_disposition=False):
         "DEE_VECTORSTORE_BACKEND": "memory", "DEE_LOGIN_OTP_DEBUG_ECHO": "false",
         "DEE_LOGIN_OTP_STATIC_CODE": "", "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(scratch), str(ROOT / "scripts")]),
+        "VERITAS_SQL_SMOKE_FACTORY": "gate_app:create_smoke_app",
         "NO_PROXY": "127.0.0.1,localhost",
     })
     port = free_port()
@@ -82,8 +89,9 @@ def main(browser=False, legacy_disposition=False):
 
     @contextmanager
     def server():
+        stop.unlink(missing_ok=True)
         with (scratch / "server.log").open("a", encoding="utf-8") as log:
-            proc = subprocess.Popen(uvicorn_argv(port, target="gate_app:app"), env=env, cwd=scratch,
+            proc = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--serve", str(port), str(stop)], env=env, cwd=scratch,
                 stdout=log, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             try:
@@ -91,12 +99,15 @@ def main(browser=False, legacy_disposition=False):
                     assert wait_healthy(http), "scratch application startup failed"
                     yield http
             finally:
-                proc.terminate()
+                stop.write_text("stop", encoding="utf-8")
                 try:
-                    proc.wait(timeout=15)
+                    proc.wait(timeout=30)
                 except subprocess.TimeoutExpired:
-                    proc.kill()
+                    proc.terminate()
                     proc.wait(timeout=10)
+                    raise AssertionError("curation scratch app failed graceful shutdown")
+                assert proc.returncode == 0, "curation scratch lifespan failed"
+                checks.check("curation scratch lifespan shuts down gracefully", True)
 
     def require(response, status=200):
         assert response.status_code == status, (response.request.url.path, response.status_code)
@@ -112,6 +123,9 @@ def main(browser=False, legacy_disposition=False):
             return db.execute("SELECT count(*) FROM curation_observations").fetchone()[0]
 
     with server() as http:
+        with sqlite3.connect(dbpath) as db:
+            checks.check("scratch app migrated to current head", db.execute(
+                "SELECT version_num FROM alembic_version").fetchone()[0] == "0029_candidate_login_binding")
         first, second = candidate(http, "First"), candidate(http, "Second")
         require(http.post(f"/candidates/{first}/sources/linkedin", json=export(["Shared raw!"])))
         require(http.post(f"/candidates/{second}/sources/github", json={"handle": "dev"}))
@@ -141,7 +155,24 @@ def main(browser=False, legacy_disposition=False):
         checks.check("ignore deletes raw and later input reappears", raw_count() == 1)
         checks.check("unauthorized reviewer refused", http.get("/curation/skills/unmapped",
             headers={"X-API-Key": ""}).status_code == 401)
-        require(http.post("/admin/users", json={"email": "reviewer@example.com"}))
+        operator = require(http.post("/admin/users", json={"email": "reviewer@example.com"}))
+        with client(base) as reviewer:
+            require(reviewer.post("/auth/admin/login", json={"email": "reviewer@example.com"}), 202)
+            message = json.loads((scratch / "mail.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+            code = re.search(r"\b(\d{6})\b", message["body"])[1]
+            login = require(reviewer.post("/auth/admin/verify", json={"email": "reviewer@example.com", "code": code}))
+            reviewer.headers["X-API-Key"] = ADMIN
+            current, = require(reviewer.get("/curation/skills/unmapped"))["terms"]
+            decision = dict(norm_key=current["norm_key"], action="ignore", expected_revision=current["review_revision"])
+            refused = reviewer.post("/curation/skills/resolve", json=decision)
+            checks.check("HTTP operator cookie plus machine key retains CSRF and queue", refused.status_code == 403
+                and require(reviewer.get("/curation/skills/unmapped"))["terms"] == [current])
+            receipt = require(reviewer.post("/curation/skills/resolve", json=decision,
+                headers={"X-CSRF-Token": login["csrf_token"]}))
+            checks.check("HTTP session decision records operator without raw input", receipt["admin_user_id"] == operator["id"]
+                and receipt["action"] == "ignore" and "norm_key" not in receipt and raw_count() == 0)
+        require(http.post(f"/candidates/{first}/sources/linkedin", json=export(["Shared raw!"])))
+        saved_queue = require(http.get("/curation/skills/unmapped"))
 
     # Seed synthetic legacy and expired rows while the server is stopped.
     old = (datetime.now(timezone.utc) - timedelta(days=31)).isoformat()
@@ -158,6 +189,8 @@ def main(browser=False, legacy_disposition=False):
         checks.check("startup physically purges expired observations", raw_count() == 1)
         terms = require(http.get("/curation/skills/unmapped"))["terms"]
         checks.check("restart hides legacy and preserves live queue", [t["norm_key"] for t in terms] == ["shared raw"])
+        checks.check("graceful restart preserves exact live review snapshot", require(http.get(
+            "/curation/skills/unmapped")) == saved_queue)
         signal = require(http.post(f"/candidates/{first}/sources/linkedin", json=export(["Approved shared", "Legacy approved"])))
         checks.check("restart reloads new and compatible legacy normalization", all(s["canonical"] == "python" for s in signal["skills"]))
         with sqlite3.connect(dbpath) as db:
@@ -295,5 +328,8 @@ raise SystemExit(tool.main(sys.argv[3:]))
 
 
 if __name__ == "__main__":
+    if "--serve" in sys.argv:
+        asyncio.run(serve(int(sys.argv[2]), Path(sys.argv[3])))
+        raise SystemExit(0)
     raise SystemExit(main(browser="--browser" in sys.argv,
                           legacy_disposition="--legacy-disposition" in sys.argv))

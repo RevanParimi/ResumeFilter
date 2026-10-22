@@ -1249,3 +1249,134 @@ def test_interview_cookie_ownership_csrf_and_employer_key_precedence(cfg, captur
         assert employer.post("/portal/interviews", json={}).status_code == 401
         employer.cookies.clear()
         assert employer.get(f"/interview/candidates/{cid}/assessments").status_code == 403
+
+
+# Curation extraction
+
+
+def curation_app(services):
+    from app.api.auth import auth_router
+    from app.api.curation import router
+
+    app = FastAPI()
+    app.state.services = services
+    app.include_router(auth_router)
+    app.include_router(router)
+    return app
+
+
+def test_curation_queue_preserves_pagination_status_bounds_and_surviving_sources(settings):
+    from tests.curation_helpers import saved_source
+
+    services = make_services(settings.model_copy(update={"cur_queue_default_limit": 2}))
+    first, source = saved_source(services.session_factory)
+    _, other = saved_source(services.session_factory)
+    for name in ("Alpha raw", "Beta raw", "Gamma raw"):
+        services.curation.record_unmapped(name, source_id=source)
+    services.curation.record_unmapped("Alpha raw", source_id=other)
+    with TestClient(curation_app(services), headers=ADMIN_HEADERS) as client:
+        page = client.get("/curation/skills/unmapped", params={"limit": 999, "status": "pending"})
+        assert page.status_code == 200
+        body = page.json()
+        assert len(body["terms"]) == 2 and body["next_cursor"]
+        assert body["terms"][0]["norm_key"] == "alpha raw" and body["terms"][0]["occurrences"] == 2
+        following = client.get("/curation/skills/unmapped", params={"cursor": body["next_cursor"]})
+        assert following.status_code == 200 and following.json()["next_cursor"] is None
+        terms = body["terms"] + following.json()["terms"]
+        assert len({t["norm_key"] for t in terms}) == len(terms) == 3
+        assert all(len(t["review_revision"]) == 64 for t in terms)
+        assert all(secret not in page.text + following.text for secret in (first, source, other, "candidate_id", "source_id"))
+        assert len(client.get("/curation/skills/unmapped?limit=0").json()["terms"]) == 1
+        for status in ("resolved", "ignored"):
+            assert client.get("/curation/skills/unmapped", params={"status": status}).json() == {"terms": [], "next_cursor": None}
+        for query in ({"cursor": "!!!"}, {"status": "unknown"}, {"limit": "bad"}):
+            assert client.get("/curation/skills/unmapped", params=query).status_code == 422
+        services.portal.erase(first)
+        survivor, = client.get("/curation/skills/unmapped").json()["terms"]
+        assert survivor["norm_key"] == "alpha raw" and survivor["occurrences"] == 1
+        assert survivor["review_revision"] != terms[0]["review_revision"]
+
+
+def test_curation_decisions_preserve_validation_conflicts_receipts_and_overlay(services):
+    from app.candidates.normalize.skills import normalize_skill
+    from tests.curation_helpers import saved_source
+
+    _, source = saved_source(services.session_factory)
+    for name in ("Map raw", "Create raw", "Ignore raw"):
+        services.curation.record_unmapped(name, source_id=source)
+    with TestClient(curation_app(services), headers=ADMIN_HEADERS) as client:
+        before = client.get("/curation/skills/unmapped").json()
+        snapshots = {t["norm_key"]: t for t in before["terms"]}
+        body = dict(norm_key="map raw", action="map", alias="Approved extracted",
+                    canonical="python", category="language", expected_revision=snapshots["map raw"]["review_revision"])
+        for change in ({"expected_revision": None}, {"expected_revision": "x" * 64},
+                       {"canonical": "unknown"}, {"category": "data"}, {"alias": None},
+                       {"admin_user_id": "supplied-identity"}, {"note": "private-note"}):
+            assert client.post("/curation/skills/resolve", json=body | change).status_code == 422
+            assert client.get("/curation/skills/unmapped").json() == before
+        missing = {k: v for k, v in body.items() if k != "expected_revision"}
+        assert client.post("/curation/skills/resolve", json=missing).status_code == 422
+        mapped = client.post("/curation/skills/resolve", json=body)
+        assert mapped.status_code == 200
+        assert mapped.json() == dict(action="map", alias="Approved extracted", canonical="python",
+            category="language", decided_at=mapped.json()["decided_at"], admin_user_id=None)
+        assert "map raw" not in mapped.text and normalize_skill("Approved extracted").canonical == "python"
+        assert normalize_skill("Map raw") is None
+        conflict = client.post("/curation/skills/resolve", json=body | {"norm_key": "create raw",
+            "expected_revision": snapshots["create raw"]["review_revision"]})
+        assert conflict.status_code == 409 and conflict.json() == {"detail": "approved alias already exists"}
+        assert snapshots["create raw"] in client.get("/curation/skills/unmapped").json()["terms"]
+        created = client.post("/curation/skills/resolve", json=body | {"norm_key": "create raw", "action": "create",
+            "alias": "Approved new extracted", "canonical": "extracted_skill", "category": "data",
+            "expected_revision": snapshots["create raw"]["review_revision"]})
+        assert created.status_code == 200 and normalize_skill("Approved new extracted").canonical == "extracted_skill"
+        ignore = dict(norm_key="ignore raw", action="ignore", expected_revision=snapshots["ignore raw"]["review_revision"])
+        assert client.post("/curation/skills/resolve", json=ignore).status_code == 200
+        services.curation.record_unmapped("Ignore raw", source_id=source)
+        fresh = client.get("/curation/skills/unmapped").json()
+        stale = client.post("/curation/skills/resolve", json=ignore)
+        assert stale.status_code == 409 and stale.json() == {"detail": "review snapshot changed; refresh before deciding"}
+        assert client.get("/curation/skills/unmapped").json() == fresh
+        ignored = client.post("/curation/skills/resolve", json=ignore | {"expected_revision": fresh["terms"][0]["review_revision"]})
+        assert ignored.status_code == 200 and ignored.json()["alias"] is None
+        absent = client.post("/curation/skills/resolve", json=ignore)
+        assert absent.status_code == 404 and absent.json() == {"detail": "term not found"}
+        assert client.get("/curation/skills/unmapped").json() == {"terms": [], "next_cursor": None}
+
+
+def test_curation_operator_auth_cookie_csrf_identity_and_revocation(cfg, capture_path):
+    from tests.curation_helpers import saved_source
+
+    services = make_services(cfg)
+    _, source = saved_source(services.session_factory)
+    services.curation.record_unmapped("Operator raw", source_id=source)
+    email = "extracted-reviewer@example.in"
+    operator = services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
+    org = services.ledger.create_organization("Curation employer")
+    org_key = services.ledger.issue_api_key(org.id)
+    candidate_id, _ = saved_source(services.session_factory)
+    candidate_key = services.candidates.issue_access_key(candidate_id)
+    with TestClient(curation_app(services), raise_server_exceptions=False) as client:
+        body = dict(norm_key="operator raw", action="map", alias="Approved operator",
+                    canonical="python", category="language", expected_revision="0" * 64)
+        for headers in ({}, {"X-Org-Key": org_key}, {"X-Candidate-Key": candidate_key}, {"X-API-Key": "invalid"}):
+            assert client.get("/curation/skills/unmapped", headers=headers).status_code == 401
+            assert client.post("/curation/skills/resolve", json=body, headers=headers).status_code == 401
+        before = client.get("/curation/skills/unmapped", headers=ADMIN_HEADERS).json()
+        body["expected_revision"] = before["terms"][0]["review_revision"]
+        assert client.post("/auth/admin/login", json={"email": email}).status_code == 202
+        login = client.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
+        assert login.status_code == 200
+        # Even a valid machine key cannot bypass session CSRF or replace its actor.
+        client.headers.update(ADMIN_HEADERS)
+        assert client.get("/curation/skills/unmapped").json() == before
+        for token in (None, "wrong"):
+            headers = {} if token is None else {"X-CSRF-Token": token}
+            assert client.post("/curation/skills/resolve", json=body, headers=headers).status_code == 403
+            assert client.get("/curation/skills/unmapped").json() == before
+        approved = client.post("/curation/skills/resolve", json=body, headers={"X-CSRF-Token": login.json()["csrf_token"]})
+        assert approved.status_code == 200 and approved.json()["admin_user_id"] == operator.id
+        client.headers.pop("X-API-Key")
+        assert services.auth.delete_admin_user(operator.id)
+        assert client.get("/curation/skills/unmapped").status_code == 401
+        assert client.post("/curation/skills/resolve", json=body).status_code == 401

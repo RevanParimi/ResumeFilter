@@ -2002,3 +2002,157 @@ evidence inline in the existing T3 record; reuse consolidated route tests and
 existing curation HTTP/Chrome journeys. Preserve operator auth/CSRF, paginated
 queue/status/cursor contracts, revision conflicts, alias decisions and curated
 overlay behavior. T4 has not started. No next task or deployment during publication.
+
+## <a id="r4-s1-t3k"></a>R4-S1-T3K - Extract curation routes
+
+Status: done (2026-10-22). Only K completed in this session.
+Trigger/result: curation requests currently execute in the aggregate route module;
+move its two operations and `CurationResolveRequest` into `api/curation.py`.
+Compose the already guarded routes at the same aggregate position. Preserve the
+shared dependency and domain response types; caller search found no request DTO
+or handler imports requiring aggregate compatibility aliases.
+
+Acceptance: full 102-operation ordered auth/OpenAPI contract is unchanged;
+standalone curation/auth routers preserve operator key/session gating, cookie
+precedence and CSRF, authenticated decision identity, raw-free receipts,
+status/limit/cursor behavior, 404/409/422 translations, required revisions,
+stale snapshot/alias-conflict rollback, map/create/ignore and immediate overlay
+refresh. Source ownership, erasure and reload/restart behavior stay intact.
+No service/store/SQL/migration/scorer/frontend change; process-local overlay and
+mutable pagination limitations remain. L/M/T4 do not start.
+
+Validation: characterize curation workflows in the existing consolidated route
+test module before moving, then mount just curation/auth for those workflows.
+Run focused curation/auth/route tests and full offline pytest; reuse
+`smoke_curation_activation.py` for migrated HTTP/restart and
+`check_ui_curation_browser.py` through its `--browser` option for actual Chrome.
+Reuse the existing stop-file uvicorn loop for graceful HTTP shutdown; preserve
+the demo and working DB. Run bindings/JS syntax, compile/diff checks and record
+implementation self-review, then completion review and scoped commit/push with
+remote verification. Pure extraction expects passing characterization, not a
+functional defect or an expected-red test. No new PostgreSQL concurrency gate
+applies without SQL/transaction/schema changes.
+
+### <a id="r4-s1-t3k--evidence-and-review"></a>Evidence and review
+
+Two operations and one DTO now live in `api/curation.py` (73 lines); aggregate
+`routes.py` is 328 lines. The full 102-operation contract fixture is unchanged.
+The shared admin dependency and domain response/error classes retain identity.
+
+Commands use `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3k.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. The local runner
+clears inherited DEE config/keys, points to absent YAML and uses isolated stores
+and fake/null/capture providers. Logs: `.pytest_cache/r4-s1-t3k-<tag>.txt`;
+ignored local artifacts are not portable setup guarantees.
+
+Pre-move `characterization`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_curation_api.py
+tests/test_curation_activation.py`: initial test-setup error (nonexistent store
+helper), 1 failed/46 passed; corrected setup uses the existing durable-source
+fixture and access-key method. `characterization-corrected`: **47 passed,
+1 warning, 19.16s**, exit 0, 24.92s runner. All three new workflows first mounted
+the original aggregate, then switched to curation/auth only. This pure extraction
+expects passing characterization; the fixture error is not a product regression.
+
+Post-move `focused`: `-m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_curation_api.py
+tests/test_curation_activation.py tests/test_curation_service.py
+tests/test_curation_store.py tests/test_curation_overlay.py
+tests/test_curation_review_revisions.py tests/test_curation_owned_store.py
+tests/test_curation_capture.py tests/test_curation_input_boundary.py
+tests/test_curation_schema.py tests/test_api_auth_gate.py tests/test_auth_api.py
+tests/test_route_table_guard.py tests/test_org_scope_guard.py
+tests/test_openapi_contract.py`: **190 passed, 64 skipped, 52 warnings, 119.43s**,
+exit 0 (125.16s runner). Three standalone workflows assert capped/cursor/status
+queues, two surviving contributors and erasure revisions, malformed/refused
+requests without mutation, exact raw-free receipts, immediate overlay changes,
+stale replacement and alias rollback, key/plane isolation, cookie/key CSRF,
+authenticated decision identity and reviewer revocation. Existing fixtures also
+exercise owned storage and revision lifecycle. PostgreSQL skips do not prove
+controlled lock behavior; Starlette/httpx and expression-index reflection warnings
+remain.
+
+Migrated HTTP (`journey scripts/smoke_curation_activation.py`): **20/20**, exit 0,
+20.81s. Reuses the existing stop-file uvicorn loop and checks both normal shutdown
+exits; revision 0029, two source contributors, surviving ownership after erasure,
+refused capture, raw-free map/ignore receipts, auth and cookie/key CSRF,
+authenticated operator identity, exact queue revision across graceful restart,
+legacy/new overlay loading, expiry/maintenance and sanitized capture failure pass.
+No working migration/demo restart; normal exits are not new SQL-disposal probes.
+
+Actual Chrome (`browser scripts/smoke_curation_activation.py --browser`):
+**53/53 combined HTTP/browser checks**, exit 0, 58.48s. Real operator sign-in,
+map/create/ignore and normalization, revision transmission, reload, alias and
+two-operator stale-review conflicts, uncertain network/timeout/503 recovery,
+failed refresh, navigation and late writes, actual 20/25-row paging, denied/invalid
+read cache clearing, expiry/erasure, reviewer revocation and denied org/candidate
+sessions all pass. No console exceptions. Three graceful app lifespans preserve
+browser-approved vocabulary over restart; Chrome cleanup is forced on Windows.
+Chrome needs existing CDN internet; providers/mail are fake/capture. No live
+provider, measured quality or cross-worker overlay claim.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, passed;
+`node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q src/app/api/routes.py src/app/api/curation.py
+tests/test_api_route_extraction.py scripts/smoke_curation_activation.py` and
+`git diff --check` pass. No frontend source change.
+
+Implementation self-review: HEAD `36b92d9` plus aggregate/new curation,
+consolidated route tests and the existing modified curation HTTP harness.
+Specification review maps both operations/DTO to full-contract, standalone, HTTP
+and actual Chrome evidence. Correctness review traces principal/dependency order,
+cookie/key CSRF and operator identity, source ownership/privacy, queue bounds,
+cursor/status/error translations, revision/alias rollback, overlay/erasure and
+owned subprocess shutdown/restart. `review -I .pytest_cache/review_r4_s1_t3k.py`:
+exit 0, 3.03s. All **18** original aggregate class/function definitions, including
+decorators/signatures/bodies, are AST-identical across aggregate/curation;
+independent import, shared schemas/errors and exactly one admin gate per operation
+pass. Five reviewed code/contract hashes recorded. No blocking finding remains.
+Same-agent self-review is not independent review. No SQL/transaction/migration
+change, so no new PostgreSQL concurrency/migration gate applies.
+
+Initial preservation (`.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3k.py`):
+711 unrelated tracked files, working DB and five reviewed code/contract hashes
+unchanged; scoped Markdown links/anchors and whitespace pass. Remote `origin/main`
+matches starting HEAD `36b92d9b3df513e5954a7bd27b0b6eb7fcaf8289`.
+Full pytest (`full-reviewed`, no extra runner arguments): **3531 passed,
+505 skipped, 127 warnings in 7058.15s (1:57:38)**, exit 0 (7074.35s runner).
+Existing Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain. Environment/optional skips do not establish omitted
+cases. The full suite ran on the reviewed code; only documentation changed later.
+Acceptance and required validation are complete. Mutable queue ordering,
+process-local overlay and retention scheduling limitations remain unchanged.
+
+### <a id="r4-s1-t3k--completion-review-and-publication"></a>Completion review and publication
+
+After required checks and completion/evidence/PI/handoff updates, a distinct final
+same-agent self-review examined HEAD `36b92d9` plus the exact nine staged files:
+aggregate/new curation, consolidated route tests, existing curation HTTP harness
+and five handoff/roadmap/PI/task/evidence records. Specification review confirms
+two operations/one DTO, unchanged full ordered API/auth contract, required runtime
+validation, evidence ownership and the L-only next pointer. Correctness review
+rechecks shared schemas/errors/principal identity and dependency order, cookie/key
+CSRF and authenticated decision actor, source privacy/erasure, queue bounds and
+status/cursor/error behavior, revision/alias rollback, overlay refresh and graceful
+subprocess restart. No blocking finding remains. `completion-review -I
+.pytest_cache/review_r4_s1_t3k.py`: exit 0, 5.10s; all 18 original definitions,
+independent import, shared schemas/errors, single admin gates and five reviewed
+hashes match. This later self-review is separate from implementation review;
+no independent review is claimed. Only documentation changed after full pytest.
+Final preservation confirms 711 unrelated tracked files, working DB and reviewed
+code/contract hashes unchanged; 169 local links/anchors across five scoped Markdown
+files and tracked/staged whitespace pass. Staging excludes secrets, working data,
+generated artifacts and unrelated files. Configured tracking branch is
+`origin/main`; publication uses G's per-command account selection for the existing
+two-account Credential Manager setup. Commit/push and remote verification follow
+this recorded final review; actual publication is recorded below.
+
+### <a id="r4-s1-t3k--handoff"></a>Handoff
+
+Only K completed. T3/F13/sprint/PI remain open. Exact next: **R4-S1-T3L - Extract
+operator accounts, retention, metrics and signal-quality routes**, not started.
+Write L's contract/evidence inline in the existing T3 record; reuse consolidated
+route tests and existing operator HTTP/Chrome journeys. Preserve admin auth/CSRF,
+account/session revocation, dry-run retention defaults and refusal, metrics media
+type and advisory label/report behavior. T4 has not started. No next task or
+deployment during publication.

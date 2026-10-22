@@ -6,6 +6,15 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T3K completed; curation route extraction.**
+  Two operations and one DTO move to `api/curation.py`, preserving full API/auth,
+  operator CSRF/identity, source ownership, queue/revision/alias contracts and
+  normalization overlay behavior. [K evidence](delivery/EVIDENCE-R4.md#r4-s1-t3k)
+  owns focused/full pytest, migrated HTTP/graceful restart, actual curation Chrome,
+  static/preservation and separate review/publication records. Working storage/demo
+  preserved. T3/F13/sprint/PI remain open; exact next T3L (operator accounts,
+  retention, metrics and signal quality), not started. Stop after K; T4 not started.
+
 - **Session 2026-10-22 - R4-S1-T3J completed; interview route extraction.**
   Six operations, five DTOs and one response helper move to `api/interviews.py`;
   full API/auth, ownership, transcript privacy, current scoped consent/audit and

@@ -1,22 +1,23 @@
 """Remaining product handlers and ordered API assembly.
 
-Auth, reports, candidates, screening, ledger, employer, features, portal, verification
-and interviews have API modules.
+Auth, reports, candidates, screening, ledger, employer, features, portal, verification,
+interviews and curation have API modules.
 Shared request/auth dependencies keep the same principal and CSRF boundaries.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app import __version__
 # Compatibility aliases retain callable identity for existing route guards.
 from app.api.auth import auth_router
+from app.api.curation import router as curation_router
 from app.api.interviews import (
     candidate_router as interview_candidate_router, org_router as interview_org_router,
 )
@@ -46,11 +47,6 @@ from app.api.dependencies import (
 from app.auth.schema import AdminUser
 from app.domains.base import get_domain, list_domains
 from app.profile_sources.store import SourceSubjectErasedError
-from app.curation.schema import (
-    CurationAction, CurationDecision, CurationStatus, UnmappedPage,
-)
-from app.curation.service import AliasConflictError
-from app.curation.store import StaleReviewError
 from app.retention.schema import SweepReport
 from app.retention.sweep import run_sweep
 from app.signal_quality.labels import LedgerLabelSource, OutcomesLabelSource
@@ -59,7 +55,6 @@ from app.signal_quality.service import measure
 from app.rights.schema import (
     GrievanceContact, build_grievance_contact,
 )
-from app.screening.pagination import InvalidCursor
 from app.services.llm import NullLLM
 
 
@@ -121,61 +116,7 @@ router.routes.extend(evaluation_router.routes)
 router.routes.extend(candidate_admin_router.routes)
 
 
-# ── Normalization curation loop (S6.3) ───────────────────────────────────────
-# Admin-plane review of unmapped skill terms surfaced by the profile-source
-# adapters. Resolving a term feeds the deterministic normalize_skill overlay.
-# The admin router authenticates operator sessions/keys and enforces session CSRF.
-
-
-class CurationResolveRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    norm_key: str = Field(min_length=1, max_length=128)
-    action: CurationAction
-    alias: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    canonical: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    category: Optional[str] = Field(default=None, min_length=1, max_length=32)
-    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-
-@router.get(
-    "/curation/skills/unmapped", response_model=UnmappedPage,
-    description=(
-        "The unmapped-term review queue. Cursor-paginated; pass `next_cursor` back as `cursor`. NOTE the sort key "
-        "(occurrences, last_seen) is mutable, so paging is stable against "
-        "inserts and not against re-observation."
-    ),
-)
-async def list_unmapped_terms(
-    request: Request,
-    status: Optional[CurationStatus] = None,
-    limit: Optional[int] = None,
-    cursor: Optional[str] = None,
-) -> UnmappedPage:
-    try:
-        return _services(request).curation.list_unmapped(status, limit, cursor=cursor)
-    except (InvalidCursor, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@router.post("/curation/skills/resolve", response_model=CurationDecision)
-async def resolve_unmapped_term(
-    req: CurationResolveRequest, request: Request
-) -> CurationDecision:
-    services = _services(request)
-    try:
-        return services.curation.resolve(
-            req.norm_key, req.action, alias=req.alias, canonical=req.canonical,
-            category=req.category, admin_user_id=request.state.principal.admin_user_id,
-            expected_revision=req.expected_revision,
-        )
-    except StaleReviewError:
-        raise HTTPException(status_code=409, detail="review snapshot changed; refresh before deciding") from None
-    except AliasConflictError:
-        raise HTTPException(status_code=409, detail="approved alias already exists") from None
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail="term not found") from None
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+router.routes.extend(curation_router.routes)
 
 
 # ── Evaluation ledger (S3.2) ────────────────────────────────────────────────
