@@ -3214,3 +3214,226 @@ commit/push. No D work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4D - Extract evaluation/report UI handlers and view values**,
 not started. Define its bounded contract in the existing T4 record before
 implementation in the next session. Stop after C publication.
+
+## <a id="r4-s1-t4d"></a>R4-S1-T4D - Extract evaluation/report UI logic
+
+Status: done (2026-10-22); publication follows final completion review. Parent:
+[T4](tasks/R4-S1-T4.md). Prerequisite: [T4C](#r4-s1-t4c), done/published.
+
+### Contract and acceptance
+
+Move Instant check inputs/submission, report loading/navigation, feedback and
+probe-copy handlers plus evaluation/report/feedback view mappings from
+`frontend/Veritas.dc.html` to `frontend/evaluation-report.js`. Reuse the plain
+script factory/subclass seam, passing existing API, resource, display, browser
+and timer helpers explicitly. Keep shared state, navigation/session/unmount
+invalidation, PDF reading, template, generated runtime, API client and backend
+behavior unchanged. Compose evaluation values before live overrides and report
+values at their existing screening-map position. Add only the named module to
+public static delivery and existing offline execution entry points. The moved
+probe cache remains per-instance; shared unmount still clears its timer.
+
+Acceptance: organization text/PDF evaluation uses its existing owned route;
+operator evaluation uses the ad-hoc route. Invalid/candidate input refuses;
+duplicate clicks produce one request. Saved report IDs, reload/hash restoration,
+report read retries and feedback reads/writes retain route/ownership/CSRF
+boundaries. Errors preserve drafts and existing uncertain-write advice without
+automatic replay or fabricated success. Navigation keeps completed evaluations
+available without changing the new screen; session loss/unmount invalidate late
+results, and feedback cannot clear another report/account's notes or token.
+Detached callbacks retain receiver/identity; same-class instances have separate
+mutable state, pending requests and report/probe/feedback caches. Report mapping
+preserves factual/style separation, historical v1 labels/scores, missing and
+unsupported assessment states, withheld match identities, candidate clarification
+and advisory/human-review wording. Probe-copy state and feedback history retain
+their existing behavior. All bindings and the ordered API/auth contract remain
+intact. Remove only proven dead/duplicate code in this bounded area.
+
+### Required validation
+
+Extend `scripts/test_ui_evaluate.js` with before/after callback, same-class
+isolation and report-semantics characterizations. Keep its input/PDF/error/
+session/retry tests and run all existing offline handlers. Extend existing
+mount and migrated HTTP module-delivery checks. Run focused UI/image/mount,
+evaluation/report/outcome/auth and ordered API-contract pytest; full offline
+pytest; bindings and JS syntax including extracted inline logic. Actual Chrome:
+`scripts/check_ui_evaluate_browser.py` and
+`scripts/check_ui_review_context_browser.py` cover evaluation/feedback and
+advisory/style/historical report rendering. Reuse `scripts/smoke_r3_s1_q.py`
+for migrated evaluation/report/outcome/restart (Windows stop is forced), and
+`scripts/smoke_r4_s1_t3d.py` for module serving, scoped report/feedback persistence
+and graceful restart. Browser fixtures/transport faults prove mechanics, not
+live providers or accuracy. Record implementation self-review, preservation,
+completion and distinct final self-review before scoped commit/push/remote
+verification. No schema/transaction/concurrency changes; no new PostgreSQL gate
+applies. Preserve working storage, unrelated work and the existing demo. Stop
+after D; next E will extract screening handlers/view values with its contract
+defined next session. T4/F13/sprint/PI remain open.
+
+### Evidence
+
+Starting HEAD `890efc9700c38470caa082cc5f0bcc096bdc293f`; initial worktree clean.
+This pure extraction uses passing before/after characterizations, not a
+product-defect reproduction. Sanitized runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t4d.py <tag> <Python args>` clears inherited DEE config/
+keys, ignores `.env`, blocks external GitHub and uses existing fake providers
+and isolated stores. Omitted args after the tag run project `-m pytest -q
+--tb=short`; logs use `.pytest_cache/r4-s1-t4d-<tag>.txt`. Baseline hashes cover
+725 tracked files including the working DB; local artifacts stay ignored.
+
+Pre-move `node --test scripts/test_ui_evaluate.js`: **27 passed, 0 failed,
+0 skipped, 396.55ms**; post-move same command: **27 passed, 0 failed,
+0 skipped, 399.16ms**, both exit 0. New characterizations exercise detached
+evaluation/input/feedback callbacks and stable identity, separate factory state,
+same-class pending evaluations and feedback, account-loss invalidation,
+per-instance probe/feedback caches, report v2/v1/unknown/missing semantics,
+withheld match identities and probe-copy notice state/timer cleanup. This is
+not OS clipboard-delivery evidence. Existing tests retain organization/operator
+routes, PDF/text replacement, malformed success, input/CSRF/policy/timeout/
+network/503 recovery, report read retry, hash reload, navigation, session loss,
+unmount and late feedback/401 guards. All seven offline handler subprocesses
+reuse this actual extracted composition.
+
+Focused `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py
+tests/test_api_route_extraction.py tests/test_screening_outcome_api.py
+tests/test_report_outcomes.py tests/test_report_response_erasure.py
+tests/test_auth_api.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py`: **144 passed, 2 skipped, 1 warning in 39.47s**,
+exit 0 (47.18s runner). Includes actual offline handlers, anonymous module bytes/
+JavaScript media type, static confinement, image COPY/ignore, report/outcome/
+erasure boundaries and unchanged ordered 102-operation API/auth/OpenAPI contract.
+Environment skips do not prove PostgreSQL or omitted cases; image contract
+checks are not an image build.
+
+Actual Chrome `evaluation-browser scripts/check_ui_evaluate_browser.py`:
+**38/38**, exit 0, 33.06s runner, plus shared harness **1/1** app-contract check.
+Migrated scratch SQLite (0029) and captured sign-in prove organization text/PDF,
+duplicate clicks, real report summary/ID, factual/style advisory context,
+cross-tenant refusal, saved feedback and lost acknowledgement followed by
+read-only recovery, document reload without resubmission, unreadable PDF retry,
+domain selection, navigation/late results, erasure/404, session expiry and stale
+401 after operator login. Operator ad-hoc/candidate-free report and feedback,
+candidate refusal, captured contact, portal consent/access/erasure and no console
+exceptions also pass. Transport timeout/network/503/lost acknowledgements are
+synthetic; ordinary auth/mutations use real HTTP. Existing CDN internet is
+required. Windows process stop is forced, not graceful-lifecycle evidence.
+
+Actual Chrome `review-browser scripts/check_ui_review_context_browser.py`:
+**28/28**, exit 0, 28.30s runner. Real reports with fake providers prove paired
+plain/polished factual context, separate unverified style observations, timeline
+clarification, content matches without identities, insufficient/missing/unknown
+assessment refusal, original historical v1 score/summary without JSON rewrite,
+authorized report reload, real missing-report error/recovery and no console
+exceptions. Existing employer board/role/compensation empty/saved/error flows
+also pass. Windows stop is forced. Neither browser run validates live providers
+or measured accuracy; working storage/demo are untouched.
+
+Migrated HTTP `evaluation-journey scripts/smoke_r3_s1_q.py`: **20/20**, exit 0,
+25.05s runner. Organization and operator evaluation/report/outcomes, CSRF/plane/
+ownership refusals, named human provenance, captured contact and exact saved
+report/judgement restart checks pass. Windows shutdown here is forced.
+
+Migrated HTTP `graceful-journey scripts/smoke_r4_s1_t3d.py`: **18/18**, exit 0,
+27.33s runner, plus reused screening HTTP contract **31/31** (HTTP simulation,
+not Chrome). Anonymous named-module delivery checks declaration, exact bytes,
+JavaScript media type and unrelated-path refusal before/after restart. Existing
+scoped report/feedback, private operator notes, named reviewer, ownership/CSRF,
+batch/queue/summary/advisory and exact persisted report/outcomes pass. Both
+migrated scratch app lifespans require graceful exit 0 with shared SQL disposal.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass.
+`review -I .pytest_cache/review_r4_s1_t4d.py`: exit 0, 1.86s runner; `node
+--check` covers API client, generated runtime, account/organization/curation/
+evaluation-report modules, existing changed Node behavior/checker scripts and
+extracted inline logic (`.pytest_cache/r4-s1-t4d-inline.js`). Project `compile
+-m compileall -q src/app/main.py tests/test_ui_mount.py
+scripts/smoke_r4_s1_t3d.py`: exit 0, 0.21s runner. Existing frontend COPY/ignore
+includes the named module; Dockerfile, generated runtime and API client are
+unchanged. No image build is claimed. Tracked/source whitespace passes.
+
+Implementation self-review: HEAD `890efc9` plus HTML/new evaluation-report
+module, named static allowlist, existing Node/checker/HTTP entry points and mount
+test. Specification review maps the bounded contract to before/after Node,
+focused API/route/erasure checks, both actual Chrome journeys and migrated HTTP.
+Correctness review traces composed-class field initialization, receiver identity,
+explicit API/resource/display/browser/timer capture, evaluation/live/report-map
+precedence, per-instance probe/feedback caches and request tokens, route/URL
+encoding, draft recovery, no automatic replay, navigation/session/unmount
+invalidation, factual/style and scorer-version handling, identity withholding,
+static confinement and packaging. All **16** handler bodies, probe-cache field,
+evaluation view mapping and report inputs/mapping are text-identical. Shared
+state/lifecycle/PDF reader and other logic are identical after normalizing only
+the script/base/view composition edits. Main's AST changes only the named static
+allowlist entry. **16** reviewed source/harness/contract hashes are recorded.
+No blocking finding remains. This same-agent self-review is not independent
+review. No schema/transaction/concurrency changes or new PostgreSQL gate apply.
+No dead handler or duplicate sample/live evaluation/report source was found to
+remove in this bounded area; unrelated prototype screens remain for later work.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4d.py`:
+**713** unrelated tracked files, working DB and **16** reviewed hashes unchanged;
+scoped local Markdown links/anchors and tracked/staged/source whitespace pass.
+Tracking branch is `origin/main`; its pre-publication remote matches starting
+HEAD.
+
+Full pytest `full-reviewed` (no extra runner arguments; project `-m pytest -q
+--tb=short`): **3539 passed, 505 skipped, 127 warnings in 741.75s (0:12:21)**,
+exit 0 (750.79s runner). Existing Starlette/httpx deprecation
+and SQLite expression-index reflection/autogenerate warnings remain. Optional
+and environment skips do not prove omitted cases. Sixteen reviewed source/
+harness/contract hashes remain unchanged; only documentation changed during
+the run.
+
+All bounded D acceptance and required validation gates are complete. Evaluation,
+report, feedback and probe-copy handlers plus their mappings have one
+implementation in the new plain script. Shared state/lifecycle/PDF reader,
+template and API/auth behavior remain unchanged. No dead handler or sample/live
+duplicate was found to remove. D alone completed this session; T4/F13/sprint/PI
+remain open. Working storage/demo are preserved. No E implementation or
+deployment started.
+
+### Completion review and publication
+
+After required validation and completion records, a distinct final same-agent
+self-review examined HEAD `890efc9` plus the exact thirteen staged files:
+HTML/new evaluation-report module, named static allowlist, existing Node/checker/
+HTTP entry points, mount test, feature overview, handoff, roadmap, PI/evidence
+and active T4 parent record. Specification review confirms the bounded
+extraction, required validation, unchanged ordered API/auth contract, single
+evaluation/report implementation, child evidence ownership and E-only next
+pointer, with T4/F13/sprint/PI still open.
+
+Correctness review rechecks composed-class initialization (bound handlers and
+the probe cache initialize before shared state, but handlers read state only
+when called), explicit API/resource/display/navigator/timer capture, evaluation
+values before live overrides, report values at the original screening position,
+per-instance caches and request tokens, report URL/route encoding, PDF helper
+reuse, feedback draft recovery, uncertain writes without automatic replay,
+navigation/session/unmount invalidation, advisory/style separation, preserved
+historical scores, missing/unsupported assessment refusal, withheld match
+identities, static confinement and packaging. Generated runtime/API client and
+other screen logic remain unchanged. No blocking finding remains. This final
+self-review is separate from implementation review; no independent review is
+claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4d.py`: exit 0, 1.76s runner;
+all sixteen original handler bodies, probe-cache field and complete evaluation/
+report inputs/mappings match. Shared template/state/lifecycle/PDF reader and
+main AST comparisons pass; shipped/test/inline JS syntax and sixteen reviewed
+source/harness/contract hashes match. Final preservation confirms **713**
+unrelated tracked files, working DB and **16** reviewed hashes unchanged;
+**277** scoped local links/anchors and tracked/staged whitespace pass. Only
+documentation changed during/after full pytest. Exact staged scope excludes
+secrets, working data and local artifacts. Tracking branch is `origin/main`;
+its pre-publication remote matches starting HEAD. Publication uses G's existing
+per-command account selection. No E work, demo restart or deployment started.
+
+Scoped commit/push and remote verification follow this recorded completion
+review.
+
+### Handoff
+
+Exact next: **R4-S1-T4E - Extract screening UI handlers and view values**, not
+started. Define its bounded contract in the existing T4 record before
+implementation in the next session. Stop after D publication.

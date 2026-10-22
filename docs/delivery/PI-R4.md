@@ -89,14 +89,14 @@ the parent is now done. Next: T4, not started. F13/sprint/PI stay open.
 Status: in progress (split before implementation, 2026-10-22). Audit mapping: F13. Prerequisites: R4-S1-T3.
 
 [T4 parent](tasks/R4-S1-T4.md) owns the bounded child sequence and active
-contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a),
-[T4B](EVIDENCE-R4.md#r4-s1-t4b) and [T4C](EVIDENCE-R4.md#r4-s1-t4c) are done
-(2026-10-22): account, organization and curation handlers/view values live in
-plain scripts with the same shared lifecycle, API/auth and rendered behavior.
+contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a), [T4B](EVIDENCE-R4.md#r4-s1-t4b),
+[T4C](EVIDENCE-R4.md#r4-s1-t4c) and [T4D](EVIDENCE-R4.md#r4-s1-t4d) are done
+(2026-10-22): account, organization, curation and evaluation/report logic live
+in plain scripts with the same shared lifecycle, API/auth and rendered behavior.
 Focused/full pytest, migrated HTTP/restart, actual Chrome, bindings/syntax,
-preservation and implementation self-review pass. C owns the distinct final
-completion review/publication record. Only C completed this session; exact next
-T4D (evaluation/report), not started. The parent, F13 and sprint/PI remain open.
+preservation and implementation self-review pass. D owns the distinct final
+completion review/publication record. Only D completed this session; exact next
+T4E (screening), not started. The parent, F13 and sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

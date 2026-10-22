@@ -4,45 +4,46 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4C complete and published: curation UI extraction.**
-The 16 handlers/view mapping now live in `frontend/curation.js`; shared state,
-lifecycle/template and API/auth behavior are preserved. Before/after Node,
-focused/full offline pytest, bindings/syntax, migrated HTTP/actual Chrome
-(53/53 combined), operator HTTP/graceful restart (50/50), preservation and
-implementation self-review pass. [C evidence](delivery/EVIDENCE-R4.md#r4-s1-t4c)
-owns exact commands/counts/limits and the distinct final completion review/
-publication record. Distinct final completion self-review found no blocking
-issues. Scoped task commit `5221f9f` is pushed to `origin/main`; remote
-`5221f9f8f215933d9af7bd3bad07c2e795631e3a` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation. Only C completed this session;
+**R4-S1-T4D complete: evaluation/report UI extraction.**
+The 16 handlers, probe cache and evaluation/report/feedback mappings now live
+in `frontend/evaluation-report.js`; shared state/lifecycle/PDF reader, template
+and API/auth behavior are preserved. Before/after Node, focused/full offline
+pytest, bindings/syntax, actual Chrome (38/38 evaluation; 28/28 advisory),
+migrated HTTP (20/20 evaluation; 18/18 screening/graceful restart plus 31/31
+HTTP contract), preservation and implementation self-review pass.
+[D evidence](delivery/EVIDENCE-R4.md#r4-s1-t4d) owns exact commands/counts/limits
+and the distinct final completion review/publication record. Distinct final
+completion self-review found no blocking issues; scoped commit/push is next.
+Only D completed this session;
 [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
-**Exact next development task: R4-S1-T4D - Extract evaluation/report UI handlers
-and view values, not started.** Read [PI-R4](delivery/PI-R4.md),
-[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and C evidence.
-Define D's bounded contract before implementation in the next session. Preserve
-plane/ownership/consent boundaries, advisory results, uncertain-write recovery
-and navigation/session invalidation. No D work or deployment started.
+**Exact next development task: R4-S1-T4E - Extract screening UI handlers and
+view values, not started.** Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and D evidence.
+Define E's bounded contract before implementation in the next session. Preserve
+file intake, batch ownership, processing/retry bounds, report callbacks,
+navigation and pending-result invalidation. No E work or deployment started.
 
 ## Latest work
 
-Detached curation callbacks retain their receiver, and same-class instances
-keep pending decisions/drafts separate. Exact loaded revisions, blank approved
-aliases, explicit map/create/ignore, stale/missing snapshot handling and read
-recovery before an explicit retry are preserved. HTTP/Chrome proves persisted
-vocabulary and normalization, errors/reload, stale expiry/erasure, revocation,
-plane refusal and graceful app restart. Working DB/unrelated tracked files match
-baseline; no demo restart. Publication uses G's existing per-command GitHub
-account selection. Ignored-artifact removal stays outside scope;
+Detached evaluation/feedback callbacks retain their receiver; same-class
+instances isolate pending work and probe/feedback caches. Organization/operator
+routes, PDF/text recovery, report hash/reload, feedback and ambiguous-write copy
+are unchanged. Report mapping retains advisory/style separation, historical
+scores, missing/unsupported assessment refusal and withheld match identities.
+HTTP proves exact saved reports/feedback and graceful restart; Chrome proves
+actual input/report/feedback/advisory rendering, errors/reload and session/
+consent/erasure boundaries. Working DB/unrelated tracked files match baseline;
+no demo restart. Publication uses G's existing per-command GitHub account
+selection. Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4c.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4d.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

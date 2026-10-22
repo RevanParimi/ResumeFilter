@@ -97,9 +97,10 @@ and DTOs live in product modules, with `routes.py` limited to ordered assembly.
 The full API/auth contract, tenant/subject ownership, consent/erasure and
 advisory responses are preserved. A-M own their validation evidence.
 Frontend extraction T4 is in progress: [T4A](docs/delivery/EVIDENCE-R4.md#r4-s1-t4a),
-[T4B](docs/delivery/EVIDENCE-R4.md#r4-s1-t4b) and
-[T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c) move account, organization and
-curation handlers/view values into plain scripts, preserving saved operations,
-key/confirmation handling, explicit human review and recovery flows. Evaluation/
-report extraction is next; other frontend areas and sprint integration remain
+[T4B](docs/delivery/EVIDENCE-R4.md#r4-s1-t4b),
+[T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c) and
+[T4D](docs/delivery/EVIDENCE-R4.md#r4-s1-t4d) move account, organization,
+curation and evaluation/report handlers/view values into plain scripts,
+preserving saved operations, advisory context, human review and recovery flows.
+Screening extraction is next; other frontend areas and sprint integration remain
 pending. T4/F13/sprint/PI stay open.

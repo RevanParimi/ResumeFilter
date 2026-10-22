@@ -13,6 +13,7 @@ const logic = html.slice(start, html.indexOf("</script>", start));
 const operatorAccountsSource = fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8");
 const organizationAdminSource = fs.readFileSync(path.join(ROOT, "frontend/organization-admin.js"), "utf8");
 const curationSource = fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8");
+const evaluationReportSource = fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(ROOT, "frontend/api.js"), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const report = { id: "rep_server_123", domain: "genai", verdicts: [] };
@@ -33,6 +34,7 @@ function component(kind = "org", post) {
   new Function("window", operatorAccountsSource)(window);
   new Function("window", organizationAdminSource)(window);
   new Function("window", curationSource)(window);
+  new Function("window", evaluationReportSource)(window);
   const C = new Function("DCLogic", "window", "document", "navigator", "FileReader",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval", logic + "\nreturn Component;")(
     DCLogic, window, window.document = {}, {}, Reader, setTimeout, clearTimeout, () => 0, () => {});
@@ -344,6 +346,96 @@ test("late 401 from a replaced session cannot sign out the new account", async (
   window.document.cookie = ""; // Cookie expiry during the current request must still clear the UI.
   await assert.rejects(current, e => e.kind === "session_lost");
   assert.equal(lost, 1);
+});
+
+test("detached evaluation and feedback callbacks retain receiver and separate factory state", async () => {
+  const first = component(), second = component();
+  const view = first.c.renderVals();
+  assert.notEqual(view.runEvaluate, second.c.renderVals().runEvaluate);
+  view.setEvalText({ target: { value: "Detached synthetic resume" } });
+  view.setEvalGithub({ target: { value: "https://github.com/synthetic" } });
+  await view.runEvaluate(); await settle();
+  assert.equal(first.calls.find(row => row[0] === "POST")[2].resume_text, "Detached synthetic resume");
+  assert.equal(first.c.state.evalReportId, report.id);
+  assert.equal(second.c.state.evalReportId, null);
+  assert.equal(second.calls.length, 0);
+  assert.equal(first.c.renderVals().runEvaluate, view.runEvaluate);
+  const reportView = first.c.renderVals();
+  reportView.setOutcomeNotes({ target: { value: "Detached human review" } });
+  reportView.outcomeButtons[0].record(); reportView.outcomeButtons[0].record(); await settle();
+  const writes = first.calls.filter(row => row[0] === "POST" && row[1].endsWith("/outcome"));
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][2].notes, "Detached human review");
+  assert.equal(second.c.state.outcomeNotes, "");
+  assert.equal(first.c.renderVals().outcomeButtons[0].record, reportView.outcomeButtons[0].record);
+});
+
+test("same-class instances isolate pending evaluations and cached feedback callbacks", async () => {
+  const { c, window } = component();
+  const sibling = new c.constructor();
+  Object.assign(sibling.state, { screen: "evaluate", plane: "org", me: { kind: "org" },
+    evalText: "Sibling synthetic resume" });
+  const pending = [];
+  window.VeritasAPI.post = (_path, body) => new Promise(resolve => { pending.push({ body, resolve }); });
+  window.VeritasAPI.get = async path => path.endsWith("/outcomes") ? { outcomes: [] }
+    : { ...report, id: decodeURIComponent(path.split("/").at(-1)) };
+  const firstRun = c.runEvaluate(), siblingRun = sibling.runEvaluate();
+  assert.equal(pending.length, 2); assert.notEqual(c._evaluating, sibling._evaluating);
+  c.handleSessionLost();
+  c.setState({ me: { kind: "admin" }, screen: "evaluate", evalText: "New account draft" });
+  pending[0].resolve({ report: { ...report, id: "stale-report" } }); await firstRun;
+  assert.equal(c.state.evalReportId, null); assert.equal(c.state.evalText, "New account draft");
+  assert.equal(sibling.state.evalBusy, true);
+  pending[1].resolve({ report: { ...report, id: "sibling-report" } }); await siblingRun; await settle();
+  assert.equal(sibling.state.report.data.id, "sibling-report");
+  c.openReport("operator-report")(); await settle();
+  const firstView = c.renderVals(), siblingView = sibling.renderVals();
+  assert.notEqual(firstView.outcomeButtons[0].record, siblingView.outcomeButtons[0].record);
+  assert.notEqual(c._outcomeHandlers, sibling._outcomeHandlers);
+  assert.notEqual(c._copyHandlers, sibling._copyHandlers);
+  firstView.setOutcomeNotes({ target: { value: "First human notes" } });
+  siblingView.setOutcomeNotes({ target: { value: "Sibling human notes" } });
+  firstView.outcomeButtons[0].record(); siblingView.outcomeButtons[0].record();
+  c.handleSessionLost(); c.state.outcomeNotes = "New session notes";
+  pending[2].resolve({}); await settle();
+  assert.equal(c.state.outcomeNotes, "New session notes"); assert(sibling.state.outcomeBusy);
+  assert.equal(sibling.state.outcomeNotes, "Sibling human notes");
+  pending[3].resolve({}); await settle();
+  assert.equal(sibling.state.outcomeBusy, null); assert.equal(sibling.state.outcomeNotes, "");
+  assert.equal(c.state.outcomeNotes, "New session notes");
+});
+
+test("report values retain advisory versions, withheld identities and cached probe state", () => {
+  const { c } = component();
+  const saved = { ...report, summary: "Stored assessment wording", depth_band: "deep", depth_score: 0.8,
+    candidate_context: { full_name: "Synthetic Reviewer" },
+    fabrication_risk: { scorer_version: 2, band: "low", score: 0.1, confidence: 0.9, components: [] },
+    ai_generation: { band: "likely", signals: [{ source: "llm", detail: "Synthetic opinion" }] },
+    resume_farm: { corpus_size: 2, matches: [{ similarity: 0.5, candidate_id: "private-subject", resume_id: "private-resume" }] },
+    verdicts: [{ claim_text: "Dated contribution", status: "supported", claim_type: "experience",
+      coherence_score: 0.8, confidence: 0.8, probes: ["Clarify contribution"] }] };
+  c.state.report = { data: saved, loading: false, error: null };
+  const view = c.renderVals();
+  assert.match(view.reportVersionNote, /writing style is excluded/);
+  assert.match(view.reportRiskExplanation, /not the probability of dishonesty/);
+  assert.match(view.reportStyleSignals[0], /unverified/);
+  assert.equal(view.reportScore, "0.10");
+  assert(!JSON.stringify(view.reportFarmMatches).includes("private-"));
+  assert.match(view.reportFarmLine, /Match identities are withheld/);
+  assert.equal(c.renderVals().reportVerdicts[0].copy, view.reportVerdicts[0].copy);
+  view.reportVerdicts[0].copy();
+  assert.equal(c.renderVals().reportVerdicts[0].copyLabel, "Copied");
+  c.componentWillUnmount(); // Release the existing copy-notice timer.
+  saved.fabrication_risk = { ...saved.fabrication_risk, scorer_version: 1, score: 0.72 };
+  assert.match(c.renderVals().reportVersionNote, /Historical assessment/);
+  assert.equal(c.renderVals().reportScore, "0.72");
+  assert.equal(c.renderVals().reportSummary, "Stored assessment wording");
+  saved.fabrication_risk.scorer_version = 99;
+  assert.equal(c.renderVals().reportBandLabel, "Unsupported version");
+  assert.equal(c.renderVals().reportIndexLabel, "Review index unavailable");
+  saved.fabrication_risk = null;
+  assert.equal(c.renderVals().reportScore, "—");
+  assert.match(c.renderVals().reportVersionNote, /No factual review assessment/);
 });
 
 module.exports = { component, settle };

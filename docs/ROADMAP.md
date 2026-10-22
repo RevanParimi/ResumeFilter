@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T4D completed; evaluation/report UI extraction.**
+  The 16 handlers, probe cache and evaluation/report/feedback mappings move to
+  `frontend/evaluation-report.js`; shared state/lifecycle/PDF reader, template
+  and API/auth behavior are preserved. [D evidence](delivery/EVIDENCE-R4.md#r4-s1-t4d)
+  owns before/after Node, focused/full pytest, both actual Chrome journeys,
+  migrated evaluation HTTP and screening HTTP/graceful restart, bindings/syntax,
+  preservation and separate review/publication records. Advisory/style and
+  historical report semantics remain unchanged. Working data/demo preserved.
+  Only D completed; T4/F13/sprint/PI stay open. Exact next T4E (screening), not
+  started. Stop after D.
+
 - **Session 2026-10-22 - R4-S1-T4C completed; curation UI extraction.**
   The 16 handlers/view mapping move to `frontend/curation.js`; shared state,
   lifecycle, template and API/auth behavior are preserved. Explicit approval,

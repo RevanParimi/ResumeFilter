@@ -59,6 +59,7 @@ log = get_logger("main")
 #: an old `_ds` directory must not make its files public again.
 UI_ASSETS = frozenset({
     "api.js", "support.js", "Veritas.dc.html", "operator-accounts.js", "organization-admin.js", "curation.js",
+    "evaluation-report.js",
 })
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open

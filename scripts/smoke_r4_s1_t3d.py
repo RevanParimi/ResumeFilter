@@ -84,8 +84,20 @@ def main():
         http.headers["X-CSRF-Token"] = session["csrf_token"]
         return session
 
+    def public_ui():
+        with client(base) as page:
+            entry = page.get("/ui/")
+            module = page.get("/ui/evaluation-report.js")
+            checks.check("anonymous UI delivers its declared evaluation/report module",
+                entry.status_code == module.status_code == 200
+                and '<script src="./evaluation-report.js"></script>' in entry.text
+                and module.content == (ROOT / "frontend/evaluation-report.js").read_bytes()
+                and "javascript" in module.headers["content-type"]
+                and page.get("/ui/not-an-asset.txt").status_code == 404)
+
     with client(base, headers={"X-API-Key": ADMIN}) as control, client(base) as actor, client(base) as other:
         with server():
+            public_ui()
             contract.run_checks(mailbox)
             checks.check("reused UI HTTP contract passes", contract.S.summary() == 0)
             login(actor, "screening-router-a@example.in", "Screening Router A")
@@ -120,6 +132,7 @@ def main():
             checks.check("completed queue and summary remain advisory", saved[""]["counts"]["done"] == 2
                 and saved["/summary"]["n_screened"] == 2 and all(row["advisory"] and row["human_review_required"] for row in saved["/queue"]["rows"]))
         with server():
+            public_ui()
             checks.check("cookie session and exact batch queue summary survive restart", all(require(actor.get(path + suffix)) == body for suffix, body in saved.items()))
             checks.check("report and employer judgments survive restart exactly", require(actor.get(report_path)) == saved_report
                 and require(actor.get(report_path + "/outcomes"))["outcomes"] == outcomes)
