@@ -1815,7 +1815,7 @@ T4 has not started. No next task or deployment during publication.
 
 ## <a id="r4-s1-t3j"></a>R4-S1-T3J - Candidate interviews and employer assessment summaries
 
-Status: done (2026-10-22). Parent: [T3](tasks/R4-S1-T3.md).
+Status: done and published (2026-10-22). Parent: [T3](tasks/R4-S1-T3.md).
 Prerequisite: [I](#r4-s1-t3i), done/published.
 Only J is in scope; T3/F13/sprint/PI remain open.
 
@@ -1977,8 +1977,22 @@ links/anchors across five Markdown files and staged whitespace pass. Staging
 excludes secrets, working data, generated artifacts and unrelated files.
 Configured tracking branch is `origin/main`; remote matched the starting HEAD
 before publication. Commit/push will use per-command account selection from G's
-existing two-account Credential Manager evidence. Scoped publication pending;
-no K work, demo restart or deployment.
+existing two-account Credential Manager evidence. Scoped task commit **`7a2f7be`**
+was created; `git -c credential.https://github.com.username=RevanParimi push`
+(with `GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main
+from `4b59ac9` to `7a2f7be`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`7a2f7be4b5869cf94d2e53d4faa490ee0471a623`**. Working tree was clean.
+No K work, demo restart or deployment occurred.
+
+This two-file documentation-only confirmation records that verified publication
+in the handoff and this existing evidence section. Its separate final self-review
+against `7a2f7be` checks the exact prose diff, actual remote evidence, unchanged
+task limits and K-only next pointer; no blocking finding remains. Scoped links/
+whitespace and preservation checks pass. Application code remains at the full
+pytest/API/Chrome validated state, so no application tests were rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push.
 
 ### <a id="r4-s1-t3j--handoff"></a>Handoff
 

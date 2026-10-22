@@ -4,7 +4,7 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3J complete: candidate interviews and employer assessment extraction.**
+**R4-S1-T3J complete and published: interviews/employer assessment extraction.**
 Six operations, five DTOs and one helper now live in `api/interviews.py`;
 aggregate `routes.py` is 387 lines. Full 102-operation ordered auth/OpenAPI,
 subject/tenant ownership, cookie/CSRF, transcript privacy, current consent/audit,
@@ -12,8 +12,11 @@ ASR refusal/budget/fallback and versioned advisory content scoring remain unchan
 Focused/full offline pytest, migrated mixed-channel HTTP/graceful restart,
 actual interview Chrome and static/preservation/implementation self-review passed.
 [J evidence](delivery/EVIDENCE-R4.md#r4-s1-t3j) owns commands, results and limits.
-Distinct final completion self-review found no blocking issues. Scoped commit/push
-and remote verification remain pending; no next task or deployment started.
+Distinct final completion self-review found no blocking issues. Scoped task commit
+`7a2f7be` is pushed to `origin/main`; remote
+`7a2f7be4b5869cf94d2e53d4faa490ee0471a623` was verified. This documentation-only
+confirmation records publication; the final response reports its remote SHA.
+No next task or deployment started during publication.
 
 **Exact next development task: R4-S1-T3K - Extract curation routes, not started.**
 Read [PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
