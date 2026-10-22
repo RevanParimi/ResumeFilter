@@ -65,19 +65,16 @@ F13 and sprint/PI closure remain open.
 
 ### R4-S1-T3 — Split routes by product area
 
-Status: in progress (split before implementation, 2026-10-17). Audit mapping: F13. Prerequisites: R4-S1-T2.
+Status: done (2026-10-22). Audit mapping: F13. Prerequisites: R4-S1-T2.
 
-[T3 parent](tasks/R4-S1-T3.md) owns the area sequence and future inline child
-contracts/evidence. A-L are done; [PI-R4 evidence](EVIDENCE-R4.md#r4-s1-t3a)
-retains their contracts and exact validation. [T3L](EVIDENCE-R4.md#r4-s1-t3l)
-is done (2026-10-22): six operator operations and three DTOs extracted; full
-API/auth, account/session revocation, retention safeguards, Prometheus media type
-and advisory signal-label/refusal behavior remain unchanged. Focused/full pytest,
-migrated HTTP/graceful restart, actual operator Chrome, static/preservation and
-implementation self-review gates pass. Its child evidence owns the distinct final
-completion review/publication record. Next: T3M, public health/domain/grievance/
-service surface and final composition; not started.
-Parent, remaining child, finding and sprint stay open.
+[T3 parent](EVIDENCE-R4.md#r4-s1-t3) links all A-M contracts/evidence.
+[T3M](EVIDENCE-R4.md#r4-s1-t3m) completes the four remaining operations,
+three DTOs and final ordered composition. The full 102-operation API/auth
+contract remains unchanged; aggregate `routes.py` contains only assembly.
+Focused/full pytest, migrated HTTP/graceful restart, actual Chrome,
+static/preservation and implementation self-review pass. M owns the distinct
+final completion review/publication record. Only M completed this session;
+the parent is now done. Next: T4, not started. F13/sprint/PI stay open.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 

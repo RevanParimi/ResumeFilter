@@ -1,4 +1,4 @@
-"""Auth/ledger/employer/features extraction: migrated HTTP, ownership and restart.
+"""API extraction composition: migrated HTTP, ownership and graceful restart.
 
 Uses captured mail and the existing fake-provider SQL app/graceful server loop.
 No external mail/provider calls, working storage or existing demo restart.
@@ -40,6 +40,9 @@ def main():
         "DEE_LOGIN_OTP_DEBUG_ECHO": "false", "DEE_LOGIN_OTP_STATIC_CODE": "",
         "DEE_VERIF_OTP_DEBUG_ECHO": "false", "DEE_LOGIN_OTP_COOLDOWN_SECONDS": "0",
         "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
+        "DEE_GRIEVANCE_OFFICER_NAME": "Synthetic Public Officer",
+        "DEE_GRIEVANCE_OFFICER_EMAIL": "public-officer@example.in",
+        "DEE_GRIEVANCE_OFFICER_PHONE": "+91 80 4000 0000", "DEE_GRIEVANCE_RESPONSE_DAYS": "21",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
         "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t1a:create_smoke_app",
@@ -76,6 +79,35 @@ def main():
         assert response.status_code == status, (response.request.url.path, response.status_code)
         return response.json()
 
+    def public_surface():
+        from app import __version__
+
+        with client(base) as anonymous:
+            health = require(anonymous.get("/healthz"))
+            contact = require(anonymous.get("/grievance"))
+            service = require(anonymous.get("/"))
+            checks.check("anonymous health preserves version environment effective mode and ordered domains",
+                health == {"status": "ok", "version": __version__, "env": "local",
+                    "llm_mode": "live", "domains": ["data_eng", "genai"]})
+            checks.check("published grievance exposes exactly the configured contact",
+                contact == {"name": "Synthetic Public Officer", "email": "public-officer@example.in",
+                    "phone": "+91 80 4000 0000", "response_days": 21})
+            schema = require(anonymous.get("/openapi.json"))
+            advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
+                for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
+                key=lambda e: (e.split(" ", 1)[1], e))
+            checks.check("service stays advisory and advertises all 101 other operations without docs or UI",
+                service == {"service": "depth-eval-engine", "advisory": True,
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 101)
+            checks.check("invalid machine credentials do not gate the three public reads", all(
+                require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
+                for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
+            checks.check("domains refuse anonymous and invalid admin credentials", all(
+                require(anonymous.get("/domains", headers=headers), 401)
+                    == {"detail": "invalid or missing admin credential"}
+                for headers in ({}, {"X-API-Key": "invalid"})))
+        return health, contact, service
+
     def login(http, plane, email, *, organization=None):
         body = {"email": email}
         if organization:
@@ -94,6 +126,12 @@ def main():
     with client(base, headers={"X-API-Key": ADMIN}) as control, client(base) as operator, \
             client(base) as org, client(base) as other_org, client(base) as candidate, client(base) as sibling:
         with server():
+            saved_public = public_surface()
+            saved_domains = require(control.get("/domains"))
+            checks.check("admin machine key reads both domains with their existing metadata",
+                [row["key"] for row in saved_domains] == ["data_eng", "genai"]
+                and all(set(row) == {"key", "display_name", "claim_types"}
+                    and row["display_name"] and row["claim_types"] for row in saved_domains))
             require(control.post("/admin/users", json={"email": "router-admin@example.in", "label": "Synthetic router admin"}))
             admin_csrf = login(operator, "admin", "router-admin@example.in")
             org_csrf = login(org, "org", "router-org@example.in", organization="Synthetic Router A")
@@ -102,6 +140,9 @@ def main():
             sibling_csrf = login(sibling, "candidate", "router-candidate@example.in")
             who = [require(http.get("/auth/me")) for http in (operator, org, other_org, candidate)]
             checks.check("three planes resolve their own sessions", [row["kind"] for row in who] == ["admin", "org", "org", "candidate"])
+            checks.check("domain safe read accepts operator cookie and refuses org and candidate cookies",
+                require(operator.get("/domains", headers={"X-API-Key": "invalid"})) == saved_domains
+                and org.get("/domains").status_code == candidate.get("/domains").status_code == 401)
             checks.check("anonymous and header-only callers cannot use session lifecycle", control.get("/auth/me").status_code == 401)
             for http, path, body in (
                 (operator, "/ledger/orgs", {"name": "Denied without CSRF"}),
@@ -303,6 +344,9 @@ def main():
                 and sibling.get("/admin/requests").status_code == 401
                 and org.get("/admin/requests").status_code == 401)
         with server():
+            checks.check("public bodies and guarded domain metadata survive graceful restart exactly",
+                public_surface() == saved_public and require(operator.get("/domains")) == saved_domains
+                and org.get("/domains").status_code == sibling.get("/domains").status_code == 401)
             checks.check("all planes and tenant data survive graceful restart", operator.get("/admin/users").status_code == 200
                 and org.get(f"/jobs/{job['id']}").status_code == 200 and sibling.get("/portal/me").status_code == 200
                 and other_org.get(f"/jobs/{job['id']}").status_code == 404)

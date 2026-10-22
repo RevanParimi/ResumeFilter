@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-22 - R4-S1-T3M completed; route composition finalized.**
+  Four operations/three DTOs and endpoint discovery move to `api/public.py`;
+  aggregate `routes.py` now contains only ordered assembly. The full 102-operation
+  API/auth contract, public allowlist, domain guard and advisory response remain
+  unchanged. [M evidence](delivery/EVIDENCE-R4.md#r4-s1-t3m) owns focused/full
+  pytest, migrated HTTP/graceful restart, actual Chrome, static/preservation and
+  separate review/publication records. A-M close [T3](delivery/EVIDENCE-R4.md#r4-s1-t3).
+  Working storage/demo preserved. F13/sprint/PI stay open; exact next T4 (frontend
+  components/dead handlers), not started. Stop after M.
+
 - **Session 2026-10-22 - R4-S1-T3L completed; operator route extraction.**
   Six operations/three DTOs move to `api/operator.py`, preserving full API/auth,
   account/session revocation, retention safeguards, metrics format and advisory
@@ -118,7 +128,7 @@
   API/dependency contract unchanged; no SQL/scorer/UI change or PG/live-provider/
   quality/independent-review claim. Working DB/prior edits/demo preserved;
   scratch processes stopped. T3/F13/sprint/PI stay open. Exact next T3E, not
-  started; stop after D. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the sequence.
+  started; stop after D. [T3 parent](delivery/EVIDENCE-R4.md#r4-s1-t3) owns the sequence.
 
 - **Session 2026-10-18 - R4-S1-T3C completed; candidate workflow extraction.**
   Ten admin operations and shared intake/erasure DTOs now live in api/candidates;
@@ -129,7 +139,7 @@
   imports/static checks, self-review and preservation. Working DB/prior edits/demo
   preserved; scratch processes stopped. No SQL/scorer/UI change or PG/live-provider/
   quality/independent-review claim. T3/F13/sprint/PI stay open. Exact next T3D,
-  not started; stop after C. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the sequence.
+  not started; stop after C. [T3 parent](delivery/EVIDENCE-R4.md#r4-s1-t3) owns the sequence.
 
 - **Session 2026-10-18 - R4-S1-T3B completed; evaluation/report workflow.**
   Moved four admin operations, DTOs and shared outcome helpers to api/reports.
@@ -140,7 +150,7 @@
   and preservation. Windows HTTP stop is forced; no new graceful-cleanup/PG/live-
   provider/quality claim. Working DB, unrelated edits and existing demo preserved;
   scratch processes stopped. T3/F13/sprint/PI stay open. Exact next T3C, not started;
-  stop after B. [T3 parent](delivery/tasks/R4-S1-T3.md) owns the area sequence.
+  stop after B. [T3 parent](delivery/EVIDENCE-R4.md#r4-s1-t3) owns the area sequence.
 
 - **Session 2026-10-17 - R4-S1-T3A completed; authentication router extraction.**
   Split T3 into bounded product areas before implementing only A. Auth/session
@@ -151,7 +161,7 @@
   Chrome, isolated import/static checks, self-review and preservation. No SQL,
   scorer, UI behavior or working-data change; demo preserved and scratch processes
   stopped. Parent T3/F13/sprint/PI remain open. Exact next T3B, not started;
-  stop after A. [T3 parent](delivery/tasks/R4-S1-T3.md) owns remaining areas.
+  stop after A. [T3 parent](delivery/EVIDENCE-R4.md#r4-s1-t3) owns remaining areas.
 
 - **Session 2026-10-16 - R4-S1-T2 completed; unused provenance infrastructure.**
   Removed the unused Chroma/vector/hash service, dependency and startup path.

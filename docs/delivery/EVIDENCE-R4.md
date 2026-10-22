@@ -11,6 +11,8 @@ execution, independent review, live-provider check or broader quality claim.
 - [R4-S1-T1A](#r4-s1-t1a)
 - [R4-S1-T1B](#r4-s1-t1b)
 - [R4-S1-T2](#r4-s1-t2)
+- [R4-S1-T3](#r4-s1-t3)
+- [R4-S1-T3M](#r4-s1-t3m)
 - [R4-S1-T3A](#r4-s1-t3a)
 - [R4-S1-T3B](#r4-s1-t3b)
 - [R4-S1-T3C](#r4-s1-t3c)
@@ -430,7 +432,7 @@ was repeated after these updates with the same 880/16 hashes and demo HTTP 200.
 
 ## <a id="r4-s1-t3a"></a>R4-S1-T3A — Extract authentication/session routes
 
-Status: done (2026-10-17). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1; F13.
+Status: done (2026-10-17). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1; F13.
 Prerequisite: [T2](#r4-s1-t2), done. Only child authorized for this session.
 
 ### <a id="r4-s1-t3a--contract"></a>Contract
@@ -539,7 +541,7 @@ unrelated files, seven reviewed hashes and existing demo HTTP 200.
 
 ## <a id="r4-s1-t3b"></a>R4-S1-T3B — Extract evaluation and operator report/outcome routes
 
-Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1; F13.
+Status: done (2026-10-18). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1; F13.
 Prerequisite: [T3A](#r4-s1-t3a), done. Only current-session child.
 
 ### <a id="r4-s1-t3b--contract"></a>Contract
@@ -653,7 +655,7 @@ code/contract hashes and existing demo HTTP 200.
 
 ## <a id="r4-s1-t3c"></a>R4-S1-T3C — Extract candidate intake, resumes and profile-source routes
 
-Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+Status: done (2026-10-18). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1;
 F13. Prerequisite: [T3B](#r4-s1-t3b), done. Only this child this session.
 
 ### <a id="r4-s1-t3c--contract"></a>Contract
@@ -794,7 +796,7 @@ remain. The existing demo was never restarted.
 
 ## <a id="r4-s1-t3d"></a>R4-S1-T3D — Extract employer screening, batches, queue and scoped reports
 
-Status: done (2026-10-18). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+Status: done (2026-10-18). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1;
 F13. Prerequisite: [T3C](#r4-s1-t3c), done. Only this child this session.
 
 ### <a id="r4-s1-t3d--contract"></a>Contract
@@ -928,7 +930,7 @@ processes are absent; the existing demo was never restarted.
 
 ## <a id="r4-s1-t3e"></a>R4-S1-T3E - Extract ledger administration and employer evidence routes
 
-Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+Status: done (2026-10-20). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1;
 F13. Prerequisite: [T3D](#r4-s1-t3d), done. Only E completed this session.
 
 ### <a id="r4-s1-t3e--contract"></a>Contract
@@ -1071,7 +1073,7 @@ original completion sessions.
 
 ## <a id="r4-s1-t3f"></a>R4-S1-T3F - Extract employer jobs, compensation and dashboard routes
 
-Status: done (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md). PI-R4 / R4-S1;
+Status: done (2026-10-20). Parent: [T3](#r4-s1-t3). PI-R4 / R4-S1;
 F13. Prerequisite: [T3E](#r4-s1-t3e), done. Only F completed this continuation.
 
 ### <a id="r4-s1-t3f--contract"></a>Contract
@@ -1235,7 +1237,7 @@ original completion sessions.
 ## <a id="r4-s1-t3g"></a>R4-S1-T3G - Extract feature materialization and talent search routes
 
 Status: done and published (2026-10-20); remote commit verified.
-Parent: [T3](tasks/R4-S1-T3.md). Prerequisite: [F](#r4-s1-t3f), done.
+Parent: [T3](#r4-s1-t3). Prerequisite: [F](#r4-s1-t3f), done.
 Only G is authorized for this continuation; T3/F13/sprint/PI remain open.
 
 ### <a id="r4-s1-t3g--contract"></a>Contract
@@ -1446,7 +1448,7 @@ No next-backlog implementation or deployment during publication.
 
 ## <a id="r4-s1-t3h"></a>R4-S1-T3H - Extract candidate portal and data-principal request routes
 
-Status: done and published (2026-10-20). Parent: [T3](tasks/R4-S1-T3.md).
+Status: done and published (2026-10-20). Parent: [T3](#r4-s1-t3).
 Prerequisite: [G](#r4-s1-t3g), done/published.
 Only H is in scope for this continuation; T3/F13/sprint/PI remain open.
 
@@ -1630,7 +1632,7 @@ T4 has not started. No next backlog task or deployment during publication.
 
 ## <a id="r4-s1-t3i"></a>R4-S1-T3I - Verification, documents and employer assurance
 
-Status: done and published (2026-10-21). Parent: [T3](tasks/R4-S1-T3.md).
+Status: done and published (2026-10-21). Parent: [T3](#r4-s1-t3).
 Prerequisite: [H](#r4-s1-t3h), done/published.
 Only I is in scope; T3/F13/sprint/PI remain open.
 
@@ -1815,7 +1817,7 @@ T4 has not started. No next task or deployment during publication.
 
 ## <a id="r4-s1-t3j"></a>R4-S1-T3J - Candidate interviews and employer assessment summaries
 
-Status: done and published (2026-10-22). Parent: [T3](tasks/R4-S1-T3.md).
+Status: done and published (2026-10-22). Parent: [T3](#r4-s1-t3).
 Prerequisite: [I](#r4-s1-t3i), done/published.
 Only J is in scope; T3/F13/sprint/PI remain open.
 
@@ -2351,3 +2353,232 @@ composition**, not started. Write M's bounded contract/evidence inline in the
 existing T3 record; preserve the full ordered API/auth contract, named public
 allowlist, `/domains` admin guard, liveness mode and advisory/human-review service
 response. T4 has not started. No next task starts during L publication.
+
+## <a id="r4-s1-t3"></a>R4-S1-T3 - Split routes by product area
+
+Status: done (2026-10-22); split before implementation, 2026-10-17. PI-R4 / R4-S1;
+F13. Prerequisite: [T2](#r4-s1-t2), done.
+
+Original contract: the 2,871-line route module mixed 102 operations across auth
+planes and product areas. Extract cohesive modules without changing HTTP behavior or adding
+a routing/dependency framework. Shared principal resolution and CSRF remain in
+one dependency module; preserve import aliases actually used by current callers.
+Each child evidence section owns its bounded contract, focused/full pytest,
+affected migrated HTTP and relevant browser journey, OpenAPI/route comparison and separate self-review.
+No SQL/service/scorer/frontend changes are implied. Missing evidence keeps the
+child open; this parent required every child to pass. A-M are now complete.
+
+| Child | Bounded area | Status |
+|---|---|---|
+| [T3A](#r4-s1-t3a) | Authentication/session router and shared request/auth dependencies | Done (2026-10-17); child owns evidence |
+| [T3B](#r4-s1-t3b) | Evaluation and operator reports/outcomes | Done (2026-10-18); child owns evidence |
+| [T3C](#r4-s1-t3c) | Candidate intake, resume management and profile sources | Done (2026-10-18); child owns evidence |
+| [T3D](#r4-s1-t3d) | Employer screening, batches, queue and scoped reports/outcomes | Done (2026-10-18); child owns evidence |
+| [T3E](#r4-s1-t3e) | Ledger organizations, consent, records, coding and reputation | Done (2026-10-20); child owns evidence |
+| [T3F](#r4-s1-t3f) | Employer jobs, compensation and dashboard | Done (2026-10-20); child owns evidence |
+| [T3G](#r4-s1-t3g) | Feature materialization and talent search | Done/published (2026-10-20); child owns evidence |
+| [T3H](#r4-s1-t3h) | Candidate portal, consent/access and data-principal requests | Done (2026-10-20); child owns evidence |
+| [T3I](#r4-s1-t3i) | Verification, documents and employer assurance reads | Done (2026-10-21); child owns evidence |
+| [T3J](#r4-s1-t3j) | Candidate interviews and employer assessment summaries | Done (2026-10-22); child owns evidence |
+| [T3K](#r4-s1-t3k) | Curation | Done (2026-10-22); child owns evidence |
+| [T3L](#r4-s1-t3l) | Operator accounts, retention, metrics and signal quality | Done (2026-10-22); child owns evidence |
+| [T3M](#r4-s1-t3m) | Public health/domain/grievance/service surface and final composition | Done (2026-10-22); child owns evidence |
+
+Common acceptance: every method/path, operation ID, success/error response,
+response schema, dependency order, ownership/auth plane and cookie/CSRF behavior
+is preserved; no duplicate/unguarded registration or circular imports. Child
+boundaries may be refined from actual callers before starting each child; do not
+create placeholder evidence files for unstarted children. Reuse existing guards,
+fakes and journeys, and compare the full contract at every extraction.
+
+A-M are complete; their linked sections own the bounded contracts, exact
+validation, review and publication records. Final composition keeps all 102
+operations in their original order with the same OpenAPI/auth digest. `routes.py`
+is now 69 lines of assembly, with no handlers or DTOs; all handlers live in
+product modules. This closes T3 only. F13, R4-S1 and PI-R4 remain open for T4
+and their integration gate. Exact next: **R4-S1-T4 - Extract frontend components
+and remove dead handlers**, not started. Define its first bounded child in the
+next session before implementation. No T4 work starts during M publication.
+
+2026-10-18 R4-M1 maintenance consolidated completed records and related tests;
+[the audit](../CODEBASE_REVIEW_2026-09-07.md#follow-up-2026-10-18--test-and-delivery-consolidation)
+owns its acceptance and validation. No additional route extraction in that task.
+
+## <a id="r4-s1-t3m"></a>R4-S1-T3M - Public surface and final composition
+
+Status: done (2026-10-22). Prerequisite: [L](#r4-s1-t3l), done/published.
+
+### Contract and acceptance
+
+Extract `GET /domains`, `/grievance`, `/healthz` and `/` with their three DTOs
+into `api/public.py`. The domain router retains the shared admin dependency;
+the other three operations retain their named public exemptions. Keep the
+existing ordered 102-operation OpenAPI/auth fixture unchanged, including route
+names, descriptions, schemas and dependencies. Separate the service-description
+router so `/` remains last, after auth and the UI mount. Move live endpoint
+discovery with that handler; retain helper/guard aliases used by current callers.
+Reduce `routes.py` to ordered assembly, without route slicing, extra inherited
+dependencies or a new framework. No service, SQL, transaction, schema, frontend,
+provider, readiness or scoring changes.
+
+Acceptance: anonymous/invalid credentials can read health, the configured public
+four-field grievance contact and the advisory/human-review service description.
+Health retains version, environment, ordered registered domains and effective
+null/live mode without invoking providers or storage. `/domains` returns the
+same registered metadata only for an admin key/session, refusing anonymous,
+org and candidate callers. Endpoint discovery follows each requesting app's
+current routes, including later additions, excluding docs/root/mounts and
+HEAD/OPTIONS. Preserve cookie precedence/CSRF across the composed API.
+
+Extend `tests/test_api_route_extraction.py` with pre-move characterizations,
+then run them against standalone public/domain/auth routers. Run focused API,
+root/contact/boot/auth/route/schema tests and full offline pytest. Extend the
+existing `scripts/smoke_r4_s1_t3a.py` migrated scratch HTTP/graceful-restart
+journey with these public/guarded behaviors, plus an actual Chrome evaluation/
+auth journey to check final composition. Run bindings/syntax/import, diff,
+documentation/preservation checks, implementation self-review and a distinct
+final completion self-review before scoped commit/push/remote verification.
+No new PostgreSQL migration/concurrency gate applies. Preserve working storage,
+unrelated files and the existing demo. Finish only M; T4 stays unstarted.
+
+### Evidence
+
+Starting HEAD `172c8b2c325c51ddffa52d0f18a206b6dc21db78`; initial tree clean.
+Sanitized runner `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_t3m.py
+<tag> <Python args>` clears inherited DEE config/keys, ignores `.env`, blocks
+external GitHub and uses fake providers/isolated stores. Omitted Python args
+run `-m pytest -q --tb=short`. Logs use `.pytest_cache/r4-s1-t3m-<tag>.txt`.
+Baseline hashes cover 721 tracked files, including working storage; the task
+contract had already been written when this preservation snapshot was taken.
+
+Pre-move `characterization -m pytest -q --tb=short
+tests/test_api_route_extraction.py -k 'public_surface or public_domains or
+public_service or product_extraction'`: **5 passed, 29 deselected, 1 warning,
+3.57s**, exit 0 (6.46s runner). The first attempt had two fixture failures
+because the composed app's access middleware also needs the metrics recorder;
+supplying that existing recorder fixed the fixture before extraction. Those
+failures are not a product-defect reproduction. Characterizations first ran
+against the aggregate and then switched to standalone public/domain/auth routers.
+
+Final focused `final-focused -m pytest -q --tb=short
+tests/test_api_route_extraction.py tests/test_api.py tests/test_root_endpoints.py
+tests/test_grievance_contact.py tests/test_boot_config.py
+tests/test_api_auth_gate.py tests/test_route_table_guard.py
+tests/test_org_scope_guard.py tests/test_openapi_contract.py
+tests/test_ui_mount.py tests/test_auth_api.py`: **170 passed, 1 warning, 49.88s**,
+exit 0 (55.80s runner). An earlier focused run passed 170/170 before the final
+explicit model-call refusal assertion was added. The final run includes that
+assertion. Full ordered API/auth/OpenAPI digest remains
+`cbdd461be76f67469f960cc56e6349e90ed99003db24b0acc7c4f45f2817e2b5` (102 operations).
+
+New standalone tests verify public reads with no auth/store services, both
+effective model modes with model invocation forbidden, exact configured contact,
+advisory/human-review response, admin-key/session domain metadata and other-plane
+refusals, logout refusal and requesting-app/later-route discovery without docs,
+mounts, root, HEAD/OPTIONS or duplicates. Existing root tests also exercise
+discovery through actual `create_app` composition.
+
+Migrated scratch HTTP `journey scripts/smoke_r4_s1_t3a.py`: **83/83**, exit 0,
+27.87s runner. Added anonymous/invalid-key public reads, configured four-field
+contact, effective live mode (fake model), exact 101-other-operation service
+listing against HTTP OpenAPI, domain key/operator-cookie access and candidate/org
+cookie refusals before/after restart. Existing auth/ledger/employer/features/
+portal/verification flows, consent/revocation, ownership and SQL disposal still
+pass. Both scratch lifespans exit gracefully with revision 0029. No working
+migration, demo restart or live provider calls.
+
+Static: `node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass;
+`node --check frontend/api.js`, `node --check frontend/support.js`, project
+`-m compileall -q src/app/api/routes.py src/app/api/public.py src/app/main.py
+tests/test_api_route_extraction.py scripts/smoke_r4_s1_t3a.py` and
+`git diff --check` pass. No frontend source change.
+
+Implementation self-review: HEAD `172c8b2` plus aggregate/new public module,
+main composition, consolidated route tests and existing HTTP harness. Specification
+review maps all four routes/three DTOs to standalone/full-contract and HTTP
+assertions. Correctness review traces domain admin dependency, named exemptions,
+cookie precedence/CSRF across unchanged planes, light health behavior, contact
+privacy, current requesting-app discovery, operation IDs/order and restart.
+`review -I .pytest_cache/review_r4_s1_t3m.py`: exit 0, 9.37s runner. All ten moved
+definitions are AST-identical, normalizing only domain/root decorator router names
+and root's explicit Request/`request.app` access in place of its closure. Standalone
+import needs no aggregate/main import; single domain guard, public exemptions,
+helper identity, full contract and absence of aggregate/main-owned handlers pass.
+Six reviewed code/contract hashes recorded. No blocking finding remains. This
+same-agent self-review is not independent review. No SQL/transaction/migration
+change; no new PostgreSQL concurrency/migration gate applies.
+
+Actual Chrome `browser scripts/check_ui_evaluate_browser.py`: **38/38**, exit 0,
+39.68s runner. Real sign-in/evaluation/report/advisory output, feedback recovery,
+reload, selected-domain PDF retry, auth expiry/ownership, candidate portal,
+consent/access, error recovery and erasure pass with no console exceptions.
+The shared browser harness also reports its **1/1** app-contract check. Chrome
+uses existing CDN internet, fake model/GitHub/speech and captured mail; injected
+transport faults test browser recovery, not real provider outages. Browser/app
+process cleanup is forced on Windows; the separate HTTP journey owns graceful
+restart evidence. No live-provider or measured-quality claim.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t3m.py`:
+712 unrelated tracked files, working DB and six reviewed hashes unchanged;
+172 local Markdown links/anchors and tracked/staged whitespace pass. Read-only
+remote check confirms `origin/main` still matches starting HEAD `172c8b2`.
+
+Full pytest `full-reviewed` (no extra runner args; project
+`-m pytest -q --tb=short`): **3538 passed, 505 skipped, 127 warnings in
+1166.90s (0:19:26)**, exit 0 (1180.56s runner).
+Existing Starlette/httpx deprecation and SQLite expression-index reflection/
+autogenerate warnings remain; optional/environment skips do not prove omitted
+cases. The reviewed code stayed unchanged through this full run. Final review
+then removed one terminal blank line in the new public module; its Python AST
+is identical. The affected static/contract checks were rerun below. No other
+application/test/harness source changed after full pytest started.
+
+All acceptance and required validation gates are complete. Four operations,
+three DTOs and three discovery helpers now live in `api/public.py`; `routes.py`
+is 69 lines (200 before M). Its ordered assembly has no handlers/models.
+The public allowlist, `/domains` admin guard and effective liveness behavior
+remain unchanged. Liveness is not storage readiness; readiness remains R4-S3-T2.
+Synthetic providers prove mechanics, not live integration or measured quality.
+Only M completed this session; A-M now close T3, while F13/sprint/PI remain open.
+No T4 work, working-data migration, demo restart or deployment occurred.
+
+### Completion review and publication
+
+After required validation and completion records, a distinct final same-agent
+self-review examined HEAD `172c8b2` plus the exact eleven staged files: aggregate,
+new public module, main composition, consolidated route tests, existing HTTP
+harness, feature overview, handoff, roadmap, PI/evidence and retired active T3
+record. Specification review confirms four operations/three DTOs, unchanged
+ordered 102-operation API/auth contract, all validation layers, A-M parent
+closure, single evidence ownership, updated inbound links and T4-only next pointer.
+Correctness review rechecks domain admin dependency and cookie precedence,
+public exemptions/contact privacy, health without storage/model calls, requesting
+app discovery, operation-ID assignment, dependency order, graceful restart and
+the unchanged consent/erasure/advisory boundaries. No blocking finding remains.
+This later self-review is separate from implementation review; no independent
+review is claimed.
+
+The staged whitespace check caught an extra terminal blank line in the new
+public module (untracked files were absent from the earlier `git diff --check`)
+and consolidation initially added a terminal blank line in the evidence file.
+Both are removed. The public module's before/after AST is identical; its reviewed
+hash was refreshed only for that whitespace change. `final-format-contract -m
+pytest -q --tb=short tests/test_api_route_extraction.py -k 'public_surface or
+public_domains or public_service or product_extraction'`: **5 passed,
+29 deselected, 1 warning, 7.62s**, exit 0 (12.74s runner). Project
+`-m compileall -q src/app/api/public.py` and tracked/staged whitespace pass.
+`completion-review-final -I .pytest_cache/review_r4_s1_t3m.py`: exit 0, 5.98s
+runner; rechecks all ten
+AST definitions, standalone import, shared guards/helpers, original route order,
+full contract and six final reviewed hashes. Final preservation confirms **711**
+unrelated tracked files, working DB and six reviewed hashes unchanged; scoped
+links/anchors and whitespace pass. Secrets, working data and local artifacts are
+excluded. Tracking branch is `origin/main`; publication uses G's existing
+per-command account selection. Scoped commit/push and remote verification
+follow; publication is not yet claimed. No T4 work or deployment started.
+
+### Handoff
+
+Exact next development task: **R4-S1-T4 - Extract frontend components and remove
+dead handlers**, not started. Read its PI section and workflow and define a
+bounded first child before implementation in the next session. Stop after M.

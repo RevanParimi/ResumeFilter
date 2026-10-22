@@ -4,47 +4,43 @@ Updated: 2026-10-22. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T3L complete and published: operator route extraction.**
-Six operations/three DTOs now live in `api/operator.py`; aggregate `routes.py`
-is 200 lines. Full 102-operation ordered auth/OpenAPI, account/session revocation,
-retention safeguards, Prometheus media type and advisory signal labels/refusals
-remain unchanged. Focused/full offline pytest, migrated HTTP/graceful restart
-(44/44), actual Chrome combined journey (62/62), static/preservation and
-implementation self-review pass. [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l)
-owns exact commands/counts/limits. Distinct final completion self-review found no
-blocking issues. Scoped task commit `26d9515` is pushed to `origin/main`; remote
-`26d9515bf122b73be549ce9ad1eafd05539fe1b8` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation. Only L completed this session.
-Working storage/demo are preserved; no M/T4 work or deployment started.
+**R4-S1-T3M complete: public surface and final route composition.**
+Four operations/three DTOs and endpoint discovery now live in `api/public.py`;
+`routes.py` is 69 lines of ordered assembly. The full 102-operation API/auth
+contract, public allowlist, `/domains` admin guard, effective liveness mode,
+published contact and advisory/human-review service response are unchanged.
+Focused/full offline pytest, migrated HTTP/graceful restart (83/83), actual
+Chrome (38/38), static/preservation and implementation self-review pass.
+[M evidence](delivery/EVIDENCE-R4.md#r4-s1-t3m) owns exact commands/counts/limits
+and the separate final completion review/publication record. Distinct final
+completion self-review found no blocking issues. Scoped commit/push/remote
+verification follow; publication is not yet claimed.
+Only M completed this session; A-M now close [T3](delivery/EVIDENCE-R4.md#r4-s1-t3).
+Working storage/demo are preserved. F13/sprint/PI remain open.
 
-**Exact next development task: R4-S1-T3M - Extract public health/domain/grievance/
-service surface and finalize composition, not started.** Read
-[PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
-[T3](delivery/tasks/R4-S1-T3.md) and [L evidence](delivery/EVIDENCE-R4.md#r4-s1-t3l).
-Write M's bounded contract/evidence inline in T3. Preserve the full ordered API/
-auth contract, named public allowlist, `/domains` admin guard, liveness mode and
-advisory/human-review service response. Only L completed this session;
-T3/F13/sprint/PI remain open. T4 has not started.
+**Exact next development task: R4-S1-T4 - Extract frontend components and remove
+dead handlers, not started.** Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md) and [M evidence](delivery/EVIDENCE-R4.md#r4-s1-t3m).
+Define its first bounded child contract before implementation in the next chat.
+No T4 work or deployment started in this session.
 
 ## Latest work
 
-Standalone operator/auth workflows retain hashed account identity, duplicate/
-missing refusals, cookie/key CSRF, multi-session revocation and other-operator
-survival. Retention preserves dry-run defaults, disabled-apply refusal, bounded
-preview/apply parity and recent rows. HTTP preserves human labels/sessions over
-graceful restart; Chrome verifies real account persistence, deletion and recovery.
-Working DB/unrelated tracked files match the baseline; no demo restart. A-L evidence is in
-[PI-R4 evidence](delivery/EVIDENCE-R4.md). Publication uses per-command GitHub
-account selection from G's existing two-account Credential Manager evidence.
-Ignored artifact removal stays outside scope;
-[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+Public reads work with anonymous/invalid credentials and no auth/store services;
+health invokes no model. Domain metadata retains admin key/session access and
+org/candidate refusals. Service endpoint discovery follows the requesting app's
+current routes. HTTP verifies unchanged public bodies and guarded domains after
+graceful restart; Chrome checks evaluation/auth/portal recovery and erasure.
+Working DB/unrelated tracked files match the baseline; no demo restart.
+Publication uses G's existing per-command GitHub account selection. Ignored
+artifact removal stays outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md)
+owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3l.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t3m.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

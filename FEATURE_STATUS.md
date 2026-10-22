@@ -92,12 +92,8 @@ accepted and ignored. Final validation is recorded in T2. F12/F13 remain open
 for their remaining sprint tasks/gate. No blanket leak-free, live-provider or
 general measured performance claim.
 
-[R4-S1-T3A](docs/delivery/EVIDENCE-R4.md#r4-s1-t3a),
-[T3B](docs/delivery/EVIDENCE-R4.md#r4-s1-t3b),
-[T3C](docs/delivery/EVIDENCE-R4.md#r4-s1-t3c) and
-[T3D](docs/delivery/EVIDENCE-R4.md#r4-s1-t3d) extract authentication/session,
-evaluation/operator reports, candidate intake/resumes/profile sources and
-employer screening/batches/queue/scoped reports while preserving the full API
-contract and account-plane behavior. Shared dependencies, intake and outcome
-contracts retain identity; A/B/C/D are done and each leaf owns validation. Other
-router extractions and T3/F13/sprint/PI remain open.
+[R4-S1-T3](docs/delivery/EVIDENCE-R4.md#r4-s1-t3) is complete: API handlers
+and DTOs live in product modules, with `routes.py` limited to ordered assembly.
+The full API/auth contract, tenant/subject ownership, consent/erasure and
+advisory responses are preserved. A-M own their validation evidence. Frontend
+extraction T4 and sprint integration remain pending; F13/sprint/PI stay open.

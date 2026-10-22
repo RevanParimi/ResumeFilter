@@ -1541,3 +1541,100 @@ def test_operator_signal_quality_preserves_label_opt_in_floor_refusals_and_priva
         assert client.get("/admin/signal-quality?source=unknown").status_code == 422
         assert client.get("/admin/signal-quality?include_operator_labels=invalid").status_code == 422
         assert all(report.id not in response.text for report in (genuine, fabricated, inconclusive))
+
+
+# Public surface and final composition
+
+
+def public_surface_app(services):
+    from app.api.auth import auth_router
+    from app.api.public import domain_router, public_router, service_router
+
+    app = FastAPI()
+    app.state.services = services
+    for segment in (domain_router, public_router, auth_router, service_router):
+        app.include_router(segment)
+    return app
+
+
+@pytest.mark.parametrize("mode", ["null", "live"])
+def test_public_surface_preserves_lightweight_health_contact_and_effective_mode(services, mode, monkeypatch):
+    from types import SimpleNamespace
+    from app import __version__
+    from app.services.llm import NullLLM
+    from tests.conftest import FakeLLM
+
+    services.settings.grievance_officer_name = "Synthetic Officer"
+    services.settings.grievance_officer_email = "public-officer@example.in"
+    services.settings.grievance_officer_phone = "+91 80 4000 0000"
+    services.settings.grievance_response_days = 21
+    llm = NullLLM(services.settings) if mode == "null" else FakeLLM(settings=services.settings)
+    async def refuse_provider_call(**kwargs):
+        raise AssertionError("public reads must not invoke a model")
+    monkeypatch.setattr(llm, "_araw", refuse_provider_call)
+    app = public_surface_app(services)
+    # No auth or stores are available; the composed app also records HTTP metrics.
+    app.state.services = SimpleNamespace(settings=services.settings, llm=llm, metrics=services.metrics)
+    client = TestClient(app)
+    for headers in ({}, {"X-API-Key": "invalid", "X-Org-Key": "invalid", "X-Candidate-Key": "invalid"}):
+        health = client.get("/healthz", headers=headers)
+        assert health.status_code == 200
+        assert health.json() == {"status": "ok", "version": __version__,
+            "env": services.settings.env, "llm_mode": mode, "domains": ["data_eng", "genai"]}
+        contact = client.get("/grievance", headers=headers)
+        assert contact.status_code == 200
+        assert contact.json() == {"name": "Synthetic Officer", "email": "public-officer@example.in",
+            "phone": "+91 80 4000 0000", "response_days": 21}
+        service = client.get("/", headers=headers)
+        assert service.status_code == 200
+        assert set(service.json()) == {"service", "advisory", "human_review_required", "endpoints"}
+        assert service.json()["service"] == "depth-eval-engine"
+        assert service.json()["advisory"] is service.json()["human_review_required"] is True
+
+
+def test_public_domains_preserve_admin_key_session_and_other_plane_refusals(cfg, capture_path):
+    from tests.curation_helpers import saved_source
+
+    services = make_services(cfg)
+    org = services.ledger.create_organization("Public metadata denial")
+    org_key = services.ledger.issue_api_key(org.id)
+    cid, _ = saved_source(services.session_factory)
+    candidate_key = services.candidates.issue_access_key(cid)
+    email = "domain-operator@example.in"
+    services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
+    with TestClient(public_surface_app(services)) as client:
+        for headers in ({}, {"X-API-Key": "invalid"}, {"X-Org-Key": org_key}, {"X-Candidate-Key": candidate_key}):
+            refused = client.get("/domains", headers=headers)
+            assert refused.status_code == 401
+            assert refused.json() == {"detail": "invalid or missing admin credential"}
+        expected = client.get("/domains", headers=ADMIN_HEADERS)
+        assert expected.status_code == 200
+        assert [row["key"] for row in expected.json()] == ["data_eng", "genai"]
+        assert all(set(row) == {"key", "display_name", "claim_types"}
+            and row["display_name"] and row["claim_types"] for row in expected.json())
+        assert client.post("/auth/admin/login", json={"email": email}).status_code == 202
+        verified = client.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
+        assert verified.status_code == 200
+        # Safe reads require no CSRF; invalid machine credentials cannot mask a session.
+        assert client.get("/domains", headers={"X-API-Key": "invalid"}).json() == expected.json()
+        client.headers["X-CSRF-Token"] = verified.json()["csrf_token"]
+        assert client.post("/auth/logout").status_code == 200
+        assert client.get("/domains").status_code == 401
+
+
+def test_public_service_discovery_follows_requesting_app_and_later_routes(services):
+    first, second = public_surface_app(services), public_surface_app(services)
+
+    @first.get("/later-surface")
+    async def later_surface():
+        return {"available": True}
+
+    with TestClient(first) as client, TestClient(second) as other:
+        listed = client.get("/").json()["endpoints"]
+        assert "GET /later-surface" in listed
+        assert "GET /later-surface" not in other.get("/").json()["endpoints"]
+        assert client.get("/later-surface").json() == {"available": True}
+        assert all(entry in listed for entry in ("GET /healthz", "GET /grievance", "GET /domains"))
+        assert listed == sorted(set(listed), key=lambda e: (e.split(" ", 1)[1], e))
+        assert not any(entry.startswith(("HEAD ", "OPTIONS ")) or entry.split(" ", 1)[1]
+            in {"/", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"} or "/ui" in entry for entry in listed)
