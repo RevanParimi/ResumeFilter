@@ -230,6 +230,18 @@ window.fetch = (url, init) => String(url).endsWith('/board')
             await tab.js("window.fetch = window.__employerFetch")
             assert await tab.js("[...document.querySelectorAll('div')].find(e => e.textContent.trim() === 'Synthetic Review Role').click(); true")
             checks.check("employer board recovers after failed read", await tab.wait("window.__has('coverage') && !window.__has('synthetic employer read failure')", 20))
+            await tab.js("""window.fetch = (url, init) => String(url).endsWith('/comp')
+  ? Promise.resolve(new Response(JSON.stringify({detail:'synthetic compensation read failure'}), {status:503, headers:{'Content-Type':'application/json'}}))
+  : window.__employerFetch(url, init);""")
+            await tab.js("window.__click('button', 'Comp intelligence')")
+            checks.check("compensation read failure renders explicit missing benchmark without stale band",
+                await tab.wait("window.__has('synthetic compensation read failure') && window.__has('benchmark for this requisition did not load')", 20)
+                and not await tab.js("window.__has('static prior alone')"))
+            await tab.js("window.fetch = window.__employerFetch")
+            await tab.js("window.__click('button', 'Roles')")
+            await tab.js("window.__click('button', 'Comp intelligence')")
+            checks.check("compensation recovers through explicit navigation after read failure",
+                await tab.wait("window.__has('p50') && window.__has('static prior alone') && !window.__has('synthetic compensation read failure')", 20))
             await tab.js("window.__click('button', 'Instant check')")
             await tab.js("window.__click('button', 'Evaluate this resume')")
             checks.check("Instant check refuses empty input without a fictional result",

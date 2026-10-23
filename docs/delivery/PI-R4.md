@@ -112,7 +112,14 @@ lifecycle/navigation/media cleanup, API/scoring and advisory behavior remain
 unchanged. Before/after Node, focused/full pytest, combined interview/shared
 evaluation Chrome, migrated HTTP/graceful restart, bindings/syntax, preservation
 and implementation self-review pass. G owns its separate final review/publication.
-Only G completed this session; exact next T4H (employer roles/compensation),
+[T4H](EVIDENCE-R4.md#r4-s1-t4h) is done (2026-10-23): employer roles,
+board and compensation handlers/view values move to `frontend/employer-roles.js`;
+overwritten role/shortlist samples are removed. Shared state/loading/lifecycle/
+navigation/template, API/auth and advisory/missing-data behavior are preserved.
+Before/after Node, focused/full pytest, employer/shared report Chrome, migrated
+HTTP/exact board+comp/graceful restart, bindings/syntax, preservation and
+implementation self-review pass. H owns its distinct final review/publication.
+Only H completed this session; exact next T4I (shared display/dead-code cleanup),
 not started. T4/F13/sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.

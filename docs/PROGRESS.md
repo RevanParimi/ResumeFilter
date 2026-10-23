@@ -4,43 +4,38 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4G complete and published: interview UI extraction.**
-The 23 handler/helper fields and interview view mapping now live in
-`frontend/interview.js`; shared state/boot/session/pagehide/unmount/navigation/
-template, API/scoring and media cleanup behavior are preserved. Before/after
-Node (49 text; 74 overlapping audio), focused pytest (201 passed), full pytest
-(3540 passed, 505 skipped), bindings/syntax, actual Chrome (40/40 combined
-interview; 42/42 shared evaluation), migrated HTTP/graceful restart (27/27),
-preservation and implementation
-self-review pass. [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t4g) owns exact
-commands/counts/limits and the distinct final completion review/publication record.
-Distinct final completion self-review found no blocking issues. Scoped task
-commit `27d8400` is pushed to `origin/main`; remote
-`27d8400d274425562cfedb9ee75ec693c1a4cdc3` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation. Only G completed this session;
-[T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
+**R4-S1-T4H complete: employer roles/compensation UI extraction.**
+The four load/select handlers and complete roles/board/compensation view mapping
+now live in `frontend/employer-roles.js`; overwritten role/shortlist samples are
+removed. Shared state/loading/lifecycle/navigation/template/API/auth and
+advisory/missing-data behavior remain unchanged. Before/after Node (34), focused
+pytest (137 passed), full pytest (3540 passed, 505 skipped), bindings/syntax,
+actual Chrome (30/30) and migrated HTTP/exact board+comp/graceful restart (87/87)
+pass. [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t4h) owns commands/counts/limits
+and the separate final completion review/publication record. Distinct final
+completion self-review found no blocking issues. Scoped publication is next;
+this handoff does not yet claim a pushed commit.
+Only H completed; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage is preserved; demo not restarted.
 
-**Exact next development task: R4-S1-T4H - Extract employer roles and
-compensation UI logic**, not started. Read [PI-R4](delivery/PI-R4.md),
-[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and G evidence.
-Define H's bounded contract before implementation next session. Preserve owned
-role/board/compensation routes, advisory/missing-data rendering, navigation and
-recovery. No H work or deployment started.
+**Exact next development task: R4-S1-T4I - Shared display and dead-code cleanup**,
+not started. Read [PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
+the existing T4 record and H evidence. Define I's bounded contract from remaining
+shared display/default/helper callers before implementation next session.
+Preserve module composition/lifecycle/navigation, all planes, live data and
+missing/error/advisory states. No I work or deployment started.
 
 ## Latest work
 
-Typed/audio answers, candidate ownership/question binding, read-only recovery
-after uncertain writes, detached callbacks and per-instance pending/media state
-retain their behavior. Recording remains explicit audio-only; streams/recorders/
-readers/timers and late permissions retain cleanup. Historical/unknown rubric,
-limited evidence and advisory/human-review wording remain unchanged. Chrome
-proves synthetic microphone, mixed channels, actual forced restarts, consent
-summaries and actor/reload/error/media cleanup; HTTP separately proves graceful
-restart and exact saved state. Existing cancellation/provider/quality limits
-remain. Working DB and 715 unrelated tracked files match baseline; no demo
-restart. Publication uses the existing per-command GitHub account selection.
+Role discovery/selection, ranked boards and compensation retain current reads,
+first/saved/fallback selection, empty/consent/error distinctions and manual
+recovery. Missing values differ from zero, unknown risk remains insufficient,
+legacy/wrapped comp and units/skewed median/prior/k-floor/no-band wording are
+preserved. Chrome proves reload and board/comp read recovery; migrated HTTP
+separately proves graceful restart with exact full board and compensation
+responses, tenant ownership, consent/revocation and existing auth/ledger/portal
+flows. Fakes prove mechanics, not empirical quality or live-provider behavior.
+Working DB and 717 unrelated tracked files match baseline; no demo restart.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -48,7 +43,7 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4g.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4h.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

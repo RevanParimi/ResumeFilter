@@ -44,6 +44,7 @@ def test_entry_page_delivers_each_declared_local_script_without_authentication(s
     assert "./screening.js" in scripts
     assert "./portal-auth.js" in scripts
     assert "./interview.js" in scripts
+    assert "./employer-roles.js" in scripts
     for source in scripts:
         response = client.get(urljoin("/ui/", source))
         assert response.status_code == 200, source

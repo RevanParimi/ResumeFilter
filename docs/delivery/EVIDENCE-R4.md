@@ -4175,3 +4175,210 @@ commit/push. No H work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4H - Extract employer roles and compensation UI logic**,
 not started. Define its bounded contract in the existing T4 record next session.
 Stop after G publication.
+
+## <a id="r4-s1-t4h"></a>R4-S1-T4H - Employer roles and compensation UI extraction
+
+Status: done (2026-10-23); bounded child of [T4](tasks/R4-S1-T4.md), F13.
+Baseline `cbf6c17`, clean `main` tracking `origin/main`. Only H completes this
+session; T4/F13/sprint/PI stay open. Working data preserved; demo not restarted.
+
+### Contract specified before implementation
+
+This is a behavior-preserving extraction: passing before/after characterization
+is appropriate, not a fabricated failing defect reproducer.
+
+When an employer opens Roles, selects a saved requisition or opens Comp
+intelligence, the same requests, selected-role fallback, rendered data and
+read-error recovery must result. Move the four load/select handlers and the
+roles/board/compensation view mapping into `frontend/employer-roles.js`, using
+the existing plain-script class-factory pattern and explicit helpers. Remove
+only the JOBS/SHORTLIST samples and their initial mappings, which live mappings
+always replace. Shared state, loading helper, boot/session lifecycle, navigation
+callbacks, template and other screens stay in the component. Add only the named
+public static asset. No API/scoring/auth behavior, schemas, SQL/migrations,
+visual redesign, new role editor, live-provider validation or demo restart.
+
+Acceptance and validation:
+
+1. Same detached handlers act on their component; concurrent same-class
+   instances retain separate selected roles, pending resources and view values.
+   Extend the existing offline evaluation suite with behavior characterizations
+   before extraction, including first-role selection and direct-comp loading.
+2. Empty pool, consent refusal and failed reads remain distinct; manual retry
+   recovers. Missing scores/coverage, zeroes, unknown bands, wrapped and legacy
+   compensation, missing/degenerate bounds, k-floor/prior and no-band wording
+   retain honest rendered values. Tests assert outcomes rather than file shape.
+3. Actual Chrome exercises saved role/board selection, advisory explanation,
+   wrapped compensation, reload and read-failure/recovery with no uncaught
+   errors. Extend the existing review-context journey for compensation failure
+   and recovery; synthetic data/fakes do not establish empirical quality.
+4. Migrated scratch HTTP verifies the named asset's declaration, exact bytes,
+   content type and unrelated-path refusal, owned/foreign employer routes,
+   consent and exact persisted board/compensation across graceful restart.
+   Reuse `scripts/smoke_r4_s1_t3a.py`; preserve its existing auth/ledger checks.
+5. Run focused UI/employer/auth/API pytest, full pytest, bindings, shipped/inline
+   JS syntax, Python compile, diff/links and preservation checks. No new PG gate
+   is required for a frontend-only extraction with unchanged SQL/transactions.
+6. Record implementation self-review and a distinct final completed/staged
+   self-review. Update owned evidence, PI and short handoff, publish scoped
+   reviewed changes, verify remote, then stop. T4/F13/sprint/PI remain open.
+
+### Implementation and regression evidence
+
+The four original fields (`loadJobs`, `selectJob`, `loadComp`, `loadCompFor`)
+and complete roles/board/compensation data/value mapping are text-identical in
+`frontend/employer-roles.js`. Roles/Comp screen flags and navigation styling
+move with the view mapping, substituting `st.screen` for the equivalent `s`.
+The factory takes explicit API/error/style/risk/confidence/navigation helpers;
+all handlers remain bound fields with deferred state reads. Shared state,
+loading, boot/session/unmount/navigation callbacks, template and other modules
+are unchanged. Only the named static asset is added to the server allowlist.
+
+JOBS/SHORTLIST arrays and initial render mappings were always overwritten by
+`liveVals()`; callers were searched and those dead samples are removed. There
+is one roles/compensation mapping. No backend/API/auth/scoring/store/SQL change,
+role editor or visual redesign. Existing shared-load and concurrency semantics
+are preserved; this extraction adds no new cancellation or stale-response claim.
+
+Seven cases extend `scripts/test_ui_evaluate.js` using its existing fixture:
+first-role/retained selection and live-only rows; same-class separate pending
+board/compensation and detached callbacks; direct comp role loading/fallback;
+failed discovery without fictional data/writes; missing versus zero scores and
+coverage/unknown risk; wrapped/legacy/prior/skewed/degenerate/missing comp values;
+and explicit read retry clearing failure/stale data. Existing consent/empty-pool
+and evaluation/session/client cases remain. Other suites import this fixture,
+so overlapping Node totals are not additional unique coverage.
+
+The first characterization run had 30 passes/four fixture failures in 281.90ms:
+new tests mutated shared IDLE envelopes instead of replacing each resource.
+Fixed the test setup before extraction; no product defect or failing regression
+is claimed from that setup error. Final before/after runs of
+`node --test scripts/test_ui_evaluate.js` pass **34/34**, zero skipped/failed,
+262.25ms before and 312.67ms after.
+
+### Commands and observed validation
+
+Python commands use `.resume/Scripts/python.exe`. The ignored runner
+`.pytest_cache/run_r4_s1_t4h.py <tag> <Python args>` removes inherited DEE
+configuration, selects a nonexistent config file, clears model/GitHub keys,
+uses localhost refusal for GitHub and null/captured mail, and supplies project
+paths. Scratch harnesses own disposable SQLite migrated to 0029 with fake
+providers. Logs/helpers remain ignored; no working DB or demo is used.
+
+- `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+  tests/test_ui_mount.py tests/test_image_contents.py tests/test_jobs_api.py
+  tests/test_comp_api.py tests/test_comp_service.py tests/test_comp_schema.py
+  tests/test_comp_estimate.py tests/test_comp_bands.py
+  tests/test_api_route_extraction.py tests/test_api_auth_gate.py
+  tests/test_auth_api.py tests/test_route_table_guard.py
+  tests/test_openapi_contract.py`: **137 passed**, zero skipped, one warning,
+  48.73s pytest; exit 0, 54.38s runner.
+- `employer-browser scripts/check_ui_review_context_browser.py`: actual Chrome
+  **30/30 checks** (includes shared API/UI-host check), exit 0, 32.75s runner.
+  Captured-mail org login, real saved role/empty pool/materialized board,
+  advisory explanations, wrapped prior benchmark, page reload, failed board
+  read/no stale shortlist and explicit recovery pass. Added comp 503/missing
+  benchmark/no stale band and explicit navigation recovery pass. Shared report
+  plain/polished, historical/unknown/missing evidence, ownership, reload/404
+  recovery and Instant-check input refusal remain covered; no console errors or
+  uncaught exceptions. Chrome needs existing CDN internet; this is not an
+  offline browser or live-provider/empirical-quality result.
+- `http-journey scripts/smoke_r4_s1_t3a.py`: **87/87**, exit 0, 35.50s runner.
+  Extended existing public-surface check delivers declared employer module
+  anonymously with exact bytes/JS type and unrelated-path 404 on both starts.
+  Existing employer tenant/foreign-key/CSRF, empty/materialized pools, consent,
+  wrapped advisory comp, saved role/overview/match/comp and session/ledger/
+  feature/portal/revocation/erasure contracts pass across two graceful lifespans.
+- Review strengthened the same HTTP journey to compare the **complete board
+  response** across restart as well. `http-final scripts/smoke_r4_s1_t3a.py`:
+  **87/87**, exit 0, 20.81s runner, including exact board and comp equality.
+  Both owned servers exit 0 and dispose SQL at revision0029. Browser reload
+  proves a new document; graceful process-restart proof comes from HTTP.
+- `node scripts/check_ui_bindings.js`: **589 bindings /18 states**, all resolve.
+  All shipped JS plus changed checker/Node suite and extracted inline logic
+  pass `node --check` (includes `frontend/api.js` and `frontend/support.js`).
+- `compile -m compileall -q src/app/main.py tests/test_ui_mount.py
+  scripts/smoke_r4_s1_t3a.py scripts/check_ui_review_context_browser.py`:
+  exit 0, 0.26s runner.
+- `full-reviewed` defaults to `-m pytest -q --tb=short`: **3540 passed,
+  505 skipped, 127 warnings in 656.32s (0:10:56)**; exit 0, 663.57s runner.
+  Existing Starlette/httpx and SQLite reflection/autogenerate warnings;
+  optional/environment skips do not prove omitted cases. No application or
+  pytest-collected code changed during this run; only the standalone HTTP
+  harness's stronger board assertion was added, separately rerun and reviewed.
+
+No new PostgreSQL gate applies: SQL/constraints/transactions/migrations are
+unchanged. Synthetic fixtures prove mechanics, not scoring accuracy, calibrated
+compensation, live providers or media/codecs. Advisory/human review, domain
+independence, style versus factual evidence, consent and erasure remain intact.
+
+### Implementation self-review
+
+Same-agent review of baseline `cbf6c17` plus the HTML/new module, loader/checker,
+mount/static allowlist and extended existing offline/browser/HTTP harnesses
+checks specification compliance and correctness separately. All acceptance
+criteria map to the observed tests above. Original four fields and both complete
+view blocks compare text-identically; expected HTML comparison confines edits
+to module composition/declaration, mapping delegation and dead samples/comment.
+Python AST comparison permits only `employer-roles.js` in UI_ASSETS; the ordered
+API/auth fixture and all other code remain unchanged.
+
+Review checks class initialization/deferred state reads, detached receiver and
+per-instance resources, mapping precedence, first/saved/fallback role selection,
+read-only requests/manual recovery, empty/consent/error distinctions, numeric
+zero/missing and unknown bands, wrapped/legacy comp, units/median clamp/prior/
+k-floor/no-band and advisory wording, navigation callers, anonymous static
+confinement and Docker frontend packaging contract. No blocking product finding
+remains. One validation gap was found: restart did not compare the complete
+board body. The added assertion and final 87/87 HTTP run close it. This is
+self-review, not independent review.
+
+`implementation-review -I .pytest_cache/review_r4_s1_t4h.py`: exit 0, 1.87s.
+After the board assertion, `implementation-review-final -I
+.pytest_cache/review_r4_s1_t4h.py --review-strengthened-http`: exit 0, 1.82s.
+Only that harness hash changed; all 18 other reviewed hashes matched. All
+19 final source/harness/contract hashes, syntax and moved-body/main comparisons
+are recorded for final preservation review. Baseline 730 tracked file hashes
+protect unrelated files and working data; local artifacts are excluded.
+
+### Distinct final completion self-review and publication
+
+After required validation and completion records, a distinct final same-agent
+self-review examined baseline `cbf6c17` plus the exact fourteen staged files:
+HTML/new employer module, named static allowlist, existing Node/checker/browser/
+HTTP entry points, mount test, feature overview, handoff, roadmap, PI/evidence
+and active T4 parent. Specification review confirms all six acceptance items,
+the bounded extraction/sample retirement, observed browser versus HTTP evidence,
+unchanged API/auth fixture, evidence ownership and I-only next pointer, with
+T4/F13/sprint/PI still open.
+
+Correctness review rechecks class initialization and deferred state access,
+explicit helpers, view precedence, detached handlers and per-instance selected
+roles/pending board/comp resources, first/saved/fallback selection, read-only
+requests/manual recovery, empty/consent/error distinctions, missing/zero/unknown
+risk, wrapped/legacy comp, units/median/prior/k-floor/no-band wording, advisory
+human review, shared navigation/lifecycle callers, confined static serving and
+packaging. No blocking product finding remains. This is a distinct final
+self-review, not independent review.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4h.py --staged`: exit 0,
+2.11s runner. All four original handlers and complete data/value blocks,
+expected HTML and main AST comparison, JS syntax, 19 reviewed hashes and exact
+fourteen-file staged contents pass. No working data/secrets/local artifacts
+are staged. Initial final preservation found an extra blank line at EOF in
+FEATURE_STATUS.md; that prose-only whitespace was removed and the affected
+checks rerun before publication. No application tests require rerunning for
+this documentation fix. `completion-review-final -I
+.pytest_cache/review_r4_s1_t4h.py --staged`: exit 0, 2.19s runner. Final
+preservation (`preservation-reviewed -I .pytest_cache/verify_r4_s1_t4h.py`):
+exit 0, 1.50s runner; 717 unrelated tracked files, working DB and 19 reviewed
+hashes unchanged, 300 local Markdown links/anchors valid, staged/tracked/source
+whitespace pass. Review-record prose was separately checked for observed
+evidence, scope and status accuracy. Commit/push verification follows.
+
+### Handoff
+
+Exact next: **R4-S1-T4I - Shared display and dead-code cleanup**, not started.
+Define the bounded contract from remaining shared display/default/helper callers
+in the existing T4 record next session; preserve module composition/lifecycle,
+all planes, live data and missing/error/advisory states. Stop after H publication.

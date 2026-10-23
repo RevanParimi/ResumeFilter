@@ -84,13 +84,14 @@ def main():
 
         with client(base) as anonymous:
             page = anonymous.get("/ui/")
-            module = anonymous.get("/ui/portal-auth.js")
-            checks.check("anonymous UI delivers its declared portal/auth module",
-                page.status_code == module.status_code == 200
-                and '<script src="./portal-auth.js"></script>' in page.text
-                and module.content == (ROOT / "frontend/portal-auth.js").read_bytes()
-                and "javascript" in module.headers["content-type"]
-                and anonymous.get("/ui/not-an-asset.txt").status_code == 404)
+            for asset in ("portal-auth.js", "employer-roles.js"):
+                module = anonymous.get("/ui/" + asset)
+                checks.check("anonymous UI delivers its declared " + asset,
+                    page.status_code == module.status_code == 200
+                    and f'<script src="./{asset}"></script>' in page.text
+                    and module.content == (ROOT / "frontend" / asset).read_bytes()
+                    and "javascript" in module.headers["content-type"]
+                    and anonymous.get("/ui/not-an-asset.txt").status_code == 404)
             health = require(anonymous.get("/healthz"))
             contact = require(anonymous.get("/grievance"))
             service = require(anonymous.get("/"))
@@ -278,11 +279,12 @@ def main():
             match_body = {"as_of": materialized["as_of"]}
             employer_match = require(org.post(f"/jobs/{job['id']}/match", json=match_body))
             employer_comp = require(org.get(f"/jobs/{job['id']}/comp"))
+            employer_board = require(org.get(f"/jobs/{job['id']}/board"))
             employer_overview = require(org.get("/dashboard/overview"))
             employer_card = require(org.get(f"/candidates/{subject}/card"))
             checks.check("materialized employer board and overview return saved advisory data", employer_match["advisory"]
                 and employer_match["ranked"][0]["candidate_id"] == employer_candidate
-                and require(org.get(f"/jobs/{job['id']}/board"))["match"]["pool_size"] >= 1
+                and employer_board["match"]["pool_size"] >= 1
                 and employer_comp["advisory"] and employer_overview["total_requisitions"] == 1)
             checks.check("consented employer card exposes saved record coding and reputation", all(
                 employer_card[section]["status"] == "available" for section in ("records", "coding_rounds", "reputation")))
@@ -367,6 +369,7 @@ def main():
                 require(org.get(f"/jobs/{job['id']}")) == updated_job
                 and require(org.get("/dashboard/overview")) == employer_overview
                 and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
+                and require(org.get(f"/jobs/{job['id']}/board")) == employer_board
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
             checks.check("historical feature search survives graceful restart exactly",
                 require(operator.post("/talent/search", json=gated_search)) == saved_search)

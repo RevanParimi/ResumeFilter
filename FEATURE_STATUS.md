@@ -101,11 +101,11 @@ Frontend extraction T4 is in progress: [T4A](docs/delivery/EVIDENCE-R4.md#r4-s1-
 [T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c),
 [T4D](docs/delivery/EVIDENCE-R4.md#r4-s1-t4d),
 [T4E](docs/delivery/EVIDENCE-R4.md#r4-s1-t4e),
-[T4F](docs/delivery/EVIDENCE-R4.md#r4-s1-t4f) and
-[T4G](docs/delivery/EVIDENCE-R4.md#r4-s1-t4g) move account, organization,
-curation, evaluation/report, screening, candidate portal/auth and interview
-handlers/view values into plain scripts. F also removes overwritten portal/device
-samples,
-preserving saved operations, advisory context, human review and recovery flows.
-Employer roles/compensation extraction is next; shared display cleanup and sprint
-integration remain pending. T4/F13/sprint/PI stay open.
+[T4F](docs/delivery/EVIDENCE-R4.md#r4-s1-t4f),
+[T4G](docs/delivery/EVIDENCE-R4.md#r4-s1-t4g) and
+[T4H](docs/delivery/EVIDENCE-R4.md#r4-s1-t4h) move account, organization,
+curation, evaluation/report, screening, portal/auth, interview and employer
+roles/compensation handlers/view values into plain scripts. F/H also remove
+overwritten samples, preserving saved operations, advisory context, human review
+and recovery flows. Shared display/dead-code cleanup and sprint integration
+remain pending. T4/F13/sprint/PI stay open.

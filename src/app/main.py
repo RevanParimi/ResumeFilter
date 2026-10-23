@@ -63,6 +63,7 @@ UI_ASSETS = frozenset({
     "screening.js",
     "portal-auth.js",
     "interview.js",
+    "employer-roles.js",
 })
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open

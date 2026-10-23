@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-T4H completed; employer UI extraction.**
+  Roles/board/compensation handlers and view values move to
+  `frontend/employer-roles.js`; overwritten role/shortlist samples are removed.
+  Shared state/loading/lifecycle/navigation/template/API/auth and advisory/
+  missing-data behavior remain unchanged. [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t4h)
+  owns before/after Node, focused/full pytest, actual Chrome including comp
+  failure/recovery, migrated HTTP/exact board+comp/graceful restart, bindings/
+  syntax, preservation and separate review/publication records. Only H completes;
+  working data preserved and demo not restarted. T4/F13/sprint/PI stay open.
+  Exact next T4I (shared display/dead-code cleanup), not started. Stop after H.
+
 - **Session 2026-10-23 - R4-S1-T4G completed; interview UI extraction.**
   The 23 text/audio handler/helpers and interview view mapping move to
   `frontend/interview.js`; shared state/lifecycle/navigation/template, API/scoring
