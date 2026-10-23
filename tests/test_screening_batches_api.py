@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 from contextlib import contextmanager
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS
 from app.screening.models import BatchItemRow
 from app.screening.schema import ItemStatus
+from tests.test_screening_service import _PausedEngine
 
 
 # Screening batches api
@@ -51,6 +55,43 @@ def test_register_then_process_then_read_the_queue(services, genuine_resume):
 
         summary = c.get(f"/screening/batches/{bid}/summary", headers={"X-Org-Key": key})
         assert summary.status_code == 200 and summary.json()["n_screened"] == 1
+
+
+@pytest.mark.asyncio
+async def test_two_process_requests_share_unstarted_work_and_report_saved_counts(services, genuine_resume, monkeypatch):
+    monkeypatch.setattr(services.settings, "screening_max_items_per_call", 2)
+    org, key = _key(services)
+    _, other_key = _key(services, "Other lease actor")
+    app = create_app(services)
+    slow = _PausedEngine(services)
+    async with app.router.lifespan_context(app):
+        app.state.engine = slow
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                    headers={"X-Org-Key": key}) as actor:
+            created = await actor.post("/screening/batches", json={"name": "Two requests", "items": [
+                {"resume_text": genuine_resume + f"\nSynthetic request {i}"} for i in range(3)]})
+            assert created.status_code == 200
+            path = "/screening/batches/" + created.json()["id"]
+            pending = asyncio.create_task(actor.post(path + "/process"))
+            try:
+                await asyncio.wait_for(slow.entered.wait(), 10)
+                current = (await actor.get(path)).json()["counts"]
+                assert (current["processing"], current["pending"]) == (1, 2)
+                assert (await actor.post(path + "/process", headers={"X-Org-Key": other_key})).status_code == 404
+                app.state.engine = slow.real
+                second = await actor.post(path + "/process")
+                assert second.status_code == 200
+                assert (second.json()["processed"], second.json()["failed"], second.json()["remaining"]) == (2, 0, 1)
+                assert (await actor.post(path + "/retry")).json()["requeued"] == 0
+            finally:
+                slow.release.set()
+                first = await pending
+            assert first.status_code == 200
+            assert (first.json()["processed"], first.json()["failed"], first.json()["remaining"]) == (1, 0, 0)
+            saved = (await actor.get(path)).json()
+            assert saved["counts"] == {"pending": 0, "processing": 0, "failed": 0, "done": 3}
+            assert (await actor.get(path + "/summary")).json()["n_screened"] == 3
+            assert (await actor.post(path + "/process")).json()["processed"] == 0
 
 
 def test_an_empty_batch_is_422(services):

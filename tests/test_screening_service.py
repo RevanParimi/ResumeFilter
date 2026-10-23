@@ -2,16 +2,177 @@
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
+
 import pytest
+from sqlalchemy import select
+from app.candidates.store import CandidateStore
 from app.graph.build import EvaluationEngine
+from app.screening.models import BatchItemRow
 from app.screening.schema import BatchStatus, ItemStatus
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
+from tests.conftest import make_services
+from tests.test_report_erasure_concurrency import database  # noqa: F401
 
 
 # Screening service
 
 def _org(services, name="Acme Staffing"):
     return services.ledger.create_organization(name).id
+
+
+@pytest.fixture
+def lease_services(database, settings):
+    _, factory = database
+    return make_services(settings.model_copy(update={"screening_max_items_per_call": 2}),
+                         candidates=CandidateStore(factory))
+
+
+def _lease_batch(services, genuine_resume, count=3):
+    org = _org(services)
+    batch = services.screening.register(org, name="Lease scheduling", domain="genai",
+        texts=[genuine_resume + f"\nSynthetic reference {i}" for i in range(count)],
+        created_by_org_user_id=None)
+    return org, batch.id
+
+
+class _PausedEngine:
+    def __init__(self, services):
+        self.real = EvaluationEngine(services)
+        self.entered, self.release = asyncio.Event(), asyncio.Event()
+
+    async def evaluate(self, **kwargs):
+        self.entered.set()
+        await self.release.wait()
+        return await self.real.evaluate(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_waiting_provider_does_not_lease_the_unstarted_chunk(lease_services, genuine_resume):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume)
+    slow = _PausedEngine(services)
+    pending = asyncio.create_task(services.screening.process(org, bid, engine=slow))
+    try:
+        await asyncio.wait_for(slow.entered.wait(), 10)
+        counts = services.screening.get(org, bid).counts
+        assert (counts.processing, counts.pending) == (1, 2)
+        other = await services.screening.process(org, bid, engine=EvaluationEngine(services))
+        assert (other.processed, other.failed, other.remaining) == (2, 0, 1)
+    finally:
+        slow.release.set()
+        first = await pending
+    assert (first.processed, first.failed, first.remaining) == (1, 0, 0)
+    assert services.screening.get(org, bid).counts.done == 3
+    rows = services.screening.queue(org, bid, cursor=None, limit=10).rows
+    assert len({row.report_id for row in rows}) == 3
+    assert all(row.status == ItemStatus.DONE and row.advisory and row.human_review_required for row in rows)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refusal", [True, False], ids=["refused-ingest", "unexpected-error"])
+async def test_refused_failure_write_is_not_counted_or_replayed(lease_services, genuine_resume, monkeypatch, refusal):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    svc, store = services.screening, services.screening._store
+    now = datetime.now(timezone.utc)
+    clock = [now]
+    monkeypatch.setattr(svc, "_now", lambda: clock[0])
+    stolen = []
+
+    class StealingEngine:
+        async def evaluate(self, **kwargs):
+            clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+            stolen.extend(store.claim(org, bid, limit=1, now=clock[0],
+                timeout_seconds=services.settings.screening_claim_timeout_seconds))
+            raise IngestRefused("unknown_domain") if refusal else RuntimeError("synthetic engine failure")
+
+    result = await svc.process(org, bid, engine=StealingEngine())
+    assert (result.processed, result.failed, result.remaining) == (0, 0, 2)
+    assert len(stolen) == 1, "a lost lease must not trigger another paid attempt in this call"
+    with services.session_factory() as session:
+        rows = session.scalars(select(BatchItemRow).where(BatchItemRow.batch_id == bid)).all()
+        assert sorted(row.status for row in rows) == ["pending", "processing"]
+        assert all(row.error is None for row in rows)
+    assert store.fail(stolen[0].id, lease=stolen[0].claimed_at, error="internal_error", at=clock[0])
+    assert svc.retry(org, bid).requeued == 1
+    recovered = await svc.process(org, bid, engine=EvaluationEngine(services))
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 0)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_leaves_only_active_lease_and_later_request_recovers(lease_services, genuine_resume, monkeypatch):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume)
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(services.screening, "_now", lambda: clock[0])
+    slow = _PausedEngine(services)
+    pending = asyncio.create_task(services.screening.process(org, bid, engine=slow))
+    try:
+        await asyncio.wait_for(slow.entered.wait(), 10)
+    finally:
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+    counts = services.screening.get(org, bid).counts
+    assert (counts.processing, counts.pending, counts.failed, counts.done) == (1, 2, 0, 0)
+    clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+    recovered = await services.screening.process(org, bid, engine=EvaluationEngine(services))
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 1)
+    finished = await services.screening.process(org, bid, engine=EvaluationEngine(services))
+    assert (finished.processed, finished.failed, finished.remaining) == (1, 0, 0)
+    rows = services.screening.queue(org, bid, cursor=None, limit=10).rows
+    assert len({row.report_id for row in rows}) == 3
+
+
+@pytest.mark.asyncio
+async def test_next_item_lease_uses_the_clock_after_the_provider_wait(lease_services, genuine_resume, monkeypatch):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(services.screening, "_now", lambda: clock[0])
+    real = EvaluationEngine(services)
+    calls = []
+
+    class AdvancingEngine:
+        async def evaluate(self, **kwargs):
+            calls.append(kwargs["resume_text"])
+            if len(calls) == 1:
+                clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+            else:
+                counts = services.screening.get(org, bid).counts
+                assert (counts.processing, counts.pending) == (1, 0), "new work needs a fresh lease"
+            return await real.evaluate(**kwargs)
+
+    result = await services.screening.process(org, bid, engine=AdvancingEngine())
+    assert (result.processed, result.failed, result.remaining) == (2, 0, 0)
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_refused_completion_stops_before_reclaiming_the_same_item(lease_services, genuine_resume, monkeypatch):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    svc, store = services.screening, services.screening._store
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(svc, "_now", lambda: clock[0])
+    complete = store.complete
+    stolen = []
+
+    def steal_before_completion(item_id, **kwargs):
+        clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+        stolen.extend(store.claim(org, bid, limit=1, now=clock[0],
+            timeout_seconds=services.settings.screening_claim_timeout_seconds))
+        return complete(item_id, **kwargs)
+
+    monkeypatch.setattr(store, "complete", steal_before_completion)
+    result = await svc.process(org, bid, engine=EvaluationEngine(services))
+    # The legacy failed-attempt counter on false completion remains T1B.
+    assert (result.processed, result.failed, result.remaining) == (0, 1, 2)
+    assert len(stolen) == 1
+    counts = svc.get(org, bid).counts
+    assert (counts.processing, counts.pending, counts.done, counts.failed) == (1, 1, 0, 0)
 
 
 def test_registration_is_evaluation_free(services, genuine_resume):

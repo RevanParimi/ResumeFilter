@@ -160,10 +160,24 @@ end-to-end test. `ScreeningStore._try_claim` exists as a seam so a test can
 build the interleaved state directly, the same way S8.2's two-challenge lockout
 test had to.
 
-**One item's failure never abandons the rest of the claim.** A batch of 500 with
-one corrupt file has to finish. An unexpected exception fails *its* item with
-`error="internal_error"` — the alternative is a row stuck in `processing` until
-the claim times out for a reason nobody recorded.
+Processing claims one item immediately before ingest, with the current clock,
+up to `screening_max_items_per_call`. Unstarted items remain available to another
+worker while a provider is awaited. An ordinary failure acknowledged by the
+store increments `failed` and lets the call continue; an unexpected exception
+uses `error="internal_error"`. A refused failure/completion write stops this
+call so it cannot immediately reclaim the same item. Refused failure writes
+do not increment `failed`.
+
+Task cancellation propagates, leaving at most the active lease outstanding.
+Previously committed work remains; a later authorized process call can recover
+the active item through the existing timeout and retained-input rules. Browser
+navigation or HTTP disconnection does not guarantee server cancellation.
+
+[R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) covers this bounded scheduling
+change. The parent remains open: false completion still reports a failed attempt,
+and active expiry/terminal persistence outcomes require T1B. This does not remove
+duplicate provider work after an active lease is reclaimed, add a heartbeat,
+provide durable continuation or establish exactly-once model calls.
 
 ---
 

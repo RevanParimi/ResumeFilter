@@ -127,7 +127,7 @@ Sprint acceptance journey: Two workers process competing uploads and batches wit
 
 ### R4-S2-T1 — Make batch leases and counts truthful
 
-Status: pending. Audit mapping: F14. Prerequisites: R4-S1-Q.
+Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, done.
 
 **Development:** Claim work just in time or renew leases; honor complete/fail return values and idempotent persistence.
 
@@ -136,6 +136,31 @@ Status: pending. Audit mapping: F14. Prerequisites: R4-S1-Q.
 **Tests and journey:** Extend tests/test_screening_store.py, tests/test_screening_service.py and tests/test_screening_batches_api.py. Controlled slow fake provider with two workers; HTTP process/retry count assertions.
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
+
+Split before implementation into bounded sections. A is done; B is next. The
+parent, sprint and F14 stay open until all mapped work/gates are complete.
+
+#### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
+
+Status: done (2026-10-23). [A contract/evidence](EVIDENCE-R4.md#r4-s2-t1a)
+owns the pre-implementation scope, red/green regressions, focused/full pytest,
+SQLite/PostgreSQL two-process HTTP/graceful restart, actual screening Chrome,
+static/preservation and separate reviews. Work is claimed immediately before
+ingest; ingest/error failures require an acknowledged write; rejected terminal
+writes stop this call. Task cancellation leaves only active work leased.
+Only A closes here. B retains terminal completion outcomes, active expiry and
+persistence/idempotence; no exactly-once provider or parent/F14 closure claim.
+
+#### <a id="r4-s2-t1b"></a>R4-S2-T1B - Fence terminal outcomes and define expiry/idempotence
+
+Status: pending. Prerequisite: A.
+
+Complete the parent contract: distinguish committed completion/erasure failure
+from a refused/stolen lease, define expiry eligibility at input/report/terminal
+persistence boundaries, preserve retry/erasure behavior and document duplicate
+provider work separately from committed results. Add red regressions for those
+boundaries and real competing PostgreSQL/HTTP checks; refine its bounded contract
+from A evidence before implementing. No B implementation in A's session.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 

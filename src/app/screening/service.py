@@ -198,6 +198,8 @@ class ScreeningService:
         the other 499. An unexpected exception fails ITS item with a generic
         code rather than propagating, because the alternative is a row stuck in
         `processing` until the claim times out for a reason nobody recorded.
+        Claim only when work starts. Cancellation propagates with at most this
+        call's active lease outstanding; its existing timeout allows recovery.
         """
         # BEFORE the claim, deliberately. A bound that runs after the work it
         # bounds is the S8.4 Phase B finding (4) shape -- and here it would
@@ -215,16 +217,15 @@ class ScreeningService:
         if self._store.batch_row(org_id, batch_id) is None:
             return None
 
-        now = self._now()
-        claimed = self._store.claim(
-            org_id, batch_id,
-            limit=self._settings.screening_max_items_per_call,
-            now=now,
-            timeout_seconds=self._settings.screening_claim_timeout_seconds,
-        )
-
         processed = failed = 0
-        for item in claimed:
+        for _ in range(self._settings.screening_max_items_per_call):
+            claimed = self._store.claim(
+                org_id, batch_id, limit=1, now=self._now(),
+                timeout_seconds=self._settings.screening_claim_timeout_seconds,
+            )
+            if not claimed:
+                break
+            item = claimed[0]
             def retain_input(session, outcome):
                 if not self._store.retain_ingested_input(session, org_id, item, outcome):
                     raise IngestRefused("input_unavailable")
@@ -247,8 +248,9 @@ class ScreeningService:
                     before_write=check_input,
                 )
             except IngestRefused as exc:
-                self._store.fail(item.id, lease=item.claimed_at,
-                                 error=exc.reason, at=self._now())
+                if not self._store.fail(item.id, lease=item.claimed_at,
+                                        error=exc.reason, at=self._now()):
+                    break
                 failed += 1
                 continue
             except Exception as exc:  # noqa: BLE001 - deliberately broad, see below
@@ -256,8 +258,9 @@ class ScreeningService:
                 # is a closed vocabulary, and an exception message can quote the
                 # input that caused it.
                 log.error("batch_item_failed", item_id=item.id, error=repr(exc))
-                self._store.fail(item.id, lease=item.claimed_at,
-                                 error="internal_error", at=self._now())
+                if not self._store.fail(item.id, lease=item.claimed_at,
+                                        error="internal_error", at=self._now()):
+                    break
                 failed += 1
                 continue
 
@@ -286,6 +289,7 @@ class ScreeningService:
             else:
                 # Erasure or a lost lease discarded this attempt's result.
                 failed += 1
+                break  # Do not immediately reclaim/rebill this same item.
 
         counts = self._store.counts(org_id, batch_id, now=self._now())
         if counts is None:

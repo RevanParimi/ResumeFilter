@@ -4831,3 +4831,156 @@ final response reports the verified remote SHA after this confirmation.
 Exact next: **R4-S2-T1 - Make batch leases and counts truthful**, not started.
 Only Q is completed in this session. No working storage migration, demo restart,
 deployment, ignored-artifact cleanup or next-task implementation occurred.
+
+## <a id="r4-s2-t1a"></a>R4-S2-T1A - Claim work when it starts and acknowledge failure writes
+
+Status: done (2026-10-23). Bounded child of R4-S2-T1 / F14;
+prerequisite R4-S1-Q done. The parent remains open for T1B. The contract was
+specified inline in PI-R4 before implementation, splitting scheduling and
+failure acknowledgment from terminal outcome/expiry/idempotence work.
+
+### Contract and behavior
+
+Previously, a process request claimed the whole capped chunk before awaiting
+the first evaluation. Later items aged while waiting, blocked another worker
+and remained leased after task cancellation. Both ingest-refusal and unexpected
+exception paths incremented `failed` even if the store rejected the failure write.
+
+Claim exactly one item immediately before ingest, with a fresh clock reading,
+up to the existing per-call cap. While one provider is paused, another worker
+can consume unstarted items. Count those two failure paths only on acknowledged
+`fail=True`; stop after a refused failure/completion write so this call cannot
+immediately reclaim the same item. Ordinary acknowledged failures still let
+other work continue. Preserve quota/auth/CSRF, tenant/subject ownership, current
+consent/erasure, input-retention and advisory/API contracts. Task cancellation
+propagates with at most its active item outstanding; committed work persists
+and a later authorized call uses existing timeout/private-input recovery.
+
+No schema, store predicate, expiry policy, scorer, API shape or frontend source
+changes. A false completion still increments a failed-attempt counter; terminal
+acknowledgments, active expiry and persistence/idempotence remain **T1B**. Active
+lease theft can duplicate provider work; existing partial ingest/report commits
+can survive unsuccessful completion. Do not infer exactly-once model calls or
+globally deduplicated report persistence. HTTP disconnect/navigation does not
+promise server cancellation. Durable continuation remains R4-S2-T4; event-loop/
+aggregate resource work remains T3, and existing exception-detail diagnostics
+remain R4-S3-T2. A closes none of those parent/backlog contracts.
+The fresh-clock regression retains the present acceptance of an active item
+past timeout when no reclaimer has won. B must define that expiry policy and
+adjust the first item's outcome accordingly while preserving a fresh lease for
+the next item; A does not treat timestamp equality as proof of an unexpired lease.
+
+### Red regressions and implementation review
+
+Initial `red -m pytest -q --tb=short tests/test_screening_service.py -k
+'waiting_provider or refused_failure or cancellation_leaves'`: **4 failed,
+4 skipped, 20 deselected**, exit 1. All failures are behavioral: two processing
+items instead of one, refused writes counted as two failures, and two leases
+left after cancellation. No broken fixture/import is counted as reproduction.
+
+The later clock/completion-stop/API tests also run against a scratch copy of
+`src` with only the original `a3e9232:src/app/screening/service.py` restored.
+`red-extra -m pytest -q --tb=short -o
+pythonpath=.pytest_cache/r4-s2-t1a-before/src tests/test_screening_service.py
+tests/test_screening_batches_api.py -k 'next_item_lease or refused_completion_stops
+or two_process_requests'`: **3 failed, 2 skipped, 48 deselected, 1 warning**,
+exit 1, for stale next-item timing, additional work after refused completion and
+preclaimed concurrent-request work. The working source was never rolled back.
+
+The production fix changes only `ScreeningService.process`: a capped loop claims
+one item with the current time, both failure paths require acknowledgment and
+false completion stops the loop. It retains the existing input/report callbacks
+and propagating cancellation; no heartbeat/retry framework or new scheduler.
+
+Implementation self-review: `a3e9232` plus the service, tests and smoke diff.
+Specification mapping covers paused evaluations, actual lease theft, per-call/
+retry counts and cancellation/recovery. Reviewed quota/auth-before-claim order,
+one-at-a-time acquisition/fresh clock, both failure returns, completion refusal
+and existing ingest/erasure callbacks. The smoke extends the existing harness;
+two owned OS app processes share migrated scratch storage, only one synthetic
+evaluation pauses, and `finally` releases its gate before graceful shutdown.
+No blocking A finding. B's outcome/expiry/duplicate-cost limits remain explicit.
+Same-agent self-review is not independent review.
+
+### Validation evidence
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1a.py
+<tag> <Python args>`; omitted arguments run full `-m pytest -q --tb=short`.
+It clears inherited `DEE_` configuration/keys and pins missing config, null/
+loopback providers and project paths. App/browser harnesses additionally pin
+their scratch storage and fake/captured effects; real app children use scratch
+working directories. Logs: `.pytest_cache/r4-s2-t1a-<tag>.txt`. Local evidence,
+runner/snapshot artifacts and synthetic data stay ignored. Baseline: 730 tracked
+files. CPython 3.13.11/project dependencies remain in use.
+
+| Gate | Actual command/result |
+|---|---|
+| Broader focused | Runner `focused-final -m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_report_input.py tests/test_screening_refusal_retention.py tests/test_api_route_extraction.py`: **173 passed, 75 skipped, 3 warnings, 93.10s**, exit 0, before two additional service regressions; unchanged production fix |
+| Final service/API selection | Runner `lease-final -m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_batches_api.py`: **47 passed, 6 skipped, 1 warning, 18.31s**, exit 0, includes all new cases |
+| Migrated two-process SQLite HTTP/retry/graceful restart | Runner `http scripts/smoke_r4_s1_t3d.py --leases`: **27/27** plus reused cookie/CSRF HTTP **31/31**, exit 0; two OS app processes, held fake evaluation, exact `(2,0,1)` / `(1,0,0)` responses, three advisory queue results, retry no-op, cross-tenant refusal and exact saved queue/summary after restart; three graceful lifespans |
+| Actual screening Chrome | Runner `browser scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0; actual intake/queue/feedback/deletion, second intake/reload and injected read failure/recovery; no console exceptions |
+| PostgreSQL-configured selection | `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1a_postgres.py` owns a fresh disposable cluster; `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py`: **97 passed, 3 skipped, 1 warning, 204.97s**, exit 0 |
+| Migrated two-process PostgreSQL HTTP/retry/graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --leases`: **27/27** plus cookie/CSRF HTTP **31/31**, exit 0; actual PG storage shared by two OS app processes; three graceful lifespans, exact concurrent queue/summary and retry no-op after restart |
+| Full pytest | Runner `full` (project `-m pytest -q --tb=short`): **3547 passed, 511 skipped, 127 warnings, 1247.30s**, exit 0, on the reviewed production/test/harness state |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `frontend/support.js` and `git diff --check` pass |
+
+An initial focused invocation named nonexistent `tests/test_screening_input_erasure.py`
+and exited 4 with no tests; the corrected `focused-final` invocation above owns
+the actual evidence. Initial red failures are expected defect reproduction.
+Fakes and synthetic waits/media prove mechanics, not live-provider compatibility,
+assessment quality, cost savings or latency/resource bounds. Browser actions and
+HTTP simulation are separate; Chrome still requires the existing CDN internet.
+No fresh dependency, CI, Docker or deployment claim. No migration gate is added
+because A changes no schema/constraint/store transaction predicate.
+
+The PostgreSQL-configured selection includes backend-neutral/SQLite-only
+fixtures as well as the new database-parameterized lease cases and existing
+actual competing-connection/erasure cases. Its entire pass count is not a count
+of PostgreSQL tests; SQLite and skips do not prove PG semantics. PostgreSQL
+18.6 uses READ COMMITTED/Asia/Calcutta. PG logs use
+`.pytest_cache/r4-s2-t1a-pg-<tag>.txt`; the owned local distribution/runner is not
+a portable environment setup guarantee. No new schema migration is required.
+The owned cluster stopped successfully (exit 0), recorded in
+`.pytest_cache/r4-s2-t1a-pg-runtime.json`; all owned application/browser processes
+also stopped. The HTTP helper's reused contract runs 31 checks; its standalone
+host-start check is outside that reused call and is not claimed as an extra test.
+
+### Completion review and publication
+
+All A acceptance gates are complete, with no unresolved A blocker. Warnings are
+the existing Starlette TestClient deprecation and SQLAlchemy/Alembic expression-
+index reflection limits. Skips do not prove omitted cases. No source changes
+follow the reviewed/tested state; subsequent completion edits are prose only.
+
+Completion records fold A under this stable evidence anchor and update its PI
+status, feature/product notes, roadmap and short handoff. The parent T1, F14,
+sprint and PI stay open. After that completion record and all required gates, a
+distinct final same-agent self-review inspected the exact staged ten-file diff
+against `a3e9232`: screening `service.py`, `test_screening_service.py`,
+`test_screening_batches_api.py`, `smoke_r4_s1_t3d.py`, `SCREENING.md`,
+`FEATURE_STATUS.md`, `PROGRESS.md`, `ROADMAP.md`, delivery `PI-R4.md` and this
+evidence file. Specification review checks every A criterion against real saved
+state, failure/cancellation interleavings, API/OS-process/browser evidence and
+the explicitly pending B contract. Correctness/maintenance review rechecks
+claim timing/cap, both failure acknowledgment branches, refusal stop, quota/auth
+order, closure/cancellation behavior, unchanged ingest/erasure callbacks, fake
+gate ownership/release and PG scratch-schema isolation/cleanup. No blocking A
+finding remains. B's legacy completion/expiry/persistence cases remain explicit;
+this is self-review, not independent review.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s2_t1a.py` verifies **720**
+unrelated tracked files and the working DB against the 730-file baseline, all
+**646** reviewed source/test/harness hashes unchanged and **7** added local
+links/anchors resolved. Staged scope/whitespace checks pass; secrets, working
+data and ignored artifacts are excluded. Only completion prose changes after
+validation, including clarifying the handoff's prior PG runner label. No
+application rerun is needed for prose. Commit/push and remote verification
+follow this distinct final review.
+
+### Handoff
+
+Exact next: **R4-S2-T1B - Fence terminal outcomes and define expiry/idempotence**,
+not started. Read its inline PI contract and A's explicit legacy completion/
+expiry cases before implementation; preserve input/report erasure lock ordering.
+Only A completed in this session. Working data, existing demo and unrelated
+work remain preserved; no deployment, cleanup or next-task implementation.

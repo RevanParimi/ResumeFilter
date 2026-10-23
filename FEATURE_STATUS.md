@@ -109,3 +109,10 @@ combined migrated production composition/restart, API/UI contracts, actual
 multi-plane Chrome and SQL lifecycle/lock/migration gates pass. R4-S1 closes;
 PI-R4 continues with concurrency/bounded work and cross-worker/reproducibility
 tasks. Synthetic providers/media prove mechanics, not empirical quality.
+
+[R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) is complete: processing claims
+each item when work starts, counts ingest/error failures only after an
+acknowledged write and stops after a refused terminal write. Task cancellation
+leaves only active work leased, recoverable through existing timeout/input rules.
+The parent T1/F14 remains open for terminal completion outcomes, active expiry
+and persistence/idempotence in T1B. Duplicate provider work remains possible.

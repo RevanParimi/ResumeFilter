@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S2-T1A completed; bounded batch scheduling fix.**
+  Process calls claim one item when it starts and acknowledge failure writes;
+  rejected terminal writes stop the call, and cancellation leaves only active
+  work leased. [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t1a) owns red/green and
+  full/focused pytest, actual SQLite/PostgreSQL two-process HTTP/retry/restart,
+  screening Chrome, static/preservation and separate reviews. T1/F14/sprint/PI
+  remain open for terminal completion/expiry/idempotence and later mapped work.
+  Working data preserved; demo not restarted. Exact next R4-S2-T1B, not started.
+  Stop after A's final review/publication.
+
 - **Session 2026-10-23 - R4-S1-Q completed; sprint integration closed.**
   The existing provider/SQL smoke now checks combined production composition,
   blocked Chroma/default-and-legacy settings, real HTTP API/UI delivery and
