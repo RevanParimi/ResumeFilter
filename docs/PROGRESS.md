@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4H complete: employer roles/compensation UI extraction.**
+**R4-S1-T4H complete and published: employer roles/compensation UI extraction.**
 The four load/select handlers and complete roles/board/compensation view mapping
 now live in `frontend/employer-roles.js`; overwritten role/shortlist samples are
 removed. Shared state/loading/lifecycle/navigation/template/API/auth and
@@ -13,8 +13,11 @@ pytest (137 passed), full pytest (3540 passed, 505 skipped), bindings/syntax,
 actual Chrome (30/30) and migrated HTTP/exact board+comp/graceful restart (87/87)
 pass. [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t4h) owns commands/counts/limits
 and the separate final completion review/publication record. Distinct final
-completion self-review found no blocking issues. Scoped publication is next;
-this handoff does not yet claim a pushed commit.
+completion self-review found no blocking issues. Scoped task commit `32d504c`
+is pushed to `origin/main`; remote
+`32d504c0678d78c08ff90c8c654f3178f7d46bb4` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation.
 Only H completed; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage is preserved; demo not restarted.
 

@@ -4374,7 +4374,24 @@ preservation (`preservation-reviewed -I .pytest_cache/verify_r4_s1_t4h.py`):
 exit 0, 1.50s runner; 717 unrelated tracked files, working DB and 19 reviewed
 hashes unchanged, 300 local Markdown links/anchors valid, staged/tracked/source
 whitespace pass. Review-record prose was separately checked for observed
-evidence, scope and status accuracy. Commit/push verification follows.
+evidence, scope and status accuracy.
+
+Scoped task commit **`32d504c`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`cbf6c17` to `32d504c`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`32d504c0678d78c08ff90c8c654f3178f7d46bb4`**. Working tree was clean.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this section. Separate final same-agent self-review against
+`32d504c` checks the exact prose diff, actual remote evidence, open T4 parent and
+I-only next pointer; no blocking finding remains. Scoped links, whitespace,
+preservation and the unchanged 19 reviewed source/harness/contract hashes are
+checked before publication. Application code remains at the validated state;
+no application tests are rerun for prose. The final response reports the verified
+remote SHA after this confirmation's commit/push. No I work, working-data change,
+demo restart or deployment occurred.
 
 ### Handoff
 
