@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-Q complete; R4-S1 and bounded F12/F13 closed.**
+**R4-S1-Q complete and published; R4-S1 and bounded F12/F13 closed.**
 The combined production composition preserves evaluation/search/portal,
 tenant/subject ownership, consent/erasure and advisory behavior across graceful
 restart. Shared SQL and owned provider cleanup work with Chroma unavailable.
@@ -15,7 +15,10 @@ Focused pytest (225 + 41), full pytest (3540 passed, 505 skipped), combined
 SQLite/PostgreSQL HTTP (45/45 each), PostgreSQL-configured selection (226 passed,
 59 skipped), seven actual Chrome journeys covering eight extracted screen areas,
 cookie/CSRF contract (32/32) and bindings/syntax pass. Distinct final completion
-self-review found no remaining blocker; scoped commit/push follows.
+self-review found no remaining blocker. Scoped task commit `0d3309d` is pushed
+to `origin/main`; remote `0d3309d1ab7f56f232d471b4b9ac2611703d208f` was verified.
+This documentation-only confirmation records publication; the final response
+reports the verified remote SHA after this confirmation.
 PI-R4 remains open for S2/S3. Working storage preserved; demo not restarted.
 
 **Exact next task: R4-S2-T1 - Make batch leases and counts truthful**, not started.
