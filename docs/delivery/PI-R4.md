@@ -25,17 +25,19 @@ Every task inherits [WORKFLOW.md](WORKFLOW.md). Reuse inline active task section
 
 ## R4-S1 — Simplify construction and boundaries
 
+Status: done (2026-10-23); [Q integration evidence](EVIDENCE-R4.md#r4-s1-q).
+
 Sprint acceptance journey: Boot the production service composition against a migrated scratch database, run evaluation/search/portal flows, shut down and restart. Shared resources have a single lifecycle and routes preserve contracts.
 
 ### R4-S1-T1 — Share database and service resources
 
-Status: done (2026-10-16). Audit mapping: F12; sprint closure remains R4-S1-Q. Prerequisites: R3-S3-Q.
+Status: done (2026-10-16). Audit mapping: F12; bounded closure at [R4-S1-Q](EVIDENCE-R4.md#r4-s1-q). Prerequisites: R3-S3-Q.
 
 Split before implementation: [T1 parent](EVIDENCE-R4.md#r4-s1-t1).
 [T1A](EVIDENCE-R4.md#r4-s1-t1a) and [T1B](EVIDENCE-R4.md#r4-s1-t1b) are done for shared SQL
 topology/engine ownership and lazy owned-provider cleanup. Their PI evidence sections
 own final evidence. T2 removes the unused Chroma construction path; no blanket
-leak-free or live-provider claim. F12 remains open for R4-S1-Q.
+leak-free or live-provider claim. Q completes the bounded F12 integration gate.
 
 **Development:** Construct one engine/session factory per configured database and reuse service instances. Dispose resources on shutdown; preserve distinct database URLs when intentional.
 
@@ -53,7 +55,7 @@ Status: done (2026-10-16). Audit mapping: F13; F02 cleanup. Prerequisites: R4-S1
 and Chroma dependency removed; retired settings are accepted and ignored.
 Final focused/full pytest, migrated HTTP/restart, packaging, static checks,
 self-review and preservation passed. Graph retained with a bounded rationale;
-F13 and sprint/PI closure remain open.
+Q completes the bounded F13 integration gate. PI-R4 remains open for S2/S3.
 
 **Development:** Search callers before removing unused vector-store startup/config/dependencies; migrate supported settings with clear compatibility behavior. Evaluate linear graph simplification only if it has no required capability.
 
@@ -73,8 +75,8 @@ three DTOs and final ordered composition. The full 102-operation API/auth
 contract remains unchanged; aggregate `routes.py` contains only assembly.
 Focused/full pytest, migrated HTTP/graceful restart, actual Chrome,
 static/preservation and implementation self-review pass. M owns the distinct
-final completion review/publication record. Only M completed this session;
-the parent is now done. Next: T4, not started. F13/sprint/PI stay open.
+final completion review/publication record. T4 and the separate Q integration
+gate are now also done; Q closes the bounded F13/sprint scope.
 
 **Development:** Extract one cohesive router per subtask while retaining central authentication, response contracts and OpenAPI behavior. Record child contracts/evidence inline in T3; reuse its consolidated route tests.
 
@@ -96,8 +98,8 @@ callers and useful shared formatters/styles remain in the HTML intentionally.
 Before/after behavior and live-value comparisons, focused/full pytest, actual
 multi-plane/employer/interview Chrome, migrated HTTP/graceful restart, static/
 packaging/preservation and implementation self-review pass. I owns the separate
-final completion review/publication. Only I completed this session, closing T4;
-F13/sprint/PI stay open. Exact next R4-S1-Q, not started.
+final completion review/publication. Q now completes the combined integration
+gate, closing the bounded F13/sprint scope. PI-R4 remains open for S2/S3.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 
@@ -109,9 +111,15 @@ F13/sprint/PI stay open. Exact next R4-S1-Q, not started.
 
 ### R4-S1-Q — Sprint integration review
 
-Status: pending. Prerequisites: all tasks in R4-S1.
+Status: done (2026-10-23). Prerequisites: all tasks in R4-S1, done.
 
-Run the [sprint closure gate](WORKFLOW.md#sprint-closure) against the acceptance journey above; record results in the existing sprint section.
+[Q contract/evidence](EVIDENCE-R4.md#r4-s1-q) owns the combined production
+composition, SQLite/PostgreSQL graceful restart, full/focused pytest, actual
+Chrome across eight extracted areas, static/preservation and separate reviews.
+The existing smoke exposes repeatable `--integration` checks; no product fix was
+required. The full API/auth fixture and advisory/ownership/consent/erasure
+contracts remain. This closes R4-S1 and bounded F12/F13, not PI-R4 or measured
+quality/live-provider validation. Exact next: R4-S2-T1, not started. Stop after Q.
 
 ## R4-S2 — Concurrency and bounded work
 

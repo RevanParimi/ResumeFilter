@@ -1,16 +1,20 @@
 """Owned real provider wrappers with local SDK/HTTP fakes; graceful SQL restart.
 
 No real provider traffic or media/answer payloads in lifecycle metadata. Reuses
-T1A's migrated storage, actor, consent, erasure and graceful-stop journey.
+T1A's migrated storage, actor, consent, erasure and graceful-stop journey with
+T2's default/legacy-settings Chroma guard. --integration adds the R4-S1-Q HTTP
+API/UI composition checks; --postgres selects disposable PostgreSQL storage.
 """
 import json
 import os
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 
 import httpx
 
-from smoke_r4_s1_t1a import create_smoke_app as sql_app, main as sql_main
+from smoke_r4_s1_t1a import main as sql_main
+from smoke_r4_s1_t2 import create_smoke_app as sql_app
 
 
 def create_smoke_app():
@@ -77,4 +81,4 @@ def create_smoke_app():
 
 
 if __name__ == "__main__":
-    raise SystemExit(sql_main(provider_checks=True))
+    raise SystemExit(sql_main(provider_checks=True, composition_checks="--integration" in sys.argv))

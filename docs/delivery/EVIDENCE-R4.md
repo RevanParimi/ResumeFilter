@@ -4673,3 +4673,148 @@ Exact next: **R4-S1-Q - Sprint integration review**, not started. Read its PI-R4
 section, WORKFLOW and T1-T4 evidence. Test/review the combined production
 composition on migrated scratch storage in its own session; do not start it
 during I/T4 publication. Stop after this publication.
+
+## <a id="r4-s1-q"></a>R4-S1-Q - Sprint integration review
+
+Status: done (2026-10-23). Prerequisites: [T1](#r4-s1-t1),
+[T2](#r4-s1-t2), [T3](#r4-s1-t3), [T4](#r4-s1-t4), all done.
+Scope: only this sprint gate. The acceptance contract was specified in PI-R4
+before editing the validation harness; no product defect has been reproduced
+and no application implementation change is included.
+
+### Contract and integration mode
+
+Boot final production composition on migrated scratch storage, evaluate,
+materialize/search and use candidate portals with two subjects/employers; shut
+down gracefully and restart without losing saved reports, portal identity or
+search state. Current consent revocation must mask historical search, erasure
+must invalidate the subject and its report while preserving the survivor.
+Each lifespan must share one SQL factory/reused services, close owned provider
+transports exactly once, dispose/detach SQL and avoid Chroma with default and
+retired settings. Preserve the full ordered 102-operation OpenAPI/auth fixture,
+anonymous-plane refusals, actual entry/script delivery and private-asset refusal.
+Actual Chrome must exercise the eight extracted screen areas, auth navigation,
+reload/errors and console exceptions. Require focused/full pytest, applicable
+PostgreSQL lock/migration and real HTTP gates, static checks, preservation,
+implementation self-review and a distinct final completion self-review.
+
+Extend the existing SQL smoke's `composition_checks` mode and expose it through
+`scripts/smoke_r4_s1_t1b.py --integration` (also `--postgres`). T1B's provider
+wrapper now composes T2's existing Chroma guard around the same default app;
+no copied server launcher or extra app container. On both process starts, real
+anonymous HTTP reads the OpenAPI document and entry page, checks each declared
+local script against its actual bytes/content type and refuses protected planes
+and private/retired assets. The second schema must equal the first. The existing
+evaluation/audio, SQL lifecycle, actor/consent/erasure and provider-close checks
+remain, with default/legacy Chroma events asserted across both lifespans.
+
+No production source, schema, dependency, scorer or frontend behavior changes.
+This adds a repeatable integration acceptance journey; an initial red product
+reproducer is inapplicable because this task validates the completed sprint.
+New checks assert actual requests, saved state and lifecycle events. Existing
+offline regressions retain the constituent defect reproducers and failure paths.
+
+### Implementation self-review
+
+Reviewed state: `18caf49` plus the two smoke-script changes, with the T1-T4
+combined call paths. Reviewed the service/engine ownership diff, lazy wrappers,
+default/fake builders and lifespan; final router assembly/shared principal-CSRF
+dependencies and evaluation/search/portal boundaries; entry script/factory and
+value precedence, shared navigation/unmount and extracted request/media cleanup.
+Used the T1-T4 contracts/evidence to map acceptance and reviewed the applicable
+changes/callers, rather than re-running the historical audit.
+
+Specification: the same production builders serve both starts and all moved
+surfaces; fake SDK/HTTP adapters replace external effects only. PostgreSQL and
+browser gates remain separately identified. Correctness/maintenance: borrowed
+resources remain caller-owned, late/failed/canceled cleanup and actor checks
+have existing behavioral regressions; no parallel ownership registry or runtime
+framework was added. The smoke's Chroma guard wraps the same app before owned
+providers are created; shutdown assertions run after real lifespan completion.
+No blocking finding in this pass. It is same-agent self-review, not independent
+review, and does not establish measured quality, general speedup or zero leaks.
+
+### Validation evidence
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_q.py <tag>
+<Python args>`; omitted arguments run `-m pytest -q --tb=short`. It clears inherited
+`DEE_` settings/keys, pins a nonexistent config plus null/loopback providers and
+uses project `src`/root paths. HTTP/browser harnesses select migrated disposable
+storage and explicitly pin external effects. Combined HTTP and Chrome app
+children run outside the working directory; the cookie/CSRF contract uses the
+root directory with the sanitized runner's config/key pins and captured mail.
+Logs: `.pytest_cache/r4-s1-q-<tag>.txt`.
+Baseline hashes cover 730 tracked files; local logs/screenshots/runners are
+ignored artifacts, not portable environment setup or committed candidate data.
+
+| Gate | Actual command/result |
+|---|---|
+| Focused | Runner `focused -m pytest -q --tb=short tests/test_services_features.py tests/test_service_lifecycle.py tests/test_api_route_extraction.py tests/test_route_table_guard.py tests/test_ui_mount.py tests/test_ui_handlers.py tests/test_provenance.py tests/test_config.py tests/test_smoke_harness.py`: **225 passed, 1 warning, 85.17s**, exit 0 |
+| Provenance/config/posture | Runner `provenance -m pytest -q --tb=short tests/test_provenance_runtime.py tests/test_boot_config.py tests/test_cookie_posture.py`: **41 passed, 9.63s**, exit 0 |
+| Combined migrated SQLite HTTP/graceful restart | Runner `http scripts/smoke_r4_s1_t1b.py --integration`: **45/45**, exit 0; exact report/portal/search persistence, shared SQL and owned provider cleanup, default/retired-settings Chroma refusal, actual HTTP API/UI surface |
+| Evaluation/portal/shared shell Chrome | Runner `evaluate-browser scripts/check_ui_evaluate_browser.py`: **48/48** plus host **1/1**, exit 0 |
+| Operator accounts Chrome | Runner `users-browser scripts/check_ui_admin_users_browser.py`: **29/29** plus host **1/1**, exit 0 |
+| Organization administration Chrome | Runner `orgs-browser scripts/check_ui_admin_orgs_browser.py`: **28/28** plus host **1/1**, exit 0 |
+| Curation HTTP/Chrome/graceful restart | Runner `curation-browser scripts/smoke_curation_activation.py --browser`: **53/53**, exit 0 |
+| Screening Chrome | Runner `screening-browser scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0 |
+| Cookie/CSRF HTTP contract | Runner `csrf-contract scripts/check_ui_screening_contract.py`: **32/32**, exit 0 |
+| Interview Chrome | Runner `interview-browser scripts/check_ui_interview_integration_browser.py`: **40/40** plus host **1/1**, exit 0 |
+| Employer roles/compensation/report Chrome | Runner `employer-browser scripts/check_ui_review_context_browser.py`: **30/30**, exit 0 |
+| PostgreSQL configured lock/migration selection | `.resume/Scripts/python.exe .pytest_cache/run_r4_s1_q_postgres.py` creates/owns a fresh disposable cluster; `-m pytest -q --tb=short tests/test_service_lifecycle.py tests/test_services_features.py tests/test_job_store_match.py tests/test_features_current_consent.py tests/test_interview_lifecycle_concurrency.py tests/test_interview_erasure_concurrency.py tests/test_screening_erasure_concurrency.py tests/test_candidate_login_binding_migration.py tests/test_curation_storage_migration.py`: **226 passed, 59 skipped, 21 warnings, 436.73s**, exit 0 |
+| Combined migrated PostgreSQL HTTP/graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t1b.py --postgres --integration`: **45/45**, exit 0; actual PostgreSQL storage/shared lifecycle and owned transport cleanup; fresh schema migrated to 0029 |
+| Full pytest | Runner `full` (project `-m pytest -q --tb=short`): **3540 passed, 505 skipped, 127 warnings, 962.41s**, exit 0, on the reviewed source/harness state |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve. `node --check frontend/api.js`, `frontend/support.js`, each of the **10** frontend JS files and the entry document's extracted inline logic (`.pytest_cache/r4-s1-q-inline.js`) pass. `git diff --check` passes |
+
+PostgreSQL **18.6**, READ COMMITTED, Asia/Calcutta. The selected tests include
+backend-neutral and SQLite-only composition fixtures; the configured count is
+not a claim that every passed case used PostgreSQL. Parameterized PG cases use
+actual competing connections/current-consent, lifecycle/erasure and constraints,
+with existing 0028/0029 up/down/up coverage; SQLite cases and skips do not prove
+PG behavior. The separate migrated HTTP run uses PostgreSQL throughout. PG logs
+use `.pytest_cache/r4-s1-q-pg-<tag>.txt`; the local distribution/owned runner is
+not a portable setup guarantee. The owned cluster stopped successfully (exit 0;
+`.pytest_cache/r4-s1-q-pg-runtime.json`). CPython **3.13.11** is the project environment.
+
+Browser actions use actual Chrome/CDP, scratch HTTP and saved data; selected
+timeout/network/503/media cases inject faults and synthetic device streams.
+Browser document reload is distinct from HTTP's real graceful process restart.
+Synthetic providers/media demonstrate mechanics, not live-provider/ASR/codec
+compatibility or empirical assessment quality. Chrome still depends on CDN
+internet. No CI, Docker, fresh dependency installation or deployment claim.
+
+### Completion review and publication
+
+All acceptance gates are complete. The new integration mode and existing
+constituent regressions pass with no acceptance-blocking product finding.
+Warnings are the existing Starlette TestClient deprecation and SQLAlchemy/
+Alembic expression-index reflection limits. Skipped optional/environment cases
+do not establish omitted behavior. No fresh dependency/CI/provider/quality claim.
+R4-S1 and the bounded F12/F13 gates close; PI-R4 remains open for S2/S3.
+
+Completion records update the PI, traceability/feature summary, roadmap and
+handoff. After those records and all gates, a distinct final same-agent
+self-review inspected the exact staged eight-file diff against `18caf49`:
+`scripts/smoke_r4_s1_t1a.py`, `scripts/smoke_r4_s1_t1b.py`, `FEATURE_STATUS.md`,
+`docs/PROGRESS.md`, `docs/ROADMAP.md`, and delivery `PI-R4.md`, `README.md`,
+`EVIDENCE-R4.md`. Specification review maps every acceptance criterion to the
+recorded requests/state/lifecycle/browser evidence and leaves S2/S3 pending.
+Correctness/maintenance review rechecks composition mode selection, fake SDK
+ownership, guard order, actual script/schema comparisons, restart semantics,
+cleanup/privacy and exclusions. It corrected an overbroad prose claim about
+child working directories: the cookie/CSRF contract runs from root under the
+sanitized runner; it still uses migrated scratch SQL/captured mail. No product
+change or blocking finding remains. This is self-review, not independent review.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s1_q.py` confirms **722**
+unrelated tracked files and working DB match the 730-file baseline, all **646**
+reviewed source/harness hashes remain unchanged and **15** added local links/
+anchors resolve. Staged whitespace and explicit scope checks pass; no secrets,
+working storage or ignored artifacts are staged. Subsequent edits are completion
+prose only, so application checks need no rerun. Commit/push and remote
+verification follow this distinct final review.
+
+### Handoff
+
+Exact next: **R4-S2-T1 - Make batch leases and counts truthful**, not started.
+Only Q is completed in this session. No working storage migration, demo restart,
+deployment, ignored-artifact cleanup or next-task implementation occurred.

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import sys
@@ -75,8 +76,9 @@ async def serve(port, stop):
         await asyncio.gather(watcher, return_exceptions=True)
 
 
-def main(*, provider_checks=False):
-    checks = Smoke("R4-S1-T1B owned providers / HTTP / graceful restart" if provider_checks
+def main(*, provider_checks=False, composition_checks=False):
+    checks = Smoke("R4-S1-Q combined production composition / graceful restart" if composition_checks
+                   else "R4-S1-T1B owned providers / HTTP / graceful restart" if provider_checks
                    else "R4-S1-T1A shared production SQL / HTTP / graceful restart")
     scratch = Path(tempfile.mkdtemp(prefix="r4-s1-t1a-"))
     print(f"Synthetic SQL lifecycle evidence: {scratch}", flush=True)
@@ -120,6 +122,32 @@ def main(*, provider_checks=False):
         def require(response,status=200):
             assert response.status_code == status, (response.request.url.path,response.status_code)
             return response.json()
+        def surface():
+            with client(base) as public:
+                schema = require(public.get("/openapi.json"))
+                expected = json.loads((ROOT/"tests/fixtures/api_contract_r4_s1_t3.json").read_text())
+                operations = sum(method in {"get", "post", "put", "patch", "delete", "options", "head", "trace"}
+                    for methods in schema["paths"].values() for method in methods)
+                checks.check("production HTTP publishes the complete API operation surface", operations==expected["operations"])
+                page = public.get("/ui/")
+                assert page.status_code == 200
+                checks.check("production HTTP serves the actual extracted entry document",
+                    page.content==(ROOT/"frontend/Veritas.dc.html").read_bytes())
+                scripts = re.findall(r'<script\s+src="(\./[^"]+)"', page.text)
+                assert len(scripts) >= 8, "extracted screen scripts missing from entry document"
+                for source in scripts:
+                    response = public.get("/ui/" + source.removeprefix("./"))
+                    checks.check("production HTTP serves " + source, response.status_code==200
+                        and "javascript" in response.headers.get("content-type", "")
+                        and response.content==(ROOT/"frontend"/source.removeprefix("./")).read_bytes())
+                checks.check("production HTTP refuses anonymous access to protected planes",
+                    all(public.get(path).status_code==401 for path in
+                        ("/portal/me", "/admin/users", "/ledger/orgs", "/curation/skills/unmapped"))
+                    and public.post("/talent/search", json={"ranking":RANKING}).status_code==401)
+                checks.check("production HTTP refuses private and retired UI assets",
+                    all(public.get("/ui/"+name).status_code==404 for name in
+                        (".env", "config.yaml", "src/app/main.py", "design-system.js")))
+                return schema
         def search(admin,cut):
             return require(admin.post("/talent/search",json={"as_of":cut,"ranking":RANKING,
                 "filters":[{"feature":"reputation.score","op":"exists"}]}))
@@ -135,6 +163,7 @@ def main(*, provider_checks=False):
                 and answer["session"]["turns"][0]["channel"]=="audio" and done["assessment"]["human_review_required"])
         with client(base) as actor, client(base) as survivor, client(base) as org_a, client(base) as org_b:
             with server() as admin:
+                if composition_checks: initial_schema = surface()
                 orgs = [require(admin.post("/ledger/orgs",json={"name":"Shared SQL " + name})) for name in ("A","B")]
                 for http,org in zip((org_a,org_b),orgs): http.headers["X-Org-Key"] = org["api_key"]
                 document = "Synthetic SQL Candidate\nEmail: shared-sql@example.com\nEXPERIENCE\nEngineer at Acme, 2020 - 2024\nSKILLS\nPython, SQL, Spark"
@@ -166,6 +195,8 @@ def main(*, provider_checks=False):
             checks.check("first real shutdown disposes one owned pool and its DBAPI connection", sum(r["event"]=="disposed" for r in rows)==1
                 and any(r["event"]=="connection_closed" for r in rows) and rows[-1]=={"event":"stopped","detached":True})
             with server() as admin:
+                if composition_checks:
+                    checks.check("graceful restart preserves the complete HTTP OpenAPI document", surface()==initial_schema)
                 checks.check("graceful process restart preserves report, portal and search", require(org_a.get(f"/screening/reports/{rid}"))==saved_report
                     and require(actor.get("/portal/me"))["candidate_id"]==cid and search(admin,cut)["filtered_size"]==1)
                 if provider_checks: exercise_providers(admin, actor)
@@ -190,6 +221,11 @@ def main(*, provider_checks=False):
                     and all(sorted(r["provider"] for r in part if r["event"]=="provider_opened")==["github","llm","speech"]
                         and sorted(r["provider"] for r in part if r["event"]=="provider_closed" and r["closed"])==["github","llm","speech"]
                         for part in spans))
+            if composition_checks:
+                provenance = [r for r in rows if r["event"]=="provenance_runtime"]
+                checks.check("both owned-provider lifespans avoid Chroma under default and retired settings",
+                    [r["mode"] for r in provenance]==["default", "legacy"]
+                    and all(r["chroma_import_attempts"]==r["vector_threads"]==0 for r in provenance))
             logs = (scratch/"server.log").read_text(encoding="utf-8",errors="replace")
             checks.check("lifecycle/app logs omit resume text and candidate keys", document not in logs
                 and actor.headers["X-Candidate-Key"] not in logs and survivor.headers["X-Candidate-Key"] not in logs)

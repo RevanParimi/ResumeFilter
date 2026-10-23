@@ -4,41 +4,35 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4I complete and published; T4 frontend extraction closed.**
-Shared display directly composes the eight screen areas. Proven unused helper,
-overwritten account/org/search defaults, obsolete design prop and unreachable
-sample notice/text metadata are removed. Live identities/values/callbacks,
-module precedence and shared state/lifecycle/navigation/API behavior remain.
-Before/after Node (38), full render comparison (18 states), focused pytest
-(111 passed), full pytest (3540 passed, 505 skipped), bindings/syntax, actual
-Chrome (48 shared shell; 30 employer; 40 interview, with host checks) and migrated
-HTTP/graceful restart (91/91) pass. [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t4i) owns exact
-commands/counts/limits and separate final review/publication. Distinct final
-completion self-review found no blocking issues. Scoped task commit `e7d7bc1`
-is pushed to `origin/main`; remote
-`e7d7bc11c31cb8e7cf65f1d974ef3543a128dc9c` was verified. This documentation-only
-confirmation records publication; the final response reports the verified remote
-SHA after this confirmation.
-Only I completed, closing [T4](delivery/EVIDENCE-R4.md#r4-s1-t4); F13/sprint/PI
-remain open. Working storage preserved; demo not restarted.
+**R4-S1-Q complete; R4-S1 and bounded F12/F13 closed.**
+The combined production composition preserves evaluation/search/portal,
+tenant/subject ownership, consent/erasure and advisory behavior across graceful
+restart. Shared SQL and owned provider cleanup work with Chroma unavailable.
+The existing smoke now offers repeatable `--integration` API/UI checks; no
+application fix was required. [Q evidence](delivery/EVIDENCE-R4.md#r4-s1-q) owns
+the contract, exact commands/counts, implementation and final completion reviews.
+Focused pytest (225 + 41), full pytest (3540 passed, 505 skipped), combined
+SQLite/PostgreSQL HTTP (45/45 each), PostgreSQL-configured selection (226 passed,
+59 skipped), seven actual Chrome journeys covering eight extracted screen areas,
+cookie/CSRF contract (32/32) and bindings/syntax pass. Distinct final completion
+self-review found no remaining blocker; scoped commit/push follows.
+PI-R4 remains open for S2/S3. Working storage preserved; demo not restarted.
 
-**Exact next task: R4-S1-Q - Sprint integration review**, not started.
-Read its [PI-R4 section](delivery/PI-R4.md#r4-s1-q--sprint-integration-review),
-[WORKFLOW](delivery/WORKFLOW.md) and T1-T4 evidence. Run the combined production
-composition journey on migrated scratch storage in its own session. No Q work
-or deployment started during I/T4 publication.
+**Exact next task: R4-S2-T1 - Make batch leases and counts truthful**, not started.
+Read its [PI-R4 section](delivery/PI-R4.md#r4-s2-t1--make-batch-leases-and-counts-truthful)
+and [WORKFLOW](delivery/WORKFLOW.md). Use two workers/slow fake providers to prove
+expired/stolen leases cannot overwrite or count uncommitted successes. No T1
+implementation or deployment starts during Q publication.
 
 ## Latest work
 
-No duplicate mock/live sources remain for completed screens. Useful shared
-formatters/styles and actual lifecycle/loading/navigation/file-reader/row-cache
-callers remain in the HTML. Live account identity and org draft override design
-props even with missing/failed data; all planes retain theme/domain callbacks,
-navigation, search/advisory placement and neutral errors. Chrome separately
-proves document reload and synthetic media/cleanup; HTTP proves graceful
-restart and exact saved state. Fakes prove mechanics, not provider or measured
-quality. Working DB and 715 unrelated tracked files match baseline. The completed
-T4 task record is folded under its stable PI evidence anchor; A-I links remain.
+Q adds validation harness coverage and closes only the sprint integration gate.
+The ordered 102-operation API/auth fixture and actual HTTP script delivery remain
+intact. Chrome proves saved actions, reload/error recovery and synthetic media
+cleanup; the combined HTTP gate separately proves graceful process restart and
+owned resource disposal. Fakes prove mechanics, not provider or measured quality.
+Owned validation PostgreSQL/Chrome/app processes stopped. Working DB and
+unrelated tracked files match the baseline; final preservation is recorded in Q.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -46,8 +40,12 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4i.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_q.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Combined R4-S1 production composition/API/UI/graceful restart:
+  `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an
+  explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
+  `.pytest_cache/run_r4_s1_q_postgres.py` / `r4-s1-q-pg-runtime.json`; stopped.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
   Candidate/source/ownership/graceful restart: `scripts/smoke_r4_s1_t3c.py`.

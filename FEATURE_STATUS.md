@@ -88,8 +88,9 @@ resources, lazy owned GitHub/LLM/speech transports and async cleanup preserve
 borrowed resources and existing workflows. Child records own final validation.
 [R4-S1-T2](docs/delivery/EVIDENCE-R4.md#r4-s1-t2) removes unused Chroma/vector/hash
 infrastructure; provenance remains evaluation-local and retired settings are
-accepted and ignored. Final validation is recorded in T2. F12/F13 remain open
-for their remaining sprint tasks/gate. No blanket leak-free, live-provider or
+accepted and ignored. Final validation is recorded in T2. The bounded F12/F13
+gate is complete at [R4-S1-Q](docs/delivery/EVIDENCE-R4.md#r4-s1-q).
+No blanket leak-free, live-provider or
 general measured performance claim.
 
 [R4-S1-T3](docs/delivery/EVIDENCE-R4.md#r4-s1-t3) is complete: API handlers
@@ -102,5 +103,9 @@ screening, portal/auth, interview and employer roles/compensation logic.
 [T4I](docs/delivery/EVIDENCE-R4.md#r4-s1-t4i) simplifies shared display composition
 and removes proven dead sample/default/helper paths, preserving live identities,
 advisory/human review, saved operations and recovery. Useful shared lifecycle,
-navigation, styles and formatters remain in the HTML. A-I own required evidence;
-F13/sprint/PI remain open for separate R4-S1-Q integration review.
+navigation, styles and formatters remain in the HTML. A-I own required evidence.
+The separate [Q integration gate](docs/delivery/EVIDENCE-R4.md#r4-s1-q) is complete:
+combined migrated production composition/restart, API/UI contracts, actual
+multi-plane Chrome and SQL lifecycle/lock/migration gates pass. R4-S1 closes;
+PI-R4 continues with concurrency/bounded work and cross-worker/reproducibility
+tasks. Synthetic providers/media prove mechanics, not empirical quality.

@@ -65,8 +65,8 @@ sprint. Do not close a parent finding after only its first subtask.
 | F09 | Bounded contact ordering/delivery gate complete: [R1-S2-T3](EVIDENCE-R1.md#r1-s2-t3), [R3-S1-Q](EVIDENCE-R3.md#r3-s1-q), with consolidated T2 evidence; phone delivery explicitly unavailable |
 | F10 | R3-S1-T1 and R3-S2-T1/T2/T3 with [R3-S2-Q](EVIDENCE-R3.md#r3-s2-q) combined operator acceptance complete; broader browser regression remains R5-S2-T1 |
 | F11 | R3-S3-T1/T2/T3; video R5-S1-T1/T2/T3/T4; corresponding gates |
-| F12 | R4-S1-T1 and R4-S1-Q |
-| F13 | R4-S1-T2/T3/T4 and R4-S1-Q |
+| F12 | R4-S1-T1 and [R4-S1-Q](EVIDENCE-R4.md#r4-s1-q) bounded resource ownership/lifecycle gate complete |
+| F13 | R4-S1-T2/T3/T4 and [R4-S1-Q](EVIDENCE-R4.md#r4-s1-q) bounded simplification/composition gate complete |
 | F14 | R2-S1-T2; R4-S2-T1/T2/T3/T4 and R4-S2-Q |
 | F15 | R4-S3-T1/T2/T3; R5-S2-T1; corresponding gates |
 | F16 | R5-S2-T2/T3 and R5-S2-Q; no accuracy claim until empirical evidence exists |

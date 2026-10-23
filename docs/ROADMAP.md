@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-Q completed; sprint integration closed.**
+  The existing provider/SQL smoke now checks combined production composition,
+  blocked Chroma/default-and-legacy settings, real HTTP API/UI delivery and
+  graceful restart. [Q evidence](delivery/EVIDENCE-R4.md#r4-s1-q) owns full/focused
+  pytest, SQLite/PostgreSQL journeys, actual Chrome across eight extracted areas,
+  controlled SQL/migration/static/preservation gates and separate reviews.
+  No product fix was required. R4-S1 and bounded F12/F13 close; PI-R4 stays open.
+  Working data preserved; demo not restarted. Exact next R4-S2-T1, not started.
+  Stop after Q's final review/publication.
+
 - **Session 2026-10-23 - R4-S1-T4I completed; T4 frontend extraction closed.**
   Shared display composes the eight screen areas directly; unused helper,
   overwritten identity/org/search defaults, obsolete design prop and unreachable
