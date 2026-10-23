@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1A complete; parent T1/F14/sprint/PI remain open.**
+**R4-S2-T1A complete and published; parent T1/F14/sprint/PI remain open.**
 Process calls claim one item when its work starts, with a fresh clock reading.
 Ingest/error failure counts require an acknowledged store write; a refused
 terminal write stops the call. Task cancellation leaves only active work leased.
@@ -14,8 +14,10 @@ passed, 6 skipped), broader focused (173 passed, 75 skipped), full pytest (3547
 passed, 511 skipped), PostgreSQL-configured selection (97 passed, 3 skipped),
 two-process SQLite/PostgreSQL HTTP/restart (27/27 + 31/31 each), actual screening
 Chrome (24/24) and bindings/syntax pass. Distinct final completion self-review
-found no A blocker; scoped commit/push follows. Working storage preserved;
-demo not restarted.
+found no A blocker. Scoped task commit `7e7ee34` is pushed to `origin/main`;
+remote `7e7ee3417427bbd21c4a3cc3f6e9083dffd7348b` was verified. This prose-only
+confirmation records publication; the final response reports the verified remote
+SHA after this confirmation. Working storage preserved; demo not restarted.
 
 False completion still reports a failed attempt; active expiry and persistence/
 idempotence remain T1B. Active lease theft can duplicate provider work and
