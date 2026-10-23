@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4I complete; T4 frontend extraction closed.**
+**R4-S1-T4I complete and published; T4 frontend extraction closed.**
 Shared display directly composes the eight screen areas. Proven unused helper,
 overwritten account/org/search defaults, obsolete design prop and unreachable
 sample notice/text metadata are removed. Live identities/values/callbacks,
@@ -14,8 +14,11 @@ Before/after Node (38), full render comparison (18 states), focused pytest
 Chrome (48 shared shell; 30 employer; 40 interview, with host checks) and migrated
 HTTP/graceful restart (91/91) pass. [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t4i) owns exact
 commands/counts/limits and separate final review/publication. Distinct final
-completion self-review found no blocking issues. Scoped publication is next;
-no pushed commit is yet claimed in this handoff.
+completion self-review found no blocking issues. Scoped task commit `e7d7bc1`
+is pushed to `origin/main`; remote
+`e7d7bc11c31cb8e7cf65f1d974ef3543a128dc9c` was verified. This documentation-only
+confirmation records publication; the final response reports the verified remote
+SHA after this confirmation.
 Only I completed, closing [T4](delivery/EVIDENCE-R4.md#r4-s1-t4); F13/sprint/PI
 remain open. Working storage preserved; demo not restarted.
 
