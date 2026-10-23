@@ -28,7 +28,6 @@ test("operator landing loads actual orgs and inspects server fields", async () =
   c.selectOrg("b")();
   assert.equal(c.renderVals().orgSelected.id, "b");
   assert.equal(c.state.orgWeight, "1");
-  assert.equal(c.renderVals().isMockScreen, false);
 });
 
 test("empty/loading/refused list never shows fixtures; local filtering paginates real rows", async () => {

@@ -18,7 +18,6 @@ test("interview entry reads saved candidate sessions and resumes the server ques
   assert(calls.some(x => x[1] === "/portal/interviews"), "entry must list saved interviews");
   assert.equal(c.renderVals().interviewQuestion, question.text);
   assert.equal(c.state.interviewBody.session.id, saved.id);
-  assert.equal(c.renderVals().isMockScreen, false);
 });
 module.exports = { fixture, saved, question };
 

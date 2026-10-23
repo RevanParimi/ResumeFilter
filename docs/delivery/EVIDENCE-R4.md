@@ -2600,7 +2600,7 @@ bounded first child before implementation in the next session. Stop after M.
 
 ## <a id="r4-s1-t4a"></a>R4-S1-T4A - Extract operator-account UI logic
 
-Status: done and published (2026-10-22). Parent: [T4](tasks/R4-S1-T4.md).
+Status: done and published (2026-10-22). Parent: [T4](#r4-s1-t4).
 
 ### Contract and acceptance
 
@@ -2796,7 +2796,7 @@ implementation in the next session. Stop after A publication.
 ## <a id="r4-s1-t4b"></a>R4-S1-T4B - Extract organization-administration UI logic
 
 Status: done and published (2026-10-22). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [T4A](#r4-s1-t4a), done/published.
+[T4](#r4-s1-t4). Prerequisite: [T4A](#r4-s1-t4a), done/published.
 
 ### Contract and acceptance
 
@@ -3010,7 +3010,7 @@ implementation in the next session. Stop after B publication.
 ## <a id="r4-s1-t4c"></a>R4-S1-T4C - Extract curation UI logic
 
 Status: done and published (2026-10-22). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [T4B](#r4-s1-t4b), done/published.
+[T4](#r4-s1-t4). Prerequisite: [T4B](#r4-s1-t4b), done/published.
 
 ### Contract and acceptance
 
@@ -3218,7 +3218,7 @@ implementation in the next session. Stop after C publication.
 ## <a id="r4-s1-t4d"></a>R4-S1-T4D - Extract evaluation/report UI logic
 
 Status: done and published (2026-10-22). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [T4C](#r4-s1-t4c), done/published.
+[T4](#r4-s1-t4). Prerequisite: [T4C](#r4-s1-t4c), done/published.
 
 ### Contract and acceptance
 
@@ -3454,7 +3454,7 @@ implementation in the next session. Stop after D publication.
 ## <a id="r4-s1-t4e"></a>R4-S1-T4E - Extract screening UI handlers and view values
 
 Status: done and published (2026-10-23). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [D](#r4-s1-t4d), done/published.
+[T4](#r4-s1-t4). Prerequisite: [D](#r4-s1-t4d), done/published.
 
 ### Contract and acceptance
 
@@ -3676,7 +3676,7 @@ Stop after E publication.
 ## <a id="r4-s1-t4f"></a>R4-S1-T4F - Extract candidate portal and authentication UI logic
 
 Status: done and published (2026-10-23). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [E](#r4-s1-t4e), done/published.
+[T4](#r4-s1-t4). Prerequisite: [E](#r4-s1-t4e), done/published.
 
 ### Contract and acceptance
 
@@ -3941,7 +3941,7 @@ Stop after F publication.
 ## <a id="r4-s1-t4g"></a>R4-S1-T4G - Extract interview UI handlers and view values
 
 Status: done and published (2026-10-23). Parent:
-[T4](tasks/R4-S1-T4.md). Prerequisite: [F](#r4-s1-t4f), done/published.
+[T4](#r4-s1-t4). Prerequisite: [F](#r4-s1-t4f), done/published.
 
 ### Contract and acceptance
 
@@ -4178,7 +4178,7 @@ Stop after G publication.
 
 ## <a id="r4-s1-t4h"></a>R4-S1-T4H - Employer roles and compensation UI extraction
 
-Status: done (2026-10-23); bounded child of [T4](tasks/R4-S1-T4.md), F13.
+Status: done (2026-10-23); bounded child of [T4](#r4-s1-t4), F13.
 Baseline `cbf6c17`, clean `main` tracking `origin/main`. Only H completes this
 session; T4/F13/sprint/PI stay open. Working data preserved; demo not restarted.
 
@@ -4399,3 +4399,260 @@ Exact next: **R4-S1-T4I - Shared display and dead-code cleanup**, not started.
 Define the bounded contract from remaining shared display/default/helper callers
 in the existing T4 record next session; preserve module composition/lifecycle,
 all planes, live data and missing/error/advisory states. Stop after H publication.
+
+## <a id="r4-s1-t4"></a>R4-S1-T4 - Extract frontend components and remove dead handlers
+
+Status: done (2026-10-23; split before implementation, 2026-10-22). PI-R4 / R4-S1;
+F13. Prerequisite: [T3](#r4-s1-t3), done/published.
+
+Extract one cohesive frontend area per session while preserving the existing
+plain-script/DC runtime, auth/CSRF, tenant/subject boundaries, request recovery
+and advisory/human-review behavior. Remove only proven dead code in that area.
+No bundler, runtime rewrite, backend behavior, data migration or visual redesign
+is implied. Each child requires offline behavior tests, full pytest, bindings,
+syntax/static serving checks, actual migrated-scratch Chrome and separate reviews.
+Passing bindings are not browser execution. Keep this parent open until all
+selected screen modules and dead-code cleanup have their required evidence.
+
+| Child | Bounded area | Status |
+|---|---|---|
+| [T4A](#r4-s1-t4a) | Operator-account handlers and view values | Done (2026-10-22); child owns evidence |
+| [T4B](#r4-s1-t4b) | Organization administration handlers and view values | Done (2026-10-22); child owns evidence |
+| [T4C](#r4-s1-t4c) | Curation handlers and view values | Done (2026-10-22); child owns evidence |
+| [T4D](#r4-s1-t4d) | Evaluation/report handlers and view values | Done (2026-10-22); child owns evidence |
+| [T4E](#r4-s1-t4e) | Screening handlers and view values | Done (2026-10-23); child owns evidence |
+| [T4F](#r4-s1-t4f) | Candidate portal and authentication UI logic | Done (2026-10-23); child owns evidence |
+| [T4G](#r4-s1-t4g) | Interview handlers and view values | Done (2026-10-23); child owns evidence |
+| [T4H](#r4-s1-t4h) | Employer roles and compensation UI logic | Done (2026-10-23); child owns evidence |
+| [T4I](#r4-s1-t4i) | Shared display and dead-code cleanup | Done (2026-10-23); child owns evidence |
+
+A-I contracts, implementation/validation evidence, reviews and publication
+records are owned by their linked child sections. I is the final bounded child:
+all selected screen areas are extracted, shared display composes their existing
+factories directly, and proven unused handlers/defaults/helpers are retired.
+Required evidence is complete for each child; no generic runtime rewrite or
+unbounded cleanup was included. The shared styles/formatters and actual
+boot/state/loading/lifecycle/navigation/file-reader/row-cache callers stay in
+the HTML intentionally; moving them to another wrapper would not simplify them.
+
+Only I completes this session, closing T4. The parent contract is preserved
+here and its active file retired after inbound links are updated. I owns this
+session's full/focused pytest, actual multi-plane/employer/interview Chrome,
+migrated HTTP/graceful restart, preservation and separate completion review.
+Prior child evidence is historical, not a new execution. F13/sprint/PI stay
+open for the separate **R4-S1-Q - Sprint integration review**, not started.
+
+## <a id="r4-s1-t4i"></a>R4-S1-T4I - Shared display and dead-code cleanup
+
+Status: done (2026-10-23); final child of [T4](#r4-s1-t4), now done.
+Baseline `1ab03bd`, clean `main` tracking `origin/main`. Only I completes this
+session; F13/sprint/PI remain open for R4-S1-Q. Working data preserved and demo
+not restarted. This is cleanup with passing characterization, not a defect
+reproducer or an independent review.
+
+### Contract specified before implementation
+
+When any plane boots, signs in or changes screens/theme/domain, shared display
+must resolve the same live identity, navigation, page flags, styles, advisory
+copy, empty/error states and callbacks. Simplify `renderVals()` composition and
+remove only proven dead shared paths: the unused `nodeDot` helper, overwritten
+account/organisation/search defaults and obsolete orgName design prop, and the
+always-false sample banner plus its styling/registry/API text export. Compose
+the eight extracted areas directly in the current precedence, removing the
+now-unnecessary `liveVals()` wrapper. Retain the small shared display/style
+helpers in the HTML; a new shell class/factory is unnecessary. Do not rewrite
+the runtime, module APIs, request handling, loading/lifecycle/navigation, backend,
+SQL/migrations or UI design. No demo restart, deployment or live-provider claim.
+
+Acceptance and validation:
+
+1. Before/after offline characterizations in the existing evaluation suite cover
+   boot/login/verify, every app screen and all three planes, correct live account
+   and org-form values despite prototype props, search visibility, advisory
+   placement, page flags, API base, theme/domain and detached shared callbacks.
+   Same-class instances retain independent theme/domain and module resources.
+   This is cleanup with passing characterization, not a defect reproducer.
+2. Keep module mapping precedence, shared state and lifecycle exact. Search
+   declarations, template/callers and all shipped modules before removal; retain
+   live helpers/callbacks. Replace obsolete test metadata assertions with actual
+   rendered-operation assertions already owned by their existing suites.
+3. Actual migrated-scratch Chrome uses all planes, navigation/theme, saved
+   report/reload/errors and candidate portal/consent/devices/erasure; extend the
+   existing evaluation journey for shared shell assertions. Run employer review
+   context Chrome and combined interview Chrome for extracted callers/advisory
+   and media cleanup. Binding/syntax checks alone are not browser execution.
+4. Migrated scratch HTTP delivers exact HTML/API script bytes with the static
+   allowlist intact and retains owned/foreign/consent flows across graceful
+   restart. Extend the existing public-surface check in `smoke_r4_s1_t3a.py`;
+   use fake providers and captured mail without working storage or .env.
+5. Run focused UI/auth/route/packaging pytest, full pytest, all shipped/inline JS
+   syntax, bindings, changed Python compile, links/diff and data/unrelated-file
+   preservation. No new PG gate: SQL/constraints/transactions are unchanged.
+6. Record implementation self-review, completion evidence and a distinct final
+   staged self-review. Fold the completed T4 parent/child contracts into existing
+   PI-R4 evidence and fix inbound links; publish scoped reviewed changes and
+   verify remote. Stop after I/T4 publication; do not start R4-S1-Q here.
+
+### Implementation and behavior preservation
+
+`renderVals()` directly composes the same shared shell, auth/evaluation,
+screening/interview/operator/organization/curation/portal/employer mappings in
+the original order, with final search/API-base values retaining precedence.
+The redundant `liveVals()` wrapper is gone. The same state, composed module
+factories, boot/session/unmount/pagehide/navigation, request loading, row/cache,
+file reader and detached callbacks remain; no new shell abstraction is added.
+
+Caller searches and shipped-source declaration inventory found `nodeDot` as
+the only unused top-level helper. It is removed; live style/formatting helpers
+remain. The initial accountName/accountInitial/orgName/search values were always
+overwritten by live mappings; those defaults and the unused orgName design prop
+are removed. The empty MOCK_SCREENS registry made the sample banner unreachable
+on every screen. Its template branch, style, three view metadata properties,
+API.MOCK_NOTE text export and stale comments are retired. API credentials/CSRF,
+session generations, request methods/timeouts/body handling are text-identical.
+Four obsolete flag assertions are removed from existing suites; their real
+server-row/status/report/session assertions remain. No backend, allowlist,
+schema/scorer/store/SQL/migration or visual redesign occurs.
+
+Four new cases extend `scripts/test_ui_evaluate.js`: all 17 screen flags across
+all three planes with search/advisory placement and no requests from rendering;
+boot/login/verify shell visibility; actual identity/org draft/API base despite
+prototype props and missing/failed profile; and stable detached theme/domain
+callbacks with separate same-class state. Existing per-module pending-state,
+consent/erasure/error/read-recovery and report/interview tests remain.
+`node --test scripts/test_ui_evaluate.js`: **38/38** before (420.60ms) and after
+(441.31ms), zero skipped/failed. No failing defect is claimed for this cleanup.
+
+The local comparison harness executes the existing binding fixtures against
+baseline and current shipped source. **18 complete render bags** retain all live
+values and callback shapes; only mockChip/mockNote/isMockScreen are excluded
+as intentionally retired. Behavioral callback execution is tested separately;
+this comparison is not browser execution. The remaining **586 bindings /18
+states** resolve, down from 589 only because the three dead banner bindings are
+removed. No old sample/live mapping remains for selected screens.
+
+### Commands and observed validation
+
+Python commands use `.resume/Scripts/python.exe`. The ignored sanitized runner
+`.pytest_cache/run_r4_s1_t4i.py <tag> <Python args>` removes inherited DEE config,
+selects a nonexistent config file, clears model/GitHub keys, uses localhost
+GitHub refusal/null or captured mail and project paths. All journeys use
+synthetic data, fake providers and disposable SQLite migrated to 0029; no .env,
+working DB, external mail or demo restart. Local helpers/logs stay ignored.
+
+- `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+  tests/test_ui_mount.py tests/test_image_contents.py
+  tests/test_api_route_extraction.py tests/test_api_auth_gate.py
+  tests/test_auth_api.py tests/test_route_table_guard.py
+  tests/test_openapi_contract.py`: **111 passed**, zero skipped, one warning,
+  106.86s pytest; exit 0, 123.20s runner. The eight existing offline Node suites
+  retain operation/ownership/error/media assertions; imported suite counts
+  overlap and are not extra unique tests.
+- `shared-browser scripts/check_ui_evaluate_browser.py`: actual Chrome,
+  **48/48 plus shared API/UI-host 1/1**, exit 0, 81.66s runner. Added live identity,
+  current-plane search/navigation and theme switch/restore in organisation,
+  operator and candidate shells. Existing captured OTP signup/sign-in/refusal,
+  saved reports/PDF/domain, feedback, uncertain writes, 403/401/503/network/
+  deadline, reload/read-only recovery, actor changes, device revoke, contact,
+  consent/access and erasure flows pass with no uncaught console exceptions.
+- `employer-browser scripts/check_ui_review_context_browser.py`: actual Chrome
+  **30/30** including shared host check, exit 0, 73.67s runner. Saved role,
+  empty/materialized board, advisory factual/style/unknown/insufficient context,
+  missing/error/read recovery, wrapped comp/prior, document reload and board/
+  comp 503 recovery pass; no uncaught console errors.
+- `interview-browser scripts/check_ui_interview_integration_browser.py`:
+  actual Chrome **40/40 plus shared host 1/1**, exit 0, 118.13s runner. Typed/
+  synthetic microphone/mixed channels, actual MediaRecorder bytes, saved state,
+  repeated-keyword insufficient evidence, advisory v2/historical/unknown content,
+  consented summary/redaction/revocation, question/actor ownership, late media/
+  navigation/reload/signout cleanup and errors pass. Its Windows process restart
+  is forced; graceful process-restart proof is the HTTP journey. Synthetic
+  media/fake ASR are not live-provider/codec or empirical-quality validation.
+- `http-journey scripts/smoke_r4_s1_t3a.py`: **91/91**, exit 0, 100.90s runner.
+  Extended existing public-surface checks serve exact HTML/API script bytes,
+  declared JS assets/type and unrelated-path 404 on both lifespans. Owned versus
+  foreign employer, CSRF/session precedence, consent/revocation/erasure, portal/
+  ledger/features and saved role/board/comp responses survive graceful restart;
+  both owned servers exit 0 and dispose SQL at revision 0029.
+- `node scripts/check_ui_bindings.js`: **586/18**, all resolve. Implementation
+  review runs `node --check` on every shipped JS asset (including api/support),
+  every existing test_ui Node suite, checker and extracted inline logic.
+- `compile -m compileall -q scripts/smoke_r4_s1_t3a.py
+  scripts/check_ui_evaluate_browser.py`: exit 0, 0.38s runner.
+- `full-reviewed` defaults to `-m pytest -q --tb=short`: **3540 passed,
+  505 skipped, 127 warnings in 1128.85s (0:18:48)**; exit 0, 1139.43s runner.
+  Existing Starlette/httpx and SQLite reflection/autogenerate warnings;
+  optional/environment skips do not establish omitted cases. All application,
+  test and harness code remained unchanged during this run.
+
+No new PostgreSQL gate applies: SQL/constraints/transactions/migrations are
+unchanged. Chrome requires existing CDN internet and is not an offline runner.
+Fakes prove mechanics, not calibrated compensation or measured factual/interview
+accuracy. Advisory/human review, domain independence, truthful polished writing,
+content-only interview assessment, tenant isolation and consent/erasure persist.
+
+### Implementation self-review
+
+Same-agent specification review covers baseline `1ab03bd` plus the HTML/API
+cleanup, screening comment and existing checker/offline/browser/HTTP changes.
+All six criteria map to observed evidence; T4 closes only because A-I evidence
+is complete, with R4-S1-Q/F13/sprint/PI still open. Historical results are not
+represented as new validation. The parent is folded under its stable anchor,
+and child/PI/handoff links target the evidence owner instead of an inactive file.
+
+Correctness review checks mapping evaluation/overwrite order, unchanged class
+field initialization and shared lifecycle, detached callbacks and separate
+instance state, live identity instead of props, neutral missing/error states,
+plane navigation/search/advisory, theme/domain, module resource lifetimes,
+request credentials/CSRF/deadlines/generations, anonymous static confinement and
+packaging. Searches confirm retired paths had no remaining production callers;
+all retained top-level helpers have callers. No blocking findings remain.
+This is self-review, not independent review or a sprint integration review.
+
+`implementation-review -I .pytest_cache/review_r4_s1_t4i.py`: exit 0, 6.39s runner.
+Expected HTML transform permits only the specified shared cleanup; exact API
+comparison permits only retired text metadata. Shared state/lifecycle/navigation
+and module factories remain unchanged. Shipped/test/checker/inline JS syntax,
+18-state live-value comparison and **25 reviewed source/harness/contract hashes**
+pass. Baseline 731 hashes protect unrelated files and working data.
+
+### Distinct final completion self-review and publication
+
+After required checks and completion records, a distinct final same-agent
+self-review examined baseline `1ab03bd` plus the exact sixteen staged files:
+HTML/API shared cleanup, screening comment, existing checker/offline/browser/
+HTTP harness changes, feature overview, handoff, roadmap, PI/evidence and the
+retired completed T4 task file. Specification review confirms all six acceptance
+items, A-I evidence and bounded parent closure, preserved contract/anchors and
+inbound links, Q-only next pointer and F13/sprint/PI still open. It does not
+claim a new sprint gate or independent review.
+
+Correctness review separately rechecks direct mapping evaluation/overwrite
+order, class initialization/shared lifecycle, detached callbacks and per-instance
+resources, live identities/drafts and missing/error states, all-plane flags/
+navigation/search/advisory and theme/domain, unchanged API credentials/CSRF/
+timeouts/generations, module resource cleanup, retired paths' caller inventory,
+static confinement and packaging. No blocking finding remains.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4i.py --staged`: exit 0,
+3.61s runner. Expected HTML/API comparison, all shipped/test/checker/inline
+syntax, 18 complete live-value bags, 25 reviewed hashes and exact sixteen-file
+staged contents pass. The completed parent deletion is deliberate and its
+contract/child evidence links are preserved in this file; no working data,
+secrets or local artifacts are staged.
+
+Initial completion preservation caught an extra blank line at evidence EOF;
+that documentation-only whitespace was removed and affected checks rerun.
+`preservation-final -I .pytest_cache/verify_r4_s1_t4i.py`: exit 0, 1.49s runner;
+715 unrelated tracked files, working DB and 25 reviewed hashes unchanged,
+290 scoped local Markdown links/anchors valid, tracked/staged/source whitespace
+pass. Review-record prose is checked separately for observed evidence, scope
+and status accuracy before publication. Application tests need no rerun for
+prose. Commit/push verification follows.
+
+### Handoff
+
+Exact next: **R4-S1-Q - Sprint integration review**, not started. Read its PI-R4
+section, WORKFLOW and T1-T4 evidence. Test/review the combined production
+composition on migrated scratch storage in its own session; do not start it
+during I/T4 publication. Stop after this publication.

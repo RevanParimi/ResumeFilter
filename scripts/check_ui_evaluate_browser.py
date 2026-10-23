@@ -67,6 +67,24 @@ async def main():
         await tab.js(browser.HELPERS)
         assert await tab.wait("window.__has('Sign in')", 60, "login")
 
+        async def shared_shell(plane):
+            me = await tab.js("fetch('/auth/me', {credentials:'include'}).then(r => r.json())")
+            if plane == "Candidate":
+                portal = await tab.js("fetch('/portal/me', {credentials:'include'}).then(r => r.json())")
+                name = (portal.get("profile") or {}).get("full_name")
+                identity = (name.get("value") if isinstance(name, dict) else name) or "Your data"
+            else:
+                identity = "Operator" if plane == "Operator" else "Org " + me["organization_id"][:8]
+            checks.check(plane + " shell renders its live identity and current-plane navigation",
+                await tab.wait(f"window.__has({json.dumps(identity)})", 20)
+                and await tab.js("!!document.querySelector('input[placeholder=\"Search candidates\"]')") == (plane == "Organisation")
+                and "Sample data" not in await tab.text())
+            assert await tab.js("window.__click('button', 'Light mode')")
+            checks.check(plane + " shared theme control switches and restores through bound callbacks",
+                await tab.wait("window.__has('Dark mode')", 10))
+            assert await tab.js("window.__click('button', 'Dark mode')")
+            assert await tab.wait("window.__has('Light mode')", 10)
+
         async def login(plane, email, signup=False):
             await tab.js(browser.HELPERS)
             assert await tab.js(f"window.__click('button', {json.dumps(plane)})")
@@ -91,6 +109,7 @@ async def main():
             await tab.js(f"window.__type('input[inputmode]', {json.dumps(code)})")
             assert await tab.js("window.__click('button', 'Verify and continue')")
             assert await tab.wait("window.__has('Sign out')", 25, "authenticated shell")
+            await shared_shell(plane)
 
         async def install_transport():
             await tab.js("""

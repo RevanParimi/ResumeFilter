@@ -96,16 +96,11 @@ general measured performance claim.
 and DTOs live in product modules, with `routes.py` limited to ordered assembly.
 The full API/auth contract, tenant/subject ownership, consent/erasure and
 advisory responses are preserved. A-M own their validation evidence.
-Frontend extraction T4 is in progress: [T4A](docs/delivery/EVIDENCE-R4.md#r4-s1-t4a),
-[T4B](docs/delivery/EVIDENCE-R4.md#r4-s1-t4b),
-[T4C](docs/delivery/EVIDENCE-R4.md#r4-s1-t4c),
-[T4D](docs/delivery/EVIDENCE-R4.md#r4-s1-t4d),
-[T4E](docs/delivery/EVIDENCE-R4.md#r4-s1-t4e),
-[T4F](docs/delivery/EVIDENCE-R4.md#r4-s1-t4f),
-[T4G](docs/delivery/EVIDENCE-R4.md#r4-s1-t4g) and
-[T4H](docs/delivery/EVIDENCE-R4.md#r4-s1-t4h) move account, organization,
-curation, evaluation/report, screening, portal/auth, interview and employer
-roles/compensation handlers/view values into plain scripts. F/H also remove
-overwritten samples, preserving saved operations, advisory context, human review
-and recovery flows. Shared display/dead-code cleanup and sprint integration
-remain pending. T4/F13/sprint/PI stay open.
+[Frontend extraction T4](docs/delivery/EVIDENCE-R4.md#r4-s1-t4) is complete:
+eight plain scripts own account, organization, curation, evaluation/report,
+screening, portal/auth, interview and employer roles/compensation logic.
+[T4I](docs/delivery/EVIDENCE-R4.md#r4-s1-t4i) simplifies shared display composition
+and removes proven dead sample/default/helper paths, preserving live identities,
+advisory/human review, saved operations and recovery. Useful shared lifecycle,
+navigation, styles and formatters remain in the HTML. A-I own required evidence;
+F13/sprint/PI remain open for separate R4-S1-Q integration review.

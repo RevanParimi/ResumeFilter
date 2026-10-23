@@ -86,41 +86,18 @@ the parent is now done. Next: T4, not started. F13/sprint/PI stay open.
 
 ### R4-S1-T4 — Extract frontend components and remove dead handlers
 
-Status: in progress (split before implementation, 2026-10-22). Audit mapping: F13. Prerequisites: R4-S1-T3.
+Status: done (2026-10-23). Audit mapping: F13. Prerequisites: R4-S1-T3.
 
-[T4 parent](tasks/R4-S1-T4.md) owns the bounded child sequence and active
-contracts. [T4A](EVIDENCE-R4.md#r4-s1-t4a), [T4B](EVIDENCE-R4.md#r4-s1-t4b),
-[T4C](EVIDENCE-R4.md#r4-s1-t4c) and [T4D](EVIDENCE-R4.md#r4-s1-t4d) are done
-(2026-10-22): account, organization, curation and evaluation/report logic live
-in plain scripts with the same shared lifecycle, API/auth and rendered behavior.
-[T4E](EVIDENCE-R4.md#r4-s1-t4e) is done (2026-10-23): screening intake,
-batch/queue/summary loading, paging, processing, deletion and view composition
-live in `frontend/screening.js`, preserving shared lifecycle/file reading and
-API/auth behavior. Before/after Node, focused/full pytest, migrated HTTP/graceful
-restart, actual Chrome, bindings/syntax, preservation and implementation
-self-review pass. E owns its distinct final completion review/publication
-record. [T4F](EVIDENCE-R4.md#r4-s1-t4f) is done (2026-10-23): auth/OTP,
-contact, consent/device/erasure handlers and live mappings move to
-`frontend/portal-auth.js`; proven dead portal/device samples and initial auth
-action default are removed. Shared lifecycle/navigation/API/auth behavior is
-preserved. Before/after Node, focused/full pytest, actual Chrome, migrated HTTP/
-graceful restart, bindings/syntax, preservation and implementation self-review
-pass. F owns its distinct final review/publication.
-[T4G](EVIDENCE-R4.md#r4-s1-t4g) is done (2026-10-23): the 23 interview
-handler/helpers and view mapping live in `frontend/interview.js`; shared
-lifecycle/navigation/media cleanup, API/scoring and advisory behavior remain
-unchanged. Before/after Node, focused/full pytest, combined interview/shared
-evaluation Chrome, migrated HTTP/graceful restart, bindings/syntax, preservation
-and implementation self-review pass. G owns its separate final review/publication.
-[T4H](EVIDENCE-R4.md#r4-s1-t4h) is done (2026-10-23): employer roles,
-board and compensation handlers/view values move to `frontend/employer-roles.js`;
-overwritten role/shortlist samples are removed. Shared state/loading/lifecycle/
-navigation/template, API/auth and advisory/missing-data behavior are preserved.
-Before/after Node, focused/full pytest, employer/shared report Chrome, migrated
-HTTP/exact board+comp/graceful restart, bindings/syntax, preservation and
-implementation self-review pass. H owns its distinct final review/publication.
-Only H completed this session; exact next T4I (shared display/dead-code cleanup),
-not started. T4/F13/sprint/PI remain open.
+[T4 parent](EVIDENCE-R4.md#r4-s1-t4) links the completed A-I contracts/evidence.
+[T4I](EVIDENCE-R4.md#r4-s1-t4i) finishes shared display composition and retires
+only proven dead sample/default/helper paths. A-H own the eight plain-script
+screen modules; actual state/loading/lifecycle/navigation/file-reader/row-cache
+callers and useful shared formatters/styles remain in the HTML intentionally.
+Before/after behavior and live-value comparisons, focused/full pytest, actual
+multi-plane/employer/interview Chrome, migrated HTTP/graceful restart, static/
+packaging/preservation and implementation self-review pass. I owns the separate
+final completion review/publication. Only I completed this session, closing T4;
+F13/sprint/PI stay open. Exact next R4-S1-Q, not started.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

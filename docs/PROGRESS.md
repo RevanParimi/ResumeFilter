@@ -4,41 +4,38 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4H complete and published: employer roles/compensation UI extraction.**
-The four load/select handlers and complete roles/board/compensation view mapping
-now live in `frontend/employer-roles.js`; overwritten role/shortlist samples are
-removed. Shared state/loading/lifecycle/navigation/template/API/auth and
-advisory/missing-data behavior remain unchanged. Before/after Node (34), focused
-pytest (137 passed), full pytest (3540 passed, 505 skipped), bindings/syntax,
-actual Chrome (30/30) and migrated HTTP/exact board+comp/graceful restart (87/87)
-pass. [H evidence](delivery/EVIDENCE-R4.md#r4-s1-t4h) owns commands/counts/limits
-and the separate final completion review/publication record. Distinct final
-completion self-review found no blocking issues. Scoped task commit `32d504c`
-is pushed to `origin/main`; remote
-`32d504c0678d78c08ff90c8c654f3178f7d46bb4` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation.
-Only H completed; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
-Working storage is preserved; demo not restarted.
+**R4-S1-T4I complete; T4 frontend extraction closed.**
+Shared display directly composes the eight screen areas. Proven unused helper,
+overwritten account/org/search defaults, obsolete design prop and unreachable
+sample notice/text metadata are removed. Live identities/values/callbacks,
+module precedence and shared state/lifecycle/navigation/API behavior remain.
+Before/after Node (38), full render comparison (18 states), focused pytest
+(111 passed), full pytest (3540 passed, 505 skipped), bindings/syntax, actual
+Chrome (48 shared shell; 30 employer; 40 interview, with host checks) and migrated
+HTTP/graceful restart (91/91) pass. [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t4i) owns exact
+commands/counts/limits and separate final review/publication. Distinct final
+completion self-review found no blocking issues. Scoped publication is next;
+no pushed commit is yet claimed in this handoff.
+Only I completed, closing [T4](delivery/EVIDENCE-R4.md#r4-s1-t4); F13/sprint/PI
+remain open. Working storage preserved; demo not restarted.
 
-**Exact next development task: R4-S1-T4I - Shared display and dead-code cleanup**,
-not started. Read [PI-R4](delivery/PI-R4.md), [WORKFLOW.md](delivery/WORKFLOW.md),
-the existing T4 record and H evidence. Define I's bounded contract from remaining
-shared display/default/helper callers before implementation next session.
-Preserve module composition/lifecycle/navigation, all planes, live data and
-missing/error/advisory states. No I work or deployment started.
+**Exact next task: R4-S1-Q - Sprint integration review**, not started.
+Read its [PI-R4 section](delivery/PI-R4.md#r4-s1-q--sprint-integration-review),
+[WORKFLOW](delivery/WORKFLOW.md) and T1-T4 evidence. Run the combined production
+composition journey on migrated scratch storage in its own session. No Q work
+or deployment started during I/T4 publication.
 
 ## Latest work
 
-Role discovery/selection, ranked boards and compensation retain current reads,
-first/saved/fallback selection, empty/consent/error distinctions and manual
-recovery. Missing values differ from zero, unknown risk remains insufficient,
-legacy/wrapped comp and units/skewed median/prior/k-floor/no-band wording are
-preserved. Chrome proves reload and board/comp read recovery; migrated HTTP
-separately proves graceful restart with exact full board and compensation
-responses, tenant ownership, consent/revocation and existing auth/ledger/portal
-flows. Fakes prove mechanics, not empirical quality or live-provider behavior.
-Working DB and 717 unrelated tracked files match baseline; no demo restart.
+No duplicate mock/live sources remain for completed screens. Useful shared
+formatters/styles and actual lifecycle/loading/navigation/file-reader/row-cache
+callers remain in the HTML. Live account identity and org draft override design
+props even with missing/failed data; all planes retain theme/domain callbacks,
+navigation, search/advisory placement and neutral errors. Chrome separately
+proves document reload and synthetic media/cleanup; HTTP proves graceful
+restart and exact saved state. Fakes prove mechanics, not provider or measured
+quality. Working DB and 715 unrelated tracked files match baseline. The completed
+T4 task record is folded under its stable PI evidence anchor; A-I links remain.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -46,7 +43,7 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4h.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4i.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.

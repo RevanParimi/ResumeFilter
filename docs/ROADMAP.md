@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-T4I completed; T4 frontend extraction closed.**
+  Shared display composes the eight screen areas directly; unused helper,
+  overwritten identity/org/search defaults, obsolete design prop and unreachable
+  sample notice/text metadata are retired. Live values, callbacks, module order,
+  shared lifecycle/navigation and advisory behavior remain unchanged.
+  [I evidence](delivery/EVIDENCE-R4.md#r4-s1-t4i) owns before/after Node/live-value
+  comparisons, focused/full pytest, multi-plane/employer/interview Chrome,
+  migrated HTTP/graceful restart, static/preservation and separate review/
+  publication. [T4](delivery/EVIDENCE-R4.md#r4-s1-t4) is folded into PI evidence
+  with all A-I links. Only I completes; F13/sprint/PI stay open. Working data
+  preserved; demo not restarted. Exact next R4-S1-Q, not started. Stop after I.
+
 - **Session 2026-10-23 - R4-S1-T4H completed; employer UI extraction.**
   Roles/board/compensation handlers and view values move to
   `frontend/employer-roles.js`; overwritten role/shortlist samples are removed.

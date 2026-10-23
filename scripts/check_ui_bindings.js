@@ -199,7 +199,7 @@ const STATES = {
     driving: true, driveDone: 7, driveFailed: 1,
   },
   // The screens wired in the 2026-08-03 session. Their fixtures are shaped
-  // from the reads in liveVals(), which that session verified against the live
+  // from the screen mappings, which that session verified against the live
   // API — so what this proves here is that the TEMPLATE still matches the
   // mapping, not that the mapping still matches the API. The contract script
   // is what proves the latter.

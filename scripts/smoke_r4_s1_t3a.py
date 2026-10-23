@@ -84,7 +84,9 @@ def main():
 
         with client(base) as anonymous:
             page = anonymous.get("/ui/")
-            for asset in ("portal-auth.js", "employer-roles.js"):
+            checks.check("anonymous UI delivers the exact entry document",
+                page.status_code == 200 and page.content == (ROOT / "frontend/Veritas.dc.html").read_bytes())
+            for asset in ("api.js", "portal-auth.js", "employer-roles.js"):
                 module = anonymous.get("/ui/" + asset)
                 checks.check("anonymous UI delivers its declared " + asset,
                     page.status_code == module.status_code == 200

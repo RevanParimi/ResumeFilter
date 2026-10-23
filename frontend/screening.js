@@ -263,10 +263,8 @@
       });
   };
 
-  /* The five screening screens (S8.5). Kept apart from liveVals() because it is
-   * the whole wedge, and because every value here is one hop from a route in
-   * SCREENING.md — a reader should be able to check the mapping without reading
-   * the portal. */
+  /* The five screening screens (S8.5). Every value here is one hop from a route
+   * in SCREENING.md, so the mapping can be checked without reading other screens. */
   screeningVals() {
     const st = this.state;
     const batch = st.batch.data;

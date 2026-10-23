@@ -27,7 +27,6 @@ test("operator account landing loads actual users and server status", async () =
   assert.deepEqual(c.renderVals().adminUsers.map(u => u.id), ["a", "b"]);
   assert.equal(c.renderVals().adminUsers[1].status, "Disabled");
   assert.equal(c.renderVals().adminUsers[0].role, "Operator");
-  assert.equal(c.renderVals().isMockScreen, false);
 });
 
 test("loading/empty/filter/page/error reflect actual rows without fixture emails", async () => {

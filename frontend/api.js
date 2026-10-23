@@ -240,15 +240,6 @@
     post: function (p, b, opts) { return request("POST", p, b === undefined ? {} : b, opts); },
     patch: function (p, b) { return request("PATCH", p, b === undefined ? {} : b); },
     del: function (p, opts) { return request("DELETE", p, null, opts); },
-    onSessionLost: function (fn) { sessionLostHandler = fn; },
-
-    /* Screens this session's plane has no endpoint for render mock data. They
-     * must SAY so: a confident UI beside an honest backend is how a demo ends
-     * up showing a buyer numbers that were never computed (UI.md §7).
-     *
-     * Since S8.4 the reason is never "not built" — the operator console and
-     * ad-hoc evaluation are ADMIN-plane routes, and the interview runner is
-     * candidate-plane. All three 401 an org session. */
-    MOCK_NOTE: "Sample data — this screen's endpoints are on another plane",
+    onSessionLost: function (fn) { sessionLostHandler = fn; }
   };
 })(window);

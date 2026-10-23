@@ -27,7 +27,7 @@ function component(kind = "org", post) {
   const window = { location: { hash: "", pathname: "/ui/", search: "" },
     history: { replaceState(_a, _b, url) { window.location.hash = url.includes("#") ? url.slice(url.indexOf("#")) : ""; } },
     scrollTo() {}, VeritasAPI: {
-      base: () => "", MOCK_NOTE: "mock", onSessionLost() {},
+      base: () => "", onSessionLost() {},
       get: async p => { calls.push(["GET", p]); return p.endsWith("/outcomes") ? { outcomes: [] } : report; },
       post: (p, b, opts) => { calls.push(["POST", p, b, opts]); return post ? post(p, b, opts) : Promise.resolve(kind === "org" ? { report } : report); }
     } };
@@ -52,6 +52,93 @@ function component(kind = "org", post) {
     evalText: "Synthetic resume with specific work and dated experience", domain: "genai" });
   return { c, calls, window };
 }
+
+test("shared shell preserves every screen flag, plane, search and advisory placement", () => {
+  const screens = {
+    queue: ["isQueue", "Screening queue"], report: ["isReport", "Candidate review context"],
+    summary: ["isSummary", "Batch summary"], upload: ["isUpload", "Upload"], batches: ["isBatches", "Batches"],
+    portal: ["isPortal", "Your data"], accesslog: ["isAccessLog", "Access log"], consents: ["isConsents", "Consents"],
+    devices: ["isDevices", "Signed-in devices"], erasure: ["isErasure", "Delete everything"],
+    adminorgs: ["isAdminOrgs", "Organisations"], adminusers: ["isAdminUsers", "Operator accounts"],
+    curation: ["isCuration", "Curation queue"], roles: ["isRoles", "Roles"], comp: ["isComp", "Comp intelligence"],
+    evaluate: ["isEvaluate", "Instant check"], interview: ["isInterview", "Your interview"]
+  };
+  for (const kind of ["org", "candidate", "admin"]) {
+    const { c, calls } = component(kind);
+    for (const [screen, [flag, title]] of Object.entries(screens)) {
+      c.state.screen = screen;
+      const view = c.renderVals();
+      assert.equal(view.isApp, true);
+      assert.equal(view.isAuth, false);
+      assert.equal(view.screenTitle, title);
+      for (const [key] of Object.values(screens)) assert.equal(view[key], key === flag, screen + "/" + key);
+      assert.equal(view.showSearch, kind !== "candidate" && !["adminorgs", "adminusers"].includes(screen));
+      assert.equal(view.showAdvisory, ["queue", "report", "summary", "batches", "roles", "evaluate"].includes(screen));
+      assert.equal(view.isOrgPlane, kind === "org");
+      assert.equal(view.isCandidatePlane, kind === "candidate");
+      assert.equal(view.isOperatorPlane, kind === "admin");
+    }
+    assert.deepEqual(calls, [], "view composition must not fetch or write");
+  }
+});
+
+test("shared boot and auth displays do not expose an authenticated shell", () => {
+  const { c } = component();
+  for (const screen of ["boot", "login", "verify"]) {
+    c.state.screen = screen;
+    const view = c.renderVals();
+    assert.equal(view.isApp, false);
+    assert.equal(view.isAuth, screen !== "boot");
+    assert.equal(view.isLogin, screen === "login");
+    assert.equal(view.isVerify, screen === "verify");
+  }
+});
+
+test("live identity, organisation input and API base override prototype props even with missing data", () => {
+  for (const [kind, name, initial] of [["org", "Org saved-or", "S"], ["admin", "Operator", "O"], ["candidate", "Your data", "C"]]) {
+    const { c, window } = component(kind);
+    c.props = { orgName: "Prototype identity that must never render" };
+    c.state.me.organization_id = "saved-organization";
+    window.VeritasAPI.base = () => "https://synthetic.invalid";
+    let view = c.renderVals();
+    assert.equal(view.accountName, name);
+    assert.equal(view.accountInitial, initial);
+    assert.equal(view.orgName, "");
+    assert.equal(view.apiBase, "https://synthetic.invalid");
+    c.state.orgName = "Unsaved organisation draft";
+    assert.equal(c.renderVals().orgName, "Unsaved organisation draft");
+    if (kind === "candidate") {
+      c.state.portal = { loading: false, error: null, data: { profile: { full_name: { value: "Synthetic Maple" } } } };
+      view = c.renderVals();
+      assert.equal(view.accountName, "Synthetic Maple");
+      assert.equal(view.accountInitial, "S");
+      c.state.portal = { loading: false, data: null, error: { status: 503, detail: "Synthetic profile unavailable" } };
+      view = c.renderVals();
+      assert.equal(view.accountName, "Your data");
+      assert.equal(view.portalErrorText, "Synthetic profile unavailable");
+      assert.deepEqual(view.portalProfile, []);
+    }
+  }
+});
+
+test("detached shared theme/domain callbacks remain stable and isolate same-class instances", () => {
+  const { c } = component();
+  const sibling = new c.constructor();
+  const before = c.renderVals(), toggle = before.toggleTheme, genai = before.setGenai, data = before.setDataEng;
+  toggle(); genai();
+  const light = c.renderVals();
+  assert.equal(light.themeLabel, "Dark mode");
+  assert.notDeepEqual(light.themeVars, before.themeVars);
+  assert.equal(c.state.domain, "genai");
+  assert.equal(sibling.state.theme, "dark");
+  assert.equal(sibling.state.domain, "data_eng");
+  assert.equal(light.toggleTheme, toggle);
+  assert.equal(light.setGenai, genai);
+  assert.notEqual(sibling.renderVals().toggleTheme, toggle);
+  toggle(); data();
+  assert.deepEqual(c.renderVals().themeVars, before.themeVars);
+  assert.equal(c.state.domain, "data_eng");
+});
 
 test("employer board consumes ranked candidates and nested skill coverage", () => {
   const { c } = component();
@@ -269,7 +356,6 @@ test("organisation submits once to its own plane and opens the saved server repo
   assert.deepEqual(c.state.report.data, report);
   assert(calls.some(x => x[1] === "/screening/reports/" + report.id));
   assert(window.location.hash.includes(report.id));
-  assert.equal(c.renderVals().isMockScreen, false);
 });
 
 test("operator PDF uses ad-hoc and admin report/outcome routes", async () => {
