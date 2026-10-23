@@ -224,3 +224,47 @@ test("page exit handler clears recording and is removed on unmount", async () =>
   assert(f.tracks.every(t => t.readyState === "ended"));
   f.c.componentWillUnmount(); assert.equal(events.has("pagehide"), false);
 });
+
+test("same-class microphone instances keep separate captures, tracks, timers and clips", async () => {
+  const f = await audioFixture();
+  const sibling = new f.c.constructor(); sibling.props = {};
+  Object.assign(sibling.state, { me: { kind: "candidate" }, screen: "interview",
+    interviewList: { loading: false, data: [saved], error: null },
+    interviewBody: { session: saved, next_question: question } });
+  f.c.selectInterviewAudio(); sibling.selectInterviewAudio();
+  await f.c.startInterviewRecording(); await sibling.startInterviewRecording();
+  assert.equal(f.tracks.length, 2); assert.equal(f.recorders.length, 2);
+  assert.notEqual(f.c._interviewCapture, sibling._interviewCapture);
+  assert.notEqual(f.c._interviewCapture.chunks, sibling._interviewCapture.chunks);
+  const stop = sibling.renderVals().stopInterviewRecording;
+  assert.equal(stop, sibling.renderVals().stopInterviewRecording);
+  f.c.componentWillUnmount();
+  assert.equal(f.tracks[0].readyState, "ended"); assert.equal(f.tracks[1].readyState, "live");
+  assert.equal(sibling.state.interviewAudioStatus, "recording");
+  stop(); await settle();
+  assert.equal(sibling.state.interviewAudioStatus, "ready");
+  assert.equal(sibling._interviewAudio.me, sibling.state.me);
+  assert.equal(f.c._interviewAudio, null); assert.equal(f.timers.size, 0);
+  const discard = sibling.renderVals().discardInterviewRecording; discard();
+  assert.equal(sibling._interviewAudio, null); assert.equal(sibling.state.interviewAudioStatus, "idle");
+});
+
+test("one instance's late permission after unmount cannot cancel a sibling recording", async () => {
+  const f = await audioFixture();
+  let finish;
+  const get = f.window.navigator.mediaDevices.getUserMedia;
+  f.window.navigator.mediaDevices.getUserMedia = () => new Promise(resolve => { finish = resolve; });
+  f.c.selectInterviewAudio(); const waiting = f.c.startInterviewRecording();
+  const sibling = new f.c.constructor(); sibling.props = {};
+  Object.assign(sibling.state, { me: { kind: "candidate" }, screen: "interview",
+    interviewList: { loading: false, data: [saved], error: null },
+    interviewBody: { session: saved, next_question: question } });
+  f.window.navigator.mediaDevices.getUserMedia = get;
+  sibling.selectInterviewAudio(); await sibling.startInterviewRecording();
+  f.c.componentWillUnmount();
+  const lateTrack = { readyState: "live", stop() { this.readyState = "ended"; } };
+  finish({ getTracks: () => [lateTrack] }); await waiting;
+  assert.equal(lateTrack.readyState, "ended"); assert.equal(f.tracks[0].readyState, "live");
+  assert.equal(sibling.state.interviewAudioStatus, "recording");
+  sibling.clearInterview(); assert.equal(f.tracks[0].readyState, "ended"); assert.equal(f.timers.size, 0);
+});

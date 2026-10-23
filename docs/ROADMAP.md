@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-T4G completed; interview UI extraction.**
+  The 23 text/audio handler/helpers and interview view mapping move to
+  `frontend/interview.js`; shared state/lifecycle/navigation/template, API/scoring
+  and media cleanup behavior are preserved.
+  [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t4g) owns before/after Node,
+  focused/full pytest, combined interview/shared evaluation Chrome, migrated
+  interview HTTP/graceful restart, bindings/syntax, preservation and separate
+  review/publication records. Existing rubric/advisory/privacy/media limits stay
+  explicit; working data preserved and demo not restarted. Only G completed;
+  T4/F13/sprint/PI stay open. Exact next T4H (employer roles/compensation),
+  not started. Stop after G.
+
 - **Session 2026-10-23 - R4-S1-T4F completed; candidate portal/auth UI extraction.**
   The 28 handlers, OTP callback array and live auth/portal/device mappings move
   to `frontend/portal-auth.js`; overwritten sample arrays/mappings and auth-action

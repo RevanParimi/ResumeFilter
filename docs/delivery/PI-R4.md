@@ -105,8 +105,15 @@ contact, consent/device/erasure handlers and live mappings move to
 action default are removed. Shared lifecycle/navigation/API/auth behavior is
 preserved. Before/after Node, focused/full pytest, actual Chrome, migrated HTTP/
 graceful restart, bindings/syntax, preservation and implementation self-review
-pass. F owns its distinct final review/publication. Only F completed this
-session; exact next T4G (interviews), not started. T4/F13/sprint/PI remain open.
+pass. F owns its distinct final review/publication.
+[T4G](EVIDENCE-R4.md#r4-s1-t4g) is done (2026-10-23): the 23 interview
+handler/helpers and view mapping live in `frontend/interview.js`; shared
+lifecycle/navigation/media cleanup, API/scoring and advisory behavior remain
+unchanged. Before/after Node, focused/full pytest, combined interview/shared
+evaluation Chrome, migrated HTTP/graceful restart, bindings/syntax, preservation
+and implementation self-review pass. G owns its separate final review/publication.
+Only G completed this session; exact next T4H (employer roles/compensation),
+not started. T4/F13/sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

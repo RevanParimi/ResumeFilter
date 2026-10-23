@@ -167,3 +167,67 @@ test("an unknown saved rubric cannot advertise a confident band or comparable in
   assert(!c.renderVals().interviewAssessmentText.includes("deep"));
   assert(c.renderVals().interviewAssessmentText.includes("No ability conclusion"));
 });
+
+test("detached interview callbacks retain receiver and stable handler identity", async () => {
+  let resolve;
+  const { c, calls } = await loaded(() => new Promise(r => { resolve = r; }));
+  const first = c.renderVals(), second = c.renderVals();
+  for (const key of ["refreshInterviews", "startInterview", "setInterviewDraft", "submitInterviewAnswer",
+    "armInterviewFinish", "finishInterview", "cancelInterviewFinish", "selectInterviewText", "selectInterviewAudio"])
+    assert.equal(first[key], second[key], key);
+  const draft = first.setInterviewDraft, arm = first.armInterviewFinish, cancel = first.cancelInterviewFinish;
+  draft({ target: { value: "Detached typed answer" } }); arm();
+  assert.equal(c.state.interviewConfirm, true); cancel();
+  assert.equal(c.state.interviewConfirm, false);
+  const submit = first.submitInterviewAnswer;
+  const pending = submit(); submit(); await settle();
+  assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  assert.equal(calls.find(x => x[0] === "POST")[2].text, "Detached typed answer");
+  resolve({ session: saved, next_question: question }); await pending;
+  const refresh = first.refreshInterviews; await refresh();
+  assert.equal(c.state.interviewBody.session.id, saved.id);
+  assert.equal(c.state.interviewBusy, false);
+});
+
+test("same-class instances isolate drafts and pending interview writes across actor loss", async () => {
+  const pending = [];
+  const { c } = await loaded((path, body) => new Promise(resolve => pending.push({ path, body, resolve })));
+  const sibling = new c.constructor(); sibling.props = {};
+  Object.assign(sibling.state, { me: { kind: "candidate" }, screen: "interview",
+    interviewList: { loading: false, data: [saved], error: null },
+    interviewBody: { session: saved, next_question: question } });
+  c.setInterviewDraft({ target: { value: "First actor's draft" } });
+  sibling.setInterviewDraft({ target: { value: "Sibling actor's draft" } });
+  const firstWrite = c.submitInterviewAnswer(), secondWrite = sibling.submitInterviewAnswer();
+  assert.equal(pending.length, 2); assert.notEqual(c._interviewAction, sibling._interviewAction);
+  assert.notEqual(c.setInterviewDraft, sibling.setInterviewDraft);
+  assert.notEqual(c._rowHandlers, sibling._rowHandlers);
+  assert.deepEqual(pending.map(p => p.body.text), ["First actor's draft", "Sibling actor's draft"]);
+  c.handleSessionLost(); pending[0].resolve({ session: completed, next_question: null }); await firstWrite;
+  assert.equal(c.state.interviewBody, null); assert.equal(c.state.screen, "login");
+  assert.equal(sibling.state.interviewBusy, true); assert.equal(sibling.state.interviewDraft, "Sibling actor's draft");
+  pending[1].resolve({ session: saved, next_question: question }); await secondWrite;
+  assert.equal(sibling.state.interviewBusy, false); assert.equal(sibling.state.screen, "interview");
+  assert.equal(c.state.interviewBody, null);
+});
+
+test("same-class list loads isolate tokens and encoded saved interview selection", async () => {
+  const { c, window, calls } = fixture();
+  const sibling = new c.constructor(); sibling.props = {};
+  Object.assign(sibling.state, { me: { kind: "candidate" }, screen: "interview" });
+  const pending = [];
+  const encodedId = "saved/id?with spaces";
+  window.VeritasAPI.get = path => {
+    calls.push(["GET", path]);
+    return path === "/portal/interviews" ? new Promise(resolve => pending.push(resolve))
+      : Promise.resolve({ session: { ...saved, id: encodedId }, next_question: question });
+  };
+  const first = c.refreshInterviews(), second = sibling.loadInterviews(encodedId);
+  assert.notEqual(c._interviewLoad, sibling._interviewLoad);
+  pending[0]({ interviews: [] }); await first;
+  assert.equal(c.renderVals().interviewEmpty, true); assert.equal(sibling.state.interviewList.loading, true);
+  pending[1]({ interviews: [{ ...saved, id: encodedId }] }); await second;
+  assert(calls.some(x => x[1] === "/portal/interviews/" + encodeURIComponent(encodedId)));
+  assert.equal(sibling.state.interviewBody.session.id, encodedId);
+  assert.equal(c.state.interviewBody, null);
+});

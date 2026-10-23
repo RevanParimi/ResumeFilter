@@ -3937,3 +3937,226 @@ commit/push. No G work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4G - Extract interview UI handlers and view values**, not
 started. Define its bounded contract in the existing T4 record next session.
 Stop after F publication.
+
+## <a id="r4-s1-t4g"></a>R4-S1-T4G - Extract interview UI handlers and view values
+
+Status: done (2026-10-23); reviewed, publication pending. Parent:
+[T4](tasks/R4-S1-T4.md). Prerequisite: [F](#r4-s1-t4f), done/published.
+
+### Contract and acceptance
+
+Move the contiguous interview handler/media helper/view-value area from
+`frontend/Veritas.dc.html` to `frontend/interview.js` using the established
+plain-script factory/subclass seam. Pass existing API/resource/display helpers
+explicitly; retain dynamic browser media/timer access. Keep shared state, boot,
+session loss, navigation/pagehide/unmount callers, row cache, template, generated
+runtime, API client and backend unchanged. Preserve interview mapping precedence
+and other screens. Remove only proven dead code in this area. No schema, scoring,
+transport, API/auth, visual, privacy-policy or broader race-safety change.
+
+Acceptance: candidate-only list/detail/start/answer/finish retains routes,
+encoded IDs, domain/question binding, duplicate-write suppression, malformed/
+mismatched response refusal and explicit finish. Empty/blank/oversize/expired
+states refuse without false success. Uncertain writes require saved-state reads
+without automatic replay. Late responses/permissions/recorder events cannot
+restore a departed or replaced actor's view; a newer refresh wins. Typed drafts
+and text/audio mode changes keep their current behavior. Microphone remains
+explicit audio-only; limits/deadlines, stop/discard, stream/recorder/reader/timer
+cleanup and question/actor-bound clips remain intact. Detached callbacks retain
+receiver/identity; same-class instances isolate drafts, pending loads/writes and
+media state. Saved assessments preserve original v1/v2 values, unknown/mixed/
+insufficient refusal, evidence/truncation warnings and advisory/human review.
+Content is assessed, never appearance or inferred emotion. Existing tenant/
+subject/CSRF/consent/erasure and ordered API contracts remain unchanged.
+
+### Required validation
+
+Extend existing `scripts/test_ui_interview.js` and `scripts/test_ui_interview_audio.js`
+with before/after callback/same-class/load/write/media characterizations; retain
+their existing failure, media-bound and rubric-semantic cases and run all offline
+handlers. Extend mount and existing migrated interview HTTP module-byte checks.
+Run focused UI/mount/image/interview/auth/route pytest, full offline pytest,
+bindings and shipped/inline JS syntax/diff checks. Actual Chrome:
+`scripts/check_ui_interview_integration_browser.py` (existing synthetic microphone
+plus text/audio/session/consent/restart journey) and
+`scripts/check_ui_evaluate_browser.py` for shared navigation/actor cleanup callers.
+Migrated HTTP/graceful restart: `scripts/smoke_r3_s3_t3.py --combined`, including
+anonymous exact module delivery. Fakes/synthetic media prove mechanics, not live
+ASR/codec compatibility or measured assessment quality. Browser restart is forced
+on Windows; the separate HTTP lifespan gate proves graceful shutdown. No SQL
+transaction/concurrency/migration change means no new PostgreSQL gate. Record
+implementation self-review, preservation, completion and distinct final
+self-review before scoped commit/push/remote verification. Preserve working
+storage, unrelated work and the existing demo. Stop after G. Exact next:
+**R4-S1-T4H - Extract employer roles and compensation UI logic**; define its
+bounded contract next session. T4/F13/sprint/PI remain open.
+
+### Evidence
+
+Starting HEAD `893f42a851f5dafb6f8e2a6ec4aa6528e5534406`; initial worktree
+clean. Sanitized runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t4g.py <tag> <Python args>` clears inherited DEE config/
+keys, ignores `.env`, blocks external GitHub and uses fake providers/isolated
+stores. Omitted Python args run project `-m pytest -q --tb=short`; logs use
+`.pytest_cache/r4-s1-t4g-<tag>.txt`. Baseline hashes cover 729 tracked files
+including working DB. This extraction uses passing before/after
+characterizations, not a product-defect reproducer.
+
+`node --test scripts/test_ui_interview.js`: before **49 passed, 0 failed,
+0 skipped, 853.80ms**; after **49 passed, 0 failed, 0 skipped, 904.82ms**.
+`node --test scripts/test_ui_interview_audio.js`: before **74 passed, 0 failed,
+0 skipped, 989.54ms**; after **74 passed, 0 failed, 0 skipped, 916.25ms**.
+All exit 0. Suites overlap: text includes 27 evaluation/client cases; audio
+includes the text suite. Five new cases cover stable detached field callbacks,
+same-class draft/pending-write isolation across actor loss, independent list
+loads and encoded ID selection, separate microphone captures/chunks/tracks/
+timers/clips and late permission after one instance's unmount while another
+continues recording. Existing text/audio cases retain candidate-only routes,
+selected domain/question binding, duplicate/blank/oversize/expired/refused writes,
+malformed replies, saved-state recovery without replay, version/evidence wording,
+permission/recorder/reader failures and deadlines, five-MB/two-minute limits,
+mode/navigation/session/pagehide/unmount cleanup and stale-clip refusal. These
+offline checks are not actual Chrome.
+
+Initial `focused` pytest invocation exited 4 with **no tests run in 0.04s**
+(10.78s runner) because its file selection included nonexistent microphone/
+ownership/summary filenames. Corrected the selection to the existing interview
+API/employer API/service/scoring/erasure modules; this was not a product finding.
+Final focused `focused-final -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py tests/test_interview_api.py
+tests/test_interview_org_api.py tests/test_interview_service.py
+tests/test_interview_scoring.py tests/test_interview_erasure.py
+tests/test_api_route_extraction.py tests/test_api_auth_gate.py tests/test_auth_api.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py`:
+**201 passed, 0 skipped, 1 warning in 43.66s**, exit 0 (54.73s runner).
+Includes all eight offline handler subprocesses, anonymous exact module bytes/
+JavaScript media type, static confinement/packaging, interview ownership/
+consent/erasure/scoring and unchanged ordered 102-operation API/auth/OpenAPI
+contract. Image contract checks are not an image build.
+
+Migrated HTTP `http-journey scripts/smoke_r3_s3_t3.py --combined`: **27/27**,
+exit 0, 51.15s runner. Both migrated scratch SQLite (0029) starts anonymously
+declare/deliver exact interview module bytes and JavaScript media type;
+unrelated static paths refuse. Existing text/audio continuation, fake ASR
+failure/privacy/bounds, question/actor conflicts, duplicate/stale refusal,
+saved assessments/turns across restart, employer summary consent/redaction,
+revocation/erasure and both graceful SQL shutdowns pass. HTTP fixtures do not
+prove real microphone/codec/ASR compatibility or assessment quality.
+
+Actual Chrome `evaluation-browser scripts/check_ui_evaluate_browser.py`:
+**42/42**, plus shared harness **1/1**, exit 0, 48.52s runner. Organization/
+operator/candidate sign-in, text/PDF evaluation, reports/feedback/uncertain
+write recovery, navigation/session expiry/stale 401, candidate resend/wrong-code
+recovery, sibling device revocation, contact verification, consent/access,
+document reload/errors and erasure/other-subject survival retain behavior with
+no console exceptions. Real HTTP and captured mail use migrated scratch SQL;
+existing transport faults are injected. CDN internet required; Windows stop
+is forced, not graceful-lifecycle evidence.
+
+Implementation self-review: HEAD `893f42a` plus HTML/new interview module,
+named static allowlist, existing Node/checker/HTTP entry points and mount test.
+Specification review maps the bounded extraction to before/after Node,
+migrated interview HTTP and shared evaluation Chrome. Correctness review traces
+composed-class initialization (handlers are created before shared state but
+read it only on invocation), explicit API/resource/display capture, dynamic
+window media/timer access, unchanged mapping order, detached handlers and
+per-instance request/media state, encoded IDs, strict saved-body validation,
+question/actor-bound clips, uncertain-write reads/no replay, media/timer/reader
+cleanup through shared navigation/session/pagehide/unmount callers, historical/
+unknown rubric semantics, content-only advisory wording and static packaging.
+No dead handler or duplicate sample/live interview source was found to remove.
+No blocking finding remains; same-agent self-review is not independent review.
+No backend/scoring/schema/concurrency changes or new PostgreSQL gate apply.
+
+`review -I .pytest_cache/review_r4_s1_t4g.py`: exit 0, 5.30s runner. All **24**
+original fields (23 handler/helpers and `interviewValues`) are text-identical.
+Shared state/boot/session/pagehide/unmount/navigation/template/row cache and
+other screen logic are identical after normalizing only script/base composition.
+Main's AST changes only the named static allowlist entry. Shipped/test/checker/
+extracted inline JS syntax passes; **22** reviewed source/harness/contract hashes
+recorded. Bindings `node scripts/check_ui_bindings.js`: **589 bindings /
+18 states**, pass. `compile -m compileall -q src/app/main.py
+tests/test_ui_mount.py scripts/smoke_r3_s3_t3.py`: exit 0, 0.31s runner.
+
+Actual Chrome `interview-browser scripts/check_ui_interview_integration_browser.py`:
+**40/40**, plus shared harness **1/1**, exit 0, 83.86s runner. Synthetic
+microphone/real MediaRecorder bytes and fake ASR cover explicit audio-only
+permission, denial/fallback, stop/discard/mode switch, oversize chunks, provider
+failure/empty/unavailable, delayed ASR/client deadline, duplicate submit/lost
+committed acknowledgement/read-only recovery, cross-actor/stale-question refusal,
+truncation and saved advisory assessment. Combined typed repetition + audio
+continuation, exact saved mixed-channel state across actual process restarts,
+version/confidence/evidence warnings, employer consent-only summary without
+transcripts/media, other employer refusal, current revocation, late permission,
+navigation/reload/signout media cleanup and new-account isolation pass. No
+console exceptions; app logs omit transcript/private provider error. Migrated
+scratch SQL/captured email only. CDN internet and forced Windows restart apply;
+the HTTP journey separately proves graceful shutdown. Fake ASR/synthetic media
+do not prove live provider/codec compatibility or measured assessment quality.
+
+Full pytest `full-reviewed` (no extra runner arguments; project `-m pytest -q
+--tb=short`): **3540 passed, 505 skipped, 127 warnings in 596.34s (0:09:56)**,
+exit 0 (605.42s runner). Existing
+Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate
+warnings remain. Optional/environment skips do not prove omitted cases. All
+twenty-two reviewed source/harness/contract hashes match; only documentation
+changed during/after the full run.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4g.py`:
+**715** unrelated tracked files, working DB and **22** reviewed hashes unchanged;
+scoped local Markdown links/anchors and tracked/staged/source whitespace pass.
+Tracking branch is `origin/main`; pre-publication remote matched starting HEAD
+`893f42a851f5dafb6f8e2a6ec4aa6528e5534406`.
+
+All bounded G acceptance and required validation gates are complete. The 23
+handler/helper fields and interview view mapping have one implementation in the
+new plain script. Shared state/boot/session/pagehide/unmount/navigation/template/
+row cache, other screens, API client, backend and scoring are preserved. No dead
+handler or duplicate sample/live interview source was found to remove. No SQL
+transaction/concurrency/migration changes and no new PostgreSQL gate apply.
+Existing media/cancellation/provider/quality limits remain. No live ASR/codec
+compatibility or measured assessment claim is made. Working storage is preserved;
+demo not restarted. Only G completed this session; T4/F13/sprint/PI remain open.
+No H implementation or deployment started.
+
+### Completion review and publication
+
+After required checks and completion records, a distinct final same-agent
+self-review examined HEAD `893f42a` plus the exact fifteen staged files:
+HTML/new interview module, named static allowlist, existing Node/checker/HTTP
+entry points, mount test, feature overview, handoff, roadmap, PI/evidence and
+active T4 parent. Specification review confirms the bounded text/audio
+extraction, required validation, unchanged ordered API/auth contract, one
+interview implementation, child evidence ownership and H-only next pointer,
+with T4/F13/sprint/PI still open.
+
+Correctness review rechecks composed-class field initialization and deferred
+state reads, explicit API/resource/display helpers, dynamic window media/timer
+access, unchanged view precedence, detached handlers and per-instance drafts/
+load/write/capture/clip state, encoded IDs and strict body validation, candidate/
+question binding, uncertain-write read-only recovery without replay, recording
+limits and permission/stop/encoding deadlines, track/recorder/reader/timer cleanup
+through shared navigation/session/pagehide/unmount callers, historical/unknown/
+insufficient rubric and evidence/truncation wording, content-only advisory
+semantics, anonymous static confinement and packaging. No blocking finding
+remains. This final self-review is separate from implementation review; no
+independent review is claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4g.py --staged`: exit 0,
+1.90s runner. All 23 original handler/helper fields and complete view mapping
+are text-identical. Shared template/state/boot/session/pagehide/unmount/
+navigation/row cache, other screens and main AST comparisons pass. Shipped/
+test/checker/inline syntax and all 22 reviewed hashes match. Exact fifteen-file
+staged scope matches reviewed contents and excludes working data, secrets and
+local artifacts. Preservation confirms 715 unrelated tracked files, working DB
+and 22 reviewed hashes unchanged; 295 scoped local links/anchors and tracked/
+staged/source whitespace pass. Only documentation changed during/after full
+pytest. Review-record prose is checked separately for scope/evidence/status
+accuracy before publication; application tests do not need rerunning for prose.
+Commit/push/remote verification pending.
+
+### Handoff
+
+Exact next: **R4-S1-T4H - Extract employer roles and compensation UI logic**,
+not started. Define its bounded contract in the existing T4 record next session.
+Stop after G publication.

@@ -115,9 +115,20 @@ def run(scratch, url, pg_options, checks, *, combined):
     def count():
         path = Path(str(control)+".jsonl")
         return sum(json.loads(line)["event"] == "start" for line in path.read_text().splitlines()) if path.exists() else 0
+    def public_ui():
+        with client(base) as anonymous:
+            page = anonymous.get("/ui/")
+            module = anonymous.get("/ui/interview.js")
+            checks.check("anonymous UI delivers its declared interview module",
+                page.status_code == module.status_code == 200
+                and '<script src="./interview.js"></script>' in page.text
+                and module.content == (ROOT / "frontend/interview.js").read_bytes()
+                and "javascript" in module.headers["content-type"]
+                and anonymous.get("/ui/not-an-asset.txt").status_code == 404)
     b64 = base64.b64encode(b"synthetic-audio-sentinel-not-a-live-codec-test").decode()
     with client(base) as actor, client(base) as other, client(base) as org_reader:
         with server() as admin:
+            public_ui()
             engine = create_engine(url, hide_parameters=True, connect_args={"options":pg_options} if pg_options else {})
             try:
                 with engine.connect() as db:
@@ -186,6 +197,7 @@ def run(scratch, url, pg_options, checks, *, combined):
             checks.check("consented audio summary exposes neither transcript, turns nor raw audio", summary.status_code==200
                 and len(summary.json()["assessments"])==(2 if combined else 1) and all(value not in summary.text for value in (ANSWER,b64,"transcript","turns","audio_digest")))
         with server() as admin:
+            public_ui()
             after = require(actor.get(f"/portal/interviews/{sid}"))
             checks.check("restart preserves exact saved turns and assessment", after["session"]["turns"]==done["turns"] and after["session"]["assessment"]==done["assessment"])
             if combined:
