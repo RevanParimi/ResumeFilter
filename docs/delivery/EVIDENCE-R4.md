@@ -3675,7 +3675,7 @@ Stop after E publication.
 
 ## <a id="r4-s1-t4f"></a>R4-S1-T4F - Extract candidate portal and authentication UI logic
 
-Status: done (2026-10-23); reviewed, publication pending. Parent:
+Status: done and published (2026-10-23). Parent:
 [T4](tasks/R4-S1-T4.md). Prerequisite: [E](#r4-s1-t4e), done/published.
 
 ### Contract and acceptance
@@ -3914,8 +3914,23 @@ working data, secrets and local artifacts. Preservation confirms 714 unrelated
 tracked files, working DB and 20 reviewed hashes unchanged; 289 scoped local
 links/anchors and tracked/staged/source whitespace pass. Review-record prose is
 checked separately for scope/evidence/status accuracy before publication; no
-application tests need rerunning for prose. Commit/push/remote verification
-pending.
+application tests need rerunning for prose.
+
+Scoped task commit **`6a7ac7a`** was created; `git -c
+credential.https://github.com.username=RevanParimi push` (with
+`GIT_TERMINAL_PROMPT=0`, `GCM_INTERACTIVE=never`) exited 0, advancing main from
+`0b23ebe` to `6a7ac7a`. Verification compared local HEAD with `git -c
+credential.https://github.com.username=RevanParimi ls-remote origin refs/heads/main`:
+both were **`6a7ac7a65daf46a43a5bfe3f81dbda5180cfe06e`**. Working tree was clean.
+
+This two-file documentation-only confirmation records verified publication in
+the handoff and this evidence section. Separate final same-agent self-review
+against `6a7ac7a` checks the exact prose diff, actual remote evidence, open T4
+parent and G-only next pointer; no blocking finding remains. Scoped links,
+whitespace and preservation pass. Application/test/harness code remains at the
+full pytest/HTTP/Chrome validated state; no application tests are rerun for prose.
+The final response reports the verified remote SHA after this confirmation's
+commit/push. No G work, working-data change, demo restart or deployment occurred.
 
 ### Handoff
 

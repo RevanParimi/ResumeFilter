@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4F complete: candidate portal/auth extraction; reviewed, publication pending.**
+**R4-S1-T4F complete and published: candidate portal/auth extraction.**
 The 28 handlers, OTP callback array and live auth/portal/device mappings now
 live in `frontend/portal-auth.js`; six overwritten sample arrays/mappings and
 an overwritten auth-action default are removed. Shared state/boot/session
@@ -14,9 +14,13 @@ bindings/syntax,
 actual Chrome (42/42 candidate/evaluation; 24/24 screening), migrated HTTP/
 graceful restart (85/85), preservation and implementation self-review pass.
 [F evidence](delivery/EVIDENCE-R4.md#r4-s1-t4f) owns exact commands/counts/limits
-and the distinct final completion review/publication record. Only F completed
+and the distinct final completion review/publication record. Distinct final
+completion self-review found no blocking issues. Scoped task commit `6a7ac7a`
+is pushed to `origin/main`; remote `6a7ac7a65daf46a43a5bfe3f81dbda5180cfe06e`
+was verified. This documentation-only confirmation records publication; the
+final response reports the remote SHA after this confirmation. Only F completed
 this session; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
-Working storage/demo are preserved.
+Working storage is preserved; the demo was not restarted.
 
 **Exact next development task: R4-S1-T4G - Extract interview UI handlers and
 view values**, not started. Read [PI-R4](delivery/PI-R4.md),
