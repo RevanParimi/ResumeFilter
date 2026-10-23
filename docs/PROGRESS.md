@@ -4,48 +4,46 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4E complete and published: screening UI extraction.**
-The 22 handler fields and screening/report view composition now live in
-`frontend/screening.js`; shared state/lifecycle/row cache/file reader, template
-and API/auth behavior are preserved. Before/after Node (45), focused pytest
-(168 passed, 11 skipped), full pytest (3540 passed, 505 skipped),
-bindings/syntax, actual Chrome (24/24 screening; 38/38 evaluation), migrated
-HTTP/graceful restart (20/20 plus 31/31 HTTP contract), preservation and
-implementation self-review pass. [E evidence](delivery/EVIDENCE-R4.md#r4-s1-t4e)
-owns exact commands/counts/limits and the distinct final completion review/
-publication record. Distinct final completion self-review found no blocking
-issues. Scoped task commit `6677a8d` is pushed to `origin/main`; remote
-`6677a8da2d73d0a68b395c01985142199903b5e5` was verified. This documentation-only
-confirmation records publication; the final response reports the remote SHA
-after this confirmation. Only E completed this session;
-[T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
+**R4-S1-T4F complete: candidate portal/auth extraction; reviewed, publication pending.**
+The 28 handlers, OTP callback array and live auth/portal/device mappings now
+live in `frontend/portal-auth.js`; six overwritten sample arrays/mappings and
+an overwritten auth-action default are removed. Shared state/boot/session
+cleanup/navigation/template and API/auth behavior are preserved. Before/after
+Node (54), focused pytest (164 passed), full pytest (3540 passed, 505 skipped),
+bindings/syntax,
+actual Chrome (42/42 candidate/evaluation; 24/24 screening), migrated HTTP/
+graceful restart (85/85), preservation and implementation self-review pass.
+[F evidence](delivery/EVIDENCE-R4.md#r4-s1-t4f) owns exact commands/counts/limits
+and the distinct final completion review/publication record. Only F completed
+this session; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
 Working storage/demo are preserved.
 
-**Exact next development task: R4-S1-T4F - Extract candidate portal and
-authentication UI logic**, not started. Read [PI-R4](delivery/PI-R4.md),
-[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and E evidence.
-Define F's bounded contract before implementation next session. Preserve
-candidate-only reads/mutations, auth/OTP/navigation, consent/access/session/
-erasure and pending-result behavior. No F work or deployment started.
+**Exact next development task: R4-S1-T4G - Extract interview UI handlers and
+view values**, not started. Read [PI-R4](delivery/PI-R4.md),
+[WORKFLOW.md](delivery/WORKFLOW.md), the existing T4 record and F evidence.
+Define G's bounded contract before implementation next session. Preserve
+text/audio input, saved-state recovery, assessment version/advisory semantics,
+media cleanup and pending-result invalidation. No G work or deployment started.
 
 ## Latest work
 
-Text/PDF intake, sequential processing/manual recovery, paging, batch switch/
-delete guards, whole-batch summary denominators, report callbacks and detached/
-same-class isolation retain their behavior. Existing cancellation/paging
-semantics remain; this extraction adds no broader race-safety guarantee.
-Chrome proves actual intake/process/report/feedback/delete/reload/error paths;
-shared evaluation Chrome preserves PDF/report/session/consent/erasure callers.
-HTTP proves exact saved state and graceful restart. Working DB and 713 unrelated
-tracked files match baseline; no demo restart. Publication uses G's existing
-per-command GitHub account selection. Ignored-artifact removal stays outside
-scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+All three auth planes, OTP/resend/debug-echo behavior, candidate contact
+verification, consent/device revocation, typed erasure and live account/portal
+values retain their behavior. Empty/loading/error states use live resources.
+Chrome proves resend/wrong-code recovery, sibling removal/current-session
+survival, contact/consent/access/reload/error/erasure and shared screen callers.
+HTTP proves ownership/CSRF, exact saved state and graceful restart. Existing
+callback/cancellation semantics remain; no broader race-safety guarantee is
+added. Working DB and 714 unrelated tracked files match baseline; no demo
+restart. Publication uses G's existing per-command GitHub account selection.
+Ignored-artifact removal stays outside scope;
+[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4e.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s1_t4f.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
   Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
@@ -87,8 +85,9 @@ scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
   permission request. Deployment, external messages and working-data/legacy
   cleanup remain outside scope. Preserve unrelated work and `data/veritas.db`.
 - Do not start/restart the `http://127.0.0.1:8000/ui/` demo. Its last recorded,
-  reload-disabled backend still needs a separately controlled restart for earlier
-  backend/PDF/rubric/lifecycle changes. Scratch validation does not update it.
+  reload-disabled backend still needs a separately controlled restart for the
+  extracted UI asset allowlist and earlier backend/PDF/rubric/lifecycle changes.
+  Scratch validation does not update it.
   Working DB remains at 0023; only scratch stores were migrated to 0029.
 - Preserve advisory/human review, domain independence, deterministic fallbacks,
   tenant isolation and present consent/erasure. Polished/AI-assisted truthful

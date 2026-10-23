@@ -14,6 +14,8 @@ import socket
 import subprocess
 import tempfile
 
+import httpx
+
 import check_ui_screening_browser as browser
 from _smoke import Smoke
 from smoke_r3_s1_t2 import latest_code
@@ -49,6 +51,7 @@ async def main():
                 "DEE_VECTORSTORE_BACKEND": "memory", "DEE_LOGIN_OTP_DEBUG_ECHO": "false",
                 "DEE_VERIF_OTP_DEBUG_ECHO": "false",
                 "DEE_LOGIN_OTP_STATIC_CODE": "", "DEE_SESSION_COOKIE_SECURE": "false",
+                "DEE_LOGIN_OTP_COOLDOWN_SECONDS": "0",
                 "DEE_SESSION_COOKIE_SAMESITE": "lax",
                 "PYTHONPATH": os.pathsep.join(str(p) for p in (browser.ROOT / "src", browser.ROOT / "scripts", browser.ROOT)),
             })
@@ -74,7 +77,17 @@ async def main():
             await tab.js(f"window.__type('input[type=email]', {json.dumps(email)})")
             assert await tab.js("window.__click('button', " + json.dumps("Create account and send code" if signup else "Send code") + ")")
             assert await tab.wait("document.querySelectorAll('input[inputmode]').length === 6", 20, "OTP")
+            if plane == "Candidate" and signup:
+                assert await tab.js("window.__click('a', 'Send another code')")
+                checks.check("candidate resend keeps uniform acceptance copy", await tab.wait(
+                    "window.__has('If that address is registered, another code is on its way.')", 20))
             code = browser._code_for(mailbox, email)
+            if plane == "Candidate" and signup:
+                wrong = str((int(code[0]) + 1) % 10) + code[1:]
+                await tab.js(f"window.__type('input[inputmode]', {json.dumps(wrong)})")
+                assert await tab.js("window.__click('button', 'Verify and continue')")
+                checks.check("candidate wrong code refuses and clears digits before recovery", await tab.wait(
+                    "window.__has('That code did not work') && [...document.querySelectorAll('input[inputmode]')].every(e => !e.value)", 20))
             await tab.js(f"window.__type('input[inputmode]', {json.dumps(code)})")
             assert await tab.js("window.__click('button', 'Verify and continue')")
             assert await tab.wait("window.__has('Sign out')", 25, "authenticated shell")
@@ -287,6 +300,20 @@ void 0;
         assert await tab.wait("window.__has('Sign in')", 15)
         await login("Candidate", "instant-candidate@example.com", signup=True)
         checks.check("candidate has no evaluation action", not await tab.js("window.__has('Instant check')"))
+        with httpx.Client(base_url=browser.API_BASE, headers={"User-Agent": "Synthetic sibling device"}) as sibling:
+            email = "instant-candidate@example.com"
+            assert sibling.post("/auth/candidate/login", json={"email": email}).status_code == 202
+            assert sibling.post("/auth/candidate/verify", json={
+                "email": email, "code": browser._code_for(mailbox, email)}).status_code == 200
+            assert await tab.js("window.__click('button', 'Signed-in devices')")
+            checks.check("candidate devices show the saved sibling and current session", await tab.wait(
+                "window.__has('Synthetic sibling device') && window.__has('This device')", 20))
+            assert await tab.js("window.__click('button', 'Revoke')")
+            checks.check("browser revokes sibling while retaining the current session", await tab.wait(
+                "!window.__has('Synthetic sibling device') && window.__has('This device')", 20)
+                and sibling.get("/auth/me").status_code == 401
+                and (await tab.js("window.VeritasAPI.get('/auth/me')"))["kind"] == "candidate")
+        assert await tab.js("window.__click('button', 'Overview')")
         # Continue in the same app/browser composition, using the separately
         # proved login subject rather than treating resume contact hints as proof.
         email = "instant-candidate@example.com"

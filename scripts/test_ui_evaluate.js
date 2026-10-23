@@ -15,6 +15,7 @@ const organizationAdminSource = fs.readFileSync(path.join(ROOT, "frontend/organi
 const curationSource = fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8");
 const evaluationReportSource = fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8");
 const screeningSource = fs.readFileSync(path.join(ROOT, "frontend/screening.js"), "utf8");
+const portalAuthSource = fs.readFileSync(path.join(ROOT, "frontend/portal-auth.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(ROOT, "frontend/api.js"), "utf8");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const report = { id: "rep_server_123", domain: "genai", verdicts: [] };
@@ -38,6 +39,7 @@ function component(kind = "org", post) {
   new Function("window", curationSource)(window);
   new Function("window", evaluationReportSource)(window);
   new Function("window", screeningSource)(window);
+  new Function("window", portalAuthSource)(window);
   const C = new Function("DCLogic", "window", "document", "navigator", "FileReader",
     "setTimeout", "clearTimeout", "setInterval", "clearInterval", logic + "\nreturn Component;")(
     DCLogic, window, window.document = {}, {}, Reader, setTimeout, clearTimeout, () => 0, () => {});

@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-23 - R4-S1-T4F completed; candidate portal/auth UI extraction.**
+  The 28 handlers, OTP callback array and live auth/portal/device mappings move
+  to `frontend/portal-auth.js`; overwritten sample arrays/mappings and auth-action
+  default are removed. Shared lifecycle/navigation/template/API/auth behavior is
+  preserved. [F evidence](delivery/EVIDENCE-R4.md#r4-s1-t4f) owns before/after
+  Node, focused/full pytest, extended candidate and screening Chrome, migrated
+  auth/portal HTTP/graceful restart, bindings/syntax, preservation and separate
+  review/publication records. Existing callback/cancellation semantics remain;
+  working data/demo preserved. Only F completed; T4/F13/sprint/PI stay open.
+  Exact next T4G (interviews), not started. Stop after F.
+
 - **Session 2026-10-23 - R4-S1-T4E completed; screening UI extraction.**
   The 22 handler fields and screening/report view composition move to
   `frontend/screening.js`; shared state/lifecycle/row cache/file reader,

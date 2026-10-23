@@ -47,6 +47,7 @@ new Function("window", fs.readFileSync(path.join(ROOT, "frontend/organization-ad
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/screening.js"), "utf8"))(fakeWindow);
+new Function("window", fs.readFileSync(path.join(ROOT, "frontend/portal-auth.js"), "utf8"))(fakeWindow);
 
 class DCLogic {
   setState() {}

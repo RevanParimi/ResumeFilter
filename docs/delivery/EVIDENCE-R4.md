@@ -3672,3 +3672,253 @@ commit/push. No F work, working-data change, demo restart or deployment occurred
 Exact next: **R4-S1-T4F - Extract candidate portal and authentication UI logic**,
 not started. Define its bounded contract in the existing T4 record next session.
 Stop after E publication.
+
+## <a id="r4-s1-t4f"></a>R4-S1-T4F - Extract candidate portal and authentication UI logic
+
+Status: done (2026-10-23); reviewed, publication pending. Parent:
+[T4](tasks/R4-S1-T4.md). Prerequisite: [E](#r4-s1-t4e), done/published.
+
+### Contract and acceptance
+
+Move login/signup/resend/verification/sign-out, OTP box handlers, auth plane/
+mode selection, candidate contact verification, consent/session revocation and
+erasure handlers plus auth/portal/device view mappings into
+`frontend/portal-auth.js` using the existing plain-script factory/subclass seam.
+Pass existing API, OTP/plane/resource/display helpers explicitly. Keep shared
+state, resource loader, boot/session/unmount cleanup, navigation, row cache,
+template, generated runtime, API client and backend unchanged. Keep live auth
+action precedence and account identity mapping. Remove the six portal/device
+sample arrays and their always-overwritten render mappings after proving no
+other callers; keep other areas out of scope. No database/schema/API/auth-policy,
+visual or broader race-safety change is implied.
+
+Acceptance: all three auth planes retain signup/login/verify routes, payloads,
+landing screens and uniform acceptance copy; operator has no self-signup.
+Blank email/org name/incomplete code refuse locally. OTP paste, backspace and
+Enter, local-only server debug echo, resend-without-echo preserving typed digits,
+failed verify clearing digits, logout and shared session cleanup retain their
+behavior. Portal/access/consent/device navigation requests the same resources;
+consent and other-device revocation reread saved server state; errors preserve
+existing data and never invent success. Erasure requires typed DELETE, ends the
+session only on success and preserves other subjects. Contact checks retain
+candidate-only/duplicate guards, encoded IDs, strict returned-state checks,
+uncertain-write recovery and existing account/unmount invalidation. Detached
+callbacks retain their receiver/identity; instances isolate OTP handlers, contact
+tokens and row caches. Portal mappings preserve identity/retention/assurance,
+report metadata without report contents, access actors/outcomes and current
+device's inert action; empty/loading/error states never fall back to samples.
+Tenant/subject/CSRF/consent/erasure and ordered API contracts remain intact.
+
+### Required validation
+
+Extend the existing `scripts/test_ui_verification.js` suite with before/after
+auth/OTP/portal/device/erasure/instance characterizations, reusing its component
+fixture and existing contact regressions. Extend mount and migrated HTTP module
+delivery checks; run all offline handlers, focused UI/mount/image/auth/portal/
+verification/API-route pytest, full offline pytest, bindings and shipped/inline
+JS syntax/diff checks. Extend actual Chrome `scripts/check_ui_evaluate_browser.py`
+with real candidate resend/invalid-code recovery and sibling-device revocation,
+retaining its contact/consent/access/reload/error/erasure journeys. Also run
+`scripts/check_ui_screening_extraction_browser.py` for organization signup and
+screen/report callers, and `scripts/smoke_r4_s1_t3a.py` for migrated scratch
+auth/portal/ownership/CSRF/graceful restart plus exact module delivery. Fake
+providers/captured mail prove mechanics, not live delivery/provider quality.
+No SQL transaction/concurrency/migration change means no new PostgreSQL gate.
+Record implementation self-review, preservation, completion and separate final
+self-review before scoped commit/push/remote verification. Preserve working
+storage, unrelated work and the existing demo. Stop after F. Exact next:
+**R4-S1-T4G - Extract interview UI handlers and view values**; define its bounded
+contract next session. T4/F13/sprint/PI remain open.
+
+### Evidence
+
+Starting HEAD `0b23ebe75feeef2988c45a6bee1d82bdce5b9983`; initial worktree
+clean. Sanitized runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s1_t4f.py <tag> <Python args>` clears inherited DEE config/
+keys, ignores `.env`, blocks external GitHub and uses fake providers/isolated
+stores. Omitted Python args run project `-m pytest -q --tb=short`; logs use
+`.pytest_cache/r4-s1-t4f-<tag>.txt`. Baseline hashes cover 728 tracked files
+including working DB. This extraction uses passing before/after
+characterizations, not a product-defect reproducer.
+
+`node --test scripts/test_ui_verification.js`: before **54 passed, 0 failed,
+0 skipped, 1206.80ms**; after **54 passed, 0 failed, 0 skipped, 853.43ms**, exit 0.
+The existing suite reuses 27 evaluation/client cases and 12 contact cases;
+15 added auth/portal cases cover all plane/mode routes, local validation,
+OTP paste/backspace/Enter/identity/instance isolation, local server echo,
+resend-without-echo preserving digits, verify/send/resend refusal and recovery,
+busy-action precedence, resource-specific navigation, redacted report/contact
+metadata, assurance/retention/access actors, no sample fallback, consent/device
+saved-state rereads/errors, typed erasure/success cleanup and separate pending
+contact tokens. Existing contact tests retain strict returned-state checks,
+duplicate suppression, delivery/code refusal, uncertain writes and account-loss
+invalidation. Initial draft failures (52/54 then 53/54) were fixture mistakes:
+mutating the shared idle resource and expecting verification to be the last
+call despite its landing-screen read. Corrected assertions/setup are not
+product-defect reproductions. Offline handlers are not Chrome rendering.
+
+Focused `focused -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py tests/test_image_contents.py tests/test_auth_api.py
+tests/test_auth_debug_echo.py tests/test_auth_session_twins.py
+tests/test_portal_api.py tests/test_portal_sessions.py tests/test_portal_identity.py
+tests/test_verification_api.py tests/test_verification_delivery.py
+tests/test_api_route_extraction.py tests/test_api_auth_gate.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py`:
+**164 passed, 0 skipped, 1 warning in 150.29s (0:02:30)**, exit 0
+(165.42s runner). Covers all eight offline handler subprocesses, anonymous
+module bytes/JavaScript media type, static confinement/packaging, auth/subject/
+tenant/CSRF/contact/erasure and unchanged ordered 102-operation API/auth/OpenAPI
+contracts. Image contract checks are not an image build.
+
+Actual Chrome `screening-browser scripts/check_ui_screening_extraction_browser.py`:
+**24/24**, exit 0, 46.34s runner. Migrated scratch SQLite (0029), captured org
+signup/OTP, actual text/PDF picker/reading/processing, private queue identities,
+summary, owned report/feedback/history, duplicate judgement clicks, two-step
+delete, new intake/reload, injected 503 read/recovery and no console exceptions
+pass. CDN internet is required; Windows stop is forced. Fakes prove mechanics,
+not live provider/delivery quality.
+
+Migrated HTTP `http-journey scripts/smoke_r4_s1_t3a.py`: **85/85**, exit 0,
+66.65s runner. Both migrated starts anonymously declare/deliver exact portal/
+auth module bytes and JavaScript media type; unrelated static paths refuse.
+Three-plane sign-in/cookies/CSRF, owned devices and sibling survival, uniform
+unknown login and invalid verify, subject/tenant ownership, portal requests/
+consent/contact documents/manual review, exact saved state across restart,
+revocation/erasure and other-subject survival pass. Both lifespans shut down
+gracefully with shared SQL disposal. Other existing employer/ledger/features/
+public-surface checks remain green; HTTP is not browser evidence.
+
+After the source-comment correction, `http-journey-final
+scripts/smoke_r4_s1_t3a.py` repeats **85/85**, exit 0, 29.08s runner, including
+exact final module bytes before/after restart and both graceful SQL lifespans.
+
+Implementation self-review: HEAD `0b23ebe` plus HTML/new portal-auth module,
+named static allowlist, Node/checker/browser/HTTP entry points and mount test.
+Specification review maps the bounded extraction to before/after Node,
+focused API/auth/portal/erasure checks, actual org Chrome and migrated HTTP.
+Correctness review traces base field initialization (OTP array creates callbacks,
+state is read on invocation), explicit helpers, auth busy/live precedence,
+portal/account map placement, per-instance OTP/contact/row-cache state, strict
+contact state/encoded IDs, existing navigation/boot/session/unmount cleanup,
+uniform auth responses, no automatic write replay, revocation/erasure recovery,
+report metadata/redacted contacts, assurance/retention and static packaging.
+Six sample arrays and their mappings each had only a definition and a render
+reference always overwritten by live values; the duplicate initial auth action
+was also always overwritten. Their removal changes no rendered values. No
+blocking finding remains. This same-agent self-review is not independent review.
+Existing non-contact callback/cancellation semantics remain; no broader
+race-safety guarantee or backend policy change is made.
+
+Low finding, resolved: the transferred current-device comment in
+`frontend/portal-auth.js` incorrectly claimed the API refuses self-revocation;
+the existing HTTP journey proves it succeeds while the sibling survives. The
+UI deliberately keeps the current device's row action inert. Replaced only
+that source comment with the UI rule (use Sign out for this device), avoiding a
+misleading maintenance instruction. `node --test scripts/test_ui_verification.js`
+after correction: **54 passed, 0 failed, 0 skipped, 716.08ms**, exit 0; shipped/
+test/checker/inline syntax also passes. Browser behavior/runtime expressions are
+unchanged, so no browser rerun is needed for the comment. The correction was
+made during full pytest before its UI handler subprocesses execute.
+
+`review-final-comment -I .pytest_cache/review_r4_s1_t4f.py`: exit 0, 2.20s runner
+(supersedes the 3.36s `review-final` snapshot after that comment correction).
+All **29** original fields (28 handlers plus per-instance OTP callback array),
+portal setup/account/live mappings and effective auth mapping are preserved.
+Shared state/boot/session cleanup/unmount/navigation/template/row cache and
+other screen logic are identical after normalizing script/base/map composition
+and only the proven dead data/default and reviewed source comment. Main's AST
+changes only the named static allowlist entry. Shipped/test/checker/extracted inline JS syntax passes;
+**20** reviewed source/harness/contract hashes recorded. Bindings
+`node scripts/check_ui_bindings.js`: **589 bindings / 18 states**, pass.
+
+`compile -m compileall -q src/app/main.py tests/test_ui_mount.py
+scripts/smoke_r4_s1_t3a.py scripts/check_ui_evaluate_browser.py`: exit 0,
+0.43s runner.
+
+Actual Chrome `evaluation-browser-final scripts/check_ui_evaluate_browser.py`:
+**42/42**, plus shared harness **1/1**, exit 0, 48.26s runner. Real candidate
+resend/wrong-code refusal/cleared digits/correct-code recovery and saved sibling
+device listing/revocation/current-session survival extend the existing org/
+operator/candidate sign-in, evaluation/report/feedback, uncertain-write reads,
+contact delivery failure/confirmation, consent revocation/access actors,
+authenticated document reload/error recovery and erasure/other-subject survival.
+All pass with no console exceptions on migrated scratch SQLite/captured mail.
+Cooldown is disabled only in the synthetic browser server; production settings
+are unchanged. Existing transport fault cases are injected; auth/mutations use
+real HTTP. CDN internet is required; Windows stop is forced. The initial extended
+run was **41/42**, exit 1 (84.49s): its new device check expected a revoked row,
+but the existing API deliberately lists live sessions only. Corrected the test
+to require sibling disappearance, actual sibling 401 and current-session
+survival. No product code changed for that harness correction; the affected
+browser rerun passes and its final hash is recorded.
+
+Full pytest `full-reviewed` (no extra runner arguments; project `-m pytest -q
+--tb=short`): **3540 passed, 505 skipped, 127 warnings in 1842.46s (0:30:42)**,
+exit 0 (1853.15s runner). Existing
+Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate
+warnings remain. Optional/environment skips do not prove omitted cases. All
+twenty final reviewed source/harness/contract hashes match. During the full run,
+one source comment was corrected before the UI handler subprocesses executed;
+runtime expressions remained identical and affected Node/syntax checks were
+rerun. Other changes during the run were task documentation only.
+
+Preservation `.resume/Scripts/python.exe .pytest_cache/verify_r4_s1_t4f.py`:
+**714** unrelated tracked files, working DB and **20** reviewed hashes unchanged;
+scoped local Markdown links/anchors and tracked/staged/source whitespace pass.
+Tracking branch is `origin/main`; pre-publication remote matched starting HEAD
+`0b23ebe75feeef2988c45a6bee1d82bdce5b9983`.
+
+All bounded F acceptance and required validation gates are complete. Auth,
+contact, consent/device/erasure handlers, OTP callbacks and live auth/portal/
+account/device mappings have one implementation in the new plain script. Six
+always-overwritten sample arrays/mappings and the initial auth-action default
+are removed. Shared state/boot/session cleanup/unmount/navigation/template/row
+cache, API client and backend are preserved. No SQL transaction, concurrency or
+migration change and no new PostgreSQL gate apply. Existing callback/cancellation
+semantics remain; no broader race-safety, live delivery/provider or quality claim
+is made. Working storage/demo are preserved. Only F completed this session;
+T4/F13/sprint/PI remain open. No G implementation or deployment started.
+
+### Completion review and publication
+
+After required checks and completion records, a distinct final same-agent
+self-review examined HEAD `0b23ebe` plus the exact fifteen staged files:
+HTML/new portal-auth module, named static allowlist, existing Node/checker/
+browser/HTTP entry points, mount test, feature overview, handoff, roadmap,
+PI/evidence and active T4 parent. Specification review confirms the bounded
+auth/portal extraction, proof of dead samples/default, required validation,
+unchanged ordered API/auth contract, child evidence ownership and G-only next
+pointer, with T4/F13/sprint/PI still open.
+
+Correctness review rechecks base/derived field initialization, deferred state
+reads, explicit helpers, effective busy auth action, portal/account map order,
+stable detached callbacks and per-instance OTP/contact/row-cache state,
+uniform auth responses, local server echo only, resend/verify recovery,
+strict contact states/encoded IDs, existing boot/navigation/session/unmount
+cleanup, consent/device saved-state reads, typed erasure and other-subject
+survival, metadata-only reports/redacted contacts, assurance/retention/access
+actors, static confinement and packaging. Current-device UI action remains
+inert; its inaccurate source comment is corrected without changing expressions.
+Existing callback/cancellation limits are preserved and disclosed. No blocking
+finding remains. This final self-review is separate from implementation review;
+no independent review is claimed.
+
+`completion-review -I .pytest_cache/review_r4_s1_t4f.py --staged`: exit 0,
+2.15s runner. All 29 original fields and effective live mappings match after
+normalizing only the reviewed comment. Shared template/state/boot/session/
+unmount/navigation/row cache, other screens and main AST comparisons pass.
+The six retired sample arrays/mappings and initial auth-action default have
+no remaining callers. Shipped/test/checker/inline syntax and all 20 reviewed
+hashes match. The exact fifteen staged files match reviewed contents, excluding
+working data, secrets and local artifacts. Preservation confirms 714 unrelated
+tracked files, working DB and 20 reviewed hashes unchanged; 289 scoped local
+links/anchors and tracked/staged/source whitespace pass. Review-record prose is
+checked separately for scope/evidence/status accuracy before publication; no
+application tests need rerunning for prose. Commit/push/remote verification
+pending.
+
+### Handoff
+
+Exact next: **R4-S1-T4G - Extract interview UI handlers and view values**, not
+started. Define its bounded contract in the existing T4 record next session.
+Stop after F publication.

@@ -99,8 +99,14 @@ live in `frontend/screening.js`, preserving shared lifecycle/file reading and
 API/auth behavior. Before/after Node, focused/full pytest, migrated HTTP/graceful
 restart, actual Chrome, bindings/syntax, preservation and implementation
 self-review pass. E owns its distinct final completion review/publication
-record. Only E completed this session; exact next T4F (candidate portal/auth),
-not started. The parent, F13 and sprint/PI remain open.
+record. [T4F](EVIDENCE-R4.md#r4-s1-t4f) is done (2026-10-23): auth/OTP,
+contact, consent/device/erasure handlers and live mappings move to
+`frontend/portal-auth.js`; proven dead portal/device samples and initial auth
+action default are removed. Shared lifecycle/navigation/API/auth behavior is
+preserved. Before/after Node, focused/full pytest, actual Chrome, migrated HTTP/
+graceful restart, bindings/syntax, preservation and implementation self-review
+pass. F owns its distinct final review/publication. Only F completed this
+session; exact next T4G (interviews), not started. T4/F13/sprint/PI remain open.
 
 **Development:** Extract one cohesive screen/module per child task and remove only proven unused code. Keep runtime compatibility and working user journeys.
 

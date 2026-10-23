@@ -61,6 +61,7 @@ UI_ASSETS = frozenset({
     "api.js", "support.js", "Veritas.dc.html", "operator-accounts.js", "organization-admin.js", "curation.js",
     "evaluation-report.js",
     "screening.js",
+    "portal-auth.js",
 })
 
 #: The document `/ui/` serves. DEPLOY.md step 7 tells an operator to open

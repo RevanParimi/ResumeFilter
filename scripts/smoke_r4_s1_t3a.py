@@ -83,6 +83,14 @@ def main():
         from app import __version__
 
         with client(base) as anonymous:
+            page = anonymous.get("/ui/")
+            module = anonymous.get("/ui/portal-auth.js")
+            checks.check("anonymous UI delivers its declared portal/auth module",
+                page.status_code == module.status_code == 200
+                and '<script src="./portal-auth.js"></script>' in page.text
+                and module.content == (ROOT / "frontend/portal-auth.js").read_bytes()
+                and "javascript" in module.headers["content-type"]
+                and anonymous.get("/ui/not-an-asset.txt").status_code == 404)
             health = require(anonymous.get("/healthz"))
             contact = require(anonymous.get("/grievance"))
             service = require(anonymous.get("/"))
