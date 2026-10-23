@@ -4,7 +4,7 @@ Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S1-T4G complete: interview UI extraction; reviewed, publication pending.**
+**R4-S1-T4G complete and published: interview UI extraction.**
 The 23 handler/helper fields and interview view mapping now live in
 `frontend/interview.js`; shared state/boot/session/pagehide/unmount/navigation/
 template, API/scoring and media cleanup behavior are preserved. Before/after
@@ -14,8 +14,13 @@ interview; 42/42 shared evaluation), migrated HTTP/graceful restart (27/27),
 preservation and implementation
 self-review pass. [G evidence](delivery/EVIDENCE-R4.md#r4-s1-t4g) owns exact
 commands/counts/limits and the distinct final completion review/publication record.
-Only G completed this session; [T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI
-remain open. Working storage is preserved; demo not restarted.
+Distinct final completion self-review found no blocking issues. Scoped task
+commit `27d8400` is pushed to `origin/main`; remote
+`27d8400d274425562cfedb9ee75ec693c1a4cdc3` was verified. This documentation-only
+confirmation records publication; the final response reports the remote SHA
+after this confirmation. Only G completed this session;
+[T4](delivery/tasks/R4-S1-T4.md), F13 and sprint/PI remain open.
+Working storage is preserved; demo not restarted.
 
 **Exact next development task: R4-S1-T4H - Extract employer roles and
 compensation UI logic**, not started. Read [PI-R4](delivery/PI-R4.md),
