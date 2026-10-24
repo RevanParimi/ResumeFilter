@@ -7,6 +7,7 @@ The reused UI contract is HTTP simulation, not actual browser execution.
 --expiry adds R4-S2-T1B2a's no-reclaimer terminal expiry and recovery.
 --persistence adds R4-S2-T1B2b1's input/report expiry rollback and recovery.
 Its checkpoints also verify B2b2a's private original facts across workers.
+B2b2b adds first-report reuse without provider replay, including after restart.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -14,6 +15,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from datetime import timedelta
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -84,12 +86,14 @@ def create_smoke_app():
                 armed = scratch / "outcome-mode"
                 if armed.exists():
                     mode = armed.read_text(encoding="utf-8")
-                    if mode in {"stolen", "erased", "expired"}:
+                    if mode in {"stolen", "erased", "expired", "restart"}:
                         gate(mode, {"candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"],
                                     **checkpoint})
                 return complete(item_id, **kwargs)
 
             def controlled_retain(session, org, item, outcome, **kwargs):
+                (scratch / f"ingested-{outcome.extraction_id}.json").write_text(json.dumps({
+                    "candidate_id": outcome.candidate_id}), encoding="utf-8")
                 gate("input-expired", {"candidate_id": outcome.candidate_id, "report_id": None})
                 return retain(session, org, item, outcome, **kwargs)
 
@@ -118,7 +122,10 @@ def create_smoke_app():
                         while not (scratch / "lease-release").exists():
                             assert time.monotonic() < deadline, "synthetic provider gate timed out"
                             await asyncio.sleep(.05)
-                return await evaluate(**kwargs)
+                report = await evaluate(**kwargs)
+                (scratch / f"evaluated-{report.id}.json").write_text(json.dumps({
+                    "sha256": sha256(kwargs["resume_text"].encode("utf-8")).hexdigest()}), encoding="utf-8")
+                return report
 
             app.state.engine.evaluate = controlled
             yield
@@ -134,7 +141,7 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1B2b2a private ingest facts / persistence expiry / two workers / restart" if persistence
+    checks = Smoke("R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
                    else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
                    else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
                    else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
@@ -189,6 +196,15 @@ def run(scratch, url, pg_options):
     def require(response, status=200):
         assert response.status_code == status, (response.request.url.path, response.status_code)
         return response.json()
+
+    def evaluations(text):
+        digest = sha256(text.encode("utf-8")).hexdigest()
+        return sum(json.loads(path.read_text(encoding="utf-8"))["sha256"] == digest
+                   for path in scratch.glob("evaluated-*.json"))
+
+    def ingestions(candidate_id):
+        return sum(json.loads(path.read_text(encoding="utf-8"))["candidate_id"] == candidate_id
+                   for path in scratch.glob("ingested-*.json"))
 
     def login(http, email, name):
         require(http.post("/auth/org/signup", json={"email": email, "organization_name": name}), 202)
@@ -282,15 +298,16 @@ def run(scratch, url, pg_options):
                             and all(row["advisory"] and row["human_review_required"] for row in lease_saved["/queue"]["rows"]))
                         checks.check("another tenant cannot read or process worker intake", other.get(lease_path).status_code == 404
                             and other.post(lease_path + "/process").status_code == 404)
-                        outcome_saved = {}
+                        outcome_saved, recovery_restart = {}, None
                         if terminal_outcomes:
                             modes = ["stolen", "erased"] + (["expired"] if expiry else [])
                             if persistence:
-                                modes += ["input-expired", "report-expired"]
-                            expired_modes = {"expired", "input-expired", "report-expired"}
+                                modes += ["input-expired", "report-expired", "restart"]
+                            expired_modes = {"expired", "input-expired", "report-expired", "restart"}
                             for mode in modes:
+                                resume_text = contract._resume(f"Outcome {mode}", f"outcome-{mode}@example.com")
                                 batch = require(worker_b.post("/screening/batches", json={"name": f"Terminal {mode}", "items": [{
-                                    "resume_text": contract._resume(f"Outcome {mode}", f"outcome-{mode}@example.com") }]}))
+                                    "resume_text": resume_text }]}))
                                 outcome_path = "/screening/batches/" + batch["id"]
                                 (scratch / "outcome-mode").write_text(mode, encoding="utf-8")
                                 with ThreadPoolExecutor(max_workers=1) as executor:
@@ -307,6 +324,8 @@ def run(scratch, url, pg_options):
                                                 # Windows can expose a renamed gate before its
                                                 # writer releases the transient sharing lock.
                                                 time.sleep(.05)
+                                        if mode in {"stolen", "expired", "restart"}:
+                                            subject["saved_report"] = require(worker_b.get(f"/screening/reports/{subject['report_id']}"))
                                         if mode == "stolen" or mode in expired_modes:
                                             (scratch / "outcome-advanced").write_text("advance", encoding="utf-8")
                                             if mode == "stolen":
@@ -337,17 +356,20 @@ def run(scratch, url, pg_options):
                                         and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
                                         and state[""]["counts"] == {"pending":1, "processing":0, "failed":0, "done":0}
                                         and state["/summary"]["n_screened"] == 0)
-                                    recovered = require(worker_b.post(outcome_path + "/process"))
-                                    checks.check("later request recovers expired work using retained input",
-                                        (recovered["processed"], recovered["failed"], recovered["remaining"]) == (1, 0, 0))
-                                    state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
-                                    row = state["/queue"]["rows"][0]
-                                    checks.check(f"{mode}: recovery commits expected subject and exactly one queue result",
-                                        (row["candidate_id"] != subject["candidate_id"] if mode == "input-expired"
-                                         else row["candidate_id"] == subject["candidate_id"]) and row["status"] == "done"
-                                        and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1}
-                                        and state["/summary"]["n_screened"] == 1)
-                                (scratch / "outcome-advanced").unlink(missing_ok=True)
+                                    if mode == "restart":
+                                        recovery_restart = outcome_path, subject, resume_text
+                                    else:
+                                        recovered = require(worker_b.post(outcome_path + "/process"))
+                                        checks.check("later request recovers expired work using retained input",
+                                            (recovered["processed"], recovered["failed"], recovered["remaining"]) == (1, 0, 0))
+                                        state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
+                                        row = state["/queue"]["rows"][0]
+                                        checks.check(f"{mode}: recovery commits expected subject and exactly one queue result",
+                                            (row["candidate_id"] != subject["candidate_id"] if mode == "input-expired"
+                                             else row["candidate_id"] == subject["candidate_id"]) and row["status"] == "done"
+                                            and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1}
+                                            and state["/summary"]["n_screened"] == 1)
+                                if mode != "restart": (scratch / "outcome-advanced").unlink(missing_ok=True)
                                 if mode in {"stolen", "expired", "report-expired"}:
                                     checkpoint = json.loads((scratch / f"checkpoint-{row['report_id']}.json").read_text(encoding="utf-8"))
                                     checks.check(f"{mode}: original private matching facts and TTL survive recovery",
@@ -357,17 +379,29 @@ def run(scratch, url, pg_options):
                                 checks.check(f"{mode}: private ingest checkpoint never enters public batch reads",
                                     "ingest_facts" not in json.dumps(state) and "input_created_at" not in json.dumps(state))
                                 if mode == "stolen":
-                                    checks.check("stale completion cannot overwrite replacement report or saved counts",
-                                        row["status"] == "done" and row["report_id"] != subject["report_id"]
+                                    checks.check("stale completion cannot overwrite recovered report or saved counts",
+                                        row["status"] == "done" and row["report_id"] == subject["report_id"]
                                         and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1})
                                 elif mode == "erased":
                                     checks.check("acknowledged erasure failure has no subject links or signals",
                                         row["status"] == "failed" and row["error"] == "candidate_erased"
                                         and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
                                         and state[""]["counts"] == {"pending":0, "processing":0, "failed":1, "done":0})
+                                if mode in {"stolen", "expired"}:
+                                    checks.check(f"{mode}: reuse preserves report/body/original facts without provider or ingest replay",
+                                        row["report_id"] == subject["report_id"]
+                                        and require(worker_b.get(f"/screening/reports/{row['report_id']}")) == subject["saved_report"]
+                                        and all(row["signals"][key] == subject["ingest_facts"][key] for key in (
+                                            "matched_existing", "matched_on", "duplicate_resume"))
+                                        and evaluations(resume_text) == ingestions(subject["candidate_id"]) == 1
+                                        and len(require(worker_b.get(f"/screening/candidates/{row['candidate_id']}/reports"))) == 1)
+                                elif mode in {"input-expired", "report-expired"}:
+                                    checks.check(f"{mode}: pre-checkpoint provider cost is distinct from one persisted report",
+                                        evaluations(resume_text) == (2 if mode == "report-expired" else 1)
+                                        and len(require(worker_b.get(f"/screening/candidates/{row['candidate_id']}/reports"))) == 1)
                                 checks.check(f"{mode}: retries do not replay settled or scrubbed input",
                                     require(worker_b.post(outcome_path + "/retry")) == {"batch_id":batch["id"], "requeued":0, "skipped":int(mode == "erased")}
-                                    and require(worker_b.post(outcome_path + "/process"))["processed"] == 0
+                                    and (mode == "restart" or require(worker_b.post(outcome_path + "/process"))["processed"] == 0)
                                     and row["advisory"] and row["human_review_required"]
                                     and other.get(outcome_path + "/queue").status_code == 404)
                                 outcome_saved[outcome_path] = state
@@ -382,6 +416,24 @@ def run(scratch, url, pg_options):
                     if terminal_outcomes:
                         checks.check("terminal outcomes and exact saved queue summaries survive graceful restart",
                             all(require(worker.get(path + suffix)) == body for path, state in outcome_saved.items() for suffix, body in state.items()))
+                    if recovery_restart is not None:
+                        restart_path, subject, resume_text = recovery_restart
+                        try:
+                            recovered = require(worker.post(restart_path + "/process"))
+                            state = {suffix: require(worker.get(restart_path + suffix)) for suffix in ("", "/queue", "/summary")}
+                            row = state["/queue"]["rows"][0]
+                            checks.check("pending report checkpoint recovers after app restart with exact original result and counts",
+                                (recovered["processed"], recovered["failed"], recovered["remaining"]) == (1,0,0)
+                                and row["report_id"] == subject["report_id"]
+                                and require(worker.get(f"/screening/reports/{row['report_id']}")) == subject["saved_report"]
+                                and all(row["signals"][key] == subject["ingest_facts"][key] for key in (
+                                    "matched_existing", "matched_on", "duplicate_resume"))
+                                and state["/summary"]["n_screened"] == 1 and state[""]["counts"]["done"] == 1
+                                and evaluations(resume_text) == ingestions(subject["candidate_id"]) == 1)
+                            checks.check("recovered checkpoint cannot replay after restart",
+                                require(worker.post(restart_path + "/process"))["processed"] == 0
+                                and require(worker.post(restart_path + "/retry"))["requeued"] == 0)
+                        finally: (scratch / "outcome-advanced").unlink(missing_ok=True)
             checks.check("cookie session and exact batch queue summary survive restart", all(require(actor.get(path + suffix)) == body for suffix, body in saved.items()))
             checks.check("report and employer judgments survive restart exactly", require(actor.get(report_path)) == saved_report
                 and require(actor.get(report_path + "/outcomes"))["outcomes"] == outcomes)
@@ -403,7 +455,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2b1-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

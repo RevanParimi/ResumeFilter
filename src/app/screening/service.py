@@ -239,6 +239,13 @@ class ScreeningService:
                     raise IngestRefused("fresh_upload_required")
 
             try:
+                recovered = self._store.recover_report(org_id, item,
+                    input_ttl_days=self._settings.ret_batch_item_days, now=self._now)
+                if recovered is CompletionOutcome.DONE:
+                    processed += 1
+                    continue
+                if recovered is not None:
+                    break
                 result = await ingest_resume(
                     self._deps, engine,
                     text=item.raw_text, domain=item.domain,

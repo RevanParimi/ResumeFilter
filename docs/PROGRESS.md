@@ -4,57 +4,47 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b2a complete and published.**
-Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) owns the bounded
-private-checkpoint prerequisite and exact commands/counts. Full pytest **3589
-passed, 553 skipped**; focused **154 passed, 99 skipped**; PG-configured **307
-passed, 9 skipped**; SQLite/PostgreSQL two-process HTTP/restart **61/61 + 31/31
-each**, after fixing a Windows gate-file read sharing failure; screening Chrome
-**24/24** and static checks pass. Implementation and distinct final completion
-self-reviews found no B2b2a blocker. Scoped task commit `71afb32` is pushed to
-`origin/main`; remote `71afb3233e23ca9054f5e97379815b0d78a11483` was verified.
-This prose confirmation records publication; the final response reports the
-verified remote SHA after confirmation.
+**R4-S2-T1B2b2b complete; B2b2/B2b/B2/B/T1 acceptance closes with it.**
+Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) owns the scope,
+regressions, exact commands/counts, initial auth timing failure and unchanged
+clean rerun, parent closure and reviews. Full pytest **3630 passed, 595 skipped**;
+PG-configured **389 passed, 10 skipped**; SQLite/PostgreSQL two-process HTTP/
+restart **71/71 + 31/31 each**, screening Chrome **24/24**, focused and static
+checks pass. Fakes prove mechanics, not live providers or empirical quality.
 
-New private input references retain the first ingest's three matching facts,
-version 1, atomically with ingest. Retry/report saves preserve them and original
-TTL. Historical facts remain unknown; public responses and ordinary retry
-behavior are unchanged. Migration 0030 is scratch-only; no working-store change.
-Report reuse/protection and duplicate persisted reports/provider cost remain
-open. Existing expiry checks admit commit under held locks, not a physical
-commit deadline.
+Recovery atomically completes from the same authorized bound report and strict
+original flags without ingestion/evaluation. First-write binding rejects
+replacement/same-ID mutation. Unknown/invalid/swept/TTL-expired checkpoints
+require fresh upload; lease refusal rolls back/stops with zero counters. Tenant,
+erasure, original TTL, advisory/projection and existing consent remain. Earlier
+separate commits/provider cost before checkpoint and historical duplicates stay
+possible. No migration/frontend/working-store change; commit admission under
+locks is not a physical commit deadline.
 
-**Exact next: R4-S2-T1B2b2b - Recover the authorized report checkpoint**;
-refine its [PI contract](delivery/PI-R4.md#r4-s2-t1b2b2b) before implementing.
-Preserve erasure lock order, private input/TTL and current consent.
-B2b2/B2b/B2/B/T1/F14/sprint/PI stay open. No B2b2b implementation this session.
-A/B1/B2a/B2b1 and R4-S1/bounded F12/F13 remain closed.
+**Exact next: R4-S2-T2 - Resolve candidate and resume ingest races**;
+read its [PI contract](delivery/PI-R4.md#r4-s2-t2--resolve-candidate-and-resume-ingest-races).
+Do not start it in this session. F14/sprint/PI remain open for T2/T3/T4/Q.
+A/B1/B2a/B2b1/B2b2a and R4-S1/bounded F12/F13 remain closed.
 
-## Latest work
-
-The existing `--persistence` journey now compares private original facts/TTL
-across workers and proves public non-disclosure, alongside expiry/recovery and
-graceful restart. Populated migration tests cover old links/unknown facts and
-erased absence; legacy head assertions advance to 0030. Other head-only smoke
-journeys are not all claimed run. Fakes prove mechanics, not live providers or
-measured quality. Working DB/unrelated tracked files match baseline; demo not
-restarted. All owned validation processes stopped. Final completion self-review
-found no B2b2a blocker; task publication verified. No B2b2b implementation here.
-Ignored-artifact removal stays outside scope;
-[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+Implementation and distinct final completion self-reviews found no blocker.
+Authorized scoped commit/push to origin/main and remote verification follow;
+publication will be recorded here after that step. Working DB and unrelated files match baseline;
+643 code hashes match reviewed/tested state. Demo not restarted; owned PG,
+HTTP and Chrome validation processes stopped. Ignored-artifact removal remains
+outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b2a.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b2b.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
   `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
   scheduling `--leases`);
   append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t1b2b2a_postgres.py` / `r4-s2-t1b2b2a-pg-runtime.json`;
+  `.pytest_cache/run_r4_s2_t1b2b2b_postgres.py` / `r4-s2-t1b2b2b-pg-runtime.json`;
   stopped.
 - Combined R4-S1 production composition/API/UI/graceful restart:
   `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an

@@ -31,9 +31,10 @@ from app.core.logging import get_logger
 from app.ledger.consent import as_utc
 from app.reports.models import ReportRow
 from app.schemas.report import Report
+from app.screening.ingest import IngestRefused
 from app.screening.models import BatchItemRow, ScreeningBatchRow, ScreeningInputRow, ScreeningErasureStateRow
 from app.screening.pagination import decode_cursor, encode_cursor, iso_datetime
-from app.screening.schema import BatchCounts, ItemSignals, ItemStatus
+from app.screening.schema import BatchCounts, IngestFacts, ItemSignals, ItemStatus, signals_from_report
 
 log = get_logger("screening.store")
 
@@ -329,12 +330,98 @@ class ScreeningStore:
             return False
         bound = session.execute(update(ScreeningInputRow).where(
             ScreeningInputRow.id == item.id,
+            ScreeningInputRow.report_id.is_(None),
             ScreeningInputRow.resume_id.in_(select(ResumeRow.id).join(
                 ReportRow, ReportRow.candidate_id == ResumeRow.candidate_id).where(
                     ResumeRow.org_id == org_id, ReportRow.org_id == org_id,
                     ReportRow.id == report.id, ResumeRow.candidate_id == report.candidate_id)),
         ).values(report_id=report.id))
         return bound.rowcount == 1 and self._lease_live(item.claimed_at, now)
+
+    def recover_report(self, org_id: str, item: ClaimedItem, *, input_ttl_days: int,
+                       now: Optional[Callable[[], datetime]] = None) -> Optional[CompletionOutcome]:
+        """Commit a bound report without repeating ingestion or evaluation.
+
+        None means there is no report checkpoint; REFUSED means no transition
+        committed under this lease. Invalid/unavailable saved state requires a
+        fresh upload. The service must acknowledge any resulting failure write.
+        """
+        now = now or _utcnow
+        with self._session_factory() as s:
+            # Erasure takes this guard before touching subjects. Lock subjects
+            # before the item/private input, also matching ingest/report saves.
+            self._generation(s, lock=True)
+            batch = s.scalar(select(ScreeningBatchRow).join(BatchItemRow).where(
+                self._holds_lease(item.id, item.claimed_at),
+                ScreeningBatchRow.org_id == org_id,
+                ScreeningBatchRow.domain == item.domain,
+            ).with_for_update(read=True, of=ScreeningBatchRow))
+            if batch is None:
+                return CompletionOutcome.REFUSED
+            links = s.execute(select(ScreeningInputRow.resume_id, ScreeningInputRow.report_id).where(
+                ScreeningInputRow.id == item.id)).one_or_none()
+            if links is None or links.report_id is None:
+                if not self._lock_terminal_lease(s, item.id, item.claimed_at, now):
+                    return CompletionOutcome.REFUSED
+                if links is None and item.expected_resume_id is not None:
+                    raise IngestRefused("fresh_upload_required")
+                return None
+            resume = s.scalar(select(ResumeRow).where(
+                ResumeRow.id == links.resume_id, ResumeRow.org_id == org_id,
+            ).with_for_update(read=True))
+            saved = s.scalar(select(ReportRow).where(
+                ReportRow.id == links.report_id, ReportRow.org_id == org_id,
+            ).with_for_update(read=True))
+            if not self._lock_terminal_lease(s, item.id, item.claimed_at, now):
+                return CompletionOutcome.REFUSED
+            ref = s.scalar(select(ScreeningInputRow).where(
+                ScreeningInputRow.id == item.id).with_for_update())
+            if not self._lease_live(item.claimed_at, now):
+                return CompletionOutcome.REFUSED
+            if (ref is None or ref.resume_id != links.resume_id or ref.report_id != links.report_id
+                    or resume is None or saved is None
+                    or (item.expected_resume_id is not None and ref.resume_id != item.expected_resume_id)
+                    or saved.candidate_id != resume.candidate_id or saved.domain != batch.domain):
+                raise IngestRefused("fresh_upload_required")
+
+            def eligible():
+                current = as_utc(now())
+                if not self._lease_live(item.claimed_at, lambda: current):
+                    return False
+                if as_utc(ref.created_at) < current - timedelta(days=input_ttl_days):
+                    raise IngestRefused("fresh_upload_required")
+                return True
+
+            if not eligible():
+                return CompletionOutcome.REFUSED
+            try:
+                # bool is an int subclass; version True is not version 1.
+                if not isinstance(ref.ingest_facts, dict) or type(ref.ingest_facts.get("version")) is not int:
+                    raise ValueError("invalid_checkpoint")
+                facts = IngestFacts.model_validate(ref.ingest_facts)
+                report = Report.model_validate(saved.body)
+                if (report.id != saved.id or report.candidate_id != resume.candidate_id
+                        or report.domain != batch.domain or not report.advisory or not report.human_review_required):
+                    raise ValueError("invalid_checkpoint")
+                signals = signals_from_report(report, matched_existing=facts.matched_existing,
+                    matched_on=facts.matched_on, duplicate_resume=facts.duplicate_resume)
+            except (ValueError, TypeError):
+                raise IngestRefused("fresh_upload_required") from None
+            written = s.execute(update(BatchItemRow).where(self._holds_lease(item.id, item.claimed_at)).values(
+                status=ItemStatus.DONE.value, raw_text="", text_sha256="",
+                candidate_id=resume.candidate_id, resume_id=resume.id, report_id=saved.id,
+                risk_score=report.fabrication_risk.score if report.fabrication_risk is not None else None,
+                signals=signals.model_dump(mode="json"), error=None, processed_at=now(),
+            ))
+            if written.rowcount != 1:
+                s.rollback()
+                return CompletionOutcome.REFUSED
+            s.execute(delete(ScreeningInputRow).where(ScreeningInputRow.id == item.id))
+            if not eligible():
+                s.rollback()
+                return CompletionOutcome.REFUSED
+            s.commit()
+            return CompletionOutcome.DONE
 
     @staticmethod
     def _try_claim(session, item_id: str, *, claimable, now: datetime) -> bool:

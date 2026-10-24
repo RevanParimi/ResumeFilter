@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.candidates.store import MatchedOn
 from app.schemas.fabrication import DuplicationBand, FabricationRiskBand
@@ -47,6 +47,16 @@ class BatchStatus(StrEnum):
     PROCESSING = "processing"
     COMPLETE = "complete"
     PARTIAL = "partial"  # nothing left to do, but something failed
+
+
+class IngestFacts(BaseModel):
+    """Private original ingest checkpoint; never part of an API response."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+    version: Literal[1]
+    matched_existing: bool
+    matched_on: Optional[MatchedOn]
+    duplicate_resume: bool
 
 
 class ItemSignals(BaseModel):

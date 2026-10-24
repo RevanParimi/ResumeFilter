@@ -43,8 +43,6 @@ def persistence_case(factory, operation):
     item = store.claim(org, batch, limit=1, now=NOW, timeout_seconds=900)[0]
     if operation != "input":
         persist_input_or_report(factory, org, item, "input")
-        if operation == "report":
-            persist_input_or_report(factory, org, item, "report")
         if operation == "retry":
             item = store.claim(org, batch, limit=1, now=NOW + timedelta(seconds=901),
                                timeout_seconds=900)[0]

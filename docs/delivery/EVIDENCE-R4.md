@@ -5748,3 +5748,272 @@ Exact next after B2b2a: **R4-S2-T1B2b2b - Recover the authorized report
 checkpoint**. Refine its atomic recovery/first-report protection, historical
 unknown/invalid facts, current authorization/erasure/TTL and concurrency policy
 before implementing. All parents remain open; no B2b2b implementation here.
+
+## <a id="r4-s2-t1b2b2b"></a>R4-S2-T1B2b2b - Recover the authorized report checkpoint
+
+Status: done (2026-10-24). Prerequisite B2b2a is
+complete/published. This bounded child owns report protection/recovery and
+review of the remaining B2b2/B2b/B2/B/T1 acceptance. F14/sprint/PI stay open.
+
+### Contract specified before implementation
+
+After claiming one item, inspect its current private checkpoint before any
+extraction/evaluation.
+No bound report follows the existing ingest path. A bound report completes in
+one store transaction from that same report and strict version-1 original
+matching facts; no extraction, identity update, fingerprint, evaluation or new
+report save occurs. Report binding is first-write-only, including refusal of
+same-ID batch resaves, so an in-flight callback rolls its report transaction
+back rather than replacing a committed checkpoint.
+
+Recovery holds the erasure guard before shared batch/subject/report locks,
+then the processing-token item lock, then rechecks/locks the private reference.
+Preserve subject-before-item-before-private ordering. Recheck current org,
+resume/report candidate and domain ownership, report/body IDs, advisory contract,
+private links, strict facts, fresh lease clock and original private-input TTL
+after waits and writes. Timeout/TTL equality remains eligible. Lease refusal
+rolls back, stops and counts neither outcome. Missing/swept/invalid/unknown or
+TTL-expired checkpoint raises fresh_upload_required; only an acknowledged
+current-lease failure counts, and retry skips it. Preserve earlier reports and
+private data until their existing erasure/sweep lifetimes; never restore a
+missing reference or reset TTL. These are commit-admission checks under locks,
+not physical commit/delivery deadlines or clock-skew guarantees.
+
+Current report authorization is the existing org-owned resume/report boundary;
+recovery creates no consent grant, reads no ledger/features/source data, and
+does not relax report redaction or erasure. The existing fresh-ingest path and
+separate earlier commits remain. Duplicate provider cost before checkpoint
+commit remains possible; claims about historical duplicate cleanup, exactly-once
+providers or empirical quality are excluded. No schema/frontend change.
+
+**Acceptance/tests:** red/green failed/interrupted/expired completion recovers
+the same report with original signals and exact counts, without provider calls
+or duplicate persisted reports; settled replay is a no-op. Refuse replacement
+and same-ID mutation atomically. Strict malformed/history/ownership/domain/TTL
+cases, no checkpoint fallback, erasure/sweep races, real competing SQLite/PG
+locks and post-write/commit rollback; verify saved state/TTL/report counts.
+Extend existing screening tests and two-process migrated HTTP/restart smoke;
+run focused/full pytest, actual PG selection, screening Chrome, static and
+preservation checks, implementation and distinct final self-reviews. Existing
+populated migration roundtrips stay in the selection. Review every parent T1
+criterion before closing it; F14/sprint/PI remain open.
+
+### Implementation and privacy boundary
+
+ScreeningService checks the private checkpoint immediately after each claim.
+No report checkpoint retains the existing ingest path. A bound report enters
+ScreeningStore.recover_report: erasure guard, shared batch/resume/report locks,
+current-token item lock and private input lock/recheck, then one terminal
+transaction. It validates strict version-1 facts, row/body IDs and domains,
+resume/report org ownership, candidate linkage, advisory/human-review fields,
+original private TTL and fresh lease eligibility after waits and writes. The
+same report builds scalar queue signals from the first ingest's original flags;
+no extraction, identity update, fingerprint, evaluation or report save runs.
+Queue completion and private-reference removal commit together. Competing or
+expired recovery refuses without counters and stops this call; interrupted
+commit, post-write TTL/lease expiry and zero affected rows roll back.
+
+The report-save callback binds only an unbound report_id. Replacement and
+same-ID mutation fail the callback and roll back the entire report transaction,
+including the attempted body change. This protects the batch checkpoint; it
+is not a universal immutability rule for unrelated internal report-store callers.
+Missing/swept/erased, malformed, unknown/future or TTL-expired checkpoint facts
+require fresh_upload_required without replay or inferred flags. Only a current-
+lease acknowledged failure increments failed; retry skips that input. Existing
+report/private-row retention remains until normal sweep/erasure. No reference
+is recreated or TTL refreshed; completion removes private facts as before.
+
+Current org report authorization is the existing org-owned report/resume
+boundary. Inspection of screening.scope, reports.store.get_for_org and the
+ingest/evaluation callers confirms recovery reads no ledger, consent features
+or source data and grants no consent. Public projection/redaction and advisory
+semantics remain. Other-tenant processing is 404; wrong stored owners refuse.
+Custom saved domains are supported without a hardcoded domain whitelist.
+No migration, frontend source or working-store change is added.
+
+The earlier ingest/fingerprint/report commits remain separate. Before a report
+checkpoint commits, retries/interrupted workers may repeat extraction/evaluation
+and spend provider work. A saved checkpoint is reused per batch item; distinct
+items and historical duplicates are not merged or cleaned up. Equality at the
+lease/TTL boundary remains eligible. Fresh checks admit commit while locks are
+held, not a physical commit/delivery deadline or clock-skew guarantee. Browser
+navigation/disconnection still does not guarantee server cancellation, and
+there is no heartbeat or durable scheduler added here.
+
+### Reproduction and implementation self-review
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b2b.py
+<tag> <Python args>`; omitted args run `-m pytest -q --tb=short`. It clears
+inherited DEE config/keys, pins missing config and null/loopback providers;
+HTTP/Chrome use migrated scratch stores and synthetic/fake effects. Logs use
+`.pytest_cache/r4-s2-t1b2b2b-<tag>.txt`. Baseline: 731 tracked files, captured
+after the refined PI contract; the tree was clean before that contract edit.
+Local runners, snapshots and synthetic captures remain ignored.
+
+Pre-fix `red -m pytest -q --tb=short tests/test_screening_report_input.py -k
+'first_report_checkpoint or http_interrupted'`: **3 failed, 2 skipped,
+24 deselected, 1 warning, 4.67s**, exit 1. Replacement and same-ID writes were
+accepted; HTTP retry reran the prohibited provider. Initial `green` with the
+same selection: **3 passed, 2 skipped, 24 deselected, 1 warning, 3.97s**,
+exit 0. These are behavioral reproducers, not broken imports/fixtures.
+
+An intermediate `recovery` selection returned **1 failed, 31 passed, 31 skipped,
+24 deselected, 1 warning, 34.64s**: the ORM considered JSON true equal to 1,
+so the bool-version fixture had not persisted malformed data. The fixture now
+uses an explicit Core UPDATE, then asserts recovery refuses it. This was a
+fixture defect, not an application version-validation failure. The application
+explicitly rejects bool as a version and validates strict flags/required keys.
+The existing report-expiry fixture now admits a first report instead of seeding
+an already-bound report; otherwise first-write protection would refuse before
+the intended expiry boundary. Dedicated replacement/mutation regressions retain
+that preservation contract.
+
+Implementation self-review against `7a165ab` plus the three screening modules,
+three existing screening test modules and smoke diff maps every child criterion
+to persisted state, original flags, refusal/counts, erasure/TTL/authorization,
+rollback and real competing-transaction assertions. Review found and resolved
+a low-severity defensive terminal-write issue in src/app/screening/store.py,
+recover_report: if its conditional update
+affected zero rows it could have removed the private capability and returned
+DONE. It now rolls back and returns REFUSED before deletion. The held token lock
+normally prevents that race; service/refusal and competing-recovery regressions
+exercise observable no-count/no-replay behavior. The final private-lock check
+also reads a fresh clock after waiting, before validating saved state.
+
+Correctness review checks erasure guard before subject/item locks, compatible
+shared subject/report locks before the item/private lock, no locks across
+provider awaits, callback exceptions rolling back same-ID body changes,
+post-write rollback restoring private input, fresh clocks/TTL equality, strict
+historical refusal, tenant/projection and no source/consent expansion. No
+remaining implementation blocker. This is self-review, not independent review.
+The final reviewed source snapshot hashes 643 tracked code/test/harness files;
+later completion prose must preserve those hashes.
+
+### Validation
+
+All required gates passed on the reviewed application/test state. The initial
+full-run failure and unchanged rerun are recorded below. Later tracked changes
+are completion prose only.
+
+| Gate | Actual command/result |
+|---|---|
+| Initial broad focused | Runner `focused -m pytest -q --tb=short tests/test_screening_report_input.py tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_erasure_concurrency.py tests/test_screening_batches_api.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py tests/test_screening_schema.py tests/test_migrations.py`: **263 passed, 158 skipped, 18 warnings, 140.63s**, exit 0; before the defensive rowcount check and final service/API/competing regressions |
+| Final focused | Runner `focused-final -m pytest -q --tb=short tests/test_screening_report_input.py tests/test_screening_service.py tests/test_screening_erasure_concurrency.py`: **131 passed, 112 skipped, 2 warnings, 87.31s**, exit 0; final application and service/API state |
+| Additional competing transactions | Runner `competing -m pytest -q --tb=short tests/test_screening_report_input.py -k competing_checkpoint`: **2 passed, 2 skipped, 102 deselected, 1 warning, 3.91s**, exit 0; final test additions, two connections for first-save and recovery; full/PG include them |
+| Two-process SQLite HTTP / graceful restart | Runner `http scripts/smoke_r4_s1_t3d.py --persistence`: **71/71** plus cookie/CSRF HTTP contract **31/31**, exit 0, 31.32s wrapper; same report/body/original flags, ingestion/evaluation attempt counts, one persisted report, refused stale writes and pending checkpoint recovery after actual app restart |
+| PostgreSQL-configured selection | Owned `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b2b_postgres.py` invokes `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py tests/test_migrations.py`: **389 passed, 10 skipped, 18 warnings, 587.04s**, exit 0 |
+| Two-process PostgreSQL HTTP / graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --persistence`: **71/71** plus cookie/CSRF HTTP contract **31/31**, exit 0, 70.96s wrapper; actual PG app storage, original report reuse without provider replay, exact counts/body/flags, expiry/erasure/tenant/CSRF/advisory and pending report recovery after graceful app restart |
+| Full pytest | Runner `full-repeat` (project `-m pytest -q --tb=short`): **3630 passed, 595 skipped, 127 warnings in 1423.97s (0:23:43)**, exit 0; unchanged reviewed code |
+| Actual screening Chrome | Runner `browser scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0, 19.44s wrapper; intake/queue/report/outcomes/deletion, second intake, reload, injected read failure/recovery and no console exceptions |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `frontend/support.js`, project `-m compileall -q src/app/screening scripts/smoke_r4_s1_t3d.py` and `git diff --check` pass |
+
+The PG-configured selection mixes SQLite/backend-neutral fixtures and actual
+PG parameterizations; its entire count is not a count of PostgreSQL tests.
+Controlled actual PG connections inspect pg_blocking_pids before releasing the
+writer in competing saves/recovery, private/report/item waits and erasure races;
+PG also sweeps between recovery reads, proving no capability restoration.
+The owned PostgreSQL 18.6 cluster uses READ COMMITTED/Asia/Calcutta. Existing
+populated migration up/down/up cases remain in the selection; scratch head is
+0030, with no new migration. Working storage is untouched. Local cluster/setup
+artifacts are not a portable environment guarantee.
+Owned PG shutdown returned exit 0, recorded in
+`.pytest_cache/r4-s2-t1b2b2b-pg-runtime.json`; all owned HTTP/Chrome app
+processes also stopped. The demo was not restarted. The reused HTTP contract
+has 31 checks; its separate standalone host-start check is not claimed here.
+
+HTTP/UI contract simulation is separate from Chrome. Fakes and synthetic waits
+prove transaction/recovery mechanics, not live-provider compatibility, empirical
+quality, cost savings or measured latency/resource bounds. Chrome still uses
+existing CDN internet. Skips do not prove omitted cases; no dependency/CI,
+deployment, other-browser or historical-duplicate cleanup claim is made.
+
+
+The initial full run returned **1 failed, 3629 passed, 595 skipped,
+127 warnings, 10691.34s**, exit 1. Existing
+tests/test_ratelimit_auth.py::test_a_session_records_the_ip_hash_and_never_the_ip
+expected verify 200 but received 400/invalid_code. Captured logs show its signup
+request took 4,567,365.6ms (about 76 minutes), then verification immediately
+refused. That is consistent with OTP expiry during the long delay; the cause
+of that delay is not established. No screening/auth code change or expiry
+relaxation is justified by this result. Runner `auth-check -m pytest -q
+--tb=short tests/test_ratelimit_auth.py::test_a_session_records_the_ip_hash_and_never_the_ip`
+passes unchanged: **1 passed, 1 warning, 5.10s**, exit 0. Runner `full-repeat`
+passed the unchanged entire suite as recorded above; the initial failure remains
+recorded. No cause for the original delay or auth fix is claimed.
+Two collection-only diagnostic calls returned 4225 tests, with no test execution;
+they identified the failing node before the aggregate traceback printed.
+
+### Parent T1 acceptance review
+
+This is closure review of the current task's parents, not a new backlog task.
+A/B1/B2a/B2b1/B2b2a evidence remains linked from PI-R4; final suites rerun their
+combined acceptance with B2b2b, instead of treating old counts as fresh evidence.
+
+| Parent criterion | Final-code assertion/journey |
+|---|---|
+| Claim when work starts; unstarted work stays available | waiting-provider service/API regressions and two actual app processes; fresh next-item clock; current per-call cap |
+| Acknowledge complete/fail; expired/stolen outcomes cannot count or overwrite | refused/expired ingest, error, completion and recovered-report cases assert exact counters, stop and unchanged durable state; HTTP slow worker cannot overwrite recovered report |
+| Bound retry and define cancellation | capped process loop; refusal stops before reclaim/rebill; settled process/retry no-op; fresh-upload failures skip retry; cancellation propagates with one active lease, recovery later uses fresh leases |
+| Input/report/terminal admission and rollback | fresh clocks after real lock waits and writes; equality/expiry; partial earlier commits remain explicit; populated migration tests remain in SQL selection |
+| Persisted report idempotence on authorized recovery | replacement/same-ID atomic refusal; competing saves/recoveries commit one result; same report/body/original flags and exactly one saved report; no ingestion/evaluation replay including app restart |
+| Tenant, erasure, retention and consent boundaries | wrong org/owners/domain/body refuse; private TTL equality/expiry; erasure-first/sweep absence cannot restore; recovery-first erasure waits for commit; public metadata non-disclosure, CSRF/404 and unchanged projection |
+
+No exactly-once provider claim is needed for this bounded T1 contract: provider
+cost before a committed checkpoint is explicitly separate from persisted-report
+idempotence. Current full/PG/HTTP/Chrome gates and specification/correctness
+self-review close B2b2b and its B2b2/B2b/B2/B/T1 parents, with no acceptance
+blocker remaining. This is same-agent review, not independent review.
+T2 ingest identity/version races, T3 aggregate/off-loop limits, T4 durable browser
+continuation and R4-S2-Q remain separate. F14/sprint/PI cannot close with T1.
+
+
+### Completion record
+
+B2b2b and the combined parent T1 acceptance are complete. PI-R4 owns status;
+FEATURE_STATUS/SCREENING describe current recovery; PROGRESS names exact next
+R4-S2-T2, and ROADMAP has one brief session entry. No next-task work, deployment
+or working-data change is included. Existing Starlette/SQLAlchemy/Alembic
+warnings and skipped optional/backend cases do not prove omitted behavior.
+The unchanged clean full rerun resolves the validation blocker while preserving
+the initial auth timing failure and its limits. All later edits are completion
+prose; the 643-code-file reviewed snapshot remains the tested state. The distinct
+final staged completion self-review and authorized publication follow.
+
+
+### Distinct final completion self-review and publication
+
+After all required gates and the completion record, a distinct final self-review
+against `7a165ab` inspected the exact thirteen-file staged scope: screening
+schema/service/store, the screening smoke, existing report-input/service/erasure-
+concurrency tests, FEATURE_STATUS/SCREENING/PROGRESS/ROADMAP, PI-R4 and this
+existing evidence file. Specification review maps each child and parent T1
+criterion to the final persisted-state, original-fact, rollback/expiry, competing
+SQL, tenant/erasure/TTL, HTTP/restart, Chrome and full-suite assertions. Parent
+closure is bounded to B2b2/B2b/B2/B/T1; F14/sprint/PI and T2/T3/T4/Q stay open.
+The first auth failure, 76-minute signup, unchanged isolated/full passes and
+unproven delay cause remain explicit; there is no auth-code/expiry-policy change.
+
+Correctness/maintenance review rechecks callback rollback of replacement/same-ID
+mutations, strict original facts and report/body identity, shared parent locks
+before item/private locks under the erasure guard, fresh clocks after waits and
+writes, no restored capability/TTL refresh, atomic queue/input transition and
+acknowledged counters/stop behavior. No provider await holds recovery locks;
+separate earlier commits/provider cost, existing org report/consent boundary and
+unchanged public projection remain. Scratch trace files use synthetic data and
+remain ignored; restart gates release in finally and owned servers/PG stopped.
+No blocking application finding remains. This is self-review, not independent
+review, separate from implementation review.
+
+One low-severity documentation finding in PI-R4's T1 heading replaced its dash
+with a question mark during a PowerShell text rewrite. This affected formatting;
+a direct Unicode patch restores the heading and wraps completion prose. Local
+link/anchor and whitespace checks validate it; application code is unchanged.
+
+The staged preservation check (`.resume/Scripts/python.exe
+.pytest_cache/review_r4_s2_t1b2b2b.py --staged`) verifies exactly **13** scoped
+files, **718** unrelated tracked files/working DB unchanged from the 731-file
+baseline, **643** code hashes matching the reviewed/tested snapshot and **12**
+added local documentation links/anchors. Staged whitespace passes. Secrets,
+working data and local artifacts are excluded. Later edits are completion prose,
+so application checks need no rerun. Authorized scoped commit/push and remote
+verification follow this distinct completion self-review; no T2 work starts.

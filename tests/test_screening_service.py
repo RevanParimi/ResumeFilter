@@ -6,7 +6,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import event, select
 from app.candidates.models import ResumeRow
 from app.candidates.store import CandidateStore
 from app.graph.build import EvaluationEngine
@@ -176,6 +176,44 @@ async def test_expired_persistence_rolls_back_stops_and_recovers(lease_services,
         assert len(list(session.scalars(select(ResumeRow)))) == 2
         assert len(list(session.scalars(select(ReportRow)))) == 2
         assert list(session.scalars(select(ScreeningInputRow))) == []
+
+
+@pytest.mark.asyncio
+async def test_expired_saved_report_recovery_rolls_back_and_stops_before_next_item(lease_services, genuine_resume, monkeypatch):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    svc, store = services.screening, services.screening._store
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(svc, "_now", lambda: clock[0])
+    calls = []
+    class Engine:
+        async def evaluate(self, **kwargs):
+            calls.append(True)
+            return _report()
+    with monkeypatch.context() as patch:
+        patch.setattr(store, "complete", lambda *args, **kwargs: CompletionOutcome.REFUSED)
+        first = await svc.process(org, bid, engine=Engine())
+    assert (first.processed, first.failed, first.remaining) == (0, 0, 2)
+    clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+    def expire(state):
+        result = state.invoke_statement()
+        if state.is_delete and state.bind_mapper is not None and state.bind_mapper.class_ is ScreeningInputRow:
+            clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+        return result
+    event.listen(store._session_factory, "do_orm_execute", expire, retval=True)
+    try:
+        refused = await svc.process(org, bid, engine=Engine())
+    finally: event.remove(store._session_factory, "do_orm_execute", expire)
+    assert (refused.processed, refused.failed, refused.remaining) == (0, 0, 2)
+    assert len(calls) == 1
+    with services.session_factory() as session:
+        assert len(list(session.scalars(select(ScreeningInputRow)))) == 1
+        assert len(list(session.scalars(select(ReportRow)))) == 1
+    recovered = await svc.process(org, bid, engine=Engine())
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 0)
+    assert len(calls) == 2
+    with services.session_factory() as session:
+        assert len(list(session.scalars(select(ReportRow)))) == 2
 
 
 @pytest.mark.asyncio

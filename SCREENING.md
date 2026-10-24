@@ -198,8 +198,6 @@ service stops without counting either outcome when terminal expiry refuses.
 These remain separate transactions. Earlier ingest, fingerprint or report
 commits can survive later expiry and a refused terminal write. Optional
 fingerprinting keeps its existing separate subject/erasure checks.
-The parent remains open for saved-report reuse in T1B2b2; duplicate persisted
-reports and provider work remain possible.
 This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
 [R4-S2-T1B2b2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) adds a prerequisite:
@@ -209,8 +207,30 @@ and report saves preserve these facts and the original input timestamp. They
 contain no input text, contact hashes or subject IDs, and do not enter public
 batch responses. Erasure, completion and retention remove them with the private
 reference. Migration 0030 leaves historical facts unknown; downgrade discards
-only this new metadata. Recovery from the report and protection of its first
-binding remain T1B2b2b; ordinary retry behavior still evaluates/saves as before.
+only this new metadata.
+
+[R4-S2-T1B2b2b](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) checks that private
+checkpoint after claim and before ingestion. An authorized bound report and
+strict original facts complete the item atomically with private-input removal;
+it reuses the same report and flags without extraction, identity/fingerprint
+updates, evaluation or report save. A first-write-only batch binding rolls back
+replacement and same-ID mutation attempts. Recovery holds the erasure guard,
+batch/subject/report locks, then item/private locks, checking ownership, domain,
+advisory contract, fresh lease and original private TTL after waits/writes.
+Equality remains eligible. Expiry/stolen/refused leases roll back, stop this call
+and count neither result. Missing/swept/erased, unknown/malformed or TTL-expired
+checkpoints require fresh_upload_required; only an acknowledged failure counts,
+and retry skips that input. Existing report/private retention remains until
+normal sweep/erasure, with no restored reference or refreshed TTL.
+
+No bound report follows the existing ingest path, so provider work can repeat
+before the checkpoint commits. Separate earlier commits may survive later
+refusal. Distinct batch items and historical reports are not merged. Recovery
+uses the existing org-owned report/resume boundary, reads no consent features or
+sources and grants no consent; public report redaction stays in its current
+projection. This is per-item checkpoint recovery, not exactly-once providers or
+a physical commit deadline. The evidence record owns the T1 closure review and
+required SQL/HTTP/browser/full checks; F14 and later sprint tasks remain open.
 
 ---
 

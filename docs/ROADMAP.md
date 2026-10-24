@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-24 - R4-S2-T1B2b2b completed; authorized report recovery.**
+  A current private checkpoint atomically completes from its first saved report
+  and original flags without ingestion/evaluation or a duplicate report.
+  Replacement/same-ID saves roll back; unknown/invalid/swept/TTL-expired saved
+  state requires fresh upload, and lease refusal rolls back with zero counters.
+  [B2b2b evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) owns regressions,
+  full/focused/actual PG competing locks, SQLite/PG two-process HTTP/restart,
+  Chrome/static, initial auth timing failure/unchanged clean rerun and reviews.
+  Combined acceptance closes B2b2/B2b/B2/B/T1. Earlier commits/provider cost
+  before checkpoint and historical duplicates remain; F14/sprint/PI stay open.
+  Working DB preserved, demo untouched. Exact next R4-S2-T2; stop after scoped
+  final completion review/publication. No next-task implementation here.
+
 - **Session 2026-10-24 - R4-S2-T1B2b2a completed; private original ingest facts.**
   B2b2 was split before implementation. New private retry references retain
   version 1 and the first ingest's three matching facts in the ingest transaction;

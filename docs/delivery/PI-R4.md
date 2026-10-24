@@ -127,7 +127,7 @@ Sprint acceptance journey: Two workers process competing uploads and batches wit
 
 ### R4-S2-T1 — Make batch leases and counts truthful
 
-Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, done.
+Status: done (2026-10-24). Audit mapping: F14. Prerequisites: R4-S1-Q, done.
 
 **Development:** Claim work just in time or renew leases; honor complete/fail return values and idempotent persistence.
 
@@ -137,149 +137,113 @@ Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, do
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
-Split before implementation into bounded sections. A, B1, B2a, B2b1 and B2b2a
-are done; B2b2b is next. The parent, sprint and F14 stay open until all mapped
-work/gates are complete.
+Split before implementation into A, B1, B2a, B2b1, B2b2a and B2b2b. All
+implementation and required validation are complete;
+[B2b2b evidence](EVIDENCE-R4.md#r4-s2-t1b2b2b)
+owns the completed combined parent acceptance review and current validation.
+B2b2/B2b/B2/B/T1 close; F14/sprint/PI retain their T2/T3/T4/Q work. Exact next
+is R4-S2-T2; no next-task implementation is included here.
 
 #### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
 
 Status: done (2026-10-23). [A contract/evidence](EVIDENCE-R4.md#r4-s2-t1a)
-owns the pre-implementation scope, red/green regressions, focused/full pytest,
-SQLite/PostgreSQL two-process HTTP/graceful restart, actual screening Chrome,
-static/preservation and separate reviews. Work is claimed immediately before
-ingest; ingest/error failures require an acknowledged write; rejected terminal
-writes stop this call. Task cancellation leaves only active work leased.
-Only A closes here. B retains terminal completion outcomes, active expiry and
-persistence/idempotence; no exactly-once provider or parent/F14 closure claim.
+owns its bounded scope, regressions, validation and separate reviews. Work is
+claimed immediately before ingest; ingest/error failures require an acknowledged
+write; rejected terminal writes stop this call. Cancellation leaves only active
+work leased. Later B children below complete terminal expiry and report recovery.
 
 #### <a id="r4-s2-t1b"></a>R4-S2-T1B - Fence terminal outcomes and define expiry/idempotence
 
-Status: in progress (2026-10-23). Prerequisite: A, done.
+Status: done (2026-10-24). Prerequisite: A, done.
 
-Complete the parent contract: distinguish committed completion/erasure failure
-from a refused/stolen lease, define expiry eligibility at input/report/terminal
-persistence boundaries, preserve retry/erasure behavior and document duplicate
-provider work separately from committed results. Add red regressions for those
-boundaries and real competing PostgreSQL/HTTP checks; refine its bounded contract
-from A evidence before implementing. No B implementation in A's session.
-
-Split before implementation on 2026-10-23: the acknowledgment defect can be
-fixed without changing the input/report transaction protocol. Expiry and
-idempotent report persistence need that separate protocol review. B1 is done;
-B2 retains the remaining contract. B, T1, F14, sprint and PI remain open.
+Distinguish committed completion/erasure failure from a refused/stolen lease;
+define input/report/terminal expiry admission and authorized checkpoint recovery.
+B1 and B2 were split before implementation to separate acknowledgment from the
+persistence/erasure protocol. Child implementation and final gates are complete;
+the combined parent review is in B2b2b evidence. Provider work before a committed
+checkpoint remains separate from persisted report idempotence.
 
 ##### R4-S2-T1B1 - Distinguish acknowledged terminal outcomes
 
 Status: done (2026-10-24). Prerequisite: A, done.
-[B1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b1) owns the pre-implementation
-scope, red/green regressions, validation, review findings and publication.
-Completion distinguishes newly committed done/erasure-failed transitions from
-refused writes; only acknowledged transitions count for this process call.
-Refusal and committed erasure cleanup stop the call. Scrubbing/retry, lock order,
-API/advisory/tenant/CSRF contracts remain. Only B1 closes; matching expired leases
-and partial/duplicate input/report persistence remain B2. No parent/F14 closure
-or exactly-once provider/report claim.
+[B1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b1) owns its bounded scope,
+red/green, validation and publication. Completion distinguishes newly committed
+done/erasure-failed transitions from refused writes. Only acknowledged transitions
+count; refusal/committed erasure cleanup stop this call. B2 completes expiry and
+checkpoint recovery; advisory, tenant, CSRF and scrub/retry contracts remain.
 
 ##### R4-S2-T1B2 - Fence expiry and make batch persistence idempotent
 
-Status: in progress (2026-10-24). Prerequisite: B1, done.
+Status: done (2026-10-24). Prerequisite: B1, done.
 
-Define and enforce expiry eligibility at input, report and terminal persistence
-boundaries (including lock waits/rollback), and prevent an already-saved report
-from creating duplicate persisted results on recovery. Refine the atomicity/
-retry contract before implementation; preserve erasure lock ordering, private
-input lifetime and current consent. Distinguish duplicate provider cost from
-committed results. Own the remaining B/parent acceptance and PostgreSQL/HTTP
-gates; B1's green tests do not close these requirements.
-
-Split before implementation on 2026-10-24: terminal admission can be fenced
-without changing the earlier ingest/report commit protocol. Input/report
-fencing and report reuse require a separate persistence/erasure review. B2a is
-done; B2b is in progress. B2/B/T1/F14/sprint/PI stay open.
+Fence input/report/terminal commit admission after lock waits and writes; prevent
+an already-saved checkpoint from creating another persisted report on recovery.
+B2a and B2b were split before implementation so terminal admission could close
+separately from the input/report commit protocol. Both implementations and
+required gates are complete; B2b2b evidence owns the combined B2/B/T1 closure review.
+Earlier commits and provider cost before a checkpoint remain explicit.
 
 ###### R4-S2-T1B2a - Fence terminal transitions at lease expiry
 
 Status: done (2026-10-24). Prerequisite: B1, done.
-[B2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2a) owns the pre-implementation
-scope, red/green regressions, SQL/HTTP/browser/full validation and reviews.
-Terminal done/fail and erasure cleanup check a fresh clock after locking and
-after writes, before commit; expiry rolls back and counts neither outcome.
-Timeout equality remains eligible. The last check admits a commit under the
-held lock, not a physical commit/delivery deadline. Input/report fencing and
-report reuse remain B2b; B2/B/T1/F14/sprint/PI stay open.
+[B2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2a) owns terminal done/fail
+and erasure-cleanup checks after locking and writes, with rollback on expiry.
+Equality remains eligible. These are commit-admission checks under locks, not a
+physical commit/delivery deadline. B2b below completes input/report recovery.
 
 ###### R4-S2-T1B2b - Fence input/report persistence and reuse saved reports
 
-Status: in progress (2026-10-24). Prerequisite: B2a, done.
+Status: done (2026-10-24). Prerequisite: B2a, done.
 
-Refine input/report eligibility, lock-wait and commit atomicity/retry policy;
-reuse a still-authorized saved report on recovery instead of creating duplicate
-persisted results. Preserve erasure lock ordering, consent, private input and
-its original TTL. Own B2's remaining parent acceptance and database/HTTP gates;
-terminal-only fencing is not complete persistence idempotence.
-
-Split before implementation on 2026-10-24: the existing ingest and report-save
-callbacks can fence their own transactions without deciding how to recover a
-saved report. B2b1 is done; B2b2 retains saved-report reuse
-and the remaining parent acceptance. B2b/B2/B/T1/F14/sprint/PI stay open.
+Preserve input/report eligibility, erasure lock order, consent and original
+private TTL; recover an authorized saved report. B2b1/B2b2 were split before
+implementation to ship callback fencing separately from report reuse. Their
+implementations and required gates are complete; B2b2b evidence owns parent
+closure.
 
 ###### <a id="r4-s2-t1b2b1"></a>R4-S2-T1B2b1 - Fence input and report transaction admission
 
 Status: done (2026-10-24). Prerequisite: B2a, done.
-[B2b1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b1) owns the pre-implementation
-scope, red/green regressions, full/focused/SQL/HTTP/Chrome/static validation and
-separate self-reviews. Input/report callbacks check fresh expiry after locking
-and after private-input operations; refusal rolls back that whole transaction,
-preserves prior bindings/original TTL and stops without incrementing either
-counter when terminal expiry refuses. Equality remains eligible. These are
-separate commits, admitted under held locks rather than a physical commit
-deadline; earlier commits and duplicate reports/provider cost can survive
-later expiry. B2b2 owns saved-report reuse; B2b/B2/B/T1/F14/sprint/PI stay open.
+[B2b1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b1) owns callback eligibility,
+red/green/full/SQL/HTTP/Chrome/static checks and separate self-reviews. Fresh
+clocks after item locking/private-input operations fence each transaction;
+refusal rolls back, preserves prior bindings/original TTL and stops with zero
+counters when terminal expiry refuses. Earlier admitted commits remain separate.
+B2b2 below completes saved-report reuse.
 
 ###### <a id="r4-s2-t1b2b2"></a>R4-S2-T1B2b2 - Reuse saved reports on authorized recovery
 
-Status: in progress (2026-10-24). Prerequisite: B2b1, done.
+Status: done (2026-10-24). Prerequisite: B2b1, done.
 
-Refine the saved-result metadata, authorization/erasure/TTL and concurrent
-recovery protocol before implementation. Recover a still-authorized bound
-report without a duplicate persisted result; prove crash/retry/expiry and
-tenant/consent/erasure behavior through SQL and HTTP. Distinguish duplicate
-provider cost from persisted idempotence. Own B2b/B2/B/T1's remaining acceptance
-and closure review; no parent closure follows B2b1 alone.
-
-Split before implementation on 2026-10-24: a saved report does not retain the
-original matched_existing/matched_on/duplicate_resume facts needed to rebuild
-its queue signals. Add a private, nullable versioned checkpoint first (B2b2a);
-ship binding protection together with its recovery consumer (B2b2b), so existing
-retries keep working between children. Only B2b2a is authorized for this bounded
-session; B2b2/B2b/B2/B/T1/F14/sprint/PI remain open.
+Recover a still-authorized bound report without a duplicate persisted result,
+preserving current tenant/consent/erasure/TTL boundaries and original flags.
+Split before implementation into private original facts (B2b2a) and binding
+protection with its recovery consumer (B2b2b), so retries kept working between
+children. Implementation and required gates are complete; B2b2b evidence owns
+combined parent closure, full/PG/HTTP checks, reviews and provider-cost limitations.
 
 ###### <a id="r4-s2-t1b2b2a"></a>R4-S2-T1B2b2a - Preserve original private ingest facts
 
 Status: done (2026-10-24). Prerequisite: B2b1, done.
-[B2b2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b2a) owns the pre-implementation
-scope, original/unknown facts, private lifetime/atomicity, populated 0030
-SQLite/PG up/down/up, red/green/full/focused/SQL/HTTP/Chrome/static validation
-and separate self-reviews. New private references retain only version 1 and
-the three original matching facts; retries/report saves preserve them and
-original TTL. Historical facts stay unknown; public responses and retry behavior
-remain unchanged. Working storage is untouched. B2b2b owns report reuse with
-binding protection; B2b2/B2b/B2/B/T1/F14/sprint/PI remain open.
+[B2b2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b2a) owns nullable version-1
+original matching facts, first-ingest atomicity, private lifetime/TTL and
+populated SQLite/PG 0030 migration roundtrips, regressions, validation and reviews.
+Historical facts stay unknown and public responses exclude this metadata.
+B2b2a itself left retries unchanged; B2b2b completes recovery/binding protection.
+Working storage is untouched.
 
 ###### <a id="r4-s2-t1b2b2b"></a>R4-S2-T1B2b2b - Recover the authorized report checkpoint
 
-Status: pending. Prerequisite: B2b2a.
-
-Refine and implement first-saved-report protection with atomic authorized
-completion from the bound report and original facts. Recheck processing token,
-fresh expiry after waits/writes, tenant/resume/report ownership, domain, private
-capability/TTL and present authorization under the existing erasure lock order.
-Missing/invalid/unknown historical facts must refuse or explicitly require fresh
-upload, never fabricate original flags or create a duplicate persisted result.
-Reuse does not run extraction/evaluation; competing and interrupted workers may
-still spend provider work before a checkpoint commits. Prove crash/retry/expiry,
-erasure/sweep/consent and competing SQL/HTTP/restart behavior; review all B2b2/
-B2b/B2/B/T1 acceptance before closing those parents. F14/sprint/PI stay open.
+Status: done (2026-10-24). Prerequisite: B2b2a, done.
+[B2b2b contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b2b) owns the refined
+pre-implementation scope, first-write binding, strict original-fact recovery,
+authorization/erasure/TTL/expiry protocol, red/green regressions, validation and
+parent T1 acceptance review. A saved report completes atomically without
+extraction/evaluation or a new report. Invalid/unknown/swept/TTL-expired
+checkpoints require a fresh upload; lease refusal rolls back/stops with zero
+counters. Earlier commits/provider cost before a checkpoint remain explicit.
+All required gates and the combined B2b2/B2b/B2/B/T1 acceptance review are
+complete. No F14/sprint/PI closure or next-task work is included.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 

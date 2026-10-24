@@ -116,8 +116,7 @@ acknowledged write and stops after a refused terminal write. Task cancellation
 leaves only active work leased, recoverable through existing timeout/input rules.
 [R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1) distinguishes committed
 success/erasure failure from a refused completion; only newly acknowledged
-transitions affect this call's counters. The parent T1/F14 remains open for
-saved-report reuse and persistence/idempotence in T1B2b2.
+transitions affect this call's counters.
 [R4-S2-T1B2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2a) checks terminal eligibility
 with a fresh clock after row/writer locking and after writes, including erasure
 rollback. Expired terminal writes roll back without increasing counters;
@@ -127,10 +126,15 @@ held lock, not a physical delivery deadline.
 after lock waits and private-input operations to ingest/report-save callbacks;
 refusal rolls back their whole transaction, preserves prior input/report
 bindings and original input TTL, and stops without incrementing either counter.
-Earlier admitted commits can survive later expiry/terminal refusal; duplicate
-persisted reports and provider work remain possible until saved-report recovery
-is implemented and validated.
+Earlier admitted commits can survive later expiry/terminal refusal.
 [R4-S2-T1B2b2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) preserves the first
 ingest's three matching facts on its private retry reference, with the original
-TTL. Historical facts remain unknown; public responses and retries are unchanged.
-Report reuse and binding protection remain B2b2b, with parent tasks open.
+TTL. Historical facts remain unknown and public responses exclude this metadata.
+[R4-S2-T1B2b2b](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) recovers the same
+still-authorized report with those original facts, without extraction/evaluation
+or another saved report. First-write binding rejects replacement/same-ID mutation;
+invalid, unknown, swept or TTL-expired checkpoints require a fresh upload. Lease
+refusal rolls back and stops without counters. No-report retries retain their
+existing path; provider work before a checkpoint and historical duplicates remain
+possible. Combined acceptance closes B2b2/B2b/B2/B/T1; F14/sprint/PI remain
+open for their other tasks. Exact next is R4-S2-T2; no T2 work is included here.
