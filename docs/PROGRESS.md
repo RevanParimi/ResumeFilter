@@ -4,14 +4,17 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2a complete and reviewed; publication pending.**
+**R4-S2-T1B2a complete and published.**
 Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2a) owns the bounded
 terminal expiry behavior, red/green regressions, exact commands/counts and
 reviews. Full pytest **3568 passed, 532 skipped**; focused **196 passed, 98
 skipped**; PostgreSQL-configured **251 passed, 9 skipped**; two-process
 SQLite/PostgreSQL expiry HTTP/restart **41/41 + 31/31 each**, screening Chrome
 **24/24** and static checks pass. Distinct final completion self-review found
-no B2a blocker; scoped commit/push and remote verification follow before stopping.
+no B2a blocker. Scoped task commit `3c368d2` is pushed to `origin/main`; remote
+`3c368d2303b9884eb33950eb682327a3a274c2a5` was verified. This prose-only
+confirmation records publication; the final response reports the verified
+remote SHA after confirmation.
 
 Terminal done/fail and erasure cleanup now check a fresh clock after row/writer
 locking and after writes, before commit. Expiry rolls back and counts neither
@@ -34,7 +37,7 @@ SQLite/PostgreSQL transactions cover fresh clock reads after locks and rollback.
 Chrome proves rendered screening actions/reload/error recovery. Fakes prove
 mechanics, not live-provider behavior or measured quality. All owned validation
 processes stopped; working DB and unrelated tracked files match baseline.
-Final completion self-review found no B2a blocker. Publication pending;
+Final completion self-review found no B2a blocker. Publication confirmed;
 demo not restarted.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
