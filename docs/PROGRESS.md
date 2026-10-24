@@ -4,7 +4,7 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b1 complete; publication follows.**
+**R4-S2-T1B2b1 complete and published.**
 Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b1) owns the bounded
 input/report admission fix, pre-fix failures, exact commands/counts and reviews.
 Full pytest **3585 passed, 549 skipped**; broader focused **213 passed, 115
@@ -12,7 +12,10 @@ skipped**; final expiry-focused **18 passed, 18 skipped**; PG-configured **285
 passed, 9 skipped**; two-process SQLite/PostgreSQL HTTP/restart **53/53 + 31/31
 each**. Chrome rerun **24/24** after an initial **23/24** read-error observation
 miss; static checks pass. Implementation and distinct final completion
-self-reviews found no B2b1 blocker. Authorized scoped publication follows.
+self-reviews found no B2b1 blocker. Scoped task commit `8dbf168` is pushed to
+`origin/main`; remote `8dbf1687912b6172602fde211834ff1f83b86940` was verified.
+This prose confirmation records publication; the final response reports the
+verified remote SHA after confirmation.
 
 Input/report callbacks now check a fresh clock after item locking and after
 private-input operations. Expiry refuses the whole ingest or report transaction;
@@ -37,7 +40,7 @@ recovery; its first missed error-text observation is recorded, not hidden.
 Fakes prove mechanics, not live-provider behavior or measured quality. Working
 DB and unrelated tracked files match baseline; demo not restarted. All owned
 validation processes stopped. Distinct final completion self-review found no
-B2b1 blocker; scoped publication follows. No B2b2 work starts here.
+B2b1 blocker; task publication verified. No B2b2 work starts here.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
