@@ -7,14 +7,17 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from app.candidates.models import ResumeRow
 from app.candidates.store import CandidateStore
 from app.graph.build import EvaluationEngine
-from app.screening.models import BatchItemRow
+from app.reports.models import ReportRow
+from app.screening.models import BatchItemRow, ScreeningInputRow
 from app.screening.schema import BatchStatus, ItemStatus
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
 from app.screening.store import CompletionOutcome
 from tests.conftest import make_services
 from tests.test_report_erasure_concurrency import database  # noqa: F401
+from tests.test_report_store import _report
 
 
 # Screening service
@@ -125,6 +128,54 @@ async def test_cancellation_leaves_only_active_lease_and_later_request_recovers(
     assert (finished.processed, finished.failed, finished.remaining) == (1, 0, 0)
     rows = services.screening.queue(org, bid, cursor=None, limit=10).rows
     assert len({row.report_id for row in rows}) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["input", "report"])
+async def test_expired_persistence_rolls_back_stops_and_recovers(lease_services, genuine_resume, monkeypatch, phase):
+    import app.candidates.extractor as extractor
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    svc = services.screening
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(svc, "_now", lambda: clock[0])
+    evaluate_calls, extraction_calls = [], []
+    original = extractor.extract_profile
+    def expire():
+        clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+    async def extract(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        extraction_calls.append(True)
+        if phase == "input":
+            expire()
+        return result
+    class Engine:
+        async def evaluate(self, **kwargs):
+            evaluate_calls.append(True)
+            if phase == "report" and len(evaluate_calls) == 1:
+                expire()
+            return _report()
+    with monkeypatch.context() as patch:
+        patch.setattr(extractor, "extract_profile", extract)
+        result = await svc.process(org, bid, engine=Engine())
+    assert (result.processed, result.failed, result.remaining) == (0, 0, 2)
+    assert len(extraction_calls) == 1 and len(evaluate_calls) == int(phase == "report")
+    with services.session_factory() as session:
+        assert len(list(session.scalars(select(ResumeRow)))) == int(phase == "report")
+        assert list(session.scalars(select(ReportRow))) == []
+        refs = list(session.scalars(select(ScreeningInputRow)))
+        assert len(refs) == int(phase == "report")
+        if refs:
+            assert refs[0].report_id is None
+            assert refs[0].created_at == session.get(BatchItemRow, refs[0].id).created_at
+    queue = svc.queue(org, bid, cursor=None, limit=10).rows
+    assert all(row.status is ItemStatus.PENDING and row.report_id is row.error is None for row in queue)
+    recovered = await svc.process(org, bid, engine=Engine())
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 0)
+    with services.session_factory() as session:
+        assert len(list(session.scalars(select(ResumeRow)))) == 2
+        assert len(list(session.scalars(select(ReportRow)))) == 2
+        assert list(session.scalars(select(ScreeningInputRow))) == []
 
 
 @pytest.mark.asyncio

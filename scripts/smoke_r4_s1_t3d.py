@@ -5,6 +5,7 @@ The reused UI contract is HTTP simulation, not actual browser execution.
 --leases adds R4-S2-T1A's two-app-process slow-provider scheduling journey.
 --outcomes adds R4-S2-T1B1's terminal refusal/erasure journey to --leases.
 --expiry adds R4-S2-T1B2a's no-reclaimer terminal expiry and recovery.
+--persistence adds R4-S2-T1B2b1's input/report expiry rollback and recovery.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -44,6 +45,7 @@ def create_smoke_app():
             evaluate = app.state.engine.evaluate
             svc = app.state.services.screening
             now, complete = svc._now, svc._store.complete
+            retain, bind = svc._store.retain_ingested_input, svc._store.bind_input_report
 
             def controlled_now():
                 # Deterministic expiry for competing OS processes, not a
@@ -51,10 +53,9 @@ def create_smoke_app():
                 offset = svc._settings.screening_claim_timeout_seconds + 1 if (scratch / "outcome-advanced").exists() else 0
                 return now() + timedelta(seconds=offset)
 
-            def controlled_complete(item_id, **kwargs):
+            def gate(mode, subject):
                 armed = scratch / "outcome-mode"
-                if armed.exists():
-                    mode = armed.read_text(encoding="utf-8")
+                if armed.exists() and armed.read_text(encoding="utf-8") == mode:
                     try:
                         (scratch / f"outcome-claimed-{mode}").open("x").close()
                     except FileExistsError:
@@ -62,17 +63,33 @@ def create_smoke_app():
                     else:
                         entered = scratch / f"outcome-entered-{mode}.json"
                         temporary = entered.with_suffix(".tmp")
-                        temporary.write_text(json.dumps({
-                            "candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"]}), encoding="utf-8")
+                        temporary.write_text(json.dumps(subject), encoding="utf-8")
                         temporary.replace(entered)
                         deadline = time.monotonic() + 30
                         while not (scratch / f"outcome-release-{mode}").exists():
-                            assert time.monotonic() < deadline, "synthetic terminal gate timed out"
+                            assert time.monotonic() < deadline, "synthetic persistence gate timed out"
                             time.sleep(.05)
+
+            def controlled_complete(item_id, **kwargs):
+                armed = scratch / "outcome-mode"
+                if armed.exists():
+                    mode = armed.read_text(encoding="utf-8")
+                    if mode in {"stolen", "erased", "expired"}:
+                        gate(mode, {"candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"]})
                 return complete(item_id, **kwargs)
+
+            def controlled_retain(session, org, item, outcome, **kwargs):
+                gate("input-expired", {"candidate_id": outcome.candidate_id, "report_id": None})
+                return retain(session, org, item, outcome, **kwargs)
+
+            def controlled_bind(session, org, item, report, **kwargs):
+                gate("report-expired", {"candidate_id": report.candidate_id, "report_id": report.id})
+                return bind(session, org, item, report, **kwargs)
 
             svc._now = controlled_now
             svc._store.complete = controlled_complete
+            svc._store.retain_ingested_input = controlled_retain
+            svc._store.bind_input_report = controlled_bind
 
             async def controlled(**kwargs):
                 if "R4-S2-T1A slow fake gate" in (kwargs.get("resume_text") or ""):
@@ -96,12 +113,14 @@ def create_smoke_app():
 
 
 def run(scratch, url, pg_options):
-    expiry = "--expiry" in sys.argv
+    persistence = "--persistence" in sys.argv
+    expiry = "--expiry" in sys.argv or persistence
     terminal_outcomes = "--outcomes" in sys.argv or expiry
     leases = "--leases" in sys.argv or terminal_outcomes
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
+    checks = Smoke("R4-S2-T1B2b1 persistence expiry / two workers / graceful restart" if persistence
+                   else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
                    else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
                    else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
                    else "R4-S1-T3D screening HTTP and graceful restart")
@@ -250,7 +269,11 @@ def run(scratch, url, pg_options):
                             and other.post(lease_path + "/process").status_code == 404)
                         outcome_saved = {}
                         if terminal_outcomes:
-                            for mode in (("stolen", "erased", "expired") if expiry else ("stolen", "erased")):
+                            modes = ["stolen", "erased"] + (["expired"] if expiry else [])
+                            if persistence:
+                                modes += ["input-expired", "report-expired"]
+                            expired_modes = {"expired", "input-expired", "report-expired"}
+                            for mode in modes:
                                 batch = require(worker_b.post("/screening/batches", json={"name": f"Terminal {mode}", "items": [{
                                     "resume_text": contract._resume(f"Outcome {mode}", f"outcome-{mode}@example.com") }]}))
                                 outcome_path = "/screening/batches/" + batch["id"]
@@ -261,10 +284,10 @@ def run(scratch, url, pg_options):
                                         entered = scratch / f"outcome-entered-{mode}.json"
                                         deadline = time.monotonic() + 15
                                         while not entered.exists():
-                                            assert time.monotonic() < deadline, "worker never reached terminal gate"
+                                            assert time.monotonic() < deadline, "worker never reached persistence gate"
                                             time.sleep(.05)
                                         subject = json.loads(entered.read_text(encoding="utf-8"))
-                                        if mode in {"stolen", "expired"}:
+                                        if mode == "stolen" or mode in expired_modes:
                                             (scratch / "outcome-advanced").write_text("advance", encoding="utf-8")
                                             if mode == "stolen":
                                                 winner = require(worker_b.post(outcome_path + "/process"))
@@ -280,9 +303,16 @@ def run(scratch, url, pg_options):
                                 state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
                                 row = state["/queue"]["rows"][0]
                                 checks.check(f"{mode}: response counts only this call's acknowledged transitions",
-                                    (loser["processed"], loser["failed"], loser["remaining"]) == (0, int(mode == "erased"), int(mode == "expired")))
-                                if mode == "expired":
-                                    checks.check("expired terminal attempt stays pending without public result links",
+                                    (loser["processed"], loser["failed"], loser["remaining"]) == (0, int(mode == "erased"), int(mode in expired_modes)))
+                                if mode in expired_modes:
+                                    if mode == "input-expired":
+                                        checks.check("expired ingest rolls back its subject through HTTP",
+                                            control.get(f"/candidates/{subject['candidate_id']}").status_code == 404)
+                                    elif mode == "report-expired":
+                                        checks.check("expired report rolls back while earlier subject survives",
+                                            control.get(f"/candidates/{subject['candidate_id']}").status_code == 200
+                                            and worker_b.get(f"/screening/reports/{subject['report_id']}").status_code == 404)
+                                    checks.check(f"{mode}: expired attempt stays pending without public result links",
                                         row["status"] == "pending" and row["error"] is None
                                         and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
                                         and state[""]["counts"] == {"pending":1, "processing":0, "failed":0, "done":0}
@@ -292,8 +322,9 @@ def run(scratch, url, pg_options):
                                         (recovered["processed"], recovered["failed"], recovered["remaining"]) == (1, 0, 0))
                                     state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
                                     row = state["/queue"]["rows"][0]
-                                    checks.check("recovery preserves subject and commits exactly one queue result",
-                                        row["candidate_id"] == subject["candidate_id"] and row["status"] == "done"
+                                    checks.check(f"{mode}: recovery commits expected subject and exactly one queue result",
+                                        (row["candidate_id"] != subject["candidate_id"] if mode == "input-expired"
+                                         else row["candidate_id"] == subject["candidate_id"]) and row["status"] == "done"
                                         and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1}
                                         and state["/summary"]["n_screened"] == 1)
                                 (scratch / "outcome-advanced").unlink(missing_ok=True)
@@ -344,7 +375,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2b1-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

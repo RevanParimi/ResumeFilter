@@ -137,9 +137,9 @@ Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, do
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
-Split before implementation into bounded sections. A, B1 and B2a are done;
-B2b is next. The parent, sprint and F14 stay open until all mapped work/gates
-are complete.
+Split before implementation into bounded sections. A, B1, B2a and B2b1 are
+done; B2b2 is next. The parent, sprint and F14 stay open until all mapped
+work/gates are complete.
 
 #### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
 
@@ -195,7 +195,7 @@ gates; B1's green tests do not close these requirements.
 Split before implementation on 2026-10-24: terminal admission can be fenced
 without changing the earlier ingest/report commit protocol. Input/report
 fencing and report reuse require a separate persistence/erasure review. B2a is
-done; B2b is next. B2/B/T1/F14/sprint/PI stay open.
+done; B2b is in progress. B2/B/T1/F14/sprint/PI stay open.
 
 ###### R4-S2-T1B2a - Fence terminal transitions at lease expiry
 
@@ -210,13 +210,42 @@ report reuse remain B2b; B2/B/T1/F14/sprint/PI stay open.
 
 ###### R4-S2-T1B2b - Fence input/report persistence and reuse saved reports
 
-Status: pending. Prerequisite: B2a.
+Status: in progress (2026-10-24). Prerequisite: B2a, done.
 
 Refine input/report eligibility, lock-wait and commit atomicity/retry policy;
 reuse a still-authorized saved report on recovery instead of creating duplicate
 persisted results. Preserve erasure lock ordering, consent, private input and
 its original TTL. Own B2's remaining parent acceptance and database/HTTP gates;
 terminal-only fencing is not complete persistence idempotence.
+
+Split before implementation on 2026-10-24: the existing ingest and report-save
+callbacks can fence their own transactions without deciding how to recover a
+saved report. B2b1 is done; B2b2 retains saved-report reuse
+and the remaining parent acceptance. B2b/B2/B/T1/F14/sprint/PI stay open.
+
+###### <a id="r4-s2-t1b2b1"></a>R4-S2-T1B2b1 - Fence input and report transaction admission
+
+Status: done (2026-10-24). Prerequisite: B2a, done.
+[B2b1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b1) owns the pre-implementation
+scope, red/green regressions, full/focused/SQL/HTTP/Chrome/static validation and
+separate self-reviews. Input/report callbacks check fresh expiry after locking
+and after private-input operations; refusal rolls back that whole transaction,
+preserves prior bindings/original TTL and stops without incrementing either
+counter when terminal expiry refuses. Equality remains eligible. These are
+separate commits, admitted under held locks rather than a physical commit
+deadline; earlier commits and duplicate reports/provider cost can survive
+later expiry. B2b2 owns saved-report reuse; B2b/B2/B/T1/F14/sprint/PI stay open.
+
+###### <a id="r4-s2-t1b2b2"></a>R4-S2-T1B2b2 - Reuse saved reports on authorized recovery
+
+Status: pending. Prerequisite: B2b1.
+
+Refine the saved-result metadata, authorization/erasure/TTL and concurrent
+recovery protocol before implementation. Recover a still-authorized bound
+report without a duplicate persisted result; prove crash/retry/expiry and
+tenant/consent/erasure behavior through SQL and HTTP. Distinguish duplicate
+provider cost from persisted idempotence. Own B2b/B2/B/T1's remaining acceptance
+and closure review; no parent closure follows B2b1 alone.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 

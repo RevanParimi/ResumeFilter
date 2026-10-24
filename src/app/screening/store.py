@@ -260,13 +260,15 @@ class ScreeningStore:
             ]
 
     def retain_ingested_input(self, session, org_id: str, item: ClaimedItem,
-                              outcome: IngestOutcome) -> bool:
+                              outcome: IngestOutcome, *,
+                              now: Optional[Callable[[], datetime]] = None) -> bool:
         """Bind retry input inside ingest's transaction, before it commits.
 
         Resume text already exists. Keep only a private CASCADE reference and
         clear the unlinked copy. Public subject links still wait for completion.
         The caller must abort ingest when this returns False.
         """
+        now = now or _utcnow
         if item.expected_resume_id is None and item.input_generation != self._generation(session):
             return False
         resume = session.scalar(select(ResumeRow).where(
@@ -284,7 +286,9 @@ class ScreeningStore:
                 ScreeningBatchRow.org_id == org_id)),
         ).values(raw_text="", text_sha256="").returning(BatchItemRow.created_at))
         created_at = res.scalar_one_or_none()
-        if created_at is None:
+        # The conditional write holds the item lock. Read the clock only after
+        # any wait, then check again after private-input operations/flushes.
+        if created_at is None or not self._lease_live(item.claimed_at, now):
             return False
         retained = session.scalar(select(ScreeningInputRow).where(
             ScreeningInputRow.id == item.id).with_for_update())
@@ -292,28 +296,31 @@ class ScreeningStore:
             # A sweep may have removed the reference since claim loaded text.
             # Do not restore a swept capability from a worker's stale copy.
             return (retained is not None and retained.resume_id == item.expected_resume_id
-                    and outcome.resume_id == item.expected_resume_id)
+                    and outcome.resume_id == item.expected_resume_id
+                    and self._lease_live(item.claimed_at, now))
         if retained is not None:
             return False
         session.add(ScreeningInputRow(id=item.id, resume_id=outcome.resume_id,
                                      created_at=created_at))
         session.flush()
-        return True
+        return self._lease_live(item.claimed_at, now)
 
     def bind_input_report(self, session, org_id: str, item: ClaimedItem,
-                          report: Report) -> bool:
+                          report: Report, *,
+                          now: Optional[Callable[[], datetime]] = None) -> bool:
         """Tie retry to report erasure in the report's own save transaction.
 
         Lock the lease before the private input, matching completion. Never
         recreate a reference removed by erasure or retention while evaluating.
         The caller must roll back the report when this returns False.
         """
+        now = now or _utcnow
         held = session.execute(update(BatchItemRow).where(
             self._holds_lease(item.id, item.claimed_at),
             BatchItemRow.batch_id.in_(select(ScreeningBatchRow.id).where(
                 ScreeningBatchRow.org_id == org_id)),
         ).values(raw_text=""))
-        if held.rowcount != 1:
+        if held.rowcount != 1 or not self._lease_live(item.claimed_at, now):
             return False
         bound = session.execute(update(ScreeningInputRow).where(
             ScreeningInputRow.id == item.id,
@@ -322,7 +329,7 @@ class ScreeningStore:
                     ResumeRow.org_id == org_id, ReportRow.org_id == org_id,
                     ReportRow.id == report.id, ResumeRow.candidate_id == report.candidate_id)),
         ).values(report_id=report.id))
-        return bound.rowcount == 1
+        return bound.rowcount == 1 and self._lease_live(item.claimed_at, now)
 
     @staticmethod
     def _try_claim(session, item_id: str, *, claimable, now: datetime) -> bool:

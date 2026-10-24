@@ -4,41 +4,40 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2a complete and published.**
-Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2a) owns the bounded
-terminal expiry behavior, red/green regressions, exact commands/counts and
-reviews. Full pytest **3568 passed, 532 skipped**; focused **196 passed, 98
-skipped**; PostgreSQL-configured **251 passed, 9 skipped**; two-process
-SQLite/PostgreSQL expiry HTTP/restart **41/41 + 31/31 each**, screening Chrome
-**24/24** and static checks pass. Distinct final completion self-review found
-no B2a blocker. Scoped task commit `3c368d2` is pushed to `origin/main`; remote
-`3c368d2303b9884eb33950eb682327a3a274c2a5` was verified. This prose-only
-confirmation records publication; the final response reports the verified
-remote SHA after confirmation.
+**R4-S2-T1B2b1 complete; publication follows.**
+Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b1) owns the bounded
+input/report admission fix, pre-fix failures, exact commands/counts and reviews.
+Full pytest **3585 passed, 549 skipped**; broader focused **213 passed, 115
+skipped**; final expiry-focused **18 passed, 18 skipped**; PG-configured **285
+passed, 9 skipped**; two-process SQLite/PostgreSQL HTTP/restart **53/53 + 31/31
+each**. Chrome rerun **24/24** after an initial **23/24** read-error observation
+miss; static checks pass. Implementation and distinct final completion
+self-reviews found no B2b1 blocker. Authorized scoped publication follows.
 
-Terminal done/fail and erasure cleanup now check a fresh clock after row/writer
-locking and after writes, before commit. Expiry rolls back and counts neither
-outcome; equality at timeout remains eligible. The final check admits a commit
-under the held lock, not a physical commit/delivery deadline. Earlier input/report
-callbacks still use lease identity rather than expiry; their commits, duplicate
-reports and provider work can survive terminal refusal.
+Input/report callbacks now check a fresh clock after item locking and after
+private-input operations. Expiry refuses the whole ingest or report transaction;
+terminal refusal counts neither outcome and stops the call. Equality remains
+eligible. Earlier admitted commits can survive later expiry; duplicate saved
+reports and provider work remain possible. Checks admit commit under held locks,
+not a physical commit/delivery deadline.
 
-**Exact next: R4-S2-T1B2b - Fence input/report persistence and reuse saved
-reports**, not started. Refine its [PI contract](delivery/PI-R4.md#r4-s2-t1b2b---fence-inputreport-persistence-and-reuse-saved-reports)
-and atomicity/retry policy before implementation. Preserve erasure lock order,
-private input/TTL and current consent. B2/B/T1/F14/sprint/PI stay open. No B2b
-work this session. A/B1 and R4-S1/bounded F12/F13 remain closed.
+**Exact next: R4-S2-T1B2b2 - Reuse saved reports on authorized
+recovery**; refine its [PI contract](delivery/PI-R4.md#r4-s2-t1b2b2) before
+implementation. Preserve erasure lock order, private input/TTL and current
+consent. B2b/B2/B/T1/F14/sprint/PI stay open. No B2b2 work this session.
+A/B1/B2a and R4-S1/bounded F12/F13 remain closed.
 
 ## Latest work
 
-The existing `--expiry` HTTP journey adds no-reclaimer terminal refusal and
-later recovery to two-process scheduling/outcome/restart checks. Real competing
-SQLite/PostgreSQL transactions cover fresh clock reads after locks and rollback.
-Chrome proves rendered screening actions/reload/error recovery. Fakes prove
-mechanics, not live-provider behavior or measured quality. All owned validation
-processes stopped; working DB and unrelated tracked files match baseline.
-Final completion self-review found no B2a blocker. Publication confirmed;
-demo not restarted.
+The existing HTTP journey's `--persistence` option adds expired ingest/report
+rollback and later recovery to two-process scheduling/outcome/restart checks.
+New regressions cover initial input, bound retry, prior report binding, original
+TTL and post-write expiry. Chrome proves rendered screening actions/reload/error
+recovery; its first missed error-text observation is recorded, not hidden.
+Fakes prove mechanics, not live-provider behavior or measured quality. Working
+DB and unrelated tracked files match baseline; demo not restarted. All owned
+validation processes stopped. Distinct final completion self-review found no
+B2b1 blocker; scoped publication follows. No B2b2 work starts here.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -46,13 +45,14 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2a.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b1.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
-  `scripts/smoke_r4_s1_t3d.py --expiry` (or `--outcomes` / scheduling `--leases`);
+  `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
+  scheduling `--leases`);
   append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t1b2a_postgres.py` / `r4-s2-t1b2a-pg-runtime.json`;
+  `.pytest_cache/run_r4_s2_t1b2b1_postgres.py` / `r4-s2-t1b2b1-pg-runtime.json`;
   stopped.
 - Combined R4-S1 production composition/API/UI/graceful restart:
   `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an

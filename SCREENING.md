@@ -188,10 +188,18 @@ remains eligible. Cleanup repeats the checks after rollback releases its lock.
 The last check admits a commit under the held lock; clock reads and commit are
 not atomic, so this is not a physical commit/delivery deadline.
 
-The parent remains open for input/report fencing and saved-report reuse in
-T1B2b. Those earlier callbacks still check lease identity rather than expiry;
-their commits can survive a refused terminal write. Duplicate persisted reports
-and provider work remain possible.
+[R4-S2-T1B2b1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b1) applies fresh expiry
+checks to the ingest/private-input and report-save callbacks: after the
+conditional item write acquires its lock, and after private-input operations
+before returning to commit. Refusal rolls back that whole transaction and
+preserves earlier input/report bindings and the input's original TTL. The
+service stops without counting either outcome when terminal expiry refuses.
+
+These remain separate transactions. Earlier ingest, fingerprint or report
+commits can survive later expiry and a refused terminal write. Optional
+fingerprinting keeps its existing separate subject/erasure checks.
+The parent remains open for saved-report reuse in T1B2b2; duplicate persisted
+reports and provider work remain possible.
 This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
 ---

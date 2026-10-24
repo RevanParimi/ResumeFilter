@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-24 - R4-S2-T1B2b1 completed; input/report expiry admission.**
+  B2b was split before implementation; only its persistence-admission child
+  closes. Input/report callbacks check a fresh clock after locking and after
+  private-input operations; refusal rolls back that whole transaction, preserves
+  prior bindings/original TTL, and stops without counting either outcome when
+  terminal expiry refuses. [B2b1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b1)
+  owns red/green, full/focused pytest, actual SQLite/PostgreSQL competing locks,
+  two-process HTTP/restart, screening Chrome including its initial observation
+  miss and successful rerun, static/preservation and separate reviews. Earlier
+  commits/duplicate reports/provider cost remain possible. B2b/B2/B/T1/F14/
+  sprint/PI remain open. Working DB preserved; demo not restarted. Exact next
+  R4-S2-T1B2b2 saved-report reuse; stop after B2b1 final review/publication.
+
 - **Session 2026-10-24 - R4-S2-T1B2a completed; terminal expiry fencing.**
   Done/fail and erasure cleanup check a fresh clock after row/writer locking
   and after writes before commit; expiry rolls back without incrementing this

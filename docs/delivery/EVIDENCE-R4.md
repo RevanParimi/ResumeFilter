@@ -5388,3 +5388,167 @@ the final response reports the verified remote SHA after confirmation.
 Exact next after B2a completion/publication: **R4-S2-T1B2b - Fence input/report
 persistence and reuse saved reports**, not started. Refine atomicity/retry and
 expiry eligibility before implementation. B2/B/T1/F14/sprint/PI remain open.
+
+## <a id="r4-s2-t1b2b1"></a>R4-S2-T1B2b1 - Fence input and report transaction admission
+
+Status: done (2026-10-24). Prerequisite B2a is
+complete/published. B2b was split in PI-R4 before implementation: this session
+owns persistence admission; B2b2 owns saved-report reuse and remaining parent
+acceptance. B2b/B2/B/T1/F14/sprint/PI remain open.
+
+### Contract and implementation
+
+A matching processing token previously admitted ingest/private-input and report
+transactions after lease timeout without a replacement claimant. Both callbacks
+now require a fresh clock after the conditional item write acquires its lock,
+and another after private-input operations/flushes before returning to commit.
+Equality at timeout remains eligible; greater age refuses. Direct callers
+default to current UTC; the service passes its dynamic clock. The caller raises
+IngestRefused on refusal, rolling back the entire candidate/resume/extraction/
+input or report/binding transaction. Terminal expiry then refuses too: the
+service stops without counting success/failure or immediately replaying work.
+
+The existing separate ingest, report and terminal commits remain. A transaction
+admitted while live may survive later expiry. These are commit-admission clock
+checks under held locks, not an atomic physical commit/delivery deadline or
+cross-worker clock-skew guarantee. Optional fingerprinting retains its existing
+separate subject/erasure checks; earlier ingest/fingerprint commits may survive
+report/terminal refusal. Later authorized process calls recover through
+the existing timeout, retained-input TTL and erasure rules; no automatic extra
+provider retry is added.
+
+Input refusal preserves the prior raw/private input and original created_at;
+report refusal preserves an existing report binding and earlier ingest.
+Preserve subject -> item -> private-input lock order, generation/erasure
+barriers, tenant checks, present consent, public JSON/advisory behavior, per-call
+cap and cancellation. No schema/migration, heartbeat, identity/scoring or
+frontend change. Saved-report reuse is deliberately pending B2b2; duplicate
+persisted reports and provider cost remain possible after a live report save
+and later terminal refusal.
+
+Acceptance maps to initial ingest, resume-bound retry and report-save durable
+rows: live/equality/expired admission, actual competing SQLite/PostgreSQL locks,
+and expiry after private-input writes/reads/flushes must roll back all changes
+in that transaction. Service tests cover extraction/provider expiry, zero
+counters, stop and later recovery. Migrated two-process HTTP/restart, actual
+screening Chrome, focused/full pytest, static and separate self-reviews are
+required. Existing populated input/report migration roundtrips remain in the
+selected SQL suites; no new migration needs an additional roundtrip.
+
+### Reproduction and implementation self-review
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b1.py
+<tag> <Python args>`; omitted args run `-m pytest -q --tb=short`. It clears
+inherited DEE settings/keys, uses missing config and null/loopback providers;
+app/browser harnesses use migrated scratch storage and synthetic providers.
+Logs use `.pytest_cache/r4-s2-t1b2b1-<tag>.txt`. Ignored runners, hashes and
+synthetic artifacts remain local. Baseline: 730 tracked files, captured after
+the pre-implementation PI split; working tree was clean before that split.
+
+Pre-fix runner `red -m pytest -q --tb=short
+tests/test_screening_erasure_concurrency.py -k persistence`: **9 failed,
+6 passed, 15 skipped, 65 deselected, 1 warning, 36.97s**, exit 1. Each failure
+is an expired transaction committing rather than refusing; live/equality
+examples pass. Runner `red-service -m pytest -q --tb=short
+tests/test_screening_service.py -k expired_persistence`: **2 failed, 2 skipped,
+40 deselected, 16.47s**, exit 1. Input expiry still called the evaluator;
+report expiry retained a report. Import/fixture failures are not reproduction.
+
+Initial green runner `green -m pytest -q --tb=short
+tests/test_screening_erasure_concurrency.py tests/test_screening_service.py
+-k 'persistence or expired_provider'`: **18 passed, 18 skipped, 103 deselected,
+1 warning, 21.47s**, exit 0. Implementation self-review then strengthened the
+report cases to start with an existing bound report, so snapshots prove its
+preservation on refusal, and clarified HTTP check labels. Final checks below
+own that reviewed code state. Report-input direct-store fixtures pin their
+historical clock; service tests still use the service's clock.
+
+Implementation self-review against `e9a7f16` plus screening store/service,
+existing erasure-concurrency/service/report-input tests, the screening smoke
+and PI contract checked every criterion against saved rows, original TTL,
+counts and recovery. All callback callers propagate refusal to rollback;
+fresh clocks follow the potentially blocking conditional item write and final
+private-input operations. Rechecked existing erasure lock order, report/tenant
+binding predicates, commit before terminal acknowledgment, generation guard,
+cancel/cap behavior and opt-in smoke gate release in finally. No blocking
+implementation finding remains. This is self-review, not independent review.
+
+### Final validation
+
+All required gates completed on 2026-10-24. The 642 reviewed Python/JS/HTML/CSS
+hashes match the validated code/test/harness state. Later changes are prose only.
+
+| Gate | Actual command/result |
+|---|---|
+| Broader focused selection | Runner `focused -m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_report_input.py tests/test_screening_refusal_retention.py tests/test_api_route_extraction.py`: **213 passed, 115 skipped, 3 warnings, 197.72s**, exit 0; collected before final report-fixture strengthening/HTTP labels; final selection/full/PG below cover the final state |
+| Final focused expiry regressions | Runner `focused-final -m pytest -q --tb=short tests/test_screening_erasure_concurrency.py tests/test_screening_service.py -k 'persistence or expired_provider'`: **18 passed, 18 skipped, 103 deselected, 1 warning, 27.20s**, exit 0, on the reviewed final code/test snapshot |
+| Two-process SQLite persistence / HTTP / graceful restart | Runner `http scripts/smoke_r4_s1_t3d.py --persistence`: **53/53** plus cookie/CSRF HTTP contract **31/31**, exit 0; two app processes, expired ingest subject absent, expired report absent with earlier subject retained, zero outcome counts, pending queue without public result links, later recovery and exact queue/summary across graceful restart; also retains prior scheduling/terminal/tenant/advisory checks |
+| Actual screening Chrome | Runner `browser-retry scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0, **35.10s**; intake/queue/feedback/deletion, second intake, reload, injected read failure/recovery, no console exceptions. Initial identical runner `browser` was **23/24**, exit 1, **53.78s**: injected read-error text was not observed within its wait; recovery and other checks passed. Unchanged code passed the rerun; the cause of that intermittent browser observation remains unproven |
+| PostgreSQL-configured selection | Owned `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b1_postgres.py` creates a disposable cluster and invokes `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py`: **285 passed, 9 skipped, 3 warnings, 421.91s**, exit 0 |
+| Two-process PostgreSQL persistence / HTTP / graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --persistence`: **53/53** plus cookie/CSRF HTTP contract **31/31**, exit 0; both app processes share actual PG storage and repeat expiry rollback, exact response/counts, later recovery, tenant/advisory and saved queue/summary restart assertions |
+| Full pytest | Runner `full` (project `-m pytest -q --tb=short`): **3585 passed, 549 skipped, 127 warnings, 1036.11s**, exit 0 |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `node --check frontend/support.js`, `git diff --check` pass |
+
+Fakes and deterministic expiry gates prove mechanics, not live-provider
+behavior, empirical quality, measured latency or cost reduction. HTTP simulation
+and Chrome are separate; Chrome still requires CDN internet. SQLite and skips
+are not PostgreSQL evidence. No deployment, runtime/dependency alignment or CI
+claim. CPython **3.13.11** and existing dependencies remain in use. Warnings are
+the existing Starlette TestClient deprecation and SQLAlchemy/Alembic expression
+index reflection limits; skips do not prove omitted cases.
+
+The PG-configured selection includes backend-neutral and SQLite-only fixtures;
+285 is not a PG-only count. Each PostgreSQL lock-wait case observes the actual
+blocking backend PID before advancing the clock and releasing the competing
+connection. Existing populated input/report migration roundtrips run in the
+selection. PostgreSQL **18.6**, **READ COMMITTED / Asia/Calcutta**; local logs
+use `.pytest_cache/r4-s2-t1b2b1-pg-<tag>.txt`. Owned cluster stopped with exit 0,
+recorded in `.pytest_cache/r4-s2-t1b2b1-pg-runtime.json`; completed HTTP/Chrome
+and pytest processes stopped too. All owned validation processes have stopped.
+Local distribution/runner metadata are not portable setup guarantees.
+
+### Completion review and publication
+
+All B2b1 acceptance/validation gates are complete and no implementation-review
+blocker remains. Completion records fold the bounded contract/evidence here,
+update PI/product status, the short handoff and roadmap. B2b/B2/B/T1/F14/sprint/
+PI remain open for saved-report reuse and remaining mapped work. Working DB and
+unrelated tracked files match baseline; demo remains untouched. No code change
+follows final validation. A distinct final self-review of the exact staged
+scope and authorized commit/push/remote verification follow this record.
+
+A distinct final self-review was performed after the completed checks and
+completion record, against `e9a7f16` plus the exact twelve-file staged scope:
+screening store/service, the screening smoke, existing erasure-concurrency/
+service/report-input tests, FEATURE_STATUS/SCREENING/PROGRESS/ROADMAP, PI-R4
+and this evidence file. Specification review maps each B2b1 criterion to durable
+rollback, live/equality/expiry, real lock waits, prior binding/original TTL,
+zero counters/stop/recovery and SQL/HTTP/Chrome/full evidence. Only B2b1 closes;
+saved-report reuse and all parent statuses remain open. The initial Chrome
+observation miss is retained: its injected client-side GET response is outside
+the modified ingest/report write path, and the unchanged rerun covers the
+required rendered failure/recovery journey. No cause or UI fix is claimed.
+
+Correctness/maintenance review rechecks all callback callers' rollback behavior,
+fresh clocks after potentially blocking item writes and private operations,
+unchanged subject/item/input lock order and generation guard, tenant/report
+predicates, no TTL refresh or swept capability restoration, separate commits,
+terminal acknowledgments, cap/cancellation and finally-released smoke gates.
+Earlier commits, duplicate report/provider cost, optional fingerprint checks
+and the commit-admission limitation remain explicit. No blocking B2b1 finding
+remains. This later completion review is self-review, not independent review.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s2_t1b2b1.py --staged`
+verifies **718** unrelated tracked files/working DB against the 730-file
+baseline, **642** code hashes matching the reviewed/tested snapshot, **6** added
+local links/anchors and exactly **12** scoped staged files. Staged whitespace
+checks pass; secrets, working data and ignored artifacts are excluded. Later
+edits are completion prose only, requiring documentation/preservation checks
+rather than another application rerun. Authorized scoped commit/push and remote
+verification follow this final self-review. No B2b2 implementation starts here.
+
+### Handoff
+
+Exact next after B2b1: **R4-S2-T1B2b2 - Reuse saved reports on authorized
+recovery**. Refine saved-result metadata/authorization/atomicity/retry before
+implementation; B2b/B2/B/T1/F14/sprint/PI remain open. No B2b2 work this session.

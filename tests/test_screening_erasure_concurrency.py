@@ -6,14 +6,17 @@ from threading import Event
 from time import monotonic
 
 import pytest
-from sqlalchemy import event, text
+from sqlalchemy import event, select, text, update
 from sqlalchemy.exc import IntegrityError
 
+from app.candidates.models import CandidateRow, ExtractionRow, ResumeRow
 from app.candidates.store import CandidateStore
 from app.core.db import make_session_factory
 from app.ledger.consent import as_utc
 from app.ledger.store import LedgerStore
+from app.reports.models import ReportRow
 from app.reports.store import SqlReportStore
+from app.screening.ingest import IngestRefused
 from app.screening.models import BatchItemRow, ScreeningInputRow
 from app.screening.schema import ItemSignals
 from app.screening.store import CompletionOutcome, ScreeningStore
@@ -30,6 +33,134 @@ def terminal_clock(monkeypatch):
     clock = [NOW]
     monkeypatch.setattr("app.screening.store._utcnow", lambda: clock[0], raising=False)
     return clock
+
+
+def persistence_case(factory, operation):
+    org = LedgerStore(factory).create_organization("Synthetic persistence").id
+    store = ScreeningStore(factory)
+    batch = store.create_batch(org, name="Synthetic", domain="genai",
+        created_by_org_user_id=None, texts=["private resume"])
+    item = store.claim(org, batch, limit=1, now=NOW, timeout_seconds=900)[0]
+    if operation != "input":
+        persist_input_or_report(factory, org, item, "input")
+        if operation == "report":
+            persist_input_or_report(factory, org, item, "report")
+        if operation == "retry":
+            item = store.claim(org, batch, limit=1, now=NOW + timedelta(seconds=901),
+                               timeout_seconds=900)[0]
+    return org, item
+
+
+def persist_input_or_report(factory, org, item, operation):
+    store = ScreeningStore(factory)
+    def bind(session, value):
+        admitted = (store.bind_input_report(session, org, item, value) if operation == "report"
+                    else store.retain_ingested_input(session, org, item, value))
+        if not admitted:
+            raise IngestRefused("input_unavailable")
+    if operation == "report":
+        with factory() as session:
+            cid = session.scalar(select(ResumeRow.candidate_id).join(
+                ScreeningInputRow, ScreeningInputRow.resume_id == ResumeRow.id).where(
+                    ScreeningInputRow.id == item.id))
+        SqlReportStore(factory).save(_report(candidate_id=cid), org_id=org, before_commit=bind)
+    else:
+        CandidateStore(factory).ingest(extraction(email="persistence@example.com"), item.raw_text,
+            org_id=org, expected_resume_id=item.expected_resume_id, before_commit=bind)
+
+
+def persistence_snapshot(factory):
+    with factory() as session:
+        return {model.__tablename__: session.execute(select(model.__table__).order_by(model.id)).all()
+                for model in (CandidateRow, ResumeRow, ExtractionRow, ReportRow,
+                              BatchItemRow, ScreeningInputRow)}
+
+
+@pytest.mark.parametrize("operation", ["input", "retry", "report"])
+@pytest.mark.parametrize("age", [899, 900, 900.000001])
+def test_persistence_requires_unexpired_lease(database, terminal_clock, operation, age):
+    _, factory = database
+    org, item = persistence_case(factory, operation)
+    before = persistence_snapshot(factory)
+    terminal_clock[0] = item.claimed_at + timedelta(seconds=age)
+    if age > 900:
+        with pytest.raises(IngestRefused, match="input_unavailable"):
+            persist_input_or_report(factory, org, item, operation)
+        assert persistence_snapshot(factory) == before
+    else:
+        persist_input_or_report(factory, org, item, operation)
+        with factory() as session:
+            ref = session.get(ScreeningInputRow, item.id)
+            assert ref.created_at == session.get(BatchItemRow, item.id).created_at
+            assert (ref.report_id is not None) == (operation == "report")
+            assert session.get(BatchItemRow, item.id).raw_text == ""
+
+
+@pytest.mark.parametrize("operation", ["input", "retry", "report"])
+def test_persistence_expiry_after_private_write_rolls_back(database, terminal_clock, operation):
+    engine, factory = database
+    org, item = persistence_case(factory, operation)
+    before = persistence_snapshot(factory)
+    terminal_clock[0] = item.claimed_at
+    writer = make_session_factory(engine)
+    advanced = []
+    def advance():
+        advanced.append(True)
+        terminal_clock[0] = item.claimed_at + timedelta(seconds=901)
+    def after_flush(session, _):
+        if any(isinstance(row, ScreeningInputRow) for row in session.new):
+            advance()
+    def after_execute(state):
+        result = state.invoke_statement()
+        if state.bind_mapper is not None and state.bind_mapper.class_ is ScreeningInputRow:
+            if (operation == "retry" and state.is_select) or (operation == "report" and state.is_update):
+                advance()
+        return result
+    event.listen(writer, "after_flush", after_flush)
+    event.listen(writer, "do_orm_execute", after_execute, retval=True)
+    with pytest.raises(IngestRefused, match="input_unavailable"):
+        persist_input_or_report(writer, org, item, operation)
+    assert advanced, "test must expire after the private-input operation"
+    assert persistence_snapshot(factory) == before
+
+
+@pytest.mark.parametrize("operation", ["input", "retry", "report"])
+def test_persistence_waiting_for_lock_uses_fresh_clock(database, terminal_clock, operation):
+    engine, factory = database
+    org, item = persistence_case(factory, operation)
+    before = persistence_snapshot(factory)
+    terminal_clock[0] = item.claimed_at
+    writer = make_session_factory(engine)
+    ready, pids = Event(), {}
+    def started(session, transaction, connection):
+        if engine.dialect.name == "postgresql":
+            pids["writer"] = connection.scalar(text("SELECT pg_backend_pid()"))
+        ready.set()
+    event.listen(writer, "after_begin", started)
+    with factory() as blocker, ThreadPoolExecutor(max_workers=1) as executor:
+        blocker.execute(update(BatchItemRow).where(BatchItemRow.id == item.id)
+                        .values(claimed_at=BatchItemRow.claimed_at))
+        if engine.dialect.name == "postgresql":
+            pids["blocker"] = blocker.scalar(text("SELECT pg_backend_pid()"))
+        pending = executor.submit(persist_input_or_report, writer, org, item, operation)
+        try:
+            assert ready.wait(20)
+            if engine.dialect.name == "postgresql":
+                deadline = monotonic() + 10
+                with engine.connect() as observer:
+                    while monotonic() < deadline:
+                        if pids["blocker"] in observer.scalar(text("SELECT pg_blocking_pids(:pid)"),
+                                                              {"pid": pids["writer"]}):
+                            break
+                    else:
+                        pytest.fail("persistence did not wait for the competing connection")
+            assert not pending.done()
+            terminal_clock[0] = item.claimed_at + timedelta(seconds=901)
+        finally:
+            blocker.rollback()
+        with pytest.raises(IngestRefused, match="input_unavailable"):
+            pending.result(timeout=20)
+    assert persistence_snapshot(factory) == before
 
 
 @pytest.mark.parametrize("operation", ["done", "fail"])
@@ -117,7 +248,6 @@ def test_terminal_waiting_for_lock_uses_fresh_clock(database, terminal_clock, op
         ready.set()
 
     event.listen(writer, "after_begin", started, once=True)
-    from sqlalchemy import update
     with factory() as blocker, ThreadPoolExecutor(max_workers=1) as executor:
         blocker.execute(update(BatchItemRow).where(BatchItemRow.id == item.id)
                         .values(claimed_at=BatchItemRow.claimed_at))

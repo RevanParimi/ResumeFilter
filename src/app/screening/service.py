@@ -227,11 +227,11 @@ class ScreeningService:
                 break
             item = claimed[0]
             def retain_input(session, outcome):
-                if not self._store.retain_ingested_input(session, org_id, item, outcome):
+                if not self._store.retain_ingested_input(session, org_id, item, outcome, now=self._now):
                     raise IngestRefused("input_unavailable")
 
             def bind_report(session, report):
-                if not self._store.bind_input_report(session, org_id, item, report):
+                if not self._store.bind_input_report(session, org_id, item, report, now=self._now):
                     raise IngestRefused("input_unavailable")
 
             def check_input(session):

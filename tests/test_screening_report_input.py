@@ -23,6 +23,11 @@ from tests.test_screening_batches_api import _client, _key, _register
 from tests.test_screening_durable_input import Interrupted, NOW, ingest_bound, prepare
 
 
+@pytest.fixture(autouse=True)
+def persistence_clock(monkeypatch):
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: NOW)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["before_completion", "after_rollback"])
 async def test_report_erasure_survives_interrupted_cleanup(services, monkeypatch, phase):
