@@ -5568,3 +5568,167 @@ the final response reports the verified remote SHA after confirmation.
 Exact next after B2b1: **R4-S2-T1B2b2 - Reuse saved reports on authorized
 recovery**. Refine saved-result metadata/authorization/atomicity/retry before
 implementation; B2b/B2/B/T1/F14/sprint/PI remain open. No B2b2 work this session.
+
+## <a id="r4-s2-t1b2b2a"></a>R4-S2-T1B2b2a - Preserve original private ingest facts
+
+Status: done (2026-10-24). Prerequisite B2b1
+complete/published. B2b2 was split in PI-R4 before implementation: this session
+owns the private prerequisite; B2b2b owns authorized report reuse together with
+binding protection. B2b2/B2b/B2/B/T1/F14/sprint/PI remain open.
+
+### Contract and implementation
+
+A bound report lacks the first ingest's matched_existing/matched_on/
+duplicate_resume facts; reconstructing them from a retry changes history.
+New private retry references now store precisely those three typed outcome
+scalars plus version 1 in nullable JSON ingest_facts. Creation shares the
+candidate/resume/extraction/input transaction and existing expiry/lease/tenant/
+generation checks. Bound retries and report saves preserve facts and original
+created_at. Historical NULL facts remain unknown, including after retry; no
+inferred backfill. No text, contact hashes, identifiers, profile or report copy
+is added. Public batch/result/queue/summary schemas and ordinary retry behavior
+remain unchanged.
+
+Facts live only with screening_item_inputs: completion, batch/subject/report
+erasure and TTL sweep remove the same private row. Existing erasure lock order,
+consent, advisory/human review, identity and scorer semantics remain. Migration
+0030 adds only this nullable JSON column; downgrade drops only these new facts.
+Re-upgrade preserves existing links/timestamps/data but leaves facts unknown.
+Working storage is not migrated. Populated SQLite/PG tests preserve old report/
+resume/input links, raw copies and erased absence across up/down/up; a genuine
+post-upgrade ingest records new facts. The older input-table roundtrip now
+unwinds/reapplies 0030 around its existing 0024/0025 roundtrip.
+
+Twenty scratch smoke/browser head assertions advance to 0030; nineteen files
+have only revision literal/label changes. The existing screening persistence
+journey also captures synthetic private facts/timestamps immediately before
+terminal completion, compares original/replacement checkpoints across app
+processes and proves they do not enter public reads. It still proves current
+report duplication is possible: reuse/protection remain B2b2b. Protecting a
+binding alone would break current retries, so that protection ships with the
+consumer in the next child. No exactly-once provider/result or parent closure
+claim is made here.
+
+### Reproduction and implementation self-review
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b2a.py
+<tag> <Python args>`; omitted args run `-m pytest -q --tb=short`. It clears
+inherited DEE config/keys, uses missing config and null/loopback providers;
+HTTP/Chrome harnesses use isolated migrated scratch storage and fake effects.
+Logs use `.pytest_cache/r4-s2-t1b2b2a-<tag>.txt`. Baseline: 730 tracked files,
+captured after the PI split; tree was clean before the split. New migration is
+the sole new tracked artifact. Local runners, hashes and synthetic captures stay
+ignored.
+
+Pre-fix runner `red -m pytest -q --tb=short
+tests/test_screening_durable_input.py -k 'ingest_facts or ordinary_retry'`:
+**4 failed, 3 skipped, 45 deselected, 1 warning, 30.11s**, exit 1. Failures
+assert missing persisted facts for new/preexisting identities and HTTP ordinary
+retry; no import/fixture errors count as reproduction. Initial `green -m pytest
+-q --tb=short tests/test_screening_durable_input.py -k 'ingest_facts or
+ordinary_retry or rollback'`: **7 passed, 4 skipped, 41 deselected, 1 warning,
+11.38s**, exit 0, before final migration/lifetime assertions.
+
+Implementation self-review against `63c73b4` plus models/store, migration 0030,
+existing durable-input/report-input tests and scratch harness changes checks
+each criterion against persisted facts, original TTL, retry/unknown behavior,
+rollback/erasure/sweep, public non-disclosure and populated migrations. The
+store writes only the private reference's initial insert; all existing guards,
+flush/rollback and lock ordering remain. Migration has no default/backfill/FK
+change. Head-only harness edits assert the actual new scratch head; their
+individual journeys are not all claimed run. Report reuse and binding
+protection remain explicitly pending. No blocking application finding remains.
+This is self-review, not independent review.
+
+Validation found one harness blocker: initial `http scripts/smoke_r4_s1_t3d.py
+--persistence` passed the 31-check HTTP contract and early checkpoint assertions
+but stopped on PermissionError reading a just-published input-expiry gate file
+on Windows. The reader now polls absent/sharing-denied files within the existing
+15-second deadline; finally still releases the gate and stops owned servers.
+This is not an application data failure. HTTP rerun and script compilation
+validate the fix. The final 643-code-file snapshot includes it. Application/
+pytest sources were unchanged during these runs; pytest does not import this
+standalone smoke script. The full run remains on the final application/tests;
+the changed harness is rerun through its affected HTTP checks before closure.
+
+### Final validation
+
+All required gates completed on 2026-10-24 on the reviewed final application,
+migration, test and harness state. Later edits are completion prose only.
+
+| Gate | Actual command/result |
+|---|---|
+| Focused screening/migrations | Runner `focused -m pytest -q --tb=short tests/test_screening_durable_input.py tests/test_screening_report_input.py tests/test_screening_erasure_concurrency.py tests/test_screening_service.py tests/test_screening_batches_api.py tests/test_migrations.py`: **154 passed, 99 skipped, 18 warnings, 207.35s**, exit 0; final application/migration/test state |
+| Two-process SQLite checkpoint / HTTP / graceful restart | Runner `http-final scripts/smoke_r4_s1_t3d.py --persistence`: **61/61** plus cookie/CSRF HTTP contract **31/31**, exit 0; original facts/TTL survive stolen/expired/report-refused attempts and cross-process recovery, private checkpoints absent from public reads, prior expiry/count/tenant/advisory checks and exact saved queue/summary survive restart |
+| PostgreSQL-configured selection | Owned `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2b2a_postgres.py` invokes `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py tests/test_migrations.py`: **307 passed, 9 skipped, 18 warnings, 515.78s**, exit 0 |
+| Two-process PostgreSQL checkpoint / HTTP / graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --persistence`: **61/61** plus cookie/CSRF HTTP contract **31/31**, exit 0; both actual PG app processes repeat original facts/TTL, public non-disclosure, expiry/refusal/counts, tenant/advisory and restart checks |
+| Full pytest | Runner `full` (project `-m pytest -q --tb=short`): **3589 passed, 553 skipped, 127 warnings, 1484.19s**, exit 0 |
+| Screening Chrome | Runner `browser scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0, **55.81s**; rendered intake/queue/report/outcomes/deletion, second intake, reload and injected read-error recovery, no console exceptions |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `node --check frontend/support.js`; project `-m compileall -q src/app/screening alembic/versions/0030_screening_ingest_facts.py scripts` and final smoke-script compilation; `git diff --check` pass |
+
+Fakes/synthetic checkpoints prove mechanics, not live providers, measured cost,
+latency or assessment quality. HTTP simulation and Chrome are separate; Chrome
+still needs CDN internet. No deployment, working-store migration, dependency/
+runtime alignment or CI claim. Missing/skipped cases are not evidence.
+
+PG-configured tests include backend-neutral/SQLite fixtures, so 307 is not a
+PG-only count. The actual PG fixtures exercise competing connections and
+populated 0030 up/down/up, alongside existing input/report/erasure races.
+PostgreSQL **18.6**, **READ COMMITTED / Asia/Calcutta**; owned disposable runner
+logs use `.pytest_cache/r4-s2-t1b2b2a-pg-<tag>.txt`. Local distribution/runtime
+metadata are not portable setup guarantees. Owned cluster stopped with exit 0,
+recorded in `.pytest_cache/r4-s2-t1b2b2a-pg-runtime.json`; HTTP/Chrome/pytest
+processes stopped too. All owned validation processes are stopped. Existing
+CPython **3.13.11** dependencies remain; warnings are Starlette TestClient
+deprecation and SQLAlchemy/Alembic expression-index reflection limitations.
+
+### Completion review and publication
+
+All B2b2a acceptance and validation gates are complete; the Windows gate-read
+harness blocker is fixed and the affected HTTP/compilation checks pass.
+Completion records fold the contract/evidence here and update PI/product
+status, the handoff and roadmap. Working DB and unrelated tracked files match
+baseline; demo was not restarted and no working-store migration occurred.
+Only B2b2a closes. B2b2/B2b/B2/B/T1/F14/sprint/PI remain open. The distinct
+final self-review of the exact staged scope and authorized publication follow
+this completion record.
+
+A distinct final self-review followed the completed checks and completion
+record, against `63c73b4` plus the exact **31-file staged scope**: screening
+models/store, migration 0030, durable-input/report-input tests, twenty scratch
+harnesses, and FEATURE_STATUS/SCREENING/PROGRESS/ROADMAP/PI-R4/this evidence.
+Specification review maps each criterion to original-versus-retry/unknown
+facts, rollback and deletion, private API shape, original TTL, populated
+SQLite/PG up/down/up, cross-process checkpoint observations, HTTP/restart,
+Chrome and full pytest. Only this prerequisite closes; all parent statuses
+and pending report-reuse/protection behavior remain explicit.
+
+Correctness/maintenance review rechecks that only the initial private-reference
+insert writes facts, validated outcomes supply the closed scalars, retries
+cannot infer/replace them or refresh TTL, and erasure/sweep/completion remove
+the same row. Lease/expiry/tenant/generation checks, lock order, public contracts,
+consent/advisory/scoring and ordinary retries are unchanged. Migration changes
+only the nullable column, has no default/backfill and preserves existing data;
+downgrade's metadata loss is explicit. Nineteen harness files were verified
+against exact revision-literal/label substitution; only screening adds logic.
+Its synthetic checkpoint writes and bounded gate reads retain timeout/finally
+shutdown behavior. The initial Windows read failure, fix and rerun are recorded.
+No blocking B2b2a finding remains. This distinct completion review is self-review,
+not independent review.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s2_t1b2b2a.py --staged`
+confirms **700** unrelated tracked files/working DB preserved against the
+730-file baseline, **643** code hashes matching the final reviewed/tested
+snapshot, **6** added local links/anchors and exactly **31** staged files.
+Staged whitespace checks pass. The new migration is the sole added tracked
+artifact; secrets, working data and ignored artifacts are excluded. No
+application/migration/test/harness change follows final validation; remaining
+publication edits are prose only. Authorized scoped commit/push and remote
+verification follow. No next-child implementation starts here.
+
+### Handoff
+
+Exact next after B2b2a: **R4-S2-T1B2b2b - Recover the authorized report
+checkpoint**. Refine its atomic recovery/first-report protection, historical
+unknown/invalid facts, current authorization/erasure/TTL and concurrency policy
+before implementing. All parents remain open; no B2b2b implementation here.

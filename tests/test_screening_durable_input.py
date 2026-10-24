@@ -50,10 +50,12 @@ async def test_ingested_input_erases_without_worker_cleanup(services, parent, in
     with factory() as session:
         resume = session.scalars(select(ResumeRow)).one()
         rid, cid = resume.id, resume.candidate_id
+        assert session.scalars(select(ScreeningInputRow)).one().ingest_facts["version"] == 1
     assert getattr(services.candidates, f"delete_{parent}")(cid if parent == "candidate" else rid)
     with factory() as session:
         row = session.scalars(select(BatchItemRow)).one()
         assert row.raw_text == row.text_sha256 == ""
+        assert list(session.scalars(select(ScreeningInputRow))) == []
         if interrupted:
             row.claimed_at -= timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
             session.commit()
@@ -87,6 +89,13 @@ def test_ordinary_retry_reuses_exact_resume_without_contact_identity(services, m
         with services.candidates._session_factory() as session:
             original = session.scalars(select(ResumeRow)).one()
             rid, cid = original.id, original.candidate_id
+            ref = session.scalars(select(ScreeningInputRow)).one()
+            assert getattr(ref, "ingest_facts", None) == {
+                "version": 1, "matched_existing": False, "matched_on": None,
+                "duplicate_resume": False,
+            }
+        for suffix in ("", "/queue", "/summary"):
+            assert "ingest_facts" not in http.get(path + suffix, headers=headers).text
         assert http.post(path + "/retry", headers={"X-Org-Key": other_key}).status_code == 404
         assert http.post(path + "/retry", headers=headers).json()["requeued"] == 1
         ran = http.post(path + "/process", headers=headers)
@@ -127,6 +136,45 @@ def ingest_bound(factory, org, item):
         before_commit=lambda s, o: bind(store, s, org, item, o))
 
 
+@pytest.mark.parametrize("existing", [False, True])
+def test_original_ingest_facts_survive_bound_retry(database, existing):
+    _, factory = database
+    org, batch, item = prepare(factory)
+    if existing:
+        CandidateStore(factory).ingest(extraction(email="bound@example.com"), item.raw_text, org_id=org)
+    original = ingest_bound(factory, org, item)
+    facts = {"version": 1, "matched_existing": original.matched_existing,
+             "matched_on": original.matched_on, "duplicate_resume": original.duplicate_resume}
+    with factory() as session:
+        ref = session.get(ScreeningInputRow, item.id)
+        assert getattr(ref, "ingest_facts", None) == facts
+        created_at = ref.created_at
+    retry = ScreeningStore(factory).claim(org, batch, limit=1,
+        now=NOW + timedelta(seconds=901), timeout_seconds=900)[0]
+    retried = ingest_bound(factory, org, retry)
+    assert retried.matched_existing and retried.duplicate_resume
+    with factory() as session:
+        ref = session.get(ScreeningInputRow, item.id)
+        assert ref.ingest_facts == facts
+        assert ref.created_at == created_at
+
+
+def test_unknown_historical_ingest_facts_are_not_inferred_on_retry(database):
+    _, factory = database
+    org, batch, item = prepare(factory)
+    ingest_bound(factory, org, item)
+    with factory() as session:
+        ref = session.get(ScreeningInputRow, item.id)
+        assert getattr(ref, "ingest_facts", None) is not None
+        ref.ingest_facts = None
+        session.commit()
+    retry = ScreeningStore(factory).claim(org, batch, limit=1,
+        now=NOW + timedelta(seconds=901), timeout_seconds=900)[0]
+    ingest_bound(factory, org, retry)
+    with factory() as session:
+        assert session.get(ScreeningInputRow, item.id).ingest_facts is None
+
+
 def test_ingest_and_input_binding_rollback_together(database):
     engine, factory = database
     org, _, item = prepare(factory)
@@ -145,6 +193,7 @@ def test_ingest_and_input_binding_rollback_together(database):
     saved = ingest_bound(factory, org, item)
     with factory() as session:
         assert session.get(ScreeningInputRow, item.id).resume_id == saved.resume_id
+        assert session.get(ScreeningInputRow, item.id).ingest_facts["version"] == 1
         assert session.get(BatchItemRow, item.id).raw_text == ""
 
 
@@ -301,7 +350,7 @@ def test_retention_sweep_removes_retry_reference_without_removing_resume(service
     preview = run_sweep(factory, settings, now=NOW, dry_run=True)
     assert next(c.affected for c in preview.by_class if c.data_class == "batch_item_text") == 1
     with factory() as session:
-        assert session.get(ScreeningInputRow, item.id) is not None
+        assert session.get(ScreeningInputRow, item.id).ingest_facts["version"] == 1
     applied = run_sweep(factory, settings, now=NOW, dry_run=False)
     assert next(c.affected for c in applied.by_class if c.data_class == "batch_item_text") == 1
     assert store.requeue_failed(org, batch) == (0, 1)
@@ -334,8 +383,11 @@ def test_populated_migration_preserves_live_input_and_cannot_restore_erased_inpu
                                   "alembic/versions/0024_screening_retry_input.py"))
     report_migration = runpy.run_path(str(Path(__file__).resolve().parents[1] /
                                   "alembic/versions/0025_screening_input_report.py"))
+    facts_migration = runpy.run_path(str(Path(__file__).resolve().parents[1] /
+                                  "alembic/versions/0030_screening_ingest_facts.py"))
     with engine.begin() as connection:
         with Operations.context(MigrationContext.configure(connection)):
+            facts_migration["downgrade"]()
             report_migration["downgrade"]()
             migration["downgrade"]()
         rows = connection.execute(text("SELECT id, raw_text, text_sha256 FROM batch_items")).all()
@@ -346,10 +398,72 @@ def test_populated_migration_preserves_live_input_and_cannot_restore_erased_inpu
         with Operations.context(MigrationContext.configure(connection)):
             migration["upgrade"]()
             report_migration["upgrade"]()
+            facts_migration["upgrade"]()
     with factory() as session:
         assert session.get(ResumeRow, kept.resume_id).raw_text == item.raw_text
         assert list(session.scalars(select(ScreeningInputRow))) == []  # No guessed backfill.
         assert session.get(BatchItemRow, erased_item.id).raw_text == ""
+
+
+def test_populated_ingest_facts_migration_roundtrip_preserves_links_and_unknowns(database):
+    import runpy
+    from pathlib import Path
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+    from app.reports.store import SqlReportStore
+    from tests.test_report_store import _report
+    engine, factory = database
+    org, batch, item = prepare(factory)
+    saved = ingest_bound(factory, org, item)
+    store = ScreeningStore(factory)
+    report = _report(candidate_id=saved.candidate_id)
+    def bind_report(session, value):
+        assert store.bind_input_report(session, org, item, value)
+    SqlReportStore(factory).save(report, org_id=org, before_commit=bind_report)
+    store.add_items(org, batch, texts=["Erased synthetic input"])
+    erased_item = store.claim(org, batch, limit=1, now=NOW, timeout_seconds=900)[0]
+    erased = ingest_bound(factory, org, erased_item)
+    assert CandidateStore(factory).delete_resume(erased.resume_id)
+    store.add_items(org, batch, texts=["Untouched pending input"])
+    migration = runpy.run_path(str(Path(__file__).resolve().parents[1] /
+                                  "alembic/versions/0030_screening_ingest_facts.py"))
+    with engine.begin() as connection:
+        before = connection.execute(text(
+            "SELECT id, resume_id, report_id, created_at FROM screening_item_inputs ORDER BY id")).all()
+        raw_before = connection.execute(text(
+            "SELECT id, raw_text, text_sha256 FROM batch_items ORDER BY id")).all()
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["downgrade"]()
+            migration["upgrade"]()
+        assert connection.execute(text(
+            "SELECT id, resume_id, report_id, created_at FROM screening_item_inputs ORDER BY id")).all() == before
+        assert connection.execute(text("SELECT ingest_facts FROM screening_item_inputs")).scalar_one() is None
+    # A genuine post-upgrade first ingest records facts; the old reference stays unknown.
+    new_item = store.claim(org, batch, limit=1, now=NOW, timeout_seconds=900)[0]
+    ingest_bound(factory, org, new_item)
+    with factory() as session:
+        assert session.get(ScreeningInputRow, item.id).ingest_facts is None
+        assert session.get(ScreeningInputRow, new_item.id).ingest_facts["version"] == 1
+    with engine.begin() as connection:
+        with Operations.context(MigrationContext.configure(connection)):
+            migration["downgrade"]()
+            migration["upgrade"]()
+        assert all(value is None for value in connection.scalars(text(
+            "SELECT ingest_facts FROM screening_item_inputs")))
+        assert connection.execute(text(
+            "SELECT id, resume_id, report_id, created_at FROM screening_item_inputs WHERE id = :id"),
+            {"id": item.id}).one() == before[0]
+        assert connection.execute(text(
+            "SELECT raw_text, text_sha256 FROM batch_items WHERE id = :id"),
+            {"id": erased_item.id}).one() == ("", "")
+        # The original private/report links and erased row stay exactly as they were;
+        # only the intentionally processed pending item's raw copy has changed.
+        assert all(connection.execute(text(
+            "SELECT id, raw_text, text_sha256 FROM batch_items WHERE id = :id"),
+            {"id": row.id}).one() == row for row in raw_before if row.id != new_item.id)
+    with factory() as session:
+        assert session.get(ScreeningInputRow, erased_item.id) is None
+        assert session.get(ResumeRow, saved.resume_id) is not None
 
 
 def test_retry_cannot_use_another_tenants_resume(database):

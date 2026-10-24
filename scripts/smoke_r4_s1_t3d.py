@@ -6,6 +6,7 @@ The reused UI contract is HTTP simulation, not actual browser execution.
 --outcomes adds R4-S2-T1B1's terminal refusal/erasure journey to --leases.
 --expiry adds R4-S2-T1B2a's no-reclaimer terminal expiry and recovery.
 --persistence adds R4-S2-T1B2b1's input/report expiry rollback and recovery.
+Its checkpoints also verify B2b2a's private original facts across workers.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -71,11 +72,21 @@ def create_smoke_app():
                             time.sleep(.05)
 
             def controlled_complete(item_id, **kwargs):
+                from app.screening.models import ScreeningInputRow
+                with svc._store._session_factory() as session:
+                    ref = session.get(ScreeningInputRow, item_id)
+                    checkpoint = {"ingest_facts": ref.ingest_facts if ref else None,
+                                  "input_created_at": ref.created_at.isoformat() if ref else None}
+                target = scratch / f"checkpoint-{kwargs['report_id']}.json"
+                temporary = target.with_suffix(".tmp")
+                temporary.write_text(json.dumps(checkpoint), encoding="utf-8")
+                temporary.replace(target)
                 armed = scratch / "outcome-mode"
                 if armed.exists():
                     mode = armed.read_text(encoding="utf-8")
                     if mode in {"stolen", "erased", "expired"}:
-                        gate(mode, {"candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"]})
+                        gate(mode, {"candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"],
+                                    **checkpoint})
                 return complete(item_id, **kwargs)
 
             def controlled_retain(session, org, item, outcome, **kwargs):
@@ -83,7 +94,11 @@ def create_smoke_app():
                 return retain(session, org, item, outcome, **kwargs)
 
             def controlled_bind(session, org, item, report, **kwargs):
-                gate("report-expired", {"candidate_id": report.candidate_id, "report_id": report.id})
+                from app.screening.models import ScreeningInputRow
+                ref = session.get(ScreeningInputRow, item.id)
+                gate("report-expired", {"candidate_id": report.candidate_id, "report_id": report.id,
+                    "ingest_facts": ref.ingest_facts if ref else None,
+                    "input_created_at": ref.created_at.isoformat() if ref else None})
                 return bind(session, org, item, report, **kwargs)
 
             svc._now = controlled_now
@@ -119,7 +134,7 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1B2b1 persistence expiry / two workers / graceful restart" if persistence
+    checks = Smoke("R4-S2-T1B2b2a private ingest facts / persistence expiry / two workers / restart" if persistence
                    else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
                    else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
                    else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
@@ -283,10 +298,15 @@ def run(scratch, url, pg_options):
                                     try:
                                         entered = scratch / f"outcome-entered-{mode}.json"
                                         deadline = time.monotonic() + 15
-                                        while not entered.exists():
+                                        while True:
                                             assert time.monotonic() < deadline, "worker never reached persistence gate"
-                                            time.sleep(.05)
-                                        subject = json.loads(entered.read_text(encoding="utf-8"))
+                                            try:
+                                                subject = json.loads(entered.read_text(encoding="utf-8"))
+                                                break
+                                            except (FileNotFoundError, PermissionError):
+                                                # Windows can expose a renamed gate before its
+                                                # writer releases the transient sharing lock.
+                                                time.sleep(.05)
                                         if mode == "stolen" or mode in expired_modes:
                                             (scratch / "outcome-advanced").write_text("advance", encoding="utf-8")
                                             if mode == "stolen":
@@ -328,6 +348,14 @@ def run(scratch, url, pg_options):
                                         and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1}
                                         and state["/summary"]["n_screened"] == 1)
                                 (scratch / "outcome-advanced").unlink(missing_ok=True)
+                                if mode in {"stolen", "expired", "report-expired"}:
+                                    checkpoint = json.loads((scratch / f"checkpoint-{row['report_id']}.json").read_text(encoding="utf-8"))
+                                    checks.check(f"{mode}: original private matching facts and TTL survive recovery",
+                                        checkpoint == {key: subject[key] for key in ("ingest_facts", "input_created_at")}
+                                        and checkpoint["ingest_facts"] == {"version":1, "matched_existing":False,
+                                            "matched_on":None, "duplicate_resume":False})
+                                checks.check(f"{mode}: private ingest checkpoint never enters public batch reads",
+                                    "ingest_facts" not in json.dumps(state) and "input_created_at" not in json.dumps(state))
                                 if mode == "stolen":
                                     checks.check("stale completion cannot overwrite replacement report or saved counts",
                                         row["status"] == "done" and row["report_id"] != subject["report_id"]
@@ -368,7 +396,7 @@ def run(scratch, url, pg_options):
                 and actor.get(path).status_code == 404 and actor.get(report_path).status_code == 200)
     lifecycle = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
     starts = 3 if leases else 2
-    checks.check("all migrated workers share SQL topology and shut down gracefully", sum(row["event"] == "started" and row["revision"] == "0029_candidate_login_binding" and row["one_factory"] for row in lifecycle) == starts
+    checks.check("all migrated workers share SQL topology and shut down gracefully", sum(row["event"] == "started" and row["revision"] == "0030_screening_ingest_facts" and row["one_factory"] for row in lifecycle) == starts
         and sum(row["event"] == "disposed" for row in lifecycle) == starts
         and sum(row["event"] == "stopped" and row["detached"] for row in lifecycle) == starts)
     return checks.summary()

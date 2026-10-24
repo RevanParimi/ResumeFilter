@@ -91,8 +91,8 @@ def main():
             with client(base) as alice, client(base) as bob:
                 with server() as admin:
                     with engine.connect() as connection:
-                        checks.check('real app migrated scratch schema to 0029',
-                            connection.scalar(text('SELECT version_num FROM alembic_version')) == '0029_candidate_login_binding')
+                        checks.check('real app migrated scratch schema to 0030',
+                            connection.scalar(text('SELECT version_num FROM alembic_version')) == '0030_screening_ingest_facts')
                     aid = require(admin.post('/candidates', json={'resume_text':
                         'Synthetic Alice\nEmail: alice@example.in\nPhone: 9876543210\nSKILLS\nPython\n'}))['candidate_id']
                     acode = issue(alice, 'alice@example.in')

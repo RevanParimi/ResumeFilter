@@ -102,6 +102,9 @@ def test_report_and_binding_roll_back_together(database):
     saved = ingest_bound(factory, org, item)
     report = _report(candidate_id=saved.candidate_id)
     writer = make_session_factory(engine)
+    with factory() as session:
+        facts = session.get(ScreeningInputRow, item.id).ingest_facts
+        assert facts["version"] == 1
 
     def interrupt(*_):
         raise Interrupted()
@@ -112,9 +115,11 @@ def test_report_and_binding_roll_back_together(database):
     with factory() as session:
         assert session.get(ReportRow, report.id) is None
         assert session.get(ScreeningInputRow, item.id).report_id is None
+        assert session.get(ScreeningInputRow, item.id).ingest_facts == facts
     save_bound(factory, org, item, report)
     with factory() as session:
         assert session.get(ScreeningInputRow, item.id).report_id == report.id
+        assert session.get(ScreeningInputRow, item.id).ingest_facts == facts
 
 
 @pytest.mark.parametrize("change", ["lease", "batch", "sweep", "resume", "report"])

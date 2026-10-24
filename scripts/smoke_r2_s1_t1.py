@@ -159,7 +159,7 @@ def main():
         with server() as http:
             with engine.connect() as conn:
                 checks.check("actual scratch app migrated to head", conn.scalar(
-                    text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                    text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
             baseline = require(http.post("/evaluate", json={"resume_text": RESUME}))
             checks.check("abstaining provider has deterministic claims/probes",
                          bool(baseline["verdicts"]) and any(v["probes"] for v in baseline["verdicts"]))

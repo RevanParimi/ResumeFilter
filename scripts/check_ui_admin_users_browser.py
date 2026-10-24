@@ -73,7 +73,7 @@ async def main():
         engine = create_engine(state["db"])
         try:
             with engine.begin() as conn:
-                checks.check("scratch composition is migrated to head", conn.scalar(text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                checks.check("scratch composition is migrated to head", conn.scalar(text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
                 # Fixture-only disabled state; there is no HTTP suspension control.
                 conn.execute(text("UPDATE admin_users SET disabled_at=:at WHERE id=:id"), {"at": "2026-10-13 12:00:00", "id": disabled["id"]})
         finally: engine.dispose()

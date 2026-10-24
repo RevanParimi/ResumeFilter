@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-24 - R4-S2-T1B2b2a completed; private original ingest facts.**
+  B2b2 was split before implementation. New private retry references retain
+  version 1 and the first ingest's three matching facts in the ingest transaction;
+  retries/report saves preserve them and original TTL. Historical facts stay
+  unknown, and public responses/ordinary retry behavior remain unchanged.
+  [B2b2a evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) owns red/green, populated
+  SQLite/PG migration 0030 roundtrips, full/focused/SQL/HTTP/restart/Chrome/static
+  checks, resolved Windows gate-read harness failure and separate reviews.
+  Working DB stays at 0023; only scratch stores advance to 0030. Demo untouched.
+  Exact next B2b2b recovers/protects the report checkpoint; all parents remain
+  open. Stop after this child's final completion review and publication.
+
 - **Session 2026-10-24 - R4-S2-T1B2b1 completed; input/report expiry admission.**
   B2b was split before implementation; only its persistence-admission child
   closes. Input/report callbacks check a fresh clock after locking and after

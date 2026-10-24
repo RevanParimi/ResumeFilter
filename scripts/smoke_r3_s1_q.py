@@ -97,7 +97,7 @@ def main():
                 try:
                     with engine.connect() as conn:
                         checks.check("combined scratch composition migrated to head",
-                            conn.scalar(text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                            conn.scalar(text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
                 finally:
                     engine.dispose()
                 def candidate_count():

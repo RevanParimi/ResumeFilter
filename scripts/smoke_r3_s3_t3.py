@@ -132,7 +132,7 @@ def run(scratch, url, pg_options, checks, *, combined):
             engine = create_engine(url, hide_parameters=True, connect_args={"options":pg_options} if pg_options else {})
             try:
                 with engine.connect() as db:
-                    checks.check("scratch app migrated to current head", db.scalar(text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                    checks.check("scratch app migrated to current head", db.scalar(text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
             finally:
                 engine.dispose()
             ids = []

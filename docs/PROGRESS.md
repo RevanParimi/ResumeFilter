@@ -4,43 +4,39 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b1 complete and published.**
-Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b1) owns the bounded
-input/report admission fix, pre-fix failures, exact commands/counts and reviews.
-Full pytest **3585 passed, 549 skipped**; broader focused **213 passed, 115
-skipped**; final expiry-focused **18 passed, 18 skipped**; PG-configured **285
-passed, 9 skipped**; two-process SQLite/PostgreSQL HTTP/restart **53/53 + 31/31
-each**. Chrome rerun **24/24** after an initial **23/24** read-error observation
-miss; static checks pass. Implementation and distinct final completion
-self-reviews found no B2b1 blocker. Scoped task commit `8dbf168` is pushed to
-`origin/main`; remote `8dbf1687912b6172602fde211834ff1f83b86940` was verified.
-This prose confirmation records publication; the final response reports the
-verified remote SHA after confirmation.
+**R4-S2-T1B2b2a complete; publication follows.**
+Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) owns the bounded
+private-checkpoint prerequisite and exact commands/counts. Full pytest **3589
+passed, 553 skipped**; focused **154 passed, 99 skipped**; PG-configured **307
+passed, 9 skipped**; SQLite/PostgreSQL two-process HTTP/restart **61/61 + 31/31
+each**, after fixing a Windows gate-file read sharing failure; screening Chrome
+**24/24** and static checks pass. Implementation and distinct final completion
+self-reviews found no B2b2a blocker. Authorized scoped publication follows.
 
-Input/report callbacks now check a fresh clock after item locking and after
-private-input operations. Expiry refuses the whole ingest or report transaction;
-terminal refusal counts neither outcome and stops the call. Equality remains
-eligible. Earlier admitted commits can survive later expiry; duplicate saved
-reports and provider work remain possible. Checks admit commit under held locks,
-not a physical commit/delivery deadline.
+New private input references retain the first ingest's three matching facts,
+version 1, atomically with ingest. Retry/report saves preserve them and original
+TTL. Historical facts remain unknown; public responses and ordinary retry
+behavior are unchanged. Migration 0030 is scratch-only; no working-store change.
+Report reuse/protection and duplicate persisted reports/provider cost remain
+open. Existing expiry checks admit commit under held locks, not a physical
+commit deadline.
 
-**Exact next: R4-S2-T1B2b2 - Reuse saved reports on authorized
-recovery**; refine its [PI contract](delivery/PI-R4.md#r4-s2-t1b2b2) before
-implementation. Preserve erasure lock order, private input/TTL and current
-consent. B2b/B2/B/T1/F14/sprint/PI stay open. No B2b2 work this session.
-A/B1/B2a and R4-S1/bounded F12/F13 remain closed.
+**Exact next: R4-S2-T1B2b2b - Recover the authorized report checkpoint**;
+refine its [PI contract](delivery/PI-R4.md#r4-s2-t1b2b2b) before implementing.
+Preserve erasure lock order, private input/TTL and current consent.
+B2b2/B2b/B2/B/T1/F14/sprint/PI stay open. No B2b2b implementation this session.
+A/B1/B2a/B2b1 and R4-S1/bounded F12/F13 remain closed.
 
 ## Latest work
 
-The existing HTTP journey's `--persistence` option adds expired ingest/report
-rollback and later recovery to two-process scheduling/outcome/restart checks.
-New regressions cover initial input, bound retry, prior report binding, original
-TTL and post-write expiry. Chrome proves rendered screening actions/reload/error
-recovery; its first missed error-text observation is recorded, not hidden.
-Fakes prove mechanics, not live-provider behavior or measured quality. Working
-DB and unrelated tracked files match baseline; demo not restarted. All owned
-validation processes stopped. Distinct final completion self-review found no
-B2b1 blocker; task publication verified. No B2b2 work starts here.
+The existing `--persistence` journey now compares private original facts/TTL
+across workers and proves public non-disclosure, alongside expiry/recovery and
+graceful restart. Populated migration tests cover old links/unknown facts and
+erased absence; legacy head assertions advance to 0030. Other head-only smoke
+journeys are not all claimed run. Fakes prove mechanics, not live providers or
+measured quality. Working DB/unrelated tracked files match baseline; demo not
+restarted. All owned validation processes stopped. Final completion self-review
+found no B2b2a blocker; scoped publication follows. No B2b2b implementation here.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -48,14 +44,14 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b1.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b2a.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
   `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
   scheduling `--leases`);
   append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t1b2b1_postgres.py` / `r4-s2-t1b2b1-pg-runtime.json`;
+  `.pytest_cache/run_r4_s2_t1b2b2a_postgres.py` / `r4-s2-t1b2b2a-pg-runtime.json`;
   stopped.
 - Combined R4-S1 production composition/API/UI/graceful restart:
   `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an
@@ -104,7 +100,7 @@ Ignored-artifact removal stays outside scope;
   reload-disabled backend still needs a separately controlled restart for the
   extracted UI asset allowlist and earlier backend/PDF/rubric/lifecycle changes.
   Scratch validation does not update it.
-  Working DB remains at 0023; only scratch stores were migrated to 0029.
+  Working DB remains at 0023; only scratch stores were migrated to 0030.
 - Preserve advisory/human review, domain independence, deterministic fallbacks,
   tenant isolation and present consent/erasure. Polished/AI-assisted truthful
   writing is not fabrication. Video scoring judges content, not appearance or

@@ -125,7 +125,7 @@ def main(browser=False, legacy_disposition=False):
     with server() as http:
         with sqlite3.connect(dbpath) as db:
             checks.check("scratch app migrated to current head", db.execute(
-                "SELECT version_num FROM alembic_version").fetchone()[0] == "0029_candidate_login_binding")
+                "SELECT version_num FROM alembic_version").fetchone()[0] == "0030_screening_ingest_facts")
         first, second = candidate(http, "First"), candidate(http, "Second")
         require(http.post(f"/candidates/{first}/sources/linkedin", json=export(["Shared raw!"])))
         require(http.post(f"/candidates/{second}/sources/github", json={"handle": "dev"}))

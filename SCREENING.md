@@ -202,6 +202,16 @@ The parent remains open for saved-report reuse in T1B2b2; duplicate persisted
 reports and provider work remain possible.
 This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
+[R4-S2-T1B2b2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) adds a prerequisite:
+the private retry reference stores version 1 and the original matched-existing,
+matched-on and duplicate-resume facts in the first ingest transaction. Retries
+and report saves preserve these facts and the original input timestamp. They
+contain no input text, contact hashes or subject IDs, and do not enter public
+batch responses. Erasure, completion and retention remove them with the private
+reference. Migration 0030 leaves historical facts unknown; downgrade discards
+only this new metadata. Recovery from the report and protection of its first
+binding remain T1B2b2b; ordinary retry behavior still evaluates/saves as before.
+
 ---
 
 ## 4. The queue reads `batch_items` and never a `Report`

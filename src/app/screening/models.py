@@ -141,6 +141,9 @@ class ScreeningInputRow(Base):
         ForeignKey("reports.id", ondelete="CASCADE", name="fk_screening_input_report"),
         nullable=True, index=True,
     )
+    # Original ingest facts for later report recovery. NULL is historical/unknown;
+    # retries must not replace it with facts about the retry itself.
+    ingest_facts: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     # Copy the item's timestamp: retry must not reset its retention window.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

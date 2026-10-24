@@ -140,7 +140,7 @@ def main():
         with server() as http:
             with engine.connect() as conn:
                 checks.check("actual scratch startup migrated to head", conn.scalar(
-                    text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                    text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
             for domain in ("genai", "data_eng"):
                 pair = [require(http.post("/evaluate", json={"resume_text": body, "domain": domain}))
                         for body in texts.values()]

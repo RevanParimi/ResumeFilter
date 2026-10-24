@@ -72,7 +72,7 @@ def main():
             with client(base) as actor, client(base) as other, client(base) as org_actor:
                 with server() as admin:
                     with engine.connect() as db:
-                        checks.check("actual app migrated to current head", db.scalar(text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                        checks.check("actual app migrated to current head", db.scalar(text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
                     ids = [require(admin.post("/candidates", json={"evaluate": False,
                         "resume_text": f"Synthetic Interview {i}\nEmail: interview-{i}@example.com\nEXPERIENCE\nEngineer at Acme, 2020 - 2024\nSKILLS\nPython, SQL, Spark"}))["candidate_id"] for i in range(2)]
                     for http, cid in zip((actor, other), ids):

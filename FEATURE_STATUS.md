@@ -130,3 +130,7 @@ bindings and original input TTL, and stops without incrementing either counter.
 Earlier admitted commits can survive later expiry/terminal refusal; duplicate
 persisted reports and provider work remain possible until saved-report recovery
 is implemented and validated.
+[R4-S2-T1B2b2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) preserves the first
+ingest's three matching facts on its private retry reference, with the original
+TTL. Historical facts remain unknown; public responses and retries are unchanged.
+Report reuse and binding protection remain B2b2b, with parent tasks open.

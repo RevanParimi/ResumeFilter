@@ -143,8 +143,8 @@ def main():
             with client(base) as alice, client(base) as bob:
                 with server() as admin:
                     with engine.connect() as conn:
-                        checks.check('actual app migrates scratch to 0029',
-                            conn.scalar(text('SELECT version_num FROM alembic_version')) == '0029_candidate_login_binding')
+                        checks.check('actual app migrates scratch to 0030',
+                            conn.scalar(text('SELECT version_num FROM alembic_version')) == '0030_screening_ingest_facts')
                     orgs = [require(admin.post('/ledger/orgs', json={'name': f'Synthetic Q {tag}'}))
                             for tag in ('A', 'B')]
                     org_headers = [{'X-Org-Key': org['api_key']} for org in orgs]

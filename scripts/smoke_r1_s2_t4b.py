@@ -90,7 +90,7 @@ def main():
                 with server() as admin:
                     with engine.connect() as connection:
                         checks.check('real app migrates fresh scratch schema',
-                            connection.scalar(text('SELECT version_num FROM alembic_version')) == '0029_candidate_login_binding')
+                            connection.scalar(text('SELECT version_num FROM alembic_version')) == '0030_screening_ingest_facts')
                     aid, bid = upload(admin, document_a)['candidate_id'], upload(admin, document_b)['candidate_id']
                     csrf = login(alice, 'alice@example.in')
                     login(bob, 'bob@example.in')

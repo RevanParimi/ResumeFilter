@@ -301,7 +301,12 @@ class ScreeningStore:
         if retained is not None:
             return False
         session.add(ScreeningInputRow(id=item.id, resume_id=outcome.resume_id,
-                                     created_at=created_at))
+                                     created_at=created_at, ingest_facts={
+                                         "version": 1,
+                                         "matched_existing": outcome.matched_existing,
+                                         "matched_on": outcome.matched_on,
+                                         "duplicate_resume": outcome.duplicate_resume,
+                                     }))
         session.flush()
         return self._lease_live(item.claimed_at, now)
 

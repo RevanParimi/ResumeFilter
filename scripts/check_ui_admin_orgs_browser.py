@@ -74,7 +74,7 @@ async def main():
         try:
             with engine.connect() as conn:
                 checks.check("actual scratch composition is migrated to head",
-                    conn.scalar(text("SELECT version_num FROM alembic_version")) == "0029_candidate_login_binding")
+                    conn.scalar(text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
         finally: engine.dispose()
 
         async def login():

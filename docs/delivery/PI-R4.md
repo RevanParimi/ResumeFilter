@@ -137,8 +137,8 @@ Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, do
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
-Split before implementation into bounded sections. A, B1, B2a and B2b1 are
-done; B2b2 is next. The parent, sprint and F14 stay open until all mapped
+Split before implementation into bounded sections. A, B1, B2a, B2b1 and B2b2a
+are done; B2b2b is next. The parent, sprint and F14 stay open until all mapped
 work/gates are complete.
 
 #### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
@@ -238,7 +238,7 @@ later expiry. B2b2 owns saved-report reuse; B2b/B2/B/T1/F14/sprint/PI stay open.
 
 ###### <a id="r4-s2-t1b2b2"></a>R4-S2-T1B2b2 - Reuse saved reports on authorized recovery
 
-Status: pending. Prerequisite: B2b1.
+Status: in progress (2026-10-24). Prerequisite: B2b1, done.
 
 Refine the saved-result metadata, authorization/erasure/TTL and concurrent
 recovery protocol before implementation. Recover a still-authorized bound
@@ -246,6 +246,40 @@ report without a duplicate persisted result; prove crash/retry/expiry and
 tenant/consent/erasure behavior through SQL and HTTP. Distinguish duplicate
 provider cost from persisted idempotence. Own B2b/B2/B/T1's remaining acceptance
 and closure review; no parent closure follows B2b1 alone.
+
+Split before implementation on 2026-10-24: a saved report does not retain the
+original matched_existing/matched_on/duplicate_resume facts needed to rebuild
+its queue signals. Add a private, nullable versioned checkpoint first (B2b2a);
+ship binding protection together with its recovery consumer (B2b2b), so existing
+retries keep working between children. Only B2b2a is authorized for this bounded
+session; B2b2/B2b/B2/B/T1/F14/sprint/PI remain open.
+
+###### <a id="r4-s2-t1b2b2a"></a>R4-S2-T1B2b2a - Preserve original private ingest facts
+
+Status: done (2026-10-24). Prerequisite: B2b1, done.
+[B2b2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2b2a) owns the pre-implementation
+scope, original/unknown facts, private lifetime/atomicity, populated 0030
+SQLite/PG up/down/up, red/green/full/focused/SQL/HTTP/Chrome/static validation
+and separate self-reviews. New private references retain only version 1 and
+the three original matching facts; retries/report saves preserve them and
+original TTL. Historical facts stay unknown; public responses and retry behavior
+remain unchanged. Working storage is untouched. B2b2b owns report reuse with
+binding protection; B2b2/B2b/B2/B/T1/F14/sprint/PI remain open.
+
+###### <a id="r4-s2-t1b2b2b"></a>R4-S2-T1B2b2b - Recover the authorized report checkpoint
+
+Status: pending. Prerequisite: B2b2a.
+
+Refine and implement first-saved-report protection with atomic authorized
+completion from the bound report and original facts. Recheck processing token,
+fresh expiry after waits/writes, tenant/resume/report ownership, domain, private
+capability/TTL and present authorization under the existing erasure lock order.
+Missing/invalid/unknown historical facts must refuse or explicitly require fresh
+upload, never fabricate original flags or create a duplicate persisted result.
+Reuse does not run extraction/evaluation; competing and interrupted workers may
+still spend provider work before a checkpoint commits. Prove crash/retry/expiry,
+erasure/sweep/consent and competing SQL/HTTP/restart behavior; review all B2b2/
+B2b/B2/B/T1 acceptance before closing those parents. F14/sprint/PI stay open.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 
