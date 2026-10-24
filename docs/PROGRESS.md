@@ -4,7 +4,7 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B1 complete and reviewed; publication pending.**
+**R4-S2-T1B1 complete and published.**
 Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b1) owns the bounded
 terminal acknowledgment work, red/green regressions, resolved review findings
 and exact validation commands/counts. Final full pytest **3554 passed, 518
@@ -13,8 +13,11 @@ skipped**; focused **182 passed, 84 skipped**; PostgreSQL-configured **135 passe
 each**, scheduling-only **27/27 + 31/31**, screening Chrome **24/24** and static
 checks pass. **Exact next task: R4-S2-T1B2 - Fence expiry and make batch
 persistence idempotent**, not started. Parent B/T1/F14/sprint/PI stay open.
-Distinct final completion self-review found no B1 blocker; authorized scoped
-commit/push and remote verification follow before stopping.
+Distinct final completion self-review found no B1 blocker. Scoped task commit
+`bdf2cfb` is pushed to `origin/main`; remote
+`bdf2cfba0167a9fe70be15f1f2af7b8e60c944ba` was verified. This prose-only
+confirmation records publication; the final response reports the verified
+remote SHA after confirmation.
 
 Completion now distinguishes newly committed success/erasure failure from a
 refused write; only this call's acknowledged transitions affect its counters.
@@ -35,7 +38,7 @@ saved queue/counters, retry no-op and tenant/CSRF behavior survive restart.
 Chrome proves rendered screening actions/reload/error recovery. Fakes prove
 mechanics, not live-provider behavior or measured quality. All owned validation
 processes stopped; working DB and unrelated tracked files match baseline.
-Final completion self-review found no B1 blocker. Publication pending;
+Final completion self-review found no B1 blocker. Publication confirmed;
 demo not restarted.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
