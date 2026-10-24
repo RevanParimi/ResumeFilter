@@ -4,14 +4,17 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b2a complete; publication follows.**
+**R4-S2-T1B2b2a complete and published.**
 Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) owns the bounded
 private-checkpoint prerequisite and exact commands/counts. Full pytest **3589
 passed, 553 skipped**; focused **154 passed, 99 skipped**; PG-configured **307
 passed, 9 skipped**; SQLite/PostgreSQL two-process HTTP/restart **61/61 + 31/31
 each**, after fixing a Windows gate-file read sharing failure; screening Chrome
 **24/24** and static checks pass. Implementation and distinct final completion
-self-reviews found no B2b2a blocker. Authorized scoped publication follows.
+self-reviews found no B2b2a blocker. Scoped task commit `71afb32` is pushed to
+`origin/main`; remote `71afb3233e23ca9054f5e97379815b0d78a11483` was verified.
+This prose confirmation records publication; the final response reports the
+verified remote SHA after confirmation.
 
 New private input references retain the first ingest's three matching facts,
 version 1, atomically with ingest. Retry/report saves preserve them and original
@@ -36,7 +39,7 @@ erased absence; legacy head assertions advance to 0030. Other head-only smoke
 journeys are not all claimed run. Fakes prove mechanics, not live providers or
 measured quality. Working DB/unrelated tracked files match baseline; demo not
 restarted. All owned validation processes stopped. Final completion self-review
-found no B2b2a blocker; scoped publication follows. No B2b2b implementation here.
+found no B2b2a blocker; task publication verified. No B2b2b implementation here.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
