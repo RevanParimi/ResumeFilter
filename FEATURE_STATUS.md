@@ -117,6 +117,11 @@ leaves only active work leased, recoverable through existing timeout/input rules
 [R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1) distinguishes committed
 success/erasure failure from a refused completion; only newly acknowledged
 transitions affect this call's counters. The parent T1/F14 remains open for
-active expiry and persistence/idempotence in T1B2. A matching expired lease can
-still write until reclaimed, and input/report commits can survive terminal
-refusal. Duplicate persisted reports and provider work remain possible.
+input/report expiry fencing and persistence/idempotence in T1B2b.
+[R4-S2-T1B2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2a) checks terminal eligibility
+with a fresh clock after row/writer locking and after writes, including erasure
+rollback. Expired terminal writes roll back without increasing counters;
+exact timeout equality remains eligible. This is commit admission under the
+held lock, not a physical delivery deadline. Earlier input/report commits can
+survive terminal refusal; duplicate persisted reports and provider work remain
+possible.

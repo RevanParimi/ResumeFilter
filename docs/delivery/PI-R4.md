@@ -137,8 +137,9 @@ Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, do
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
-Split before implementation into bounded sections. A and B1 are done; B2 is next. The
-parent, sprint and F14 stay open until all mapped work/gates are complete.
+Split before implementation into bounded sections. A, B1 and B2a are done;
+B2b is next. The parent, sprint and F14 stay open until all mapped work/gates
+are complete.
 
 #### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
 
@@ -164,8 +165,8 @@ from A evidence before implementing. No B implementation in A's session.
 
 Split before implementation on 2026-10-23: the acknowledgment defect can be
 fixed without changing the input/report transaction protocol. Expiry and
-idempotent report persistence need that separate protocol review. Complete
-only B1 in this session; B, T1, F14, sprint and PI remain open.
+idempotent report persistence need that separate protocol review. B1 is done;
+B2 retains the remaining contract. B, T1, F14, sprint and PI remain open.
 
 ##### R4-S2-T1B1 - Distinguish acknowledged terminal outcomes
 
@@ -181,7 +182,7 @@ or exactly-once provider/report claim.
 
 ##### R4-S2-T1B2 - Fence expiry and make batch persistence idempotent
 
-Status: pending. Prerequisite: B1.
+Status: in progress (2026-10-24). Prerequisite: B1, done.
 
 Define and enforce expiry eligibility at input, report and terminal persistence
 boundaries (including lock waits/rollback), and prevent an already-saved report
@@ -190,6 +191,32 @@ retry contract before implementation; preserve erasure lock ordering, private
 input lifetime and current consent. Distinguish duplicate provider cost from
 committed results. Own the remaining B/parent acceptance and PostgreSQL/HTTP
 gates; B1's green tests do not close these requirements.
+
+Split before implementation on 2026-10-24: terminal admission can be fenced
+without changing the earlier ingest/report commit protocol. Input/report
+fencing and report reuse require a separate persistence/erasure review. B2a is
+done; B2b is next. B2/B/T1/F14/sprint/PI stay open.
+
+###### R4-S2-T1B2a - Fence terminal transitions at lease expiry
+
+Status: done (2026-10-24). Prerequisite: B1, done.
+[B2a contract/evidence](EVIDENCE-R4.md#r4-s2-t1b2a) owns the pre-implementation
+scope, red/green regressions, SQL/HTTP/browser/full validation and reviews.
+Terminal done/fail and erasure cleanup check a fresh clock after locking and
+after writes, before commit; expiry rolls back and counts neither outcome.
+Timeout equality remains eligible. The last check admits a commit under the
+held lock, not a physical commit/delivery deadline. Input/report fencing and
+report reuse remain B2b; B2/B/T1/F14/sprint/PI stay open.
+
+###### R4-S2-T1B2b - Fence input/report persistence and reuse saved reports
+
+Status: pending. Prerequisite: B2a.
+
+Refine input/report eligibility, lock-wait and commit atomicity/retry policy;
+reuse a still-authorized saved report on recovery instead of creating duplicate
+persisted results. Preserve erasure lock ordering, consent, private input and
+its original TTL. Own B2's remaining parent acceptance and database/HTTP gates;
+terminal-only fencing is not complete persistence idempotence.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 

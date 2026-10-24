@@ -101,6 +101,11 @@ def test_ordinary_retry_reuses_exact_resume_without_contact_identity(services, m
 NOW = datetime.now(timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def terminal_clock(monkeypatch):
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: NOW)
+
+
 def prepare(factory):
     org = LedgerStore(factory).create_organization("Synthetic agency").id
     store = ScreeningStore(factory)

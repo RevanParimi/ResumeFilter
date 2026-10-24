@@ -16,6 +16,11 @@ from tests.test_screening_batches_api import _client, _key, _register
 from tests.test_screening_erasure_concurrency import NOW, assert_scrubbed, seed
 
 
+@pytest.fixture(autouse=True)
+def terminal_clock(monkeypatch):
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: NOW)
+
+
 @pytest.mark.parametrize("parent", ["candidate", "resume", "report"])
 def test_erasure_failure_scrubs_input_and_prevents_retry(database, parent):
     _, factory = database

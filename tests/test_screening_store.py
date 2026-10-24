@@ -17,6 +17,11 @@ from app.screening.store import CompletionOutcome, ScreeningStore
 NOW = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def terminal_clock(monkeypatch):
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: NOW)
+
+
 @pytest.fixture
 def store(services) -> ScreeningStore:
     return ScreeningStore(services.candidates._session_factory)

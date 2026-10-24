@@ -179,10 +179,19 @@ navigation or HTTP disconnection does not guarantee server cancellation.
 
 [R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) covers scheduling;
 [R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1)
-covers terminal acknowledgment. The parent remains open for active
-expiry and persistence/idempotence in T1B2. A matching expired lease can still
-write until reclaimed, and earlier input/report commits can survive a refused
-terminal write. Duplicate persisted reports and provider work remain possible.
+covers terminal acknowledgment.
+[R4-S2-T1B2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2a) fences terminal done/fail
+and erasure cleanup: check a fresh clock after the row/writer lock and again
+after writes, before commit. A greater age than the configured timeout refuses
+and rolls back the terminal transaction even without another claimant; equality
+remains eligible. Cleanup repeats the checks after rollback releases its lock.
+The last check admits a commit under the held lock; clock reads and commit are
+not atomic, so this is not a physical commit/delivery deadline.
+
+The parent remains open for input/report fencing and saved-report reuse in
+T1B2b. Those earlier callbacks still check lease identity rather than expiry;
+their commits can survive a refused terminal write. Duplicate persisted reports
+and provider work remain possible.
 This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
 ---

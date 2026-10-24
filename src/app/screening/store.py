@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from hashlib import sha256
-from typing import Optional
+from typing import Callable, Optional
 
 from pydantic import ValidationError
 from sqlalchemy import and_, case, delete, func, or_, select, update
@@ -40,6 +40,10 @@ log = get_logger("screening.store")
 #: The queue's sort key for an item that has not been scored yet. Below every
 #: real score (which is >= 0.0), so unscreened rows sort last under DESC.
 _UNSCORED = -1.0
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class CompletionOutcome(Enum):
@@ -109,8 +113,8 @@ class ScreeningStore:
         self, session_factory: sessionmaker, claim_timeout_seconds: int = 900
     ) -> None:
         self._session_factory = session_factory
-        #: Read-time only. Nothing here ever REWRITES a stale claim -- see
-        #: `_item_record`.
+        #: Shared read/terminal expiry boundary; reads do not rewrite a stale
+        #: claim. See `_item_record` and `_lease_live`.
         self._claim_timeout = claim_timeout_seconds
 
     @staticmethod
@@ -391,6 +395,7 @@ class ScreeningStore:
         risk_score: Optional[float],
         signals: ItemSignals,
         at: datetime,
+        now: Optional[Callable[[], datetime]] = None,
     ) -> CompletionOutcome:
         """Success. CLEARS ``raw_text``: the text now lives in ``resumes``,
         where candidate erasure already cascades (spec §4.2).
@@ -401,9 +406,15 @@ class ScreeningStore:
         deleted (including cleanup losing its lease after rollback).
         Foreign keys order this write with deletion. Completion-first keeps
         the existing SET NULL/count retention behavior.
+
+        Check expiry after lock acquisition and after writes, before commit.
+        A matching expired lease is refused even without a replacement worker.
         """
+        now = now or _utcnow
         with self._session_factory() as s:
             try:
+                if not self._lock_terminal_lease(s, item_id, lease, now):
+                    return CompletionOutcome.REFUSED
                 res = s.execute(
                     update(BatchItemRow)
                     .where(self._holds_lease(item_id, lease))
@@ -421,6 +432,9 @@ class ScreeningStore:
                 )
                 if res.rowcount == 1:
                     s.execute(delete(ScreeningInputRow).where(ScreeningInputRow.id == item_id))
+                if not self._lease_live(lease, now):
+                    s.rollback()
+                    return CompletionOutcome.REFUSED
                 s.commit()
             except IntegrityError as exc:
                 s.rollback()
@@ -441,6 +455,8 @@ class ScreeningStore:
                     raise
                 # Rollback released the item lock. A new claimant or batch
                 # deletion can win before cleanup, so reassert the lease.
+                if not self._lock_terminal_lease(s, item_id, lease, now):
+                    return CompletionOutcome.REFUSED
                 cleanup = s.execute(
                     update(BatchItemRow)
                     .where(self._holds_lease(item_id, lease))
@@ -450,6 +466,9 @@ class ScreeningStore:
                 )
                 if cleanup.rowcount == 1:
                     s.execute(delete(ScreeningInputRow).where(ScreeningInputRow.id == item_id))
+                if not self._lease_live(lease, now):
+                    s.rollback()
+                    return CompletionOutcome.REFUSED
                 s.commit()
                 return CompletionOutcome.FAILED if cleanup.rowcount == 1 else CompletionOutcome.REFUSED
             if res.rowcount != 1:
@@ -457,17 +476,40 @@ class ScreeningStore:
                 return CompletionOutcome.REFUSED
             return CompletionOutcome.DONE
 
-    def fail(self, item_id: str, *, lease: datetime, error: str, at: datetime) -> bool:
+    def _lease_live(self, lease: datetime, now: Callable[[], datetime]) -> bool:
+        # Equality matches the existing strict '<' stale/claim/read boundary.
+        return as_utc(lease) >= as_utc(now()) - timedelta(seconds=self._claim_timeout)
+
+    def _lock_terminal_lease(self, session, item_id: str, lease: datetime,
+                             now: Callable[[], datetime]) -> bool:
+        # PostgreSQL must finish waiting before reading the clock. SQLite's
+        # SELECT has no row-lock equivalent, so acquire its writer lock with
+        # a conditional no-op instead. A refusal rolls back this transaction.
+        if session.bind.dialect.name == "sqlite":
+            held = session.execute(update(BatchItemRow).where(
+                self._holds_lease(item_id, lease),
+            ).values(claimed_at=BatchItemRow.claimed_at)).rowcount == 1
+        else:
+            held = session.scalar(select(BatchItemRow.id).where(
+                self._holds_lease(item_id, lease),
+            ).with_for_update()) is not None
+        return held and self._lease_live(lease, now)
+
+    def fail(self, item_id: str, *, lease: datetime, error: str, at: datetime,
+             now: Optional[Callable[[], datetime]] = None) -> bool:
         """Keep ordinary failure input for retry; scrub explicit erasure refusals.
 
         The failed status and scrub share one lease-checked write/commit, so a
         recorded erasure refusal cannot leave input available to batch retry.
         """
+        now = now or _utcnow
         values = dict(status=ItemStatus.FAILED.value, error=error[:64], processed_at=at)
         if error in {"candidate_erased", "resume_erased", "report_erased"}:
             values.update(raw_text="", text_sha256="", candidate_id=None,
                           resume_id=None, report_id=None, signals=None, risk_score=None)
         with self._session_factory() as s:
+            if not self._lock_terminal_lease(s, item_id, lease, now):
+                return False
             res = s.execute(
                 update(BatchItemRow)
                 .where(self._holds_lease(item_id, lease))
@@ -475,6 +517,9 @@ class ScreeningStore:
             )
             if res.rowcount == 1 and error in {"candidate_erased", "resume_erased", "report_erased"}:
                 s.execute(delete(ScreeningInputRow).where(ScreeningInputRow.id == item_id))
+            if not self._lease_live(lease, now):
+                s.rollback()
+                return False
             s.commit()
             if res.rowcount != 1:
                 log.warning("lost_claim_lease", item_id=item_id, outcome="fail")

@@ -25,6 +25,129 @@ from tests.test_screening_batches_api import _client, _key, _register
 NOW = datetime.now(timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def terminal_clock(monkeypatch):
+    clock = [NOW]
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: clock[0], raising=False)
+    return clock
+
+
+@pytest.mark.parametrize("operation", ["done", "fail"])
+@pytest.mark.parametrize("age", [899, 900, 900.000001])
+def test_terminal_transition_requires_unexpired_lease(database, terminal_clock, operation, age):
+    _, factory = database
+    org, batch, item, kwargs = seed(factory, retain_input=True)
+    terminal_clock[0] = NOW + timedelta(seconds=age)
+    store = ScreeningStore(factory)
+    if operation == "done":
+        result = store.complete(item.id, **kwargs)
+        assert result is (CompletionOutcome.DONE if age <= 900 else CompletionOutcome.REFUSED)
+    else:
+        result = store.fail(item.id, lease=item.claimed_at, error="internal_error", at=NOW)
+        assert result is (age <= 900)
+    with factory() as session:
+        row = session.get(BatchItemRow, item.id)
+        if age > 900:
+            assert row.status == "processing" and row.processed_at is None
+            assert row.candidate_id is row.report_id is row.error is None
+            assert session.get(ScreeningInputRow, item.id).resume_id == kwargs["resume_id"]
+        else:
+            assert row.status == ("done" if operation == "done" else "failed")
+    if age > 900:
+        assert store.counts(org, batch, now=terminal_clock[0]).pending == 1
+
+
+@pytest.mark.parametrize("operation", ["done", "fail"])
+def test_terminal_expiry_after_write_rolls_back_input_and_status(database, terminal_clock, operation):
+    engine, factory = database
+    _, _, item, kwargs = seed(factory, retain_input=True)
+    writer = make_session_factory(engine)
+
+    def advance(state):
+        result = state.invoke_statement()
+        if state.is_delete:
+            terminal_clock[0] += timedelta(seconds=901)
+        return result
+
+    event.listen(writer, "do_orm_execute", advance, retval=True)
+    store = ScreeningStore(writer)
+    if operation == "done":
+        assert store.complete(item.id, **kwargs) is CompletionOutcome.REFUSED
+    else:
+        assert not store.fail(item.id, lease=item.claimed_at, error="resume_erased", at=NOW)
+    with factory() as session:
+        row = session.get(BatchItemRow, item.id)
+        assert row.status == "processing" and row.processed_at is None and row.error is None
+        assert session.get(ScreeningInputRow, item.id).resume_id == kwargs["resume_id"]
+
+
+@pytest.mark.parametrize("phase", ["rollback", "cleanup_write"])
+def test_erasure_cleanup_rechecks_expiry_after_rollback(database, terminal_clock, phase):
+    engine, factory = database
+    _, _, item, kwargs = seed(factory)
+    assert erase(factory, "candidate", kwargs)
+    writer = make_session_factory(engine)
+    if phase == "rollback":
+        event.listen(writer, "after_rollback", lambda *_: terminal_clock.__setitem__(0,
+            NOW + timedelta(seconds=901)), once=True)
+    else:
+        def advance(state):
+            result = state.invoke_statement()
+            if state.is_delete:
+                terminal_clock[0] = NOW + timedelta(seconds=901)
+            return result
+        event.listen(writer, "do_orm_execute", advance, retval=True)
+    assert ScreeningStore(writer).complete(item.id, **kwargs) is CompletionOutcome.REFUSED
+    with factory() as session:
+        row = session.get(BatchItemRow, item.id)
+        assert row.status == "processing" and row.raw_text == "private resume" and row.error is None
+
+
+@pytest.mark.parametrize("operation", ["done", "fail"])
+def test_terminal_waiting_for_lock_uses_fresh_clock(database, terminal_clock, operation):
+    engine, factory = database
+    _, _, item, kwargs = seed(factory, retain_input=True)
+    writer = make_session_factory(engine)
+    ready = Event()
+    pids = {}
+
+    def started(session, transaction, connection):
+        if engine.dialect.name == "postgresql":
+            pids["writer"] = connection.scalar(text("SELECT pg_backend_pid()"))
+        ready.set()
+
+    event.listen(writer, "after_begin", started, once=True)
+    from sqlalchemy import update
+    with factory() as blocker, ThreadPoolExecutor(max_workers=1) as executor:
+        blocker.execute(update(BatchItemRow).where(BatchItemRow.id == item.id)
+                        .values(claimed_at=BatchItemRow.claimed_at))
+        if engine.dialect.name == "postgresql":
+            pids["blocker"] = blocker.scalar(text("SELECT pg_backend_pid()"))
+        store = ScreeningStore(writer)
+        pending = executor.submit(store.complete, item.id, **kwargs) if operation == "done" else executor.submit(
+            store.fail, item.id, lease=item.claimed_at, error="internal_error", at=NOW)
+        try:
+            assert ready.wait(20)
+            if engine.dialect.name == "postgresql":
+                deadline = monotonic() + 10
+                with engine.connect() as observer:
+                    while monotonic() < deadline:
+                        if pids["blocker"] in observer.scalar(text("SELECT pg_blocking_pids(:pid)"),
+                                                              {"pid": pids["writer"]}):
+                            break
+                    else:
+                        pytest.fail("terminal write did not wait for the competing connection")
+            assert not pending.done()
+            terminal_clock[0] = NOW + timedelta(seconds=901)
+        finally:
+            blocker.rollback()
+        assert pending.result(timeout=20) is (CompletionOutcome.REFUSED if operation == "done" else False)
+    with factory() as session:
+        row = session.get(BatchItemRow, item.id)
+        assert row.status == "processing" and row.processed_at is None
+        assert session.get(ScreeningInputRow, item.id).resume_id == kwargs["resume_id"]
+
+
 def seed(factory, *, retain_input=False):
     org = LedgerStore(factory).create_organization("Synthetic agency").id
     saved = CandidateStore(factory).ingest(extraction(), "private resume", org_id=org)
@@ -258,9 +381,10 @@ def test_unrelated_completion_constraint_error_propagates(database, erased):
     writer_factory = make_session_factory(engine)
 
     def invalidate(state):
-        state.statement = state.statement.values(status=None)
+        if state.is_update:
+            state.statement = state.statement.values(status=None)
 
-    event.listen(writer_factory, "do_orm_execute", invalidate, once=True)
+    event.listen(writer_factory, "do_orm_execute", invalidate)
     with pytest.raises(IntegrityError):
         ScreeningStore(writer_factory).complete(item.id, **kwargs)
     with factory() as session:

@@ -249,7 +249,7 @@ class ScreeningService:
                 )
             except IngestRefused as exc:
                 if not self._store.fail(item.id, lease=item.claimed_at,
-                                        error=exc.reason, at=self._now()):
+                                        error=exc.reason, at=self._now(), now=self._now):
                     break
                 failed += 1
                 continue
@@ -259,7 +259,7 @@ class ScreeningService:
                 # input that caused it.
                 log.error("batch_item_failed", item_id=item.id, error=repr(exc))
                 if not self._store.fail(item.id, lease=item.claimed_at,
-                                        error="internal_error", at=self._now()):
+                                        error="internal_error", at=self._now(), now=self._now):
                     break
                 failed += 1
                 continue
@@ -283,6 +283,7 @@ class ScreeningService:
                     duplicate_resume=result.duplicate_resume,
                 ) if report is not None else _no_report_signals(result),
                 at=self._now(),
+                now=self._now,
             )
             if completed is CompletionOutcome.DONE:
                 processed += 1

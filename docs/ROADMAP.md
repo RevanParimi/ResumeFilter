@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-24 - R4-S2-T1B2a completed; terminal expiry fencing.**
+  Done/fail and erasure cleanup check a fresh clock after row/writer locking
+  and after writes before commit; expiry rolls back without incrementing this
+  call's counters. Timeout equality remains eligible. [B2a evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2a)
+  owns red/green, full/focused pytest, actual SQLite/PostgreSQL competing locks
+  and two-process HTTP/restart, screening Chrome, static/preservation and
+  separate reviews. B2/B/T1/F14/sprint/PI remain open for input/report fencing
+  and report reuse. Working DB preserved; demo not restarted. Exact next
+  R4-S2-T1B2b, not started. Stop after B2a final review/publication.
+
 - **Session 2026-10-24 - R4-S2-T1B1 completed; terminal acknowledgment.**
   Completion distinguishes newly committed success/erasure failure from a
   refused write; only this call's acknowledged transitions count, and both

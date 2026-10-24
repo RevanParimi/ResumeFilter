@@ -22,6 +22,11 @@ from tests.test_screening_durable_input import Interrupted, NOW, prepare
 from tests.test_report_store import _report
 
 
+@pytest.fixture(autouse=True)
+def terminal_clock(monkeypatch):
+    monkeypatch.setattr("app.screening.store._utcnow", lambda: NOW)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stage", ["before_extraction", "resolved_failure", "resolved_interruption"])
 async def test_no_automatic_recreation_from_unlinked_input(services, monkeypatch, stage):

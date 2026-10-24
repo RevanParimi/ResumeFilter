@@ -4,6 +4,7 @@ Uses the existing fake-provider production SQL app and graceful restart loop.
 The reused UI contract is HTTP simulation, not actual browser execution.
 --leases adds R4-S2-T1A's two-app-process slow-provider scheduling journey.
 --outcomes adds R4-S2-T1B1's terminal refusal/erasure journey to --leases.
+--expiry adds R4-S2-T1B2a's no-reclaimer terminal expiry and recovery.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -46,7 +47,7 @@ def create_smoke_app():
 
             def controlled_now():
                 # Deterministic expiry for competing OS processes, not a
-                # measured wall-clock timeout or an active-expiry fence test.
+                # measured wall-clock timeout.
                 offset = svc._settings.screening_claim_timeout_seconds + 1 if (scratch / "outcome-advanced").exists() else 0
                 return now() + timedelta(seconds=offset)
 
@@ -95,11 +96,13 @@ def create_smoke_app():
 
 
 def run(scratch, url, pg_options):
-    terminal_outcomes = "--outcomes" in sys.argv
+    expiry = "--expiry" in sys.argv
+    terminal_outcomes = "--outcomes" in sys.argv or expiry
     leases = "--leases" in sys.argv or terminal_outcomes
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
+    checks = Smoke("R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
+                   else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
                    else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
                    else "R4-S1-T3D screening HTTP and graceful restart")
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
@@ -247,7 +250,7 @@ def run(scratch, url, pg_options):
                             and other.post(lease_path + "/process").status_code == 404)
                         outcome_saved = {}
                         if terminal_outcomes:
-                            for mode in ("stolen", "erased"):
+                            for mode in (("stolen", "erased", "expired") if expiry else ("stolen", "erased")):
                                 batch = require(worker_b.post("/screening/batches", json={"name": f"Terminal {mode}", "items": [{
                                     "resume_text": contract._resume(f"Outcome {mode}", f"outcome-{mode}@example.com") }]}))
                                 outcome_path = "/screening/batches/" + batch["id"]
@@ -261,11 +264,12 @@ def run(scratch, url, pg_options):
                                             assert time.monotonic() < deadline, "worker never reached terminal gate"
                                             time.sleep(.05)
                                         subject = json.loads(entered.read_text(encoding="utf-8"))
-                                        if mode == "stolen":
+                                        if mode in {"stolen", "expired"}:
                                             (scratch / "outcome-advanced").write_text("advance", encoding="utf-8")
-                                            winner = require(worker_b.post(outcome_path + "/process"))
-                                            checks.check("replacement worker alone acknowledges completion",
-                                                (winner["processed"], winner["failed"], winner["remaining"]) == (1, 0, 0))
+                                            if mode == "stolen":
+                                                winner = require(worker_b.post(outcome_path + "/process"))
+                                                checks.check("replacement worker alone acknowledges completion",
+                                                    (winner["processed"], winner["failed"], winner["remaining"]) == (1, 0, 0))
                                         else:
                                             erased = require(worker_b.delete(f"/candidates/{subject['candidate_id']}", headers={"X-API-Key": ADMIN}))
                                             checks.check("second app erases subject before terminal write", erased["deleted"])
@@ -273,16 +277,31 @@ def run(scratch, url, pg_options):
                                         (scratch / f"outcome-release-{mode}").write_text("release", encoding="utf-8")
                                     loser = require(pending.result(timeout=30))
                                 (scratch / "outcome-mode").unlink()
-                                (scratch / "outcome-advanced").unlink(missing_ok=True)
                                 state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
                                 row = state["/queue"]["rows"][0]
                                 checks.check(f"{mode}: response counts only this call's acknowledged transitions",
-                                    (loser["processed"], loser["failed"], loser["remaining"]) == (0, int(mode == "erased"), 0))
+                                    (loser["processed"], loser["failed"], loser["remaining"]) == (0, int(mode == "erased"), int(mode == "expired")))
+                                if mode == "expired":
+                                    checks.check("expired terminal attempt stays pending without public result links",
+                                        row["status"] == "pending" and row["error"] is None
+                                        and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
+                                        and state[""]["counts"] == {"pending":1, "processing":0, "failed":0, "done":0}
+                                        and state["/summary"]["n_screened"] == 0)
+                                    recovered = require(worker_b.post(outcome_path + "/process"))
+                                    checks.check("later request recovers expired work using retained input",
+                                        (recovered["processed"], recovered["failed"], recovered["remaining"]) == (1, 0, 0))
+                                    state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
+                                    row = state["/queue"]["rows"][0]
+                                    checks.check("recovery preserves subject and commits exactly one queue result",
+                                        row["candidate_id"] == subject["candidate_id"] and row["status"] == "done"
+                                        and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1}
+                                        and state["/summary"]["n_screened"] == 1)
+                                (scratch / "outcome-advanced").unlink(missing_ok=True)
                                 if mode == "stolen":
                                     checks.check("stale completion cannot overwrite replacement report or saved counts",
                                         row["status"] == "done" and row["report_id"] != subject["report_id"]
                                         and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1})
-                                else:
+                                elif mode == "erased":
                                     checks.check("acknowledged erasure failure has no subject links or signals",
                                         row["status"] == "failed" and row["error"] == "candidate_erased"
                                         and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
@@ -325,7 +344,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

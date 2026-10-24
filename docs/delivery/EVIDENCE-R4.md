@@ -5210,3 +5210,166 @@ batch persistence idempotent**, not started. Refine its remaining contract befor
 implementation. B/T1/F14/sprint/PI remain open. Preserve working storage and the
 existing demo; B1's HTTP/browser fakes prove mechanics, not live-provider
 behavior or assessment quality.
+
+## <a id="r4-s2-t1b2a"></a>R4-S2-T1B2a - Fence terminal transitions at lease expiry
+
+Status: done (2026-10-24). Prerequisite B1 complete/published at `ffbb645`.
+B2 was split inline in PI-R4 before implementation; only B2a is in this session.
+B2b owns input/report fencing and saved-report reuse. B2/B/T1/F14/sprint/PI
+remain open.
+
+### Contract and implementation
+
+Previously a matching lease could commit success/failure past timeout, including
+after a database lock wait or rollback before erasure cleanup. Terminal done,
+fail and erasure cleanup now require that processing lease, a fresh application
+clock after acquiring its lock, and another clock check after terminal writes,
+before commit. Refuse/roll back on expiry; the service counts neither outcome
+and stops the call. Erasure cleanup reacquires/rechecks after rollback. Keep
+the existing strict stale inequality: age equal to timeout is eligible; greater
+age is expired. The last check admits a commit under the held lock; clock reads
+and database commit are not atomic. No physical commit/HTTP delivery deadline
+or clock-skew guarantee is established.
+
+PostgreSQL uses a conditional `SELECT FOR UPDATE`; SQLite uses a conditional
+no-op update to acquire its writer lock before reading the clock. Refusal leaves
+status, public result fields and raw/private input unchanged by that terminal
+transaction; previously committed erasure/retention is not undone. Complete and
+fail retain their B1 outcome/boolean contracts. Service calls pass their clock
+callback, rather than a pre-wait snapshot; direct stores default to current UTC.
+The existing `at` remains the caller's event timestamp. No new schema/migration,
+heartbeat, claim/read inequality, identity/scoring or frontend source change.
+
+Preserve erasure lock order, input TTL/scrubbing/retry, cancellation, per-call
+cap, auth/CSRF/tenant/advisory and public JSON shape. Input/report callbacks
+still check lease identity without expiry. Their earlier commits and duplicate
+provider/report work can survive terminal refusal. Atomic report/terminal
+persistence and report reuse remain B2b; B2a closes no parent acceptance gate.
+
+### Reproduction and implementation self-review
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2a.py
+<tag> <Python args>`; omitted args run `-m pytest -q --tb=short`. It clears
+inherited DEE config/keys, pins missing config, null/loopback providers and
+project paths. App/browser harnesses additionally use scratch storage, scratch
+app working directories and fake/captured effects. Logs use
+`.pytest_cache/r4-s2-t1b2a-<tag>.txt`; snapshots/runners/synthetic artifacts stay
+ignored. Baseline: 730 tracked files, with the B2 split contract already written.
+
+Pre-fix `red -m pytest -q --tb=short tests/test_screening_erasure_concurrency.py
+-k 'requires_unexpired or expiry_after_write or rechecks_expiry'`: **5 failed,
+4 passed, 9 skipped, 41 deselected, 1 warning, 9.79s**, exit 1. Pre-fix
+`red-lock -m pytest -q --tb=short tests/test_screening_erasure_concurrency.py
+-k terminal_waiting`: **2 failed, 2 skipped, 59 deselected, 1 warning, 3.73s**,
+exit 1. Failures are actual expired done/failed/cleanup commits or committed
+writes after waiting, with live/equality positive examples still passing.
+
+Supplemental `red-final -m pytest -q --tb=short -o
+pythonpath=.pytest_cache/r4-s2-t1b2a-code-before/src
+tests/test_screening_erasure_concurrency.py tests/test_screening_service.py
+-k 'requires_unexpired or expiry_after_write or rechecks_expiry or
+terminal_waiting or expired_failure or expired_provider_result'`: **11 failed,
+4 passed, 15 skipped, 75 deselected, 1 warning, 27.81s**, exit 1. The scratch
+copy contains tracked current source with only `ffbb645` screening store/service
+restored; working source was never reverted. This also proves the service's
+expired completion/failure count and stop/recovery regressions. An earlier
+supplemental run started before its scratch copy was ready and used current
+source (**15 passed, 15 skipped, 75 deselected**); it is not pre-fix proof. The
+owned copy helper was stopped, then tracked-only preparation completed before
+the valid `red-final` run. No import/fixture failure counts as reproduction.
+
+Initial terminal suite: **31 passed, 32 skipped, 1 warning, 24.90s**. Initial
+broader selection: **195 passed, 97 skipped, 3 warnings, 91.19s** before adding
+the second cleanup-expiry phase; final selection below owns all final cases.
+Historical direct-store fixtures now inject their explicit terminal clock,
+while service calls use their own dynamic clock. The existing unrelated-error
+injector ignores the new PostgreSQL lock SELECT and still asserts IntegrityError
+propagation/unchanged data.
+
+Implementation self-review against `ffbb645` plus screening store/service,
+six existing screening test modules, `smoke_r4_s1_t3d.py` and the PI contract:
+every B2a criterion maps to saved status/input/counts, equality, no reclaimer,
+actual competing locks, post-write rollback, erasure rollback/cleanup, stop and
+later recovery. Rechecked lock order, fresh callback reads at both boundaries,
+rollback before refusal, commit before acknowledgment, all terminal callers and
+unchanged earlier callbacks. Conditional locks still require the matching
+processing token; no queue read or default provider output is counted as a
+commit. The smoke's opt-in gate is released in finally before process shutdown.
+No blocking implementation finding; this is same-agent self-review, not
+independent review. B2b's remaining persistence/cost risks stay explicit.
+
+### Final validation
+
+All final gates completed on 2026-10-24. Runner prefix is the sanitized runner
+above; project code/test/harness hashes match the reviewed/tested snapshot.
+
+| Gate | Actual command/result |
+|---|---|
+| Broader focused | Runner `focused-final -m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_report_input.py tests/test_screening_refusal_retention.py tests/test_api_route_extraction.py`: **196 passed, 98 skipped, 3 warnings, 147.96s**, exit 0 |
+| Two-process SQLite expiry / HTTP / graceful restart | Runner `http-initial scripts/smoke_r4_s1_t3d.py --expiry`: **41/41** plus cookie/CSRF HTTP contract **31/31**, exit 0; no reclaimer is needed for expired `(0,0,1)`, pending queue has no public result links, later request recovers retained input, saves one queue result and exact state survives restart; includes prior scheduling/terminal/tenant/advisory checks |
+| Actual screening Chrome | Runner `browser scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0; rendered intake/queue/feedback/deletion, second intake, reload, injected read failure/recovery; no console exceptions |
+| PostgreSQL-configured selection | Owned `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b2a_postgres.py` creates a disposable cluster and invokes `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py`: **251 passed, 9 skipped, 3 warnings, 387.75s**, exit 0 |
+| Two-process PostgreSQL expiry / HTTP / graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --expiry`: **41/41** plus cookie/CSRF HTTP contract **31/31**, exit 0; both OS app processes share actual PG storage; exact terminal responses, recovery, saved queue/summary and graceful restart |
+| Full pytest | Runner `full` (project `-m pytest -q --tb=short`): **3568 passed, 532 skipped, 127 warnings, 955.87s**, exit 0 |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `node --check frontend/support.js`, `git diff --check` pass |
+
+Fakes and synthetic waits/media prove mechanics, not live-provider behavior,
+quality, cost reduction or measured latency. HTTP simulation and Chrome are
+separate; Chrome still requires CDN internet. SQLite and skips are not PG lock
+evidence. No deployment, dependency/runtime alignment or CI claim.
+
+The PG-configured selection includes backend-neutral and SQLite-only fixtures
+as well as actual PostgreSQL tests; 251 passes is not a count of PG-only tests.
+New lock tests observe the actual blocking backend PID before advancing the
+clock and releasing the competing connection. Existing populated input/report
+migration roundtrips also run; B2a adds no migration. PostgreSQL **18.6** uses
+**READ COMMITTED / Asia/Calcutta**. PG logs use
+`.pytest_cache/r4-s2-t1b2a-pg-<tag>.txt`; local runner/distribution metadata are
+not portable environment setup guarantees. The owned cluster stopped with
+exit 0, recorded in `.pytest_cache/r4-s2-t1b2a-pg-runtime.json`; completed HTTP/
+browser processes stopped too. All owned validation processes have stopped.
+
+### Completion review and publication
+
+All B2a acceptance/validation gates are complete; no implementation-review
+blocker remains. CPython **3.13.11** and existing dependencies remain in use.
+Warnings are the existing Starlette TestClient deprecation and SQLAlchemy/
+Alembic expression-index reflection limits; skips do not prove omitted cases.
+Completion records fold the contract/evidence here and update PI status,
+product notes, short handoff and roadmap. No project code/test/harness change
+follows validation; later edits are prose only. B2/B/T1/F14/sprint/PI stay open.
+
+A distinct final self-review was performed after all required checks and this
+completion record, against `ffbb645` plus the exact staged fifteen-file scope:
+screening `store.py`/`service.py`, `smoke_r4_s1_t3d.py`, existing screening
+store/service/erasure/durable-input/unresolved-input/refusal-retention test
+modules, `FEATURE_STATUS.md`, `SCREENING.md`, `PROGRESS.md`, `ROADMAP.md`,
+delivery `PI-R4.md` and this evidence file.
+
+Specification review maps every B2a criterion to saved state/input/counters,
+equality, no-reclaimer expiry, actual competing connections, post-write and
+erasure rollback, stop/recovery and the SQL/HTTP/Chrome gates. B2b and all parent
+statuses remain open. Correctness/maintenance review rechecks conditional
+processing-token locks, fresh callback reads after waits and writes, rollback
+before refusal, cleanup lock reacquisition, commit before acknowledgment,
+unchanged input TTL/erasure/lock order, all terminal callers, quota/tenant/CSRF/
+advisory/JSON contracts, fixture clocks and opt-in gate release/shutdown.
+The commit-admission boundary and earlier report/provider duplication remain
+explicit; there is no physical commit deadline or complete persistence claim.
+No blocking B2a finding remains. This distinct final review is self-review,
+not independent review.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s2_t1b2a.py --staged`
+verifies **715** unrelated tracked files and the working DB against the
+730-file baseline, **642** code hashes matching the reviewed/tested snapshot,
+**6** added local links/anchors resolved and exactly **15** scoped staged files.
+Staged whitespace checks pass. Secrets, working data and ignored artifacts are
+excluded. Subsequent changes are completion prose only; application checks need
+no rerun. Authorized commit/push and remote verification follow this review.
+Working DB/demo remain preserved; no B2b work starts here.
+
+### Handoff
+
+Exact next after B2a completion/publication: **R4-S2-T1B2b - Fence input/report
+persistence and reuse saved reports**, not started. Refine atomicity/retry and
+expiry eligibility before implementation. B2/B/T1/F14/sprint/PI remain open.

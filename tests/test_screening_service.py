@@ -128,7 +128,7 @@ async def test_cancellation_leaves_only_active_lease_and_later_request_recovers(
 
 
 @pytest.mark.asyncio
-async def test_next_item_lease_uses_the_clock_after_the_provider_wait(lease_services, genuine_resume, monkeypatch):
+async def test_expired_provider_result_stops_then_recovery_uses_fresh_leases(lease_services, genuine_resume, monkeypatch):
     services = lease_services
     org, bid = _lease_batch(services, genuine_resume, count=2)
     clock = [datetime.now(timezone.utc)]
@@ -143,12 +143,39 @@ async def test_next_item_lease_uses_the_clock_after_the_provider_wait(lease_serv
                 clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
             else:
                 counts = services.screening.get(org, bid).counts
-                assert (counts.processing, counts.pending) == (1, 0), "new work needs a fresh lease"
+                assert (counts.processing, counts.pending) == (1, 1 if len(calls) == 2 else 0), "new work needs a fresh lease"
             return await real.evaluate(**kwargs)
 
     result = await services.screening.process(org, bid, engine=AdvancingEngine())
-    assert (result.processed, result.failed, result.remaining) == (2, 0, 0)
-    assert len(calls) == 2
+    assert (result.processed, result.failed, result.remaining) == (0, 0, 2)
+    assert len(calls) == 1
+    recovered = await services.screening.process(org, bid, engine=AdvancingEngine())
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 0)
+    assert len(calls) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refusal", [True, False], ids=["refused-ingest", "unexpected-error"])
+async def test_expired_failure_is_neither_counted_nor_replayed(lease_services, genuine_resume, monkeypatch, refusal):
+    services = lease_services
+    org, bid = _lease_batch(services, genuine_resume, count=2)
+    clock = [datetime.now(timezone.utc)]
+    monkeypatch.setattr(services.screening, "_now", lambda: clock[0])
+    calls = []
+
+    class ExpiringEngine:
+        async def evaluate(self, **kwargs):
+            calls.append(kwargs["resume_text"])
+            clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
+            raise IngestRefused("unknown_domain") if refusal else RuntimeError("synthetic engine failure")
+
+    result = await services.screening.process(org, bid, engine=ExpiringEngine())
+    assert (result.processed, result.failed, result.remaining) == (0, 0, 2)
+    assert len(calls) == 1
+    counts = services.screening.get(org, bid).counts
+    assert (counts.pending, counts.processing, counts.failed, counts.done) == (2, 0, 0, 0)
+    recovered = await services.screening.process(org, bid, engine=EvaluationEngine(services))
+    assert (recovered.processed, recovered.failed, recovered.remaining) == (2, 0, 0)
 
 
 @pytest.mark.asyncio
