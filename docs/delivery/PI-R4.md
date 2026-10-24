@@ -137,7 +137,7 @@ Status: in progress (2026-10-23). Audit mapping: F14. Prerequisites: R4-S1-Q, do
 
 **Review focus:** Review duplicate provider calls versus duplicate persisted results separately; define remaining cost risk.
 
-Split before implementation into bounded sections. A is done; B is next. The
+Split before implementation into bounded sections. A and B1 are done; B2 is next. The
 parent, sprint and F14 stay open until all mapped work/gates are complete.
 
 #### R4-S2-T1A - Claim work when it starts and acknowledge failure writes
@@ -153,7 +153,7 @@ persistence/idempotence; no exactly-once provider or parent/F14 closure claim.
 
 #### <a id="r4-s2-t1b"></a>R4-S2-T1B - Fence terminal outcomes and define expiry/idempotence
 
-Status: pending. Prerequisite: A.
+Status: in progress (2026-10-23). Prerequisite: A, done.
 
 Complete the parent contract: distinguish committed completion/erasure failure
 from a refused/stolen lease, define expiry eligibility at input/report/terminal
@@ -161,6 +161,35 @@ persistence boundaries, preserve retry/erasure behavior and document duplicate
 provider work separately from committed results. Add red regressions for those
 boundaries and real competing PostgreSQL/HTTP checks; refine its bounded contract
 from A evidence before implementing. No B implementation in A's session.
+
+Split before implementation on 2026-10-23: the acknowledgment defect can be
+fixed without changing the input/report transaction protocol. Expiry and
+idempotent report persistence need that separate protocol review. Complete
+only B1 in this session; B, T1, F14, sprint and PI remain open.
+
+##### R4-S2-T1B1 - Distinguish acknowledged terminal outcomes
+
+Status: done (2026-10-24). Prerequisite: A, done.
+[B1 contract/evidence](EVIDENCE-R4.md#r4-s2-t1b1) owns the pre-implementation
+scope, red/green regressions, validation, review findings and publication.
+Completion distinguishes newly committed done/erasure-failed transitions from
+refused writes; only acknowledged transitions count for this process call.
+Refusal and committed erasure cleanup stop the call. Scrubbing/retry, lock order,
+API/advisory/tenant/CSRF contracts remain. Only B1 closes; matching expired leases
+and partial/duplicate input/report persistence remain B2. No parent/F14 closure
+or exactly-once provider/report claim.
+
+##### R4-S2-T1B2 - Fence expiry and make batch persistence idempotent
+
+Status: pending. Prerequisite: B1.
+
+Define and enforce expiry eligibility at input, report and terminal persistence
+boundaries (including lock waits/rollback), and prevent an already-saved report
+from creating duplicate persisted results on recovery. Refine the atomicity/
+retry contract before implementation; preserve erasure lock ordering, private
+input lifetime and current consent. Distinguish duplicate provider cost from
+committed results. Own the remaining B/parent acceptance and PostgreSQL/HTTP
+gates; B1's green tests do not close these requirements.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 

@@ -16,7 +16,7 @@ from app.reports.models import ReportRow
 from app.reports.store import SqlReportStore
 from app.screening.ingest import IngestRefused
 from app.screening.models import BatchItemRow, ScreeningInputRow
-from app.screening.store import ScreeningStore
+from app.screening.store import CompletionOutcome, ScreeningStore
 from tests.test_report_erasure_concurrency import database
 from tests.test_report_store import _report
 from tests.test_screening_batches_api import _client, _key, _register
@@ -229,7 +229,7 @@ def test_http_interrupted_completion_retries_same_resume_and_preserves_completed
     # failed item; retry remains possible while the bound report still exists.
     def fail(item_id, **kwargs):
         assert store.fail(item_id, lease=kwargs["lease"], error="internal_error", at=NOW)
-        return False
+        return CompletionOutcome.FAILED
 
     with _client(services) as http:
         batch = _register(http, key, ["Synthetic engineer\nSkills: Python"]).json()["id"]
@@ -237,7 +237,11 @@ def test_http_interrupted_completion_retries_same_resume_and_preserves_completed
         with monkeypatch.context() as patch:
             patch.setattr(store, "complete", fail)
             response = http.post(path + "/process", headers=headers)
-        assert response.status_code == 200 and response.json()["failed"] == 1
+        assert response.status_code == 200
+        assert (response.json()["processed"], response.json()["failed"], response.json()["remaining"]) == (0, 1, 0)
+        assert http.get(path, headers=headers).json()["counts"] == {
+            "pending": 0, "processing": 0, "failed": 1, "done": 0,
+        }
         with services.candidates._session_factory() as session:
             ref = session.scalars(select(ScreeningInputRow)).one()
             rid, report_id = ref.resume_id, ref.report_id

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from hashlib import sha256
 from typing import Optional
 
@@ -39,6 +40,14 @@ log = get_logger("screening.store")
 #: The queue's sort key for an item that has not been scored yet. Below every
 #: real score (which is >= 0.0), so unscreened rows sort last under DESC.
 _UNSCORED = -1.0
+
+
+class CompletionOutcome(Enum):
+    """The transition acknowledged by this completion attempt's commit."""
+
+    DONE = "done"
+    FAILED = "failed"
+    REFUSED = "refused"
 
 
 @dataclass(frozen=True)
@@ -72,7 +81,7 @@ class ClaimedItem:
     raw_text: str
     domain: str
     #: The lease. `complete`/`fail` only land while the row still carries this
-    #: exact claim -- a claimant that outlived the timeout writes back nothing.
+    #: exact claim. Once reclaimed, the previous claimant writes back nothing.
     claimed_at: datetime
     expected_resume_id: Optional[str] = None
     input_generation: Optional[int] = None
@@ -382,14 +391,16 @@ class ScreeningStore:
         risk_score: Optional[float],
         signals: ItemSignals,
         at: datetime,
-    ) -> bool:
+    ) -> CompletionOutcome:
         """Success. CLEARS ``raw_text``: the text now lives in ``resumes``,
         where candidate erasure already cascades (spec §4.2).
 
-        False when the lease was lost, the batch deleted, or a linked parent
-        erased. Foreign keys order this write with deletion. Erasure-first
-        scrubs retained input under the same lease and refuses stale results;
-        completion-first keeps the existing SET NULL/count retention behavior.
+        DONE acknowledges the success commit. FAILED acknowledges erasure
+        cleanup committed under this lease. REFUSED means neither transition
+        committed: the lease was lost, the item already settled or the batch
+        deleted (including cleanup losing its lease after rollback).
+        Foreign keys order this write with deletion. Completion-first keeps
+        the existing SET NULL/count retention behavior.
         """
         with self._session_factory() as s:
             try:
@@ -440,11 +451,11 @@ class ScreeningStore:
                 if cleanup.rowcount == 1:
                     s.execute(delete(ScreeningInputRow).where(ScreeningInputRow.id == item_id))
                 s.commit()
-                return False
+                return CompletionOutcome.FAILED if cleanup.rowcount == 1 else CompletionOutcome.REFUSED
             if res.rowcount != 1:
                 log.warning("lost_claim_lease", item_id=item_id, outcome="complete")
-                return False
-            return True
+                return CompletionOutcome.REFUSED
+            return CompletionOutcome.DONE
 
     def fail(self, item_id: str, *, lease: datetime, error: str, at: datetime) -> bool:
         """Keep ordinary failure input for retry; scrub explicit erasure refusals.

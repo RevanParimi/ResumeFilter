@@ -1,46 +1,42 @@
 # Current handoff
 
-Updated: 2026-10-23. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1A complete and published; parent T1/F14/sprint/PI remain open.**
-Process calls claim one item when its work starts, with a fresh clock reading.
-Ingest/error failure counts require an acknowledged store write; a refused
-terminal write stops the call. Task cancellation leaves only active work leased.
-[A evidence](delivery/EVIDENCE-R4.md#r4-s2-t1a) owns its bounded contract, red/green
-regressions, exact commands/counts and reviews. Final service/API pytest (47
-passed, 6 skipped), broader focused (173 passed, 75 skipped), full pytest (3547
-passed, 511 skipped), PostgreSQL-configured selection (97 passed, 3 skipped),
-two-process SQLite/PostgreSQL HTTP/restart (27/27 + 31/31 each), actual screening
-Chrome (24/24) and bindings/syntax pass. Distinct final completion self-review
-found no A blocker. Scoped task commit `7e7ee34` is pushed to `origin/main`;
-remote `7e7ee3417427bbd21c4a3cc3f6e9083dffd7348b` was verified. This prose-only
-confirmation records publication; the final response reports the verified remote
-SHA after this confirmation. Working storage preserved; demo not restarted.
+**R4-S2-T1B1 complete and reviewed; publication pending.**
+Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b1) owns the bounded
+terminal acknowledgment work, red/green regressions, resolved review findings
+and exact validation commands/counts. Final full pytest **3554 passed, 518
+skipped**; focused **182 passed, 84 skipped**; PostgreSQL-configured **135 passed,
+4 skipped**; two-process SQLite/PostgreSQL terminal HTTP/restart **36/36 + 31/31
+each**, scheduling-only **27/27 + 31/31**, screening Chrome **24/24** and static
+checks pass. **Exact next task: R4-S2-T1B2 - Fence expiry and make batch
+persistence idempotent**, not started. Parent B/T1/F14/sprint/PI stay open.
+Distinct final completion self-review found no B1 blocker; authorized scoped
+commit/push and remote verification follow before stopping.
 
-False completion still reports a failed attempt; active expiry and persistence/
-idempotence remain T1B. Active lease theft can duplicate provider work and
-partial ingest/report commits can survive a failed completion. No exactly-once
-claim. R4-S1 and bounded F12/F13 remain closed.
-
-**Exact next task: R4-S2-T1B - Fence terminal outcomes and define expiry/idempotence**,
-not started. Read its [PI contract](delivery/PI-R4.md#r4-s2-t1b), A evidence and
-[WORKFLOW](delivery/WORKFLOW.md). Distinguish committed erasure failure from a
-refused completion; define expiry at input/report/final persistence boundaries,
-preserving lock ordering, retained input and current erasure. Refine B's bounded
-contract before implementation. No B work starts during A publication.
+Completion now distinguishes newly committed success/erasure failure from a
+refused write; only this call's acknowledged transitions affect its counters.
+A matching expired lease still can write until reclaimed; earlier input/report
+commits can survive terminal refusal. Duplicate reports and provider work remain
+possible. B2 must define expiry eligibility at input/report/final persistence
+boundaries, preserving erasure lock ordering, retained input and current consent.
+Read its [PI contract](delivery/PI-R4.md#r4-s2-t1b2---fence-expiry-and-make-batch-persistence-idempotent)
+and [WORKFLOW](delivery/WORKFLOW.md) before implementation. No B2 work this session.
+R4-S1 and bounded F12/F13 remain closed; A remains complete/published.
 
 ## Latest work
 
-A changes only process scheduling/acknowledgment and adds behavioral regressions
-to the existing service/API tests. The existing HTTP harness's `--leases` mode
-uses two actual app processes and a held fake evaluation on migrated scratch
-storage; saved queue/counters, retry no-op and tenant/CSRF behavior survive real
-graceful restart. Chrome proves rendered screening actions/reload/error recovery.
-Fakes prove mechanics, not live-provider behavior or measured quality. All owned
-validation processes stopped. Working DB and unrelated tracked files match the
-baseline; final preservation is recorded in A.
+B1 changes only the completion acknowledgment contract and service accounting.
+The existing HTTP harness's `--outcomes` adds real terminal lease replacement
+and candidate erasure across two app processes on migrated scratch storage;
+saved queue/counters, retry no-op and tenant/CSRF behavior survive restart.
+Chrome proves rendered screening actions/reload/error recovery. Fakes prove
+mechanics, not live-provider behavior or measured quality. All owned validation
+processes stopped; working DB and unrelated tracked files match baseline.
+Final completion self-review found no B1 blocker. Publication pending;
+demo not restarted.
 Ignored-artifact removal stays outside scope;
 [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
@@ -48,12 +44,14 @@ Ignored-artifact removal stays outside scope;
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1a.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b1.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
-- Two-process batch scheduling/retry/graceful restart:
-  `scripts/smoke_r4_s1_t3d.py --leases`; append `--postgres` only with an
+- Two-process batch scheduling/terminal outcomes/retry/graceful restart:
+  `scripts/smoke_r4_s1_t3d.py --outcomes` (or scheduling-only `--leases`);
+  append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t1a_postgres.py` / `r4-s2-t1a-pg-runtime.json`; stopped.
+  `.pytest_cache/run_r4_s2_t1b1_postgres.py` / `r4-s2-t1b1-pg-runtime.json`;
+  stopped.
 - Combined R4-S1 production composition/API/UI/graceful restart:
   `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Q's owned PG runner/runtime:

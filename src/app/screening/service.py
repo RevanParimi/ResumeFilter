@@ -27,7 +27,7 @@ from app.screening.schema import (
     signals_from_report,
 )
 from app.screening.store import (
-    BatchRecord, ItemRecord, ScreeningStore, build_screening_store,
+    BatchRecord, CompletionOutcome, ItemRecord, ScreeningStore, build_screening_store,
 )
 
 if TYPE_CHECKING:
@@ -284,11 +284,13 @@ class ScreeningService:
                 ) if report is not None else _no_report_signals(result),
                 at=self._now(),
             )
-            if completed:
+            if completed is CompletionOutcome.DONE:
                 processed += 1
             else:
-                # Erasure or a lost lease discarded this attempt's result.
-                failed += 1
+                if completed is CompletionOutcome.FAILED:
+                    failed += 1
+                # Stop after erasure cleanup or refusal. Only acknowledged
+                # transitions count; another worker's state is not our failure.
                 break  # Do not immediately reclaim/rebill this same item.
 
         counts = self._store.counts(org_id, batch_id, now=self._now())

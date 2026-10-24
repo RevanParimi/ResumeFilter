@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.screening.schema import ItemSignals, ItemStatus
-from app.screening.store import ScreeningStore
+from app.screening.store import CompletionOutcome, ScreeningStore
 
 NOW = datetime(2026, 8, 7, 12, 0, tzinfo=timezone.utc)
 
@@ -253,12 +253,12 @@ def test_a_lost_lease_cannot_overwrite_the_winners_result(store, services):
     assert store.complete(
         b.id, lease=b.claimed_at, candidate_id=None, resume_id=None,
         report_id=None, risk_score=0.7, signals=ItemSignals(), at=later,
-    ) is True
+    ) is CompletionOutcome.DONE
 
     assert store.complete(
         a.id, lease=a.claimed_at, candidate_id=None, resume_id=None,
         report_id=None, risk_score=0.2, signals=ItemSignals(), at=later,
-    ) is False
+    ) is CompletionOutcome.REFUSED
 
     row = store.all_items(org, bid, now=later)[0]
     assert row.status is ItemStatus.DONE

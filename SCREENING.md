@@ -164,20 +164,26 @@ Processing claims one item immediately before ingest, with the current clock,
 up to `screening_max_items_per_call`. Unstarted items remain available to another
 worker while a provider is awaited. An ordinary failure acknowledged by the
 store increments `failed` and lets the call continue; an unexpected exception
-uses `error="internal_error"`. A refused failure/completion write stops this
-call so it cannot immediately reclaim the same item. Refused failure writes
-do not increment `failed`.
+uses `error="internal_error"`. Completion distinguishes a newly committed
+success, a newly committed erasure failure and a refused write. Only those
+committed transitions increment this call's `processed` or `failed` counter.
+A refused failure/completion write stops this call without incrementing either
+counter, so it cannot immediately reclaim the same item or count another
+worker's outcome. Committed erasure cleanup counts one failure and also stops
+the call after observed erasure.
 
 Task cancellation propagates, leaving at most the active lease outstanding.
 Previously committed work remains; a later authorized process call can recover
 the active item through the existing timeout and retained-input rules. Browser
 navigation or HTTP disconnection does not guarantee server cancellation.
 
-[R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) covers this bounded scheduling
-change. The parent remains open: false completion still reports a failed attempt,
-and active expiry/terminal persistence outcomes require T1B. This does not remove
-duplicate provider work after an active lease is reclaimed, add a heartbeat,
-provide durable continuation or establish exactly-once model calls.
+[R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) covers scheduling;
+[R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1)
+covers terminal acknowledgment. The parent remains open for active
+expiry and persistence/idempotence in T1B2. A matching expired lease can still
+write until reclaimed, and earlier input/report commits can survive a refused
+terminal write. Duplicate persisted reports and provider work remain possible.
+This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
 ---
 

@@ -3,12 +3,14 @@
 Uses the existing fake-provider production SQL app and graceful restart loop.
 The reused UI contract is HTTP simulation, not actual browser execution.
 --leases adds R4-S2-T1A's two-app-process slow-provider scheduling journey.
+--outcomes adds R4-S2-T1B1's terminal refusal/erasure journey to --leases.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
+from datetime import timedelta
 import json
 import os
 from pathlib import Path
@@ -39,6 +41,37 @@ def create_smoke_app():
     async def lifespan(app):
         async with original(app):
             evaluate = app.state.engine.evaluate
+            svc = app.state.services.screening
+            now, complete = svc._now, svc._store.complete
+
+            def controlled_now():
+                # Deterministic expiry for competing OS processes, not a
+                # measured wall-clock timeout or an active-expiry fence test.
+                offset = svc._settings.screening_claim_timeout_seconds + 1 if (scratch / "outcome-advanced").exists() else 0
+                return now() + timedelta(seconds=offset)
+
+            def controlled_complete(item_id, **kwargs):
+                armed = scratch / "outcome-mode"
+                if armed.exists():
+                    mode = armed.read_text(encoding="utf-8")
+                    try:
+                        (scratch / f"outcome-claimed-{mode}").open("x").close()
+                    except FileExistsError:
+                        pass
+                    else:
+                        entered = scratch / f"outcome-entered-{mode}.json"
+                        temporary = entered.with_suffix(".tmp")
+                        temporary.write_text(json.dumps({
+                            "candidate_id": kwargs["candidate_id"], "report_id": kwargs["report_id"]}), encoding="utf-8")
+                        temporary.replace(entered)
+                        deadline = time.monotonic() + 30
+                        while not (scratch / f"outcome-release-{mode}").exists():
+                            assert time.monotonic() < deadline, "synthetic terminal gate timed out"
+                            time.sleep(.05)
+                return complete(item_id, **kwargs)
+
+            svc._now = controlled_now
+            svc._store.complete = controlled_complete
 
             async def controlled(**kwargs):
                 if "R4-S2-T1A slow fake gate" in (kwargs.get("resume_text") or ""):
@@ -62,10 +95,12 @@ def create_smoke_app():
 
 
 def run(scratch, url, pg_options):
-    leases = "--leases" in sys.argv
+    terminal_outcomes = "--outcomes" in sys.argv
+    leases = "--leases" in sys.argv or terminal_outcomes
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
+    checks = Smoke("R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
+                   else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
                    else "R4-S1-T3D screening HTTP and graceful restart")
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
@@ -210,6 +245,54 @@ def run(scratch, url, pg_options):
                             and all(row["advisory"] and row["human_review_required"] for row in lease_saved["/queue"]["rows"]))
                         checks.check("another tenant cannot read or process worker intake", other.get(lease_path).status_code == 404
                             and other.post(lease_path + "/process").status_code == 404)
+                        outcome_saved = {}
+                        if terminal_outcomes:
+                            for mode in ("stolen", "erased"):
+                                batch = require(worker_b.post("/screening/batches", json={"name": f"Terminal {mode}", "items": [{
+                                    "resume_text": contract._resume(f"Outcome {mode}", f"outcome-{mode}@example.com") }]}))
+                                outcome_path = "/screening/batches/" + batch["id"]
+                                (scratch / "outcome-mode").write_text(mode, encoding="utf-8")
+                                with ThreadPoolExecutor(max_workers=1) as executor:
+                                    pending = executor.submit(worker_a.post, outcome_path + "/process")
+                                    try:
+                                        entered = scratch / f"outcome-entered-{mode}.json"
+                                        deadline = time.monotonic() + 15
+                                        while not entered.exists():
+                                            assert time.monotonic() < deadline, "worker never reached terminal gate"
+                                            time.sleep(.05)
+                                        subject = json.loads(entered.read_text(encoding="utf-8"))
+                                        if mode == "stolen":
+                                            (scratch / "outcome-advanced").write_text("advance", encoding="utf-8")
+                                            winner = require(worker_b.post(outcome_path + "/process"))
+                                            checks.check("replacement worker alone acknowledges completion",
+                                                (winner["processed"], winner["failed"], winner["remaining"]) == (1, 0, 0))
+                                        else:
+                                            erased = require(worker_b.delete(f"/candidates/{subject['candidate_id']}", headers={"X-API-Key": ADMIN}))
+                                            checks.check("second app erases subject before terminal write", erased["deleted"])
+                                    finally:
+                                        (scratch / f"outcome-release-{mode}").write_text("release", encoding="utf-8")
+                                    loser = require(pending.result(timeout=30))
+                                (scratch / "outcome-mode").unlink()
+                                (scratch / "outcome-advanced").unlink(missing_ok=True)
+                                state = {suffix: require(worker_b.get(outcome_path + suffix)) for suffix in ("", "/queue", "/summary")}
+                                row = state["/queue"]["rows"][0]
+                                checks.check(f"{mode}: response counts only this call's acknowledged transitions",
+                                    (loser["processed"], loser["failed"], loser["remaining"]) == (0, int(mode == "erased"), 0))
+                                if mode == "stolen":
+                                    checks.check("stale completion cannot overwrite replacement report or saved counts",
+                                        row["status"] == "done" and row["report_id"] != subject["report_id"]
+                                        and state[""]["counts"] == {"pending":0, "processing":0, "failed":0, "done":1})
+                                else:
+                                    checks.check("acknowledged erasure failure has no subject links or signals",
+                                        row["status"] == "failed" and row["error"] == "candidate_erased"
+                                        and row["candidate_id"] is row["resume_id"] is row["report_id"] is row["signals"] is None
+                                        and state[""]["counts"] == {"pending":0, "processing":0, "failed":1, "done":0})
+                                checks.check(f"{mode}: retries do not replay settled or scrubbed input",
+                                    require(worker_b.post(outcome_path + "/retry")) == {"batch_id":batch["id"], "requeued":0, "skipped":int(mode == "erased")}
+                                    and require(worker_b.post(outcome_path + "/process"))["processed"] == 0
+                                    and row["advisory"] and row["human_review_required"]
+                                    and other.get(outcome_path + "/queue").status_code == 404)
+                                outcome_saved[outcome_path] = state
         with server():
             public_ui()
             if leases:
@@ -218,6 +301,9 @@ def run(scratch, url, pg_options):
                         all(require(worker.get(lease_path + suffix)) == body for suffix, body in lease_saved.items())
                         and require(worker.post(lease_path + "/process"))["processed"] == 0
                         and require(worker.post(lease_path + "/retry"))["requeued"] == 0)
+                    if terminal_outcomes:
+                        checks.check("terminal outcomes and exact saved queue summaries survive graceful restart",
+                            all(require(worker.get(path + suffix)) == body for path, state in outcome_saved.items() for suffix, body in state.items()))
             checks.check("cookie session and exact batch queue summary survive restart", all(require(actor.get(path + suffix)) == body for suffix, body in saved.items()))
             checks.check("report and employer judgments survive restart exactly", require(actor.get(report_path)) == saved_report
                 and require(actor.get(report_path + "/outcomes"))["outcomes"] == outcomes)
@@ -239,7 +325,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

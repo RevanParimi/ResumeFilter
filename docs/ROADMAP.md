@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-24 - R4-S2-T1B1 completed; terminal acknowledgment.**
+  Completion distinguishes newly committed success/erasure failure from a
+  refused write; only this call's acknowledged transitions count, and both
+  erasure cleanup and refusal stop the call. [B1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b1)
+  owns red/green regressions, resolved validation findings, full/focused pytest,
+  actual SQLite/PostgreSQL two-process HTTP/restart, screening Chrome, static/
+  preservation and separate reviews. B/T1/F14/sprint/PI remain open for expiry
+  and persistence/idempotence. Working DB preserved; demo not restarted.
+  Exact next R4-S2-T1B2, not started. Stop after B1 review/publication.
+
 - **Session 2026-10-23 - R4-S2-T1A completed; bounded batch scheduling fix.**
   Process calls claim one item when it starts and acknowledge failure writes;
   rejected terminal writes stop the call, and cancellation leaves only active

@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-10-23. This is the common feature summary. For the exact next
+Updated: 2026-10-24. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -114,5 +114,9 @@ tasks. Synthetic providers/media prove mechanics, not empirical quality.
 each item when work starts, counts ingest/error failures only after an
 acknowledged write and stops after a refused terminal write. Task cancellation
 leaves only active work leased, recoverable through existing timeout/input rules.
-The parent T1/F14 remains open for terminal completion outcomes, active expiry
-and persistence/idempotence in T1B. Duplicate provider work remains possible.
+[R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1) distinguishes committed
+success/erasure failure from a refused completion; only newly acknowledged
+transitions affect this call's counters. The parent T1/F14 remains open for
+active expiry and persistence/idempotence in T1B2. A matching expired lease can
+still write until reclaimed, and input/report commits can survive terminal
+refusal. Duplicate persisted reports and provider work remain possible.

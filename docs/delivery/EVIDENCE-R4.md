@@ -4997,3 +4997,201 @@ not started. Read its inline PI contract and A's explicit legacy completion/
 expiry cases before implementation; preserve input/report erasure lock ordering.
 Only A completed in this session. Working data, existing demo and unrelated
 work remain preserved; no deployment, cleanup or next-task implementation.
+
+## <a id="r4-s2-t1b1"></a>R4-S2-T1B1 - Distinguish acknowledged terminal outcomes
+
+Status: done (2026-10-24). Bounded child of R4-S2-T1B / T1 / F14;
+prerequisite A done. B was split inline in PI-R4 before implementation: B1
+fixes terminal acknowledgment without changing the input/report transaction
+protocol; B2 owns expiry and persistence/idempotence. Only B1 is in this
+session. B, T1, F14, sprint and PI remain open.
+
+### Contract and implementation
+
+Previously `complete=False` meant either a newly committed erasure-failed item
+or no write at all (stolen/deleted/already-terminal item or cleanup losing its
+lease after rollback). `process` counted both as one failed attempt. Replace
+that boolean with internal `CompletionOutcome.DONE/FAILED/REFUSED`. DONE and
+FAILED acknowledge only this attempt's newly committed transition; REFUSED
+acknowledges neither. The service counts DONE as processed and FAILED as
+failed. Both erasure cleanup and refusal retain the existing stop behavior;
+refusal increments neither counter and cannot immediately reclaim/rebill the
+same item or count a newer worker's outcome.
+
+Acceptance: success counts once; candidate/resume/report erasure cleanup counts
+one failure only after its lease-checked cleanup commits; stolen/deleted/
+already-terminal completion or cleanup losing its lease counts nothing and
+cannot overwrite newer state. Repeated completion is refused. Unrelated
+constraint errors propagate. Preserve raw/private input scrubbing and retry,
+existing lock ordering, advisory/tenant/CSRF behavior and public JSON shape.
+
+The production change touches only the screening store's completion return
+contract and the service's outcome accounting (plus a misleading lease comment).
+Both success and erasure cleanup commit before returning an acknowledgment;
+cleanup's conditional update still reasserts the lease after rollback. No new
+schema, SQL predicate, timeout, ingest/report callback, identity/scoring logic
+or frontend change. All production completion callers and existing smoke/test
+wrappers were inspected; wrappers forward the new outcome.
+
+A matching expired lease still can write until reclaimed. Input/report commits
+can precede terminal refusal, and retries can create duplicate reports. Duplicate
+provider work/cost also remains possible. B2 must define expiry at input/report/
+terminal boundaries, including lock waits and rollback, and idempotent persisted
+results without breaking erasure lock ordering or private input lifetime.
+This task establishes no hard expiry deadline, atomic report completion,
+globally unique reports, heartbeat, durable continuation or exactly-once model
+calls. Those exclusions were explicit before implementation.
+
+### Reproduction and implementation self-review
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b1.py
+<tag> <Python args>`; omitted arguments run project `-m pytest -q --tb=short`.
+It clears inherited DEE config/keys, pins missing config and null/loopback
+providers, and sets project paths. HTTP/browser harnesses additionally use
+fake/captured effects, scratch storage and scratch app working directories.
+Logs: `.pytest_cache/r4-s2-t1b1-<tag>.txt`; local runner/snapshot/synthetic
+artifacts remain ignored. Baseline `dc4c4fe`: 730 tracked files.
+
+Pre-fix runner `red -m pytest -q --tb=short tests/test_screening_service.py
+tests/test_screening_erasure_concurrency.py -k 'refused_completion_stops or
+does_not_count_lost_completion'`: **2 failed, 1 skipped, 60 deselected,
+1 warning, 8.49s**, exit 1. Both failures are real lease replacement incorrectly
+counted as failed despite no failed transition, through service and API. The API
+regression replaces its old constant-false stub with a real store reclamation.
+No import/fixture failure is counted as reproduction.
+
+Initial focused four-module run: **78 passed, 22 skipped, 1 warning, 55.64s**.
+Added winner/rollback races selection: **6 passed, 6 skipped, 61 deselected,
+1 warning, 13.24s**, before the final commit-refusal cases. The final selection
+below owns all final tests. New assertions distinguish an active replacement,
+its committed done/failed result, cleanup refused after rollback, preserved
+private retry input, repeated completion and success/cleanup commit rollback.
+Existing erasure order, actual PostgreSQL locks, unrelated constraint failures,
+cancellation and retry cases remain in the final selections.
+
+Implementation same-agent self-review: `dc4c4fe` plus screening `store.py`,
+`service.py`, existing service/store/erasure test modules and
+`smoke_r4_s1_t3d.py`. Specification review maps each B1 criterion to saved
+state/count assertions; no B2 or parent completion is inferred. Correctness/
+maintenance review checks commit-before-acknowledgment, cleanup rowcount after
+rollback, explicit outcome comparisons, stop/cap behavior, unchanged erasure
+scrubbing/lock order and completion callers/wrappers. The scratch-only
+terminal gates pause one worker after report save, release in `finally` and
+publish gate metadata atomically. A second OS app process takes the stale lease
+and commits a replacement, or executes real candidate-erasure HTTP before
+terminal persistence. No blocking B1 finding. This is self-review, not an
+independent review.
+
+Resumed review on 2026-10-24 verified the retained 642 code hashes against the
+working tree and the working DB against the 730-file baseline before changing
+anything. The interrupted final gates had not passed: broader focused was
+**1 failed, 181 passed, 84 skipped, 3 warnings, 182.26s**, and full pytest was
+**1 failed, 3553 passed, 518 skipped, 127 warnings, 1025.75s**. Both exposed the
+same missed completion adapter below. Those failed runs are not final proof.
+
+Resumed implementation self-review findings against `dc4c4fe` plus the B1 diff:
+
+- **Medium, `tests/test_screening_report_input.py`, interrupted-completion HTTP
+  adapter:** after committing `store.fail`, it still returned the old `False`.
+  The new service correctly counted neither enum outcome, so the existing
+  retry/count regression failed. Return `CompletionOutcome.FAILED` after the
+  actual acknowledged failure and assert exact response and persisted counts.
+  This fixes the test adapter's contract, with no compatibility boolean branch
+  added to production. The initial all-wrapper review missed this adapter.
+- **Low, `scripts/smoke_r4_s1_t3d.py`, `run`:** the terminal-mode flag reused
+  `outcomes`, later overwritten by the saved employer outcome list. As a result
+  `--leases` unintentionally ran terminal scenarios. Rename the flag to
+  `terminal_outcomes`; preserve the saved list and verify both explicit modes.
+
+The resumed review rechecks all screening completion callers, the full
+store/service/test/harness diff, commit-before-acknowledgment and cleanup
+rowcount after rollback. No production B1 blocker found; the two validation
+findings are fixed. Final gates use the revised test adapter/harness and the
+unchanged production fix. Source hashes are recorded separately in
+`.pytest_cache/r4-s2-t1b1-reviewed-source-resumed.json`. B2's expiry and partial/
+duplicate report persistence remain explicit; this is same-agent self-review.
+
+### Final validation
+
+All resumed final reviewed-state gates completed on 2026-10-24.
+The runner prefix below is `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t1b1.py`; commands/log tags with `-resumed` are the
+2026-10-24 reruns on the corrected test adapter/harness. Production code was
+unchanged across these reruns. Source hashes bind the reviewed/tested state.
+
+| Gate | Actual command/result |
+|---|---|
+| Broader focused | Runner `focused-resumed -m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_report_input.py tests/test_screening_refusal_retention.py tests/test_api_route_extraction.py`: **182 passed, 84 skipped, 3 warnings, 108.20s**, exit 0 |
+| Migrated two-process SQLite terminal outcomes / HTTP / graceful restart | Runner `http-resumed scripts/smoke_r4_s1_t3d.py --outcomes`: **36/36** plus reused cookie/CSRF HTTP contract **31/31**, exit 0; real lease replacement acknowledges one result, stale worker returns `(0,0,0)`, candidate-erasure cleanup returns `(0,1,0)`, exact saved queue/summary survive restart |
+| Scheduling-only mode regression | Runner `leases-resumed scripts/smoke_r4_s1_t3d.py --leases`: original **27/27** plus HTTP contract **31/31**, exit 0; terminal scenarios stay opt-in after flag/list separation |
+| Actual screening Chrome | Runner `browser-resumed scripts/check_ui_screening_extraction_browser.py`: **24/24**, exit 0; rendered intake, queue, feedback, deletion, second intake, saved reload and injected read failure/recovery; no console exceptions |
+| PostgreSQL-configured selection | `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t1b1_postgres.py` owns a fresh disposable cluster and invokes `-m pytest -q --tb=short tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py`: **135 passed, 4 skipped, 2 warnings, 238.49s**, exit 0 |
+| Migrated two-process PostgreSQL terminal outcomes / HTTP / graceful restart | Same owned runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --outcomes`: **36/36** plus cookie/CSRF HTTP contract **31/31**, exit 0; actual PG storage shared by both app processes, exact terminal responses, saved queue/summary, retry no-op and restart |
+| Full pytest | Runner `full-resumed` (project `-m pytest -q --tb=short`): **3554 passed, 518 skipped, 127 warnings, 913.09s**, exit 0 |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, all resolve; `node --check frontend/api.js`, `node --check frontend/support.js` and `git diff --check` pass |
+
+SQLite and PostgreSQL application journeys use migrated disposable storage and
+two OS application processes, with three gracefully closed lifespans including
+restart. HTTP simulation is separate from Chrome. Synthetic providers/gates
+prove mechanics, not live-provider compatibility, assessment quality, measured
+latency or reduced cost. Chrome still needs the existing CDN internet. No new
+schema, constraint or migration; no deployment/CI/runtime-alignment claim.
+
+The PostgreSQL-configured selection includes backend-neutral/SQLite-only
+fixtures as well as actual PG competing-connection/rollback/erasure cases;
+its entire pass count is not a PostgreSQL test count. Existing populated report
+migration roundtrips run in that selection; B1 adds no schema migration.
+SQLite and skipped lock cases are not PG evidence. PostgreSQL **18.6** uses
+**READ COMMITTED / Asia/Calcutta**. PG logs use
+`.pytest_cache/r4-s2-t1b1-pg-<tag>.txt`; the portable distribution metadata and
+owned runner are local artifacts, not a portable environment setup guarantee.
+The owned cluster stopped successfully (exit 0), recorded in
+`.pytest_cache/r4-s2-t1b1-pg-runtime.json`; all owned application/browser
+processes from the completed journey gates stopped as well.
+
+### Completion review and publication
+
+All B1 acceptance gates are complete, with no unresolved implementation-review
+blocker. CPython **3.13.11** and the existing dependencies remain in use.
+Warnings are the existing Starlette TestClient deprecation and SQLAlchemy/
+Alembic expression-index reflection limits; skips do not prove omitted cases.
+No project code/test/harness changes follow the reviewed/tested source snapshot;
+completion edits are prose only and need no application rerun.
+
+Completion records consolidate the B1 contract/evidence here and update PI
+status, product/feature notes, the short handoff and roadmap. B/T1/F14/sprint/PI
+remain open. A distinct final self-review of the exact staged thirteen-file
+scope was performed after the completion record and all required checks,
+against `dc4c4fe`: screening `store.py` and `service.py`, existing
+`test_screening_store.py`, `test_screening_service.py`,
+`test_screening_erasure_concurrency.py`, `test_screening_report_input.py`,
+`smoke_r4_s1_t3d.py`, `FEATURE_STATUS.md`, `SCREENING.md`, `PROGRESS.md`,
+`ROADMAP.md`, delivery `PI-R4.md` and this evidence record.
+
+Specification review maps every B1 criterion to committed state/counts, repeated
+completion, active/settled replacement, rollback, erasure/retry and the actual
+SQL/HTTP/browser gates; B2 and all parent statuses stay open. Correctness/
+maintenance review rechecks commit-before-acknowledgment on both outcomes,
+lease reassertion/rowcount after rollback, no acknowledgment on commit failure,
+all completion callers/adapters, explicit enum comparisons, unchanged erasure
+scrubbing/lock order, input retention, quota/tenant/CSRF/advisory/JSON contracts,
+and opt-in fake gates with release-before-shutdown. The two earlier validation
+findings are resolved and covered by the final green checks. No blocking B1
+finding remains. This distinct final review is self-review, not independent
+review; active expiry and partial/duplicate report/provider work remain B2.
+
+`.resume/Scripts/python.exe .pytest_cache/review_r4_s2_t1b1.py --staged`
+verifies **717** unrelated tracked files and the working DB against the
+730-file baseline, all **642** reviewed code hashes unchanged, **8** added local
+links/anchors resolved and exactly **13** scoped staged files. Staged whitespace
+checks pass. Secrets, working data and ignored local artifacts are excluded;
+only completion prose changes after validation. Commit/push and remote
+verification follow this distinct final review; no B2 work starts here.
+
+### Handoff
+
+Exact next after B1 completion/publication: **R4-S2-T1B2 - Fence expiry and make
+batch persistence idempotent**, not started. Refine its remaining contract before
+implementation. B/T1/F14/sprint/PI remain open. Preserve working storage and the
+existing demo; B1's HTTP/browser fakes prove mechanics, not live-provider
+behavior or assessment quality.

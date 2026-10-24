@@ -12,6 +12,7 @@ from app.graph.build import EvaluationEngine
 from app.screening.models import BatchItemRow
 from app.screening.schema import BatchStatus, ItemStatus
 from app.screening.ingest import IngestRefused, ingest_deps, ingest_resume
+from app.screening.store import CompletionOutcome
 from tests.conftest import make_services
 from tests.test_report_erasure_concurrency import database  # noqa: F401
 
@@ -151,7 +152,8 @@ async def test_next_item_lease_uses_the_clock_after_the_provider_wait(lease_serv
 
 
 @pytest.mark.asyncio
-async def test_refused_completion_stops_before_reclaiming_the_same_item(lease_services, genuine_resume, monkeypatch):
+@pytest.mark.parametrize("winner", ["processing", "done", "failed"])
+async def test_refused_completion_stops_before_reclaiming_the_same_item(lease_services, genuine_resume, monkeypatch, winner):
     services = lease_services
     org, bid = _lease_batch(services, genuine_resume, count=2)
     svc, store = services.screening, services.screening._store
@@ -164,15 +166,20 @@ async def test_refused_completion_stops_before_reclaiming_the_same_item(lease_se
         clock[0] += timedelta(seconds=services.settings.screening_claim_timeout_seconds + 1)
         stolen.extend(store.claim(org, bid, limit=1, now=clock[0],
             timeout_seconds=services.settings.screening_claim_timeout_seconds))
+        assert len(stolen) == 1
+        if winner == "done":
+            assert complete(item_id, **{**kwargs, "lease": stolen[0].claimed_at, "at": clock[0]}) is CompletionOutcome.DONE
+        elif winner == "failed":
+            assert store.fail(item_id, lease=stolen[0].claimed_at, error="internal_error", at=clock[0])
         return complete(item_id, **kwargs)
 
     monkeypatch.setattr(store, "complete", steal_before_completion)
     result = await svc.process(org, bid, engine=EvaluationEngine(services))
-    # The legacy failed-attempt counter on false completion remains T1B.
-    assert (result.processed, result.failed, result.remaining) == (0, 1, 2)
+    assert (result.processed, result.failed, result.remaining) == (0, 0, 2 if winner == "processing" else 1)
     assert len(stolen) == 1
     counts = svc.get(org, bid).counts
-    assert (counts.processing, counts.pending, counts.done, counts.failed) == (1, 1, 0, 0)
+    assert (counts.processing, counts.pending, counts.done, counts.failed) == (
+        int(winner == "processing"), 1, int(winner == "done"), int(winner == "failed"))
 
 
 def test_registration_is_evaluation_free(services, genuine_resume):
