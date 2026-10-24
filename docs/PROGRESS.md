@@ -4,7 +4,7 @@ Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b2b complete; B2b2/B2b/B2/B/T1 acceptance closes with it.**
+**R4-S2-T1B2b2b complete and published; B2b2/B2b/B2/B/T1 close with it.**
 Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) owns the scope,
 regressions, exact commands/counts, initial auth timing failure and unchanged
 clean rerun, parent closure and reviews. Full pytest **3630 passed, 595 skipped**;
@@ -27,8 +27,10 @@ Do not start it in this session. F14/sprint/PI remain open for T2/T3/T4/Q.
 A/B1/B2a/B2b1/B2b2a and R4-S1/bounded F12/F13 remain closed.
 
 Implementation and distinct final completion self-reviews found no blocker.
-Authorized scoped commit/push to origin/main and remote verification follow;
-publication will be recorded here after that step. Working DB and unrelated files match baseline;
+Scoped task commit `8fb5122` is pushed to origin/main; remote
+`8fb512206d0efce980808df30428283605b794bf` was verified, with a clean tree.
+This prose confirmation records publication; the final response reports its
+verified remote SHA after confirmation. Working DB and unrelated files match baseline;
 643 code hashes match reviewed/tested state. Demo not restarted; owned PG,
 HTTP and Chrome validation processes stopped. Ignored-artifact removal remains
 outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the overview.
