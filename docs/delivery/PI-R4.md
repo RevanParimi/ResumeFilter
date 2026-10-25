@@ -247,7 +247,7 @@ complete. No F14/sprint/PI closure or next-task work is included.
 
 ### R4-S2-T2 — Resolve candidate and resume ingest races
 
-Status: pending. Audit mapping: F14. Prerequisites: R4-S2-T1.
+Status: done (2026-10-25). Audit mapping: F14. Prerequisites: R4-S2-T1, done.
 
 **Development:** Handle lookup/create and resume-version allocation conflicts transactionally while respecting verified identity policy. Inspect existing duplicates before proposing constraints.
 
@@ -256,6 +256,14 @@ Status: pending. Audit mapping: F14. Prerequisites: R4-S2-T1.
 **Tests and journey:** Extend tests/test_candidate_store.py and screening ingest tests. Competing PostgreSQL transactions and API uploads; migration tests on synthetic duplicate records if schema changes.
 
 **Review focus:** Review uniqueness scope, retries and existing data. Never auto-merge real identities as a schema-cleanup shortcut.
+
+[T2 contract/evidence](EVIDENCE-R4.md#r4-s2-t2) owns the pre-implementation scope,
+safe unresolved-contact ordering/recheck, existing version-allocation proof,
+synthetic duplicate inventory, regressions, full/focused/actual PostgreSQL and
+two-process HTTP/restart validation, harness corrections and separate reviews.
+Proof, tenant ownership, consent/erasure and distinct ambiguous submissions
+remain. No migration or working-data merge/cleanup; provider/report work remains
+separate. Exact next is R4-S2-T3; F14/sprint/PI remain open for T3/T4/Q.
 
 ### R4-S2-T3 — Bound requests and move blocking work off-loop
 

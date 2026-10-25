@@ -10,11 +10,99 @@ from sqlalchemy import event, select, text, update
 from app.auth.models import AuthSessionRow
 from app.auth.schema import AuthPlane, LoginPurpose
 from app.auth.service import ChallengeRefused
-from app.candidates.models import CandidateRow
+from app.candidates.models import CandidateRow, ResumeRow, ExtractionRow
 from app.core.db import make_session_factory
 from tests.test_login_redemption_erasure import setup_auth
 from tests.test_report_erasure_concurrency import database  # noqa: F401
 from tests.test_auth_service import NOW
+
+
+@pytest.mark.parametrize("creator", ["upload", "login"])
+@pytest.mark.parametrize("rollback", [False, True])
+def test_first_upload_and_mailbox_redemption_share_creation_order(
+    database, settings, tmp_path, monkeypatch, creator, rollback,
+):
+    from app.candidates.extractor import heuristic_profile
+    from app.candidates.hashing import apply_contact_hashes
+    from app.candidates.schema import ExtractionResult
+
+    engine, factory = database
+    auth_factory, upload_factory = make_session_factory(engine), make_session_factory(engine)
+    auth, _ = setup_auth(auth_factory, settings, tmp_path)
+    from app.candidates.store import CandidateStore
+    candidates = CandidateStore(upload_factory)
+    email = "first-claim@example.in"
+    _, code = auth.issue_code(email=email, plane=AuthPlane.CANDIDATE,
+                              purpose=LoginPurpose.LOGIN, at=NOW)
+    resume = f"Synthetic first claim\nEmail: {email}\nSkills: Python"
+    profile = heuristic_profile(resume)
+    apply_contact_hashes(profile, salt=settings.contact_hash_salt)
+    extracted = ExtractionResult(profile=profile, method="heuristic")
+    ready, release, started = Event(), Event(), Event()
+    owner, pids = [], []
+    second_factory = auth_factory if creator == "upload" else upload_factory
+
+    def hold(session):
+        if engine.dialect.name == "postgresql":
+            owner.append(session.connection().scalar(text("SELECT pg_backend_pid()")))
+        ready.set()
+        assert release.wait(20)
+        if rollback:
+            raise RuntimeError("synthetic creation rollback")
+
+    def record(session, transaction, connection):
+        if engine.dialect.name == "postgresql":
+            pids.append(connection.scalar(text("SELECT pg_backend_pid()")))
+        started.set()
+
+    if creator == "upload":
+        event.listen(upload_factory, "before_commit", hold, once=True)
+    else:
+        establish = auth._establish
+        def hold_principal(*args, **kwargs):
+            result = establish(*args, **kwargs)
+            hold(kwargs["session"])
+            return result
+        monkeypatch.setattr(auth, "_establish", hold_principal)
+    event.listen(second_factory, "after_begin", record)
+    upload = lambda: candidates.ingest(extracted, resume)
+    login = lambda: auth.verify_code(email=email, plane=AuthPlane.CANDIDATE, code=code, at=NOW)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(upload if creator == "upload" else login)
+            try:
+                assert ready.wait(20)
+                second = pool.submit(login if creator == "upload" else upload)
+                assert started.wait(20)
+                blocked(engine, second, owner[0] if owner else None, pids)
+            finally:
+                release.set()
+            if rollback:
+                with pytest.raises(RuntimeError, match="synthetic creation rollback"):
+                    first.result(timeout=20)
+                first_result = None
+            else:
+                first_result = first.result(timeout=20)
+            second_result = second.result(timeout=20)
+    finally:
+        event.remove(second_factory, "after_begin", record)
+    with factory() as session:
+        rows = session.scalars(select(CandidateRow).where(
+            CandidateRow.email_hash == auth.hash_email(email))).all()
+        assert len(rows) == 1
+        row = rows[0]
+        if first_result is not None:
+            uploaded = first_result if creator == "upload" else second_result
+            principal = (second_result if creator == "upload" else first_result)[2]
+            assert uploaded.candidate_id == principal.candidate_id == row.id
+        proved = not rollback or creator == "upload"
+        assert row.login_email_hash == (auth.hash_email(email) if proved else None)
+        assert (row.login_email_verified_at is not None) is proved
+        assert len(session.scalars(select(AuthSessionRow).where(
+            AuthSessionRow.candidate_id == row.id)).all()) == int(proved)
+        uploaded = not rollback or creator == "login"
+        for model in (ResumeRow, ExtractionRow):
+            assert len(session.scalars(select(model).where(model.candidate_id == row.id)).all()) == int(uploaded)
 
 
 def blocked(engine, future, owner_pid, pids):

@@ -6041,3 +6041,163 @@ Exact next: **R4-S2-T2 - Resolve candidate and resume ingest races**, pending.
 Read its PI contract and current handoff; do not begin it as part of this task's
 publication. B2b2b/B2b2/B2b/B2/B/T1 close; F14/sprint/PI remain open for their
 other mapped tasks and gates. Working data and the existing demo are preserved.
+
+## R4-S2-T2
+
+### Contract and implementation (2026-10-25)
+
+Status: done (2026-10-25). Prerequisite R4-S2-T1 is done. This
+session handles candidate/resume ingestion races only; F14/sprint/PI stay open.
+
+Trigger: two first uploads both resolve no candidate before either commits.
+Previously each created its own subject, so identical safe contact/text input
+could split identity and resume history. After the batch pre-write erasure
+barrier, unresolved contact lookups take a transaction-scoped key and recheck
+before creating. Email uses existing login/redemption/erasure ordering; phone-only
+keys have a disjoint prefix. PostgreSQL uses the existing advisory lock, SQLite
+its writer lock. Lookup queries populate current matching rows after waits.
+Concrete resolved/expected subjects are never re-resolved after erasure.
+
+Acceptance and scope:
+
+- A unique compatible email/phone match shares one candidate across competing
+  uploads. Identical text reuses the caller-owned resume and records another
+  extraction; changed text/another tenant gets a unique candidate-wide version.
+  Existing candidate UPDATE locking already serializes dedup/version allocation;
+  this task proves that path as well as fixing absent-subject creation.
+  The operator plane retains its existing unowned/available-text reuse policy.
+- First mailbox redemption and upload agree on the subject. Proof is set only
+  by exact-code redemption. Creation rollback releases ordering and persists no
+  partial candidate/resume/extraction; callback failures are not auto-replayed.
+- Missing/ambiguous/incompatible hints retain distinct-submission policy, and
+  asserted hints stay non-unique. No historical identity merge, schema change,
+  migration, working-data cleanup, UI contract or scoring change.
+- Provider/report operations remain separate commits. This is candidate/resume
+  deduplication under the supported SQLite/PostgreSQL ordering, not exactly-once
+  provider/report execution or an assertion that hints prove identity.
+
+The pre-implementation read-only command `.resume/Scripts/python.exe
+scripts/inventory_candidate_contacts.py --database data/veritas.db` found one
+candidate, zero email/phone duplicate groups, one missing phone, one historical
+login subject and revision `0023_correction_pins_the_name`. Proof columns were
+unavailable, so proof was unknown. Only aggregates were printed; baseline hashes
+preserve this named working DB. Synthetic duplicate asserted emails are explicitly
+retained and cause separate submissions. A unique asserted-contact constraint
+would reject legitimate ambiguity and is intentionally unnecessary here.
+
+### Regressions and validation
+
+Sanitized local runner `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t2.py
+<tag> <Python args>` clears inherited `DEE_*`, uses a nonexistent config instead
+of `.env`, disables live LLM/GitHub/mail delivery and sets project import paths.
+Omitted arguments run `-m pytest -q --tb=short`. Scratch SQL/providers and the
+working DB are separate. Ignored logs/runners are local artifacts, not portable
+setup guarantees; reproducible HTTP entry points are tracked in the existing smoke.
+
+| Check | Actual result |
+|---|---|
+| Red: runner `red -m pytest -q --tb=short tests/test_candidate_store.py -k 'competing_ingests and first-creation and commit and identical'` | **2 failed, 2 skipped, 69 deselected**; both SQLite email/phone assertions found different committed candidate IDs, the intended defect |
+| Initial focused candidate/contact/login/erasure/screening group, runner `focused` | **213 passed, 138 skipped**, 2 warnings; before final lookup refresh/test-gate refinements |
+| Final full pytest | Runner `full-final` invokes `.resume/Scripts/python.exe -m pytest -q --tb=short`: **3659 passed, 623 skipped**, 127 warnings, exit 0 (876.78 s pytest time) |
+| Final PostgreSQL-configured focused group | `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t2_postgres.py`: **551 passed, 12 skipped**, 18 warnings, exit 0; includes actual controlled PostgreSQL connections and SQLite cases |
+| Migrated SQLite two-process HTTP, runner `http-fixed scripts/smoke_r4_s1_t3d.py --ingest-races` | **41/41** plus reused cookie/CSRF HTTP contract **31/31**, exit 0 |
+| Migrated PostgreSQL two-process HTTP/restart | Same PG runner invokes `scripts/smoke_r4_s1_t3d.py --postgres --ingest-races`: **41/41 + 31/31**, exit 0 |
+| Static | `node scripts/check_ui_bindings.js`: **586** bindings/18 states; `node --check scripts/test_ui_screening.js` and `git diff --check` passed |
+
+The owned PG runner provisions a new disposable PostgreSQL 18.6 database with
+Asia/Calcutta timezone and READ COMMITTED isolation, then runs the following
+project-environment command with its explicit `DEE_TEST_DB_URL` (URLs/passwords
+are not printed):
+
+```powershell
+.resume/Scripts/python.exe -m pytest -q --tb=short tests/test_candidate_store.py tests/test_candidate_login_binding_concurrency.py tests/test_candidate_login_binding.py tests/test_asserted_contact_policy.py tests/test_asserted_contact_concurrency.py tests/test_ingest_erasure_concurrency.py tests/test_screening_api.py tests/test_screening_service.py tests/test_screening_store.py tests/test_screening_batches_api.py tests/test_screening_erasure_concurrency.py tests/test_screening_report_input.py tests/test_screening_durable_input.py tests/test_screening_unresolved_input.py tests/test_screening_refusal_retention.py tests/test_migrations.py
+```
+
+It then runs `.resume/Scripts/python.exe scripts/smoke_r4_s1_t3d.py --postgres
+--ingest-races` and stops only its owned server in `finally` (stop exit 0).
+Both HTTP runs prove three migrated app lifespans and graceful cleanup. The full
+suite's skips and warnings are not evidence for omitted environments/features;
+the PG-configured group separately exercises the relevant actual PG contention.
+No schema changed;
+the existing migration suite and migrated HTTP startup check compatibility,
+without claiming a new migration or touching working storage. Python compilation
+also passed for the store, two changed test modules and changed smoke script.
+
+`tests/test_candidate_store.py` adds controlled committed/rolled-back competing
+email/phone, first/existing subject, identical/changed text and other-tenant
+uploads. The second lookup runs while the first write is uncommitted. PostgreSQL
+checks actual blocking PIDs; SQLite checks the pending writer. Assertions cover
+subject count, caller ownership, contiguous unique versions, resume reuse,
+extraction count and absent proof. Synthetic duplicate emails remain unmodified.
+`tests/test_candidate_login_binding_concurrency.py` covers both creation orders
+against actual exact-code redemption, commit/rollback, proof and session history.
+Existing erasure/contact/retry regressions preserve refusal and transaction scope.
+
+The tracked smoke's `--ingest-races` adds controlled first-email, first-phone,
+existing-identical, existing-changed, cross-tenant and operator/employer HTTP
+uploads through two actual app processes. It checks persisted versions, separate
+advisory reports/tenant reads, exact resume state after graceful restart, and
+reuses the earlier worker scheduling and cookie/CSRF HTTP contract. This is
+HTTP execution with fake providers, not a browser or live-provider test. No
+screen/handler/UI contract changed, so actual browser execution is not required.
+
+Harness corrections: initial new login tests passed settings as a positional
+argument to the single-argument heuristic helper (4 setup failures); fixed by
+hashing its profile with the configured salt and wrapping ExtractionResult.
+The first HTTP attempt requested an unsupported candidate-detail endpoint (404);
+it now asserts ownership through supported report routes with evaluation enabled
+for the cross-tenant case. The initial PostgreSQL run exposed two failure markers
+because the login-first pause attached to an earlier rate-limit commit. The pause
+now occurs after principal establishment under the address lock. Superseded full
+and PG runs were explicitly stopped, with no final counts claimed; the PG runner
+shut down its owned server. Clean final runs use the corrected gate and final code.
+
+### Implementation self-review
+
+Reviewed against base `82eb351` plus the scoped candidate-store, two test modules,
+smoke and candidate behavior documentation. Specification review traced safe and
+ambiguous/no-contact matching, tenant text reuse, version uniqueness, callback
+rollback and proof authority to behavioral assertions. Correctness review traced
+both routers and the batch caller, barrier -> contact -> candidate ordering,
+the existing resume/retry lock order, erasure refusals, and separate fingerprint/
+report/provider persistence. No blocking product finding remains. The lookup
+refresh uses populate-existing on the two matching queries instead of expiring
+the whole session, preserving caller-owned callback state. This is same-agent
+self-review, not independent review. Validation refinements above were resolved;
+final code hashes and required gates must agree before closure.
+
+Low documentation finding, `CANDIDATES.md` matching paragraph: unqualified
+caller-owned wording could imply that the operator plane owned a resume row.
+Clarified organization-only reuse and the existing operator exception here and
+in that behavior guide; runtime behavior is unchanged. Documentation checks
+validate the clarification.
+
+### Completion review and publication
+
+Distinct final completion self-review (2026-10-25), after the required gates
+and completion record: reviewed all **10 staged files** against `82eb351`:
+the candidate store, two regression modules, extended smoke, candidate guide,
+feature overview, PI status, this evidence, handoff and roadmap entry. This is
+a separate same-agent self-review, not independent review. Specification review
+matched each acceptance criterion to current implementation and final evidence.
+Correctness review rechecked key/row/barrier ordering, rollback and erasure,
+proof authority, tenant-specific resume reuse, version allocation, unchanged
+public contracts and independent provider/report commits. No blocking finding
+remains. A low handoff wording issue pointed the persistence setup at T2's
+creation-only PG runner; the prior persistence runner and current T2 runner are
+now named under their respective journeys. No application change was needed.
+
+Final preservation checks (`.resume/Scripts/python.exe
+.pytest_cache/review_r4_s2_t2.py --staged`) verify **643** code hashes unchanged
+from the reviewed/tested snapshot, **721** unrelated tracked files including the
+working DB unchanged, exactly **10** scoped staged files and **7** added local
+documentation links/anchors. Staged whitespace passes. Secrets, working data,
+ignored validation artifacts and unrelated work are excluded. Owned PG/HTTP/
+pytest processes finished; the existing demo was untouched. Final edits after
+application validation only refine completion prose, so affected documentation
+and staging checks suffice. Authorized publication targets `origin/main`; the
+final chat response records its verified remote commit after push.
+
+All acceptance gates, the completion record and both self-reviews are complete.
+Exact next is
+**R4-S2-T3 - Bound requests and move blocking work off-loop**; do not start it here.

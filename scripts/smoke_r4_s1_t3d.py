@@ -8,6 +8,7 @@ The reused UI contract is HTTP simulation, not actual browser execution.
 --persistence adds R4-S2-T1B2b1's input/report expiry rollback and recovery.
 Its checkpoints also verify B2b2a's private original facts across workers.
 B2b2b adds first-report reuse without provider replay, including after restart.
+--ingest-races adds R4-S2-T2's controlled candidate/resume creation contention.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -110,6 +111,35 @@ def create_smoke_app():
             svc._store.retain_ingested_input = controlled_retain
             svc._store.bind_input_report = controlled_bind
 
+            candidates = app.state.services.candidates
+            ingest, resolve = candidates.ingest, candidates._resolve_candidate
+
+            def observe_resolve(session, profile):
+                result = resolve(session, profile)
+                armed = scratch / "outcome-mode"
+                if armed.exists():
+                    mode = armed.read_text(encoding="utf-8")
+                    if mode.startswith("ingest-") and (scratch / f"outcome-entered-{mode}.json").exists():
+                        (scratch / f"outcome-resolved-{mode}").touch()
+                return result
+
+            def controlled_ingest(result, resume_text, **kwargs):
+                if "R4-S2-T2" in resume_text:
+                    callback = kwargs.get("before_commit")
+                    def checkpoint(session, outcome):
+                        if callback is not None:
+                            callback(session, outcome)
+                        armed = scratch / "outcome-mode"
+                        if armed.exists():
+                            mode = armed.read_text(encoding="utf-8")
+                            if mode.startswith("ingest-"):
+                                gate(mode, outcome.model_dump())
+                    kwargs["before_commit"] = checkpoint
+                return ingest(result, resume_text, **kwargs)
+
+            candidates._resolve_candidate = observe_resolve
+            candidates.ingest = controlled_ingest
+
             async def controlled(**kwargs):
                 if "R4-S2-T1A slow fake gate" in (kwargs.get("resume_text") or ""):
                     try:
@@ -134,14 +164,79 @@ def create_smoke_app():
     return app
 
 
+def check_ingest_races(checks, scratch, control, worker_a, worker_b):
+    """Hold a committed-write candidate transaction while another process resolves it."""
+    def require(response):
+        assert response.status_code == 200, (response.request.url.path, response.status_code)
+        return response.json()
+
+    def wait_for(path):
+        deadline = time.monotonic() + 20
+        while not path.exists():
+            assert time.monotonic() < deadline, "synthetic ingest gate timed out"
+            time.sleep(.05)
+
+    other = require(control.post("/ledger/orgs", json={"name": "Synthetic ingest counterparty"}))
+    snapshots = {}
+    for case in ("new-email", "new-phone", "existing-identical", "existing-changed",
+                 "other-tenant", "operator-employer"):
+        text = contract._resume("Synthetic Ingest Race", f"ingest-{case}@example.in") + "\nR4-S2-T2"
+        if case == "new-phone":
+            text = text.replace("ingest-new-phone@example.in", "") + "\nPhone: +91 98765 43210"
+        body = {"resume_text": text, "evaluate": case == "other-tenant", "domain": "genai"}
+        if case.startswith("existing-"):
+            require(worker_a.post("/screening/candidates", json={**body, "resume_text": text + "\nSeed version"}))
+        mode = "ingest-" + case
+        (scratch / "outcome-mode").write_text(mode, encoding="utf-8")
+        first_client = control if case == "operator-employer" else worker_a
+        first_path = "/candidates" if case == "operator-employer" else "/screening/candidates"
+        second_body = {**body, "resume_text": text + "\nNew availability"} if case == "existing-changed" else body
+        second_headers = {"X-Org-Key": other["api_key"]} if case == "other-tenant" else {}
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            one = pool.submit(first_client.post, first_path, json=body)
+            try:
+                wait_for(scratch / f"outcome-entered-{mode}.json")
+                two = pool.submit(worker_b.post, "/screening/candidates", json=second_body, headers=second_headers)
+                wait_for(scratch / f"outcome-resolved-{mode}")
+            finally:
+                (scratch / f"outcome-release-{mode}").touch()
+            first, second = require(one.result(timeout=30)), require(two.result(timeout=30))
+        (scratch / "outcome-mode").unlink()
+        extra_row = case in {"existing-changed", "other-tenant", "operator-employer"}
+        checks.check(f"{case}: concurrent uploads share subject and defined resume/version outcome",
+            first["candidate_id"] == second["candidate_id"]
+            and (first["resume_id"] == second["resume_id"]) is (not extra_row)
+            and second["resume_version"] == first["resume_version"] + int(extra_row)
+            and second["matched_existing"] and second["duplicate_resume"] is (case != "existing-changed")
+            and ((first["report"] is second["report"] is None) if case != "other-tenant" else
+                 first["report"]["advisory"] and second["report"]["human_review_required"]))
+        cid = first["candidate_id"]
+        path = f"/candidates/{cid}/resumes"
+        snapshots[path] = require(control.get(path))
+        versions = [row["version"] for row in snapshots[path]["resumes"]]
+        checks.check(f"{case}: persisted versions are unique with no failed-write gaps",
+            versions == list(range(1, second["resume_version"] + 1)))
+        if case == "other-tenant":
+            with client(str(worker_b.base_url), headers=second_headers) as counterparty:
+                left, right = first["report"]["id"], second["report"]["id"]
+                checks.check("concurrent counterparties retain separate advisory reports and scoped reads",
+                    [row["id"] for row in require(worker_a.get(f"/screening/candidates/{cid}/reports"))] == [left]
+                    and [row["id"] for row in require(counterparty.get(f"/screening/candidates/{cid}/reports"))] == [right]
+                    and worker_a.get(f"/screening/reports/{right}").status_code == 404
+                    and counterparty.get(f"/screening/reports/{left}").status_code == 404)
+    return snapshots
+
+
 def run(scratch, url, pg_options):
+    ingest_races = "--ingest-races" in sys.argv
     persistence = "--persistence" in sys.argv
     expiry = "--expiry" in sys.argv or persistence
     terminal_outcomes = "--outcomes" in sys.argv or expiry
-    leases = "--leases" in sys.argv or terminal_outcomes
+    leases = "--leases" in sys.argv or terminal_outcomes or ingest_races
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
+    checks = Smoke("R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
+                   else "R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
                    else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
                    else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
                    else "R4-S2-T1A two-worker leases / screening HTTP / graceful restart" if leases
@@ -267,6 +362,8 @@ def run(scratch, url, pg_options):
                     sock.bind(("127.0.0.1", 0)); worker_port = sock.getsockname()[1]
                 with server(worker_port, scratch / "stop-worker") as worker_base:
                     with client(base, headers=headers) as worker_a, client(worker_base, headers=headers) as worker_b:
+                        if ingest_races:
+                            ingest_saved = check_ingest_races(checks, scratch, control, worker_a, worker_b)
                         batch = require(worker_b.post("/screening/batches", json={"name": "Concurrent lease intake", "items": [
                             {"resume_text": contract._resume(f"Lease candidate {i}", f"lease-worker-{i}@example.com")
                              + "\nR4-S2-T1A slow fake gate"} for i in range(3)]}))
@@ -407,6 +504,9 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if ingest_races:
+                checks.check("exact concurrent candidate/resume state survives graceful app restart",
+                    all(require(control.get(path)) == body for path, body in ingest_saved.items()))
             if leases:
                 with client(base, headers=headers) as worker:
                     checks.check("exact concurrent queue and counters survive graceful app restart",
@@ -455,7 +555,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t2-" if "--ingest-races" in sys.argv else "r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

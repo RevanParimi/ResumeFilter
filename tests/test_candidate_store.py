@@ -1,6 +1,9 @@
 """Candidate store regressions, grouped by behavior."""
 
 import pytest
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from sqlalchemy import event, func, select, text
 from app.candidates import hashing
 from app.candidates.schema import CandidateProfile, ExtractedStr, ExtractionResult
 from app.candidates.store import CandidateStore
@@ -8,7 +11,10 @@ from app.core.db import Base, make_engine, make_session_factory
 from datetime import datetime, timezone
 from app.candidates.extractor import heuristic_profile
 from tests.conftest import make_candidate_store, set_extraction_created_at
-from app.candidates.models import CandidateRow
+from app.candidates.models import CandidateRow, ExtractionRow, ResumeRow
+from app.ledger.store import LedgerStore
+from tests.test_candidate_login_binding_concurrency import blocked
+from tests.test_report_erasure_concurrency import database  # noqa: F401
 
 
 # Candidate store
@@ -100,6 +106,108 @@ def test_identical_text_reuses_resume_but_records_new_extraction(store):
     assert again.resume_id == first.resume_id
     assert again.resume_version == 1
     assert again.extraction_id != first.extraction_id
+
+
+@pytest.mark.parametrize("contact", ["email", "phone"])
+@pytest.mark.parametrize("existing", [False, True], ids=["first-creation", "existing-subject"])
+@pytest.mark.parametrize("upload", ["identical", "changed-text", "other-tenant"])
+@pytest.mark.parametrize("rollback", [False, True], ids=["commit", "rollback"])
+def test_competing_ingests_deduplicate_and_allocate_versions(
+    database, monkeypatch, contact, existing, upload, rollback,
+):
+    engine, factory = database
+    store = CandidateStore(factory)
+    org_a = LedgerStore(factory).create_organization("Synthetic A").id
+    org_b = LedgerStore(factory).create_organization("Synthetic B").id
+    profile = extraction(**({"email": "ingest-race@example.com"} if contact == "email"
+                            else {"phone": "9876543210"}))
+    seed = store.ingest(profile, "seed", org_id=org_a) if existing else None
+    first_factory, second_factory = make_session_factory(engine), make_session_factory(engine)
+    first, second = CandidateStore(first_factory), CandidateStore(second_factory)
+    ready, release, resolved = Event(), Event(), Event()
+    pids, owner, lookups = [], [], []
+    resolve = second._resolve_candidate
+
+    def observe(session, incoming):
+        result = resolve(session, incoming)
+        lookups.append(result[0].id if result[0] else None)
+        resolved.set()
+        return result
+
+    def hold(session, outcome):
+        if engine.dialect.name == "postgresql":
+            owner.append(session.connection().scalar(text("SELECT pg_backend_pid()")))
+        ready.set()
+        assert release.wait(20)
+        if rollback:
+            raise RuntimeError("synthetic ingest rollback")
+
+    def started(session, transaction, connection):
+        if engine.dialect.name == "postgresql":
+            pids.append(connection.scalar(text("SELECT pg_backend_pid()")))
+
+    monkeypatch.setattr(second, "_resolve_candidate", observe)
+    event.listen(second_factory, "after_begin", started)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            one = pool.submit(first.ingest, profile, "same", org_id=org_a, before_commit=hold)
+            try:
+                assert ready.wait(20)
+                two = pool.submit(second.ingest, profile,
+                    "changed" if upload == "changed-text" else "same",
+                    org_id=org_b if upload == "other-tenant" else org_a)
+                assert resolved.wait(20)
+                assert lookups[0] == (seed.candidate_id if seed else None)
+                blocked(engine, two, owner[0] if owner else None, pids)
+            finally:
+                release.set()
+            if rollback:
+                with pytest.raises(RuntimeError, match="synthetic ingest rollback"):
+                    one.result(timeout=20)
+                saved = None
+            else:
+                saved = one.result(timeout=20)
+            result = two.result(timeout=20)
+    finally:
+        event.remove(second_factory, "after_begin", started)
+
+    if saved:
+        assert result.candidate_id == saved.candidate_id
+        assert result.duplicate_resume is (upload != "changed-text")
+        assert (result.resume_id == saved.resume_id) is (upload == "identical")
+        assert result.extraction_id != saved.extraction_id
+    else:
+        assert result.duplicate_resume is False
+    if seed:
+        assert result.candidate_id == seed.candidate_id
+    assert result.matched_existing is (existing or not rollback)
+    assert result.matched_on == (contact + "_hash" if result.matched_existing else None)
+    count = int(existing) + 1 + int(not rollback and upload != "identical")
+    assert result.resume_version == count
+    with factory() as session:
+        # The fixture's two unrelated subjects survive. No hidden split subject.
+        assert session.scalar(select(func.count()).select_from(CandidateRow)) == 3
+        resumes = session.scalars(select(ResumeRow).where(
+            ResumeRow.candidate_id == result.candidate_id).order_by(ResumeRow.version)).all()
+        assert [row.version for row in resumes] == list(range(1, count + 1))
+        assert session.get(ResumeRow, result.resume_id).org_id == (
+            org_b if upload == "other-tenant" else org_a)
+        assert session.scalar(select(func.count()).select_from(ExtractionRow)) == (
+            int(existing) + 1 + int(not rollback))
+        assert session.get(CandidateRow, result.candidate_id).login_email_hash is None
+
+
+def test_duplicate_asserted_emails_remain_distinct_and_unmodified(store):
+    profile = extraction(email="ambiguous@example.com")
+    with store._session_factory.begin() as session:
+        session.add_all([CandidateRow(id=key, email_hash=profile.profile.contact.email_hash)
+                         for key in ("one", "two")])
+    first = store.ingest(profile, "same")
+    second = store.ingest(profile, "same")
+    assert len({"one", "two", first.candidate_id, second.candidate_id}) == 4
+    assert not first.matched_existing and not second.matched_existing
+    assert store.get_candidate("one").resume_count == 0
+    assert store.get_candidate("two").resume_count == 0
 
 
 def test_missing_hash_backfilled_on_match(store):

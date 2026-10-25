@@ -1,45 +1,42 @@
 # Current handoff
 
-Updated: 2026-10-24. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-25. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T1B2b2b complete and published; B2b2/B2b/B2/B/T1 close with it.**
-Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) owns the scope,
-regressions, exact commands/counts, initial auth timing failure and unchanged
-clean rerun, parent closure and reviews. Full pytest **3630 passed, 595 skipped**;
-PG-configured **389 passed, 10 skipped**; SQLite/PostgreSQL two-process HTTP/
-restart **71/71 + 31/31 each**, screening Chrome **24/24**, focused and static
-checks pass. Fakes prove mechanics, not live providers or empirical quality.
+**R4-S2-T2 complete.** Its
+[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t2) owns the bounded scope,
+regressions, harness corrections, exact checks and implementation self-review.
+Unresolved contact lookups now lock/recheck before creating candidates; existing
+candidate writes serialize caller-owned resume deduplication and unique versions.
+Email ordering agrees with mailbox redemption; missing/ambiguous/incompatible
+hints keep distinct-submission policy. Proof, tenant ownership, consent and
+erasure remain. No migration/UI/working-store change; historical duplicates and
+separate provider/report work remain possible.
 
-Recovery atomically completes from the same authorized bound report and strict
-original flags without ingestion/evaluation. First-write binding rejects
-replacement/same-ID mutation. Unknown/invalid/swept/TTL-expired checkpoints
-require fresh upload; lease refusal rolls back/stops with zero counters. Tenant,
-erasure, original TTL, advisory/projection and existing consent remain. Earlier
-separate commits/provider cost before checkpoint and historical duplicates stay
-possible. No migration/frontend/working-store change; commit admission under
-locks is not a physical commit deadline.
+Full pytest: **3659 passed, 623 skipped**; PostgreSQL-configured focused:
+**551 passed, 12 skipped**; SQLite/PostgreSQL two-process HTTP/restart:
+**41/41 + 31/31 each**. Bindings, Python compilation and whitespace pass.
+The evidence owns initial harness corrections and clean final runs. Fakes prove
+mechanics, not live providers or empirical quality.
 
-**Exact next: R4-S2-T2 - Resolve candidate and resume ingest races**;
-read its [PI contract](delivery/PI-R4.md#r4-s2-t2--resolve-candidate-and-resume-ingest-races).
-Do not start it in this session. F14/sprint/PI remain open for T2/T3/T4/Q.
-A/B1/B2a/B2b1/B2b2a and R4-S1/bounded F12/F13 remain closed.
+**Exact next: R4-S2-T3 - Bound requests and move blocking work off-loop**;
+read its [PI contract](delivery/PI-R4.md#r4-s2-t3--bound-requests-and-move-blocking-work-off-loop).
+Do not start T3 in this session. F14/sprint/PI remain open for T3/T4/Q.
+Earlier R4-S1 and R4-S2-T1 remain closed.
 
-Implementation and distinct final completion self-reviews found no blocker.
-Scoped task commit `8fb5122` is pushed to origin/main; remote
-`8fb512206d0efce980808df30428283605b794bf` was verified, with a clean tree.
-This prose confirmation records publication; the final response reports its
-verified remote SHA after confirmation. Working DB and unrelated files match baseline;
-643 code hashes match reviewed/tested state. Demo not restarted; owned PG,
-HTTP and Chrome validation processes stopped. Ignored-artifact removal remains
-outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the overview.
+Implementation and distinct final staged self-reviews found no blocker.
+Authorized scoped publication uses tracking branch `origin/main`; the final
+response reports the verified remote SHA. Working DB and unrelated files match
+baseline; 643 code hashes name the reviewed/tested state. Demo untouched; owned
+PG, HTTP and pytest validation processes stopped.
+[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t1b2b2b.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t2.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
   `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
@@ -48,6 +45,11 @@ outside scope; [FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the overview.
   explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t1b2b2b_postgres.py` / `r4-s2-t1b2b2b-pg-runtime.json`;
   stopped.
+- Candidate/resume creation contention across two app processes and restart:
+  `scripts/smoke_r4_s1_t3d.py --ingest-races`; add `--postgres` only with an
+  explicitly disposable `DEE_TEST_DB_URL`. T2's owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t2_postgres.py` / `r4-s2-t2-pg-runtime.json`, stopped.
+  It covers this journey and the focused group named in T2 evidence.
 - Combined R4-S1 production composition/API/UI/graceful restart:
   `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an
   explicitly disposable DEE_TEST_DB_URL. Q's owned PG runner/runtime:

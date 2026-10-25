@@ -124,6 +124,17 @@ refuses profile merges and login changes as documented in [AUTH.md](AUTH.md).
 | Phone only | Match only one phone row with no proved login and no legacy review flag. |
 | Missing, ambiguous or conflicting hints | Create a separate submission; preserve every existing subject. |
 
+Concurrent unresolved lookups are ordered by the submitted email hash, or a
+separate phone-only key, and checked again before candidate creation. Email
+ordering is shared with mailbox redemption. A compatible unique match therefore
+shares one candidate across first uploads; ambiguous hints still create distinct
+submissions. Candidate writes serialize resume deduplication and candidate-wide
+version allocation: organization uploads reuse their own identical-text resume,
+while another tenant gets its own version. The operator plane keeps its existing
+ability to reuse an available text row. Every ingest records a new extraction.
+Report/provider work uses separate operations; historical duplicates remain. See
+[R4-S2-T2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t2).
+
 Only unproved subjects without a legacy review flag accept missing contact
 backfills. Proved/review subjects keep their top-level contact hints; extraction
 JSON still records each document's contacts. Names keep the existing latest

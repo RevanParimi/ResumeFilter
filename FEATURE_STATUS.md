@@ -137,4 +137,9 @@ invalid, unknown, swept or TTL-expired checkpoints require a fresh upload. Lease
 refusal rolls back and stops without counters. No-report retries retain their
 existing path; provider work before a checkpoint and historical duplicates remain
 possible. Combined acceptance closes B2b2/B2b/B2/B/T1; F14/sprint/PI remain
-open for their other tasks. Exact next is R4-S2-T2; no T2 work is included here.
+open for their other tasks.
+[R4-S2-T2](docs/delivery/EVIDENCE-R4.md#r4-s2-t2) orders unresolved contact lookups
+with a transactional recheck, preserving mailbox proof and ambiguous-submission
+policy. Competing safe matches share a candidate; caller-owned text deduplication
+and candidate-wide versions remain serialized. Existing duplicates are preserved;
+provider/report work is separate. Exact next is R4-S2-T3.

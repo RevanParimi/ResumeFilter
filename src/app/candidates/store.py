@@ -148,6 +148,21 @@ class CandidateStore:
                     CandidateRow.id == cand.id)) is None:
                     raise CandidateErasedError()
                 before_write(session)
+            if cand is None and expected_resume_id is None:
+                # Order absent lookups before creating a subject. Asserted
+                # hints are deliberately non-unique (ambiguity is not proof),
+                # so an INSERT constraint cannot arbitrate this race. Email
+                # shares redemption/erasure ordering; the phone-only namespace
+                # cannot collide with a mailbox hash. SQLite orders writers.
+                # Acquire AFTER the batch erasure barrier in before_write.
+                contact = profile.contact
+                key = contact.email_hash or (
+                    "ingest:phone:" + contact.phone_hash if contact.phone_hash else None)
+                if key:
+                    lock_login_state(session, key)
+                    cand, matched_on = self._resolve_candidate(session, profile)
+                # Recheck only unresolved work. A concrete resolved/expected
+                # subject that is erased must never become a replacement ID.
             matched = cand is not None
             if cand is None:
                 cand = CandidateRow()
@@ -265,7 +280,7 @@ class CandidateStore:
             rows = (
                 session.execute(
                     select(CandidateRow).where(CandidateRow.email_hash == contact.email_hash)
-                    .limit(2)
+                    .limit(2).execution_options(populate_existing=True)
                 )
                 .scalars()
                 .all()
@@ -278,7 +293,8 @@ class CandidateStore:
         if contact.phone_hash:
             rows = (
                 session.execute(
-                    select(CandidateRow).where(CandidateRow.phone_hash == contact.phone_hash).limit(2)
+                    select(CandidateRow).where(CandidateRow.phone_hash == contact.phone_hash)
+                    .limit(2).execution_options(populate_existing=True)
                 )
                 .scalars()
                 .all()

@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-25 - R4-S2-T2 completed; candidate/resume ingest races.**
+  Unresolved email/phone lookups lock and recheck before candidate creation;
+  mailbox redemption shares email ordering. Competing safe matches reuse the
+  candidate, caller-owned identical text and unique candidate-wide versions.
+  Ambiguous/missing hints, tenant ownership, proof and erasure remain; no schema
+  change, historical identity merge or working-data cleanup. The
+  [T2 evidence](delivery/EVIDENCE-R4.md#r4-s2-t2) owns red/green regressions,
+  full pytest, actual PG contention, SQLite/PG two-process HTTP/restart,
+  harness corrections, preservation and separate self-reviews. Provider/report
+  work remains separate; fake providers prove mechanics. Exact next R4-S2-T3;
+  F14/sprint/PI stay open. Demo untouched; stop after reviewed scoped publication.
+
 - **Session 2026-10-24 - R4-S2-T1B2b2b completed; authorized report recovery.**
   A current private checkpoint atomically completes from its first saved report
   and original flags without ingestion/evaluation or a duplicate report.
