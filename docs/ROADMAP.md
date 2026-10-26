@@ -6,7 +6,7 @@
 
 ## ▶ Current state
 
-- **Session 2026-10-26 - R4-S2-T3B implemented/validated; publication blocked.**
+- **Session 2026-10-26 - R4-S2-T3B completed and published.**
   Shared per-service admission refuses excess work safely; cancellation retains
   capacity until child/pipe cleanup, and service shutdown joins supervisors.
   Verification rechecks gates after parsing; atomic registration and existing
@@ -15,8 +15,8 @@
   measured responsiveness, actual Chrome recovery, dated-fixture corrections
   and separate self-reviews. No SQL session crosses threads. T3/F14/sprint/PI
   stay open for C and later gates. Working DB preserved, demo untouched. Reviewed
-  commit is local; missing GitHub authentication blocks push. Exact next is B
-  publication/remote verification, then stop; T3C is the next backlog task.
+  implementation was pushed and verified after selecting the repository owner's
+  GCM account. Exact next is T3C; stop after the publication-record update.
 
 - **Session 2026-10-26 - R4-S2-T3A completed; aggregate HTTP body budget.**
   T3 was split before implementation. Raw request bytes are capped before

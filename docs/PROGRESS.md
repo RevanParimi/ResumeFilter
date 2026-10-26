@@ -4,8 +4,7 @@ Updated: 2026-10-26. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3B implementation/validation complete; publication blocked.**
-Only B is this session's task. Its
+**R4-S2-T3B complete and published.** Only B is this session's task. Its
 [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3b) owns admission/lifecycle
 behavior, regressions, exact commands/counts, fixture corrections and reviews.
 T3/F14/sprint/PI remain open for C and later gates; A/T1/T2 and R4-S1 stay closed.
@@ -26,15 +25,13 @@ were pinned to their synthetic clocks; application consent is unchanged.
 Fakes prove mechanics, not live providers or empirical quality.
 
 Implementation and distinct final staged self-reviews found no blocker.
-The reviewed scoped commit is local. Push to `origin/main` is blocked by missing
-GitHub authentication: GCM's noninteractive retry refused credentials. Remote
-`main` was verified unchanged at `06a7f42`; no remote publication is claimed.
+The reviewed implementation commit `5afe648` was pushed to `origin/main` and
+verified remotely. GCM's multiple-account selection was resolved using a
+per-command username; no saved Git configuration changed. The final response
+records the verified remote SHA after this publication-record update.
 
-**Exact next task: finish R4-S2-T3B publication only.** After GitHub authentication,
-push the reviewed local commit to the existing tracking branch and verify the
-remote SHA, then stop. Do not repeat implementation/audit or the unchanged green
-tests. Next backlog task after B publication is **R4-S2-T3C - Bound remaining
-blocking SQL/SMTP boundaries**, under its [contract](delivery/PI-R4.md#r4-s2-t3c).
+**Exact next task: R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries**,
+under its [contract](delivery/PI-R4.md#r4-s2-t3c). Do not start C in this session.
 
 Per-service admission is not global RSS/body concurrency. Timeouts remain per
 parse, and normal server shutdown first drains HTTP requests. Direct synchronous

@@ -6353,8 +6353,8 @@ existing [T3 child contract](PI-R4.md#r4-s2-t3b). Stop after A publication.
 
 ### Contract and implementation (2026-10-26)
 
-Status: blocked (publication only, 2026-10-26). Implementation, validation and
-both self-reviews are complete. This session handles B only. A/T2
+Status: done (2026-10-26), including reviewed publication/remote verification.
+This session handles B only. A/T2
 are complete; C, parent T3/F14/sprint/PI remain open.
 
 Trigger: candidate intake, batch registration and the async graph ingest node
@@ -6516,7 +6516,7 @@ unchanged from the earlier HTTP/Chrome/focused validation.
 
 Implementation, required validation and the completion record are complete.
 Final full pytest passed on the reviewed state; **604 code/config hashes**
-remain unchanged. B's publication is pending; C/parent/F14/sprint/PI remain open. Settings,
+remain unchanged. B is published; C/parent/F14/sprint/PI remain open. Settings,
 operating/feature guidance, PI, roadmap and the short handoff agree. No working
 store migration, demo restart or live-provider validation is claimed.
 The distinct final staged self-review/publication follows this completion record.
@@ -6558,8 +6558,8 @@ Exactly **26 scoped files** are staged with no unstaged changes. **8 added local
 documentation links/anchors** and `git diff --cached --check` pass.
 
 Both reviews and B's validation gates are complete. Authorized scoped publication
-uses `main` tracking `origin/main` and remains pending authentication below.
-Finish B publication/remote verification, then stop. Next backlog is
+uses `main` tracking `origin/main`; the authentication issue below is resolved.
+Next backlog is
 **R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries**, under the
 existing [C contract](PI-R4.md#r4-s2-t3c).
 
@@ -6571,12 +6571,25 @@ failed with `Cannot prompt because user interactivity has been disabled` /
 credentials are unavailable; SSH refused because no trusted host key is present.
 No host trust, credential configuration or remote URL was changed. Read-only
 `git ls-remote origin refs/heads/main` verified remote main still at
-`06a7f4227188f9dda3c63fb571784fad7c9b517b`. No successful push is claimed.
+`06a7f4227188f9dda3c63fb571784fad7c9b517b`. No successful push was claimed then.
 
-The current local commit includes this publication-blocker handoff; the final
-response records its SHA. These later edits are documentation only and receive
-a scoped self-review/whitespace/link check before amending the unpublished
-commit. All tested code/config hashes remain unchanged. Exact next is B's push
-and remote verification once GitHub authentication is available, then stop;
-C remains the next backlog task. The user has been asked to restore GitHub
-authentication, not to reapprove the already-authorized publication.
+The implementation commit retained that earlier blocker handoff. After the user
+confirmed authentication readiness, a noninteractive retry still could not
+select credentials. `git credential-manager github list` identified multiple
+accounts. Using the per-command `-c credential.username=RevanParimi` selection
+allowed `git push origin main` to succeed without changing saved configuration,
+host trust or the remote URL. Missing noninteractive account selection did not
+prove stored accounts were absent. The implementation commit
+**`5afe648c7b7244f89b4c0c60ed16893b32f0ddf0`** was verified exactly by
+`git ls-remote origin refs/heads/main`; the publication blocker is resolved.
+
+Publication continuation changes only PROGRESS, PI status, this evidence and
+the existing roadmap entry. Its scoped self-review confirms B is done, C/parent
+remain open, historical failed attempts stay labeled, and no application/test/
+config or working data changed. **604 code/config hashes** and **707 unrelated
+tracked files including the working DB** still match their reviewed baselines.
+Prior focused/full/HTTP/Chrome results remain applicable; no application tests
+are rerun for publication prose. Documentation links and staged whitespace are
+checked before the separate documentation commit. The final chat response
+records its verified remote SHA. Exact next is C; stop after this publication
+record is pushed and verified.

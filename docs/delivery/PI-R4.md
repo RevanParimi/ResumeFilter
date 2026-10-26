@@ -277,8 +277,7 @@ Status: in progress (2026-10-25). Audit mapping: F14. Prerequisites: R4-S2-T2, d
 
 **Review focus:** Review sessions across threads, memory bounds and exception sanitization. Split individual boundaries into child tasks when needed.
 
-Split before implementation into A/B/C below. A is complete; B implementation/
-validation/reviews are complete but publication is blocked by GitHub authentication;
+Split before implementation into A/B/C below. A/B are complete;
 T3/F14/sprint/PI remain open until all children and the parent acceptance review
 are complete. Completed child evidence lives in the linked PI evidence record.
 
@@ -297,8 +296,8 @@ working-store change. B/C execution and parent acceptance are tracked below.
 
 #### <a id="r4-s2-t3b"></a>R4-S2-T3B - Bound PDF execution and keep it off the event loop
 
-Status: blocked (publication only, 2026-10-26). Implementation, validation and
-both self-reviews are complete. Prerequisite: A, done.
+Status: done (2026-10-26), including reviewed publication/remote verification.
+Prerequisite: A, done.
 
 [B contract/evidence](EVIDENCE-R4.md#r4-s2-t3b) owns the pre-implementation
 scope, bounded off-loop PDF/document execution, shared queue-free admission,
@@ -308,8 +307,7 @@ per-parse limits, text precedence, safe refusals, ownership and atomic batch
 registration remain; verification rechecks its gates after the awaited parse.
 SQL sessions stay on the caller. This is per-service admission, not global RSS
 or a whole-batch deadline; normal server shutdown first drains HTTP requests.
-C and the parent acceptance review remain open. Exact next is B's pending push/
-remote verification after GitHub authentication, then stop; C is next backlog.
+C and the parent acceptance review remain open; exact next is C.
 
 #### <a id="r4-s2-t3c"></a>R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries
 
