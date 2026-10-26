@@ -449,6 +449,9 @@ class Settings(BaseSettings):
 
     # --- API hardening ----------------------------------------------------------
     # Input caps so a hostile/buggy client can't OOM the service (FR-11).
+    # Raw bytes per HTTP request, including the whole batch/ignored JSON fields.
+    # This ingress cap is enforced before JSON parsing, separately from per-item caps.
+    max_request_body_bytes: int = Field(default=32_000_000, ge=1)
     max_resume_chars: int = 200_000
     max_pdf_b64_chars: int = Field(default=14_000_000, ge=1)  # ≈ 10 MB decoded
     # Per PDF, including verification documents. Logical caps do not bound RSS.

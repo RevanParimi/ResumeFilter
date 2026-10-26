@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-10-24. This is the common feature summary. For the exact next
+Updated: 2026-10-26. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -142,4 +142,9 @@ open for their other tasks.
 with a transactional recheck, preserving mailbox proof and ambiguous-submission
 policy. Competing safe matches share a candidate; caller-owned text deduplication
 and candidate-wide versions remain serialized. Existing duplicates are preserved;
-provider/report work is separate. Exact next is R4-S2-T3.
+provider/report work is separate.
+[R4-S2-T3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3a) adds the
+[raw HTTP body budget](OPERATING.md#raw-http-body-budget) before JSON/model/PDF
+work, including streamed bodies; request IDs/CORS and existing per-item limits
+remain. Rejected batches create no partial registration. The T3 parent remains
+open for bounded PDF/SQL/SMTP execution; next is T3B.

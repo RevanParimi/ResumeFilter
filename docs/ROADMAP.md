@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-26 - R4-S2-T3A completed; aggregate HTTP body budget.**
+  T3 was split before implementation. Raw request bytes are capped before
+  JSON/model/PDF work; oversized lengths refuse unread and streamed bodies
+  count actual bytes. Rejected batches create no partial registration;
+  exact-size intake, auth/tenant/CSRF and request IDs/CORS remain. The
+  [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3a) owns the contract, red/green,
+  full/focused pytest, migrated HTTP/restart/paused-upload latency, actual
+  Chrome recovery, static checks and separate self-reviews. This bounds raw
+  bytes per request; transport timeouts and blocking PDF/SQL/SMTP remain.
+  T3/F14/sprint/PI stay open. Working DB preserved, demo untouched. Exact next
+  T3B; stop after A's reviewed scoped publication.
+
 - **Session 2026-10-25 - R4-S2-T2 completed; candidate/resume ingest races.**
   Unresolved email/phone lookups lock and recheck before candidate creation;
   mailbox redemption shares email ordering. Competing safe matches reuse the

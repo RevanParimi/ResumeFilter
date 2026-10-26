@@ -267,7 +267,7 @@ separate. Exact next is R4-S2-T3; F14/sprint/PI remain open for T3/T4/Q.
 
 ### R4-S2-T3 — Bound requests and move blocking work off-loop
 
-Status: pending. Audit mapping: F14. Prerequisites: R4-S2-T2.
+Status: in progress (2026-10-25). Audit mapping: F14. Prerequisites: R4-S2-T2, done.
 
 **Development:** Add aggregate body limits before expensive parsing; move measured blocking SQL/SMTP/PDF boundaries to bounded workers without unsafe shared sessions.
 
@@ -276,6 +276,46 @@ Status: pending. Audit mapping: F14. Prerequisites: R4-S2-T2.
 **Tests and journey:** HTTP size-bound tests and controlled blocking fakes; concurrent health/read request latency with a documented budget measured on the test host.
 
 **Review focus:** Review sessions across threads, memory bounds and exception sanitization. Split individual boundaries into child tasks when needed.
+
+Split before implementation into A/B/C below. A is complete;
+T3/F14/sprint/PI remain open until all children and the parent acceptance review
+are complete. Completed child evidence lives in the linked PI evidence record.
+
+#### R4-S2-T3A - Bound aggregate HTTP request bodies before parsing
+
+Status: done (2026-10-26). Prerequisite: T2, done.
+
+[A contract/evidence](EVIDENCE-R4.md#r4-s2-t3a) owns the pre-implementation
+scope, raw-byte budget before JSON/model/PDF work, red/green regressions,
+full/focused/HTTP/restart/Chrome/static checks, harness corrections and separate
+self-reviews. Known lengths refuse unread and streams count actual bytes;
+equality, auth/tenant/CSRF, request IDs/CORS and existing item caps remain.
+Refused batches create no partial registration. Disconnect/cancellation and
+the per-request memory limitation are explicit. No schema/transaction or
+working-store change. B/C and parent acceptance remain open; exact next is B.
+
+#### <a id="r4-s2-t3b"></a>R4-S2-T3B - Bound PDF execution and keep it off the event loop
+
+Status: pending. Prerequisite: A.
+
+Inspect measured PDF blocking callers; use bounded execution while retaining
+per-parse process/time/resource limits. Define admission saturation, cancellation,
+timeout and shutdown. Prove slow/failing PDF work permits unrelated health/read
+requests within a measured budget; cover valid/invalid multi-file intake and
+bounded worker capacity with offline fakes plus migrated HTTP. Preserve input
+refusal, ownership and exception sanitization; review actual browser impact.
+
+#### <a id="r4-s2-t3c"></a>R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries
+
+Status: pending. Prerequisite: B.
+
+Measure remaining synchronous SQL/SMTP boundaries; move complete owning-session
+operations to bounded workers without sharing sessions across threads. Define
+saturation, timeout/cancellation, committed-write uncertainty and cleanup.
+Require focused/full/API and actual PostgreSQL competing-connection evidence
+where transaction/thread behavior changes; measure unrelated-request latency
+with slow SQL/mail fakes. Complete the combined T3 acceptance review here only
+after A/B/C evidence is complete. No live email delivery or deployment.
 
 ### R4-S2-T4 — Provide durable batch continuation
 

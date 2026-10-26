@@ -9,6 +9,7 @@ The reused UI contract is HTTP simulation, not actual browser execution.
 Its checkpoints also verify B2b2a's private original facts across workers.
 B2b2b adds first-report reuse without provider replay, including after restart.
 --ingest-races adds R4-S2-T2's controlled candidate/resume creation contention.
+--body-limit adds R4-S2-T3A's aggregate ingress refusal and slow-upload checks.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -17,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager
 from datetime import timedelta
 from hashlib import sha256
+from http.client import HTTPResponse
 import json
 import os
 from pathlib import Path
@@ -37,11 +39,29 @@ ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
 
 
+class ObservePausedUpload:
+    """Test-only acknowledgement that the real ASGI server delivered the prefix."""
+    def __init__(self, app, *, marker):
+        self.app, self.marker = app, marker
+
+    async def __call__(self, scope, receive, send):
+        async def observed_receive():
+            message = await receive()
+            if message.get("body"):
+                self.marker.touch()
+            return message
+        paused = scope["type"] == "http" and (
+            b"x-smoke-paused-upload", b"true") in scope.get("headers", ())
+        await self.app(scope, observed_receive if paused else receive, send)
+
+
 def create_smoke_app():
     """Pause one synthetic evaluation across two real app processes."""
     app = sql_app()
     original = app.router.lifespan_context
     scratch = Path(os.environ["VERITAS_SQL_SMOKE_EVENTS"]).parent
+    if os.environ.get("VERITAS_BODY_LIMIT_SMOKE") == "true":
+        app.add_middleware(ObservePausedUpload, marker=scratch / "body-upload-waiting")
 
     @asynccontextmanager
     async def lifespan(app):
@@ -140,6 +160,15 @@ def create_smoke_app():
             candidates._resolve_candidate = observe_resolve
             candidates.ingest = controlled_ingest
 
+            if os.environ.get("VERITAS_BODY_LIMIT_SMOKE") == "true":
+                import app.core.resume as resume_input
+                parse = resume_input.pdf_b64_to_text
+                def observed_pdf(*args, **kwargs):
+                    if (scratch / "body-checks-armed").exists():
+                        (scratch / "body-pdf-called").touch()
+                    return parse(*args, **kwargs)
+                resume_input.pdf_b64_to_text = observed_pdf
+
             async def controlled(**kwargs):
                 if "R4-S2-T1A slow fake gate" in (kwargs.get("resume_text") or ""):
                     try:
@@ -227,7 +256,71 @@ def check_ingest_races(checks, scratch, control, worker_a, worker_b):
     return snapshots
 
 
+def check_request_body_limit(checks, scratch, base, control, actor):
+    """Real HTTP framing, paused uploads and exact-size accepted registration."""
+    from urllib.parse import urlsplit
+    cap = 64_000
+    expected = {"detail": f"request body exceeds max_request_body_bytes={cap}"}
+    origin = contract.UI_ORIGIN
+    def require(response):
+        assert response.status_code == 200, (response.request.url.path, response.status_code)
+        return response.json()
+    before = require(actor.get("/screening/batches"))
+    (scratch / "body-checks-armed").touch()
+    address = (urlsplit(base).hostname, urlsplit(base).port)
+    # A peer which sends no body still receives a refusal from the length hint.
+    with socket.create_connection(address, timeout=3) as peer:
+        peer.sendall((f"POST /screening/batches HTTP/1.1\r\nHost: {address[0]}\r\n"
+                      f"Content-Length: {cap + 1}\r\nConnection: close\r\n\r\n").encode())
+        response = HTTPResponse(peer)
+        response.begin()
+        checks.check("oversized declared length refuses before any upload bytes arrive",
+            response.status == 413 and json.loads(response.read()) == expected
+            and bool(response.getheader("X-Request-ID")))
+    payload = json.dumps({"items": [{"resume_pdf_b64": "A" * 40_000}] * 2,
+                          "name": "private-body-smoke-sentinel"}).encode()
+    for mode, content in (("known", payload), ("chunked", iter((payload[:32_000], payload[32_000:]))),
+                          ("invalid-json", b"{" + b"x" * cap)):
+        response = actor.post("/screening/batches", content=content,
+            headers={"Content-Type": "application/json", "Origin": origin})
+        checks.check(f"{mode}: aggregate refusal precedes parsing/PDF and keeps CORS/request ID",
+            response.status_code == 413 and response.json() == expected
+            and response.headers.get("access-control-allow-origin") == origin
+            and bool(response.headers.get("x-request-id")))
+    checks.check("refused batch input performs no PDF parse or durable registration",
+        not (scratch / "body-pdf-called").exists()
+        and require(actor.get("/screening/batches")) == before)
+
+    # Hold one incomplete application request while unrelated requests complete.
+    with socket.create_connection(address, timeout=3) as peer:
+        peer.sendall((f"POST /screening/batches HTTP/1.1\r\nHost: {address[0]}\r\n"
+                      f"Content-Length: {cap}\r\nContent-Type: application/json\r\n"
+                      "X-Smoke-Paused-Upload: true\r\n\r\n{").encode())
+        deadline = time.monotonic() + 5
+        while not (scratch / "body-upload-waiting").exists():
+            assert time.monotonic() < deadline, "server did not receive the paused upload prefix"
+            time.sleep(.01)
+        start = time.monotonic()
+        health = control.get("/healthz")
+        listing = actor.get("/screening/batches")
+        elapsed = time.monotonic() - start
+        checks.check("paused upload permits health and authorized read within one second",
+            health.status_code == listing.status_code == 200 and elapsed <= 1,
+            f"two_requests_seconds={elapsed:.4f}; budget=1.0000")
+    (scratch / "body-checks-armed").unlink()
+    # Whitespace is part of the HTTP body, even though JSON ignores it.
+    raw = json.dumps({"name": "Exact body budget", "items": [{"resume_text": "Python"}]}).encode()
+    exact = raw + b" " * (cap - len(raw))
+    accepted = require(actor.post("/screening/batches", content=exact,
+        headers={"Content-Type": "application/json"}))
+    checks.check("exact-byte request budget accepts ordinary intake after refusals/disconnect",
+        accepted["name"] == "Exact body budget" and accepted["counts"]["pending"] == 1)
+    path = "/screening/batches/" + accepted["id"]
+    return path, require(actor.get(path))
+
+
 def run(scratch, url, pg_options):
+    body_limit = "--body-limit" in sys.argv
     ingest_races = "--ingest-races" in sys.argv
     persistence = "--persistence" in sys.argv
     expiry = "--expiry" in sys.argv or persistence
@@ -235,7 +328,8 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes or ingest_races
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
+    checks = Smoke("R4-S2-T3A aggregate request body limits / HTTP / restart" if body_limit
+                   else "R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
                    else "R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
                    else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
                    else "R4-S2-T1B1 terminal outcomes / two workers / graceful restart" if terminal_outcomes
@@ -256,10 +350,12 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_smoke_app" if leases else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if body_limit:
+        env.update(DEE_MAX_REQUEST_BODY_BYTES="64000", VERITAS_BODY_LIMIT_SMOKE="true")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -326,6 +422,8 @@ def run(scratch, url, pg_options):
             checks.check("reused UI HTTP contract passes", contract.S.summary() == 0)
             login(actor, "screening-router-a@example.in", "Screening Router A")
             login(other, "screening-router-b@example.in", "Screening Router B")
+            if body_limit:
+                body_path, body_saved = check_request_body_limit(checks, scratch, base, control, actor)
             text = contract._resume("Synthetic Screening Router", "screening-intake@example.in")
             uploaded = require(actor.post("/screening/candidates", json={"resume_text": text}))
             rid, cid = uploaded["report"]["id"], uploaded["candidate_id"]
@@ -504,6 +602,10 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if body_limit:
+                checks.check("exact-boundary intake and response persist after graceful restart",
+                    require(actor.get(body_path)) == body_saved
+                    and other.get(body_path).status_code == 404)
             if ingest_races:
                 checks.check("exact concurrent candidate/resume state survives graceful app restart",
                     all(require(control.get(path)) == body for path, body in ingest_saved.items()))
@@ -555,7 +657,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t2-" if "--ingest-races" in sys.argv else "r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t3a-" if "--body-limit" in sys.argv else "r4-s2-t2-" if "--ingest-races" in sys.argv else "r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

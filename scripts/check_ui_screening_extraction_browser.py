@@ -3,6 +3,7 @@
 Reuse file intake, processing, queue, feedback, summary and deletion actions.
 Add a second file intake, persisted reload and injected batch-read error/recovery.
 Requires Chrome and the existing CDN runtime internet; no live provider calls.
+--body-limit also verifies actual ingress 413 rendering and fresh-file recovery.
 """
 
 import asyncio
@@ -10,6 +11,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 
 import check_ui_screening_browser as browser
@@ -44,6 +46,8 @@ async def main():
                 "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
                 "PYTHONPATH": os.pathsep.join(str(path) for path in (browser.ROOT / "src", browser.ROOT / "scripts", browser.ROOT)),
             })
+            if "--body-limit" in sys.argv:
+                env["DEE_MAX_REQUEST_BODY_BYTES"] = "64000"
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -79,8 +83,7 @@ window.__screeningFetch = window.fetch;
 window.__failBatchRead = true;
 window.fetch = (url, init) => {
  if (window.__failBatchRead && String(url).endsWith('/screening/batches') && (!init || !init.method || init.method === 'GET')) {
-  window.__failBatchRead = false;
-  return Promise.resolve(new Response(JSON.stringify({detail:'Synthetic batch read failure'}), {status:503, headers:{'content-type':'application/json'}}));
+  return new Promise(resolve => setTimeout(() => resolve(new Response(JSON.stringify({detail:'Synthetic batch read failure'}), {status:503, headers:{'content-type':'application/json'}})), 100));
  }
  return window.__screeningFetch(url, init);
 };
@@ -93,6 +96,36 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
+            if "--body-limit" in sys.argv:
+                oversized = scratch / "aggregate-oversize.txt"
+                oversized.write_text("Readable synthetic resume\n" + "x" * 65_000, encoding="utf-8")
+                assert await tab.js("window.__click('button', 'Upload')")
+                assert await tab.wait("document.querySelector('input[type=file]')", 20, "body-limit file intake")
+                box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+                await tab.send("DOM.setFileInputFiles", {"files": [str(oversized)], "objectId": box})
+                assert await tab.wait("window.__has('file ready')", 20, "oversized selected file")
+                assert await tab.js("window.__type('input[placeholder*=intake]', 'Rejected body intake', 0)")
+                assert await tab.js("window.__click('button', 'Register batch and start screening')")
+                browser.S.check("actual aggregate 413 renders on the upload screen without a saved batch",
+                    await tab.wait("window.__has('request body exceeds max_request_body_bytes=64000')", 20, "body limit refusal")
+                    and all(row["name"] != "Rejected body intake" for row in api.get("/screening/batches").json()["batches"]))
+                assert await tab.js("window.__click('button', 'Clear')")
+                assert await tab.wait("!window.__has('aggregate-oversize.txt') && !window.__has('request body exceeds')", 20, "cleared refused selection")
+                box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+                await tab.send("DOM.setFileInputFiles", {"files": files[:1], "objectId": box})
+                assert await tab.wait("window.__has('file ready')", 20, "replacement selected file")
+                assert await tab.js("window.__type('input[placeholder*=intake]', 'Body limit recovery intake', 0)")
+                assert await tab.js("window.__click('button', 'Register batch and start screening')")
+                assert await tab.wait("window.__has('Nothing left to screen')", 60, "body limit recovery")
+                browser.S.check("fresh valid file recovers after 413 and screens once",
+                    len([row for row in api.get("/screening/batches").json()["batches"]
+                         if row["name"] == "Body limit recovery intake" and row["counts"]["done"] == 1]) == 1)
+                await tab.send("Page.reload")
+                assert await tab.wait("document.body.innerText.includes('Sign out')", 60, "body recovery reload")
+                await tab.js(browser.HELPERS)
+                assert await tab.js("window.__click('button', 'Batches')")
+                browser.S.check("recovered body-limit intake persists after actual browser reload",
+                    await tab.wait("window.__has('Body limit recovery intake')", 30, "persisted body recovery"))
             browser.S.check("extended screening journey has no console exceptions", not tab.console, "; ".join(tab.console[:2]))
 
     browser.run, subprocess.Popen = run, launch

@@ -57,6 +57,33 @@ fail.
 The ASR rule fires **only when audio is present**: a typed interview answer
 costs nothing and must not consume a transcription budget.
 
+### Raw HTTP body budget
+
+`max_request_body_bytes` defaults to **32,000,000 bytes** for the entire HTTP
+body, including all batch items, JSON syntax, ignored fields and whitespace.
+Set it in `config.yaml` or override with `DEE_MAX_REQUEST_BODY_BYTES`; it must be
+positive. Restart the application to apply a changed budget. Existing per-item
+text/base64/PDF limits still apply.
+
+The ASGI ingress gate runs before JSON/model validation, authentication and route
+work. A declared over-budget Content-Length refuses without reading a body;
+missing/underreported lengths still count actual received bytes. Equality is
+accepted. Over-budget requests return HTTP **413**, with detail
+`request body exceeds max_request_body_bytes=<limit>`, before PDF/provider/store
+work. Split a large batch into smaller registrations or choose an appropriate
+deployment budget. Refusal never silently truncates or partially registers a batch.
+
+Request IDs and configured CORS apply to refusals. CORS preflights can finish
+without consuming a body. Disconnect during ingress stops before routing and
+attempts HTTP 400 with `request_body_incomplete`; the disconnected client may
+never receive it. Cancellation propagates. Transport read timeouts are unchanged.
+
+This bounds raw bytes per request. Server-owned ASGI event buffers, temporary
+copies, JSON/decoded objects and simultaneous requests have separate memory
+costs; this is not an RSS or global concurrent-upload bound. Blocking PDF/SQL/
+SMTP work and bounded worker admission remain
+[R4-S2-T3](docs/delivery/PI-R4.md#r4-s2-t3--bound-requests-and-move-blocking-work-off-loop).
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

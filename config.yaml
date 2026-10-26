@@ -247,6 +247,7 @@ speech_max_retries: 2
 # Input caps so a hostile/buggy client can't OOM the service. The optional
 # API auth key is a SECRET and lives in .env (DEE_API_AUTH_KEY), never here.
 max_resume_chars: 200000
+max_request_body_bytes: 32000000  # raw bytes for the whole HTTP body, before JSON parsing
 max_pdf_b64_chars: 14000000        # ~10 MB PDF once base64-decoded
 pdf_max_pages: 40
 pdf_max_work_units: 100000         # graph visits + expanded extraction operations

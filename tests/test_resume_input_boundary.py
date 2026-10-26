@@ -1,6 +1,7 @@
 """Invalid resumes must fail before graph/model work or durable intake writes."""
 
 import base64
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +19,100 @@ TABLES = ("candidates", "resumes", "extractions", "resume_fingerprints", "report
 def counts(services):
     with services.session_factory() as session:
         return {table: session.scalar(text(f"SELECT count(*) FROM {table}")) for table in TABLES}
+
+
+def test_aggregate_batch_body_refuses_before_pdf_or_persistence(services, monkeypatch, log_events):
+    services.settings = services.settings.model_copy(update={"max_request_body_bytes": 512})
+    org = services.ledger.create_organization("Synthetic aggregate boundary")
+    key = services.ledger.issue_api_key(org.id)
+    parsed = []
+    def parser(value, **kwargs):
+        parsed.append(value)
+        return "Readable synthetic resume"
+    monkeypatch.setattr("app.core.resume.pdf_b64_to_text", parser)
+    before = counts(services)
+    body = json.dumps({"items": [{"resume_pdf_b64": "A" * 256}] * 2,
+                       "name": "private-aggregate-sentinel"}).encode()
+    assert len(body) > 512
+    with TestClient(create_app(services)) as http:
+        response = http.post("/screening/batches", content=body,
+            headers={"X-Org-Key": key, "Content-Type": "application/json"})
+    assert response.status_code == 413, response.text
+    assert response.json() == {"detail": "request body exceeds max_request_body_bytes=512"}
+    assert response.headers["x-request-id"].startswith("req_")
+    assert parsed == []
+    assert counts(services) == before
+    assert "private-aggregate-sentinel" not in response.text + str(log_events)
+
+
+@pytest.mark.parametrize("path", ["/evaluate", "/screening/batches", "/auth/candidate/verify", "/not-a-route", "/healthz"])
+@pytest.mark.parametrize("streamed", [False, True])
+def test_body_limit_precedes_json_routing_and_auth(services, path, streamed, log_events):
+    services.settings = services.settings.model_copy(update={"max_request_body_bytes": 64,
+        "cors_allowed_origins": ["https://ui.example"]})
+    before = counts(services)
+    body = b'{"private-body-sentinel":' + b"x" * 64  # Deliberately invalid JSON.
+    content = iter((body[:32], body[32:])) if streamed else body
+    with TestClient(create_app(services)) as http:
+        response = http.request("GET" if path == "/healthz" else "POST", path, content=content,
+            headers={"Content-Type": "application/json",
+            "Origin": "https://ui.example", "X-Request-ID": "body-boundary"})
+    assert response.status_code == 413, response.text
+    assert response.json() == {"detail": "request body exceeds max_request_body_bytes=64"}
+    assert response.headers["x-request-id"] == "body-boundary"
+    assert response.headers["access-control-allow-origin"] == "https://ui.example"
+    assert counts(services) == before
+    assert "private-body-sentinel" not in response.text + str(log_events)
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_exact_body_budget_preserves_valid_org_ingest(services, streamed):
+    body = json.dumps({"resume_text": "Synthetic é\nSkills: Python", "evaluate": False},
+                      ensure_ascii=False).encode()
+    services.settings = services.settings.model_copy(update={"max_request_body_bytes": len(body)})
+    org = services.ledger.create_organization("Synthetic exact-byte boundary")
+    key = services.ledger.issue_api_key(org.id)
+    with TestClient(create_app(services)) as http:
+        headers = {"Content-Type": "application/json"}
+        assert http.post("/screening/candidates", content=body, headers=headers).status_code == 401
+        headers["X-Org-Key"] = key
+        content = iter((body[:21], body[21:])) if streamed else body
+        response = http.post("/screening/candidates", content=content, headers=headers)
+        assert response.status_code == 200, response.text
+        assert services.candidates.org_owns_candidate(org.id, response.json()["candidate_id"])
+        assert http.post("/screening/candidates", content=b"{", headers=headers).status_code == 422
+        assert http.post("/screening/candidates", content=body + b" ", headers=headers).status_code == 413
+
+
+def test_cors_preflight_can_complete_without_entering_body_handling(services):
+    services.settings = services.settings.model_copy(update={"max_request_body_bytes": 8,
+        "cors_allowed_origins": ["https://ui.example"]})
+    with TestClient(create_app(services)) as http:
+        response = http.request("OPTIONS", "/screening/batches", content=b"x" * 9, headers={
+            "Origin": "https://ui.example", "Access-Control-Request-Method": "POST"})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://ui.example"
+    assert all(value == 0 for value in counts(services).values())
+
+
+async def test_body_disconnect_does_not_become_an_unhandled_application_error(services):
+    app = create_app(services)
+    events = iter([{"type": "http.request", "body": b"{", "more_body": True},
+                   {"type": "http.disconnect"}])
+    sent = []
+    async def receive():
+        return next(events, {"type": "http.disconnect"})
+    async def send(message):
+        sent.append(message)
+    await app({"type": "http", "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1", "method": "POST", "scheme": "http", "path": "/screening/batches",
+        "raw_path": b"/screening/batches", "query_string": b"", "root_path": "",
+        "headers": [(b"content-type", b"application/json"), (b"content-length", b"32")],
+        "client": ("127.0.0.1", 1), "server": ("testserver", 80)}, receive, send)
+    assert sent[0]["status"] == 400
+    body = b"".join(message.get("body", b"") for message in sent if message["type"] == "http.response.body")
+    assert json.loads(body) == {"detail": "request_body_incomplete"}
+    assert all(value == 0 for value in counts(services).values())
 
 
 def invalid_inputs():

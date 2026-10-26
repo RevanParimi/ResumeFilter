@@ -6201,3 +6201,150 @@ final chat response records its verified remote commit after push.
 All acceptance gates, the completion record and both self-reviews are complete.
 Exact next is
 **R4-S2-T3 - Bound requests and move blocking work off-loop**; do not start it here.
+
+## R4-S2-T3A
+
+### Contract and implementation (2026-10-25)
+
+Status: done (2026-10-26). T3 was split before implementation
+into A (ingress bytes), B (bounded PDF execution) and C (remaining SQL/SMTP).
+This session completes A only; T3/F14/sprint/PI remain open. T2 is done.
+
+Trigger: per-item and item-count checks ran after framework JSON parsing; a
+batch or ignored JSON field could allocate an unbounded body before those
+checks. A positive `max_request_body_bytes` setting defaults to 32,000,000 raw
+bytes in Settings/YAML and accepts `DEE_MAX_REQUEST_BODY_BYTES` overrides.
+The new small ASGI gate lives inside request-context/CORS and outside routing
+and JSON/model validation. Known oversized lengths refuse before receiving;
+actual streamed bytes are counted even without a trustworthy length. Decimal
+length comparison avoids untrusted integer conversion. Equality is accepted;
+oversized events are not appended, empty chunks retain no event list, and the
+accepted bytes replay once before delegating later receives to the transport.
+The last event/temporary buffer is released before downstream work.
+
+Acceptance: uniform safe HTTP 413 for application-bound oversized bodies on
+operator/org/auth/unknown/public paths, before PDF/provider/persistence work.
+Existing CORS preflights can finish without consuming any body. Accepted bodies
+retain byte equality, UTF-8 content, auth/tenant/CSRF/validation, request IDs and
+CORS. Disconnect stops without routing and attempts HTTP 400 with
+`request_body_incomplete` to complete outer middleware; delivery to a disconnected
+client is not guaranteed. Cancellation propagates. A paused upload permits
+unrelated health and authorized reads within a measured one-second total budget.
+
+This bounds bytes per request, not global RSS, simultaneous uploads, JSON object
+expansion or decoded media. Server-owned events and transient copies remain;
+existing transport read timeouts and per-item/PDF limits are unchanged. No
+schema/transaction, provider, scorer or frontend change. SQL sessions never move
+between threads in this child. Worker saturation/cancellation/timeout/shutdown
+and slow PDF/provider/SQL/mail responsiveness remain B/C and the parent review.
+No new PostgreSQL concurrency/migration gate is required for an ingress-only
+change; SQLite journey evidence is not called actual PG evidence.
+
+### Validation
+
+Sanitized runner `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3a.py
+<tag> <Python args>` clears inherited `DEE_*`, uses a nonexistent config instead
+of `.env`, disables live LLM/GitHub/mail delivery and sets project import paths.
+Omitted args run `-m pytest -q --tb=short`. Isolated SQL and fake providers are
+used throughout; no working-store migration or demo restart. Ignored logs and
+local runners are artifacts, not portable setup guarantees.
+
+| Check | Actual result |
+|---|---|
+| Original red, runner `red -m pytest -q --tb=short tests/test_resume_input_boundary.py -k aggregate_batch` | **1 failed, 64 deselected**; HTTP 200 registered two oversized-batch items instead of 413 |
+| Disconnect integration red, runner `disconnect-red -m pytest -q --tb=short tests/test_resume_input_boundary.py -k unhandled_application_error` | **1 failed, 76 deselected**; silent return raised `No response returned` and produced a 500 access event |
+| Final focused, runner `focused-reviewed-final` | **201 passed**, 1 warning; exact file set below |
+| Final full, runner `full-final` | **3695 passed, 623 skipped, 127 warnings** in **904.38 s**, exit 0 |
+| Migrated HTTP/restart, runner `http-reviewed-final scripts/smoke_r4_s1_t3d.py --body-limit` | **28/28 + 31/31** reused cookie/CSRF HTTP contract, exit 0; final latency below |
+| Actual Chrome, runner `chrome-final scripts/check_ui_screening_extraction_browser.py --body-limit` | **27/27**, exit 0; actual 413, Clear/fresh-file recovery, one completed batch and reload, with no console exceptions |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings/18 states**; `node --check frontend/api.js`, `node --check frontend/support.js`, changed-file Python compilation and `git diff --check` passed |
+
+The focused command is `.resume/Scripts/python.exe -m pytest -q --tb=short
+tests/test_api.py tests/test_resume_input_boundary.py tests/test_config.py
+tests/test_config_screening.py tests/test_openapi_contract.py tests/test_metrics.py
+tests/test_api_auth_gate.py tests/test_cookie_posture.py tests/test_auth_api.py`.
+Existing modules group transport, resume integration and config checks; no new
+test file was introduced. Tests assert exact/UTF-8/chunked bytes, early refusal
+and unread tail, absent/underreported/huge/leading-zero lengths, empty chunks,
+disconnect/cancellation, replay, non-HTTP scopes, API auth/validation/CORS, no
+PDF calls or candidate/resume/extraction/fingerprint/report/batch/input writes,
+and omitted body sentinels in responses/logs. Fakes prove mechanics, not quality.
+
+The tracked HTTP flag uses migrated scratch SQL, fake providers and graceful
+restart. A real socket receives 413 from headers alone, and HTTP chunked and
+malformed bodies get the same refusal. A test-only ASGI marker acknowledges a
+partial upload prefix before timing health plus an authorized batch read;
+the two complete in **0.0161 s** total against a **1.0000 s** budget on this host.
+PDF instrumentation and exact saved batch lists prove refusal precedes parsing/
+registration. An exact-size accepted request survives restart with tenant
+isolation. Chrome separately proves the real rendered error and recovery; HTTP
+contract simulation is not mislabeled browser execution. Browser uses existing
+CDN runtime internet and Windows process termination; the HTTP journey owns
+the graceful lifecycle evidence.
+
+Harness corrections are separate from the reproducers: two initial selections
+named nonexistent `test_auth_middleware.py`/`test_cors.py` (no tests ran); the
+preflight test used an unsupported convenience-method `content` argument,
+corrected to generic `request`. The full-ASGI disconnect test initially inspected
+only the final empty response event, corrected to join response body events.
+Browser replacement initially assumed selection overwrote existing files, but
+the picker appends; it now uses the existing Clear action and waits for cleared
+selection/error rather than a hidden zero-files label. An immediate one-shot
+mock batch-read 503 could race navigation rendering; the injected response now
+waits 100 ms and stays armed until explicit restoration. Clean final focused,
+HTTP and Chrome runs pass; these setup failures are not product defect proof.
+
+### Implementation self-review
+
+Reviewed `388baf6` plus the ingress module, Settings/main wiring, YAML, three
+existing test modules and two existing journey scripts. Specification review
+mapped byte limits, no parsing/writes, compatibility, cancellation/disconnect and
+partial-upload responsiveness to behavioral checks. Correctness review traced
+middleware ordering, all paths/methods, CORS preflight short-circuit, raw-byte
+versus decoded/aggregate-memory bounds, reentrancy, safe details and storage/
+provider bypass on refusal. No blocking finding remains after these fixes:
+
+- Medium: silent disconnect return in the new ingress gate triggered a 500 in
+  outer BaseHTTPMiddleware. The red full-ASGI regression reproduced it; safe
+  incomplete-body response completes that wrapper without route work.
+- Low: the last ASGI event/chunk could remain referenced throughout downstream
+  provider work. Release it with the temporary bytearray after preparing replay;
+  final byte/replay regressions and required journeys cover compatibility.
+
+This is same-agent self-review, not independent review. Final full pytest ran
+on the reviewed source/config state, subsequently verified unchanged. B/C and
+the parent acceptance review are not implemented by this session.
+
+### Completion review and handoff
+
+Implementation and required validation are complete. Final full pytest passed
+on the reviewed code/config; no application changes followed it. Settings,
+operating guidance, feature status, PI status, this completion record and the
+short handoff agree. T3/F14/sprint/PI remain open. Working DB and unrelated
+tracked files are preserved; no demo restart, working-store migration or
+live-provider validation is claimed.
+
+Distinct final self-review (2026-10-26), after the completion record: reviewed
+the exact **15-file staged diff** against `388baf6`: ingress/Settings/main/YAML,
+three existing regression modules, two existing journey scripts, operating and
+feature guidance, handoff, roadmap, PI and this evidence. Specification review
+mapped all A acceptance criteria to the final checks and kept B/C/parent gates
+open. Correctness review traced header/stream limits, bounded accumulation and
+replay, disconnect/cancellation, middleware/CORS order, sanitized errors, no
+rejected-body persistence, tenant/CSRF compatibility, browser recovery and owned
+scratch-process lifecycle. No blocking finding or application change resulted.
+This is same-agent self-review, not independent review.
+
+Final preservation/staging checks: **644 code hashes plus YAML** match the
+reviewed full-test state; **717 unrelated tracked files and the working DB**
+match baseline. Exactly the 15 scoped files are staged, with no unstaged scope
+changes; nine added local documentation links/anchors and `git diff --cached
+--check` pass. Packaging includes the new module through existing `src/app`
+package/image inclusion; no dependency or image change is needed. No secrets,
+working data or ignored validation artifacts are included.
+
+Both reviews and acceptance gates are complete. Authorized scoped publication
+uses `main` tracking `origin/main`; the final chat response records the verified
+remote commit after push. Exact next after A is
+**R4-S2-T3B - Bound PDF execution and keep it off the event loop**, under the
+existing [T3 child contract](PI-R4.md#r4-s2-t3b). Stop after A publication.

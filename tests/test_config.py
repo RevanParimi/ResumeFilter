@@ -1,6 +1,8 @@
 """Config knob presence + env-override sanity (S5.2 comp_* additions)."""
 
 from app.core.config import Settings
+import pytest
+from pydantic import ValidationError
 
 
 def test_comp_defaults_present():
@@ -18,6 +20,21 @@ def test_comp_defaults_present():
 def test_comp_env_override(monkeypatch):
     monkeypatch.setenv("DEE_COMP_MIN_OBSERVATIONS", "3")
     assert Settings().comp_min_observations == 3
+
+
+def test_request_body_budget_default_yaml_and_env(monkeypatch):
+    import yaml
+    with open("config.yaml", encoding="utf-8") as file:
+        raw = yaml.safe_load(file)
+    assert Settings(_env_file=None).max_request_body_bytes == raw["max_request_body_bytes"] == 32_000_000
+    monkeypatch.setenv("DEE_MAX_REQUEST_BODY_BYTES", "2048")
+    assert Settings(_env_file=None).max_request_body_bytes == 2048
+
+
+@pytest.mark.parametrize("limit", [0, -1])
+def test_request_body_budget_requires_positive_limit(limit):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, max_request_body_bytes=limit)
 
 
 def test_linkedin_source_defaults():

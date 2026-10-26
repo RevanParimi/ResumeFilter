@@ -42,6 +42,7 @@ from app.core.boot import verify_launch_config
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.migrate import upgrade_to_head
+from app.core.request_body import RequestBodyLimitMiddleware
 from app.graph.build import EvaluationEngine
 from app.services import Services, ServiceCleanupError, build_default_services
 
@@ -263,6 +264,9 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
     # the guard leaves a defect waiting to be "fixed" by silencing the console
     # error. Prod refuses to BOOT with a wildcard (app/core/boot.py).
     cors_settings = services.settings if services is not None else get_settings()
+    # Inside request context/CORS, outside routing and JSON/model validation.
+    # Preflights answered by CORS never consume a body or enter route work.
+    app.add_middleware(RequestBodyLimitMiddleware, max_bytes=cors_settings.max_request_body_bytes)
     if cors_settings.cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

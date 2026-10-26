@@ -1,43 +1,54 @@
 # Current handoff
 
-Updated: 2026-10-25. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-26. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T2 complete.** Its
-[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t2) owns the bounded scope,
-regressions, harness corrections, exact checks and implementation self-review.
-Unresolved contact lookups now lock/recheck before creating candidates; existing
-candidate writes serialize caller-owned resume deduplication and unique versions.
-Email ordering agrees with mailbox redemption; missing/ambiguous/incompatible
-hints keep distinct-submission policy. Proof, tenant ownership, consent and
-erasure remain. No migration/UI/working-store change; historical duplicates and
-separate provider/report work remain possible.
+**R4-S2-T3A complete.** T3 was split before
+implementation into A/B/C. Only A is this session's scope; T3/F14/sprint/PI
+remain open. Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3a) owns the
+ingress budget, red/green regressions, exact commands/counts, harness corrections
+and reviews.
 
-Full pytest: **3659 passed, 623 skipped**; PostgreSQL-configured focused:
-**551 passed, 12 skipped**; SQLite/PostgreSQL two-process HTTP/restart:
-**41/41 + 31/31 each**. Bindings, Python compilation and whitespace pass.
-The evidence owns initial harness corrections and clean final runs. Fakes prove
-mechanics, not live providers or empirical quality.
+Raw HTTP bodies now have a positive 32,000,000-byte default cap before JSON/model/
+PDF work. Known oversized lengths refuse unread; streams count actual bytes.
+Exact equality, per-item caps, request IDs/CORS and ordinary auth/CSRF/tenant
+behavior remain. Refused batches create no partial registration. Disconnect
+attempts a safe incomplete-body 400, cancellation propagates, and outer CORS
+preflights can finish without reading. No schema/frontend/scoring/working-store
+change. This is a per-request raw-byte bound, not global RSS/upload concurrency;
+transport timeouts and blocking PDF/SQL/SMTP remain B/C.
 
-**Exact next: R4-S2-T3 - Bound requests and move blocking work off-loop**;
-read its [PI contract](delivery/PI-R4.md#r4-s2-t3--bound-requests-and-move-blocking-work-off-loop).
-Do not start T3 in this session. F14/sprint/PI remain open for T3/T4/Q.
-Earlier R4-S1 and R4-S2-T1 remain closed.
+Focused pytest **201 passed**; migrated scratch HTTP/restart **28/28 + 31/31**;
+actual Chrome **27/27**, including 413/fresh-file recovery/reload. A controlled
+paused upload allowed health plus an authorized read in **0.0161 s** total
+(one-second budget). Full pytest: **3695 passed, 623 skipped, 127 warnings**.
+Fakes prove mechanics, not live providers or empirical quality.
 
 Implementation and distinct final staged self-reviews found no blocker.
 Authorized scoped publication uses tracking branch `origin/main`; the final
-response reports the verified remote SHA. Working DB and unrelated files match
-baseline; 643 code hashes name the reviewed/tested state. Demo untouched; owned
-PG, HTTP and pytest validation processes stopped.
-[FEATURE_STATUS.md](../FEATURE_STATUS.md) owns the feature overview.
+response records the verified remote SHA. Stop after A publication.
+
+**Exact next task: R4-S2-T3B - Bound PDF execution and keep it off the
+event loop**; read its [child contract](delivery/PI-R4.md#r4-s2-t3b). Do not start
+B in this session. Earlier T1/T2 and R4-S1 remain closed.
+
+Working DB and unrelated files remain at baseline; the demo is untouched.
+644 code hashes plus YAML identify the reviewed/tested state.
+PG was not required for this ingress-only child. HTTP/Chrome owned processes
+and full pytest finished. The feature overview is
+[FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t2.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3a.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Aggregate request bodies / partial-upload latency / graceful HTTP restart:
+  `scripts/smoke_r4_s1_t3d.py --body-limit`. Actual screening Chrome including
+  ingress refusal, Clear/fresh-file recovery and reload:
+  `scripts/check_ui_screening_extraction_browser.py --body-limit`.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
   `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
   scheduling `--leases`);

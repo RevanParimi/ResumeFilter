@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -12,6 +15,112 @@ RESUME = (
     "- Fine-tuned GPT-4 to improve accuracy.\n"
     "- Built production RAG at scale for support tickets.\n"
 )
+
+
+async def _body_gate(events, *, headers=(), limit=8, trace=None, scope_type="http"):
+    """Drive actual ASGI receive events, including events left unread on refusal."""
+    from app.core.request_body import RequestBodyLimitMiddleware
+    trace = trace if trace is not None else {"read": [], "forwarded": [], "sent": []}
+    pending = iter(events)
+    async def receive():
+        message = next(pending)
+        trace["read"].append(message)
+        if isinstance(message, BaseException):
+            raise message
+        return message
+    async def send(message):
+        trace["sent"].append(message)
+    async def downstream(scope, receive, send):
+        if scope["type"] != "http":
+            trace["forwarded"].append(scope["type"])
+            return
+        message = await receive()
+        trace["forwarded"].append(message)
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": message["body"]})
+    await RequestBodyLimitMiddleware(downstream, max_bytes=limit)(
+        {"type": scope_type, "headers": headers}, receive, send)
+    return trace
+
+
+def _chunks(*values):
+    return [{"type": "http.request", "body": value, "more_body": i < len(values) - 1}
+            for i, value in enumerate(values)]
+
+
+@pytest.mark.parametrize("chunks", [(b"",), (b"12345678",), (b"", b"123", b"", b"45678"),
+                                     ("éé".encode(), "éé".encode())])
+async def test_body_budget_accepts_equality_and_replays_exact_bytes(chunks):
+    trace = await _body_gate(_chunks(*chunks))
+    expected = b"".join(chunks)
+    assert trace["forwarded"] == [{"type": "http.request", "body": expected, "more_body": False}]
+    assert trace["sent"][-1]["body"] == expected
+
+
+@pytest.mark.parametrize("headers", [[], [(b"content-length", b"1")],
+    [(b"content-length", b"garbage")], [(b"content-length", b"0" * 5000 + b"1")]])
+async def test_streamed_body_budget_counts_actual_bytes_and_stops_early(headers):
+    events = _chunks(b"1234", b"56789", b"must-remain-unread")
+    trace = await _body_gate(events, headers=headers)
+    assert trace["read"] == events[:2]
+    assert trace["forwarded"] == []
+    assert trace["sent"][0]["status"] == 413
+    assert json.loads(trace["sent"][-1]["body"]) == {
+        "detail": "request body exceeds max_request_body_bytes=8"}
+
+
+@pytest.mark.parametrize("headers", [[(b"content-length", b"9")],
+    [(b"Content-Length", b"0009")], [(b"content-length", b"9" * 5000)],
+    [(b"content-length", b"1"), (b"content-length", b"9")]])
+async def test_declared_oversize_body_refuses_without_receiving(headers):
+    trace = await _body_gate([], headers=headers)
+    assert trace["read"] == trace["forwarded"] == []
+    assert trace["sent"][0]["status"] == 413
+
+
+async def test_many_empty_chunks_do_not_change_payload_or_budget():
+    trace = await _body_gate(_chunks(*([b""] * 1000), b"12345678"),
+                             headers=[(b"content-length", b"0" * 5000 + b"8")])
+    assert trace["sent"][0]["status"] == 200
+    assert trace["forwarded"][0]["body"] == b"12345678"
+
+
+async def test_body_disconnect_stops_without_downstream_and_completes_outer_middleware():
+    events = _chunks(b"partial", b"unused")[:1] + [{"type": "http.disconnect"}]
+    trace = await _body_gate(events)
+    assert trace["read"] == events
+    assert trace["forwarded"] == []
+    assert trace["sent"][0]["status"] == 400
+    assert json.loads(trace["sent"][-1]["body"]) == {"detail": "request_body_incomplete"}
+
+
+async def test_body_read_cancellation_propagates_without_downstream_or_response():
+    trace = {"read": [], "forwarded": [], "sent": []}
+    with pytest.raises(asyncio.CancelledError):
+        await _body_gate(_chunks(b"partial", b"unused")[:1] + [asyncio.CancelledError()], trace=trace)
+    assert trace["forwarded"] == trace["sent"] == []
+
+
+@pytest.mark.parametrize("scope_type", ["lifespan", "websocket"])
+async def test_body_gate_preserves_non_http_scopes(scope_type):
+    trace = await _body_gate([], scope_type=scope_type)
+    assert trace["forwarded"] == [scope_type]
+    assert trace["read"] == trace["sent"] == []
+
+
+async def test_body_replay_then_delegates_disconnect_to_the_original_receive():
+    from app.core.request_body import RequestBodyLimitMiddleware
+    events = iter(_chunks(b"12345678") + [{"type": "http.disconnect"}])
+    forwarded = []
+    async def receive():
+        return next(events)
+    async def send(message):
+        pass
+    async def downstream(scope, receive, send):
+        forwarded.extend([await receive(), await receive()])
+    await RequestBodyLimitMiddleware(downstream, max_bytes=8)({"type": "http"}, receive, send)
+    assert forwarded == [{"type": "http.request", "body": b"12345678", "more_body": False},
+                         {"type": "http.disconnect"}]
 
 
 @pytest.fixture
