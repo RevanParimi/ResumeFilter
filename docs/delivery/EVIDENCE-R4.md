@@ -6593,3 +6593,250 @@ are rerun for publication prose. Documentation links and staged whitespace are
 checked before the separate documentation commit. The final chat response
 records its verified remote SHA. Exact next is C; stop after this publication
 record is pushed and verified.
+
+## R4-S2-T3C1
+
+Status: done (2026-10-26); required validation and completion record complete.
+This session implements C1 only. C2/C3, C, parent
+T3/F14/sprint/PI remain open. Prerequisite: B, done.
+
+### Contract defined before implementation
+
+C was split into bounded children in its existing PI section before code
+changes. Trigger: all five async signup/login code-issuing handlers directly
+perform synchronous SQL and SMTP. Organization signup also performs its name
+check on the event loop. Move the entire owning operation to a dedicated
+worker, opening/using/closing every store-created SQL session on that thread.
+Pass plain request values and service references; never pass HTTP Request,
+Response or live Session objects between threads. Preserve provider-first
+refusal, limits, reservations/activation, erasure, local-only echo and existing
+DTOs/cookies. Verification/resolution and other SQL/mail operations remain C2/C3.
+
+Per-service `auth_code_max_concurrent_requests` is positive, defaults to two
+and admits without a waiting queue. Saturation or closed admission returns a
+safe 503 plus `Retry-After: 1` before account/SQL/mail work. Positive finite
+`auth_code_wait_seconds` defaults to 20 and bounds the HTTP caller's wait.
+Timeout returns the ordinary generic 202 `{"status":"accepted"}`; a distinct
+mail-timeout status could identify a known account. There is no automatic
+replay, delivery promise or rollback promise. Caller cancellation propagates.
+Timeout/cancellation retain capacity until the original operation finishes.
+Shutdown closes admission and joins accepted calls before owned SQL disposal.
+Threads cannot safely be killed; existing SMTP/socket/driver limits remain,
+with no new whole-operation or server-drain deadline.
+
+Every ordinary accepted UI request permits manual code entry and explains
+possible delivery delay. Busy admission has readable recovery copy; guarded
+local echo remains. Acceptance requires a red SQL/mail stall regression,
+shared admission across all five routes, no unadmitted writes, late completion
+without replay, cancellation/shutdown, safe provider failure, anti-enumeration,
+ownership/erasure and session thread ownership. Health plus an authorized SQL
+read must complete within a measured one-second total budget under controlled
+stalls. Required layers: focused/full pytest, actual PostgreSQL competing
+connections, migrated scratch HTTP/restart, actual Chrome capacity/delayed-mail/
+manual verification/reload, bindings/syntax and separate final staged review.
+
+### Implementation and preserved boundaries
+
+`AuthCodeExecutor` owns a dedicated bounded pool, atomically checks admission,
+copies request context and retains each concurrent future until real completion.
+Its caller wait neither cancels the worker nor disguises an operation's own
+TimeoutError as the executor's timeout. Late exceptions are consumed without
+exposing addresses, codes or provider details. Services lazily owns this pool,
+refuses late admission during cleanup and joins it before disposing SQL;
+repeated cancellation still waits for that cleanup.
+
+The auth adapter moves organization-name checking plus complete `issue_code`
+operations together. Other principal/consent/erasure and verification behavior
+is unchanged. UI accepted-state copy now explains uncertainty consistently for
+first send and resend, with manual entry and readable admission refusal.
+Settings/YAML and [operating guidance](../../OPERATING.md#authentication-code-execution-budget)
+define the limits. No dependency, model, schema or migration changes; therefore
+no new migration roundtrip is applicable. Existing migrations are exercised by
+both HTTP journeys. Working storage and the demo are not test targets.
+
+### Commands and observed evidence
+
+All Python commands use `.resume/Scripts/python.exe`. Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c1.py <tag> <Python args>` clears inherited DEE/live
+configuration, disables real providers and uses isolated stores. Logs share the
+ignored `r4-s2-t3c1-` prefix; no credentials or working data are evidence.
+
+- Red: runner `red -m pytest -q --tb=short tests/test_auth_api.py -k
+  'slow_auth_issuance and sqlite'`: **2 failed, 33 deselected, 1 warning**.
+  Each controlled three-second SQL/mail stall finished before unrelated health
+  could execute. This reproduced event-loop blocking, not a fixture/import error.
+- Initial green auth API/org-name/debug-echo group: **47 passed, 2 skipped,
+  1 warning**. New API scenarios alone (`focused-new` with `-k
+  'slow_auth_issuance or admission_retains or real_competing'`): **7 passed,
+  7 skipped, 65 deselected, 1 warning**. The global filter deselected config and
+  lifecycle cases; the complete focused group below includes them.
+- Runner `focused -m pytest -q --tb=short tests/test_auth_api.py
+  tests/test_auth_org_name_taken.py tests/test_auth_debug_echo.py
+  tests/test_auth_service.py tests/test_auth_store.py
+  tests/test_login_redemption_erasure.py tests/test_email_seam.py
+  tests/test_ratelimit_auth.py tests/test_service_lifecycle.py
+  tests/test_config.py tests/test_api_auth_gate.py tests/test_openapi_contract.py`:
+  **219 passed, 27 skipped, 1 warning**, 63.58 s. PostgreSQL parameters skip
+  without an explicit disposable DB; they are run separately below.
+- Runner `http scripts/smoke_r4_s1_t3a.py --auth-code-workers`:
+  **112/112 OK**, exit 0. Actual migrated SQLite app startup, all-plane auth,
+  stalled code issuance, failure/recovery, ledger/employer/portal/consent/
+  erasure and graceful restart. Two late-issued sessions survive restart.
+  Health plus admin-key SQL read totals: mail **0.0088 s**, SQL **0.0086 s**,
+  against one second. These are controlled host measurements, not throughput
+  or live SMTP claims.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c1_postgres.py`:
+  **251 passed, 1 warning**, 215.31 s, no skips; migrated PostgreSQL HTTP
+  `scripts/smoke_r4_s1_t3a.py --postgres --auth-code-workers`: **112/112 OK**,
+  exit 0. Focused files: auth API/store/service/org-name/debug-echo, email seam,
+  auth rate limits, login redemption/erasure, candidate login binding
+  concurrency, service lifecycle and config. The owned disposable PostgreSQL
+  **18.6** cluster uses read committed and a validation-only 25,000 ms statement
+  timeout. Controlled separate connections hold actual conflicting locks;
+  `pg_stat_activity` confirms a worker waits on a lock. Health plus admin-key
+  SQL read totals: mail **0.0079 s**, SQL **0.0584 s**, against one second.
+  Owned server stopped successfully; local runtime/log metadata stays ignored.
+- Runner `chrome-reviewed scripts/check_ui_screening_extraction_browser.py
+  --auth-code-workers`: **28/28 OK**, exit 0. Actual Chrome sees busy 503 copy,
+  delayed generic acceptance before mail delivery, manual six-digit entry,
+  successful sign-in and session reload, then the existing screening/recovery
+  flow. Runner `browser-resend-final scripts/check_ui_evaluate_browser.py`:
+  **1/1 OK and 48/48 OK**, exit 0, including real resend, all-plane navigation,
+  evaluation/report/PDF, contact/consent/erasure and reload.
+  After the static copy finding below, runner `chrome-copy-final
+  scripts/check_ui_screening_extraction_browser.py --auth-code-workers` again
+  passes **28/28 OK**, exit 0, and explicitly checks rendered `Requested for`
+  with no `Sent to` claim while mail remains held. Runner `ui-copy-final -m
+  pytest -q --tb=short tests/test_ui_mount.py tests/test_ui_handlers.py`:
+  **20 passed, 1 warning**, 7.80 s.
+- Initial full command, runner `full -m pytest -q --tb=short -x`, stopped at
+  **1 failed, 3432 passed, 614 skipped, 127 warnings**, 834.04 s. The failure
+  was `test_ui_handlers.py::test_shipped_handlers_offline[verification]`:
+  six initial-send assertions still required no notice and resend required
+  the old copy. Those expectations were missed during implementation review.
+  The existing handler tests now assert the rendered delivery-pending notice,
+  six manual code boxes, no principal and no verify/replay before manual entry;
+  resend still preserves digits, uses its own route and covers local echo.
+  Runner `ui-handlers-final -m pytest -q --tb=short tests/test_ui_handlers.py`:
+  **8 passed**. This is offline Node behavior, not browser evidence.
+  Entire suite restarted as runner `full-final -m pytest -q --tb=short -x`:
+  **3721 passed, 630 skipped, 127 warnings**, 1061.38 s, exit 0. Optional,
+  environment and unconfigured PostgreSQL skips do not prove omitted cases;
+  the actual owned PG run above supplies the required DB evidence. Warnings
+  concern existing Starlette/httpx deprecation and SQLite expression-index
+  reflection/autogenerate limits, not a new migration.
+- Static checks: `node scripts/check_ui_bindings.js` resolves **586 bindings
+  across 18 states**; `node --check frontend/api.js`, `frontend/support.js`
+  and `frontend/portal-auth.js` pass. Project-Python `py_compile` passes for
+  all **11 changed Python files**, including the new executor. `git diff
+  --check` and the refreshed **616-file** reviewed-state comparison pass.
+  The final browser script compiles again after its copy assertion change;
+  `node --check scripts/test_ui_verification.js` also passes.
+
+API regressions cover all five admission refusals and exact unchanged rate/
+issuance/challenge rows, late success without duplicate mail, caller cancel,
+erasure while delivery is held and surviving unrelated subjects. Session
+transaction hooks check one thread owns each Session. Controlled actual SQLite
+writer/PG row locks separately prove worker behavior under contention.
+Lifecycle regressions cancel shutdown twice, refuse fresh admission and prove
+SQL disposal follows actual accepted completion. Existing fake-provider tests
+retain local echo, refusal, anti-enumeration, OTP/CSRF/tenant and consent rules.
+
+Harness corrections: initial Chrome reload attempts found an unhydrated page
+before the Candidate button was visible. The final check waits for a new
+document and its rendered plane button. The additional resend browser initially
+reused the previously displayed notice to decide that resend had completed;
+first-send now displays that same honest notice. It therefore read the old code.
+The harness now observes the actual resend HTTP 202 before reading capture mail;
+the clean browser rerun passes. These synchronization corrections do not change
+application behavior. Chrome requires existing CDN internet and its harness
+terminates Windows app processes; HTTP owns graceful restart evidence. Fakes
+and capture mail prove mechanics, not live-provider delivery or scoring quality.
+
+### Implementation self-review
+
+Reviewed `7081eb2` plus the scoped executor, five route adapters, Services cleanup,
+Settings/YAML, portal auth, existing test modules and three existing journey
+scripts. Specification review maps the child contract to the assertions above
+and leaves C2/C3/parent acceptance open. Correctness review traces atomic
+queue-free admission, retained futures, context propagation, timeout/operation
+exception distinction, no automatic replay, uniform 202 anti-enumeration,
+owning-session threads, erasure cancellation, shutdown ordering, safe details,
+local echo, readable recovery and reload. No blocking finding remains; this is
+same-agent self-review, not independent review.
+
+Acceptance finding (medium): `frontend/Veritas.dc.html`'s login hint and OTP
+heading still said a code was on its way / `Sent to`. A timed-out caller could
+see those claims before delivery. The hint now describes possible delay and
+the OTP heading says `Requested for`. The actual held-mail Chrome assertion
+and the complete 20-test UI mount/handler group pass on this correction.
+No backend/auth/SQL behavior changed. This finding is resolved.
+
+The reviewed-state snapshot covers **616 code/config files**, now including
+the frontend HTML as well as JS.
+The final resend harness synchronization was the sole code hash change during
+the first full run; no application, test, frontend or config changed during
+that run. Its affected actual browser journey was rerun successfully. After
+that full run exposed stale offline handler expectations, their small test diff
+was separately reviewed and the complete handler group passed. The snapshot
+was refreshed for these validation-only changes before `full-final`. During
+that run, the two static HTML copy corrections and the browser assertion above
+were reviewed and their affected UI/actual Chrome checks rerun successfully.
+The snapshot was refreshed to include HTML. No backend, Python test, frontend
+logic or config changes followed the HTTP/PG evidence. Full pytest plus the
+explicitly repeated affected UI/Chrome checks validate the final reviewed state.
+
+Per-service admission does not bound global/process-wide request load, guarantee
+fairness or create durable mail jobs. A transport disconnect may leave its app
+task running; even cancelled/timed-out callers can see late delivery/activation.
+Thread joins can wait for existing SQL/SMTP limits. Direct synchronous service
+callers own scheduling. Authentication verification/resolution and other async
+SQL are C3; candidate contact-verification mail is C2. No combined T3, F14,
+sprint or PI closure is claimed.
+
+### Completion and handoff
+
+C1 implementation, required validation and completion record are complete.
+Focused SQLite/actual PostgreSQL, migrated HTTP/restart on both, actual Chrome,
+offline UI/static checks and the final full suite pass. The initial failed
+full run, stale handler expectations, browser synchronization corrections and
+static delivery-copy finding remain recorded with their resolutions. Only
+affected UI checks were repeated for the final copy change; backend, tests and
+configuration remain at their validated state. No live-provider/empirical
+quality, schema migration, working-store change or demo restart is claimed.
+
+The handoff/feature/PI/roadmap/operating records agree. C2/C3, C, T3/F14/sprint/
+PI remain open; exact next is **R4-S2-T3C2 - Bound contact-verification mail
+operations** under its [existing contract](PI-R4.md#r4-s2-t3c2). Do not start C2
+in this session. The distinct final staged self-review and scoped publication
+follow this completion record.
+
+Distinct final staged self-review (2026-10-26), after required validation and
+the completion record: reviewed the exact **22-file staged diff** against
+`7081eb2`, covering the executor, all five adapters, Services ownership,
+Settings/YAML, auth JS/static HTML, existing API/config/lifecycle/fixture/Node
+tests, three existing HTTP/browser journey scripts and completion/operating
+documentation. Specification review maps every C1 criterion to its observed
+evidence, keeps C2/C3/parent gates open and labels actual PG/Chrome separately
+from skipped environments and capture providers. Correctness review traces
+atomic admission, slot retention, session threads, context, late exceptions,
+uniform timeout/no replay, erasure, repeated cancellation and join-before-SQL
+disposal. UI manual entry, busy recovery, no premature delivery claim, resend,
+local echo and reload agree with the actual browser checks. No blocking finding
+remains. This is same-agent self-review, not independent review.
+
+The final **616 code/config hashes** match the reviewed state after the full
+run and separately repeated copy-affected UI checks. **712 unrelated tracked
+files, including the working DB**, match baseline. No dependency/image/migration
+change is needed; existing package discovery includes the new auth module.
+No secrets, working data or ignored validation artifacts are staged. Only final
+review prose changes after this pass; documentation links, staged whitespace,
+scope and preservation are checked before commit. Publication uses `main`
+tracking `origin/main`, with GCM account selection limited to the command.
+The final response reports the verified remote SHA; stop after publication,
+without starting C2.
+
+Final pre-commit checks pass: **15 added local documentation links/anchors**,
+`git diff --cached --check`, the 616-file reviewed-state comparison and the
+712-file preservation comparison. Exactly **22 scoped files** are staged,
+with no unstaged or untracked changes. No application changes followed review.

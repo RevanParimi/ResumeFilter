@@ -13,7 +13,7 @@ follow the linked task records. Existing features can still have open remediatio
 | Consent and evaluation ledger | Interview/coding records, purpose-scoped consent and advisory reputation. | [Ledger](LEDGER.md). Current authorization across reads/exports is validated by [Q](docs/delivery/EVIDENCE-R1.md#r1-s2-q). |
 | Features, training and matching | Feature registry/materialization, exports, talent search, job matching and employer dashboard. | [Features](FEATURES.md), [matching](MATCHING.md), [dashboard](DASHBOARD.md). Snapshot checks do not lock across delivery. |
 | Profile intake and curation | GitHub/LinkedIn-export ingestion, advisory source signals and guarded human taxonomy review. | [Sources](PROFILE_SOURCES.md), [curation](CURATION.md). New raw terms use source ownership and expiry; the named working-database legacy inventory is empty. [R3-S2-T3](docs/delivery/EVIDENCE-R3.md#r3-s2-t3) closes required snapshot revisions, real map/create/ignore/reload, stale conflicts and safe browser recovery/privacy. [R3-S2-Q](docs/delivery/EVIDENCE-R3.md#r3-s2-q) closes combined operator acceptance; cross-worker overlay refresh remains R4. |
-| Login and candidate portal | Email-code authentication, sessions, candidate access/consent controls and erasure. | [Auth](AUTH.md), [portal](PORTAL.md). Login ordering, aggregate refusal and sprint erasure validation are complete; current consent and exact challenge validity passed [Q](docs/delivery/EVIDENCE-R1.md#r1-s2-q). |
+| Login and candidate portal | Email-code authentication, sessions, candidate access/consent controls and erasure. | [Auth](AUTH.md), [portal](PORTAL.md). Login ordering, aggregate refusal and sprint erasure validation are complete; current consent and exact challenge validity passed [Q](docs/delivery/EVIDENCE-R1.md#r1-s2-q). [C1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c1) bounds signup/login issuance off the event loop; contact mail and remaining SQL stay open. |
 | Organization administration | Operator list/inspection, create, reliability update, confirmed key rotation/offboarding and one-time key display. | [R3-S2-T1](docs/delivery/EVIDENCE-R3.md#r3-s2-t1) owns current implementation/validation; list filtering/pagination is local over an unpaged API. Reliability is an operator multiplier, not measured accuracy. Combined acceptance passed [R3-S2-Q](docs/delivery/EVIDENCE-R3.md#r3-s2-q). |
 | Operator accounts | Actual list/create/confirmed deletion with saved IDs, labels and enabled/disabled status; session revocation and self-lockout warning. | [R3-S2-T2](docs/delivery/EVIDENCE-R3.md#r3-s2-t2) owns completed implementation/validation. All accounts have one platform role; no role/membership/suspension controls or readable stored emails. Listing is unpaged; self/last-account deletion remains allowed by the existing API. Combined revocation/restart acceptance passed [R3-S2-Q](docs/delivery/EVIDENCE-R3.md#r3-s2-q). |
 | Screening | Batch processing, leases, retry handling and retained-input controls. | [Screening](SCREENING.md). Completed erasure safeguards below; Bounded PI-R3 UI journeys passed; resource work remains PI-R4. |
@@ -152,5 +152,11 @@ off the event loop with shared per-service admission, safe 503 saturation,
 retained capacity during cancellation cleanup and owned shutdown. Existing
 per-parse limits remain; verification rechecks its gates after parsing. See the
 [PDF budget](OPERATING.md#pdf-execution-budget) for scope and operational limits.
-The T3 parent remains open for SQL/SMTP execution and combined acceptance;
-next is T3C.
+[R4-S2-T3C1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c1) moves all five signup/login
+code operations, including their owning SQL sessions and mail, to bounded
+workers. Busy admission refuses safely; caller timeout keeps opaque acceptance
+and capacity until actual completion. UI permits manual code entry and explains
+possible delivery delay. The [auth budget](OPERATING.md#authentication-code-execution-budget)
+states cancellation/shutdown and uncertain-write limits. C/parent T3/F14/sprint/
+PI remain open for contact mail (C2), remaining measured SQL (C3) and combined
+acceptance. Exact next is maintained in the handoff.

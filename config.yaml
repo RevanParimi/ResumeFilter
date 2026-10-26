@@ -281,6 +281,8 @@ login_otp_length: 6
 login_otp_ttl_seconds: 600
 login_otp_max_attempts: 5
 login_otp_cooldown_seconds: 60
+auth_code_max_concurrent_requests: 2  # per service; refuse rather than queue
+auth_code_wait_seconds: 20.0         # caller wait only; operation may complete later
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

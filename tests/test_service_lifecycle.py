@@ -14,6 +14,41 @@ from app.services.speech import OpenRouterSpeech
 from tests.test_services_features import production  # noqa: F401
 
 
+async def test_auth_code_shutdown_joins_accepted_work_before_disposing_sql(services, monkeypatch):
+    from threading import Event
+    from app.auth.execution import AuthCodeUnavailable
+    entered, release, finished = Event(), Event(), Event()
+    def work():
+        entered.set()
+        assert release.wait(8)
+        finished.set()
+        return 'completed'
+    pending = asyncio.create_task(services.auth_codes.run(work))
+    assert await asyncio.to_thread(entered.wait, 5)
+    disposed = []
+    def dispose():
+        assert finished.is_set()
+        disposed.append(True)
+    monkeypatch.setattr(services, 'dispose_sql', dispose)
+    closing = asyncio.create_task(services.aclose())
+    try:
+        await asyncio.sleep(.02)
+        closing.cancel()
+        await asyncio.sleep(.02)
+        closing.cancel()
+        await asyncio.sleep(.02)
+        assert not closing.done() and not disposed
+        with pytest.raises(AuthCodeUnavailable, match='auth_code_executor_closed'):
+            _ = services.auth_codes
+    finally:
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await closing
+        assert await pending == 'completed'
+    await services.aclose()
+    assert disposed == [True]
+
+
 async def test_services_stop_pdf_before_sql_disposal_and_refuse_late_admission(services, monkeypatch):
     from threading import Event
     from app.core.pdf_execution import PdfUnavailable, check_pdf_cancelled

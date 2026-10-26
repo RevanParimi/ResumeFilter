@@ -96,9 +96,18 @@ async def main():
             assert await tab.js("window.__click('button', " + json.dumps("Create account and send code" if signup else "Send code") + ")")
             assert await tab.wait("document.querySelectorAll('input[inputmode]').length === 6", 20, "OTP")
             if plane == "Candidate" and signup:
-                assert await tab.js("window.__click('a', 'Send another code')")
-                checks.check("candidate resend keeps uniform acceptance copy", await tab.wait(
-                    "window.__has('If that address is registered, another code is on its way.')", 20))
+                await tab.js("""window.__resendFetch = window.fetch;
+window.__resendStatus = null;
+window.fetch = (url, init) => window.__resendFetch(url, init).then(response => {
+ if (String(url).endsWith('/auth/candidate/login')) window.__resendStatus = response.status;
+ return response;
+});""")
+                try:
+                    assert await tab.js("window.__click('a', 'Send another code')")
+                    checks.check("candidate resend keeps uniform acceptance copy", await tab.wait(
+                        "window.__resendStatus === 202 && window.__has('Delivery may still be in progress')", 20))
+                finally:
+                    await tab.js("window.fetch = window.__resendFetch")
             code = browser._code_for(mailbox, email)
             if plane == "Candidate" and signup:
                 wrong = str((int(code[0]) + 1) % 10) + code[1:]

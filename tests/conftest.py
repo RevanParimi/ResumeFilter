@@ -419,6 +419,8 @@ def services(settings, fake_github, flywheel) -> Services:
     # PDF threads even when a test used several distinct event loops.
     if bundle._pdf is not None:
         bundle._pdf.close()
+    if bundle._auth_codes is not None:
+        bundle._auth_codes.close()
 
 
 @pytest.fixture

@@ -307,11 +307,11 @@ per-parse limits, text precedence, safe refusals, ownership and atomic batch
 registration remain; verification rechecks its gates after the awaited parse.
 SQL sessions stay on the caller. This is per-service admission, not global RSS
 or a whole-batch deadline; normal server shutdown first drains HTTP requests.
-C and the parent acceptance review remain open; exact next is C.
+C and the parent acceptance review remain open; child status is tracked below.
 
 #### <a id="r4-s2-t3c"></a>R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries
 
-Status: pending. Prerequisite: B.
+Status: in progress (2026-10-26). Prerequisite: B, done.
 
 Measure remaining synchronous SQL/SMTP boundaries; move complete owning-session
 operations to bounded workers without sharing sessions across threads. Define
@@ -320,6 +320,39 @@ Require focused/full/API and actual PostgreSQL competing-connection evidence
 where transaction/thread behavior changes; measure unrelated-request latency
 with slow SQL/mail fakes. Complete the combined T3 acceptance review here only
 after A/B/C evidence is complete. No live email delivery or deployment.
+
+Split before implementation: C1 is this session's bounded task. C2/C3, C,
+parent T3/F14/sprint/PI remain open; do not implement another child here.
+
+##### <a id="r4-s2-t3c1"></a>R4-S2-T3C1 - Bound signup/login code issuance
+
+Status: done (2026-10-26). Prerequisite: B, done.
+
+[C1 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c1) owns the pre-implementation
+contract, dedicated bounded owning-session execution for all five issuing
+routes, uniform 202 caller timeout, retained admission during late work,
+cancellation/cleanup, regressions and validation/review results. Organization
+name checking moves with issuance. No live Session crosses threads; no schema
+change. UI explains possible delivery delay and permits manual code entry.
+Existing auth/erasure/local echo remain. This is a caller wait budget, not a
+whole-operation deadline or durable mail queue. Exact next child is C2;
+verification/resolution and remaining SQL stay in C3.
+
+##### <a id="r4-s2-t3c2"></a>R4-S2-T3C2 - Bound contact-verification mail operations
+
+Status: pending. Prerequisite: C1. Measure and move complete contact challenge
+start/resend operations with their owning SQL sessions; preserve candidate proof,
+consent, erasure and uncertain-write recovery. Define admission/cancel/timeout/
+cleanup and require focused/full/actual PG/migrated HTTP/Chrome evidence.
+
+##### <a id="r4-s2-t3c3"></a>R4-S2-T3C3 - Bound remaining measured SQL and review combined T3 acceptance
+
+Status: pending. Prerequisite: C2. Inventory/measure remaining async SQL callers,
+including auth verification/resolution, intake, screening and reporting. Define
+bounded child groups here before implementation if needed. Require owning-session
+operations, controlled SQL/PG concurrency, unrelated-request latency, failure/
+cancellation/committed-write uncertainty and relevant browser journeys. Close C/
+T3 only after every group and the combined A/B/C acceptance review pass.
 
 ### R4-S2-T4 — Provide durable batch continuation
 

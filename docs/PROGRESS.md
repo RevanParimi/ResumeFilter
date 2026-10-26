@@ -4,50 +4,59 @@ Updated: 2026-10-26. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3B complete and published.** Only B is this session's task. Its
-[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3b) owns admission/lifecycle
-behavior, regressions, exact commands/counts, fixture corrections and reviews.
-T3/F14/sprint/PI remain open for C and later gates; A/T1/T2 and R4-S1 stay closed.
+**R4-S2-T3C1 complete.** C was split before implementation; only C1 is this
+session's task. Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c1)
+owns acceptance, exact commands/counts, harness corrections, limits and reviews.
+C2/C3, C, T3/F14/sprint/PI remain open; B/A/T1/T2 and R4-S1 stay closed.
 
-PDF/document parsing now runs off the event loop with shared per-service
-admission (default two, no waiting queue). Saturation returns safe 503 with
-Retry-After, without partial registration. Cancellation retains capacity until
-child/pipe cleanup; service cleanup joins supervisors before owned SQL disposal.
-Verification rechecks its gates after parsing. Existing per-parse resource
-limits, text precedence, auth/CSRF/tenant and refusal behavior remain. SQL stays
-on the caller; no schema/frontend/scoring/working-store change.
+All five signup/login code operations now run off the event loop with their
+owning SQL sessions and mail. Per-service admission defaults to two, without
+a waiting queue; excess work gets safe 503/Retry-After before SQL. The default
+20-second caller wait returns the same opaque 202 on timeout. Capacity stays
+occupied until actual completion; no automatic replay. UI explains possible
+delivery delay and permits manual entry. Cleanup joins accepted workers before
+SQL disposal. Existing auth, erasure and guarded local echo remain.
 
-Full pytest: **3706 passed, 623 skipped, 127 warnings**. Focused, migrated
-HTTP/restart and actual Chrome passed, including real 503/fresh-PDF recovery/
-reload. During real controlled PDF stalls, health plus an authorized read took
-**0.0165–0.0356 s** total per door against one second. Dated consent fixtures
-were pinned to their synthetic clocks; application consent is unchanged.
-Fakes prove mechanics, not live providers or empirical quality.
+Focused SQLite and actual PostgreSQL, migrated HTTP/restart on both, actual
+Chrome busy/delayed-code/manual verification/reload and resend, bindings/syntax/
+compilation pass. Final full pytest: **3721 passed, 630 skipped, 127 warnings**.
+The initial failed run and corrected UI notice expectations are recorded;
+the affected UI mount/handler group passes (**20 passed**), as does Chrome
+after removing the older premature delivery claim.
+Controlled SQL/mail stalls kept health plus authorized SQL reads within one
+second. Fakes/capture mail prove mechanics, not live delivery or empirical quality.
 
-Implementation and distinct final staged self-reviews found no blocker.
-The reviewed implementation commit `5afe648` was pushed to `origin/main` and
-verified remotely. GCM's multiple-account selection was resolved using a
-per-command username; no saved Git configuration changed. The final response
-records the verified remote SHA after this publication-record update.
+Implementation, correction and distinct final staged self-reviews are recorded;
+no blocking finding remains. Required validation and completion records are
+complete. Authorized scoped publication follows; the final response reports
+the verified remote SHA. Use per-command
+`-c credential.username=RevanParimi` for GCM's multiple-account selection;
+no saved Git configuration change is needed.
 
-**Exact next task: R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries**,
-under its [contract](delivery/PI-R4.md#r4-s2-t3c). Do not start C in this session.
+**Exact next after C1: R4-S2-T3C2 - Bound contact-verification mail operations**,
+under its [contract](delivery/PI-R4.md#r4-s2-t3c2). Do not start C2 here.
 
-Per-service admission is not global RSS/body concurrency. Timeouts remain per
-parse, and normal server shutdown first drains HTTP requests. Direct synchronous
-callers own scheduling; see [operating limits](../OPERATING.md#pdf-execution-budget).
-Working DB/unrelated files remain at baseline, demo untouched. **604 code/config
-hashes** identify the reviewed/tested state. PG was not required: no SQL session,
-transaction or migration moved. Owned validation processes and full pytest
-finished. The feature overview is
+Timeout cannot kill threads, recall mail or promise rollback. There is no new
+whole-operation/server-drain deadline; driver/socket limits remain. Direct
+synchronous callers own scheduling. See the [auth budget](../OPERATING.md#authentication-code-execution-budget).
+No schema/migration/scoring or working-store change. Working DB/unrelated files
+remain at baseline, demo untouched. **616 code/config hashes** identify the
+reviewed state. Owned disposable PG is stopped. Feature overview:
 [FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3b.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3c1.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Auth code worker admission/SQL/mail stalls/late success/graceful restart:
+  `scripts/smoke_r4_s1_t3a.py --auth-code-workers`; actual Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --auth-code-workers`.
+  Append HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
+  C1's owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c1_postgres.py` /
+  `r4-s2-t3c1-pg-runtime.json`, stopped. Resend/contact/portal Chrome:
+  `scripts/check_ui_evaluate_browser.py`.
 - Aggregate request bodies / partial-upload latency / graceful HTTP restart:
   `scripts/smoke_r4_s1_t3d.py --body-limit`. Actual screening Chrome including
   ingress refusal, Clear/fresh-file recovery and reload:

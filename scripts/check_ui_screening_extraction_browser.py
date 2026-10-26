@@ -5,9 +5,11 @@ Add a second file intake, persisted reload and injected batch-read error/recover
 Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --body-limit also verifies actual ingress 413 rendering and fresh-file recovery.
 --pdf-execution verifies actual PDF capacity refusal and recovery/reload.
+--auth-code-workers verifies actual auth admission/delayed-mail/manual recovery.
 """
 
 import asyncio
+import json
 import os
 from pathlib import Path
 import socket
@@ -36,6 +38,8 @@ async def main():
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
             if '--pdf-execution' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--auth-code-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
             env = {key: value for key, value in inherited.items() if not key.startswith("DEE_")}
             env.update({key: value for key, value in inherited.items() if key in {
@@ -54,6 +58,9 @@ async def main():
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
+            if '--auth-code-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_CODE_WAIT_SECONDS='.5')
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -62,6 +69,64 @@ async def main():
         return proc
 
     async def run(tab, mailbox, files, admin):
+        if '--auth-code-workers' in sys.argv:
+            async def auth_reload(condition):
+                await tab.js('window.__authReloadMarker = true')
+                await tab.send('Page.reload')
+                assert await tab.wait('!window.__authReloadMarker && (' + condition + ')', 30, 'new auth document')
+                await tab.js(browser.HELPERS)
+            await tab.js(browser.HELPERS)
+            assert await tab.wait("document.querySelector('input[type=email]')", 30, 'auth screen')
+            (scratch / 'auth-mode').write_text('mail')
+            held = asyncio.create_task(asyncio.to_thread(admin.post, '/auth/candidate/signup',
+                json={'email': 'held-browser-auth@example.in'}))
+            try:
+                async with asyncio.timeout(8):
+                    while not (scratch / 'auth-entered').exists():
+                        await asyncio.sleep(.01)
+                assert await tab.js("window.__type('input[type=email]', 'busy-browser-auth@example.in', 0)")
+                assert await tab.js("window.__click('button', 'Send code')")
+                browser.S.check('actual global auth capacity refusal has useful recovery copy',
+                    await tab.wait("window.__has('Code requests are busy. Try again shortly.')", 10, 'auth busy refusal')
+                    and await tab.js("document.querySelectorAll('input[inputmode]').length") == 0)
+            finally:
+                (scratch / 'auth-release').touch()
+                assert (await held).status_code == 202
+                async with asyncio.timeout(8):
+                    while not (scratch / 'auth-completed').exists():
+                        await asyncio.sleep(.01)
+                (scratch / 'auth-mode').unlink(missing_ok=True)
+            for name in ('auth-entered', 'auth-completed', 'auth-release'):
+                (scratch / name).unlink(missing_ok=True)
+            await auth_reload("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Candidate' && b.offsetParent)")
+            assert await tab.js("window.__click('button', 'Candidate')")
+            email = 'late-browser-auth@example.in'
+            (scratch / 'auth-mode').write_text('mail')
+            try:
+                assert await tab.js(f"window.__type('input[type=email]', '{email}', 0)")
+                assert await tab.js("window.__click('button', 'Send code')")
+                browser.S.check('real caller timeout permits manual code entry without claiming delivery',
+                    await tab.wait("document.querySelectorAll('input[inputmode]').length === 6 && window.__has('Delivery may still be in progress') && window.__has('Requested for') && !window.__has('Sent to')", 10, 'pending code entry')
+                    and email not in (mailbox.read_text() if mailbox.exists() else ''))
+            finally:
+                (scratch / 'auth-release').touch()
+                async with asyncio.timeout(8):
+                    while not (scratch / 'auth-completed').exists():
+                        await asyncio.sleep(.01)
+                (scratch / 'auth-mode').unlink(missing_ok=True)
+            code = browser._code_for(mailbox, email)
+            assert await tab.js(f"window.__type('input[inputmode]', '{code}', 0)")
+            assert await tab.js("window.__click('button', 'Verify and continue')")
+            browser.S.check('late delivered code signs in after one manually entered verification',
+                await tab.wait("window.__has('Sign out')", 25, 'late-code signed-in shell')
+                and len([row for row in mailbox.read_text().splitlines() if json.loads(row)['to'] == email]) == 1)
+            await auth_reload("document.body.innerText.includes('Sign out')")
+            browser.S.check('late-code session survives actual browser reload',
+                (await tab.js("fetch('/auth/me', {credentials:'include'}).then(r=>r.json())"))['kind'] == 'candidate')
+            assert await tab.js("window.__click('button', 'Sign out')")
+            assert await tab.wait("document.querySelector('input[type=email]')", 20, 'signed-out auth screen')
+            await auth_reload("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Organisation' && b.offsetParent)")
+            assert await tab.js("window.__click('button', 'Organisation')")
         await original_run(tab, mailbox, files, admin)
         assert await tab.js("window.__click('button', 'Upload')")
         assert await tab.wait("document.querySelector('input[type=file]')", 20, "new file intake")

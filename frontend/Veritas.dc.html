@@ -147,7 +147,7 @@
               <div style="{{ authErrorBox }}">{{ authErrorText }}</div>
             </sc-if>
 
-            <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:14px 0 0 0;">If that address is registered, a code is on its way. We answer the same way either way — that is deliberate.</p>
+            <p style="font-size:11.5px; line-height:1.55; color:var(--muted); margin:14px 0 0 0;">Code delivery can take a little while. If a code arrives, enter it on the next screen.</p>
 
             <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border); font-size:11px; line-height:1.55; color:var(--muted);">Veritas is advisory. It never auto-rejects and never labels a person as fake.</div>
           </sc-if>
@@ -155,7 +155,7 @@
           <sc-if value="{{ isVerify }}" hint-placeholder-val="{{ false }}">
             <button onClick="{{ backToLogin }}" style="{{ linkBtn }}" style-hover="color:var(--heading)">← Use a different address</button>
             <h2 style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:24px; letter-spacing:-0.02em; margin:14px 0 4px 0; color:var(--heading);">Enter your code</h2>
-            <p style="font-size:13px; color:var(--muted); margin:0 0 18px 0;">Sent to <strong style="color:var(--text);">{{ emailInput }}</strong>. Expires in ten minutes.</p>
+            <p style="font-size:13px; color:var(--muted); margin:0 0 18px 0;">Requested for <strong style="color:var(--text);">{{ emailInput }}</strong>. Codes expire after ten minutes.</p>
 
             <div style="display:grid; grid-template-columns:repeat(6,1fr); gap:7px;">
               <sc-for list="{{ otpBoxes }}" as="b" hint-placeholder-count="6">

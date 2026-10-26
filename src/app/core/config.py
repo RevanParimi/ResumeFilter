@@ -512,6 +512,8 @@ class Settings(BaseSettings):
     login_otp_ttl_seconds: int = Field(default=600, ge=30)
     login_otp_max_attempts: int = Field(default=5, ge=1)
     login_otp_cooldown_seconds: int = Field(default=60, ge=0)
+    auth_code_max_concurrent_requests: int = Field(default=2, ge=1)
+    auth_code_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     # DOUBLE-GUARDED at the route, exactly like verif_otp_debug_echo: the login
     # code is echoed in the 202 body only when env == "local" AND this is true.
     # It exists so a developer clicking through the UI is not reading six digits

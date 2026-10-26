@@ -7,7 +7,11 @@ of the service, so they are asserted here through an actual client.
 from __future__ import annotations
 
 import json
+import asyncio
 import re
+from pathlib import Path
+from threading import Event
+import time
 from datetime import datetime, timezone
 
 import pytest
@@ -18,6 +22,206 @@ from app.auth.models import AuthSessionRow, LoginChallengeRow
 from app.main import create_app
 from app.services.email import CaptureEmail
 from tests.conftest import ADMIN_HEADERS, make_services
+from tests.test_report_erasure_concurrency import database  # noqa: F401
+
+
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'erase'])
+async def test_auth_code_admission_retains_owning_work_until_completion(database, cfg, monkeypatch, ending):
+    import httpx
+    from threading import get_ident
+    from sqlalchemy import event, text
+    from app.candidates.store import CandidateStore
+    from app.candidates.models import CandidateRow
+    engine, factory = database
+    cfg.auth_code_max_concurrent_requests = 1
+    cfg.auth_code_wait_seconds = .05 if ending == 'timeout' else 20
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    email = 'retained-auth@example.in'
+    with factory() as session:
+        session.add(CandidateRow(id='auth-owner', email_hash=services.auth.hash_email(email)))
+        session.commit()
+    entered, release = Event(), Event()
+    caller = get_ident()
+    mail_threads, session_threads, calls = [], [], []
+    send = services.email.send
+    def mail(**kwargs):
+        calls.append(kwargs['to'])
+        mail_threads.append(get_ident())
+        entered.set()
+        assert release.wait(15)
+        return send(**kwargs)
+    def begin(session, transaction, connection):
+        owner = session.info.setdefault('auth_owner_thread', get_ident())
+        assert owner == get_ident(), 'one SQL session crossed threads'
+        session_threads.append(get_ident())
+    def end(session, transaction):
+        assert session.info.get('auth_owner_thread', get_ident()) == get_ident()
+    monkeypatch.setattr(services.email, 'send', mail)
+    event.listen(factory, 'after_begin', begin)
+    event.listen(factory, 'after_transaction_end', end)
+    def state():
+        with factory() as session:
+            return {table: list(session.execute(text(f'SELECT * FROM {table} ORDER BY id')).tuples())
+                    for table in ('rate_limit_counters', 'login_issuances', 'login_challenges')}
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post('/auth/candidate/signup', json={'email': email}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    before = state()
+                    for path, body in (
+                        ('/auth/org/signup', {'email': 'other@example.in', 'organization_name': 'Other'}),
+                        ('/auth/org/login', {'email': 'unknown@example.in'}),
+                        ('/auth/candidate/signup', {'email': 'new@example.in'}),
+                        ('/auth/candidate/login', {'email': email}),
+                        ('/auth/admin/login', {'email': 'unknown@example.in'}),
+                    ):
+                        response = await http.post(path, json=body)
+                        assert response.status_code == 503, (path, response.text)
+                        assert response.json() == {'detail': 'auth_code_capacity_exhausted'}
+                        assert response.headers['retry-after'] == '1' and response.headers['x-request-id']
+                    assert state() == before, 'unadmitted requests reached SQL'
+                    assert calls == [email]
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    if ending == 'timeout':
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 202 and response.json() == {'status': 'accepted'}
+                        assert 'set-cookie' not in response.headers
+                        assert not Path(cfg.email_capture_path).exists()
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    elif ending == 'erase':
+                        erased = await http.delete('/candidates/auth-owner', headers=ADMIN_HEADERS)
+                        assert erased.status_code == 200
+                        assert services.candidates.get_candidate('b') is not None
+                    assert (await http.post('/auth/admin/login', json={'email': 'unknown@example.in'})).status_code == 503
+                finally:
+                    release.set()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_codes._active:
+                            await asyncio.sleep(.01)
+                code = _code(Path(cfg.email_capture_path))
+                verified = await http.post('/auth/candidate/verify', json={'email': email, 'code': code})
+                assert verified.status_code == (400 if ending == 'erase' else 200)
+                if ending == 'erase':
+                    assert verified.json() == {'detail': 'invalid_code'}
+                    assert services.candidates.get_candidate('auth-owner') is None
+                assert (await http.post('/auth/admin/login', json={'email': 'unknown@example.in'})).json() == {'status': 'accepted'}
+                assert calls == [email], 'the original request was replayed'
+        assert mail_threads and all(thread != caller for thread in mail_threads)
+        assert caller in session_threads and any(thread != caller for thread in session_threads)
+    finally:
+        release.set()
+        services.auth_codes.close()
+        event.remove(factory, 'after_begin', begin)
+        event.remove(factory, 'after_transaction_end', end)
+
+
+async def test_auth_code_worker_waits_for_a_real_competing_sql_transaction(database, cfg):
+    import httpx
+    from sqlalchemy import event, text
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_code_max_concurrent_requests = 1
+    cfg.auth_code_wait_seconds = .1
+    cfg.login_otp_cooldown_seconds = 0
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    entered = Event()
+    pids = []
+    def observing(conn, cursor, statement, parameters, context, many):
+        if 'rate_limit_counters' in statement and statement.lstrip().upper().startswith(('UPDATE', 'INSERT')):
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                assert (await http.post('/auth/candidate/login', json={'email': 'lock-auth@example.in'})).status_code == 202
+                async with asyncio.timeout(8):
+                    while services.auth_codes._active:
+                        await asyncio.sleep(.01)
+                blocker = engine.connect()
+                if engine.dialect.name == 'sqlite':
+                    blocker.exec_driver_sql('BEGIN IMMEDIATE')
+                else:
+                    blocker.execute(text('SELECT * FROM rate_limit_counters FOR UPDATE')).all()
+                event.listen(engine, 'before_cursor_execute', observing)
+                pending = asyncio.create_task(http.post('/auth/candidate/login', json={'email': 'lock-auth@example.in'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    response = await pending
+                    assert response.status_code == 202 and response.json() == {'status': 'accepted'}
+                    assert (await http.post('/auth/admin/login', json={'email': 'other@example.in'})).status_code == 503
+                finally:
+                    blocker.rollback()
+                    blocker.close()
+                    event.remove(engine, 'before_cursor_execute', observing)
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_codes._active:
+                            await asyncio.sleep(.01)
+                code = _code(Path(cfg.email_capture_path))
+                assert (await http.post('/auth/candidate/verify', json={'email': 'lock-auth@example.in', 'code': code})).status_code == 200
+    finally:
+        services.auth_codes.close()
+
+
+@pytest.mark.parametrize('gate', ['mail', 'sql'])
+async def test_slow_auth_issuance_does_not_block_unrelated_requests(database, cfg, monkeypatch, gate):
+    import httpx
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    entered, release, finished = Event(), Event(), Event()
+    send = services.email.send
+    def hold():
+        entered.set()
+        release.wait(3)
+        finished.set()
+    def mail(**kwargs):
+        if gate == 'mail':
+            hold()
+        return send(**kwargs)
+    def sql(conn, cursor, statement, parameters, context, many):
+        if gate == 'sql' and 'rate_limit_counters' in statement and not entered.is_set():
+            hold()
+    monkeypatch.setattr(services.email, 'send', mail)
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post('/auth/candidate/signup', json={'email': 'slow-auth@example.in'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    health = await http.get('/healthz')
+                    read = await http.get('/admin/users', headers=ADMIN_HEADERS)
+                    elapsed = time.monotonic() - start
+                    assert health.status_code == read.status_code == 200
+                    assert not finished.is_set(), f'unrelated requests waited for {gate} work ({elapsed:.4f}s)'
+                finally:
+                    release.set()
+                    response = await pending
+                assert response.status_code == 202 and response.json() == {'status': 'accepted'}
+    finally:
+        event.remove(engine, 'before_cursor_execute', sql)
+        if getattr(services, '_auth_codes', None) is not None:
+            services._auth_codes.close()
 
 
 @pytest.fixture
@@ -47,6 +251,8 @@ def client(cfg, flywheel):
     with TestClient(create_app(services), raise_server_exceptions=False) as c:
         c.app_services = services
         yield c
+    if services._auth_codes is not None:
+        services._auth_codes.close()
 
 
 def _code(capture_path) -> str:

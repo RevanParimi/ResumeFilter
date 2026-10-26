@@ -130,6 +130,17 @@ Signup and login always answer `202`, and every invalid-code failure answers one
 `400 invalid_code` — distinguishing expired from wrong from exhausted tells a
 brute-forcer which assumption was right. Cooldown refusals are also `202`.
 
+Signup/login code issuance uses shared bounded execution, including its SQL
+operations and configured email delivery. Full capacity refuses before account
+lookup with 503; accepted work can finish after its caller stops waiting.
+The same opaque 202 body covers a caller wait timeout, so slow mail does not
+introduce a new known-address status oracle. The browser permits manual code
+entry and describes possible delay for every normal acceptance. No automatic
+resend occurs. Existing direct synchronous service callers own scheduling.
+See the [execution budget](OPERATING.md#authentication-code-execution-budget)
+for configuration, cancellation and shutdown limits. Verification/resolution
+and candidate contact mail are separate remaining boundaries.
+
 **On the candidate plane, signup and login are the same act and both always
 send.** A `candidates` row is *not* an account: most were created by an org
 uploading a resume, about someone who has never touched this system. Treating

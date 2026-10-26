@@ -115,6 +115,38 @@ supervisor also uses two bounded pipe-I/O threads. Direct synchronous parser
 and verification-service callers retain caller-owned scheduling and the same
 per-parse limits; use the service's async entry points for shared admission.
 
+### Authentication code execution budget
+
+`auth_code_max_concurrent_requests` is positive and defaults to **2** per
+service/application process. Its queue-free workers handle the entire signup/
+login-code operation, including organization-name checks and store-owned SQL
+sessions. No live SQL session, HTTP Request or Response crosses threads.
+Full capacity returns **503** `auth_code_capacity_exhausted`; closed admission
+uses `auth_code_executor_closed`. Both include `Retry-After: 1`, before account
+lookup, rate-counter or email work. The browser explains capacity refusal.
+
+`auth_code_wait_seconds` defaults to **20**, must be finite/positive, and bounds
+the caller's asynchronous wait. Configure these settings in YAML or with
+`DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS` / `DEE_AUTH_CODE_WAIT_SECONDS`, then
+restart. The wait budget does not kill a SQL/mail operation or promise rollback.
+Timeout returns the existing generic **202** accepted body, without claiming
+delivery. A different status after slow mail would disclose which addresses
+have an account. Local-only echo remains guarded and is absent after timeout.
+
+Do not automatically replay an uncertain code request. An email may arrive
+later; enter that code if it does. The browser says this for every ordinary
+acceptance. Cancellation propagates to the caller; cancellation and timeout
+retain the admission slot until the original operation actually finishes.
+Service cleanup closes admission and joins accepted operations before owned SQL
+disposal. It cannot safely kill Python threads; existing driver/SMTP socket
+timeouts apply, and normal server shutdown first drains HTTP requests. This is
+not a whole-operation/drain deadline, a global RSS budget or a durable mail queue.
+
+All verification/resolution/contact-mail and remaining SQL boundaries are still
+tracked under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
+service callers retain caller-owned scheduling. This does not configure or send
+live email.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

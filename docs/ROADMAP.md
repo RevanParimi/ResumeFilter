@@ -6,6 +6,20 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-26 - R4-S2-T3C1 complete; bounded auth code issuance.**
+  C was split before implementation; only C1 belongs to this session. All five
+  issuing routes move complete SQL/mail operations to dedicated bounded
+  workers. Admission is queue-free; caller timeout keeps generic acceptance
+  and retains capacity until actual completion, without automatic replay.
+  Cleanup joins accepted work before SQL disposal. UI explains delayed
+  delivery and permits manual entry. The [C1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c1)
+  owns the contract, regressions, SQLite/actual PG contention, migrated HTTP/
+  restart, real Chrome, successful full regression, corrected handler/copy
+  expectations and separate self-reviews. Final staged self-review found no
+  blocker; the final response records publication's verified remote SHA.
+  No schema or working-store change; demo untouched. C2/C3, C, T3/F14/sprint/PI
+  stay open. Exact next after C1 is contact-verification mail, C2.
+
 - **Session 2026-10-26 - R4-S2-T3B completed and published.**
   Shared per-service admission refuses excess work safely; cancellation retains
   capacity until child/pipe cleanup, and service shutdown joins supervisors.

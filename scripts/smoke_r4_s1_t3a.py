@@ -6,7 +6,8 @@ No external mail/provider calls, working storage or existing demo restart.
 
 import asyncio
 import base64
-from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, asynccontextmanager
 import json
 import os
 from pathlib import Path
@@ -14,25 +15,168 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
+from threading import get_ident
 
 from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_s82 import _code_for as latest_code
 from smoke_r4_s1_t1a import serve
+from smoke_r4_s1_t1a import create_smoke_app as sql_app
+from smoke_r1_s1_t3a_v1 import database
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-router-admin"
 
 
+def create_auth_code_smoke_app():
+    """Actual SQL composition with controlled captured mail / SQL waits."""
+    from sqlalchemy import event
+    from app.services.email import EmailSendFailed
+    app = sql_app()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            send, issue = services.email.send, services.auth.issue_code
+            def mode():
+                path = scratch / 'auth-mode'
+                return path.read_text() if path.exists() else ''
+            def hold():
+                (scratch / 'auth-entered').touch()
+                deadline = time.monotonic() + 20
+                while not (scratch / 'auth-release').exists():
+                    assert time.monotonic() < deadline, 'synthetic auth gate timed out'
+                    time.sleep(.01)
+            def mail(**kwargs):
+                if mode() == 'mail':
+                    hold()
+                if mode() == 'fail':
+                    raise EmailSendFailed('private-auth-smoke-sentinel')
+                return send(**kwargs)
+            def observed_issue(**kwargs):
+                try:
+                    return issue(**kwargs)
+                finally:
+                    if mode():
+                        (scratch / 'auth-completed').touch()
+            def sql(conn, cursor, statement, parameters, context, many):
+                if mode() == 'sql' and 'rate_limit_counters' in statement and not (scratch / 'auth-entered').exists():
+                    hold()
+            def owner(session, transaction, connection):
+                previous = session.info.setdefault('auth_smoke_thread', get_ident())
+                assert previous == get_ident(), 'SQL session crossed threads'
+                with (scratch / 'auth-thread-ownership.jsonl').open('a') as log:
+                    log.write(json.dumps({'owner': previous, 'current': get_ident()}) + '\n')
+            services.email.send, services.auth.issue_code = mail, observed_issue
+            engine = services.session_factory.kw['bind']
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(services.session_factory, 'after_begin', owner)
+            try:
+                yield
+            finally:
+                event.remove(engine, 'before_cursor_execute', sql)
+                event.remove(services.session_factory, 'after_begin', owner)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_auth_code_workers(checks, scratch, base, control, mailbox):
+    saved = []
+    def wait(path):
+        deadline = time.monotonic() + 10
+        while not path.exists():
+            assert time.monotonic() < deadline, 'controlled auth operation did not reach checkpoint'
+            time.sleep(.01)
+    def require(response, status=200):
+        assert response.status_code == status, (response.request.url.path, response.status_code)
+        return response.json()
+    def ready(http):
+        deadline = time.monotonic() + 8
+        while True:
+            response = http.post('/auth/admin/login', json={'email': 'unknown-ready@example.in'})
+            if response.status_code == 202:
+                return
+            assert response.status_code == 503 and time.monotonic() < deadline
+            time.sleep(.01)
+    require(control.post('/admin/users', json={'email': 'bounded-admin@example.in', 'label': 'Synthetic bounded admin'}))
+    for gate, plane, purpose, email in (
+        ('mail', 'admin', 'login', 'bounded-admin@example.in'),
+        ('sql', 'candidate', 'signup', 'bounded-candidate@example.in'),
+    ):
+        for name in ('auth-entered', 'auth-release', 'auth-completed'):
+            (scratch / name).unlink(missing_ok=True)
+        (scratch / 'auth-mode').write_text(gate)
+        before_mail = mailbox.read_text() if mailbox.exists() else ''
+        with client(base) as actor, ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(actor.post, f'/auth/{plane}/{purpose}', json={'email': email})
+            try:
+                wait(scratch / 'auth-entered')
+                started = time.monotonic()
+                health, read = control.get('/healthz'), control.get('/admin/users')
+                elapsed = time.monotonic() - started
+                checks.check(f'{gate}: health plus authorized SQL read finish during blocked issuance',
+                    health.status_code == read.status_code == 200 and elapsed <= 1,
+                    f'two_requests_seconds={elapsed:.4f}; budget=1.0000')
+                response = pending.result(timeout=4)
+                checks.check(f'{gate}: caller timeout is uniform accepted with no premature delivery/cookie',
+                    response.status_code == 202 and response.json() == {'status': 'accepted'}
+                    and 'set-cookie' not in response.headers
+                    and (mailbox.read_text() if mailbox.exists() else '') == before_mail)
+                for path, body in (
+                    ('/auth/org/signup', {'email': 'busy-org@example.in', 'organization_name': 'Busy Organization'}),
+                    ('/auth/org/login', {'email': 'unknown@example.in'}),
+                    ('/auth/candidate/signup', {'email': 'new@example.in'}),
+                    ('/auth/candidate/login', {'email': email}),
+                    ('/auth/admin/login', {'email': 'unknown@example.in'}),
+                ):
+                    busy = control.post(path, json=body)
+                    checks.check(f'{gate}: {path} shares retained admission', busy.status_code == 503
+                        and busy.json() == {'detail': 'auth_code_capacity_exhausted'}
+                        and busy.headers.get('retry-after') == '1')
+            finally:
+                (scratch / 'auth-release').touch()
+            wait(scratch / 'auth-completed')
+            (scratch / 'auth-mode').unlink()
+            ready(control)
+            verified = require(actor.post(f'/auth/{plane}/verify', json={'email': email, 'code': latest_code(mailbox, email)}))
+            me = require(actor.get('/auth/me'))
+            checks.check(f'{gate}: late operation completes once and delivered code establishes its own session',
+                verified['principal'] == me['kind'] == plane
+                and len([row for row in mailbox.read_text().splitlines() if json.loads(row)['to'] == email]) == 1)
+            saved.append((dict(actor.cookies), me))
+    (scratch / 'auth-mode').write_text('fail')
+    response = control.post('/auth/candidate/signup', json={'email': 'failed-auth@example.in'})
+    (scratch / 'auth-mode').unlink()
+    checks.check('provider failure preserves opaque accepted contract and safe details',
+        response.status_code == 202 and response.json() == {'status': 'accepted'}
+        and 'private-auth-smoke-sentinel' not in response.text)
+    accepted = require(control.post('/auth/candidate/signup', json={'email': 'failed-auth@example.in'}), 202)
+    checks.check('capacity recovers after provider failure without automatic replay', accepted == {'status': 'accepted'}
+        and len([row for row in mailbox.read_text().splitlines() if json.loads(row)['to'] == 'failed-auth@example.in']) == 1)
+    rows = [json.loads(line) for line in (scratch / 'auth-thread-ownership.jsonl').read_text().splitlines()]
+    checks.check('SQL sessions retain one thread and independent caller/worker lanes',
+        all(row['owner'] == row['current'] for row in rows) and len({row['owner'] for row in rows}) >= 2)
+    return saved
+
+
 def main():
-    checks = Smoke("R4-S1-T3A auth/session extraction HTTP/restart")
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s1-t3a-"))
+    scratch = Path(tempfile.mkdtemp(prefix='r4-s2-t3c1-' if '--auth-code-workers' in sys.argv else 'r4-s1-t3a-'))
+    with database(scratch) as (url, pg_options):
+        return run(scratch, url, pg_options)
+
+
+def run(scratch, url, pg_options):
+    workers = '--auth-code-workers' in sys.argv
+    checks = Smoke('R4-S2-T3C1 auth code workers / HTTP / restart' if workers else 'R4-S1-T3A auth/session extraction HTTP/restart')
     print(f"Synthetic auth evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     env.update({
         "DEE_CONFIG_FILE": str(scratch / "no-config.yaml"), "DEE_ENV": "local",
-        "DEE_CANDIDATES_DB_URL": "sqlite:///" + (scratch / "app.db").as_posix(),
+        "DEE_CANDIDATES_DB_URL": url, 'PGOPTIONS': pg_options,
         "DEE_DB_MIGRATE_ON_BOOT": "true", "DEE_API_AUTH_KEY": ADMIN,
         "DEE_OPENROUTER_API_KEY": "", "DEE_GITHUB_TOKEN": "",
         "DEE_GITHUB_API_BASE": "http://127.0.0.1:9", "DEE_SPEECH_PROVIDER": "local",
@@ -45,10 +189,12 @@ def main():
         "DEE_GRIEVANCE_OFFICER_PHONE": "+91 80 4000 0000", "DEE_GRIEVANCE_RESPONSE_DAYS": "21",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if workers:
+        env.update(DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_CODE_WAIT_SECONDS='.3')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -138,6 +284,8 @@ def main():
             client(base) as org, client(base) as other_org, client(base) as candidate, client(base) as sibling:
         with server():
             saved_public = public_surface()
+            if workers:
+                worker_sessions = check_auth_code_workers(checks, scratch, base, control, mailbox)
             saved_domains = require(control.get("/domains"))
             checks.check("admin machine key reads both domains with their existing metadata",
                 [row["key"] for row in saved_domains] == ["data_eng", "genai"]
@@ -356,6 +504,12 @@ def main():
                 and sibling.get("/admin/requests").status_code == 401
                 and org.get("/admin/requests").status_code == 401)
         with server():
+            if workers:
+                for cookies, me in worker_sessions:
+                    with client(base) as resumed:
+                        resumed.cookies.update(cookies)
+                        checks.check('late auth-code completion session survives graceful restart',
+                            require(resumed.get('/auth/me')) == me)
             checks.check("public bodies and guarded domain metadata survive graceful restart exactly",
                 public_surface() == saved_public and require(operator.get("/domains")) == saved_domains
                 and org.get("/domains").status_code == sibling.get("/domains").status_code == 401)

@@ -11,6 +11,11 @@
   }) => class extends Base {
   // ── auth ──────────────────────────────────────────────────────────────────
   setEmailInput = (e) => this.setState({ emailInput: e.target.value, authError: null });
+  authErrorCopy = (err) => {
+    if (err && err.detail === "auth_code_capacity_exhausted") return "Code requests are busy. Try again shortly.";
+    if (err && err.detail === "auth_code_executor_closed") return "Sign-in is temporarily unavailable. Try again shortly.";
+    return errorCopy(err);
+  };
   setOrgNameInput = (e) => this.setState({ orgNameInput: e.target.value, authError: null });
   onEmailKey = (e) => { if (e.key === "Enter") { e.preventDefault(); this.sendCode(); } };
 
@@ -44,7 +49,8 @@
           // Signup and login ALWAYS answer 202, known address or not. Never
           // render "no account found" — that would re-open the enumeration hole
           // the backend deliberately closed.
-          authNotice: echoed ? "Local API echoed the code — signing you in." : null
+          authNotice: echoed ? "Local API echoed the code — signing you in."
+            : "If a code arrives, enter it below. Delivery may still be in progress. Wait before requesting another code."
         });
         // Pass the code EXPLICITLY rather than trusting the setState above to
         // have landed: submitCode reads this.state.otp, and racing it produces
@@ -76,7 +82,7 @@
           ...(echoed ? { otp: otpBoxes(echoed) } : {}),
           authNotice: echoed
             ? "Local API echoed the new code — signing you in."
-            : "If that address is registered, another code is on its way. Within a minute of the last one, the first code is still the live one.",
+            : "If a code arrives, enter it below. Delivery may still be in progress. Wait before requesting another code.",
           authError: null
         });
         if (echoed) this.submitCode(String(echoed));
@@ -273,7 +279,7 @@
       })),
       authError: !!(st.authError || st.authNotice),
       authErrorBox: st.authError ? ERROR_BOX : NOTICE_BOX,
-      authErrorText: st.authError ? errorCopy(st.authError) : (st.authNotice || ""),
+      authErrorText: st.authError ? this.authErrorCopy(st.authError) : (st.authNotice || ""),
 
       tabOrg: tabBtn(this.state.plane === "org"),
       tabCandidate: tabBtn(this.state.plane === "candidate"),

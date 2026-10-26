@@ -169,7 +169,10 @@ for (const [plane, mode, path, landing] of [
       email: "synthetic-login@example.com", ...(plane === "org" && mode === "signup" ? { organization_name: "Synthetic Org" } : {})
     }]);
     assert.equal(c.state.screen, "verify"); assert.equal(c.state.authBusy, false);
-    assert.equal(c.state.authNotice, null);
+    assert.match(c.renderVals().authErrorText, /Delivery may still be in progress/);
+    assert.equal(c.renderVals().otpBoxes.length, 6);
+    assert.equal(c.state.me, null);
+    assert.equal(calls.length, 1, "generic acceptance must not verify or replay the request");
     c.state.otp = ["1", "2", "3", "4", "5", "6"];
     const verify = c.submitCode; verify({ type: "click" }); await settle();
     assert.deepEqual(calls.find(x => x[1].endsWith("/verify")), ["POST", path.replace(/\/(signup|login)$/, "/verify"),
@@ -225,7 +228,8 @@ test("resend uses login and preserves digits without server echo; local echo ver
   const resend = c.resendCode; resend({ preventDefault() {} }); await settle();
   assert.equal(calls[0][1], "/auth/org/login");
   assert.deepEqual(c.state.otp, ["1", "2", "3", "", "", ""]);
-  assert.match(c.state.authNotice, /If that address is registered/);
+  assert.match(c.renderVals().authErrorText, /If a code arrives/);
+  assert.match(c.state.authNotice, /Delivery may still be in progress/);
   window.VeritasAPI.post = async (p, body) => {
     calls.push(["POST", p, body]);
     return p.endsWith("/verify") ? { principal: "org", organization_id: "owned" } : { debug_code: "654321" };

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import _client_ip_hash, _rate_limited, _services, require_any_principal
 from app.auth.schema import AuthPlane, LoginPurpose, Principal, SessionView
+from app.auth.execution import AuthCodePending, AuthCodeUnavailable
 from app.auth.service import ChallengeRefused, EmailUnavailableError, RegistrationRefused
 from app.ratelimit.service import RateLimited
 
@@ -99,7 +100,17 @@ def _set_session_cookies(
     response.set_cookie(settings.csrf_cookie_name, csrf, httponly=False, **common)
 
 
-def _request_code(
+def _issue_code(auth, *, email, plane, purpose, payload, at, ip_hash):
+    # The entire owning operation runs together. A Session is never created
+    # by the event-loop caller and handed to a worker.
+    if plane == AuthPlane.ORG and purpose == LoginPurpose.SIGNUP:
+        if not auth.organization_name_available(payload['organization_name']):
+            raise RegistrationRefused('organization_name_taken')
+    return auth.issue_code(email=email, plane=plane, purpose=purpose,
+                           payload=payload, at=at, ip_hash=ip_hash)
+
+
+async def _request_code(
     request: Request,
     *,
     email: str,
@@ -111,7 +122,7 @@ def _request_code(
     services = _services(request)
     code: Optional[str] = None
     try:
-        _sent, code = services.auth.issue_code(
+        _sent, code = await services.auth_codes.run(_issue_code, services.auth,
             email=email,
             plane=plane,
             purpose=purpose,
@@ -119,6 +130,15 @@ def _request_code(
             at=datetime.now(timezone.utc),
             ip_hash=_client_ip_hash(request),
         )
+    except AuthCodeUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except AuthCodePending:
+        # A different public status for delayed mail would distinguish a known
+        # account from a no-op unknown login. Generic acceptance never promises
+        # delivery, and the original operation must not be replayed here.
+        pass
+    except RegistrationRefused as exc:
+        raise HTTPException(status_code=409, detail=exc.reason) from None
     except RateLimited as exc:
         # The opaque-detail reasoning that used to live here now lives on
         # `_rate_limited`, where all five call sites can read it.
@@ -199,9 +219,7 @@ async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeReques
     whether an ADDRESS has an account, and this check never looks at the
     address: an unknown address still gets 202 exactly like a known one.
     """
-    if not _services(request).auth.organization_name_available(req.organization_name):
-        raise HTTPException(status_code=409, detail="organization_name_taken")
-    return _request_code(
+    return await _request_code(
         request,
         email=req.email,
         plane=AuthPlane.ORG,
@@ -213,7 +231,7 @@ async def auth_org_signup(req: OrgSignupRequest, request: Request) -> CodeReques
 @auth_router.post("/auth/org/login", status_code=202, response_model=CodeRequestAccepted,
                   response_model_exclude_none=True)
 async def auth_org_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
+    return await _request_code(
         request, email=req.email, plane=AuthPlane.ORG, purpose=LoginPurpose.LOGIN
     )
 
@@ -230,7 +248,7 @@ async def auth_org_verify(
 @auth_router.post("/auth/candidate/signup", status_code=202, response_model=CodeRequestAccepted,
                   response_model_exclude_none=True)
 async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
+    return await _request_code(
         request,
         email=req.email,
         plane=AuthPlane.CANDIDATE,
@@ -241,7 +259,7 @@ async def auth_candidate_signup(req: EmailOnlyRequest, request: Request) -> Code
 @auth_router.post("/auth/candidate/login", status_code=202, response_model=CodeRequestAccepted,
                   response_model_exclude_none=True)
 async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
+    return await _request_code(
         request,
         email=req.email,
         plane=AuthPlane.CANDIDATE,
@@ -265,7 +283,7 @@ async def auth_candidate_verify(
 @auth_router.post("/auth/admin/login", status_code=202, response_model=CodeRequestAccepted,
                   response_model_exclude_none=True)
 async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> CodeRequestAccepted:
-    return _request_code(
+    return await _request_code(
         request, email=req.email, plane=AuthPlane.ADMIN, purpose=LoginPurpose.LOGIN
     )
 
