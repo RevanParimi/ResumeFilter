@@ -106,7 +106,8 @@ def test_board_200_with_materialized_pool(services):
         assert body["match"]["ranked"][0]["candidate_id"]
 
 
-def test_card_consent_flow(services):
+def test_card_consent_flow(services, monkeypatch):
+    monkeypatch.setattr('app.ledger.store._utcnow', lambda: NOW)
     org_id, key = _org_key(services)
     hdr = {"X-Org-Key": key}
     cand_id = _candidate(services)

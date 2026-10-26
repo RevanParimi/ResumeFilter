@@ -18,6 +18,7 @@ from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
 from app.core.db import make_engine, make_session_factory
 from app.core.logging import get_logger
+from app.core.pdf_execution import PdfExecutor, PdfUnavailable
 from app.ledger.store import LedgerStore, build_ledger_store
 from app.metrics.registry import Metrics, build_metrics
 from app.services.flywheel import Flywheel, build_flywheel
@@ -99,6 +100,17 @@ class Services:
     _owned_engine: Optional[Engine] = field(default=None, repr=False, compare=False)
     _owned_clients: tuple[object, ...] = field(default=(), repr=False, compare=False)
     _close_task: Optional[asyncio.Task] = field(default=None, init=False, repr=False, compare=False)
+    _pdf: Optional[PdfExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def pdf(self) -> PdfExecutor:
+        # Accessed by async callers on the owning event loop; no resources are
+        # allocated for services that never accept PDF input.
+        if self._close_task is not None:
+            raise PdfUnavailable('pdf_executor_closed')
+        if self._pdf is None:
+            self._pdf = PdfExecutor(self.settings.pdf_max_concurrent_parses)
+        return self._pdf
 
     def dispose_sql(self) -> None:
         """Release only the SQL engine this bundle constructed, once.
@@ -113,6 +125,8 @@ class Services:
     async def _close_owned(self) -> None:
         clients, self._owned_clients = self._owned_clients, ()
         failed = False
+        if self._pdf is not None:
+            await self._pdf.aclose()
         try:
             self.dispose_sql()
         except Exception as exc:

@@ -4,51 +4,61 @@ Updated: 2026-10-26. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3A complete.** T3 was split before
-implementation into A/B/C. Only A is this session's scope; T3/F14/sprint/PI
-remain open. Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3a) owns the
-ingress budget, red/green regressions, exact commands/counts, harness corrections
-and reviews.
+**R4-S2-T3B implementation/validation complete; publication blocked.**
+Only B is this session's task. Its
+[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3b) owns admission/lifecycle
+behavior, regressions, exact commands/counts, fixture corrections and reviews.
+T3/F14/sprint/PI remain open for C and later gates; A/T1/T2 and R4-S1 stay closed.
 
-Raw HTTP bodies now have a positive 32,000,000-byte default cap before JSON/model/
-PDF work. Known oversized lengths refuse unread; streams count actual bytes.
-Exact equality, per-item caps, request IDs/CORS and ordinary auth/CSRF/tenant
-behavior remain. Refused batches create no partial registration. Disconnect
-attempts a safe incomplete-body 400, cancellation propagates, and outer CORS
-preflights can finish without reading. No schema/frontend/scoring/working-store
-change. This is a per-request raw-byte bound, not global RSS/upload concurrency;
-transport timeouts and blocking PDF/SQL/SMTP remain B/C.
+PDF/document parsing now runs off the event loop with shared per-service
+admission (default two, no waiting queue). Saturation returns safe 503 with
+Retry-After, without partial registration. Cancellation retains capacity until
+child/pipe cleanup; service cleanup joins supervisors before owned SQL disposal.
+Verification rechecks its gates after parsing. Existing per-parse resource
+limits, text precedence, auth/CSRF/tenant and refusal behavior remain. SQL stays
+on the caller; no schema/frontend/scoring/working-store change.
 
-Focused pytest **201 passed**; migrated scratch HTTP/restart **28/28 + 31/31**;
-actual Chrome **27/27**, including 413/fresh-file recovery/reload. A controlled
-paused upload allowed health plus an authorized read in **0.0161 s** total
-(one-second budget). Full pytest: **3695 passed, 623 skipped, 127 warnings**.
+Full pytest: **3706 passed, 623 skipped, 127 warnings**. Focused, migrated
+HTTP/restart and actual Chrome passed, including real 503/fresh-PDF recovery/
+reload. During real controlled PDF stalls, health plus an authorized read took
+**0.0165–0.0356 s** total per door against one second. Dated consent fixtures
+were pinned to their synthetic clocks; application consent is unchanged.
 Fakes prove mechanics, not live providers or empirical quality.
 
 Implementation and distinct final staged self-reviews found no blocker.
-Authorized scoped publication uses tracking branch `origin/main`; the final
-response records the verified remote SHA. Stop after A publication.
+The reviewed scoped commit is local. Push to `origin/main` is blocked by missing
+GitHub authentication: GCM's noninteractive retry refused credentials. Remote
+`main` was verified unchanged at `06a7f42`; no remote publication is claimed.
 
-**Exact next task: R4-S2-T3B - Bound PDF execution and keep it off the
-event loop**; read its [child contract](delivery/PI-R4.md#r4-s2-t3b). Do not start
-B in this session. Earlier T1/T2 and R4-S1 remain closed.
+**Exact next task: finish R4-S2-T3B publication only.** After GitHub authentication,
+push the reviewed local commit to the existing tracking branch and verify the
+remote SHA, then stop. Do not repeat implementation/audit or the unchanged green
+tests. Next backlog task after B publication is **R4-S2-T3C - Bound remaining
+blocking SQL/SMTP boundaries**, under its [contract](delivery/PI-R4.md#r4-s2-t3c).
 
-Working DB and unrelated files remain at baseline; the demo is untouched.
-644 code hashes plus YAML identify the reviewed/tested state.
-PG was not required for this ingress-only child. HTTP/Chrome owned processes
-and full pytest finished. The feature overview is
+Per-service admission is not global RSS/body concurrency. Timeouts remain per
+parse, and normal server shutdown first drains HTTP requests. Direct synchronous
+callers own scheduling; see [operating limits](../OPERATING.md#pdf-execution-budget).
+Working DB/unrelated files remain at baseline, demo untouched. **604 code/config
+hashes** identify the reviewed/tested state. PG was not required: no SQL session,
+transaction or migration moved. Owned validation processes and full pytest
+finished. The feature overview is
 [FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3a.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3b.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
 - Aggregate request bodies / partial-upload latency / graceful HTTP restart:
   `scripts/smoke_r4_s1_t3d.py --body-limit`. Actual screening Chrome including
   ingress refusal, Clear/fresh-file recovery and reload:
   `scripts/check_ui_screening_extraction_browser.py --body-limit`.
+- PDF child stalls/shared admission/timeout/recovery/graceful HTTP restart:
+  `scripts/smoke_r4_s1_t3d.py --pdf-execution`. Actual PDF 503/fresh-file
+  recovery/reload Chrome: `scripts/check_ui_screening_extraction_browser.py
+  --pdf-execution`.
 - Two-process batch scheduling/terminal outcomes/retry/graceful restart:
   `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
   scheduling `--leases`);
@@ -133,6 +143,7 @@ and full pytest finished. The feature overview is
   login ownership from hints, merge identities or auto-repair old history. Missing
   session/audit history is unrecoverable; downgrade discards new proof metadata.
 - Phone verification remains unavailable. Mail/DB commits are not atomic; SMTP
-  holds the candidate/SQLite writer lock with existing socket timeouts. PDF limits
-  are per parse, not aggregate RSS/concurrency; unsupported runtimes/input can
-  refuse safely. Aggregate bounds/cross-worker overlay/reproducibility remain R4.
+  holds the candidate/SQLite writer lock with existing socket timeouts. PDF
+  admission is per service, with per-parse limits; global RSS and HTTP body
+  concurrency remain separate. Unsupported runtimes/input can refuse safely.
+  Remaining SQL/SMTP work, cross-worker overlay and reproducibility remain R4.

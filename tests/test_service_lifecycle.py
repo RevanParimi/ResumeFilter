@@ -14,6 +14,34 @@ from app.services.speech import OpenRouterSpeech
 from tests.test_services_features import production  # noqa: F401
 
 
+async def test_services_stop_pdf_before_sql_disposal_and_refuse_late_admission(services, monkeypatch):
+    from threading import Event
+    from app.core.pdf_execution import PdfUnavailable, check_pdf_cancelled
+    entered, stopped = Event(), Event()
+    def work():
+        entered.set()
+        try:
+            while True:
+                check_pdf_cancelled()
+                stopped.wait(.01)
+        finally:
+            stopped.set()
+    parsing = asyncio.create_task(services.pdf.run(work))
+    assert await asyncio.to_thread(entered.wait, 5)
+    disposed = []
+    def dispose():
+        assert stopped.is_set(), 'SQL disposal preceded PDF child supervision cleanup'
+        disposed.append(True)
+    monkeypatch.setattr(services, 'dispose_sql', dispose)
+    await services.aclose()
+    with pytest.raises(PdfUnavailable, match='pdf_executor_closed'):
+        await parsing
+    with pytest.raises(PdfUnavailable, match='pdf_executor_closed'):
+        _ = services.pdf
+    await services.aclose()
+    assert disposed == [True]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", ["llm", "speech"])
 async def test_sdk_transports_are_lazy_cached_and_closed_once(settings, monkeypatch, kind):

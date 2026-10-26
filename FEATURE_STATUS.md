@@ -146,5 +146,11 @@ provider/report work is separate.
 [R4-S2-T3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3a) adds the
 [raw HTTP body budget](OPERATING.md#raw-http-body-budget) before JSON/model/PDF
 work, including streamed bodies; request IDs/CORS and existing per-item limits
-remain. Rejected batches create no partial registration. The T3 parent remains
-open for bounded PDF/SQL/SMTP execution; next is T3B.
+remain. Rejected batches create no partial registration.
+[R4-S2-T3B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3b) moves PDF/document parsing
+off the event loop with shared per-service admission, safe 503 saturation,
+retained capacity during cancellation cleanup and owned shutdown. Existing
+per-parse limits remain; verification rechecks its gates after parsing. See the
+[PDF budget](OPERATING.md#pdf-execution-budget) for scope and operational limits.
+The T3 parent remains open for SQL/SMTP execution and combined acceptance;
+next is T3C.

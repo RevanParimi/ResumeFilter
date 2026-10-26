@@ -277,7 +277,8 @@ Status: in progress (2026-10-25). Audit mapping: F14. Prerequisites: R4-S2-T2, d
 
 **Review focus:** Review sessions across threads, memory bounds and exception sanitization. Split individual boundaries into child tasks when needed.
 
-Split before implementation into A/B/C below. A is complete;
+Split before implementation into A/B/C below. A is complete; B implementation/
+validation/reviews are complete but publication is blocked by GitHub authentication;
 T3/F14/sprint/PI remain open until all children and the parent acceptance review
 are complete. Completed child evidence lives in the linked PI evidence record.
 
@@ -292,18 +293,23 @@ self-reviews. Known lengths refuse unread and streams count actual bytes;
 equality, auth/tenant/CSRF, request IDs/CORS and existing item caps remain.
 Refused batches create no partial registration. Disconnect/cancellation and
 the per-request memory limitation are explicit. No schema/transaction or
-working-store change. B/C and parent acceptance remain open; exact next is B.
+working-store change. B/C execution and parent acceptance are tracked below.
 
 #### <a id="r4-s2-t3b"></a>R4-S2-T3B - Bound PDF execution and keep it off the event loop
 
-Status: pending. Prerequisite: A.
+Status: blocked (publication only, 2026-10-26). Implementation, validation and
+both self-reviews are complete. Prerequisite: A, done.
 
-Inspect measured PDF blocking callers; use bounded execution while retaining
-per-parse process/time/resource limits. Define admission saturation, cancellation,
-timeout and shutdown. Prove slow/failing PDF work permits unrelated health/read
-requests within a measured budget; cover valid/invalid multi-file intake and
-bounded worker capacity with offline fakes plus migrated HTTP. Preserve input
-refusal, ownership and exception sanitization; review actual browser impact.
+[B contract/evidence](EVIDENCE-R4.md#r4-s2-t3b) owns the pre-implementation
+scope, bounded off-loop PDF/document execution, shared queue-free admission,
+cancellation/timeout/shutdown, regressions, full/focused/migrated HTTP/restart/
+Chrome/static checks, fixture corrections and separate self-reviews. Existing
+per-parse limits, text precedence, safe refusals, ownership and atomic batch
+registration remain; verification rechecks its gates after the awaited parse.
+SQL sessions stay on the caller. This is per-service admission, not global RSS
+or a whole-batch deadline; normal server shutdown first drains HTTP requests.
+C and the parent acceptance review remain open. Exact next is B's pending push/
+remote verification after GitHub authentication, then stop; C is next backlog.
 
 #### <a id="r4-s2-t3c"></a>R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries
 

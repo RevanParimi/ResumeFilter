@@ -80,9 +80,40 @@ never receive it. Cancellation propagates. Transport read timeouts are unchanged
 
 This bounds raw bytes per request. Server-owned ASGI event buffers, temporary
 copies, JSON/decoded objects and simultaneous requests have separate memory
-costs; this is not an RSS or global concurrent-upload bound. Blocking PDF/SQL/
-SMTP work and bounded worker admission remain
+costs; this is not an RSS or global concurrent-upload bound. Remaining SQL/SMTP
+work belongs to
 [R4-S2-T3](docs/delivery/PI-R4.md#r4-s2-t3--bound-requests-and-move-blocking-work-off-loop).
+
+### PDF execution budget
+
+`pdf_max_concurrent_parses` defaults to **2** per service/application process.
+Set it in YAML or with `DEE_PDF_MAX_CONCURRENT_PARSES` (positive; restart to
+apply). Resume uploads, batch registration, evaluation and candidate document
+parsing share this admission budget. Batch files parse sequentially before any
+registration writes. Text resumes retain their normal path during saturation.
+
+There is no waiting queue: full capacity returns HTTP **503** with detail
+`pdf_capacity_exhausted` and `Retry-After: 1`. Shutdown closes admission with
+`pdf_executor_closed`. Retry after capacity returns; a refused registration has
+saved no partial batch. Parser timeout/invalid-file errors keep the existing
+422 resume / 400 verification-document behavior and safe details.
+
+Parsing runs in bounded supervisor threads, each retaining the disposable child
+and its existing per-parse input/page/work/decoded/output/memory/deadline limits.
+Task cancellation signals the supervisor and propagates immediately; admission
+stays occupied until its child is killed/reaped and pipes close. The child wait
+checks cancellation at intervals of at most 50 ms, apart from process launch,
+decoding and cleanup. Service cleanup stops admission, signals active work and
+joins these threads before owned SQL disposal. Normal server shutdown first
+drains in-flight HTTP requests; there is no new whole-batch deadline. A transport
+disconnect alone does not
+guarantee application-task cancellation; accepted work can finish within its
+existing deadline. No database sessions cross threads.
+
+The budget is per process, not a global RSS or concurrent-body bound. Each
+supervisor also uses two bounded pipe-I/O threads. Direct synchronous parser
+and verification-service callers retain caller-owned scheduling and the same
+per-parse limits; use the service's async entry points for shared admission.
 
 ### Dual scoping: all scopes counted, any denial denies
 

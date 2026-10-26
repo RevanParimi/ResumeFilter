@@ -6348,3 +6348,235 @@ uses `main` tracking `origin/main`; the final chat response records the verified
 remote commit after push. Exact next after A is
 **R4-S2-T3B - Bound PDF execution and keep it off the event loop**, under the
 existing [T3 child contract](PI-R4.md#r4-s2-t3b). Stop after A publication.
+
+## R4-S2-T3B
+
+### Contract and implementation (2026-10-26)
+
+Status: blocked (publication only, 2026-10-26). Implementation, validation and
+both self-reviews are complete. This session handles B only. A/T2
+are complete; C, parent T3/F14/sprint/PI remain open.
+
+Trigger: candidate intake, batch registration and the async graph ingest node
+called the synchronous disposable PDF supervisor on the event loop; candidate
+document submission did the same inside its synchronous service. Per-parse
+process/time/resource limits bounded an individual parse, but did not prevent
+unrelated requests waiting or concurrent callers creating too many children.
+
+The pre-implementation contract was recorded under B in PI-R4. One lazy
+`PdfExecutor` per Services bundle admits at most `pdf_max_concurrent_parses`
+jobs (positive, default **2**, YAML/DEE override), with no waiting queue. Resume
+input adapters, graph ingestion and candidate document parsing share admission.
+Only pure input/parsing operations cross threads; no store/session/provider does.
+All document formats use the document parsing admission; text resumes keep
+their normal validation path, including text precedence and cheap size refusals.
+
+Full capacity returns safe HTTP **503**, `pdf_capacity_exhausted`, with
+`Retry-After: 1`; closed admission uses `pdf_executor_closed`. No partial batch
+registration is saved: files parse sequentially and registration starts only
+after every file succeeds. Invalid/timeout resume errors keep 422 and safe
+indexed detail; verification parse errors retain 400 and safe detail. Existing
+auth/tenant/CSRF, per-parse disposable worker, memory/logical/input/output/time
+limits, blank/metadata verification behavior and deterministic fallbacks remain.
+
+Application-task cancellation signals its supervisor and propagates immediately.
+The admission slot remains occupied until the child is killed/reaped and pipes
+close. The child wait checks cancellation every at-most 50 ms, excluding
+launch/decoding/cleanup. Service cleanup closes admission, signals active jobs and joins
+supervisor threads before owned SQL disposal. Repeated/canceled shutdown callers
+still finish cleanup. Verification repeats candidate/method/present-consent
+gates after the awaited parse, before assessment/writes; async erasure can no
+longer pass solely on the pre-parse existence snapshot. Synchronous parser and
+verification-service APIs remain available with caller-owned scheduling.
+
+Acceptance requires a red blocking regression; all five HTTP PDF doors allowing
+health plus authorized reads within a documented **1.0000 s** total budget during
+a controlled real PDF child stall; bounded admission without partial writes;
+valid/invalid multi-file intake, timeout/failure recovery, cancellation/shutdown
+cleanup; focused/full pytest; migrated scratch HTTP/restart and actual Chrome
+error/recovery/reload. No frontend, schema, migration or SQL transaction/thread
+change; no actual PostgreSQL gate is required by this PDF-only boundary. SQLite
+journey evidence is not called PostgreSQL evidence.
+
+### Validation
+
+Sanitized runner: `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3b.py
+<tag> <Python args>`. It clears inherited `DEE_*`, bypasses live config/.env,
+disables live LLM/GitHub/mail and sets project import paths. Omitted Python args
+run `-m pytest -q --tb=short`. Tests use fake external providers and isolated
+stores; journeys use migrated scratch SQL. Ignored local runners/logs are
+artifacts, not portable setup guarantees. The demo and working storage are
+untouched. Synthetic evidence proves mechanics, not empirical scoring quality
+or live-provider validation.
+
+| Check | Actual result |
+|---|---|
+| Original red, runner `red -m pytest -q --tb=short tests/test_pdf_resource_limits.py -k slow_pdf_intake` | **1 failed, 70 deselected**; controlled 0.3-second parser delayed the event-loop/health check to **0.5822 s** |
+| Focused, runner `focused` with file set below | **249 passed**, 1 warning in **125.76 s**, exit 0 |
+| Final stop/admission regressions, runner `focused-stop-final -m pytest -q --tb=short tests/test_pdf_resource_limits.py -k 'slow_pdf_intake or capacity_is_shared or cancellation_retains or async_pdf_stop or document_parse_runs'` | **8 passed, 72 deselected**, 1 warning in **11.11 s**, exit 0; includes two later-added retained-admission/repeated-shutdown-cancellation cases |
+| Migrated HTTP/restart, runner `http scripts/smoke_r4_s1_t3d.py --pdf-execution` | **28/28 + 42/42**, exit 0; actual per-door latency below |
+| Actual Chrome, runner `chrome scripts/check_ui_screening_extraction_browser.py --pdf-execution` | **27/27**, exit 0; real PDF 503, fresh PDF recovery, one screening and reload, no console exceptions |
+| Consent fixture correction, runner `fixture-final -m pytest -q --tb=short tests/test_comp_api.py` | **6 passed**, 1 warning in **4.41 s**, exit 0 |
+| First completed full, runner `full-final` | **2 failed, 3704 passed, 623 skipped, 127 warnings** in **1017.65 s**; two more expired dashboard consent fixtures, below |
+| All corrected fixture modules, runner `fixtures-reviewed-final -m pytest -q --tb=short tests/test_comp_api.py tests/test_dashboard_api.py tests/test_dashboard_service.py` | **18 passed**, 1 warning in **4.51 s**, exit 0 |
+| Final full, runner `full-reviewed-final -m pytest -q --tb=short -x` | **3706 passed, 623 skipped, 127 warnings** in **1020.06 s**, exit 0; all **4329** collected cases accounted for; `-x` omitted nothing on this successful run |
+| Static | `node scripts/check_ui_bindings.js`: **586 bindings/18 states**; `node --check frontend/api.js`, `node --check frontend/support.js`, changed-file `py_compile` and `git diff --check` passed |
+
+Focused file set: `tests/test_pdf.py tests/test_pdf_resource_limits.py
+tests/test_resume_input_boundary.py tests/test_service_lifecycle.py
+tests/test_verification_api.py tests/test_verification_claim_api.py
+tests/test_verification_claim_service.py tests/test_verification_documents_parse.py
+tests/test_config.py tests/test_openapi_contract.py`, using the standard
+`-m pytest -q --tb=short` arguments. Existing test modules own the added cases;
+no new regression module was introduced.
+
+Controlled offline checks assert health completes before the parser is released;
+all five HTTP doors share safe admission with no candidate/resume/report/batch/
+verification writes on refusal; text intake and another executor remain usable;
+valid two-file intake succeeds after capacity returns. Real instrumented parser
+children prove cancellation, timeout and shutdown kill/reap/pipe closure and
+recovery or closed admission. A held supervisor proves canceled callers cannot
+free capacity early; repeated cancellation of shutdown cannot abandon cleanup.
+Service cleanup proves PDF finishes before SQL disposal and cannot be lazily
+recreated after closing. Document erasure during a held parse refuses before
+writes, with parsing on a different thread and SQL on the caller.
+
+Migrated HTTP uses an instrumented copy of the actual disposable worker, paused
+after a real PdfReader construction, with normal child/timeout/resource behavior.
+Health plus an authorized batch read measured **0.0356 s** (`/evaluate`),
+**0.0165 s** (`/candidates`), **0.0194 s** (`/screening/candidates`), **0.0167 s**
+(`/screening/batches`) and **0.0275 s** (`/portal/documents`), each within the
+one-second total budget on this host. Concurrent registration gets 503 with no
+partial batch; release completes valid PDF/two-file intake. Timeout, private
+worker error and invalid second file refuse atomically, then a fresh PDF
+immediately succeeds. Exact intake survives graceful restart with tenant
+isolation. The reused cookie/CSRF/UI HTTP contract is not called browser evidence.
+Chrome separately exercises rendered 503, Clear/fresh PDF intake, completion and
+reload. Chrome needs the existing CDN runtime internet and uses Windows process
+termination; the HTTP harness owns graceful lifecycle evidence.
+
+Harness corrections: the original tight unit timing budget included PDF fixture/
+request setup and remained noisy after offloading (health already completed
+before upload). The final unit check uses controlled parser admission/release
+and checks health finishes before release; measured latency belongs to the real
+HTTP test. The initial broad green run had that one timing failure (**183
+passed**); a subsequent focused stop run had it with **4 passed**. These are
+test-budget corrections, not new application defects. The smoke's evaluation
+observer now tolerates a PDF source instead of assuming `resume_text` is present.
+Clean final focused, HTTP and Chrome runs pass.
+
+The first full run (`full`) exposed an unrelated dated fixture at
+`tests/test_comp_api.py::test_submit_offer_requires_consent_then_succeeds`:
+its 2026-07-28 plus 90-day grant expired on **2026-10-26**, so the endpoint
+correctly returned 403. An isolated `full-failure-probe` reproduced **1 failed**.
+Both tests using that fixed grant now patch the ledger's clock to their fixture
+time; the six-test module passes. Application consent behavior is unchanged.
+The first full run was stopped at approximately 20% after identifying the
+failure; it is not completion evidence. `full-final` restarts the entire suite
+with the corrected fixture. This small test repair supports B's required full
+gate and does not start another backlog task.
+
+That completed full run found the same fixed-grant expiry in
+`test_dashboard_api.py::test_card_consent_flow` and
+`test_dashboard_service.py::test_card_sections_available_after_read_grant`.
+Both now pin the ledger clock to their existing `NOW` fixture, preserving
+consent-required/no-data/available assertions and actual permission checks.
+The three affected modules pass together (**18 passed**). `full-reviewed-final`
+reruns the whole suite with these test-only corrections; no application consent
+or dashboard behavior changed. Progress-tail monitoring initially missed these
+two failures; the completed summary identified them, and the final run uses
+fail-fast reporting. No failed full run is presented as a green completion gate.
+
+### Implementation self-review
+
+Reviewed `06a7f42` plus the PDF executor/supervisor, async resume adapters and
+graph node, verification parse split/recheck, Services lifecycle, safe API
+handler, Settings/YAML, three existing test modules and two existing journeys.
+Specification review mapped every B acceptance criterion to the checks above
+and kept C/parent work open. Correctness review traced shared admission and
+slot retention, thread/session ownership, process/pipe/time/memory limits,
+exception sanitization, cancellation/repeated shutdown, text compatibility,
+atomic registration, tenant/CSRF guards and verification erasure/present consent.
+
+Review refinements closed late lazy admission after service cleanup and added
+a post-work cancellation check before delivering a parsed result. Lifecycle
+and retained-admission regressions cover them. No blocking finding remains.
+This is same-agent self-review, not independent review. **604 code/config file
+hashes** identify the reviewed state for comparison after full pytest. No
+application/config changes followed that snapshot.
+The separate review of the dated consent fixture correction confirmed that it
+pins only synthetic test time and preserves the initial 403 then authorized 200
+assertions. The final code/config snapshot includes that corrected test module.
+The same separate fixture review covers the two dashboard clock pins and the
+unchanged consent-required/no-data/available contracts. The final snapshot was
+refreshed for these test-only corrections; application/config hashes remain
+unchanged from the earlier HTTP/Chrome/focused validation.
+
+### Completion and handoff
+
+Implementation, required validation and the completion record are complete.
+Final full pytest passed on the reviewed state; **604 code/config hashes**
+remain unchanged. B's publication is pending; C/parent/F14/sprint/PI remain open. Settings,
+operating/feature guidance, PI, roadmap and the short handoff agree. No working
+store migration, demo restart or live-provider validation is claimed.
+The distinct final staged self-review/publication follows this completion record.
+
+Per-process admission is not a global RSS,
+HTTP-body concurrency or cross-process budget. Each active supervisor also uses
+two pipe-I/O threads. A transport disconnect alone need not cancel the app task;
+accepted work can finish within its existing deadline. Direct synchronous
+callers retain caller-owned scheduling. Normal server shutdown first drains
+in-flight HTTP requests; the existing per-item/count limits are not a new
+whole-batch deadline. SQL/SMTP blocking and combined parent
+acceptance remain **R4-S2-T3C**; no C implementation belongs to this session.
+
+Distinct final self-review (2026-10-26), after the completion record: reviewed
+the exact **26-file staged diff** against `06a7f42`: executor/supervisor,
+resume/graph/HTTP adapters, verification split/recheck, service lifecycle,
+Settings/YAML, six existing test modules, two existing journeys, operating and
+feature guidance, handoff, roadmap, PI and this evidence. Specification review
+mapped every B acceptance criterion to the recorded checks, kept C/parent
+acceptance open and distinguished real child/HTTP/Chrome evidence from fakes
+and skipped environments. Correctness review traced admission/retained slots,
+cancel/timeout/closed admission, thread/session ownership, child/pipe/resource
+cleanup, present verification gates, atomic batch refusal, safe details,
+auth/CSRF/tenant compatibility and browser recovery. The three dated fixture
+modules only pin synthetic clocks and retain their permission assertions.
+
+Low documentation finding: A's PI summary retained its old next-B pointer after
+B closed. It now delegates B/C status to the cards below; the handoff names C.
+No application change or blocking finding resulted. This is same-agent
+self-review, not independent review. Final code/config hashes still match the
+successful full run; only completion prose changed afterwards. Added local
+documentation links, staged whitespace and preservation checks pass. Packaging
+already includes the new module via `src/app`; no dependency/image change.
+No secrets, working data or ignored validation artifacts are staged.
+
+Final preservation/staging checks: **604 code/config hashes** match the tested
+state; **707 unrelated tracked files, including the working DB**, match baseline.
+Exactly **26 scoped files** are staged with no unstaged changes. **8 added local
+documentation links/anchors** and `git diff --cached --check` pass.
+
+Both reviews and B's validation gates are complete. Authorized scoped publication
+uses `main` tracking `origin/main` and remains pending authentication below.
+Finish B publication/remote verification, then stop. Next backlog is
+**R4-S2-T3C - Bound remaining blocking SQL/SMTP boundaries**, under the
+existing [C contract](PI-R4.md#r4-s2-t3c).
+
+Publication attempt (2026-10-26): the reviewed scoped commit was created, but
+`git push origin main` stalled in Git Credential Manager awaiting interactive
+credentials. Stopped only that owned push/helper tree; a noninteractive retry
+failed with `Cannot prompt because user interactivity has been disabled` /
+`unable to get password from user`. GitHub CLI and inherited GitHub token
+credentials are unavailable; SSH refused because no trusted host key is present.
+No host trust, credential configuration or remote URL was changed. Read-only
+`git ls-remote origin refs/heads/main` verified remote main still at
+`06a7f4227188f9dda3c63fb571784fad7c9b517b`. No successful push is claimed.
+
+The current local commit includes this publication-blocker handoff; the final
+response records its SHA. These later edits are documentation only and receive
+a scoped self-review/whitespace/link check before amending the unpublished
+commit. All tested code/config hashes remain unchanged. Exact next is B's push
+and remote verification once GitHub authentication is available, then stop;
+C remains the next backlog task. The user has been asked to restore GitHub
+authentication, not to reapprove the already-authorized publication.

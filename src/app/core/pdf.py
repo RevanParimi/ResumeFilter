@@ -9,8 +9,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 from app.core.config import Settings, get_settings
+from app.core.pdf_execution import check_pdf_cancelled
 
 
 def _write_input(pipe, data):
@@ -48,6 +50,7 @@ def _parse(b64: str, *, strict: bool, settings: Settings | None,
     # Concurrent bounded pipe IO avoids deadlock and keeps document text off
     # disk. Even unexpected stdout is read only up to the protocol limit.
     with ThreadPoolExecutor(max_workers=2) as io_pool:
+        check_pdf_cancelled()
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env={key: value for key, value in os.environ.items()
@@ -57,10 +60,18 @@ def _parse(b64: str, *, strict: bool, settings: Settings | None,
         try:
             incoming = io_pool.submit(_write_input, process.stdin, data)
             outgoing = io_pool.submit(process.stdout.read, cap + 1)
-            try:
-                process.wait(timeout=settings.pdf_parse_timeout_seconds)
-            except subprocess.TimeoutExpired:
-                raise ValueError("pdf_timeout") from None
+            deadline = time.monotonic() + settings.pdf_parse_timeout_seconds
+            while True:
+                check_pdf_cancelled()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("pdf_timeout")
+                try:
+                    process.wait(timeout=min(.05, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+            check_pdf_cancelled()
             if process.returncode != 0:
                 raise ValueError("pdf_parse_failed")
             raw = outgoing.result()

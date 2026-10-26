@@ -298,6 +298,31 @@ class VerificationService:
         second candidate-initiated entry point, and a gate that only one entry
         point applies is the exact shape of the S7.1 escalation.
         """
+        moment, method = self._prepare_document(
+            candidate_id, doc_type, content_b64, claim_ref=claim_ref, at=at)
+        parsed = parse_document(content_b64, max_pages=self._settings.doc_max_pages,
+                                settings=self._settings)
+        return self._record_document(candidate_id, doc_type, parsed, method,
+                                     moment, claim_ref)
+
+    async def asubmit_document(
+        self, candidate_id: str, doc_type: DocumentType, content_b64: str, *,
+        executor, claim_ref: Optional[str] = None, at: Optional[datetime] = None,
+    ) -> tuple[Verification, list[DocumentFinding], ClaimEvidence]:
+        self._prepare_document(candidate_id, doc_type, content_b64,
+                               claim_ref=claim_ref, at=at)
+        # Only the pure document boundary crosses threads. No session, store
+        # or candidate profile is handed to the parser worker.
+        parsed = await executor.run(parse_document, content_b64,
+            max_pages=self._settings.doc_max_pages, settings=self._settings)
+        # Erasure/consent can change while the parser is running. Recheck with
+        # current time before assessment or any write on the caller's thread.
+        moment, method = self._prepare_document(
+            candidate_id, doc_type, content_b64, claim_ref=claim_ref, at=at)
+        return self._record_document(candidate_id, doc_type, parsed, method,
+                                     moment, claim_ref)
+
+    def _prepare_document(self, candidate_id, doc_type, content_b64, *, claim_ref, at):
         moment = consent_logic.as_utc(at) if at else _utcnow()
         summary = self._candidates.get_candidate(candidate_id)
         if summary is None:
@@ -341,11 +366,11 @@ class VerificationService:
             if not decision.allowed:
                 raise ConsentError(decision.reason)
 
-        # Parse and assess BEFORE writing anything: a body we cannot read must
-        # not leave a dangling `pending` row behind (an S7.1 deferred minor
-        # that there is no reason to repeat here).
-        parsed = parse_document(content_b64, max_pages=self._settings.doc_max_pages,
-                                settings=self._settings)
+        return moment, method
+
+    def _record_document(self, candidate_id, doc_type, parsed, method, moment, claim_ref):
+        # Parsing and assessment both precede writes: unreadable input must
+        # never leave a pending verification behind.
         profile = self._candidates.latest_profile(candidate_id)
         assessment = assess(
             parsed, profile, doc_type, at=moment,

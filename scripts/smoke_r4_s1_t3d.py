@@ -10,6 +10,7 @@ Its checkpoints also verify B2b2a's private original facts across workers.
 B2b2b adds first-report reuse without provider replay, including after restart.
 --ingest-races adds R4-S2-T2's controlled candidate/resume creation contention.
 --body-limit adds R4-S2-T3A's aggregate ingress refusal and slow-upload checks.
+--pdf-execution adds R4-S2-T3B's real child stall/admission/timeout checks.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -39,6 +40,24 @@ ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
 
 
+def install_controlled_pdf_worker(scratch):
+    """Instrument the real disposable parser after reader construction."""
+    import app.core.pdf as pdf
+    source = Path(pdf.__file__).with_name('pdf_worker.py').read_text(encoding='utf-8')
+    source = source.replace('reader = PdfReader(io.BytesIO(data), strict=limits["strict"])',
+        'reader = PdfReader(io.BytesIO(data), strict=limits["strict"])\n'
+        f'    gate = __import__("pathlib").Path({str(scratch)!r})\n'
+        '    if (gate / "pdf-mode").exists():\n'
+        '        mode = (gate / "pdf-mode").read_text()\n'
+        '        (gate / "pdf-entered").touch()\n'
+        '        if mode == "error": raise ValueError("private-pdf-smoke-sentinel")\n'
+        '        while not (gate / "pdf-release").exists(): __import__("time").sleep(.01)')
+    directory = scratch / 'pdf-worker'
+    directory.mkdir(exist_ok=True)
+    (directory / 'pdf_worker.py').write_text(source, encoding='utf-8')
+    pdf.__file__ = str(directory / 'pdf.py')
+
+
 class ObservePausedUpload:
     """Test-only acknowledgement that the real ASGI server delivered the prefix."""
     def __init__(self, app, *, marker):
@@ -62,6 +81,8 @@ def create_smoke_app():
     scratch = Path(os.environ["VERITAS_SQL_SMOKE_EVENTS"]).parent
     if os.environ.get("VERITAS_BODY_LIMIT_SMOKE") == "true":
         app.add_middleware(ObservePausedUpload, marker=scratch / "body-upload-waiting")
+    if os.environ.get("VERITAS_PDF_EXECUTION_SMOKE") == "true":
+        install_controlled_pdf_worker(scratch)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -183,7 +204,7 @@ def create_smoke_app():
                             await asyncio.sleep(.05)
                 report = await evaluate(**kwargs)
                 (scratch / f"evaluated-{report.id}.json").write_text(json.dumps({
-                    "sha256": sha256(kwargs["resume_text"].encode("utf-8")).hexdigest()}), encoding="utf-8")
+                    "sha256": sha256((kwargs.get("resume_text") or "").encode("utf-8")).hexdigest()}), encoding="utf-8")
                 return report
 
             app.state.engine.evaluate = controlled
@@ -319,7 +340,74 @@ def check_request_body_limit(checks, scratch, base, control, actor):
     return path, require(actor.get(path))
 
 
+def check_pdf_execution(checks, scratch, base, control, actor):
+    from tests.pdf_helpers import resume_pdf
+    def require(response):
+        assert response.status_code == 200, (response.request.url.path, response.status_code)
+        return response.json()
+    candidate = require(control.post('/candidates', json={'resume_text': 'Synthetic PDF portal', 'evaluate': False}))
+    key = require(control.post(f"/candidates/{candidate['candidate_id']}/auth-key"))['access_key']
+    pdf = resume_pdf('Python SQL synthetic PDF intake')
+    accepted_path = None
+    with client(base, headers={'X-Candidate-Key': key}) as portal:
+        for path, caller in (('/evaluate', control), ('/candidates', control),
+                ('/screening/candidates', actor), ('/screening/batches', actor), ('/portal/documents', portal)):
+            (scratch / 'pdf-entered').unlink(missing_ok=True)
+            (scratch / 'pdf-release').unlink(missing_ok=True)
+            (scratch / 'pdf-mode').write_text('stall')
+            payload = {'resume_pdf_b64': pdf}
+            if path.endswith('/batches'):
+                payload = {'name': 'Bounded PDF intake', 'items': [payload, payload]}
+            elif path.endswith('/documents'):
+                payload = {'doc_type': 'experience_letter', 'content_b64': pdf}
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(caller.post, path, json=payload)
+                try:
+                    deadline = time.monotonic() + 8
+                    while not (scratch / 'pdf-entered').exists():
+                        assert time.monotonic() < deadline, 'PDF child did not reach controlled stall'
+                        time.sleep(.01)
+                    started = time.monotonic()
+                    health, listing = control.get('/healthz'), actor.get('/screening/batches')
+                    elapsed = time.monotonic() - started
+                    checks.check(f'{path}: health plus authorized read finish during PDF stall',
+                        health.status_code == listing.status_code == 200 and elapsed <= 1,
+                        f'two_requests_seconds={elapsed:.4f}; budget=1.0000')
+                    before = listing.json()
+                    refused = actor.post('/screening/batches', json={'items': [
+                        {'resume_text': 'Validated before busy item'}, {'resume_pdf_b64': pdf}]})
+                    checks.check(f'{path}: shared capacity refuses with no partial registration',
+                        refused.status_code == 503 and refused.json() == {'detail': 'pdf_capacity_exhausted'}
+                        and refused.headers.get('retry-after') == '1'
+                        and require(actor.get('/screening/batches')) == before)
+                finally:
+                    (scratch / 'pdf-release').touch()
+                saved = require(pending.result(timeout=15))
+                checks.check(f'{path}: held valid PDF completes after release',
+                    bool(saved) and (not path.endswith('/batches') or saved['counts']['pending'] == 2))
+                if path.endswith('/batches'):
+                    accepted_path = '/screening/batches/' + saved['id']
+            (scratch / 'pdf-mode').unlink()
+        for mode, value in (('timeout', pdf), ('error', pdf), ('invalid', 'not-base64')):
+            before = require(actor.get('/screening/batches'))
+            (scratch / 'pdf-release').unlink(missing_ok=True)
+            (scratch / 'pdf-mode').write_text(mode)
+            if mode == 'invalid':
+                (scratch / 'pdf-release').touch()
+            response = actor.post('/screening/batches', json={'items': [
+                {'resume_pdf_b64': pdf if mode == 'invalid' else value}, {'resume_pdf_b64': value}]})
+            (scratch / 'pdf-mode').unlink()
+            checks.check(f'{mode}: PDF refusal is safe and atomic', response.status_code == 422
+                and 'pdf_parse_failed' in response.json()['detail']
+                and 'private-pdf-smoke-sentinel' not in response.text
+                and require(actor.get('/screening/batches')) == before)
+            checks.check(f'{mode}: valid PDF immediately recovers capacity',
+                actor.post('/screening/batches', json={'items': [{'resume_pdf_b64': pdf}]}).status_code == 200)
+    return accepted_path, require(actor.get(accepted_path))
+
+
 def run(scratch, url, pg_options):
+    pdf_execution = '--pdf-execution' in sys.argv
     body_limit = "--body-limit" in sys.argv
     ingest_races = "--ingest-races" in sys.argv
     persistence = "--persistence" in sys.argv
@@ -328,7 +416,8 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes or ingest_races
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T3A aggregate request body limits / HTTP / restart" if body_limit
+    checks = Smoke("R4-S2-T3B bounded PDF execution / HTTP / restart" if pdf_execution
+                   else "R4-S2-T3A aggregate request body limits / HTTP / restart" if body_limit
                    else "R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
                    else "R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
                    else "R4-S2-T1B2a terminal expiry / two workers / graceful restart" if expiry
@@ -350,12 +439,15 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
     if body_limit:
         env.update(DEE_MAX_REQUEST_BODY_BYTES="64000", VERITAS_BODY_LIMIT_SMOKE="true")
+    if pdf_execution:
+        env.update(DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='4',
+                   VERITAS_PDF_EXECUTION_SMOKE='true')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -424,6 +516,8 @@ def run(scratch, url, pg_options):
             login(other, "screening-router-b@example.in", "Screening Router B")
             if body_limit:
                 body_path, body_saved = check_request_body_limit(checks, scratch, base, control, actor)
+            if pdf_execution:
+                pdf_path, pdf_saved = check_pdf_execution(checks, scratch, base, control, actor)
             text = contract._resume("Synthetic Screening Router", "screening-intake@example.in")
             uploaded = require(actor.post("/screening/candidates", json={"resume_text": text}))
             rid, cid = uploaded["report"]["id"], uploaded["candidate_id"]
@@ -602,6 +696,9 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if pdf_execution:
+                checks.check('PDF intake persists with tenant isolation after graceful restart',
+                    require(actor.get(pdf_path)) == pdf_saved and other.get(pdf_path).status_code == 404)
             if body_limit:
                 checks.check("exact-boundary intake and response persist after graceful restart",
                     require(actor.get(body_path)) == body_saved
@@ -657,7 +754,7 @@ def run(scratch, url, pg_options):
 
 
 def main():
-    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t3a-" if "--body-limit" in sys.argv else "r4-s2-t2-" if "--ingest-races" in sys.argv else "r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
+    scratch = Path(tempfile.mkdtemp(prefix="r4-s2-t3b-" if "--pdf-execution" in sys.argv else "r4-s2-t3a-" if "--body-limit" in sys.argv else "r4-s2-t2-" if "--ingest-races" in sys.argv else "r4-s2-t1b2b2b-" if "--persistence" in sys.argv else "r4-s2-t1b2a-" if "--expiry" in sys.argv else "r4-s2-t1b1-" if "--outcomes" in sys.argv else "r4-s2-t1a-" if "--leases" in sys.argv else "r4-s1-t3d-"))
     with database(scratch) as (url, pg_options):
         return run(scratch, url, pg_options)
 

@@ -198,8 +198,9 @@ async def submit_document(
 ) -> DocumentSubmitResponse:
     services = _services(request)
     try:
-        verification, findings, claims = services.verification.submit_document(
-            candidate_id, req.doc_type, req.content_b64, claim_ref=req.claim_ref
+        verification, findings, claims = await services.verification.asubmit_document(
+            candidate_id, req.doc_type, req.content_b64, claim_ref=req.claim_ref,
+            executor=services.pdf,
         )
     except DocumentTooLargeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

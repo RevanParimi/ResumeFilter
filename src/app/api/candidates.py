@@ -16,7 +16,7 @@ from pydantic import BaseModel, model_validator
 from app.api.dependencies import _services, require_api_key
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
-from app.core.resume import ResumeInputError, read_resume_input
+from app.core.resume import ResumeInputError, read_resume_input_async
 from app.domains.base import get_domain
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
 from app.profile_sources.store import SourceSignalErasedError, SourceSubjectErasedError
@@ -107,7 +107,7 @@ async def _ingest_one(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
-        text = read_resume_input(resume_text=req.resume_text,
+        text = await read_resume_input_async(executor=services.pdf, resume_text=req.resume_text,
             resume_pdf_b64=req.resume_pdf_b64, settings=services.settings)
     except ResumeInputError as exc:
         raise HTTPException(status_code=422, detail=exc.detail) from None

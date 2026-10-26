@@ -462,6 +462,7 @@ class Settings(BaseSettings):
     pdf_max_output_chars: int = Field(default=1_000_000, ge=1)
     pdf_parse_timeout_seconds: float = Field(default=10.0, gt=0, allow_inf_nan=False)
     pdf_worker_memory_mb: int = Field(default=256, ge=1)
+    pdf_max_concurrent_parses: int = Field(default=2, ge=1)
     # Free text a human types beside a candidate's name, now on BOTH the
     # operator's and the customer's outcome route (S8.5). Unbounded is S7.2's
     # `claim_ref` finding one table over -- that one stored 5031 chars including

@@ -4,6 +4,7 @@ Reuse file intake, processing, queue, feedback, summary and deletion actions.
 Add a second file intake, persisted reload and injected batch-read error/recovery.
 Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --body-limit also verifies actual ingress 413 rendering and fresh-file recovery.
+--pdf-execution verifies actual PDF capacity refusal and recovery/reload.
 """
 
 import asyncio
@@ -33,6 +34,8 @@ async def main():
     def launch(args, **kwargs):
         if "app.main:app" in args:
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
+            if '--pdf-execution' in sys.argv:
+                args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
             env = {key: value for key, value in inherited.items() if not key.startswith("DEE_")}
             env.update({key: value for key, value in inherited.items() if key in {
@@ -48,6 +51,9 @@ async def main():
             })
             if "--body-limit" in sys.argv:
                 env["DEE_MAX_REQUEST_BODY_BYTES"] = "64000"
+            if '--pdf-execution' in sys.argv:
+                env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -96,6 +102,49 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
+            if '--pdf-execution' in sys.argv:
+                import base64
+                from tests.pdf_helpers import resume_pdf
+                pdf = resume_pdf('Python SQL synthetic browser PDF')
+                file = scratch / 'capacity-intake.pdf'
+                file.write_bytes(base64.b64decode(pdf))
+                (scratch / 'pdf-mode').write_text('stall')
+                held = asyncio.create_task(asyncio.to_thread(api.post, '/screening/batches',
+                    json={'name': 'Held browser PDF', 'items': [{'resume_pdf_b64': pdf}]}))
+                try:
+                    async with asyncio.timeout(8):
+                        while not (scratch / 'pdf-entered').exists():
+                            await asyncio.sleep(.02)
+                    assert await tab.js("window.__click('button', 'Upload')")
+                    assert await tab.wait("document.querySelector('input[type=file]')", 20, 'PDF file intake')
+                    box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+                    await tab.send('DOM.setFileInputFiles', {'files': [str(file)], 'objectId': box})
+                    assert await tab.wait("window.__has('file ready')", 20, 'PDF selected')
+                    assert await tab.js("window.__type('input[placeholder*=intake]', 'PDF capacity recovery', 0)")
+                    assert await tab.js("window.__click('button', 'Register batch and start screening')")
+                    browser.S.check('actual PDF capacity 503 renders without partial registration',
+                        await tab.wait("window.__has('pdf_capacity_exhausted')", 10, 'PDF admission refusal')
+                        and all(row['name'] != 'PDF capacity recovery' for row in api.get('/screening/batches').json()['batches']))
+                finally:
+                    (scratch / 'pdf-release').touch()
+                    result = await held
+                    (scratch / 'pdf-mode').unlink(missing_ok=True)
+                assert result.status_code == 200
+                assert await tab.js("window.__click('button', 'Clear')")
+                box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+                await tab.send('DOM.setFileInputFiles', {'files': [str(file)], 'objectId': box})
+                assert await tab.wait("window.__has('file ready')", 20, 'fresh PDF selection')
+                assert await tab.js("window.__click('button', 'Register batch and start screening')")
+                assert await tab.wait("window.__has('Nothing left to screen')", 60, 'PDF recovery screening')
+                browser.S.check('fresh PDF intake recovers and screens once after capacity returns',
+                    len([row for row in api.get('/screening/batches').json()['batches']
+                         if row['name'] == 'PDF capacity recovery' and row['counts']['done'] == 1]) == 1)
+                await tab.send('Page.reload')
+                assert await tab.wait("document.body.innerText.includes('Sign out')", 60, 'PDF recovery reload')
+                await tab.js(browser.HELPERS)
+                assert await tab.js("window.__click('button', 'Batches')")
+                browser.S.check('PDF recovery persists after actual browser reload',
+                    await tab.wait("window.__has('PDF capacity recovery')", 30, 'saved PDF recovery'))
             if "--body-limit" in sys.argv:
                 oversized = scratch / "aggregate-oversize.txt"
                 oversized.write_text("Readable synthetic resume\n" + "x" * 65_000, encoding="utf-8")

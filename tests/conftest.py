@@ -413,7 +413,12 @@ def make_services(
 
 @pytest.fixture
 def services(settings, fake_github, flywheel) -> Services:
-    return make_services(settings, github=fake_github, flywheel=flywheel)
+    bundle = make_services(settings, github=fake_github, flywheel=flywheel)
+    yield bundle
+    # Injected services are borrowed by TestClient, so their fixture owns the
+    # PDF threads even when a test used several distinct event loops.
+    if bundle._pdf is not None:
+        bundle._pdf.close()
 
 
 @pytest.fixture

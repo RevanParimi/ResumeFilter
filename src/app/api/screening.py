@@ -16,7 +16,7 @@ from app.api.reports import (
     OutcomeListResponse, OutcomeRecordedResponse, OutcomeRequest,
     _outcome_flywheel_record, _outcome_recorded,
 )
-from app.core.resume import ResumeInputError, read_resume_input
+from app.core.resume import ResumeInputError, read_resume_input_async
 from app.ratelimit.service import RateLimited
 from app.reports.outcomes import OutcomeRefused
 from app.schemas.report import Report
@@ -172,7 +172,7 @@ class BatchDeleteResponse(BaseModel):
     deleted: bool
 
 
-def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
+async def _batch_texts(req: BatchCreateRequest, caps, executor) -> list[str]:
     """Decode every item to text AT REGISTRATION -- cheap, deterministic, no LLM.
 
     A corrupt file therefore fails immediately rather than 400 items later, and
@@ -190,7 +190,7 @@ def _batch_texts(req: BatchCreateRequest, caps) -> list[str]:
     texts: list[str] = []
     for i, item in enumerate(req.items):
         try:
-            text = read_resume_input(resume_text=item.resume_text,
+            text = await read_resume_input_async(executor=executor, resume_text=item.resume_text,
                 resume_pdf_b64=item.resume_pdf_b64, settings=caps)
         except ResumeInputError as exc:
             raise HTTPException(status_code=422, detail=f"item {i}: {exc.detail}") from None
@@ -209,7 +209,7 @@ async def create_screening_batch(
     req: BatchCreateRequest, request: Request, org_id: str = Depends(require_org)
 ) -> BatchDetail:
     services = _services(request)
-    texts = _batch_texts(req, services.settings)
+    texts = await _batch_texts(req, services.settings, services.pdf)
     try:
         return services.screening.register(
             org_id, name=req.name, domain=req.domain, texts=texts,

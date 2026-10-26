@@ -2,6 +2,7 @@
 
 from app.core.config import Settings
 from app.core.pdf import pdf_b64_to_text
+from app.core.pdf_execution import PdfExecutor
 
 
 class ResumeInputError(ValueError):
@@ -11,6 +12,15 @@ class ResumeInputError(ValueError):
         super().__init__(reason)
         self.reason = reason
         self.detail = detail or reason
+
+
+async def read_resume_input_async(*, executor: PdfExecutor, **kwargs) -> str:
+    # Text precedence and cheap input refusals require no worker admission.
+    if kwargs.get('resume_text') or not kwargs.get('resume_pdf_b64'):
+        return read_resume_input(**kwargs)
+    if len(kwargs['resume_pdf_b64']) > kwargs['settings'].max_pdf_b64_chars:
+        return read_resume_input(**kwargs)
+    return await executor.run(read_resume_input, **kwargs)
 
 
 def validate_resume_text(text: str, settings: Settings) -> str:

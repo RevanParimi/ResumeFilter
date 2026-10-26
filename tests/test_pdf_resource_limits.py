@@ -1,10 +1,12 @@
 """Real hostile PDF structures must be refused before extraction/model work."""
 
 import base64
+import asyncio
 import io
 from pathlib import Path
 import subprocess
 import sys
+from threading import Event, get_ident
 import time
 
 import pytest
@@ -22,6 +24,209 @@ from tests.test_resume_input_boundary import counts
 
 from app.core.resume import read_resume_input
 from tests.pdf_helpers import adversarial_pdf, resume_pdf, xref_stream_pdf
+
+
+async def test_slow_pdf_intake_keeps_the_event_loop_responsive(services, monkeypatch):
+    import httpx
+    entered, release, finished = Event(), Event(), Event()
+    def slow(*args, **kwargs):
+        entered.set()
+        release.wait(3)
+        finished.set()
+        return 'Readable synthetic resume'
+    monkeypatch.setattr('app.core.resume.pdf_b64_to_text', slow)
+    org = services.ledger.create_organization('Synthetic responsiveness')
+    key = services.ledger.issue_api_key(org.id)
+    app = create_app(services)
+    payload = {'items': [{'resume_pdf_b64': resume_pdf()}]}
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+            upload = asyncio.create_task(http.post('/screening/batches',
+                headers={'X-Org-Key': key}, json=payload))
+            try:
+                assert await asyncio.to_thread(entered.wait, 5)
+                health = await http.get('/healthz')
+                assert not finished.is_set(), 'health waited for PDF parsing to finish'
+            finally:
+                release.set()
+                response = await upload
+    assert response.status_code == health.status_code == 200
+
+
+async def test_pdf_capacity_is_shared_across_http_doors_without_partial_writes(services):
+    import httpx
+    from tests.test_verification_api import _candidate
+    from app.core.pdf_execution import PdfExecutor
+    services.settings.pdf_max_concurrent_parses = 1
+    cid, candidate_key = _candidate(services)
+    org = services.ledger.create_organization('Synthetic admission')
+    org_key = services.ledger.issue_api_key(org.id)
+    before = counts(services)
+    verifications = services.verification._store.verifications_for_candidate(cid)
+    entered, release = Event(), Event()
+    def held():
+        entered.set()
+        assert release.wait(10), 'test did not release PDF admission'
+    app = create_app(services)
+    async with app.router.lifespan_context(app):
+        held_task = asyncio.create_task(services.pdf.run(held))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
+                    headers={**ADMIN_HEADERS, 'X-Org-Key': org_key, 'X-Candidate-Key': candidate_key}) as http:
+                for path in ('/evaluate', '/candidates', '/screening/candidates', '/screening/batches', '/portal/documents'):
+                    payload = {'resume_pdf_b64': resume_pdf()}
+                    if path.endswith('/batches'):
+                        payload = {'items': [{'resume_text': 'Already validated'}, payload]}
+                    elif path.endswith('/documents'):
+                        payload = {'doc_type': 'experience_letter', 'content_b64': resume_pdf()}
+                    response = await http.post(path, json=payload)
+                    assert response.status_code == 503, (path, response.text)
+                    assert response.json() == {'detail': 'pdf_capacity_exhausted'}
+                    assert response.headers['retry-after'] == '1' and response.headers['x-request-id']
+                assert counts(services) == before
+                assert services.verification._store.verifications_for_candidate(cid) == verifications
+                assert (await http.post('/screening/batches', json={'items': [{'resume_text': 'Python'}]})).status_code == 200
+                assert (await http.post('/screening/batches', json={'items': [{'resume_pdf_b64': resume_pdf()}]},
+                    headers={'X-Org-Key': 'invalid'})).status_code == 401
+                assert (await http.get('/healthz')).status_code == 200
+            # Another service has its own admission; there is no global pool.
+            other = PdfExecutor(1)
+            try:
+                assert await other.run(lambda: 'independent') == 'independent'
+            finally:
+                await other.aclose()
+        finally:
+            release.set()
+            await held_task
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
+                headers={'X-Org-Key': org_key}) as http:
+            result = await http.post('/screening/batches', json={'items': [
+                {'resume_pdf_b64': resume_pdf('Python')}, {'resume_pdf_b64': resume_pdf('SQL')}]})
+            assert result.status_code == 200 and result.json()['counts']['pending'] == 2
+
+
+@pytest.mark.parametrize('stop', ['request', 'shutdown'])
+async def test_pdf_cancellation_retains_capacity_until_supervision_finishes(stop):
+    from app.core.pdf_execution import PdfExecutor, PdfUnavailable
+    entered, release = Event(), Event()
+    executor = PdfExecutor(1)
+    def held():
+        entered.set()
+        assert release.wait(10)
+    parsing = asyncio.create_task(executor.run(held))
+    closing = None
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        if stop == 'request':
+            parsing.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await parsing
+            with pytest.raises(PdfUnavailable, match='pdf_capacity_exhausted'):
+                await executor.run(lambda: pytest.fail('cancellation freed capacity early'))
+        else:
+            closing = asyncio.create_task(executor.aclose())
+            await asyncio.sleep(.02)
+            closing.cancel()
+            await asyncio.sleep(.02)
+            closing.cancel()
+            await asyncio.sleep(.02)
+            assert not closing.done(), 'shutdown cancellation abandoned worker cleanup'
+            with pytest.raises(PdfUnavailable, match='pdf_executor_closed'):
+                await executor.run(lambda: pytest.fail('shutdown reopened admission'))
+    finally:
+        release.set()
+        if closing is not None:
+            with pytest.raises(asyncio.CancelledError):
+                await closing
+        await executor.aclose()
+        await asyncio.gather(parsing, return_exceptions=True)
+
+
+@pytest.mark.parametrize('stop', ['cancel', 'shutdown', 'timeout'])
+async def test_async_pdf_stop_reaps_real_child_and_recovers_or_closes_admission(services, monkeypatch, tmp_path, stop):
+    import app.core.pdf as pdf_module
+    from app.core.pdf_execution import PdfExecutor, PdfUnavailable
+    worker = Path(pdf_module.__file__).with_name('pdf_worker.py')
+    marker, release = tmp_path / 'entered', tmp_path / 'release'
+    source = worker.read_text(encoding='utf8').replace(
+        'reader = PdfReader(io.BytesIO(data), strict=limits["strict"])',
+        'reader = PdfReader(io.BytesIO(data), strict=limits["strict"])\n'
+        f'    open({str(marker)!r}, "w").close()\n'
+        f'    while not __import__("os").path.exists({str(release)!r}): __import__("time").sleep(.01)')
+    (tmp_path / 'pdf_worker.py').write_text(source, encoding='utf8')
+    monkeypatch.setattr(pdf_module, '__file__', str(tmp_path / 'pdf.py'))
+    children = []
+    original = subprocess.Popen
+    def capture(*args, **kwargs):
+        child = original(*args, **kwargs)
+        children.append(child)
+        return child
+    monkeypatch.setattr(pdf_module.subprocess, 'Popen', capture)
+    executor = PdfExecutor(1)
+    if stop == 'timeout':
+        services.settings.pdf_parse_timeout_seconds = 3
+    parsing = asyncio.create_task(executor.run(pdf_b64_to_text, resume_pdf(), settings=services.settings))
+    try:
+        async with asyncio.timeout(8):
+            while not marker.exists():
+                await asyncio.sleep(.01)
+        if stop in {'cancel', 'timeout'}:
+            if stop == 'cancel':
+                parsing.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await parsing
+            else:
+                with pytest.raises(ValueError, match='pdf_timeout'):
+                    await parsing
+            # Admission is retained until the supervisor reaps the child and
+            # closes its pipes, even though the canceled caller already left.
+            async with asyncio.timeout(5):
+                while executor._active:
+                    await asyncio.sleep(.01)
+            assert children[0].poll() is not None
+            assert children[0].stdin.closed and children[0].stdout.closed
+            release.touch()
+            assert await executor.run(pdf_b64_to_text, resume_pdf('Recovered'), settings=services.settings) == 'Recovered'
+        else:
+            await executor.aclose()
+            with pytest.raises(PdfUnavailable, match='pdf_executor_closed'):
+                await parsing
+            with pytest.raises(PdfUnavailable, match='pdf_executor_closed'):
+                await executor.run(lambda: pytest.fail('closed admission ran work'))
+        assert all(child.poll() is not None and child.stdin.closed and child.stdout.closed for child in children)
+    finally:
+        release.touch()
+        await executor.aclose()
+        if not parsing.done():
+            await asyncio.gather(parsing, return_exceptions=True)
+
+
+async def test_document_parse_runs_off_thread_and_erasure_during_parse_refuses_without_writes(services, monkeypatch):
+    from tests.test_verification_api import _candidate
+    from app.verification.schema import DocumentType
+    from app.verification.documents import ParsedDocument
+    cid, _ = _candidate(services)
+    entered, release = Event(), Event()
+    caller_thread = get_ident()
+    parser_threads = []
+    def parse(*args, **kwargs):
+        parser_threads.append(get_ident())
+        entered.set()
+        assert release.wait(10)
+        return ParsedDocument('Synthetic experience letter', 1, 'a' * 64)
+    monkeypatch.setattr('app.verification.service.parse_document', parse)
+    pending = asyncio.create_task(services.verification.asubmit_document(
+        cid, DocumentType.EXPERIENCE_LETTER, 'YQ==', executor=services.pdf))
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        services.candidates.delete_candidate(cid)
+    finally:
+        release.set()
+    with pytest.raises(LookupError):
+        await pending
+    assert parser_threads and parser_threads[0] != caller_thread
+    assert services.verification._store.verifications_for_candidate(cid) == []
 
 
 @pytest.mark.parametrize('kind,setting,value', [
@@ -200,7 +405,7 @@ def test_unicode_metadata_accepts_exact_output_character_limit(services, helper)
 
 
 @pytest.mark.parametrize('name', ['max_pdf_b64_chars', 'pdf_max_pages', 'pdf_max_work_units',
-    'pdf_max_depth', 'pdf_max_decoded_bytes', 'pdf_max_output_chars', 'pdf_worker_memory_mb',
+    'pdf_max_depth', 'pdf_max_decoded_bytes', 'pdf_max_output_chars', 'pdf_worker_memory_mb', 'pdf_max_concurrent_parses',
     'pdf_parse_timeout_seconds'])
 @pytest.mark.parametrize('value', [0, -1])
 def test_limits_are_explicit_positive_settings(name, value):

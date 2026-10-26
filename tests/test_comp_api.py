@@ -62,7 +62,9 @@ def test_estimate_requires_org_key(services):
         assert c.post("/comp/estimate", json={"title": "BE"}).status_code == 401
 
 
-def test_submit_offer_requires_consent_then_succeeds(services):
+def test_submit_offer_requires_consent_then_succeeds(services, monkeypatch):
+    # The synthetic 90-day grant must use its fixture clock, not today's date.
+    monkeypatch.setattr('app.ledger.store._utcnow', lambda: NOW)
     org_id, key = _org_key(services)
     cand_id = _candidate(services)
     payload = {
@@ -82,7 +84,8 @@ def test_submit_offer_requires_consent_then_succeeds(services):
         assert r2.json()["ctc_fixed"] == 2500000
 
 
-def test_submit_offer_invalid_role_family_400(services):
+def test_submit_offer_invalid_role_family_400(services, monkeypatch):
+    monkeypatch.setattr('app.ledger.store._utcnow', lambda: NOW)
     org_id, key = _org_key(services)
     cand_id = _candidate(services)
     services.ledger.grant_consent(

@@ -43,6 +43,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.migrate import upgrade_to_head
 from app.core.request_body import RequestBodyLimitMiddleware
+from app.core.pdf_execution import PdfUnavailable
 from app.graph.build import EvaluationEngine
 from app.services import Services, ServiceCleanupError, build_default_services
 
@@ -223,6 +224,11 @@ def create_app(services: Optional[Services] = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(router)
+
+    @app.exception_handler(PdfUnavailable)
+    async def pdf_unavailable(request: Request, exc: PdfUnavailable) -> Response:
+        return JSONResponse(status_code=503, content={"detail": str(exc)},
+                            headers={"Retry-After": "1"})
     app.include_router(org_router)
     app.include_router(candidate_router)
     app.include_router(public_router)

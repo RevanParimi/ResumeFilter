@@ -99,7 +99,8 @@ def test_card_all_sections_consent_required_without_grant(services):
     assert card.reputation.data is None
 
 
-def test_card_sections_available_after_read_grant(services):
+def test_card_sections_available_after_read_grant(services, monkeypatch):
+    monkeypatch.setattr('app.ledger.store._utcnow', lambda: NOW)
     org_id = _org(services)
     cand_id = _candidate(services)
     # A submitted interview record needs a write grant; reading needs a read grant.

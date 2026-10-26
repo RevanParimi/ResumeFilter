@@ -256,6 +256,7 @@ pdf_max_decoded_bytes: 16000000    # cumulative streams, including content array
 pdf_max_output_chars: 1000000      # extracted text + normalized metadata
 pdf_parse_timeout_seconds: 10.0   # disposable parser worker deadline
 pdf_worker_memory_mb: 256         # Windows private commit / Linux address space
+pdf_max_concurrent_parses: 2      # per service/app process; refuse rather than queue
 # Outcome notes: free text a human types beside a candidate's name, on BOTH
 # the operator's and the customer's route (S8.5). Enforced in ONE place,
 # app/reports/outcomes.py, so neither door can be bounded while the other is not.
