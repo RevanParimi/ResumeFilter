@@ -421,6 +421,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._pdf.close()
     if bundle._auth_codes is not None:
         bundle._auth_codes.close()
+    if bundle._contact_codes is not None:
+        bundle._contact_codes.close()
 
 
 @pytest.fixture

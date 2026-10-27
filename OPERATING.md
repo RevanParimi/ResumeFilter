@@ -142,10 +142,46 @@ disposal. It cannot safely kill Python threads; existing driver/SMTP socket
 timeouts apply, and normal server shutdown first drains HTTP requests. This is
 not a whole-operation/drain deadline, a global RSS budget or a durable mail queue.
 
-All verification/resolution/contact-mail and remaining SQL boundaries are still
+Verification/resolution and remaining SQL boundaries are still
 tracked under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
 service callers retain caller-owned scheduling. This does not configure or send
 live email.
+
+### Contact code execution budget
+
+`contact_code_max_concurrent_requests` defaults to **2** per Services/application
+process and must be positive. `POST /portal/verifications` uses this dedicated
+queue-free pool for the entire start/resend operation, including its owning SQL
+sessions and configured mail. Self-attestation shares that same entry point.
+The auth-code pool remains separate; both use the same execution mechanics.
+No live Session, HTTP Request or Response crosses threads. After the existing
+principal/CSRF gate, saturation returns **503** `contact_code_capacity_exhausted`
+and closed admission returns `contact_code_executor_closed`, with `Retry-After: 1`,
+before verification-service SQL or mail.
+
+`contact_code_wait_seconds` defaults to **20** and must be finite/positive.
+Configure YAML or `DEE_CONTACT_CODE_MAX_CONCURRENT_REQUESTS` /
+`DEE_CONTACT_CODE_WAIT_SECONDS`, then restart. A caller wait timeout returns
+**504** `contact_code_pending`, without a code or success DTO. The operation may
+still send/commit. Refresh the candidate's contact status, choose the saved
+pending record and enter any delivered code before requesting another. The UI
+explains this uncertainty and never automatically replays the start/resend.
+Confirmation still proves contact control only; ownership, consent, erasure,
+cooldown and guarded local echo remain.
+
+Cancellation propagates to the caller; cancellation and timeout retain capacity
+until actual completion. Cleanup closes both pools and joins accepted work before
+SQL disposal. Threads cannot safely be killed, SMTP cannot be recalled, and an
+HTTP failure does not promise rollback. Existing SQL/SMTP driver/socket limits
+apply; no whole-operation, server-drain deadline or durable queue is added.
+
+SMTP retains the existing candidate-locked transaction (SQLite's writer lock).
+Competing writes, including erasure, may wait for it; an erasure that follows
+activation removes its challenge. Earlier principal resolution, periodic session
+touches and confirm/list/other SQL remain C3. In particular, this change does not
+make every authenticated write or stale-session refresh nonblocking. Direct
+synchronous verification callers still own scheduling. Validation uses capture
+providers and scratch stores, not live delivery.
 
 ### Dual scoping: all scopes counted, any denial denies
 

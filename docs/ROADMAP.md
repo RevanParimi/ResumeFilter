@@ -6,6 +6,20 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-27 - R4-S2-T3C2 complete; contact code execution.**
+  Complete start/resend SQL/mail operations move to their own bounded pool.
+  Admission is queue-free; timeout returns an uncertain outcome, and UI recovery
+  refreshes own saved status for manual confirmation without replay. Both code
+  pools share execution mechanics and join before SQL disposal. The
+  [C2 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c2) owns the contract, regressions,
+  SQLite/actual PG contention, migrated HTTP/restart, real contact Chrome,
+  full regression and separate reviews. Required checks pass and the owned PG
+  server is stopped. Final staged self-review found no blocker; the final
+  response records publication's verified remote SHA. SMTP transaction locks and
+  earlier auth/session touches remain explicit. No schema/working-store change;
+  demo untouched. C3, C, T3/F14/sprint/PI stay open. Exact next after C2 is C3;
+  do not start it here.
+
 - **Session 2026-10-26 - R4-S2-T3C1 complete; bounded auth code issuance.**
   C was split before implementation; only C1 belongs to this session. All five
   issuing routes move complete SQL/mail operations to dedicated bounded

@@ -321,8 +321,8 @@ where transaction/thread behavior changes; measure unrelated-request latency
 with slow SQL/mail fakes. Complete the combined T3 acceptance review here only
 after A/B/C evidence is complete. No live email delivery or deployment.
 
-Split before implementation: C1 is this session's bounded task. C2/C3, C,
-parent T3/F14/sprint/PI remain open; do not implement another child here.
+Split before implementation: C1/C2 are complete. C3, C, parent T3/F14/sprint/PI
+remain open; follow the handoff for one bounded task per chat.
 
 ##### <a id="r4-s2-t3c1"></a>R4-S2-T3C1 - Bound signup/login code issuance
 
@@ -335,15 +335,22 @@ cancellation/cleanup, regressions and validation/review results. Organization
 name checking moves with issuance. No live Session crosses threads; no schema
 change. UI explains possible delivery delay and permits manual code entry.
 Existing auth/erasure/local echo remain. This is a caller wait budget, not a
-whole-operation deadline or durable mail queue. Exact next child is C2;
-verification/resolution and remaining SQL stay in C3.
+whole-operation deadline or durable mail queue. Contact and remaining SQL child
+status is tracked below; verification/resolution and other SQL stay in C3.
 
 ##### <a id="r4-s2-t3c2"></a>R4-S2-T3C2 - Bound contact-verification mail operations
 
-Status: pending. Prerequisite: C1. Measure and move complete contact challenge
-start/resend operations with their owning SQL sessions; preserve candidate proof,
-consent, erasure and uncertain-write recovery. Define admission/cancel/timeout/
-cleanup and require focused/full/actual PG/migrated HTTP/Chrome evidence.
+Status: done (2026-10-27). Prerequisite: C1, done and published.
+
+[C2 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c2) owns the pre-implementation
+contract, complete owning-session contact start/resend execution, shared neutral
+mechanics with separate code pools, safe admission/wait/cancel/cleanup, UI saved-
+status/manual-code recovery, regressions and validation/review results. Existing
+candidate/CSRF/destination/consent, cooldown/rollback/erasure and guarded local
+echo remain. C1 keeps opaque 202 timeout; contact timeout reports uncertainty.
+No schema change, thread kill or durable queue. SMTP transaction locks and earlier
+auth/session touches remain explicit; remaining SQL and parent acceptance are C3.
+Exact next after C2 is C3; do not start it in this session.
 
 ##### <a id="r4-s2-t3c3"></a>R4-S2-T3C3 - Bound remaining measured SQL and review combined T3 acceptance
 

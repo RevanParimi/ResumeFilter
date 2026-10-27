@@ -163,6 +163,8 @@ class Settings(BaseSettings):
     verif_otp_ttl_minutes: int = Field(default=10, ge=1)
     verif_otp_max_attempts: int = Field(default=5, ge=1)
     verif_otp_resend_cooldown_seconds: int = Field(default=60, ge=0)
+    contact_code_max_concurrent_requests: int = Field(default=2, ge=1)
+    contact_code_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     verif_outcome_ttl_days: int = Field(default=365, ge=1)
     verif_otp_debug_echo: bool = False
     ret_verification_days: int = Field(default=1095, ge=1)  # 3y, posture only

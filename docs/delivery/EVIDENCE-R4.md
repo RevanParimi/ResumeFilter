@@ -6840,3 +6840,228 @@ Final pre-commit checks pass: **15 added local documentation links/anchors**,
 `git diff --cached --check`, the 616-file reviewed-state comparison and the
 712-file preservation comparison. Exactly **22 scoped files** are staged,
 with no unstaged or untracked changes. No application changes followed review.
+
+## R4-S2-T3C2
+
+Status: done (2026-10-27); required validation and completion record complete.
+Prerequisite C1 is published at `02f536f`. Only C2 is
+this session's task; C3, C, T3/F14/sprint/PI remain open.
+
+### Contract defined before implementation
+
+Async `POST /portal/verifications`, shared by contact start and resend, directly
+performs synchronous SQL/mail. Move the complete owning operation into a
+dedicated bounded worker. No Request/Response or live Session crosses threads.
+Candidate identity/CSRF, destination proof, method/consent gates, challenge
+cooldown/supersession, provider-failure rollback, erasure serialization and
+guarded local echo remain. Self-attestation shares this start entry point and
+retains its result; confirm/list/documents and other SQL are not moved.
+
+Positive `contact_code_max_concurrent_requests` defaults to two per Services,
+separate from auth issuance. There is no waiting queue. After the principal/
+CSRF gate, full/closed admission refuses safe 503 plus `Retry-After: 1` before
+verification-service SQL/mail. Finite positive `contact_code_wait_seconds`
+defaults to 20 and bounds the caller wait, not the operation. Timeout returns
+504 `contact_code_pending`, without a code or invented success DTO. The UI
+explains possible late delivery, saved-state recovery and manual confirmation,
+without automatic replay. Busy admission has readable recovery copy.
+
+Timeout/cancellation retain capacity until actual completion; cancellation
+propagates. Shutdown closes both pools and joins accepted calls before SQL
+disposal. Share C1's existing mechanics through a neutral executor instead of
+copying lifecycle/admission code; preserve C1's separate settings/pool and
+opaque 202 timeout. No thread kill, rollback promise, durable mail queue or new
+whole-operation/server-drain deadline; existing driver/socket limits remain.
+
+SMTP retains its candidate-locked transaction (SQLite writer lock). Competing
+writes/erasure can wait; already-delivered mail cannot be recalled. Earlier
+principal resolution, periodic session-touch writes and other synchronous SQL
+remain C3. Measure health plus an admin-key SQL read against a one-second total
+budget under controlled mail/SQL stalls, without claiming that every
+authenticated write or stale-session refresh is nonblocking.
+
+Acceptance requires red event-loop SQL/mail stalls; shared start/resend
+admission and unchanged unadmitted rows; late success/manual recovery without
+replay; cancellation, safe provider failure/rollback, session threads and
+shutdown; actual SQLite/PG competing transactions and erasure ordering with a
+surviving subject. Required layers: focused/full pytest, C1 shared-executor
+regressions, actual disposable PG, migrated HTTP/restart, real contact Chrome
+busy/timeout/refresh/manual confirm/reload, offline handlers, bindings/syntax,
+implementation and distinct final staged self-reviews, scoped commit/push and
+remote verification. No schema/migration change. Stop before C3.
+
+### Implementation and observed evidence
+
+C1's executor moves from `auth/execution.py` to `core/blocking.py`, with neutral
+names and a required operation name for safe refusal codes/thread labels.
+Admission, context propagation, future retention, wait/cancel and join semantics
+are unchanged. Services owns separate contact/auth pools, closes them together
+and joins both before SQL disposal. The contact adapter awaits the entire
+existing service; transaction structure and stored schemas do not change.
+The UI maps busy/closed/uncertain responses and reuses its existing own-subject
+refresh, Enter delivered code and confirmation flow. No new queue/status API.
+See [operating limits](../../OPERATING.md#contact-code-execution-budget).
+
+All Python commands use `.resume/Scripts/python.exe`. Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c2.py <tag> <Python args>` clears inherited DEE/live
+config and disables external providers; all stores/media/mail are synthetic.
+Logs and runtime metadata use the ignored `r4-s2-t3c2-` prefix. No URL credentials,
+working data or raw contact/code values are published as evidence.
+
+- Red: runner `red -m pytest -q --tb=short tests/test_verification_api.py -k
+  'slow_contact_start and sqlite'`: **2 failed, 16 deselected, 1 warning**,
+  13.49 s. In each controlled three-second mail/SQL stall, unrelated requests
+  ran only after the stalled operation finished (SQL POST **3143.3 ms**).
+  This reproduces event-loop blocking, not a fixture/import failure.
+- Initial green API/auth/lifecycle group (`green`): **75 passed, 9 skipped,
+  1 warning**, 45.77 s. New contact API group (`owning-final`, filter `contact_`):
+  **8 passed, 8 skipped, 14 deselected, 1 warning**, 14.39 s. A later erasure
+  case is included in the full focused group below, not this earlier run.
+- Runner `focused -m pytest -q --tb=short -x tests/test_verification_api.py
+  tests/test_verification_delivery.py tests/test_verification_service.py
+  tests/test_verification_concurrency.py tests/test_verification_consent.py
+  tests/test_verification_erasure.py tests/test_verification_otp.py
+  tests/test_config_verification.py tests/test_service_lifecycle.py
+  tests/test_auth_api.py tests/test_auth_debug_echo.py
+  tests/test_auth_org_name_taken.py tests/test_config.py tests/test_ui_mount.py
+  tests/test_ui_handlers.py tests/test_api_auth_gate.py tests/test_openapi_contract.py`:
+  **218 passed, 32 skipped, 1 warning**, 91.58 s. Unconfigured PG cases skip
+  here; actual PostgreSQL is a separate gate below.
+- Runner `http scripts/smoke_r3_s1_t2.py --contact-code-workers`: **32/32 OK**,
+  exit 0. Actual migrated SQLite composition, delivery refusal/rollback,
+  prior-code preservation, challenge expiry/budget, cross-subject refusal,
+  held mail/SQL admission, timeout-to-late-success and manual saved-state
+  recovery, restart, erasure and two graceful SQL disposal/detachment lifespans.
+  During controlled stalls, health plus authorized SQL read totals were mail
+  **0.0111 s** and SQL **0.0126 s**, against one second on this host.
+- Runner `chrome-final scripts/check_ui_verification_browser.py
+  --contact-code-workers`: **1/1 OK and 23/23 OK**, exit 0. Actual Chrome
+  candidate/CSRF/provider/refusal/expiry/reload/session-loss flow, plus shared
+  busy refusal, caller wait uncertainty without a sent claim, own-state refresh,
+  late code confirmation without resend and actual reload. Console/privacy
+  assertions pass. Chrome requires existing CDN internet and terminates Windows
+  app processes; migrated HTTP owns graceful restart evidence.
+- `node --test scripts/test_ui_verification.js`: **68 passed**, including three
+  new busy/closed/pending cases which settle, retain destination, refresh saved
+  status and confirm explicitly with exactly two total POSTs (start + confirm).
+  This is offline handler evidence, not a browser run.
+- Static: **586 bindings across 18 states** resolve; `node --check frontend/api.js`,
+  `frontend/support.js` and `frontend/portal-auth.js` pass. Project-Python
+  `py_compile` passes for all **12 changed Python files**, including the moved
+  executor. `git diff --check` passes. Reviewed-state snapshot: **616 code/config
+  files**, including HTML/JS.
+- Actual PostgreSQL owned runner `.pytest_cache/run_r4_s2_t3c2_postgres.py`:
+  **253 passed, 1 warning**, 228.36 s, no skips, on disposable **PostgreSQL 18.6**,
+  read committed, Asia/Calcutta,
+  validation-only `statement_timeout=25000`. It runs verification API/delivery/
+  service/store/concurrency/consent/erasure/OTP, verification config, lifecycle,
+  auth API/debug/org-name, config, auth gate and OpenAPI; then migrated contact
+  and C1 auth worker HTTP/restart journeys. Contact `--postgres
+  --contact-code-workers`: **32/32 OK**; C1 `--postgres --auth-code-workers`:
+  **112/112 OK**, both exit 0. Contact health plus authorized-read totals:
+  mail **0.0623 s**, SQL **0.0166 s**, against one second. C1 totals:
+  mail **0.0075 s**, SQL **0.0809 s**, against one second. These are controlled
+  host observations, not production latency/throughput claims. Owned server
+  stopped successfully (stop exit 0, 31.22 s); runtime metadata stays ignored.
+  No migration roundtrip is applicable because
+  no model/schema/migration changes; existing migrations run in both journeys.
+- Full regression: runner `full -m pytest -q --tb=short -x`: **3738 passed,
+  639 skipped, 127 warnings**, 1144.05 s, exit 0. Optional/environment and
+  unconfigured PG skips do not prove omitted cases; the actual PG gate above
+  supplies the required concurrency evidence. Warnings concern the existing
+  Starlette/httpx deprecation and SQLite expression-index reflection/autogenerate
+  limitations. No application/test/config changes followed the reviewed snapshot.
+
+The API regressions assert unchanged unadmitted verification/challenge/audit
+rows, both subject actors sharing capacity, unauthenticated 401 before service
+admission, late success/failure, no automatic replay, caller cancellation,
+saved-state/manual confirmation and foreign 404. Transaction hooks assert one
+thread owns each Session. Controlled separate connections hold real SQLite
+writer/PG candidate locks; PG observes actual `pg_stat_activity` lock waits.
+Erasure before issuance leaves no restored subject/verification/challenge or
+mail and preserves another subject. Existing dispatch-vs-erasure races prove
+activation-first secrets are swept after the serialized erasure; the survivor
+is now asserted too. Lifecycle tests cover both pools, repeated cancellation,
+late-admission refusal and SQL disposal only after accepted work finishes.
+
+Harness corrections: the first owning-group run was **1 failed, 1 passed,
+14 deselected, 1 warning** because a fresh self-attestation exceeded its synthetic
+50 ms caller budget. Capacity had recovered correctly. The check now allows
+the documented 200/504 outcomes, waits for that accepted work and asserts the
+exact saved verified record; it still rejects busy refusal. The initial Chrome
+run required the background blocking request to time out even though the test
+released it after observing busy copy, before its wait budget expired. That
+background request can correctly return 200 or 504; the target browser timeout
+still must return the actual uncertain-state copy before release. The clean
+Chrome rerun passes. No application behavior changed for these corrections.
+
+### Implementation self-review
+
+Reviewed `02f536f` plus the neutral executor move, two Services pools and cleanup,
+auth import-only adaptation, verification start adapter, Settings/YAML, three
+UI error messages, existing API/config/concurrency/lifecycle/Node tests and the
+two existing contact journeys. Specification review maps C2's contract to the
+checks above and keeps C3/parent acceptance open. Correctness review traces
+queue-free admission, future/context retention, timeout/operation-error
+distinction, owning-session threads, late error privacy, safe 504/no replay,
+authentication/CSRF/destination/consent guards, failure rollback, erasure ordering,
+local echo, readable recovery and join-before-SQL disposal. Neutral extraction
+does not change C1's statuses or scheduling. No blocking finding remains;
+this is same-agent self-review, not independent review. Shared-worker and
+contact-specific acceptance and all required validation gates pass.
+
+Limits: per-service admission is not global request concurrency/RSS or durable
+jobs. Thread joins can wait on existing SQL/SMTP limits; an HTTP failure does
+not imply rollback. SMTP's candidate/SQLite writer lock, earlier auth/session
+touches and other synchronous SQL remain explicit. Direct synchronous callers
+own scheduling; fake providers prove mechanics, not live delivery or quality.
+
+### Completion and handoff
+
+C2 implementation, required validation and completion records are complete.
+Focused SQLite/actual PostgreSQL, migrated contact HTTP/restart on both, C1
+actual PG HTTP/restart, real contact Chrome, offline handlers/static and final
+full pytest pass. The two harness timing corrections remain recorded with their
+clean reruns; neither changed application behavior. The neutral executor move
+preserves C1's pool/settings/opaque timeout; C2's separate pool reports an honest
+uncertain outcome and recovers through own saved records without replay.
+
+No schema/migration, live delivery, measured scoring quality or working-store
+change is claimed. The owned PostgreSQL server is stopped; demo remains untouched.
+The PI/feature/operating/verification/roadmap/handoff records agree. C3, C, parent
+T3/F14/sprint/PI remain open. Exact next is **R4-S2-T3C3 - Bound remaining
+measured SQL and review combined T3 acceptance**, under its
+[existing contract](PI-R4.md#r4-s2-t3c3): inventory/measure and define bounded
+child groups before implementation. Do not start C3 in this session.
+The distinct final staged self-review and scoped publication follow this record.
+
+Distinct final staged self-review (2026-10-27), after required validation and
+the completion record: reviewed the exact **22-file staged diff** (including
+the executor rename) against `02f536f`. Scope: neutral executor move and auth
+adaptation; contact adapter and Services pools/cleanup; Settings/YAML; three UI
+messages; existing API/config/concurrency/lifecycle/fixture/Node tests; two
+existing contact journeys; and operating/verification/feature/PI/handoff/roadmap/
+evidence documentation. Specification review maps all C2 criteria to recorded
+checks and leaves C3/parent acceptance open. Correctness review traces immediate
+admission, retained futures/context, owning-session threads, error privacy,
+timeout/no replay, auth/CSRF/destination/consent, provider rollback, erasure,
+local echo, manual saved-state recovery and join-before-SQL disposal. C1's
+separate admission and opaque 202 remain covered by actual PG HTTP and full
+regression. No blocking finding remains. This is same-agent self-review,
+not independent review.
+
+All **616 code/config hashes** match the reviewed/full-tested state. **712
+unrelated tracked files, including the working DB**, match baseline; preservation
+handles both sides of the executor rename. Existing package discovery includes
+the moved core module; no dependency/image/migration changes are needed.
+No secrets, working data or ignored validation artifacts are staged. Only
+final review prose changes after this pass. Documentation links, staged
+whitespace, exact scope and preservation are checked before commit. Publication
+uses `main` tracking `origin/main`, with per-command GCM account selection and
+no saved credential/remote changes. The final response records the remotely
+verified SHA. Stop after publication, without starting C3.
+
+Final pre-commit checks pass: **16 added local documentation links/anchors**,
+staged whitespace, core-module compilation, reviewed-state and preservation
+comparisons. Exactly **22 scoped file changes** (23 paths counting both sides
+of the rename) are staged, with no unstaged/untracked changes.

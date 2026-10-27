@@ -185,6 +185,15 @@ Isolation is **structural**: every handler resolves `candidate_id` from the
 key, never from a path or body param. Another candidate's `verification_id` is
 an indistinguishable **404** — no probing.
 
+Start/resend runs as a complete owning-session operation in a bounded worker
+pool. After authentication/CSRF, full capacity refuses with 503/Retry-After before
+verification work. The caller wait budget can return 504 `contact_code_pending`;
+mail and activation may still finish. Refresh own contact status and enter any
+delivered code through its saved pending record before requesting another.
+There is no automatic replay or rollback/delivery promise. See the
+[contact budget](OPERATING.md#contact-code-execution-budget) for configuration,
+transaction locks, cancellation/shutdown and remaining synchronous SQL limits.
+
 ### Org plane (`X-Org-Key`)
 
 | Route | Behaviour |

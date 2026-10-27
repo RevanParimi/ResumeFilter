@@ -182,6 +182,9 @@
   };
   contactErrorCopy = (err) => {
     if (!err) return "";
+    if (err.detail === "contact_code_capacity_exhausted") return "Contact code requests are busy. Try again shortly.";
+    if (err.detail === "contact_code_executor_closed") return "Contact verification is temporarily unavailable. Try again shortly.";
+    if (err.detail === "contact_code_pending") return "The request may still be running. A code can arrive later. Refresh contact status and enter that code before requesting another.";
     if (err.detail === "email_unavailable") return "Email delivery is unavailable. Request a new code when it is available.";
     if (err.detail === "phone_unavailable") return "Phone delivery is unavailable. Use email if an email contact is on your record.";
     if (err.detail === "email_send_failed") return "The code request failed. You can request a new code.";

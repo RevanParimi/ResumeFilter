@@ -14,16 +14,17 @@ from app.services.speech import OpenRouterSpeech
 from tests.test_services_features import production  # noqa: F401
 
 
-async def test_auth_code_shutdown_joins_accepted_work_before_disposing_sql(services, monkeypatch):
+@pytest.mark.parametrize('pool_name', ['auth_codes', 'contact_codes'])
+async def test_code_shutdown_joins_accepted_work_before_disposing_sql(services, monkeypatch, pool_name):
     from threading import Event
-    from app.auth.execution import AuthCodeUnavailable
+    from app.core.blocking import ExecutionUnavailable
     entered, release, finished = Event(), Event(), Event()
     def work():
         entered.set()
         assert release.wait(8)
         finished.set()
         return 'completed'
-    pending = asyncio.create_task(services.auth_codes.run(work))
+    pending = asyncio.create_task(getattr(services, pool_name).run(work))
     assert await asyncio.to_thread(entered.wait, 5)
     disposed = []
     def dispose():
@@ -38,8 +39,8 @@ async def test_auth_code_shutdown_joins_accepted_work_before_disposing_sql(servi
         closing.cancel()
         await asyncio.sleep(.02)
         assert not closing.done() and not disposed
-        with pytest.raises(AuthCodeUnavailable, match='auth_code_executor_closed'):
-            _ = services.auth_codes
+        with pytest.raises(ExecutionUnavailable, match=pool_name.removesuffix('s') + '_executor_closed'):
+            getattr(services, pool_name)
     finally:
         release.set()
         with pytest.raises(asyncio.CancelledError):

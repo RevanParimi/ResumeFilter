@@ -203,6 +203,8 @@ verif_otp_length: 6                    # digits in an OTP challenge
 verif_otp_ttl_minutes: 10              # challenge lifetime
 verif_otp_max_attempts: 5              # wrong codes before the verification fails
 verif_otp_resend_cooldown_seconds: 60  # min gap between challenges on one verification
+contact_code_max_concurrent_requests: 2  # per service, separate from login issuance
+contact_code_wait_seconds: 20.0         # caller wait only; refresh before any resend
 verif_outcome_ttl_days: 365            # a verified outcome reads as expired after this
 verif_otp_debug_echo: false            # local-only echo of the code; see config.py note
 ret_verification_days: 1095            # retention window surfaced in the portal

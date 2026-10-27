@@ -134,6 +134,34 @@ test("timeout suggests checking server status and navigation does not become fal
   assert(c.renderVals().contactErrorText.includes("refresh contact status"));
 });
 
+for (const [detail, expected] of [
+  ["contact_code_capacity_exhausted", /busy/],
+  ["contact_code_executor_closed", /temporarily unavailable/],
+  ["contact_code_pending", /Refresh contact status and enter that code before requesting another/],
+]) {
+  test("contact admission/wait refusal settles without sent notice or automatic replay: " + detail, async () => {
+    const { c, calls, window } = fixture(async () => { throw { detail, status: detail === "contact_code_pending" ? 504 : 503 }; });
+    c.startContactVerification(); await settle();
+    assert.equal(c.state.contactBusy, false);
+    assert.equal(c.state.contactNotice, "");
+    assert.equal(c.state.contactId, null);
+    assert.equal(c.state.contactDestination, "synthetic-contact@example.com");
+    assert.match(c.renderVals().contactErrorText, expected);
+    assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+    assert(calls.some(x => x[1] === "/portal/verifications" && x[0] === "GET"));
+    window.VeritasAPI.get = async () => ({ verifications: [pending] });
+    await c.loadContacts();
+    c.continueContact(pending.id, "otp_email")();
+    c.setContactCode({ target: { value: "123456" } });
+    window.VeritasAPI.post = async (path, body) => { calls.push(["POST", path, body]); return verified; };
+    c.confirmContactVerification(); await settle();
+    assert.equal(calls.filter(x => x[0] === "POST").length, 2);
+    assert.equal(calls.filter(x => x[0] === "POST").at(-1)[1], "/portal/verifications/" + pending.id + "/confirm");
+    assert.equal(c.state.contactId, null);
+    assert.match(c.state.contactNotice, /Contact verified/);
+  });
+}
+
 function authFixture(plane = "candidate", mode = "signin") {
   const ctx = fixture();
   Object.assign(ctx.c.state, { screen: "login", me: null, plane, authMode: mode,

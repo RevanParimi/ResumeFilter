@@ -1,55 +1,63 @@
 # Current handoff
 
-Updated: 2026-10-26. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-27. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C1 complete.** C was split before implementation; only C1 is this
-session's task. Its [contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c1)
-owns acceptance, exact commands/counts, harness corrections, limits and reviews.
-C2/C3, C, T3/F14/sprint/PI remain open; B/A/T1/T2 and R4-S1 stay closed.
+**R4-S2-T3C2 complete.** Only C2 is this session's task. Its
+[contract](delivery/PI-R4.md#r4-s2-t3c2) defines the bounded contact start/resend
+work; its [evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c2) records exact checks and
+limits. C1 is published at `02f536f`; C3, C, T3/F14/sprint/PI remain open.
 
-All five signup/login code operations now run off the event loop with their
-owning SQL sessions and mail. Per-service admission defaults to two, without
-a waiting queue; excess work gets safe 503/Retry-After before SQL. The default
-20-second caller wait returns the same opaque 202 on timeout. Capacity stays
-occupied until actual completion; no automatic replay. UI explains possible
-delivery delay and permits manual entry. Cleanup joins accepted workers before
-SQL disposal. Existing auth, erasure and guarded local echo remain.
+`POST /portal/verifications` now runs its complete owning-session operation
+off the event loop. Separate contact admission defaults to two, without a queue;
+after authentication/CSRF, excess work returns safe 503/Retry-After before
+verification SQL/mail. The default 20-second caller wait returns safe 504
+`contact_code_pending`, with no invented success or automatic replay. UI explains
+late delivery and recovery through own saved status/manual code confirmation.
+Capacity remains occupied until actual completion; cleanup joins both pools
+before SQL disposal. Shared mechanics move to a neutral executor; C1 retains its
+own pool/settings and opaque 202 timeout behavior.
 
-Focused SQLite and actual PostgreSQL, migrated HTTP/restart on both, actual
-Chrome busy/delayed-code/manual verification/reload and resend, bindings/syntax/
-compilation pass. Final full pytest: **3721 passed, 630 skipped, 127 warnings**.
-The initial failed run and corrected UI notice expectations are recorded;
-the affected UI mount/handler group passes (**20 passed**), as does Chrome
-after removing the older premature delivery claim.
-Controlled SQL/mail stalls kept health plus authorized SQL reads within one
-second. Fakes/capture mail prove mechanics, not live delivery or empirical quality.
+Focused pytest, actual PostgreSQL, migrated SQLite/PG HTTP/restart, actual contact
+Chrome, offline UI and static checks pass. Full pytest: **3738 passed,
+639 skipped, 127 warnings**. Controlled SQLite/PG mail/SQL stalls kept health
+plus an admin-key SQL read within one second. Fakes/capture mail prove
+mechanics, not live delivery or measured quality. No schema/migration/scoring
+or working-store change; working DB preserved and demo untouched.
 
-Implementation, correction and distinct final staged self-reviews are recorded;
-no blocking finding remains. Required validation and completion records are
-complete. Authorized scoped publication follows; the final response reports
-the verified remote SHA. Use per-command
-`-c credential.username=RevanParimi` for GCM's multiple-account selection;
-no saved Git configuration change is needed.
+Implementation and distinct final staged self-reviews found no blocker.
+Required validation and completion records are complete; authorized scoped
+publication follows. The final response records the verified remote SHA.
+Use per-command `-c credential.username=RevanParimi` for GCM's
+multiple-account selection; no saved configuration change is needed.
 
-**Exact next after C1: R4-S2-T3C2 - Bound contact-verification mail operations**,
-under its [contract](delivery/PI-R4.md#r4-s2-t3c2). Do not start C2 here.
+**Exact next after C2: R4-S2-T3C3 - Bound remaining measured SQL and review
+combined T3 acceptance**, under its [contract](delivery/PI-R4.md#r4-s2-t3c3).
+Inventory/measure and define bounded child groups there before implementation.
+Do not start C3 here.
 
-Timeout cannot kill threads, recall mail or promise rollback. There is no new
-whole-operation/server-drain deadline; driver/socket limits remain. Direct
-synchronous callers own scheduling. See the [auth budget](../OPERATING.md#authentication-code-execution-budget).
-No schema/migration/scoring or working-store change. Working DB/unrelated files
-remain at baseline, demo untouched. **616 code/config hashes** identify the
-reviewed state. Owned disposable PG is stopped. Feature overview:
+SMTP still holds its candidate transaction (SQLite writer lock); competing
+writes/erasure may wait. Earlier auth resolution, periodic session touches and
+other SQL remain C3. Timeout cannot kill threads, recall mail or promise rollback;
+existing driver/socket limits remain, with no new whole-operation/server-drain
+deadline. Direct synchronous callers own scheduling. See the
+[contact budget](../OPERATING.md#contact-code-execution-budget). **616 code/config
+hashes** identify the reviewed state. Feature overview:
 [FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3c1.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3c2.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Contact code admission/SQL/mail stalls/late completion/recovery/graceful restart:
+  `scripts/smoke_r3_s1_t2.py --contact-code-workers`; actual Chrome:
+  `scripts/check_ui_verification_browser.py --contact-code-workers`.
+  Append HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
+  C2's owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c2_postgres.py` /
+  `r4-s2-t3c2-pg-runtime.json`, stopped.
 - Auth code worker admission/SQL/mail stalls/late success/graceful restart:
   `scripts/smoke_r4_s1_t3a.py --auth-code-workers`; actual Chrome:
   `scripts/check_ui_screening_extraction_browser.py --auth-code-workers`.

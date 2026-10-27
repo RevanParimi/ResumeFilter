@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import _services, require_api_key, require_candidate, require_org
 from app.ledger.store import ConsentError
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.services.email import EmailSendFailed
 from app.verification.documents import DocumentParseError
 from app.verification.otp import DeliveryUnavailable
@@ -83,9 +84,15 @@ async def start_verification(
 ) -> StartVerificationResponse:
     services = _services(request)
     try:
-        verification, code = services.verification.start(
+        verification, code = await services.contact_codes.run(services.verification.start,
             candidate_id, req.method, destination=req.destination
         )
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # The worker may still deliver/commit; the candidate must recover saved
+        # state rather than replaying an operation whose outcome is uncertain.
+        raise HTTPException(status_code=504, detail='contact_code_pending') from None
     except DeliveryUnavailable as exc:
         raise HTTPException(status_code=503, detail=exc.detail) from None
     except EmailSendFailed:

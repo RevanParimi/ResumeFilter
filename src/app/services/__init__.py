@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import sessionmaker
-from app.auth.execution import AuthCodeExecutor, AuthCodeUnavailable
+from app.core.blocking import BoundedExecutor, ExecutionUnavailable
 
 from app.candidates.store import CandidateStore, build_candidate_store
 from app.core.config import Settings, get_settings
@@ -102,16 +102,26 @@ class Services:
     _owned_clients: tuple[object, ...] = field(default=(), repr=False, compare=False)
     _close_task: Optional[asyncio.Task] = field(default=None, init=False, repr=False, compare=False)
     _pdf: Optional[PdfExecutor] = field(default=None, init=False, repr=False, compare=False)
-    _auth_codes: Optional[AuthCodeExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _auth_codes: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _contact_codes: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
 
     @property
-    def auth_codes(self) -> AuthCodeExecutor:
+    def auth_codes(self) -> BoundedExecutor:
         if self._close_task is not None:
-            raise AuthCodeUnavailable('auth_code_executor_closed')
+            raise ExecutionUnavailable('auth_code_executor_closed')
         if self._auth_codes is None:
-            self._auth_codes = AuthCodeExecutor(self.settings.auth_code_max_concurrent_requests,
-                                               self.settings.auth_code_wait_seconds)
+            self._auth_codes = BoundedExecutor(self.settings.auth_code_max_concurrent_requests,
+                                               self.settings.auth_code_wait_seconds, name='auth_code')
         return self._auth_codes
+
+    @property
+    def contact_codes(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('contact_code_executor_closed')
+        if self._contact_codes is None:
+            self._contact_codes = BoundedExecutor(self.settings.contact_code_max_concurrent_requests,
+                self.settings.contact_code_wait_seconds, name='contact_code')
+        return self._contact_codes
 
     @property
     def pdf(self) -> PdfExecutor:
@@ -136,8 +146,8 @@ class Services:
     async def _close_owned(self) -> None:
         clients, self._owned_clients = self._owned_clients, ()
         failed = False
-        if self._auth_codes is not None:
-            await self._auth_codes.aclose()
+        await asyncio.gather(*(executor.aclose() for executor in
+            (self._auth_codes, self._contact_codes) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

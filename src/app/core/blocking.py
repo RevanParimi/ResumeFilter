@@ -1,4 +1,4 @@
-"""Bound complete login-code operations without moving live SQL sessions."""
+"""Bound complete synchronous operations without moving live SQL sessions."""
 from __future__ import annotations
 
 import asyncio
@@ -7,19 +7,20 @@ from contextvars import copy_context
 from threading import Lock
 
 
-class AuthCodeUnavailable(Exception):
-    """Safe admission refusal, before any account lookup or mail work."""
+class ExecutionUnavailable(Exception):
+    """Safe admission refusal, before the owning operation runs."""
 
 
-class AuthCodePending(Exception):
+class ExecutionPending(Exception):
     """Caller stopped waiting; delivery/activation may still complete."""
 
 
-class AuthCodeExecutor:
-    def __init__(self, capacity: int, wait_seconds: float):
+class BoundedExecutor:
+    def __init__(self, capacity: int, wait_seconds: float, *, name: str):
         self._capacity = capacity
         self._wait_seconds = wait_seconds
-        self._pool = ThreadPoolExecutor(max_workers=capacity, thread_name_prefix='auth-code')
+        self._name = name
+        self._pool = ThreadPoolExecutor(max_workers=capacity, thread_name_prefix=name.replace('_', '-'))
         self._lock = Lock()
         self._active = set()
         self._closed = False
@@ -28,9 +29,9 @@ class AuthCodeExecutor:
         context = copy_context()
         with self._lock:
             if self._closed:
-                raise AuthCodeUnavailable('auth_code_executor_closed')
+                raise ExecutionUnavailable(f'{self._name}_executor_closed')
             if len(self._active) >= self._capacity:
-                raise AuthCodeUnavailable('auth_code_capacity_exhausted')
+                raise ExecutionUnavailable(f'{self._name}_capacity_exhausted')
             future = self._pool.submit(context.run, function, *args, **kwargs)
             self._active.add(future)
         def finished(done):
@@ -44,7 +45,7 @@ class AuthCodeExecutor:
         waiting.add_done_callback(lambda done: None if done.cancelled() else done.exception())
         done, _ = await asyncio.wait({waiting}, timeout=self._wait_seconds)
         if not done:
-            raise AuthCodePending()
+            raise ExecutionPending()
         return waiting.result()
 
     def close(self) -> None:

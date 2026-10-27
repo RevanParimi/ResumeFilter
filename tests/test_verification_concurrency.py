@@ -332,5 +332,6 @@ def test_candidate_erasure_serializes_with_dispatch_and_sweeps_activated_secret(
     assert [r[0] for r in results] == ["ok", "ok"]
     assert len(sent) == 1
     assert store.get_verification(new.id) is None
+    assert CandidateStore(factory).get_candidate('b') is not None
     with factory() as session:
         assert session.scalar(select(VerificationChallengeRow)) is None

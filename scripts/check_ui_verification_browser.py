@@ -12,13 +12,14 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 
 from sqlalchemy import create_engine, update
 
 import check_ui_screening_browser as browser
 from _smoke import Smoke
-from smoke_r3_s1_t2 import latest_code
+from smoke_r3_s1_t2 import contact_marker, latest_code
 from app.verification.models import VerificationChallengeRow, VerificationRow
 
 
@@ -52,6 +53,10 @@ async def main():
                 "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
                 "PYTHONPATH": os.pathsep.join(str(p) for p in (browser.ROOT / "src", browser.ROOT / "scripts", browser.ROOT)),
             })
+            if '--contact-code-workers' in sys.argv:
+                env.update(VERITAS_CONTACT_CODE_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_CONTACT_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_CONTACT_CODE_WAIT_SECONDS='.5',
+                    DEE_DB_MIGRATE_ON_BOOT='true')
             state["db"] = env["DEE_CANDIDATES_DB_URL"]
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt": kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -189,6 +194,60 @@ window.fetch=async (url,init)=>{
             await reload()
             checks.check("lapsed outcome reads expired without a false held/low assurance", await assurance_status("expired")
                 and (await tab.js("window.VeritasAPI.get('/portal/verifications')"))["assurance"]["level"] == 0)
+            if '--contact-code-workers' in sys.argv:
+                async def worker_finished():
+                    async with asyncio.timeout(10):
+                        while not contact_marker(mailbox, 'completed').exists():
+                            await asyncio.sleep(.01)
+                def reset_worker():
+                    for name in ('entered', 'release', 'completed'):
+                        contact_marker(mailbox, name).unlink(missing_ok=True)
+                reset_worker()
+                control.write_text('held')
+                held = asyncio.create_task(asyncio.to_thread(admin.post, '/portal/verifications',
+                    headers={'X-Candidate-Key': other_key}, json={'method': 'otp_email', 'destination': 'verify-other@example.com'}))
+                try:
+                    async with asyncio.timeout(10):
+                        while not contact_marker(mailbox, 'entered').exists():
+                            await asyncio.sleep(.01)
+                    await type_dest(); await send()
+                    checks.check('actual shared contact capacity refusal retains destination and makes no sent claim',
+                        await tab.wait("window.__has('Contact code requests are busy') && !window.__has('Code sent.')", 10)
+                        and await tab.js("document.querySelector('#contact-destination').value") == email
+                        and not await tab.js("document.querySelector('#contact-code')"))
+                finally:
+                    contact_marker(mailbox, 'release').touch()
+                    assert (await held).status_code in {200, 504}
+                    await worker_finished()
+                    control.write_text('ok')
+                reset_worker()
+                def deliveries():
+                    return [json.loads(row) for row in mailbox.read_text().splitlines()
+                        if json.loads(row)['to'] == email and json.loads(row)['subject'] == 'Verify your Veritas contact']
+                before = len(deliveries())
+                control.write_text('held')
+                try:
+                    await send()
+                    checks.check('actual caller wait shows uncertain outcome without sent notice or automatic code entry',
+                        await tab.wait("window.__has('A code can arrive later. Refresh contact status') && !window.__has('Code sent.')", 10)
+                        and not await tab.js("document.querySelector('#contact-code')") and len(deliveries()) == before)
+                finally:
+                    contact_marker(mailbox, 'release').touch()
+                    await worker_finished()
+                    control.write_text('ok')
+                await tab.js("window.__click('button', 'Refresh contact status')")
+                late_id = await selected_id()
+                assert await tab.wait(f"document.querySelector('[data-contact-record=\"{late_id}\"] button')", 15)
+                await tab.js(f"document.querySelector('[data-contact-record=\"{late_id}\"] button').click()")
+                late_code = latest_code(mailbox, email); codes.append(late_code)
+                await confirm(late_code)
+                checks.check('late delivered code confirms through own refreshed saved record without resending',
+                    await tab.wait("window.__has('Contact verified. This proves contact control, not employment.')", 15)
+                    and len(deliveries()) == before + 1)
+                await reload()
+                checks.check('late contact completion survives actual browser reload',
+                    await tab.wait(f"document.querySelector('[data-contact-record=\"{late_id}\"]')", 20)
+                    and await assurance_status('held'))
             await type_dest(); await send(); assert await tab.wait("document.querySelector('#contact-code')", 15)
             ending_code = latest_code(mailbox, email); codes.append(ending_code)
             await tab.js("window.VeritasAPI.post('/auth/logout')")

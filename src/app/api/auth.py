@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.dependencies import _client_ip_hash, _rate_limited, _services, require_any_principal
 from app.auth.schema import AuthPlane, LoginPurpose, Principal, SessionView
-from app.auth.execution import AuthCodePending, AuthCodeUnavailable
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.auth.service import ChallengeRefused, EmailUnavailableError, RegistrationRefused
 from app.ratelimit.service import RateLimited
 
@@ -130,9 +130,9 @@ async def _request_code(
             at=datetime.now(timezone.utc),
             ip_hash=_client_ip_hash(request),
         )
-    except AuthCodeUnavailable as exc:
+    except ExecutionUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
-    except AuthCodePending:
+    except ExecutionPending:
         # A different public status for delayed mail would distinguish a known
         # account from a no-op unknown login. Generic acceptance never promises
         # delivery, and the original operation must not be replayed here.
