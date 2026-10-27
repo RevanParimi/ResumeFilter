@@ -142,7 +142,7 @@ disposal. It cannot safely kill Python threads; existing driver/SMTP socket
 timeouts apply, and normal server shutdown first drains HTTP requests. This is
 not a whole-operation/drain deadline, a global RSS budget or a durable mail queue.
 
-Verification/resolution and remaining SQL boundaries are still
+Code redemption/session handlers and remaining SQL boundaries are still
 tracked under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
 service callers retain caller-owned scheduling. This does not configure or send
 live email.
@@ -177,11 +177,49 @@ apply; no whole-operation, server-drain deadline or durable queue is added.
 
 SMTP retains the existing candidate-locked transaction (SQLite's writer lock).
 Competing writes, including erasure, may wait for it; an erasure that follows
-activation removes its challenge. Earlier principal resolution, periodic session
-touches and confirm/list/other SQL remain C3. In particular, this change does not
-make every authenticated write or stale-session refresh nonblocking. Direct
+activation removes its challenge. Principal resolution/session touches now use
+the separate budget below; confirm/list/other handler SQL remain C3. This does
+not make every authenticated write nonblocking. Direct
 synchronous verification callers still own scheduling. Validation uses capture
 providers and scratch stores, not live delivery.
+
+### Request principal resolution budget
+
+`auth_resolution_max_concurrent_requests` defaults to **8** per Services/app
+process. This separate queue-free pool runs complete `AuthService.resolve` and
+`resolve_any` calls for all four request gates, including session/key lookups and
+periodic last-seen writes. Eight accommodates the current UI's concurrent
+batch/summary/queue/driver requests; it is not a production throughput guarantee.
+Only raw credentials and detached principals cross the boundary. Each SQL session
+opens, runs and closes on its owning worker; request state and CSRF remain on the
+caller. Session precedence over header keys and all existing access rules remain.
+
+`auth_resolution_wait_seconds` defaults to **20**. Capacity must be positive,
+wait finite/positive. Set YAML or `DEE_AUTH_RESOLUTION_MAX_CONCURRENT_REQUESTS` /
+`DEE_AUTH_RESOLUTION_WAIT_SECONDS`, then restart. Full admission returns **503**
+`auth_resolution_capacity_exhausted`; closed admission returns **503**
+`auth_resolution_executor_closed`. Wait expiry returns **503**
+`auth_resolution_pending`. All include `Retry-After: 1`, without cookies or a
+principal reaching the route handler. Refused work does not run the resolver;
+timed-out/cancelled work retains its slot until actual completion and may commit
+its last-seen touch. The original HTTP action never resumes or replays afterwards.
+The browser explains temporary unavailability and manual refresh, including on
+session bootstrap; its existing cookie can recover without signing in again.
+
+Full admission can refuse any protected request, including anonymous/header-only
+calls. Public liveness/UI remain available. An unrelated protected read needs a
+free slot and can still encounter later synchronous route SQL. Actual SQLite/PG
+lock tests establish resolver responsiveness, not complete SQL coverage. A
+candidate/contact transaction can still hold SQLite's writer lock; a stale
+session's worker waits without blocking the event loop, subject to driver limits.
+
+Cleanup joins accepted resolver and code work before disposing owned SQL. Caller
+timeout is not a thread kill, rollback promise or hard whole-operation/drain
+deadline. Budgets multiply across Services/processes and do not globally cap
+memory or DB connections. Resolved principals remain authorization snapshots;
+there is no new transaction lock across later revoke/erasure and route execution.
+Direct synchronous auth callers own scheduling. Code redemption/session handlers
+and other SQL remain in [C3B-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3b).
 
 ### Dual scoping: all scopes counted, any denial denies
 

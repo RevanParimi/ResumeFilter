@@ -1626,6 +1626,7 @@ const CSRF_COPY = "Your sign-in moved on while this page was open. Sign in again
 
 function errorCopy(err) {
   if (!err) return "";
+  if (AUTH_RESOLUTION_ERRORS.includes(err.detail)) return "Sign-in checks are temporarily unavailable. Wait a moment, then refresh.";
   if (err.kind === "consent") return CONSENT_COPY;
   if (err.kind === "csrf") return CSRF_COPY;
   if (err.kind === "email_down") return "No email provider is configured on this API, so no code can be sent. Set DEE_EMAIL_PROVIDER to send one.";
@@ -1633,6 +1634,8 @@ function errorCopy(err) {
   if (err.kind === "network") return err.detail;
   return err.detail || "Something went wrong.";
 }
+
+const AUTH_RESOLUTION_ERRORS = ["auth_resolution_capacity_exhausted", "auth_resolution_executor_closed", "auth_resolution_pending"];
 
 // One code, six boxes. `debug_code` is sent ONLY by a local API with
 // login_otp_debug_echo on (src/app/core/boot.py refuses it in prod), so this
@@ -1798,7 +1801,7 @@ class Component extends window.VeritasEmployerRoles(
         this.setState({
           screen: "login",
           me: null,
-          authError: err && err.kind === "network" ? err : null
+          authError: err && (err.kind === "network" || AUTH_RESOLUTION_ERRORS.includes(err.detail)) ? err : null
         });
       }
     );

@@ -6,6 +6,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --body-limit also verifies actual ingress 413 rendering and fresh-file recovery.
 --pdf-execution verifies actual PDF capacity refusal and recovery/reload.
 --auth-code-workers verifies actual auth admission/delayed-mail/manual recovery.
+--auth-resolution-workers verifies session-check refusal and refresh recovery.
 """
 
 import asyncio
@@ -38,7 +39,7 @@ async def main():
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
             if '--pdf-execution' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if '--auth-code-workers' in sys.argv:
+            if '--auth-code-workers' in sys.argv or '--auth-resolution-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
             env = {key: value for key, value in inherited.items() if not key.startswith("DEE_")}
@@ -61,6 +62,9 @@ async def main():
             if '--auth-code-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_CODE_WAIT_SECONDS='.5')
+            if '--auth-resolution-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_AUTH_RESOLUTION_MAX_CONCURRENT_REQUESTS='8', DEE_AUTH_RESOLUTION_WAIT_SECONDS='.5')
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -128,6 +132,48 @@ async def main():
             await auth_reload("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Organisation' && b.offsetParent)")
             assert await tab.js("window.__click('button', 'Organisation')")
         await original_run(tab, mailbox, files, admin)
+        if '--auth-resolution-workers' in sys.argv:
+            for gate in ('capacity', 'pending'):
+                for name in ('resolve-entered', 'resolve-completed', 'resolve-release'):
+                    (scratch / name).unlink(missing_ok=True)
+                (scratch / 'resolve-mode').write_text('sql')
+                before_mail = mailbox.read_text()
+                try:
+                    if gate == 'capacity':
+                        # Fetch can be limited to six same-origin HTTP/1 sockets
+                        # in Chrome. Concurrent HTTP clients fill the remaining
+                        # budget without relying on the browser's connection cap.
+                        cookies = await tab.send('Network.getAllCookies')
+                        cookie_header = '; '.join(row['name'] + '=' + row['value'] for row in cookies['cookies'])
+                        import httpx
+                        async def hold_resolution():
+                            async with httpx.AsyncClient(base_url=browser.API_BASE) as actor:
+                                return await actor.get('/auth/me', headers={'Cookie': cookie_header})
+                        held = [asyncio.create_task(hold_resolution()) for _ in range(8)]
+                        async with asyncio.timeout(8):
+                            while not (scratch / 'resolve-entered').exists() or len((scratch / 'resolve-entered').read_text().splitlines()) < 8:
+                                await asyncio.sleep(.01)
+                    await tab.js('window.__resolveReloadMarker = true')
+                    await tab.send('Page.reload')
+                    browser.S.check(gate + ': actual bootstrap refusal explains refresh recovery',
+                        await tab.wait("!window.__resolveReloadMarker && document.body.innerText.includes('Sign-in checks are temporarily unavailable. Wait a moment, then refresh.')",
+                                       20, 'resolver refusal copy'))
+                    browser.S.check(gate + ': refusal shows no signed-in data or automatic code request',
+                        not await tab.js("document.body.innerText.includes('Sign out')") and mailbox.read_text() == before_mail)
+                finally:
+                    (scratch / 'resolve-release').touch()
+                    if gate == 'capacity':
+                        await asyncio.gather(*held)
+                    async with asyncio.timeout(8):
+                        while not (scratch / 'resolve-completed').exists():
+                            await asyncio.sleep(.01)
+                    (scratch / 'resolve-mode').unlink(missing_ok=True)
+                await tab.js('window.__resolveReloadMarker = true')
+                await tab.send('Page.reload')
+                browser.S.check(gate + ': manual refresh restores the original session without signing in again',
+                    await tab.wait("!window.__resolveReloadMarker && document.body.innerText.includes('Sign out')", 30, 'resolver refresh recovery')
+                    and mailbox.read_text() == before_mail)
+                await tab.js(browser.HELPERS)
         assert await tab.js("window.__click('button', 'Upload')")
         assert await tab.wait("document.querySelector('input[type=file]')", 20, "new file intake")
         box = await tab.js("document.querySelector('input[type=file]')", by_value=False)

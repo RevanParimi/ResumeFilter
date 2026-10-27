@@ -53,6 +53,21 @@ function component(kind = "org", post) {
   return { c, calls, window };
 }
 
+
+for (const detail of ["auth_resolution_capacity_exhausted", "auth_resolution_executor_closed", "auth_resolution_pending"]) {
+  test("session-check refusal preserves a refresh path without sending code or replay: " + detail, async () => {
+    const { c, calls, window } = component("candidate");
+    const error = { status: 503, kind: "http", detail };
+    window.VeritasAPI.get = async p => { calls.push(["GET", p]); throw error; };
+    c.componentDidMount(); await settle();
+    assert.equal(c.state.screen, "login");
+    assert.equal(c.state.me, null);
+    assert.equal(c.state.authError, error);
+    assert.match(c.renderVals().authErrorText, /temporarily unavailable.*refresh/);
+    assert.deepEqual(calls, [["GET", "/auth/me"]]);
+  });
+}
+
 test("shared shell preserves every screen flag, plane, search and advisory placement", () => {
   const screens = {
     queue: ["isQueue", "Screening queue"], report: ["isReport", "Candidate review context"],

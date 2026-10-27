@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from threading import Event
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,6 +23,232 @@ from app.main import create_app
 from app.services.email import CaptureEmail
 from tests.conftest import ADMIN_HEADERS, make_services
 from tests.test_report_erasure_concurrency import database  # noqa: F401
+
+
+def _resolver_session(services, cfg):
+    email = 'resolver-owner@example.in'
+    services.auth.issue_code(plane='candidate', purpose='signup', email=email, at=datetime.now(timezone.utc))
+    token, csrf, principal = services.auth.verify_code(plane='candidate', email=email,
+                                                      code=_code(Path(cfg.email_capture_path)))
+    stale = datetime.now(timezone.utc) - timedelta(minutes=2)
+    with services.session_factory() as session:
+        session.execute(update(AuthSessionRow).where(AuthSessionRow.id == principal.session_id).values(last_seen_at=stale))
+        session.commit()
+    return token, csrf, principal, stale
+
+
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_resolver_admission_never_runs_a_refused_or_abandoned_handler(database, cfg, monkeypatch, ending):
+    import httpx
+    from threading import get_ident
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_resolution_max_concurrent_requests = 1
+    cfg.auth_resolution_wait_seconds = .1 if ending in ('timeout', 'late_failure') else 20
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, stale = _resolver_session(services, cfg)
+    entered, release = Event(), Event()
+    caller = get_ident()
+    resolver_calls, handler_calls, worker_sql = [], [], []
+    resolve, grant = services.auth.resolve, services.portal.grant
+    def observed(**credentials):
+        resolver_calls.append(get_ident())
+        return resolve(**credentials)
+    def handler(*args, **kwargs):
+        handler_calls.append(True)
+        return grant(*args, **kwargs)
+    def begin(session, transaction, connection):
+        owner = session.info.setdefault('resolution_thread', get_ident())
+        assert owner == get_ident(), 'SQL session crossed threads'
+    def end(session, transaction):
+        assert session.info.get('resolution_thread', get_ident()) == get_ident()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'auth_sessions' in statement and get_ident() != caller:
+            worker_sql.append(get_ident())
+        if statement.lstrip().upper().startswith('UPDATE AUTH_SESSIONS') and not entered.is_set():
+            entered.set()
+            assert release.wait(15)
+            if ending == 'late_failure':
+                raise RuntimeError('private-resolver-failure-sentinel')
+    monkeypatch.setattr(services.auth, 'resolve', observed)
+    monkeypatch.setattr(services.portal, 'grant', handler)
+    event.listen(factory, 'after_begin', begin)
+    event.listen(factory, 'after_transaction_end', end)
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                headers = {'Cookie': f'{cfg.session_cookie_name}={token}; {cfg.csrf_cookie_name}={csrf}',
+                           'X-CSRF-Token': csrf}
+                pending = asyncio.create_task(http.post('/portal/consents', headers=headers, json={'purpose': 'ledger_read'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == 200
+                    for path, busy_headers in (
+                        ('/admin/users', ADMIN_HEADERS), ('/jobs', {'X-Org-Key': 'unadmitted'}),
+                        ('/portal/me', {'X-Candidate-Key': 'unadmitted'}), ('/auth/me', headers),
+                    ):
+                        response = await http.get(path, headers=busy_headers)
+                        assert response.status_code == 503
+                        assert response.json() == {'detail': 'auth_resolution_capacity_exhausted'}
+                        assert response.headers['retry-after'] == '1'
+                        assert 'set-cookie' not in response.headers
+                    assert len(resolver_calls) == 1 and not handler_calls
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503
+                        assert response.json() == {'detail': 'auth_resolution_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert not handler_calls
+                    assert (await http.get('/auth/me', headers=headers)).status_code == 503
+                finally:
+                    release.set()
+                    outcome = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_resolution._active:
+                            await asyncio.sleep(.01)
+                assert len(resolver_calls) == 1 and len(handler_calls) == (1 if ending == 'release' else 0)
+                if ending == 'release':
+                    assert outcome[0].status_code == 200
+                with factory() as session:
+                    saved = session.get(AuthSessionRow, principal.session_id)
+                    from app.auth.sessions import as_utc
+                    assert (as_utc(saved.last_seen_at) > stale) == (ending != 'late_failure')
+                assert (await http.get('/auth/me', headers=headers)).json()['kind'] == 'candidate'
+                assert len(handler_calls) == (1 if ending == 'release' else 0), 'abandoned write replayed'
+                assert resolver_calls and all(thread != caller for thread in resolver_calls)
+                assert worker_sql and len(set(worker_sql)) == 1
+                services.auth_resolution.close()
+                response = await http.get('/portal/me', headers=headers)
+                assert response.status_code == 503 and response.json() == {'detail': 'auth_resolution_executor_closed'}
+    finally:
+        release.set()
+        if services._auth_resolution is not None:
+            services._auth_resolution.close()
+        event.remove(engine, 'before_cursor_execute', sql)
+        event.remove(factory, 'after_begin', begin)
+        event.remove(factory, 'after_transaction_end', end)
+
+
+async def test_resolver_touch_waits_for_real_sql_lock_without_blocking_event_loop(database, cfg):
+    import httpx
+    from sqlalchemy import event, text
+    from app.auth.sessions import as_utc
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_resolution_wait_seconds = .1
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, stale = _resolver_session(services, cfg)
+    entered, pids = Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith('UPDATE AUTH_SESSIONS'):
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+    blocker = engine.connect()
+    if engine.dialect.name == 'sqlite':
+        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+    else:
+        blocker.execute(text('SELECT * FROM auth_sessions WHERE id = :id FOR UPDATE'), {'id': principal.session_id}).all()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.get('/auth/me', headers={'Cookie': f'{cfg.session_cookie_name}={token}'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await pending
+                    assert response.status_code == 503 and response.json() == {'detail': 'auth_resolution_pending'}
+                finally:
+                    blocker.rollback()
+                    blocker.close()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_resolution._active:
+                            await asyncio.sleep(.01)
+                with factory() as session:
+                    assert as_utc(session.get(AuthSessionRow, principal.session_id).last_seen_at) > stale
+                assert services.candidates.get_candidate('b') is not None
+    finally:
+        blocker.close()
+        services.auth_resolution.close()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+
+@pytest.mark.parametrize('plane,path,header,via_session', [
+    ('candidate', '/portal/me', 'X-Candidate-Key', True),
+    ('org', '/jobs', 'X-Org-Key', True),
+    ('admin', '/admin/users', 'X-API-Key', True),
+    ('candidate', '/auth/me', None, True),
+    ('candidate', '/portal/me', 'X-Candidate-Key', False),
+    ('org', '/jobs', 'X-Org-Key', False),
+])
+async def test_slow_principal_sql_leaves_unrelated_requests_responsive(database, cfg, plane, path, header, via_session):
+    import httpx
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    if plane == 'admin':
+        services.auth.create_admin_user(email_hash=services.auth.hash_email('slow-resolve@example.in'), label='Synthetic')
+    services.auth.issue_code(plane=plane, purpose='signup' if plane != 'admin' else 'login',
+                             email='slow-resolve@example.in', payload={'organization_name': 'Resolver Org'},
+                             at=datetime.now(timezone.utc))
+    token, csrf, principal = services.auth.verify_code(plane=plane, email='slow-resolve@example.in',
+                                                      code=_code(Path(cfg.email_capture_path)))
+    key = None
+    if not via_session:
+        key = (services.candidates.issue_access_key(principal.candidate_id) if plane == 'candidate' else
+               services.ledger.issue_api_key(principal.org_id))
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        table = 'auth_sessions' if via_session else 'candidate_credentials' if plane == 'candidate' else 'organizations'
+        if table in statement and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                headers = {'Cookie': f'{cfg.session_cookie_name}={token}'} if via_session else {}
+                if header:
+                    headers[header] = 'invalid-key-session-must-win' if via_session else key
+                pending = asyncio.create_task(http.get(path, headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    health = await http.get('/healthz')
+                    read = await http.get('/admin/users', headers=ADMIN_HEADERS)
+                    elapsed = time.monotonic() - start
+                    assert health.status_code == read.status_code == 200
+                    assert not finished.is_set(), f'{plane}/{path}: resolver blocked event loop ({elapsed:.4f}s)'
+                    assert elapsed < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+        if getattr(services, '_auth_resolution', None) is not None:
+            services._auth_resolution.close()
 
 
 @pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'erase'])
@@ -253,6 +479,8 @@ def client(cfg, flywheel):
         yield c
     if services._auth_codes is not None:
         services._auth_codes.close()
+    if services._auth_resolution is not None:
+        services._auth_resolution.close()
 
 
 def _code(capture_path) -> str:

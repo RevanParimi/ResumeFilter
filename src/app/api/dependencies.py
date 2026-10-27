@@ -7,6 +7,7 @@ from fastapi import HTTPException, Request
 from app.auth.csrf import csrf_matches
 from app.auth.schema import Principal, PrincipalKind, PrincipalVia
 from app.candidates.hashing import contact_hash
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.ratelimit.service import RateLimited
 from app.services import Services
 
@@ -75,7 +76,7 @@ async def require_api_key(request: Request) -> Principal:
     ``AuthService._from_key``), and ``verify_launch_config`` stops the process
     before it can serve in that state at all.
     """
-    principal = _services(request).auth.resolve(
+    principal = await _resolve(request,
         kind=PrincipalKind.ADMIN,
         session_token=_session_cookie(request),
         header_key=request.headers.get("X-API-Key"),
@@ -91,7 +92,7 @@ async def require_org(request: Request) -> str:
     The return type is unchanged — every handler still receives ``org_id: str``
     — which is why sessions reached all 63 endpoints without editing one.
     """
-    principal = _services(request).auth.resolve(
+    principal = await _resolve(request,
         kind=PrincipalKind.ORG,
         session_token=_session_cookie(request),
         header_key=request.headers.get("X-Org-Key"),
@@ -108,7 +109,7 @@ async def require_candidate(request: Request) -> str:
     cross-candidate isolation stays structural because handlers still receive
     the id from here rather than from a path or body param.
     """
-    principal = _services(request).auth.resolve(
+    principal = await _resolve(request,
         kind=PrincipalKind.CANDIDATE,
         session_token=_session_cookie(request),
         header_key=request.headers.get("X-Candidate-Key"),
@@ -129,12 +130,27 @@ async def require_any_principal(request: Request) -> Principal:
     SESSION ONLY: a header key has no session to list or revoke, so it 401s
     here rather than resolving to something that pretends to work.
     """
-    principal = _services(request).auth.resolve_any(
-        session_token=_session_cookie(request)
-    )
+    principal = await _resolve(request, session_token=_session_cookie(request))
     if principal is None:
         raise HTTPException(status_code=401, detail="a session is required")
     return _accept(request, principal)
+
+
+async def _resolve(request: Request, **credentials) -> Optional[Principal]:
+    services = _services(request)
+    # Only raw credential values cross the thread boundary. The resolver owns
+    # every SQL session through its final touch/close; request state and CSRF
+    # remain on the caller, and run only after an admitted successful result.
+    resolver = services.auth.resolve if 'kind' in credentials else services.auth.resolve_any
+    try:
+        return await services.auth_resolution.run(resolver, **credentials)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # A late last-seen write may commit. No principal reaches a handler
+        # after this refusal, and the original request is never replayed.
+        raise HTTPException(status_code=503, detail='auth_resolution_pending',
+                            headers={'Retry-After': '1'}) from None
 
 
 def _session_cookie(request: Request) -> Optional[str]:

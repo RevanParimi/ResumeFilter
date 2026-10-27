@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-27 - R4-S2-T3C3A complete; request principal resolution.**
+  C3 was inventoried/split; only A belongs to this session. All four request
+  gates move complete owning-session SQL/touches to separate bounded admission.
+  Safe full/closed/pending refusals never reach handlers; abandoned actions do
+  not replay. UI explains unavailable checks and manual refresh restores the
+  original session. The [C3A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3a) owns
+  red regressions, actual SQLite/PG locks, migrated HTTP/restart, real employer/
+  candidate Chrome, full regression and separate reviews. Required checks pass;
+  owned PG stopped, working store preserved and demo untouched. C3B-F/Q and
+  C3/C/T3/F14/sprint/PI stay open. Exact next is C3B after reviewed publication;
+  do not start it here.
+
 - **Session 2026-10-27 - R4-S2-T3C2 complete; contact code execution.**
   Complete start/resend SQL/mail operations move to their own bounded pool.
   Admission is queue-free; timeout returns an uncertain outcome, and UI recovery

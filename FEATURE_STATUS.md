@@ -164,6 +164,14 @@ start/resend operations to a separate bounded pool with owning SQL sessions.
 Busy admission refuses before verification work; caller wait returns an honest
 uncertain outcome with saved-status/manual-code recovery and no automatic replay.
 Both code pools share execution mechanics and join before owned SQL disposal.
-SMTP's candidate transaction, earlier auth/session touches and other SQL remain;
+SMTP's candidate transaction and other SQL remain;
 the [contact budget](OPERATING.md#contact-code-execution-budget) states these
 limits. Exact next is maintained in the handoff.
+[R4-S2-T3C3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3a) bounds all four request
+principal resolvers, including owning-session SQL and periodic last-seen writes,
+with separate admission and safe 503 timeout/refusal before handler execution.
+Late touches retain capacity; abandoned actions never replay. UI explains
+unavailable session checks and manual refresh restores the original cookie.
+The [resolution budget](OPERATING.md#request-principal-resolution-budget) states
+defaults and limits. C3B-F/Q and parent acceptance remain open; later handler/
+graph/store SQL is still synchronous.

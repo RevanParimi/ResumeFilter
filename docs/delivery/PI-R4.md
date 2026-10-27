@@ -354,12 +354,85 @@ Exact next after C2 is C3; do not start it in this session.
 
 ##### <a id="r4-s2-t3c3"></a>R4-S2-T3C3 - Bound remaining measured SQL and review combined T3 acceptance
 
-Status: pending. Prerequisite: C2. Inventory/measure remaining async SQL callers,
+Status: in progress. Prerequisite: C2, done. Inventory/measure remaining async SQL callers,
 including auth verification/resolution, intake, screening and reporting. Define
 bounded child groups here before implementation if needed. Require owning-session
 operations, controlled SQL/PG concurrency, unrelated-request latency, failure/
 cancellation/committed-write uncertainty and relevant browser journeys. Close C/
 T3 only after every group and the combined A/B/C acceptance review pass.
+
+The source inventory at `d319535` finds synchronous service/store work in all
+protected router groups below. C1/C2 cover code issuance; request principal
+dependencies and later SQL need separate coverage. Measure each actual boundary before
+its implementation; this inventory does not claim every call has been profiled.
+Large groups must be split here before implementation, rather than widened in
+one session. Each child requires red behavioral regression, focused/full pytest,
+migrated HTTP/restart, actual PG for SQL scheduling/concurrency and a recorded
+implementation plus distinct final staged self-review. Browser checks cover the
+affected user journey; fakes do not prove live delivery or assessment quality.
+
+###### <a id="r4-s2-t3c3a"></a>R4-S2-T3C3A - Bound request principal resolution
+
+Status: done (2026-10-27). This session's only implementation task.
+
+[C3A contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3a) owns the pre-implementation
+inventory/contract, red regressions, complete request resolver worker operations,
+separate admission/wait/cancel/drain, safe refusal/refresh UI, actual SQL/PG lock
+and migrated HTTP/restart/Chrome/full regression evidence and two self-reviews.
+Request state/CSRF and existing auth rules remain. Late last-seen writes may
+commit; abandoned handlers never run or replay. No schema change or guarantee
+against later revoke/erasure. C3B-F/Q and C3/C/T3/F14/sprint/PI remain open.
+
+###### <a id="r4-s2-t3c3b"></a>R4-S2-T3C3B - Bound auth redemption and session-management SQL
+
+Status: pending. Prerequisite: C3A. Measure and bound the three verify-code
+handlers plus logout/list/revoke owning operations. Preserve OTP atomicity,
+anti-enumeration, cookie issuance, CSRF, last-admin and subject isolation. Cover
+late committed session/revocation uncertainty without replay or false cookie
+success, concurrent redemption/revoke/erasure, HTTP/restart and browser recovery.
+
+###### <a id="r4-s2-t3c3c"></a>R4-S2-T3C3C - Bound intake and profile-source SQL
+
+Status: pending. Prerequisite: C3B. Measure candidate intake/resume persistence,
+candidate reads/keys and profile-source pre/post-provider SQL in `candidates`,
+`screening.ingest` and `profile_sources`; split before implementation if needed.
+Preserve cross-process identity/resume dedupe, present consent, scoped access,
+erasure and deterministic provider fallbacks. Prove concurrency/late-write
+uncertainty and migrated two-actor intake/source HTTP/restart/browser journeys.
+
+###### <a id="r4-s2-t3c3d"></a>R4-S2-T3C3D - Bound evaluation, reporting and screening SQL
+
+Status: pending. Prerequisite: C3C. Measure `reports`, `screening` and
+graph/service SQL around async provider calls; define bounded operation children
+before implementation. Preserve report publication/delivery/consent guards,
+outcome scope, batch leases/terminal outcomes and retry semantics. Require actual
+PG contention, late committed-result uncertainty and affected HTTP/browser/
+restart workflows; do not move coroutine/provider execution into a SQL session.
+
+###### <a id="r4-s2-t3c3e"></a>R4-S2-T3C3E - Bound candidate rights, verification and interview SQL
+
+Status: pending. Prerequisite: C3D. Measure remaining `portal`, `verification`
+and `interviews` SQL; split into owning-operation children first. Preserve
+consent/access/erasure, challenge ordering/rollback, ownership and advisory
+content-only scoring. Exercise actual lock/erasure interleavings, safe uncertain
+writes, migrated HTTP/restart and relevant candidate/verification/interview Chrome.
+
+###### <a id="r4-s2-t3c3f"></a>R4-S2-T3C3F - Bound employer and operator SQL
+
+Status: pending. Prerequisite: C3E. Measure `employer`, `ledger`, `features`,
+`operator` and `curation` synchronous SQL, including scope checks and retention;
+define bounded children first. Preserve tenant/role/CSRF/last-admin rules,
+cross-store erasure, curation provenance and compatibility. Prove controlled
+SQL/PG responsiveness, late writes, migrated HTTP/restart and affected Chrome.
+
+###### <a id="r4-s2-t3c3q"></a>R4-S2-T3C3Q - Review combined bounded-work acceptance
+
+Status: pending. Prerequisites: C3A-F and all of their children. Recheck remaining
+async call sites against measured coverage; account for any uncovered boundary
+here before closing. Run combined T3 A/B/C admission/cancellation/drain, SQL/PG,
+HTTP/restart/browser and full regression gates. Review aggregate per-service
+budgets/limits and operating guidance. Close C3/C/T3 only after this evidence;
+T4 and sprint/PI closure remain separate tasks.
 
 ### R4-S2-T4 — Provide durable batch continuation
 

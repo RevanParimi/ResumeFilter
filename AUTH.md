@@ -60,6 +60,15 @@ Authentication/session handlers and their wire models live in `src/app/api/auth.
 Product handlers share the resolvers in `api/dependencies.py`; existing imports
 from `api/routes.py` retain the same resolver and allowlist identities.
 
+All four request gates run complete resolution (including periodic session
+touches) through a separate bounded worker pool. Request state and CSRF stay on
+the caller. Safe 503 capacity/closed/pending refusals never reach the protected
+handler; late touches can finish without replaying the HTTP action. The browser
+explains temporary unavailability and manual refresh. See the
+[request resolution budget](OPERATING.md#request-principal-resolution-budget)
+for configuration and limits. Later auth/session handlers and other route SQL
+remain separate work; this does not make every authenticated operation nonblocking.
+
 ## 3. Sessions
 
 `auth_sessions` carries **three nullable FKs** — `candidate_id`, `org_user_id`,

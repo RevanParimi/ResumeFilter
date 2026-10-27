@@ -104,6 +104,16 @@ class Services:
     _pdf: Optional[PdfExecutor] = field(default=None, init=False, repr=False, compare=False)
     _auth_codes: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _contact_codes: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _auth_resolution: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def auth_resolution(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('auth_resolution_executor_closed')
+        if self._auth_resolution is None:
+            self._auth_resolution = BoundedExecutor(self.settings.auth_resolution_max_concurrent_requests,
+                self.settings.auth_resolution_wait_seconds, name='auth_resolution')
+        return self._auth_resolution
 
     @property
     def auth_codes(self) -> BoundedExecutor:
@@ -147,7 +157,7 @@ class Services:
         clients, self._owned_clients = self._owned_clients, ()
         failed = False
         await asyncio.gather(*(executor.aclose() for executor in
-            (self._auth_codes, self._contact_codes) if executor is not None))
+            (self._auth_codes, self._contact_codes, self._auth_resolution) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

@@ -4,54 +4,63 @@ Updated: 2026-10-27. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C2 complete.** Only C2 is this session's task. Its
-[contract](delivery/PI-R4.md#r4-s2-t3c2) defines the bounded contact start/resend
-work; its [evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c2) records exact checks and
-limits. C1 is published at `02f536f`; C3, C, T3/F14/sprint/PI remain open.
+**R4-S2-T3C3A complete.** C3 was inventoried/split before
+implementation; only A (request principal resolution) belongs to this session.
+Its [contract/status](delivery/PI-R4.md#r4-s2-t3c3a) and
+[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3a) own acceptance, source inventory,
+measurements and exact checks. C2 is published at `d319535`; C3B-F/Q, C3, C,
+T3/F14/sprint/PI remain open.
 
-`POST /portal/verifications` now runs its complete owning-session operation
-off the event loop. Separate contact admission defaults to two, without a queue;
-after authentication/CSRF, excess work returns safe 503/Retry-After before
-verification SQL/mail. The default 20-second caller wait returns safe 504
-`contact_code_pending`, with no invented success or automatic replay. UI explains
-late delivery and recovery through own saved status/manual code confirmation.
-Capacity remains occupied until actual completion; cleanup joins both pools
-before SQL disposal. Shared mechanics move to a neutral executor; C1 retains its
-own pool/settings and opaque 202 timeout behavior.
+All four request gates now await complete owning-session auth resolution off the
+event loop, including periodic last-seen writes. A separate queue-free budget
+defaults to eight slots / 20-second wait. Full/closed/pending work returns safe
+503/Retry-After without reaching its handler. Timeout/cancellation retain capacity
+through actual completion; late touches may commit but abandoned actions never
+replay. Request state/CSRF stay on the caller; cleanup joins workers before SQL
+disposal. UI explains unavailable session checks and manual refresh restores the
+existing session. C1/C2 keep their separate budgets and timeout semantics.
 
-Focused pytest, actual PostgreSQL, migrated SQLite/PG HTTP/restart, actual contact
-Chrome, offline UI and static checks pass. Full pytest: **3738 passed,
-639 skipped, 127 warnings**. Controlled SQLite/PG mail/SQL stalls kept health
-plus an admin-key SQL read within one second. Fakes/capture mail prove
-mechanics, not live delivery or measured quality. No schema/migration/scoring
-or working-store change; working DB preserved and demo untouched.
+Focused pytest, actual PostgreSQL, migrated SQLite/PG HTTP/restart, actual
+employer and candidate Chrome, offline UI and static checks pass. Full pytest:
+**3757 passed, 650 skipped, 127 warnings**. Actual PG focused: **334 passed**;
+migrated HTTP/restart **110/110** on each DB; Chrome **30/30** employer and
+**1/1 + 23/23** candidate. No schema/migration/scoring or working-store change;
+working DB preserved and demo untouched. Fakes prove mechanics, not live delivery
+or measured quality. Implementation self-review found no remaining blocker.
 
-Implementation and distinct final staged self-reviews found no blocker.
-Required validation and completion records are complete; authorized scoped
-publication follows. The final response records the verified remote SHA.
+Required validation and completion records are complete. Authorized scoped
+publication follows the distinct final staged self-review; its record is in the
+linked evidence. The final response records the verified remote SHA.
 Use per-command `-c credential.username=RevanParimi` for GCM's
 multiple-account selection; no saved configuration change is needed.
 
-**Exact next after C2: R4-S2-T3C3 - Bound remaining measured SQL and review
-combined T3 acceptance**, under its [contract](delivery/PI-R4.md#r4-s2-t3c3).
-Inventory/measure and define bounded child groups there before implementation.
-Do not start C3 here.
+**Exact next after C3A: R4-S2-T3C3B - Bound auth redemption and session-management
+SQL**, under its [contract](delivery/PI-R4.md#r4-s2-t3c3b). Do not start B in this
+session.
 
-SMTP still holds its candidate transaction (SQLite writer lock); competing
-writes/erasure may wait. Earlier auth resolution, periodic session touches and
-other SQL remain C3. Timeout cannot kill threads, recall mail or promise rollback;
-existing driver/socket limits remain, with no new whole-operation/server-drain
-deadline. Direct synchronous callers own scheduling. See the
-[contact budget](../OPERATING.md#contact-code-execution-budget). **616 code/config
-hashes** identify the reviewed state. Feature overview:
+Later handler/graph/store SQL remains C3B-F. SMTP still holds its candidate
+transaction/SQLite writer lock; competing writes/erasure may wait. Full resolution
+admission refuses any protected caller; health/UI remain public. Budgets are per
+service/process, not global memory/connection/request limits. Timeout cannot kill
+threads or promise rollback, and driver waits/drain have no new hard deadline.
+Principal snapshots do not lock later revoke/erasure. Direct synchronous callers
+own scheduling. See the [resolution budget](../OPERATING.md#request-principal-resolution-budget).
+**616 code/config hashes** identify the reviewed state. Feature overview:
 [FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers and isolated stores, never working storage.
-  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3c2.py <tag> <Python args>`;
+  Latest sanitized runner: `.pytest_cache/run_r4_s2_t3c3a.py <tag> <Python args>`;
   omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
+- Principal resolution SQL/touch admission/uncertainty/graceful restart:
+  `scripts/smoke_r4_s1_t3a.py --auth-resolution-workers`; real Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --auth-resolution-workers`.
+  Add HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
+  Owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c3a_postgres.py` /
+  `r4-s2-t3c3a-pg-runtime.json`, stopped. Reviewed-state/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3a.py check` / `preserve`.
 - Contact code admission/SQL/mail stalls/late completion/recovery/graceful restart:
   `scripts/smoke_r3_s1_t2.py --contact-code-workers`; actual Chrome:
   `scripts/check_ui_verification_browser.py --contact-code-workers`.

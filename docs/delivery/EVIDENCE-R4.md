@@ -7065,3 +7065,196 @@ Final pre-commit checks pass: **16 added local documentation links/anchors**,
 staged whitespace, core-module compilation, reviewed-state and preservation
 comparisons. Exactly **22 scoped file changes** (23 paths counting both sides
 of the rename) are staged, with no unstaged/untracked changes.
+
+### <a id="r4-s2-t3c3a"></a>R4-S2-T3C3A - Bound request principal resolution
+
+Date: 2026-10-27 (client date). Status: done. Baseline:
+`d319535`. This is the only C3 implementation child in this session; C3B-F/Q,
+C3/C/T3/F14/sprint/PI remain open. The pre-implementation child contract and
+remaining groups were defined in [PI-R4](PI-R4.md#r4-s2-t3c3) before code changes.
+
+**Inventory and bounded contract.** Targeted source inventory identifies these
+remaining boundaries; it is not a claim that every service call was profiled:
+
+| Group | Source boundary and owning work |
+|---|---|
+| C3A, this session | `api/dependencies.py`: four async gates call synchronous `AuthService.resolve`/`resolve_any`, which can execute session/key SQL and periodic `AuthStore.touch` commits before protected handlers. |
+| C3B | `api/auth.py`: `_verify`/three code-redemption handlers and logout/list/revoke; OTP, principal/session and limiter SQL remain synchronous. |
+| C3C | `api/candidates.py`, `screening/ingest.py`, profile-source service: intake persistence/read/key operations and SQL before/after async provider calls. |
+| C3D | `api/reports.py`, screening scope/service/store and evaluation graph: report/outcome publication/delivery guards, registration/list/queue/retry and processing lease/result SQL. `api/routes.py` only assembles routers. |
+| C3E | `api/portal.py`, remaining verification and interview operations: rights/consent/access/erasure, confirm/list/document persistence and interview SQL around async provider work. C2 only covers contact start/resend. |
+| C3F | Employer/ledger/features/operator/curation routers and services: tenant/scope checks, jobs/compensation/cards, accounts, retention, curation and signal-quality SQL. |
+| C3Q | Re-inventory actual async callers and combined A/B/C limits/acceptance; any omitted boundary needs a named child before closure. |
+
+Groups C3C-F require bounded children before implementation if they cannot fit
+one session. Measure their blockers there; this task measures and fixes only A.
+No claim of complete off-loop SQL coverage follows from this inventory.
+
+Observable C3A acceptance: whole resolver operations use owning worker sessions
+and return detached principals; request state/CSRF stay on the caller. Separate
+queue-free admission, positive capacity/finite caller wait, safe 503/Retry-After
+for full/closed/pending work, retained capacity through actual completion, no
+handler after refusal/timeout/cancellation, no replay and join-before-SQL cleanup.
+Preserve session-first precedence, 401/session-only lifecycle, CSRF, tenant and
+disabled/revoked/expired behavior. Controlled resolver SQL plus actual SQLite/PG
+touch locks must leave health and an unrelated admitted read responsive. Require
+focused/full pytest, migrated HTTP/restart, real Chrome refusal/refresh recovery,
+PG concurrency, static checks and two distinct self-reviews. No migration, code
+redemption/session-management handler refactor or later route-SQL changes.
+
+**Reproduction and implementation.** Four corrected behavioral regressions
+failed before the fix: a three-second `auth_sessions` SQL hold on candidate,
+employer, operator and session-only gates completed before the event loop could
+deliver unrelated reads (**4 failed, 4 skipped, 45 deselected, 1 warning,
+16.44s**). Earlier attempts used wrong fixture service argument names and do not
+count as defect reproduction. The final reproducer was rerun after correction.
+
+The four gates now await one complete resolver on `Services.auth_resolution`,
+reusing the neutral executor but a separate pool. No Request/Response/live Session
+crosses threads; `_accept` remains after successful completion. Saturation/closed
+admission refuses before resolver work. Wait expiry returns **503
+`auth_resolution_pending`**, Retry-After 1, without principal/cookie/handler.
+Late touches may commit; abandoned requests never resume a handler or replay.
+Shutdown joins all initialized pools before owned SQL disposal. Settings/YAML/
+environment support default **8** slots / **20 seconds** per service/process.
+
+The initial one-slot Chrome configuration exposed normal screening's concurrent
+batch/summary/queue/driver requests: real 503 admission interrupted the existing
+journey. Default resolution admission is eight to accommodate that fanout; this
+is a bounded default, not a load-capacity guarantee. The final browser uses eight
+and deliberately holds all eight for overload, separately holding a bootstrap
+read past its wait for uncertainty. Shared UI refusal copy now explains refresh,
+and bootstrap preserves those three safe errors instead of silently presenting
+ordinary signed-out state. Three offline UI regressions failed before that
+change and pass afterwards; no automatic code send, write retry or new binding.
+
+Tests extend existing auth/config/lifecycle/Node modules and HTTP/Chrome harnesses.
+They cover all four gates plus candidate/org key SQL, actual stale-touch writes,
+full/closed admission, timeout/cancel/late SQL failure, no abandoned consent
+handler, retained capacity, late commit/rollback, thread ownership and repeated
+shutdown cancellation before disposal. Existing auth/CSRF/tenant regressions
+remain in the focused group. Scratch HTTP uses default migrated SQL composition,
+captured mail, controlled session SELECT/UPDATE gates and graceful restart.
+
+**Implementation self-review.** Reviewed baseline `d319535` plus the uncommitted
+13-file code/test/harness/config/PI diff, then UI/config sizing corrections and
+final focused/browser state. Checked acceptance against four caller gates,
+credential extraction/precedence, request-state/CSRF ordering, detached service
+returns, SQL session lifetime, safe generic errors, caller cancellation/late
+touches, executor admission/drain and UI refresh without credential loss/replay.
+No blocking finding remains. The sizing finding above was resolved and real
+Chrome rerun. This is self-review, not independent review. A distinct final
+staged review follows required checks and completion records.
+
+**Validation commands/results (final reviewed code unless identified as red).**
+The ignored `.pytest_cache/run_r4_s2_t3c3a.py <tag> <args>` uses the project Python,
+clears inherited DEE config/keys, uses a nonexistent YAML configuration, null/
+fake providers, localhost GitHub and isolated stores. Exact focused arguments:
+
+```text
+.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3a.py focused -m pytest -q --tb=short
+  tests/test_auth_api.py tests/test_auth_service.py tests/test_auth_store.py
+  tests/test_auth_challenges.py tests/test_auth_session_twins.py tests/test_auth_debug_echo.py
+  tests/test_auth_org_name_taken.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+  tests/test_api_route_extraction.py tests/test_portal_sessions.py tests/test_ratelimit_auth.py
+  tests/test_service_lifecycle.py tests/test_config.py tests/test_openapi_contract.py
+  tests/test_verification_api.py tests/test_ui_handlers.py
+```
+
+- Focused: **307 passed, 27 skipped, 1 warning, 76.32s**. Skipped PG cases are
+  not PG evidence. The separately run real-lock/admission group passed **5/5**
+  SQLite cases, with five PG skips before the owned PG gate.
+- SQLite migrated HTTP: runner tag `http`, args
+  `scripts/smoke_r4_s1_t3a.py --auth-resolution-workers`: **110/110**, 16.79s.
+  Held session SELECT/UPDATE health plus admitted admin SQL read: **0.0083s /
+  0.0062s**, each below the one-second local check. Two blocked slots, all gates
+  refusing, uncertain waits/retained admission, manual read recovery, session/
+  tenant/CSRF/erasure flows and two graceful migrated lifespans pass.
+- Real Chrome: runner tag `browser`, args
+  `scripts/check_ui_screening_extraction_browser.py --auth-resolution-workers`:
+  **30/30**, 22.76s, after correcting the one-slot sizing above. Normal three-file
+  screening, actual saturation/pending refusal copy, manual refresh restoring
+  the original session, no mail replay, saved intake/reload/read-error recovery
+  and no console exceptions pass. Existing CDN internet remains required.
+- Candidate Chrome: runner tag `candidate-browser`, args
+  `scripts/check_ui_verification_browser.py --contact-code-workers`: **1/1 +
+  23/23**, 28.19s. Actual candidate session/CSRF/contact busy/late delivery/manual
+  confirmation/reload/session-expiry/privacy workflow passes with the shared
+  resolver changes. Capture mail proves mechanics, not external delivery.
+- Offline Node: `node scripts/test_ui_evaluate.js`: **41 passed**. This is
+  handler execution, not browser evidence.
+- `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, pass;
+  `node --check frontend/api.js`, `node --check frontend/support.js`, compilation
+  of nine changed Python modules and `git diff --check` pass.
+- Owned actual PostgreSQL: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3a_postgres.py`, fresh disposable **PG 18.6**,
+  Asia/Calcutta, read committed, unique test schemas; same 17-file focused group:
+  **334 passed, 1 warning, 342.54s**, no skips. This includes real competing
+  `auth_sessions ... FOR UPDATE` and an observed `pg_stat_activity` Lock wait;
+  SQLite uses actual `BEGIN IMMEDIATE`. Resolution SQL sessions stay on their
+  owning worker, and the released original touch commits once after its caller
+  has already received 503. No abandoned consent mutation runs.
+- Actual PG migrated HTTP `scripts/smoke_r4_s1_t3a.py --postgres
+  --auth-resolution-workers`: **110/110**, 29.58s. Held SELECT/UPDATE liveness
+  plus admitted SQL read: **0.0973s / 0.0126s**, each below one second. The same
+  owned run repeats `--postgres --auth-code-workers`: **112/112**, 29.49s, with held
+  mail/SQL probe **0.0124s / 0.0791s**, preserving C1's uniform 202 behavior,
+  retained admission, late code/session recovery and graceful restart.
+  The runner's `finally` executes owned `pg_ctl ... -m fast ... stop`;
+  runtime metadata records **stop_exit 0** (46.73s), server stopped. No shared
+  application DB or port-8000 demo was used.
+- Full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3a.py full`, which executes the required
+  `-m pytest -q --tb=short` with the sanitized environment: **3757 passed,
+  650 skipped, 127 warnings, 750.34s** (wrapper 758.78s). No failures.
+  Optional/environment/PG skips do not establish those omitted cases; the
+  separate actual-PG run above covers this task's database gate. Existing
+  SQLite expression-index reflection and third-party deprecations remain.
+  All **616 code/config hashes** still match the implementation-reviewed state.
+- Completion records: C3A is done; C3B-F/Q, C3/C/T3/F14/sprint/PI remain open.
+  Detailed contract/results live here, with PI/feature/operating links and a
+  short handoff/roadmap entry. Exact next is **R4-S2-T3C3B**; no second task.
+  Final preservation, distinct staged self-review and publication follow below.
+
+Limits: only request principal resolution joins C1/C2 off-loop work. All later
+handler/graph/store SQL remains C3B-F; direct synchronous service callers own
+scheduling. Per-service budgets are not global RSS/DB-connection/request limits.
+Full resolution admission can refuse even header-only/anonymous protected calls;
+public health/UI stay available. Wait expiry/cancellation cannot kill threads or
+promise rollback; existing DB-driver waits still apply and graceful drain has no
+new hard deadline. Last-seen activity may commit late. Resolved principals remain
+authorization snapshots, without a new lock against subsequent revoke/erasure.
+No external provider/delivery/quality or measured production capacity claim.
+
+**Distinct final staged self-review (after required validation/completion).**
+Reviewed the exact **19-file** staged diff against `d319535`: three application
+Python modules, YAML, inline UI/shared Node regressions, two smoke/browser
+harnesses, four pytest/fixture modules and seven documentation records. Matched
+each C3A criterion to implementation and recorded tests, and checked that only A
+closes while B-F/Q and all parents remain open. Rechecked all four gates and raw
+credential-only worker arguments, session-first and CSRF ordering, detached
+returns, handler refusal on timeout/cancel, retained admission, late failure/
+commit, and cancellation-resistant cleanup before owned SQL disposal.
+
+The exact staged UI changes retain the existing cookie, explain safe unavailable
+checks and refresh without sending mail or replaying a mutation. Reviewed real
+PG lock observation separately from SQLite/controlled provider gates, migrated
+HTTP/restart separately from TestClient, and actual Chrome separately from Node/
+bindings. Normal UI fanout and saturated admission both have actual Chrome
+evidence. Default eight is not claimed as a production load measurement.
+
+No blocking finding remains. Two inventory sentences were clarified to avoid
+implying every credential needs SQL or every route has an auth dependency before
+code issuance; those documentation-only corrections do not change tested code.
+This is self-review, not independent review. No secrets, working DB, local test
+logs/runtime files or unrelated edits are staged. The **616 code/config hashes**
+identify the same full-tested state; final preservation/link/whitespace checks
+are recorded below before publication. Commit/push uses the existing `main` ->
+`origin/main` tracking branch and per-command GCM account selection; remote
+verification is reported in the final response. Stop after publication.
+
+Final pre-commit checks pass: **11 added local documentation links/anchors**,
+staged whitespace and reviewed-state comparison. **715 unrelated tracked files,
+including `data/veritas.db`**, match the saved baseline. Exactly **19 scoped
+files** are staged, with no unstaged/untracked changes. Final review added only
+documentation; the reviewed/full-tested code remains unchanged.

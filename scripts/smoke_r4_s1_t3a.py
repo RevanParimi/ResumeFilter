@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from threading import get_ident
+from threading import get_ident, local
 
 from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_s82 import _code_for as latest_code
@@ -41,6 +41,21 @@ def create_auth_code_smoke_app():
         async with original(app):
             services = app.state.services
             send, issue = services.email.send, services.auth.issue_code
+            resolver_state = local()
+            resolve, resolve_any = services.auth.resolve, services.auth.resolve_any
+            def resolution_mode():
+                path = scratch / 'resolve-mode'
+                return path.read_text() if path.exists() else ''
+            def observed_resolution(function, **credentials):
+                resolver_state.held = False
+                try:
+                    return function(**credentials)
+                finally:
+                    if getattr(resolver_state, 'held', False):
+                        with (scratch / 'resolve-completed').open('a') as log:
+                            log.write('completed\n')
+            services.auth.resolve = lambda **credentials: observed_resolution(resolve, **credentials)
+            services.auth.resolve_any = lambda **credentials: observed_resolution(resolve_any, **credentials)
             def mode():
                 path = scratch / 'auth-mode'
                 return path.read_text() if path.exists() else ''
@@ -65,6 +80,17 @@ def create_auth_code_smoke_app():
             def sql(conn, cursor, statement, parameters, context, many):
                 if mode() == 'sql' and 'rate_limit_counters' in statement and not (scratch / 'auth-entered').exists():
                     hold()
+                gate = resolution_mode()
+                target = ('auth_sessions' in statement if gate == 'sql' else
+                          statement.lstrip().upper().startswith('UPDATE AUTH_SESSIONS') if gate == 'touch' else False)
+                if target and not getattr(resolver_state, 'held', False):
+                    resolver_state.held = True
+                    with (scratch / 'resolve-entered').open('a') as log:
+                        log.write('entered\n')
+                    deadline = time.monotonic() + 20
+                    while not (scratch / 'resolve-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic resolver SQL gate timed out'
+                        time.sleep(.01)
             def owner(session, transaction, connection):
                 previous = session.info.setdefault('auth_smoke_thread', get_ident())
                 assert previous == get_ident(), 'SQL session crossed threads'
@@ -162,6 +188,58 @@ def check_auth_code_workers(checks, scratch, base, control, mailbox):
     return saved
 
 
+def check_auth_resolution_workers(checks, scratch, base, control, actors):
+    def wait_count(name, count):
+        path = scratch / name
+        deadline = time.monotonic() + 10
+        while not path.exists() or len(path.read_text().splitlines()) < count:
+            assert time.monotonic() < deadline, 'controlled resolver checkpoint missing'
+            time.sleep(.01)
+    for gate in ('sql', 'touch'):
+        for name in ('resolve-entered', 'resolve-completed', 'resolve-release'):
+            (scratch / name).unlink(missing_ok=True)
+        (scratch / 'resolve-mode').write_text(gate)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(actors[0].get, '/auth/me')
+            try:
+                wait_count('resolve-entered', 1)
+                started = time.monotonic()
+                health, read = control.get('/healthz'), control.get('/admin/users')
+                elapsed = time.monotonic() - started
+                checks.check(f'{gate}: liveness and admitted admin SQL read finish while resolution waits',
+                    health.status_code == read.status_code == 200 and elapsed < 1,
+                    f'two_requests_seconds={elapsed:.4f}; budget=1.0000')
+                second = pool.submit(actors[1].get, '/auth/me')
+                wait_count('resolve-entered', 2)
+                for path, http in (('/admin/users', control), ('/jobs', actors[1]),
+                                   ('/portal/me', actors[0]), ('/auth/me', actors[0])):
+                    response = http.get(path)
+                    checks.check(f'{gate}: full resolution capacity safely refuses {path}',
+                        response.status_code == 503 and response.json() == {'detail': 'auth_resolution_capacity_exhausted'}
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                for pending in (first, second):
+                    response = pending.result(timeout=4)
+                    checks.check(f'{gate}: caller wait ends without principal or session cookie',
+                        response.status_code == 503 and response.json() == {'detail': 'auth_resolution_pending'}
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                checks.check(f'{gate}: timed-out original work retains admission',
+                    actors[0].get('/auth/me').json() == {'detail': 'auth_resolution_capacity_exhausted'})
+            finally:
+                (scratch / 'resolve-release').touch()
+            wait_count('resolve-completed', 2)
+        (scratch / 'resolve-mode').unlink()
+        # Checkpoint is just before actual Future completion; a safe read may
+        # briefly see retained admission. Never replay a mutation to probe it.
+        deadline = time.monotonic() + 8
+        while (response := actors[0].get('/auth/me')).status_code == 503:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        checks.check(f'{gate}: manual fresh read recovers the original candidate session',
+            response.status_code == 200 and response.json()['kind'] == 'candidate')
+    rows = [json.loads(line) for line in (scratch / 'auth-thread-ownership.jsonl').read_text().splitlines()]
+    checks.check('all SQL session transactions keep their original thread', all(row['owner'] == row['current'] for row in rows))
+
+
 def main():
     scratch = Path(tempfile.mkdtemp(prefix='r4-s2-t3c1-' if '--auth-code-workers' in sys.argv else 'r4-s1-t3a-'))
     with database(scratch) as (url, pg_options):
@@ -170,6 +248,7 @@ def main():
 
 def run(scratch, url, pg_options):
     workers = '--auth-code-workers' in sys.argv
+    resolution_workers = '--auth-resolution-workers' in sys.argv
     checks = Smoke('R4-S2-T3C1 auth code workers / HTTP / restart' if workers else 'R4-S1-T3A auth/session extraction HTTP/restart')
     print(f"Synthetic auth evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
@@ -189,12 +268,15 @@ def run(scratch, url, pg_options):
         "DEE_GRIEVANCE_OFFICER_PHONE": "+91 80 4000 0000", "DEE_GRIEVANCE_RESPONSE_DAYS": "21",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers or resolution_workers else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
     if workers:
         env.update(DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_CODE_WAIT_SECONDS='.3')
+    if resolution_workers:
+        env.update(DEE_AUTH_RESOLUTION_MAX_CONCURRENT_REQUESTS='2', DEE_AUTH_RESOLUTION_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='0')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -298,6 +380,8 @@ def run(scratch, url, pg_options):
             candidate_csrf = login(candidate, "candidate", "router-candidate@example.in")
             sibling_csrf = login(sibling, "candidate", "router-candidate@example.in")
             who = [require(http.get("/auth/me")) for http in (operator, org, other_org, candidate)]
+            if resolution_workers:
+                check_auth_resolution_workers(checks, scratch, base, control, (candidate, org))
             checks.check("three planes resolve their own sessions", [row["kind"] for row in who] == ["admin", "org", "org", "candidate"])
             checks.check("domain safe read accepts operator cookie and refuses org and candidate cookies",
                 require(operator.get("/domains", headers={"X-API-Key": "invalid"})) == saved_domains
