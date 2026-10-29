@@ -7258,3 +7258,202 @@ staged whitespace and reviewed-state comparison. **715 unrelated tracked files,
 including `data/veritas.db`**, match the saved baseline. Exactly **19 scoped
 files** are staged, with no unstaged/untracked changes. Final review added only
 documentation; the reviewed/full-tested code remains unchanged.
+
+### <a id="r4-s2-t3c3b1"></a>R4-S2-T3C3B1 - Bound code redemption
+
+Date: 2026-10-29 (client date). Baseline: `97db804`. Status: done.
+B was split into B1/B2 in its [existing PI contract](PI-R4.md#r4-s2-t3c3b)
+before implementation. This session implements only B1, the three public
+verify-code handlers; logout/list/revoke remain B2. B, C3/C/T3/F14/sprint/PI stay
+open. No new task file, abstraction layer, schema or migration was needed.
+
+Pre-implementation acceptance: move each complete three-plane redemption into
+bounded owning workers, passing credential values and detached results only;
+cookies/response stay on the caller after confirmed success. Slow SQL must leave
+health and an admitted unrelated read responsive. Positive capacity / finite
+wait, full/closed refusal before limiter/OTP work, safe pending 503/Retry-After,
+no false cookies, retained capacity through actual completion, consumed late
+errors and no replay are required. Explain possible late code consumption and
+manual fresh-code recovery. Preserve atomic consume/principal/session commit,
+generic invalid-code behavior, rate limits, isolation and erasure ordering;
+join before SQL disposal. Existing schema, expiry/attempt and last-admin policy
+remain unchanged. Exclude B2 session-management and C3C-F SQL. Required layers:
+red/focused/full tests, actual SQLite/PG locks and concurrent redemption/erasure,
+migrated HTTP/restart, actual Chrome/manual recovery, Node/static checks and
+implementation plus distinct final staged self-review. Results follow.
+
+**Reproduction and implementation.** The three async verify handlers called
+synchronous `_verify` / `AuthService.verify_code`, including rate-limit SQL,
+live challenge reads, address locking and atomic consume/principal/session
+commit, directly on the event loop. Corrected behavioral regressions held a
+`login_challenges` query for three seconds on candidate/org/admin redemption:
+all three failed because health and an unrelated admitted operator read could
+run only after the hold finished (**3 failed, 3 skipped, 67 deselected,
+1 warning, 22.64s**). The first attempt omitted the fixture's required `at`
+argument; those setup errors do not count as defect reproduction. Three offline
+UI regressions also failed on raw executor error details before recovery copy.
+
+The shared `_verify` is now async and awaits a complete operation on a separate
+`Services.auth_redemption` pool. Only email/code/plane/user-agent/IP-hash values
+cross the boundary; SQL sessions open, execute, commit/rollback and close on
+their worker. Cookies and response construction stay on the caller after a
+confirmed result. Existing service/store transaction and policy code is unchanged.
+The [redemption budget](../../OPERATING.md#code-redemption-execution-budget)
+owns defaults/configuration, safe full/closed/pending 503/Retry-After behavior,
+late session/token uncertainty, retained admission and join-before-SQL disposal.
+UI explains uncertainty and permits deliberate fresh-code recovery without
+automatic redemption or send replay. Reused fake mail, existing executor,
+fixtures, auth/API tests, SQL smoke and actual Chrome harnesses.
+
+Acceptance regressions cover all three planes and release/timeout/cancel/late
+failure, refusing all three verify routes before another service/limiter call,
+no cookie on refusal/uncertainty, one late committed session or full rollback,
+worker SQL/session ownership, closed admission and cancellation-resistant
+shutdown. Real competing SQLite writer / PG address-advisory-lock tests observe
+pending work, responsive health/admitted SQL reads, retained capacity, late
+commit and a consumed code refused without cookies. Two-actor HTTP races pause
+a stale worker lookup while another redemption or erasure completes; the stale
+request cannot duplicate a session or recreate the erased candidate. Existing
+all-plane redemption/erasure, atomic consume and binding races are included in
+the focused/PG groups. These use real database connections; fake mail does not
+prove live delivery.
+
+**Implementation self-review.** Reviewed `97db804` plus the 14-file uncommitted
+code/config/test/harness/PI diff, including all three caller routes, complete
+service transaction, neutral executor admission/cancellation/late-error handling,
+cookie ordering, detached results, erasure locks and cleanup. Checked B1 criteria
+against meaningful assertions, unchanged OTP/tenant/CSRF/last-admin rules and
+UI manual recovery. No remaining blocking finding. This is self-review, not
+independent review. A distinct staged review follows validation/completion.
+
+The first Chrome attempt proved capacity refusal but its harness released the
+held operation before the half-second wait expired, then incorrectly required
+a 503 rather than allowing confirmed completion. The corrected harness waits
+for that caller's timeout before releasing SQL; the complete journey was rerun.
+An initial focused invocation named a nonexistent test module and collected
+nothing; only the corrected command below counts as validation.
+
+**Validation commands/results.** The ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3b1.py <tag> <Python args>` uses project Python,
+clears inherited DEE configuration/keys, selects a nonexistent YAML and explicitly
+overrides remote-provider credentials. Fixtures use `_env_file=None` settings
+and isolated stores; subprocess apps use scratch working directories without
+`.env`. This wrapper does not globally disable dotenv for bare `Settings()`
+calls. Exact focused arguments:
+
+```text
+.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3b1.py focused -m pytest -q --tb=short
+  tests/test_auth_api.py tests/test_auth_service.py tests/test_auth_store.py
+  tests/test_auth_challenges.py tests/test_auth_session_twins.py tests/test_auth_debug_echo.py
+  tests/test_auth_org_name_taken.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+  tests/test_api_route_extraction.py tests/test_portal_sessions.py tests/test_ratelimit_auth.py
+  tests/test_service_lifecycle.py tests/test_config.py tests/test_openapi_contract.py
+  tests/test_verification_api.py tests/test_ui_handlers.py tests/test_login_redemption_erasure.py
+  tests/test_candidate_login_binding_concurrency.py
+```
+
+- Initial post-fix responsiveness: runner tag `green`, `-m pytest -q --tb=short
+  tests/test_auth_api.py -k slow_redemption`: **3 passed, 3 skipped,
+  67 deselected, 1 warning, 12.45s**.
+- Admission/lock/config/lifecycle selection: tag `admission`, `-m pytest -q
+  --tb=short tests/test_auth_api.py -k redemption tests/test_config.py
+  tests/test_service_lifecycle.py`: **24 passed, 16 skipped, 110 deselected,
+  1 warning, 35.40s**. The `-k` filter applies to all named modules; this is
+  a selected check, not the full config/lifecycle group. Corrected final focused
+  and real PG groups below cover those modules in full.
+- Final focused command above: **368 passed, 74 skipped, 1 warning, 308.00s**
+  (wrapper 317.03s). Skipped PostgreSQL cases do not establish PG behavior;
+  the separate owned database gate covers those cases.
+- SQLite migrated HTTP: tag `http`, `scripts/smoke_r4_s1_t3a.py
+  --auth-redemption-workers`: **139/139**, 84.73s. Held query and pre-session
+  INSERT gates on all three planes leave health plus admitted operator SQL read
+  responsive in **0.0164-0.0287s**, below the local one-second assertion.
+  Full shared admission, pending/no-cookie outcome, late consumption, manual
+  fresh-code recovery observing both sessions, six recovered cookies across
+  graceful restart, existing tenant/CSRF/rights/erasure flows and two migrated
+  lifespans pass. These are real subprocess HTTP journeys, not TestClient.
+- Actual Chrome: tag `browser`,
+  `scripts/check_ui_screening_extraction_browser.py --auth-redemption-workers`:
+  **32/32**, 44.88s. Real capacity and pending UI refusals, no signed-in shell/
+  automatic mail/retry, same-code recovery after refused admission, deliberate
+  fresh-code recovery after late commit, saved device counts and actual reload,
+  ordinary employer signup/screening/file intake/read-error recovery and no
+  console exceptions pass. Existing CDN internet remains required.
+- Offline Node: `node scripts/test_ui_verification.js`: **74 passed**,
+  including three new refusal/uncertainty/manual-recovery regressions. Handler
+  execution is distinct from Chrome evidence.
+- `node scripts/check_ui_bindings.js`: **586 bindings / 18 states**, pass.
+  `node --check frontend/api.js`, `frontend/support.js` and
+  `frontend/portal-auth.js` pass. Tag `compile`, `-m py_compile` on all ten
+  changed Python modules, and `git diff --check`, pass.
+
+- Owned actual PostgreSQL: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3b1_postgres.py`, fresh disposable **PG 18.6**,
+  Asia/Calcutta, read committed, unique test schemas. The same 19-file focused
+  group passes **442 tests, 1 warning, 970.26s**, no skips. This includes an
+  actual address-advisory-lock wait observed in `pg_stat_activity`, competing
+  HTTP redemption/erasure, owning worker sessions, cancellation/rollback and
+  the existing all-plane erasure/binding/OTP concurrency group. The SQLite
+  lock case uses the real writer lock via `lock_login_state`.
+
+- Actual PG migrated HTTP: `scripts/smoke_r4_s1_t3a.py --postgres
+  --auth-redemption-workers`: **139/139**, 96.54s. Held query/INSERT gates
+  across all three planes leave health plus an unrelated admitted SQL read
+  responsive in **0.0210-0.1616s**, each below one second; late consumption,
+  cookie-free uncertainty, fresh-code/device recovery and migrated graceful
+  restart pass. The same owned run repeats `--postgres --auth-code-workers`:
+  **112/112**, 78.09s, preserving C1's issuance/admission/202 timeout behavior
+  and recovery with the newly asynchronous verifier. Owned `pg_ctl -m fast`
+  cleanup records **stop_exit 0**; the scratch server is stopped.
+
+- Full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3b1.py full` executes the required
+  `-m pytest -q --tb=short`: **3783 passed, 668 skipped, 127 warnings,
+  1808.86s** (wrapper 1823.03s), exit 0. Optional/environment/PG skips do not
+  establish omitted cases; the owned PG gate above covers this task's SQL
+  cases. Existing SQLite expression-index reflection / third-party warnings
+  remain. All **616 reviewed code/config hashes** still match after checks.
+- Completion: B1 is done. B2, B, C3/C/T3/F14/sprint/PI remain open. The contract
+  and exact evidence are consolidated here; PI/feature/operating records link
+  to their owners, and the handoff/roadmap name **R4-S2-T3C3B2** next. No second
+  implementation task was started. Distinct final staged review/publication
+  follow below.
+
+The reviewed-state helper hashes **616 code/config files**. No schema/constraint/
+transaction-policy changes require a new migration up/down/up; HTTP uses fresh
+scratch stores migrated through 0030. Working storage and the port-8000 demo
+are outside validation scope. Limits remain: caller wait cannot kill a thread,
+promise rollback or bound driver/drain time; late sessions retain their usual
+TTL and may need manual device revocation after fresh login. Budgets are per
+service/process, not global connection/memory limits. B2 and C3C-F/Q remain open.
+
+**Distinct final staged self-review (after required checks and completion).**
+Reviewed the exact **19-file** staged diff against `97db804`: three application
+Python modules, YAML, auth UI/shared Node regressions, two HTTP/Chrome harnesses,
+five pytest/fixture modules and six documentation records. Matched each B1
+criterion to the implementation and recorded evidence; only B1 closes. B2,
+B and combined C3/C/T3 acceptance remain open. Checked all three routes await
+the same complete service operation, with no Request/Response/live SQL Session
+in worker arguments and no cookie before confirmed completion. Rechecked
+limiter/OTP/tenant/subject/erasure ordering, generic invalid-code errors, bounded
+admission, cancellation/late error/commit/rollback and drain before SQL disposal.
+
+The UI explains busy versus uncertain code checks, leaves the browser signed
+out after pending work, and recovers only through deliberate user actions.
+Actual Chrome proves refused-admission code reuse, fresh-code recovery after
+late commit and reload/device counts without mail or redemption replay. Reviewed
+actual PG lock/race evidence separately from SQLite, real subprocess/restart
+evidence separately from TestClient and Chrome separately from Node/bindings.
+Synthetic providers establish mechanics, not live delivery or measured quality.
+
+No blocking finding remains. This is self-review, not independent review.
+Completion consolidated the child contract into this evidence anchor and left
+the parent/next-child statuses honest. No secrets, working DB, runtime logs,
+scratch stores or unrelated edits are staged. All **616 code/config hashes**
+still identify the reviewed/full-tested state. **715 unrelated tracked files,
+including `data/veritas.db`**, match baseline; no unstaged/untracked work remains.
+The **13 added local documentation links/anchors** and staged whitespace checks
+pass. Final review adds only this documentation record; no tested code changes.
+Publication uses the configured `main` -> `origin/main` tracking branch with
+per-command GCM account selection. The final response reports verified remote
+publication; no deployment or further implementation task is included.

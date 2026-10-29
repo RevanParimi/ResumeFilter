@@ -56,6 +56,17 @@ def create_auth_code_smoke_app():
                             log.write('completed\n')
             services.auth.resolve = lambda **credentials: observed_resolution(resolve, **credentials)
             services.auth.resolve_any = lambda **credentials: observed_resolution(resolve_any, **credentials)
+            verify = services.auth.verify_code
+            redemption_state = local()
+            def observed_verify(**credentials):
+                redemption_state.active, redemption_state.held = True, False
+                try:
+                    return verify(**credentials)
+                finally:
+                    redemption_state.active = False
+                    if redemption_state.held:
+                        (scratch / 'redeem-completed').touch()
+            services.auth.verify_code = observed_verify
             def mode():
                 path = scratch / 'auth-mode'
                 return path.read_text() if path.exists() else ''
@@ -78,6 +89,18 @@ def create_auth_code_smoke_app():
                     if mode():
                         (scratch / 'auth-completed').touch()
             def sql(conn, cursor, statement, parameters, context, many):
+                redeem_mode = scratch / 'redeem-mode'
+                if redeem_mode.exists() and getattr(redemption_state, 'active', False) and not redemption_state.held:
+                    gate = redeem_mode.read_text()
+                    target = ('login_challenges' in statement if gate == 'sql' else
+                              statement.lstrip().startswith('INSERT INTO auth_sessions'))
+                    if target:
+                        redemption_state.held = True
+                        (scratch / 'redeem-entered').touch()
+                        deadline = time.monotonic() + 20
+                        while not (scratch / 'redeem-release').exists():
+                            assert time.monotonic() < deadline, 'synthetic redemption SQL gate timed out'
+                            time.sleep(.01)
                 if mode() == 'sql' and 'rate_limit_counters' in statement and not (scratch / 'auth-entered').exists():
                     hold()
                 gate = resolution_mode()
@@ -107,6 +130,66 @@ def create_auth_code_smoke_app():
                 event.remove(services.session_factory, 'after_begin', owner)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_auth_redemption_workers(checks, scratch, base, control, mailbox):
+    sessions = []
+    for plane in ('candidate', 'org', 'admin'):
+        for gate in ('sql', 'commit'):
+            email = f'redeem-{plane}-{gate}@example.in'
+            if plane == 'admin':
+                assert control.post('/admin/users', json={'email': email, 'label': 'Synthetic'}).status_code == 200
+            with client(base) as actor:
+                body = {'email': email}
+                if plane == 'org':
+                    body['organization_name'] = f'Synthetic redeem {gate}'
+                purpose = 'login' if plane == 'admin' else 'signup'
+                assert actor.post(f'/auth/{plane}/{purpose}', json=body).status_code == 202
+                code = latest_code(mailbox, email)
+                for name in ('redeem-entered', 'redeem-release', 'redeem-completed'):
+                    (scratch / name).unlink(missing_ok=True)
+                (scratch / 'redeem-mode').write_text(gate)
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    held = pool.submit(actor.post, f'/auth/{plane}/verify', json={'email': email, 'code': code})
+                    try:
+                        deadline = time.monotonic() + 8
+                        while not (scratch / 'redeem-entered').exists():
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        start = time.monotonic()
+                        health = control.get('/healthz')
+                        read = control.get('/admin/users')
+                        elapsed = time.monotonic() - start
+                        checks.check(f'{plane}/{gate}: health and unrelated admitted SQL read remain responsive',
+                            health.status_code == read.status_code == 200 and elapsed < 1, f'{elapsed:.4f}s')
+                        for other in ('candidate', 'org', 'admin'):
+                            busy = control.post(f'/auth/{other}/verify', json={'email': 'unknown@example.in', 'code': '000000'})
+                            checks.check(f'{plane}/{gate}: shared redemption admission refuses {other} without cookies',
+                                busy.status_code == 503 and busy.json() == {'detail': 'auth_redemption_capacity_exhausted'}
+                                and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                        pending = held.result(timeout=8)
+                        checks.check(f'{plane}/{gate}: caller timeout is uncertain without false cookie success',
+                            pending.status_code == 503 and pending.json() == {'detail': 'auth_redemption_pending'}
+                            and pending.headers.get('retry-after') == '1' and 'set-cookie' not in pending.headers
+                            and not actor.cookies and actor.get('/auth/me').status_code == 401)
+                    finally:
+                        (scratch / 'redeem-release').touch()
+                        deadline = time.monotonic() + 8
+                        while not (scratch / 'redeem-completed').exists():
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        (scratch / 'redeem-mode').unlink(missing_ok=True)
+                refused = actor.post(f'/auth/{plane}/verify', json={'email': email, 'code': code})
+                checks.check(f'{plane}/{gate}: late commit consumes the original code without browser session',
+                    refused.status_code == 400 and refused.json() == {'detail': 'invalid_code'}
+                    and 'set-cookie' not in refused.headers and not actor.cookies)
+                assert actor.post(f'/auth/{plane}/login', json={'email': email}).status_code == 202
+                recovered = actor.post(f'/auth/{plane}/verify', json={'email': email, 'code': latest_code(mailbox, email)})
+                saved = actor.get('/auth/sessions').json()
+                checks.check(f'{plane}/{gate}: deliberate fresh code recovers and observes both committed sessions',
+                    recovered.status_code == 200 and len(recovered.headers.get_list('set-cookie')) == 2 and len(saved) == 2)
+                sessions.append((dict(actor.cookies), actor.get('/auth/me').json()))
+    return sessions
 
 
 def check_auth_code_workers(checks, scratch, base, control, mailbox):
@@ -249,6 +332,7 @@ def main():
 def run(scratch, url, pg_options):
     workers = '--auth-code-workers' in sys.argv
     resolution_workers = '--auth-resolution-workers' in sys.argv
+    redemption_workers = '--auth-redemption-workers' in sys.argv
     checks = Smoke('R4-S2-T3C1 auth code workers / HTTP / restart' if workers else 'R4-S1-T3A auth/session extraction HTTP/restart')
     print(f"Synthetic auth evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
@@ -268,7 +352,7 @@ def run(scratch, url, pg_options):
         "DEE_GRIEVANCE_OFFICER_PHONE": "+91 80 4000 0000", "DEE_GRIEVANCE_RESPONSE_DAYS": "21",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers or resolution_workers else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers or resolution_workers or redemption_workers else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
@@ -277,6 +361,8 @@ def run(scratch, url, pg_options):
     if resolution_workers:
         env.update(DEE_AUTH_RESOLUTION_MAX_CONCURRENT_REQUESTS='2', DEE_AUTH_RESOLUTION_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='0')
+    if redemption_workers:
+        env.update(DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_REDEMPTION_WAIT_SECONDS='.3')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -368,6 +454,8 @@ def run(scratch, url, pg_options):
             saved_public = public_surface()
             if workers:
                 worker_sessions = check_auth_code_workers(checks, scratch, base, control, mailbox)
+            if redemption_workers:
+                worker_sessions = check_auth_redemption_workers(checks, scratch, base, control, mailbox)
             saved_domains = require(control.get("/domains"))
             checks.check("admin machine key reads both domains with their existing metadata",
                 [row["key"] for row in saved_domains] == ["data_eng", "genai"]
@@ -588,11 +676,11 @@ def run(scratch, url, pg_options):
                 and sibling.get("/admin/requests").status_code == 401
                 and org.get("/admin/requests").status_code == 401)
         with server():
-            if workers:
+            if workers or redemption_workers:
                 for cookies, me in worker_sessions:
                     with client(base) as resumed:
                         resumed.cookies.update(cookies)
-                        checks.check('late auth-code completion session survives graceful restart',
+                        checks.check('recovered auth session survives graceful restart',
                             require(resumed.get('/auth/me')) == me)
             checks.check("public bodies and guarded domain metadata survive graceful restart exactly",
                 public_surface() == saved_public and require(operator.get("/domains")) == saved_domains

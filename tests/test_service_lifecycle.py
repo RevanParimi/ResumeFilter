@@ -14,7 +14,7 @@ from app.services.speech import OpenRouterSpeech
 from tests.test_services_features import production  # noqa: F401
 
 
-@pytest.mark.parametrize('pool_name', ['auth_codes', 'contact_codes', 'auth_resolution'])
+@pytest.mark.parametrize('pool_name', ['auth_codes', 'contact_codes', 'auth_resolution', 'auth_redemption'])
 async def test_code_shutdown_joins_accepted_work_before_disposing_sql(services, monkeypatch, pool_name):
     from threading import Event
     from app.core.blocking import ExecutionUnavailable

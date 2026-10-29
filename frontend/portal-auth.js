@@ -14,6 +14,9 @@
   authErrorCopy = (err) => {
     if (err && err.detail === "auth_code_capacity_exhausted") return "Code requests are busy. Try again shortly.";
     if (err && err.detail === "auth_code_executor_closed") return "Sign-in is temporarily unavailable. Try again shortly.";
+    if (err && err.detail === "auth_redemption_capacity_exhausted") return "Sign-in checks are busy. Try verifying again shortly.";
+    if (err && err.detail === "auth_redemption_executor_closed") return "Sign-in is temporarily unavailable. Try again shortly.";
+    if (err && err.detail === "auth_redemption_pending") return "Sign-in could not be confirmed. The code may have been used. Wait a moment, then request a fresh code.";
     return errorCopy(err);
   };
   setOrgNameInput = (e) => this.setState({ orgNameInput: e.target.value, authError: null });

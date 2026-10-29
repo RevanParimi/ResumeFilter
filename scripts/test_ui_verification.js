@@ -289,6 +289,28 @@ test("failed send/verify/resend settle without successful sign-in and allow expl
   assert.equal(c.state.screen, "verify");
 });
 
+for (const [detail, copy] of [
+  ["auth_redemption_capacity_exhausted", /Sign-in checks are busy/],
+  ["auth_redemption_executor_closed", /Sign-in is temporarily unavailable/],
+  ["auth_redemption_pending", /code may have been used.*request a fresh code/],
+]) {
+  test(`redemption ${detail} explains manual recovery without sign-in or replay`, async () => {
+    const { c, calls, window } = authFixture();
+    c.state.screen = "verify"; c.state.otp = ["1", "2", "3", "4", "5", "6"];
+    window.VeritasAPI.post = async (path, body) => { calls.push(["POST", path, body]); throw { status: 503, detail }; };
+    c.submitCode(); await settle();
+    assert.equal(c.state.me, null); assert.equal(c.state.screen, "verify");
+    assert.equal(c.state.authBusy, false);
+    assert.match(c.renderVals().authErrorText, copy);
+    assert.equal(calls.length, 1, "uncertain redemption must not send or verify again");
+    assert.deepEqual(c.state.otp, ["", "", "", "", "", ""]);
+    window.VeritasAPI.post = async (path, body) => { calls.push(["POST", path, body]); return { status: "accepted" }; };
+    c.resendCode(); await settle();
+    assert.equal(calls[1][1], "/auth/candidate/login");
+    assert.equal(c.state.authError, null);
+  });
+}
+
 test("portal navigation reads only the requested resource and rendering never uses sample records", async () => {
   const { c, calls } = fixture();
   for (const [screen, route] of [["portal", "/portal/me"], ["accesslog", "/portal/access-log"],

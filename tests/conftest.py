@@ -425,6 +425,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._contact_codes.close()
     if bundle._auth_resolution is not None:
         bundle._auth_resolution.close()
+    if bundle._auth_redemption is not None:
+        bundle._auth_redemption.close()
 
 
 @pytest.fixture

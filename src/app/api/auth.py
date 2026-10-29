@@ -174,18 +174,25 @@ async def _request_code(
     return CodeRequestAccepted()
 
 
-def _verify(
+async def _verify(
     request: Request, response: Response, *, email: str, code: str, plane: AuthPlane
 ) -> SessionEstablished:
     services = _services(request)
     try:
-        token, csrf, principal = services.auth.verify_code(
+        token, csrf, principal = await services.auth_redemption.run(services.auth.verify_code,
             email=email,
             plane=plane,
             code=code,
             user_agent=request.headers.get("user-agent"),
             ip_hash=_client_ip_hash(request),
         )
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # The transaction may commit after this caller stops waiting. Never
+        # issue cookies, replay redemption or claim the code remains usable.
+        raise HTTPException(status_code=503, detail='auth_redemption_pending',
+                            headers={'Retry-After': '1'}) from None
     except RateLimited as exc:
         raise _rate_limited(exc) from exc
     except RegistrationRefused as exc:
@@ -240,7 +247,7 @@ async def auth_org_login(req: EmailOnlyRequest, request: Request) -> CodeRequest
 async def auth_org_verify(
     req: VerifyRequest, request: Request, response: Response
 ) -> SessionEstablished:
-    return _verify(
+    return await _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.ORG
     )
 
@@ -271,7 +278,7 @@ async def auth_candidate_login(req: EmailOnlyRequest, request: Request) -> CodeR
 async def auth_candidate_verify(
     req: VerifyRequest, request: Request, response: Response
 ) -> SessionEstablished:
-    return _verify(
+    return await _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.CANDIDATE
     )
 
@@ -292,7 +299,7 @@ async def auth_admin_login(req: EmailOnlyRequest, request: Request) -> CodeReque
 async def auth_admin_verify(
     req: VerifyRequest, request: Request, response: Response
 ) -> SessionEstablished:
-    return _verify(
+    return await _verify(
         request, response, email=req.email, code=req.code, plane=AuthPlane.ADMIN
     )
 

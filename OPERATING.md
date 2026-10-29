@@ -142,8 +142,8 @@ disposal. It cannot safely kill Python threads; existing driver/SMTP socket
 timeouts apply, and normal server shutdown first drains HTTP requests. This is
 not a whole-operation/drain deadline, a global RSS budget or a durable mail queue.
 
-Code redemption/session handlers and remaining SQL boundaries are still
-tracked under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
+Code redemption has its separate budget below; session-management handlers and
+remaining SQL boundaries stay under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
 service callers retain caller-owned scheduling. This does not configure or send
 live email.
 
@@ -218,8 +218,42 @@ timeout is not a thread kill, rollback promise or hard whole-operation/drain
 deadline. Budgets multiply across Services/processes and do not globally cap
 memory or DB connections. Resolved principals remain authorization snapshots;
 there is no new transaction lock across later revoke/erasure and route execution.
-Direct synchronous auth callers own scheduling. Code redemption/session handlers
-and other SQL remain in [C3B-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3b).
+Direct synchronous auth callers own scheduling. Session-management handlers and
+other SQL remain in [B2 and C3C-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3b2).
+
+### Code redemption execution budget
+
+`auth_redemption_max_concurrent_requests` defaults to **2** per Services/app
+process, with a separate queue-free pool for all three
+`/auth/{candidate,org,admin}/verify` routes. Each worker owns the complete
+`AuthService.verify_code` operation: limiter, challenge lookup, address lock,
+atomic consume/subject/session commit and SQL session cleanup. Raw credential
+values and detached results cross the boundary; cookies are set on the caller
+only after confirmed completion. Existing OTP, ownership and erasure rules apply.
+
+`auth_redemption_wait_seconds` defaults to **20**. Capacity must be positive,
+wait finite/positive. Configure YAML or `DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS`
+and `DEE_AUTH_REDEMPTION_WAIT_SECONDS`, then restart. Full/closed admission gives
+**503** `auth_redemption_capacity_exhausted` / `auth_redemption_executor_closed`
+before limiter or OTP work. Caller wait expiry gives **503**
+`auth_redemption_pending`. All include `Retry-After: 1` and set no cookies.
+
+Timeout/cancellation keeps the slot until actual completion; it cannot kill a
+thread or promise rollback. A late commit can consume the code and create a
+session whose token never reaches the browser. That session keeps its ordinary
+TTL and appears in the subject's device list after a fresh successful sign-in.
+The browser explains uncertainty and permits a deliberate fresh code request;
+it does not retry redemption or send another code automatically. Normal
+cooldown/attempt/rate limits still apply. A refused admission has not used the
+code; an uncertain response cannot establish that the code is still usable.
+
+Cleanup joins accepted work before disposing owned SQL. Public health/UI and
+unrelated admitted reads remain responsive to a held redemption worker; SQLite
+writer locks can still delay competing writes. These are per-process admission
+and caller wait budgets, not global memory/connection limits or a hard database/
+shutdown deadline. Direct synchronous service callers own scheduling. Logout,
+session list/revoke and other later SQL remain synchronous under B2/C3C-F; this
+does not close [B or combined T3 acceptance](docs/delivery/PI-R4.md#r4-s2-t3c3b).
 
 ### Dual scoping: all scopes counted, any denial denies
 

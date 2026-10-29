@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-29 - R4-S2-T3C3B1 complete; bounded code redemption.**
+  B was split before implementation; this session completes only B1. Three-plane
+  verification runs complete owning-session SQL in separate bounded workers.
+  Busy/closed/pending refusals set no cookies; late work retains capacity and
+  never replays. UI explains possible code use and manual fresh-code recovery.
+  The [B1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3b1) owns the contract,
+  red regressions, actual SQLite/PG locks/races, migrated HTTP/restart, real
+  Chrome, full regression and separate reviews. Required checks pass; owned PG
+  stopped, working store preserved and demo untouched. Exact next is B2 after
+  reviewed publication; B and C3/C/T3/F14/sprint/PI remain open. Stop here.
+
 - **Session 2026-10-27 - R4-S2-T3C3A complete; request principal resolution.**
   C3 was inventoried/split; only A belongs to this session. All four request
   gates move complete owning-session SQL/touches to separate bounded admission.

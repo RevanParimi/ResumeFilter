@@ -42,7 +42,11 @@ def cfg(settings, capture_path):
 
 @pytest.fixture
 def services(cfg, flywheel):
-    return make_services(cfg, flywheel=flywheel)
+    bundle = make_services(cfg, flywheel=flywheel)
+    yield bundle
+    for executor in (bundle._auth_codes, bundle._auth_resolution, bundle._auth_redemption):
+        if executor is not None:
+            executor.close()
 
 
 @pytest.fixture

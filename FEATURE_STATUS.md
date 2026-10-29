@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-10-27. This is the common feature summary. For the exact next
+Updated: 2026-10-29. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -173,5 +173,11 @@ with separate admission and safe 503 timeout/refusal before handler execution.
 Late touches retain capacity; abandoned actions never replay. UI explains
 unavailable session checks and manual refresh restores the original cookie.
 The [resolution budget](OPERATING.md#request-principal-resolution-budget) states
-defaults and limits. C3B-F/Q and parent acceptance remain open; later handler/
-graph/store SQL is still synchronous.
+defaults and limits.
+[R4-S2-T3C3B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3b1) bounds complete code
+redemption on all three planes with a separate pool and owning SQL sessions.
+Busy/closed admission and uncertain waits return safe 503 without cookies;
+late work retains capacity and never replays. UI explains possible code use and
+deliberate fresh-code recovery. The [redemption budget](OPERATING.md#code-redemption-execution-budget)
+states defaults and late-session limits. B2, B, C3C-F/Q and parent acceptance
+remain open; session-management and later handler/graph/store SQL are synchronous.

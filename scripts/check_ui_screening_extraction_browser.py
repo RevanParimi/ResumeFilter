@@ -7,6 +7,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --pdf-execution verifies actual PDF capacity refusal and recovery/reload.
 --auth-code-workers verifies actual auth admission/delayed-mail/manual recovery.
 --auth-resolution-workers verifies session-check refusal and refresh recovery.
+--auth-redemption-workers verifies code-check refusal, uncertainty and recovery.
 """
 
 import asyncio
@@ -39,7 +40,7 @@ async def main():
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
             if '--pdf-execution' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if '--auth-code-workers' in sys.argv or '--auth-resolution-workers' in sys.argv:
+            if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
             env = {key: value for key, value in inherited.items() if not key.startswith("DEE_")}
@@ -65,6 +66,10 @@ async def main():
             if '--auth-resolution-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_AUTH_RESOLUTION_MAX_CONCURRENT_REQUESTS='8', DEE_AUTH_RESOLUTION_WAIT_SECONDS='.5')
+            if '--auth-redemption-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_REDEMPTION_WAIT_SECONDS='.5',
+                           DEE_LOGIN_OTP_COOLDOWN_SECONDS='0')
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -73,6 +78,73 @@ async def main():
         return proc
 
     async def run(tab, mailbox, files, admin):
+        if '--auth-redemption-workers' in sys.argv:
+            async def redeemed_reload():
+                await tab.js('window.__redeemReloadMarker = true')
+                await tab.send('Page.reload')
+                assert await tab.wait("!window.__redeemReloadMarker && document.body.innerText.includes('Sign out')", 30, 'confirmed redemption reload')
+                await tab.js(browser.HELPERS)
+            async def wait_marker(name):
+                async with asyncio.timeout(8):
+                    while not (scratch / name).exists():
+                        await asyncio.sleep(.01)
+            await tab.js(browser.HELPERS)
+            assert await tab.wait("document.querySelector('input[type=email]')", 30, 'auth screen')
+            for gate in ('capacity', 'pending'):
+                for name in ('redeem-entered', 'redeem-completed', 'redeem-release'):
+                    (scratch / name).unlink(missing_ok=True)
+                assert await tab.js("window.__click('button', 'Candidate')")
+                email = f'{gate}-browser-redemption@example.in'
+                assert await tab.js(f"window.__type('input[type=email]', '{email}', 0)")
+                assert await tab.js("window.__click('button', 'Send code')")
+                assert await tab.wait("document.querySelectorAll('input[inputmode]').length === 6", 15, 'code entry')
+                code = browser._code_for(mailbox, email)
+                if gate == 'capacity':
+                    held_email = 'held-browser-redemption@example.in'
+                    assert admin.post('/auth/candidate/signup', json={'email': held_email}).status_code == 202
+                    held_code = browser._code_for(mailbox, held_email)
+                before_mail = mailbox.read_text()
+                (scratch / 'redeem-mode').write_text('sql' if gate == 'capacity' else 'commit')
+                try:
+                    if gate == 'capacity':
+                        held = asyncio.create_task(asyncio.to_thread(admin.post, '/auth/candidate/verify',
+                            json={'email': held_email, 'code': held_code}))
+                        await wait_marker('redeem-entered')
+                    assert await tab.js(f"window.__type('input[inputmode]', '{code}', 0)")
+                    assert await tab.js("window.__click('button', 'Verify and continue')")
+                    copy = ('Sign-in checks are busy. Try verifying again shortly.' if gate == 'capacity' else
+                            'Sign-in could not be confirmed. The code may have been used. Wait a moment, then request a fresh code.')
+                    browser.S.check(gate + ': actual code check refusal explains manual recovery',
+                        await tab.wait('window.__has(' + json.dumps(copy) + ')', 15, 'redemption refusal'))
+                    browser.S.check(gate + ': uncertain browser stays signed out without automatic mail or retry',
+                        not await tab.js("document.body.innerText.includes('Sign out')")
+                        and await tab.js("fetch('/auth/me', {credentials:'include'}).then(r=>r.status)") == 401
+                        and mailbox.read_text() == before_mail)
+                finally:
+                    if gate == 'capacity':
+                        assert (await held).status_code == 503
+                    (scratch / 'redeem-release').touch()
+                    await wait_marker('redeem-completed')
+                    (scratch / 'redeem-mode').unlink(missing_ok=True)
+                if gate == 'pending':
+                    assert await tab.js("window.__click('a', 'Send another code')")
+                    assert await tab.wait("!window.__has('Sign-in could not be confirmed')", 15, 'manual fresh code')
+                    code = browser._code_for(mailbox, email)
+                assert await tab.js(f"window.__type('input[inputmode]', '{code}', 0)")
+                assert await tab.js("window.__click('button', 'Verify and continue')")
+                browser.S.check(gate + ': deliberate verification recovers with a confirmed session',
+                    await tab.wait("window.__has('Sign out')", 25, 'confirmed fresh session'))
+                await redeemed_reload()
+                saved = await tab.js("fetch('/auth/sessions', {credentials:'include'}).then(r=>r.json())")
+                browser.S.check(gate + ': real reload sees committed sessions and no automatic code replay',
+                    len(saved) == (2 if gate == 'pending' else 1)
+                    and len([row for row in mailbox.read_text().splitlines() if json.loads(row)['to'] == email]) == (2 if gate == 'pending' else 1))
+                assert await tab.js("window.__click('button', 'Sign out')")
+                assert await tab.wait("document.querySelector('input[type=email]')", 20, 'signed-out auth screen')
+            await tab.send('Page.reload')
+            assert await tab.wait("[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Organisation' && b.offsetParent)", 30, 'new auth screen')
+            await tab.js(browser.HELPERS)
+            assert await tab.js("window.__click('button', 'Organisation')")
         if '--auth-code-workers' in sys.argv:
             async def auth_reload(condition):
                 await tab.js('window.__authReloadMarker = true')

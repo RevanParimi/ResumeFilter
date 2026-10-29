@@ -37,6 +37,263 @@ def _resolver_session(services, cfg):
     return token, csrf, principal, stale
 
 
+@pytest.mark.parametrize('plane', ['candidate', 'org', 'admin'])
+async def test_slow_redemption_sql_leaves_unrelated_requests_responsive(database, cfg, plane):
+    import httpx
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    email = 'slow-redemption@example.in'
+    if plane == 'admin':
+        services.auth.create_admin_user(email_hash=services.auth.hash_email(email), label='Synthetic')
+    services.auth.issue_code(plane=plane, purpose='login' if plane == 'admin' else 'signup',
+        email=email, payload={'organization_name': 'Redemption Org'}, at=datetime.now(timezone.utc))
+    code = _code(Path(cfg.email_capture_path))
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'login_challenges' in statement and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post(f'/auth/{plane}/verify', json={'email': email, 'code': code}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    elapsed = time.monotonic() - start
+                    assert not finished.is_set(), f'{plane}: redemption blocked event loop ({elapsed:.4f}s)'
+                    assert elapsed < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+        if services._auth_redemption is not None:
+            services._auth_redemption.close()
+
+
+@pytest.mark.parametrize('plane', ['candidate', 'org', 'admin'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_redemption_admission_retains_work_without_false_cookie_success(database, cfg, monkeypatch, plane, ending):
+    import httpx
+    from threading import get_ident
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_redemption_max_concurrent_requests = 1
+    cfg.auth_redemption_wait_seconds = .1 if ending in ('timeout', 'late_failure') else 20
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    email = 'admission-redemption@example.in'
+    if plane == 'admin':
+        services.auth.create_admin_user(email_hash=services.auth.hash_email(email), label='Synthetic')
+    services.auth.issue_code(plane=plane, purpose='login' if plane == 'admin' else 'signup',
+        email=email, payload={'organization_name': 'Admission Org'}, at=datetime.now(timezone.utc))
+    code = _code(Path(cfg.email_capture_path))
+    entered, release = Event(), Event()
+    caller, calls, sql_threads = get_ident(), [], []
+    verify, create = services.auth.verify_code, services.auth._store.create_session
+    def observed(**credentials):
+        calls.append(get_ident())
+        return verify(**credentials)
+    def pause(**kwargs):
+        result = create(**kwargs)
+        kwargs['session'].flush()
+        entered.set()
+        assert release.wait(20)
+        if ending == 'late_failure':
+            raise RuntimeError('private-redemption-failure-sentinel')
+        return result
+    def begin(session, transaction, connection):
+        owner = session.info.setdefault('redemption_owner', get_ident())
+        assert owner == get_ident(), 'SQL Session crossed threads'
+    def end(session, transaction):
+        assert session.info.get('redemption_owner', get_ident()) == get_ident()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'login_challenges' in statement or 'INSERT INTO auth_sessions' in statement:
+            sql_threads.append(get_ident())
+    monkeypatch.setattr(services.auth, 'verify_code', observed)
+    monkeypatch.setattr(services.auth._store, 'create_session', pause)
+    event.listen(factory, 'after_begin', begin)
+    event.listen(factory, 'after_transaction_end', end)
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post(f'/auth/{plane}/verify', json={'email': email, 'code': code}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    for other in ('candidate', 'org', 'admin'):
+                        busy = await http.post(f'/auth/{other}/verify', json={'email': 'unknown@example.in', 'code': '000000'})
+                        assert busy.status_code == 503
+                        assert busy.json() == {'detail': 'auth_redemption_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    assert len(calls) == 1
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'auth_redemption_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                        assert not http.cookies
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert (await http.post(f'/auth/{plane}/verify', json={'email': email, 'code': code})).status_code == 503
+                finally:
+                    release.set()
+                    outcome = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_redemption._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0] != caller
+                assert sql_threads and set(sql_threads) == {calls[0]}
+                with factory() as session:
+                    rows = session.scalars(select(AuthSessionRow)).all()
+                    assert len(rows) == (0 if ending == 'late_failure' else 1)
+                if ending == 'release':
+                    assert outcome[0].status_code == 200
+                    assert len(outcome[0].headers.get_list('set-cookie')) == 2
+                    assert (await http.get('/auth/me')).json()['kind'] == plane
+                else:
+                    assert not http.cookies
+                    assert (await http.get('/auth/me')).status_code == 401
+                assert len(calls) == 1, 'abandoned redemption replayed'
+                services.auth_redemption.close()
+                response = await http.post(f'/auth/{plane}/verify', json={'email': email, 'code': code})
+                assert response.status_code == 503 and response.json() == {'detail': 'auth_redemption_executor_closed'}
+                assert 'set-cookie' not in response.headers and len(calls) == 1
+    finally:
+        release.set()
+        services.auth_redemption.close()
+        event.remove(engine, 'before_cursor_execute', sql)
+        event.remove(factory, 'after_begin', begin)
+        event.remove(factory, 'after_transaction_end', end)
+
+
+async def test_redemption_real_lock_can_commit_after_caller_timeout_without_cookies(database, cfg):
+    import httpx
+    from sqlalchemy import event, text
+    from app.auth.store import lock_login_state
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_redemption_max_concurrent_requests = 1
+    cfg.auth_redemption_wait_seconds = .1
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    email = 'locked-redemption@example.in'
+    services.auth.issue_code(plane='candidate', purpose='signup', email=email, at=datetime.now(timezone.utc))
+    code = _code(Path(cfg.email_capture_path))
+    entered, pids = Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        target = ('rate_limit_counters' in statement if engine.dialect.name == 'sqlite' else
+                  'pg_advisory_xact_lock' in statement)
+        if target and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+    blocker = factory()
+    lock_login_state(blocker, services.auth.hash_email(email))
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post('/auth/candidate/verify', json={'email': email, 'code': code}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await pending
+                    assert response.status_code == 503 and response.json() == {'detail': 'auth_redemption_pending'}
+                    assert 'set-cookie' not in response.headers and not http.cookies
+                    assert (await http.post('/auth/candidate/verify', json={'email': email, 'code': code})).json() == {
+                        'detail': 'auth_redemption_capacity_exhausted'}
+                finally:
+                    blocker.rollback()
+                    blocker.close()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_redemption._active:
+                            await asyncio.sleep(.01)
+                with factory() as session:
+                    assert len(session.scalars(select(AuthSessionRow)).all()) == 1
+                cfg.auth_redemption_wait_seconds = 20
+                services.auth_redemption._wait_seconds = 20
+                refused = await http.post('/auth/candidate/verify', json={'email': email, 'code': code})
+                assert refused.status_code == 400 and refused.json() == {'detail': 'invalid_code'}
+                assert 'set-cookie' not in refused.headers and not http.cookies
+                assert (await http.get('/auth/me')).status_code == 401
+    finally:
+        blocker.close()
+        services.auth_redemption.close()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+
+@pytest.mark.parametrize('competing', ['redemption', 'erasure'])
+async def test_http_redemption_worker_rechecks_stale_challenge_after_competing_action(database, cfg, monkeypatch, competing):
+    import httpx
+    from app.candidates.models import CandidateRow
+    from app.candidates.store import CandidateStore
+    _, factory = database
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    email = 'competing-redemption@example.in'
+    with factory.begin() as session:
+        session.get(CandidateRow, 'a').email_hash = services.auth.hash_email(email)
+    services.auth.issue_code(plane='candidate', purpose='signup', email=email, at=datetime.now(timezone.utc))
+    code = _code(Path(cfg.email_capture_path))
+    entered, release = Event(), Event()
+    scopes = services.auth._live_scopes
+    def stale(*args, **kwargs):
+        result = scopes(*args, **kwargs)
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(15)
+        return result
+    monkeypatch.setattr(services.auth, '_live_scopes', stale)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as first, \
+                    httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as rival:
+                pending = asyncio.create_task(first.post('/auth/candidate/verify', json={'email': email, 'code': code}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if competing == 'redemption':
+                        winner = await rival.post('/auth/candidate/verify', json={'email': email, 'code': code})
+                        assert winner.status_code == 200 and len(winner.headers.get_list('set-cookie')) == 2
+                    else:
+                        assert (await rival.delete('/candidates/a', headers=ADMIN_HEADERS)).status_code == 200
+                finally:
+                    release.set()
+                    refused = await pending
+                assert refused.status_code == 400 and refused.json() == {'detail': 'invalid_code'}
+                assert 'set-cookie' not in refused.headers and not first.cookies
+                with factory() as session:
+                    assert len(session.scalars(select(AuthSessionRow)).all()) == (1 if competing == 'redemption' else 0)
+                    assert (session.get(CandidateRow, 'a') is None) == (competing == 'erasure')
+                    assert session.get(CandidateRow, 'b') is not None
+    finally:
+        release.set()
+        services.auth_redemption.close()
+
+
 @pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
 async def test_resolver_admission_never_runs_a_refused_or_abandoned_handler(database, cfg, monkeypatch, ending):
     import httpx
@@ -481,6 +738,8 @@ def client(cfg, flywheel):
         services._auth_codes.close()
     if services._auth_resolution is not None:
         services._auth_resolution.close()
+    if services._auth_redemption is not None:
+        services._auth_redemption.close()
 
 
 def _code(capture_path) -> str:
