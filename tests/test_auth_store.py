@@ -18,6 +18,7 @@ from app.auth.store import AuthStore
 from app.candidates.models import CandidateRow
 from app.ledger.models import OrganizationRow
 from tests.conftest import make_candidate_store
+from tests.test_report_erasure_concurrency import database  # noqa: F401
 
 NOW = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
 
@@ -42,6 +43,65 @@ def _scope(**over) -> ChallengeScope:
 
 
 # ── sessions ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize('owned', [False, True], ids=['logout', 'revoke-owned'])
+def test_competing_revocations_change_the_row_and_audit_once(database, settings, owned):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from sqlalchemy import event, select
+    from app.ledger.models import AuditLogRow
+    engine, factory = database
+    from app.ledger.store import LedgerStore
+    store = AuthStore(factory, ledger=LedgerStore(factory, settings=settings), settings=settings)
+    _, view = store.create_session(kind=PrincipalKind.CANDIDATE, subject_id='a', csrf_token='c', at=NOW)
+    entered, release = Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith('UPDATE AUTH_SESSIONS') and not entered.is_set():
+            entered.set()
+            assert release.wait(15)
+    def revoke():
+        return (store.revoke_owned(view.id, kind=PrincipalKind.CANDIDATE, subject_id='a', at=NOW)
+                if owned else store.revoke(view.id, at=NOW))
+    event.listen(engine, 'before_cursor_execute', sql)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(revoke)
+            try:
+                assert entered.wait(8)
+                second = pool.submit(revoke).result(timeout=8)
+            finally:
+                release.set()
+            results = [first.result(timeout=8), second]
+        with factory() as session:
+            audits = session.scalars(select(AuditLogRow).where(AuditLogRow.action == 'auth.session.revoke')).all()
+            assert (sorted(results), len(audits)) == ([False, True], int(owned))
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+
+def test_revocation_and_audit_roll_back_together_when_audit_fails(database, settings, monkeypatch):
+    from sqlalchemy import select
+    from app.ledger.models import AuditLogRow
+    from app.ledger.store import LedgerStore
+    _, factory = database
+    store = AuthStore(factory, ledger=LedgerStore(factory, settings=settings), settings=settings)
+    token, view = store.create_session(kind=PrincipalKind.CANDIDATE, subject_id='a', csrf_token='c', at=NOW)
+    audit = store._audit_candidate
+    def fail(session, **kwargs):
+        audit(session, **kwargs)
+        session.flush()
+        raise RuntimeError('synthetic audit failure')
+    monkeypatch.setattr(store, '_audit_candidate', fail)
+    with pytest.raises(RuntimeError, match='synthetic audit failure'):
+        store.revoke_owned(view.id, kind=PrincipalKind.CANDIDATE, subject_id='a', at=NOW)
+    assert store.session_by_token(token, at=NOW).status == SessionStatus.ACTIVE
+    with factory() as session:
+        assert session.scalars(select(AuditLogRow).where(AuditLogRow.action == 'auth.session.revoke')).all() == []
+        assert session.get(CandidateRow, 'b') is not None
+    monkeypatch.setattr(store, '_audit_candidate', audit)
+    assert store.revoke_owned(view.id, kind=PrincipalKind.CANDIDATE, subject_id='a', at=NOW)
 
 
 def test_create_session_returns_plaintext_once_and_stores_only_a_hash(store_fixture):

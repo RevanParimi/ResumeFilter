@@ -378,6 +378,55 @@ test("consent/device revocation rereads saved rows, retains failures and leaves 
   assert.equal(c.state.sessionList.error.status, 403); assert.equal(c.state.sessionList.data.length, 1);
 });
 
+for (const detail of ["auth_session_capacity_exhausted", "auth_session_pending"]) {
+  test(`logout ${detail} clears sensitive state but explains unconfirmed server sign-out`, async () => {
+    const { c, calls, window } = fixture();
+    window.VeritasAPI.post = async (path) => { calls.push(["POST", path]); throw { status: 503, detail }; };
+    c.signOut(); await settle();
+    assert.equal(c.state.me, null); assert.equal(c.state.screen, "login");
+    assert.match(c.renderVals().authErrorText, /Sign-out could not be confirmed.*refresh/);
+    assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  });
+}
+
+test("pending logout prevents duplicate logout and overlapping sign-in; late device mutation cannot fill a new account", async () => {
+  const { c, calls, window } = fixture();
+  let finish;
+  window.VeritasAPI.post = path => { calls.push(["POST", path]); return new Promise(resolve => { finish = resolve; }); };
+  c.signOut(); c.signOut(); c.sendCode(); c.resendCode(); c.submitCode("123456");
+  assert.equal(calls.length, 1); assert.equal(c.state.me, null);
+  assert.match(c.renderVals().authErrorText, /Signing out/);
+  finish({ logged_out: true }); await settle();
+  assert.match(c.renderVals().authErrorText, /Signed out/);
+  c.state.me = { kind: "candidate" }; c.state.sessionList = { loading: false, data: [{ id: "sibling" }], error: null };
+  c.revokeSession("sibling")();
+  c.handleSessionLost(); c.state.me = { kind: "admin" };
+  finish({ revoked: true }); await settle();
+  assert.equal(c.state.sessionList.data, null);
+  assert.equal(calls.filter(x => x[0] === "GET").length, 0);
+});
+
+test("device uncertainty requires a guarded saved-state refresh and never replays a revocation", async () => {
+  const { c, calls, window } = fixture();
+  c.state.sessionList = { loading: false, error: null, data: [{ id: "sibling", current: false }] };
+  window.VeritasAPI.post = async path => { calls.push(["POST", path]); throw { status: 503, detail: "auth_session_pending" }; };
+  c.revokeSession("sibling")(); await settle();
+  assert.equal(c.state.sessionNeedsRefresh, true);
+  assert.match(c.renderVals().sessionsErrorText, /may still.*Refresh devices/);
+  c.revokeSession("sibling")(); await settle();
+  assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  window.VeritasAPI.get = async path => { calls.push(["GET", path]); return []; };
+  await c.loadSessions();
+  assert.equal(c.state.sessionNeedsRefresh, false);
+  assert.equal(c.renderVals().sessionsEmpty, true);
+  let late;
+  window.VeritasAPI.get = () => new Promise(resolve => { late = resolve; });
+  const pendingRead = c.loadSessions();
+  c.handleSessionLost(); c.state.me = { kind: "admin" };
+  late([{ id: "private-old-device" }]); await pendingRead;
+  assert.equal(c.state.sessionList.data, null);
+});
+
 test("typed erasure requires confirmation, preserves failure state and signs out only on success", async () => {
   const { c, window, calls } = fixture();
   c.state.portal = { loading: false, error: null, data: { profile: {} } };

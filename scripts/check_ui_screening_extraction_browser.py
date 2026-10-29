@@ -8,6 +8,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --auth-code-workers verifies actual auth admission/delayed-mail/manual recovery.
 --auth-resolution-workers verifies session-check refusal and refresh recovery.
 --auth-redemption-workers verifies code-check refusal, uncertainty and recovery.
+--auth-session-workers verifies devices and unconfirmed logout/manual recovery.
 """
 
 import asyncio
@@ -40,7 +41,7 @@ async def main():
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
             if '--pdf-execution' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers')):
+            if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
             env = {key: value for key, value in inherited.items() if not key.startswith("DEE_")}
@@ -70,6 +71,10 @@ async def main():
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_REDEMPTION_WAIT_SECONDS='.5',
                            DEE_LOGIN_OTP_COOLDOWN_SECONDS='0')
+            if '--auth-session-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_AUTH_SESSION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_SESSION_WAIT_SECONDS='.5',
+                           DEE_LOGIN_OTP_COOLDOWN_SECONDS='0')
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -78,6 +83,115 @@ async def main():
         return proc
 
     async def run(tab, mailbox, files, admin):
+        if '--auth-session-workers' in sys.argv:
+            import httpx
+            async def marker(name):
+                async with asyncio.timeout(8):
+                    while not (scratch / name).exists():
+                        await asyncio.sleep(.01)
+            def gate(operation):
+                for name in ('session-entered', 'session-completed', 'session-release'):
+                    (scratch / name).unlink(missing_ok=True)
+                (scratch / 'session-mode').write_text(operation)
+            async def release():
+                (scratch / 'session-release').touch()
+                await marker('session-completed')
+                (scratch / 'session-mode').unlink(missing_ok=True)
+            async def reload(signed_in):
+                await tab.js('window.__sessionReloadMarker = true')
+                await tab.send('Page.reload')
+                condition = ("document.body.innerText.includes('Sign out')" if signed_in else
+                             "[...document.querySelectorAll('button')].some(b=>b.textContent.trim()==='Organisation' && b.offsetParent)")
+                assert await tab.wait('!window.__sessionReloadMarker && (' + condition + ')', 30, 'session reload')
+                await tab.js(browser.HELPERS)
+            async def login():
+                assert await tab.js("window.__click('button', 'Candidate')")
+                assert await tab.js("window.__type('input[type=email]', 'browser-session-owner@example.in', 0)")
+                assert await tab.js("window.__click('button', 'Send code')")
+                assert await tab.wait("document.querySelectorAll('input[inputmode]').length === 6", 15, 'session code')
+                code = browser._code_for(mailbox, 'browser-session-owner@example.in')
+                assert await tab.js(f"window.__type('input[inputmode]', '{code}', 0)")
+                assert await tab.js("window.__click('button', 'Verify and continue')")
+                assert await tab.wait("window.__has('Sign out')", 25, 'session owner signed in')
+            async def cookie_header():
+                cookies = await tab.send('Network.getAllCookies')
+                return '; '.join(row['name'] + '=' + row['value'] for row in cookies['cookies'])
+            async def hold_read(cookie):
+                async with httpx.AsyncClient(base_url=browser.API_BASE) as actor:
+                    return await actor.get('/auth/sessions', headers={'Cookie': cookie})
+            await tab.js(browser.HELPERS)
+            assert await tab.wait("document.querySelector('input[type=email]')", 30, 'session login')
+            await login()
+            with httpx.Client(base_url=browser.API_BASE) as sibling:
+                email = 'browser-session-owner@example.in'
+                assert sibling.post('/auth/candidate/login', json={'email': email}).status_code == 202
+                assert sibling.post('/auth/candidate/verify', json={'email': email, 'code': browser._code_for(mailbox, email)}).status_code == 200
+                sibling_cookie = '; '.join(f'{key}={value}' for key, value in sibling.cookies.items())
+                assert await tab.js("window.__click('button', 'Signed-in devices')")
+                assert await tab.wait("[...document.querySelectorAll('button')].some(b=>b.textContent==='Revoke' && !b.disabled)", 20, 'two devices')
+                before_mail = mailbox.read_text()
+                for mode in ('capacity', 'pending'):
+                    gate('sessions_for')
+                    try:
+                        if mode == 'capacity':
+                            held = asyncio.create_task(hold_read(sibling_cookie))
+                            await marker('session-entered')
+                        assert await tab.js("window.__click('button', 'Refresh devices')")
+                        copy = 'Session management is temporarily unavailable' if mode == 'capacity' else 'The session request may still be running'
+                        browser.S.check(mode + ': actual device read error explains explicit refresh',
+                            await tab.wait('window.__has(' + json.dumps(copy) + ')', 15, 'device refusal'))
+                    finally:
+                        if mode == 'capacity':
+                            assert (await held).status_code == 503
+                        await release()
+                    assert await tab.js("window.__click('button', 'Refresh devices')")
+                    browser.S.check(mode + ': saved device read recovers without mutation or mail',
+                        await tab.wait("[...document.querySelectorAll('button')].some(b=>b.textContent==='Revoke' && !b.disabled)", 20, 'device recovery')
+                        and mailbox.read_text() == before_mail)
+                await tab.js("window.__sessionFetch = window.fetch; window.__sessionPosts = []; window.fetch = (url, init) => { if (init && init.method === 'POST') window.__sessionPosts.push(String(url)); return window.__sessionFetch(url, init); };")
+                gate('revoke_session')
+                try:
+                    assert await tab.js("window.__click('button', 'Revoke')")
+                    browser.S.check('uncertain revoke keeps rows disabled until manual saved-state refresh',
+                        await tab.wait("window.__has('The session request may still be running') && [...document.querySelectorAll('button')].filter(b=>b.textContent==='Revoke').every(b=>b.disabled)", 15, 'uncertain revoke'))
+                finally:
+                    await release()
+                browser.S.check('late revoke ends sibling access with exactly one real browser POST',
+                    sibling.get('/auth/me').status_code == 401
+                    and len(await tab.js("window.__sessionPosts.filter(url=>url.endsWith('/revoke'))")) == 1)
+                assert await tab.js("window.__click('button', 'Refresh devices')")
+                assert await tab.wait("!window.__has('The session request may still be running') && ![...document.querySelectorAll('button')].some(b=>b.textContent==='Revoke')", 20, 'saved revoke result')
+                await reload(True)
+                browser.S.check('saved revocation and current session survive actual reload',
+                    len(await tab.js("fetch('/auth/sessions', {credentials:'include'}).then(r=>r.json())")) == 1)
+            for mode in ('capacity', 'pending'):
+                gate('sessions_for' if mode == 'capacity' else 'logout')
+                before_mail = mailbox.read_text()
+                try:
+                    if mode == 'capacity':
+                        held = asyncio.create_task(hold_read(await cookie_header()))
+                        await marker('session-entered')
+                    assert await tab.js("window.__click('button', 'Sign out')")
+                    browser.S.check(mode + ': unconfirmed logout clears the shell and explains manual session check',
+                        await tab.wait("window.__has('Sign-out could not be confirmed') && !window.__has('Signed-in devices')", 15, 'unconfirmed logout')
+                        and await tab.js("fetch('/auth/me', {credentials:'include'}).then(r=>r.status)") == 200
+                        and mailbox.read_text() == before_mail)
+                finally:
+                    if mode == 'capacity':
+                        assert (await held).status_code == 503
+                    await release()
+                await reload(mode == 'capacity')
+                browser.S.check(mode + ': manual reload checks actual persisted logout outcome without replay',
+                    mailbox.read_text() == before_mail
+                    and await tab.js("fetch('/auth/me', {credentials:'include'}).then(r=>r.status)") == (200 if mode == 'capacity' else 401))
+            await login()
+            assert await tab.js("window.__click('button', 'Sign out')")
+            assert await tab.wait("window.__has('Signed out.')", 15, 'confirmed logout')
+            cookies = await tab.send('Network.getAllCookies')
+            browser.S.check('confirmed logout clears both cookies and reload remains signed out',
+                not any(row['name'] in ('dee_session', 'dee_csrf') for row in cookies['cookies']))
+            await reload(False)
+            assert await tab.js("window.__click('button', 'Organisation')")
         if '--auth-redemption-workers' in sys.argv:
             async def redeemed_reload():
                 await tab.js('window.__redeemReloadMarker = true')

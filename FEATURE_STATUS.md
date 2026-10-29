@@ -179,5 +179,11 @@ redemption on all three planes with a separate pool and owning SQL sessions.
 Busy/closed admission and uncertain waits return safe 503 without cookies;
 late work retains capacity and never replays. UI explains possible code use and
 deliberate fresh-code recovery. The [redemption budget](OPERATING.md#code-redemption-execution-budget)
-states defaults and late-session limits. B2, B, C3C-F/Q and parent acceptance
-remain open; session-management and later handler/graph/store SQL are synchronous.
+states defaults and late-session limits.
+[R4-S2-T3C3B2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3b2) bounds logout, own-device
+reads and revocation with separate owning-session admission and safe uncertain
+responses. Revocations have one SQL winner and atomic audit. UI reports
+unconfirmed logout, protects sign-in overlap and requires saved-device refresh
+before another uncertain revoke. See the [session budget](OPERATING.md#session-management-execution-budget).
+C3C-F/Q and parent acceptance remain open; later handler/graph/store SQL stays
+synchronous. Exact task status and next action are owned by the PI/handoff.

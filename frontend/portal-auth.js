@@ -23,6 +23,7 @@
   onEmailKey = (e) => { if (e.key === "Enter") { e.preventDefault(); this.sendCode(); } };
 
   sendCode = () => {
+    if (this._signingOut) return;
     const { plane, authMode, emailInput, orgNameInput } = this.state;
     const email = (emailInput || "").trim();
     if (!email) { this.setState({ authError: { detail: "Enter your email address." } }); return; }
@@ -66,6 +67,7 @@
 
   resendCode = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (this._signingOut) return;
     const { plane, emailInput } = this.state;
     // Always the LOGIN route on resend: a second signup for an address already
     // on file is a silent no-op on the org plane.
@@ -95,6 +97,7 @@
   };
 
   submitCode = (codeArg) => {
+    if (this._signingOut) return;
     const { plane, emailInput, otp } = this.state;
     // `codeArg` is the local debug echo handing us the code directly. Typed
     // check, not truthiness: this is also a click handler, so the argument is
@@ -150,12 +153,21 @@
     screen: "login", otp: ["", "", "", "", "", ""], authError: null, authNotice: null
   });
 
-  signOut = () => {
-    // Ask the server to kill the session, then clear locally either way — a
-    // failed logout must not strand someone in a signed-in-looking shell.
-    API.post("/auth/logout").catch(() => {});
+  signOut = async () => {
+    if (this._gone || this._signingOut) return;
+    const token = this._signingOut = {};
     this.handleSessionLost();
-    this.setState({ authNotice: null });
+    this.setState({ authBusy: true, authNotice: "Signing out…" });
+    const current = () => !this._gone && this._signingOut === token && !this.state.me;
+    try {
+      await API.post("/auth/logout");
+      if (current()) this.setState({ authBusy: false, authNotice: "Signed out." });
+    } catch (err) {
+      if (current()) this.setState({ authBusy: false,
+        authNotice: "Sign-out could not be confirmed. Wait a moment, then refresh to check your session. It may still be active; if so, try signing out again." });
+    } finally {
+      if (this._signingOut === token) this._signingOut = null;
+    }
   };
 
   loadContacts = () => {
@@ -241,12 +253,48 @@
     );
   };
 
-  revokeSession = (id) => () => {
+  loadSessions = () => {
+    const me = this.state.me;
+    if (this._gone || !me || this._sessionAction) return;
+    const token = this._sessionLoad = {};
+    const current = () => !this._gone && this.state.me === me && this._sessionLoad === token;
+    this.setState({ sessionNeedsRefresh: true });
+    return this.load("sessionList", () => API.get("/auth/sessions"), current).then(data => {
+      if (data && current()) this.setState({ sessionNeedsRefresh: false });
+      return data;
+    });
+  };
+
+  revokeSession = (id) => async () => {
+    const me = this.state.me;
+    if (this._gone || !me || this._sessionAction || this.state.sessionNeedsRefresh || this.state.sessionList.loading) return;
+    const token = this._sessionAction = {};
+    this._sessionLoad = null;
+    const current = () => !this._gone && this.state.me === me && this._sessionAction === token;
     this.setState({ busyId: id });
-    API.post("/auth/sessions/" + id + "/revoke").then(
-      () => { this.setState({ busyId: null }); this.load("sessionList", () => API.get("/auth/sessions")); },
-      (err) => this.setState({ busyId: null, sessionList: { loading: false, data: this.state.sessionList.data, error: err } })
-    );
+    let confirmed = false;
+    try {
+      await API.post("/auth/sessions/" + encodeURIComponent(id) + "/revoke");
+      confirmed = true;
+    } catch (err) {
+      if (current()) this.setState({ sessionNeedsRefresh: true,
+        sessionList: { loading: false, data: this.state.sessionList.data, error: err } });
+    } finally {
+      if (current()) {
+        this._sessionAction = null;
+        this.setState({ busyId: null });
+        if (confirmed) this.loadSessions();
+      }
+    }
+  };
+
+  sessionErrorCopy = (err) => {
+    if (!err) return "";
+    if (err.detail === "auth_session_pending" || ["timeout", "network"].includes(err.kind))
+      return "The session request may still be running. Wait a moment, then use Refresh devices before deciding whether to revoke again.";
+    if (["auth_session_capacity_exhausted", "auth_session_executor_closed"].includes(err.detail))
+      return "Session management is temporarily unavailable. Wait a moment, then use Refresh devices.";
+    return errorCopy(err);
   };
 
   setErasureConfirm = (e) => this.setState({ erasureConfirm: e.target.value });
@@ -387,8 +435,9 @@
       current: d.current,
       chip: stateChip(d.current),
       // Use Sign out for this device; keep its row's revoke action inert.
-      action: d.current || busy(d.id) ? SMALL_MUTED : SMALL_GHOST,
+      action: d.current || busy(d.id) || st.sessionNeedsRefresh ? SMALL_MUTED : SMALL_GHOST,
       actionLabel: busy(d.id) ? "…" : d.current ? "—" : "Revoke",
+      disabled: !!(d.current || this._sessionAction || st.sessionNeedsRefresh || st.sessionList.loading),
       revoke: d.current ? this.noop : this.revokeSession(d.id)
     })) : [];
 
@@ -435,6 +484,11 @@
 
       sessions,
       sessionsLoading: st.sessionList.loading,
+      refreshSessions: this.loadSessions,
+      sessionsRefreshingDisabled: !!(st.sessionList.loading || this._sessionAction),
+      sessionsError: !!st.sessionList.error,
+      sessionsErrorText: this.sessionErrorCopy(st.sessionList.error),
+      sessionsEmpty: !!sessRows && sessRows.length === 0 && !st.sessionList.error,
 
       erasureConfirm: st.erasureConfirm,
       setErasureConfirm: this.setErasureConfirm,

@@ -106,6 +106,16 @@ class Services:
     _contact_codes: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _auth_resolution: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _auth_redemption: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _auth_sessions: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def auth_sessions(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('auth_session_executor_closed')
+        if self._auth_sessions is None:
+            self._auth_sessions = BoundedExecutor(self.settings.auth_session_max_concurrent_requests,
+                self.settings.auth_session_wait_seconds, name='auth_session')
+        return self._auth_sessions
 
     @property
     def auth_redemption(self) -> BoundedExecutor:
@@ -167,7 +177,8 @@ class Services:
         clients, self._owned_clients = self._owned_clients, ()
         failed = False
         await asyncio.gather(*(executor.aclose() for executor in
-            (self._auth_codes, self._contact_codes, self._auth_resolution, self._auth_redemption) if executor is not None))
+            (self._auth_codes, self._contact_codes, self._auth_resolution, self._auth_redemption,
+             self._auth_sessions) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

@@ -7457,3 +7457,207 @@ pass. Final review adds only this documentation record; no tested code changes.
 Publication uses the configured `main` -> `origin/main` tracking branch with
 per-command GCM account selection. The final response reports verified remote
 publication; no deployment or further implementation task is included.
+
+### <a id="r4-s2-t3c3b2"></a>R4-S2-T3C3B2 - Bound session management
+
+Date: 2026-10-29 (client date). Baseline: `4227b9c`. Status: done.
+This session implements B2 only. B now closes from completed B1/B2 evidence;
+C3C-F/Q and C3/C/T3/F14/sprint/PI remain open. Status is in
+[PI-R4](PI-R4.md#r4-s2-t3c3b2). No schema or migration.
+
+Pre-implementation contract: all three async handlers must await complete
+owning-session service operations in a separate queue-free pool, with detached
+principal/id/results only. Positive capacity / finite caller wait; full/closed/
+pending 503/Retry-After without false success or cookie clearing. Confirmed logout
+clears both cookies. Timeout/cancel keeps admission through actual completion;
+late mutations may commit but never replay. Join before owned SQL disposal.
+Held SQL must leave health and an unrelated admitted read responsive. Preserve
+session-only gates, CSRF, plane/subject ownership, generic foreign/unknown 404
+and existing account policy. Concurrent revocations change the row once and
+do not duplicate audit. Test real SQLite/PG locks, revocation/redemption/erasure
+and rollback. UI clears sensitive state immediately but reports unconfirmed
+logout, prevents overlapping sign-in during its HTTP result, supports manual
+refresh/check/retry, and requires saved reads before another uncertain revoke.
+Late device responses cannot populate a new account. Require red/focused/full
+pytest, migrated HTTP/restart, actual Chrome, Node/static checks and two distinct
+self-reviews. Exclude schema/migration/scoring/mail and C3C-F implementation.
+
+**Reproduction and changes.** Logout, own-session list and revoke called
+synchronous AuthService operations from async handlers. SQL holds on each
+operation blocked health and an unrelated admitted SQL read until the hold
+finished: **3 failed, 3 skipped, 103 deselected, 1 warning, 18.88s**. Two
+competing-connection regressions also proved stale ORM revocations could both
+return true and owned revocation could audit twice: **2 failed, 2 skipped,
+26 deselected, 4.05s**. An earlier race fixture omitted the ledger, so its audit
+count was not valid evidence; the corrected reproducer injected the real ledger
+and observed two audit rows. Three offline UI regressions failed because logout
+errors were hidden and uncertain device changes did not require saved reads.
+
+The three handlers now await complete owning-session operations in a separate
+`Services.auth_sessions` pool. Only detached principal/id/results cross threads;
+cookies are cleared only after confirmed logout. Full/closed/pending admission
+returns safe 503/Retry-After without cookie deletion or false success. Timeout/
+cancel retains the slot through actual completion; late writes may commit and
+never replay. Cleanup joins workers before owned SQL disposal. Conditional SQL
+updates replace read-then-write revocation; only the winning owned update audits,
+in the same transaction. Existing account/OTP/CSRF/ownership policy remains.
+
+UI clears sensitive state immediately on sign-out, shows unconfirmed outcomes
+and manual refresh recovery, and blocks overlapping sign-in while logout HTTP is
+pending. Devices have explicit loading/error/empty/refresh states. Uncertain
+revocation disables another write until a successful saved-state read; reads/
+mutations ignore late responses after account change. No automatic replay.
+
+Resolved correctness finding (medium): `src/app/auth/store.py`,
+`AuthStore.revoke` / `revoke_owned`. Two callers reading an unrevoked session
+before either writes could both report the change, with duplicate candidate
+revoke audit rows. Conditional updates now select one winner and commit its
+audit atomically. The competing-revocation and audit-flush rollback regressions
+above/below prove the outcome on real SQLite and PostgreSQL connections.
+
+**Implementation self-review.** Reviewed `4227b9c` plus the 17-file application/
+UI/config/test/harness/PI diff, then the final audit rollback regression. Checked
+contract compliance for all three callers, detached worker arguments and SQL
+session ownership, cookie ordering, retained admission, late failure/rollback/
+commit, CAS ownership/audit atomicity, revocation/redemption/erasure races and
+cleanup. Checked UI sensitive-state clearing, sign-in overlap prevention,
+explicit saved-read gating and stale-account guards. No blocking finding remains.
+This is self-review, not independent review; the distinct final staged review
+follows required validation and completion. The first Chrome run passed the new
+journey but its final reload helper clicked before the sign-in controls were
+hydrated. The helper now waits for a visible Organisation control; the complete
+Chrome journey was rerun. No application correction was required for that issue.
+
+**Validation commands/results.** The ignored runner
+`.pytest_cache/run_r4_s2_t3c3b2.py <tag> <Python args>` uses project Python,
+clears inherited DEE configuration/keys, selects nonexistent YAML and overrides
+remote-provider credentials. Fixtures bypass dotenv and isolate stores; scratch
+subprocess apps have no `.env`. Bare Settings calls are not globally patched.
+
+- Tag `green`, `-m pytest -q --tb=short tests/test_auth_api.py
+  tests/test_auth_store.py -k 'session_management_sql or competing_revocations'`:
+  **5 passed, 5 skipped, 129 deselected, 1 warning, 13.67s**.
+- Tag `session-focused`, `-m pytest -q --tb=short tests/test_auth_api.py
+  tests/test_auth_store.py tests/test_config.py tests/test_service_lifecycle.py
+  -k 'session_worker or session_mutation or competing_revocations or
+  session_management or shutdown_joins or execution_'`: **55 passed, 22 skipped,
+  155 deselected, 1 warning, 37.16s**. Includes release/timeout/cancel/late SQL
+  failure/erasure for all three operations, full/closed admission, no cookie
+  deletion or replay, owning worker sessions and actual SQLite write locks.
+- Tag `focused`, `-m pytest -q --tb=short tests/test_auth_api.py
+  tests/test_auth_store.py tests/test_auth_service.py tests/test_auth_session_twins.py
+  tests/test_portal_sessions.py tests/test_ratelimit_auth.py tests/test_service_lifecycle.py
+  tests/test_config.py tests/test_api_auth_gate.py tests/test_route_table_guard.py
+  tests/test_api_route_extraction.py tests/test_openapi_contract.py tests/test_ui_handlers.py`:
+  **311 passed, 59 skipped, 1 warning, 186.63s** (wrapper 193.74s). Includes
+  concurrent fresh redemption surviving revocation of an older session.
+- Final tag `final-store`, `-m pytest -q --tb=short tests/test_auth_store.py`
+  reruns that module after adding audit-flush rollback coverage:
+  **29 passed, 3 skipped, 4.89s** (wrapper 9.29s).
+- SQLite migrated HTTP: tag `http`, `scripts/smoke_r4_s1_t3a.py
+  --auth-session-workers`: **172/172**, 83.30s. All three operations on all three
+  planes, shared admission, uncertainty/no cookie deletion, late server state,
+  manual recovery/no mail replay, nine retained sessions across graceful restart,
+  existing tenant/CSRF/erasure/rights flows and two migrated lifespans pass.
+  Held operation SQL leaves health plus unrelated admitted SQL reads responsive
+  in **0.0128-0.0280s**, each below the local one-second assertion.
+- Actual Chrome: tag `browser`,
+  `scripts/check_ui_screening_extraction_browser.py --auth-session-workers`:
+  **36/36**, 42.07s. Actual device capacity/pending read errors and manual
+  recovery, uncertain revoke/write gating, one real revoke POST ending sibling
+  access, saved device state/reload, busy/pending logout with immediate shell
+  clearing, manual reload restoring or ending access as persisted, confirmed
+  logout clearing both cookies, ordinary employer signup/screening and no
+  console exceptions pass. Existing CDN internet is still required.
+- Offline Node `node scripts/test_ui_verification.js`: **78 passed**. Bindings:
+  `node scripts/check_ui_bindings.js`: **593 / 18 states**, pass. Syntax:
+  `node --check frontend/api.js`, `frontend/support.js`, `frontend/portal-auth.js`,
+  and `git diff --check`, pass. These are distinct from actual Chrome evidence.
+- Tag `compile`, `-m py_compile` on all **12 changed Python modules**, exit 0.
+  The reviewed-state helper records **616 code/config hashes**. Initial PG
+  launch raced creation of its ignored local runner and did not start a server;
+  the completed runner was then launched. Only the completed PG run counts.
+
+- Full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3b2.py full` executes the required
+  `-m pytest -q --tb=short`: **3815 passed, 692 skipped, 127 warnings,
+  1606.02s** (wrapper 1618.25s), exit 0. Optional/environment/PG skips do not
+  establish omitted cases; actual PG remains a separate gate. Existing SQLite
+  expression-index reflection and third-party warnings remain. All **616
+  reviewed code/config hashes** still match after the full run.
+- Initial owned actual PG focused run: **371 passed, 1 failed, 1 warning,
+  624.22s**. An existing C3A admin-session responsiveness check completed health
+  plus admitted read in **1.021622s**, exceeding its unchanged one-second limit;
+  its prior assertion that the held SQL had not finished passed. Health alone
+  took 928.3ms during the parallel full suite. This is a failed gate, not proof
+  of acceptable latency. The owned server stopped (`stop_exit 0`). Logs/runtime
+  are retained locally with `-first` suffix. The same complete PG group and
+  HTTP/restart gate were rerun without parallel full pytest; no code/threshold
+  change.
+
+- Owned actual PG rerun: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3b2_postgres.py`, fresh disposable **PG 18.6**,
+  Asia/Calcutta, read committed, unique test schemas. The same final 13-file
+  focused group passes **372 tests, 1 warning, 389.82s**, no skips. All original
+  assertions and timing budgets remain unchanged. Includes actual session-row
+  `FOR UPDATE` waits observed in `pg_stat_activity`, conditional revocation
+  winners/audit rollback, worker ownership, cancellation/late commit/erasure and
+  fresh redemption surviving older-session revocation. The SQLite equivalents
+  use actual `BEGIN IMMEDIATE` writer locks. The earlier failed run remains
+  recorded above; this isolated rerun does not establish production latency.
+
+- Actual PG migrated HTTP: `scripts/smoke_r4_s1_t3a.py --postgres
+  --auth-session-workers`: **172/172**, 50.45s. Held SQL on all three session
+  operations/planes leaves health plus unrelated admitted SQL read responsive
+  in **0.0100-0.0604s**, each below one second. Admission, no cookie deletion/
+  false success, late revocation/logout, saved-state/manual recovery, retained
+  sessions and graceful migrated restart pass. The same owned run repeats
+  `--postgres --auth-redemption-workers`: **139/139**, 36.39s, preserving B1's
+  late-code consumption/cookie uncertainty and fresh-code recovery. Final owned
+  `pg_ctl -m fast` cleanup: **stop_exit 0**, 36.12s; server stopped. No working
+  store or existing demo was used. No new migration up/down/up applies because
+  schema/constraints are unchanged; SQL transaction/concurrency gates ran on
+  both actual engines, with migrated scratch HTTP through 0030.
+- Completion: **B2 and B done**; B1 was already complete. C3C-F/Q and C3/C/T3/
+  F14/sprint/PI remain open. Detailed acceptance/evidence is consolidated here;
+  PI/feature/runbook links and the short handoff/roadmap name **R4-S2-T3C3C**
+  next. No second implementation task was started. Distinct final staged
+  self-review and scoped publication follow below.
+
+Fakes establish mechanics, not live delivery or scoring quality. Working data
+and the demo remain outside validation; scratch stores migrate through 0030.
+
+**Distinct final staged self-review (after required validation/completion).**
+Reviewed the exact **22-file** staged diff against `4227b9c`: four application
+Python modules, YAML, two UI assets, three smoke/browser/Node scripts, six
+pytest/fixture modules and six documentation records. Matched every B2 criterion
+to implementation and evidence, checked B closure against both child records,
+and left C3C-F/Q and all combined T3 parents open. Exact next is C3C; no second
+implementation task was started.
+
+Rechecked complete owning operations for all three routes, detached worker
+arguments, session-only/CSRF/subject boundaries, generic 404, caller-side cookie
+deletion only after confirmed completion, retained admission on timeout/cancel,
+late failure/rollback/commit without replay and join-before-SQL disposal. The
+conditional updates preserve ownership and choose one revocation winner; the
+candidate audit shares that transaction and rolls back with it on failure.
+Reviewed real DB lock/race evidence separately from fake SQL holds, actual
+subprocess/migrated restart separately from TestClient, and Chrome separately
+from Node/bindings. The initial PG timing failure remains recorded, along with
+the passing unchanged isolated rerun; neither is a production capacity claim.
+
+UI review checked immediate sensitive-state clearing, visible unconfirmed logout,
+sign-in overlap prevention, device read/error/empty states, manual refresh before
+another uncertain revoke, no automatic write replay and stale-account response
+guards. No blocking finding remains. This is self-review, not independent review.
+The final pass clarified the existing finding's severity/location and completed
+validation wording in this record; these are documentation-only changes.
+
+All **616 code/config hashes** identify the same reviewed/full-tested code.
+**712 unrelated tracked files, including `data/veritas.db`**, match baseline.
+Exactly **22 scoped files** are staged, with no unstaged/untracked changes or
+secrets, working data, scratch stores or local runtime/log artifacts. The **12
+added local documentation links/anchors**, staged whitespace and preservation
+checks pass. Both owned PG servers stopped; the demo was untouched. Publication
+uses configured `main` -> `origin/main` and per-command GCM account selection;
+the final response reports the verified remote commit. Stop after publication.

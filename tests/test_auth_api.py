@@ -37,6 +37,270 @@ def _resolver_session(services, cfg):
     return token, csrf, principal, stale
 
 
+@pytest.mark.parametrize('operation', ['logout', 'sessions_for', 'revoke_session'])
+async def test_session_management_sql_leaves_unrelated_requests_responsive(database, cfg, monkeypatch, operation):
+    import httpx
+    from threading import local
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, _ = _resolver_session(services, cfg)
+    scope = local()
+    actual = getattr(services.auth, operation)
+    def observed(*args, **kwargs):
+        scope.active = True
+        try:
+            return actual(*args, **kwargs)
+        finally:
+            scope.active = False
+    monkeypatch.setattr(services.auth, operation, observed)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if getattr(scope, 'active', False) and 'auth_sessions' in statement and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    path = {'logout': '/auth/logout', 'sessions_for': '/auth/sessions',
+            'revoke_session': f'/auth/sessions/{principal.session_id}/revoke'}[operation]
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.request('GET' if operation == 'sessions_for' else 'POST', path,
+                    headers={'Cookie': f'dee_session={token}; dee_csrf={csrf}', 'X-CSRF-Token': csrf}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    assert not finished.is_set(), f'{operation} blocked the event loop'
+                    assert time.monotonic() - start < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+        for executor in (services._auth_resolution, services._auth_redemption, getattr(services, '_auth_sessions', None)):
+            if executor is not None:
+                executor.close()
+
+
+@pytest.mark.parametrize('operation', ['logout', 'sessions_for', 'revoke_session'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure', 'erase'])
+async def test_session_worker_retains_admission_and_reports_no_false_success(database, cfg, monkeypatch, operation, ending):
+    import httpx
+    from threading import get_ident, local
+    from sqlalchemy import event
+    from app.auth.schema import PrincipalKind
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_session_max_concurrent_requests = 1
+    cfg.auth_session_wait_seconds = .1 if ending in ('timeout', 'late_failure') else 20
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, _ = _resolver_session(services, cfg)
+    _, target = services.auth._store.create_session(kind=PrincipalKind.CANDIDATE,
+        subject_id=principal.candidate_id, csrf_token='other', at=datetime.now(timezone.utc))
+    entered, release = Event(), Event()
+    scope, calls, sql_threads, caller = local(), [], [], get_ident()
+    for name in ('logout', 'sessions_for', 'revoke_session'):
+        actual = getattr(services.auth, name)
+        def observed(*args, _actual=actual, _name=name, **kwargs):
+            calls.append(_name)
+            scope.active = True
+            try:
+                return _actual(*args, **kwargs)
+            finally:
+                scope.active = False
+        monkeypatch.setattr(services.auth, name, observed)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('session_worker_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('session_worker_owner', get_ident()) == get_ident()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if getattr(scope, 'active', False) and 'auth_sessions' in statement:
+            sql_threads.append(get_ident())
+            if not entered.is_set():
+                entered.set()
+                assert release.wait(15)
+    def after_sql(*args):
+        if getattr(scope, 'active', False) and ending == 'late_failure':
+            raise RuntimeError('private-session-worker-sentinel')
+    event.listen(factory, 'after_begin', begin)
+    event.listen(factory, 'after_transaction_end', end)
+    event.listen(engine, 'before_cursor_execute', sql)
+    event.listen(engine, 'after_cursor_execute', after_sql)
+    app = create_app(services)
+    path = {'logout': '/auth/logout', 'sessions_for': '/auth/sessions',
+            'revoke_session': f'/auth/sessions/{target.id}/revoke'}[operation]
+    headers = {'Cookie': f'dee_session={token}; dee_csrf={csrf}', 'X-CSRF-Token': csrf}
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.request('GET' if operation == 'sessions_for' else 'POST', path, headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    for method, other in [('GET', '/auth/sessions'), ('POST', '/auth/logout'), ('POST', f'/auth/sessions/{target.id}/revoke')]:
+                        busy = await http.request(method, other, headers=headers)
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'auth_session_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    assert calls == [operation]
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'auth_session_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    elif ending == 'erase':
+                        assert (await http.delete(f'/candidates/{principal.candidate_id}', headers=ADMIN_HEADERS)).status_code == 200
+                finally:
+                    release.set()
+                    outcome = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_sessions._active:
+                            await asyncio.sleep(.01)
+                assert calls == [operation] and sql_threads and all(thread != caller for thread in sql_threads)
+                with factory() as session:
+                    rows = {row.id: row.revoked_at for row in session.scalars(select(AuthSessionRow))}
+                    if ending == 'erase':
+                        assert rows == {} and services.candidates.get_candidate(principal.candidate_id) is None
+                    else:
+                        changed = principal.session_id if operation == 'logout' else target.id if operation == 'revoke_session' else None
+                        assert {sid for sid, at in rows.items() if at is not None} == ({changed} if changed and ending != 'late_failure' else set())
+                if ending in ('release', 'erase'):
+                    response = outcome[0]
+                    assert response.status_code == (404 if ending == 'erase' and operation == 'revoke_session' else 200)
+                    assert len(response.headers.get_list('set-cookie')) == (2 if operation == 'logout' else 0)
+                assert services.candidates.get_candidate('b') is not None
+                if ending != 'erase' and not (operation == 'logout' and ending != 'late_failure'):
+                    services.auth_sessions.close()
+                    closed = await http.get('/auth/sessions', headers=headers)
+                    assert closed.status_code == 503 and closed.json() == {'detail': 'auth_session_executor_closed'}
+    finally:
+        release.set()
+        for executor in (services._auth_resolution, services._auth_redemption, services._auth_sessions):
+            if executor is not None:
+                executor.close()
+        event.remove(factory, 'after_begin', begin)
+        event.remove(factory, 'after_transaction_end', end)
+        event.remove(engine, 'before_cursor_execute', sql)
+        event.remove(engine, 'after_cursor_execute', after_sql)
+
+
+@pytest.mark.parametrize('operation', ['logout', 'revoke_session'])
+async def test_session_mutation_waits_for_real_sql_lock_then_commits_without_cookie_success(database, cfg, operation):
+    import httpx
+    from sqlalchemy import event, text
+    from app.auth.schema import PrincipalKind
+    from app.candidates.store import CandidateStore
+    engine, factory = database
+    cfg.auth_session_max_concurrent_requests = 1
+    cfg.auth_session_wait_seconds = .1
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, _ = _resolver_session(services, cfg)
+    with factory.begin() as session:
+        session.execute(update(AuthSessionRow).where(AuthSessionRow.id == principal.session_id).values(last_seen_at=datetime.now(timezone.utc)))
+    sibling, target = services.auth._store.create_session(kind=PrincipalKind.CANDIDATE,
+        subject_id=principal.candidate_id, csrf_token='other', at=datetime.now(timezone.utc))
+    target_id = principal.session_id if operation == 'logout' else target.id
+    entered, pids = Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith('UPDATE AUTH_SESSIONS'):
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+    blocker = engine.connect()
+    if engine.dialect.name == 'sqlite':
+        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+    else:
+        blocker.execute(text('SELECT * FROM auth_sessions WHERE id = :id FOR UPDATE'), {'id': target_id}).all()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    headers = {'Cookie': f'dee_session={token}; dee_csrf={csrf}', 'X-CSRF-Token': csrf}
+    path = '/auth/logout' if operation == 'logout' else f'/auth/sessions/{target_id}/revoke'
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as http:
+                pending = asyncio.create_task(http.post(path, headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users', headers=ADMIN_HEADERS)).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await pending
+                    assert response.status_code == 503 and response.json() == {'detail': 'auth_session_pending'}
+                    assert 'set-cookie' not in response.headers
+                    assert (await http.get('/auth/sessions', headers=headers)).json() == {'detail': 'auth_session_capacity_exhausted'}
+                finally:
+                    blocker.rollback()
+                    blocker.close()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.auth_sessions._active:
+                            await asyncio.sleep(.01)
+                with factory() as session:
+                    assert session.get(AuthSessionRow, target_id).revoked_at is not None
+                assert (await http.get('/auth/me', headers={'Cookie': f'dee_session={token if operation == "logout" else sibling}'})).status_code == 401
+    finally:
+        blocker.close()
+        for executor in (services._auth_resolution, services._auth_redemption, services._auth_sessions):
+            if executor is not None:
+                executor.close()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+
+async def test_pending_session_revoke_does_not_end_a_concurrent_fresh_redemption(database, cfg, monkeypatch):
+    import httpx
+    from app.candidates.store import CandidateStore
+    _, factory = database
+    cfg.login_otp_cooldown_seconds = 0
+    services = make_services(cfg, candidates=CandidateStore(factory))
+    token, csrf, principal, _ = _resolver_session(services, cfg)
+    email = 'resolver-owner@example.in'
+    services.auth.issue_code(plane='candidate', purpose='login', email=email, at=datetime.now(timezone.utc))
+    code = _code(Path(cfg.email_capture_path))
+    entered, release = Event(), Event()
+    actual = services.auth.revoke_session
+    def pause(*args, **kwargs):
+        entered.set()
+        assert release.wait(15)
+        return actual(*args, **kwargs)
+    monkeypatch.setattr(services.auth, 'revoke_session', pause)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as old, \
+                    httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as fresh:
+                pending = asyncio.create_task(old.post(f'/auth/sessions/{principal.session_id}/revoke',
+                    headers={'Cookie': f'dee_session={token}; dee_csrf={csrf}', 'X-CSRF-Token': csrf}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    created = await fresh.post('/auth/candidate/verify', json={'email': email, 'code': code})
+                    assert created.status_code == 200
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+                assert (await old.get('/auth/me', headers={'Cookie': f'dee_session={token}'})).status_code == 401
+                rows = (await fresh.get('/auth/sessions')).json()
+                assert len(rows) == 1 and rows[0]['id'] != principal.session_id and rows[0]['current']
+    finally:
+        release.set()
+        for executor in (services._auth_resolution, services._auth_redemption, services._auth_sessions):
+            if executor is not None:
+                executor.close()
+
+
 @pytest.mark.parametrize('plane', ['candidate', 'org', 'admin'])
 async def test_slow_redemption_sql_leaves_unrelated_requests_responsive(database, cfg, plane):
     import httpx
@@ -740,6 +1004,8 @@ def client(cfg, flywheel):
         services._auth_resolution.close()
     if services._auth_redemption is not None:
         services._auth_redemption.close()
+    if services._auth_sessions is not None:
+        services._auth_sessions.close()
 
 
 def _code(capture_path) -> str:

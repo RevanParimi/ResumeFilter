@@ -385,15 +385,17 @@ against later revoke/erasure. C3B-F/Q and C3/C/T3/F14/sprint/PI remain open.
 
 ###### <a id="r4-s2-t3c3b"></a>R4-S2-T3C3B - Bound auth redemption and session-management SQL
 
-Status: in progress (2026-10-29). Prerequisite: C3A, done. Measure and bound the three verify-code
+Status: done (2026-10-29). Prerequisite: C3A, done. Measure and bound the three verify-code
 handlers plus logout/list/revoke owning operations. Preserve OTP atomicity,
 anti-enumeration, cookie issuance, CSRF, last-admin and subject isolation. Cover
 late committed session/revocation uncertainty without replay or false cookie
 success, concurrent redemption/revoke/erasure, HTTP/restart and browser recovery.
 
 Split before implementation into B1/B2 because redemption's public cookie and
-OTP uncertainty differs from authenticated session-management recovery. B and
-all parents remain open until both children pass their contracts.
+OTP uncertainty differs from authenticated session-management recovery. Both
+children now pass their contracts: [B1 evidence](EVIDENCE-R4.md#r4-s2-t3c3b1) and
+[B2 evidence](EVIDENCE-R4.md#r4-s2-t3c3b2). C3C-F/Q and C3/C/T3/F14/sprint/PI
+remain open; this closes only the auth handler group.
 
 **<a id="r4-s2-t3c3b1"></a>R4-S2-T3C3B1 - Bound code redemption**
 
@@ -404,17 +406,20 @@ verify routes, safe admission/wait/cancel/drain and caller-only cookies. Late
 commits may consume a code and leave an unreachable session; UI explains manual
 fresh-code recovery without replay. Actual SQL/PG races, migrated HTTP/restart,
 Chrome, full regression and both self-reviews are recorded there. Existing
-atomicity, policy and schema remain. B2, B and all parents stay open.
+atomicity, policy and schema remain. B2 status is below; C3/T3 parents remain open.
 
 **<a id="r4-s2-t3c3b2"></a>R4-S2-T3C3B2 - Bound session management**
 
-Status: pending. Prerequisite: B1. Measure and bound logout, session list and
-revoke as complete owning operations. Preserve session-only authentication,
-CSRF, own-subject isolation and existing last-admin policy. Define safe late
-revocation/logout uncertainty, cookie clearing and saved-state/manual recovery
-without replay. Require red/focused/full tests, real SQLite/PG concurrency,
-migrated HTTP/restart, actual Chrome device/logout recovery and both self-reviews.
-Close B only after B1/B2 evidence is complete.
+Status: done (2026-10-29). Prerequisite: B1, published at `4227b9c`.
+[B2 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3b2) owns pre-implementation scope,
+red SQL/race/UI regressions, complete owning-session workers, safe uncertain
+outcomes/cookie handling and retained admission/drain. Conditional revocations
+have one SQL winner and atomic audit. UI reports unconfirmed logout, prevents
+overlapping sign-in, and requires saved-device refresh before another uncertain
+revoke. Focused/full/actual PG, migrated HTTP/restart, actual Chrome, initial
+timing-gate failure and unchanged rerun, preservation and both self-reviews are
+recorded there. No schema/migration/scoring/mail change. B closes with B1/B2;
+C3C-F/Q and all combined T3 parents remain open. Exact next: C3C, separate session.
 
 ###### <a id="r4-s2-t3c3c"></a>R4-S2-T3C3C - Bound intake and profile-source SQL
 

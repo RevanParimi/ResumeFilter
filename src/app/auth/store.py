@@ -251,12 +251,11 @@ class AuthStore:
         """True when this call did the revoking. Already-revoked returns False
         so a caller can tell 'I closed it' from 'it was already closed'."""
         with self._session_factory() as session:
-            row = session.get(AuthSessionRow, session_id)
-            if row is None or row.revoked_at is not None:
-                return False
-            row.revoked_at = as_utc(at)
+            result = session.execute(update(AuthSessionRow).where(
+                AuthSessionRow.id == session_id, AuthSessionRow.revoked_at.is_(None)
+            ).values(revoked_at=as_utc(at)))
             session.commit()
-            return True
+            return result.rowcount == 1
 
     def revoke_owned(
         self, session_id: str, *, kind: PrincipalKind, subject_id: str, at: datetime
@@ -267,19 +266,18 @@ class AuthStore:
         point inherits it -- the rule this sprint exists to make structural.
         """
         with self._session_factory() as session:
-            row = session.get(AuthSessionRow, session_id)
+            row = session.execute(update(AuthSessionRow).where(
+                AuthSessionRow.id == session_id,
+                getattr(AuthSessionRow, _PRINCIPAL_COLUMN[kind]) == subject_id,
+                AuthSessionRow.revoked_at.is_(None),
+            ).values(revoked_at=as_utc(at)).returning(AuthSessionRow.candidate_id)).one_or_none()
             if row is None:
                 return False
-            if getattr(row, _PRINCIPAL_COLUMN[kind]) != subject_id:
-                return False        # not owned -> indistinguishable from absent
-            if row.revoked_at is not None:
-                return False
-            row.revoked_at = as_utc(at)
             if row.candidate_id:
                 self._audit_candidate(
                     session,
                     action="auth.session.revoke",
-                    entity_id=row.id,
+                    entity_id=session_id,
                     candidate_id=row.candidate_id,
                 )
             session.commit()

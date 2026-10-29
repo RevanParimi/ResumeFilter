@@ -879,7 +879,11 @@
 
           <sc-if value="{{ isDevices }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Signed-in devices</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Sessions expire after 12 hours, or 2 hours idle. Revoking one signs it out immediately.</p>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Sessions expire after 12 hours, or 2 hours idle. A confirmed revocation ends access. If a request cannot be confirmed, refresh saved devices before trying again.</p>
+            <button onClick="{{ refreshSessions }}" disabled="{{ sessionsRefreshingDisabled }}" style="{{ smallGhost }}">Refresh devices</button>
+            <sc-if value="{{ sessionsLoading }}"><p style="{{ pageSub }}">Loading devices…</p></sc-if>
+            <sc-if value="{{ sessionsError }}"><p role="alert" style="{{ uploadErrorBox }}">{{ sessionsErrorText }}</p></sc-if>
+            <sc-if value="{{ sessionsEmpty }}"><p style="{{ pageSub }}">No active devices returned by the server.</p></sc-if>
             <div style="{{ listCard }}">
               <sc-for list="{{ sessions }}" as="d" hint-placeholder-count="3">
                 <div style="display:grid; grid-template-columns:minmax(0,1fr) 130px 120px 90px; gap:14px; align-items:center; padding:12px 14px; border-bottom:1px solid var(--border);">
@@ -890,7 +894,7 @@
                   <span style="font-size:11.5px; color:var(--muted);">{{ d.lastSeen }}</span>
                   <span style="{{ d.chip }}">{{ d.status }}</span>
                   <div style="text-align:right;">
-                    <button onClick="{{ d.revoke }}" style="{{ d.action }}" style-hover="background:var(--hover)">{{ d.actionLabel }}</button>
+                    <button onClick="{{ d.revoke }}" disabled="{{ d.disabled }}" style="{{ d.action }}" style-hover="background:var(--hover)">{{ d.actionLabel }}</button>
                   </div>
                 </div>
               </sc-for>
@@ -1736,7 +1740,7 @@ class Component extends window.VeritasEmployerRoles(
     authBusy: false, authError: null, authNotice: null,
     me: null,
     // remote resources
-    portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
+    portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE, sessionNeedsRefresh: false,
     jobList: IDLE, board: IDLE, comp: IDLE,
     batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
     outcomes: IDLE,
@@ -1808,6 +1812,8 @@ class Component extends window.VeritasEmployerRoles(
   }
 
   handleSessionLost = () => {
+    this._sessionAction = null;
+    this._sessionLoad = null;
     // Rule 3: never retry, never leave a half-populated screen behind.
     this._driving = false;
     this.clearInterview();
@@ -1839,7 +1845,7 @@ class Component extends window.VeritasEmployerRoles(
       screen: "login", me: null, otp: ["", "", "", "", "", ""], authBusy: false,
       authError: null,
       authNotice: "Your session ended. Sign in again to continue.",
-      portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE,
+      portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE, sessionNeedsRefresh: false,
       jobList: IDLE, board: IDLE, comp: IDLE,
       batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
       outcomes: IDLE, outcomeNotes: "", outcomeBusy: null, outcomeError: null,
@@ -1853,7 +1859,7 @@ class Component extends window.VeritasEmployerRoles(
     if (screen === "portal") { this.load("portal", () => API.get("/portal/me")); this.loadContacts(); }
     else if (screen === "accesslog") this.load("accessLog", () => API.get("/portal/access-log"));
     else if (screen === "consents") this.load("consentList", () => API.get("/portal/consents"));
-    else if (screen === "devices") this.load("sessionList", () => API.get("/auth/sessions"));
+    else if (screen === "devices") this.loadSessions();
     else if (screen === "roles") this.loadJobs();
     else if (screen === "comp") this.loadComp();
     else if (screen === "queue" || screen === "summary") this.loadScreening();

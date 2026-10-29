@@ -67,6 +67,18 @@ def create_auth_code_smoke_app():
                     if redemption_state.held:
                         (scratch / 'redeem-completed').touch()
             services.auth.verify_code = observed_verify
+            session_state = local()
+            for operation in ('logout', 'sessions_for', 'revoke_session'):
+                function = getattr(services.auth, operation)
+                def observed_session(*args, _operation=operation, _function=function, **kwargs):
+                    session_state.operation, session_state.held = _operation, False
+                    try:
+                        return _function(*args, **kwargs)
+                    finally:
+                        session_state.operation = None
+                        if session_state.held:
+                            (scratch / 'session-completed').touch()
+                setattr(services.auth, operation, observed_session)
             def mode():
                 path = scratch / 'auth-mode'
                 return path.read_text() if path.exists() else ''
@@ -89,6 +101,15 @@ def create_auth_code_smoke_app():
                     if mode():
                         (scratch / 'auth-completed').touch()
             def sql(conn, cursor, statement, parameters, context, many):
+                session_mode = scratch / 'session-mode'
+                if (session_mode.exists() and getattr(session_state, 'operation', None) == session_mode.read_text()
+                        and not session_state.held and 'auth_sessions' in statement):
+                    session_state.held = True
+                    (scratch / 'session-entered').touch()
+                    deadline = time.monotonic() + 20
+                    while not (scratch / 'session-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic session SQL gate timed out'
+                        time.sleep(.01)
                 redeem_mode = scratch / 'redeem-mode'
                 if redeem_mode.exists() and getattr(redemption_state, 'active', False) and not redemption_state.held:
                     gate = redeem_mode.read_text()
@@ -130,6 +151,64 @@ def create_auth_code_smoke_app():
                 event.remove(services.session_factory, 'after_begin', owner)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_auth_session_workers(checks, scratch, base, control, mailbox, login):
+    saved = []
+    for plane in ('candidate', 'org', 'admin'):
+        for operation in ('sessions_for', 'revoke_session', 'logout'):
+            email = f'session-{plane}-{operation}@example.in'
+            if plane == 'admin':
+                assert control.post('/admin/users', json={'email': email}).status_code == 200
+            with client(base) as actor, client(base) as sibling:
+                csrf = login(actor, plane, email, organization=f'Session {operation}' if plane == 'org' else None)
+                other_csrf = login(sibling, plane, email)
+                actor.headers['X-CSRF-Token'] = csrf
+                sibling.headers['X-CSRF-Token'] = other_csrf
+                target = sibling.get('/auth/me').json()['session_id']
+                path = {'sessions_for': '/auth/sessions', 'revoke_session': f'/auth/sessions/{target}/revoke', 'logout': '/auth/logout'}[operation]
+                for name in ('session-entered', 'session-completed', 'session-release'):
+                    (scratch / name).unlink(missing_ok=True)
+                before_cookie, before_mail = dict(actor.cookies), mailbox.read_text()
+                (scratch / 'session-mode').write_text(operation)
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    held = pool.submit(actor.request, 'GET' if operation == 'sessions_for' else 'POST', path)
+                    try:
+                        deadline = time.monotonic() + 8
+                        while not (scratch / 'session-entered').exists():
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        start = time.monotonic()
+                        health, read = control.get('/healthz'), control.get('/admin/users')
+                        elapsed = time.monotonic() - start
+                        checks.check(f'{plane}/{operation}: health and unrelated SQL read stay responsive',
+                            health.status_code == read.status_code == 200 and elapsed < 1, f'{elapsed:.4f}s')
+                        for method, busy_path in [('GET', '/auth/sessions'), ('POST', '/auth/logout'), ('POST', f'/auth/sessions/{target}/revoke')]:
+                            busy = actor.request(method, busy_path)
+                            checks.check(f'{plane}/{operation}: shared capacity refuses {busy_path} before cookie success',
+                                busy.status_code == 503 and busy.json() == {'detail': 'auth_session_capacity_exhausted'}
+                                and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                        pending = held.result(timeout=8)
+                        checks.check(f'{plane}/{operation}: uncertain caller keeps cookies without false success',
+                            pending.status_code == 503 and pending.json() == {'detail': 'auth_session_pending'}
+                            and pending.headers.get('retry-after') == '1' and 'set-cookie' not in pending.headers
+                            and dict(actor.cookies) == before_cookie)
+                    finally:
+                        (scratch / 'session-release').touch()
+                        deadline = time.monotonic() + 8
+                        while not (scratch / 'session-completed').exists():
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        (scratch / 'session-mode').unlink(missing_ok=True)
+                current = sibling if operation == 'logout' else actor
+                rows = current.get('/auth/sessions')
+                checks.check(f'{plane}/{operation}: manual saved-state check sees late result without mail or replay',
+                    rows.status_code == 200 and len(rows.json()) == (2 if operation == 'sessions_for' else 1)
+                    and mailbox.read_text() == before_mail
+                    and (actor.get('/auth/me').status_code == (401 if operation == 'logout' else 200))
+                    and (sibling.get('/auth/me').status_code == (401 if operation == 'revoke_session' else 200)))
+                saved.append((dict(current.cookies), current.get('/auth/me').json()))
+    return saved
 
 
 def check_auth_redemption_workers(checks, scratch, base, control, mailbox):
@@ -333,6 +412,7 @@ def run(scratch, url, pg_options):
     workers = '--auth-code-workers' in sys.argv
     resolution_workers = '--auth-resolution-workers' in sys.argv
     redemption_workers = '--auth-redemption-workers' in sys.argv
+    session_workers = '--auth-session-workers' in sys.argv
     checks = Smoke('R4-S2-T3C1 auth code workers / HTTP / restart' if workers else 'R4-S1-T3A auth/session extraction HTTP/restart')
     print(f"Synthetic auth evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
@@ -352,7 +432,7 @@ def run(scratch, url, pg_options):
         "DEE_GRIEVANCE_OFFICER_PHONE": "+91 80 4000 0000", "DEE_GRIEVANCE_RESPONSE_DAYS": "21",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers or resolution_workers or redemption_workers else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3a:create_auth_code_smoke_app" if workers or resolution_workers or redemption_workers or session_workers else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
@@ -363,6 +443,8 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='0')
     if redemption_workers:
         env.update(DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_REDEMPTION_WAIT_SECONDS='.3')
+    if session_workers:
+        env.update(DEE_AUTH_SESSION_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_SESSION_WAIT_SECONDS='.3')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -456,6 +538,8 @@ def run(scratch, url, pg_options):
                 worker_sessions = check_auth_code_workers(checks, scratch, base, control, mailbox)
             if redemption_workers:
                 worker_sessions = check_auth_redemption_workers(checks, scratch, base, control, mailbox)
+            if session_workers:
+                worker_sessions = check_auth_session_workers(checks, scratch, base, control, mailbox, login)
             saved_domains = require(control.get("/domains"))
             checks.check("admin machine key reads both domains with their existing metadata",
                 [row["key"] for row in saved_domains] == ["data_eng", "genai"]
@@ -676,7 +760,7 @@ def run(scratch, url, pg_options):
                 and sibling.get("/admin/requests").status_code == 401
                 and org.get("/admin/requests").status_code == 401)
         with server():
-            if workers or redemption_workers:
+            if workers or redemption_workers or session_workers:
                 for cookies, me in worker_sessions:
                     with client(base) as resumed:
                         resumed.cookies.update(cookies)

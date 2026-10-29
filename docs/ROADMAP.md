@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-29 - R4-S2-T3C3B2 and B complete; session management.**
+  Logout, own-device list and revoke use separate bounded owning-session workers.
+  Uncertain outcomes never clear cookies or replay; conditional revocations have
+  one winner and atomic audit. UI reports unconfirmed logout and requires saved-
+  device refresh before another uncertain revoke. The
+  [B2 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3b2) owns red regressions, actual
+  SQLite/PG locks/races, migrated HTTP/restart, actual Chrome, full pytest, the
+  initial one-second timing miss/unchanged PG rerun and separate reviews. Required
+  checks pass; owned PG stopped, working store preserved and demo untouched.
+  Only B2 was implemented here. Exact next is C3C after reviewed publication;
+  C3/C/T3/F14/sprint/PI remain open. Stop here.
+
 - **Session 2026-10-29 - R4-S2-T3C3B1 complete; bounded code redemption.**
   B was split before implementation; this session completes only B1. Three-plane
   verification runs complete owning-session SQL in separate bounded workers.

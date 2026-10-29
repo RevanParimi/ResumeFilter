@@ -427,6 +427,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._auth_resolution.close()
     if bundle._auth_redemption is not None:
         bundle._auth_redemption.close()
+    if bundle._auth_sessions is not None:
+        bundle._auth_sessions.close()
 
 
 @pytest.fixture

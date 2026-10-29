@@ -324,7 +324,7 @@ async def auth_logout(
     principal: Principal = Depends(require_any_principal),
 ) -> LogoutResponse:
     services = _services(request)
-    revoked = services.auth.logout(principal)
+    revoked = await _session_operation(request, services.auth.logout, principal)
     response.delete_cookie(services.settings.session_cookie_name, path="/")
     response.delete_cookie(services.settings.csrf_cookie_name, path="/")
     return {"logged_out": revoked}
@@ -336,7 +336,7 @@ async def auth_sessions(
 ) -> list[SessionView]:
     """The caller's own live sessions. Ownership resolves from the session, never
     from a parameter, so another principal's devices are simply unreachable."""
-    return _services(request).auth.sessions_for(principal)
+    return await _session_operation(request, _services(request).auth.sessions_for, principal)
 
 
 @auth_router.post("/auth/sessions/{session_id}/revoke", response_model=SessionRevokedResponse)
@@ -347,6 +347,18 @@ async def auth_revoke_session(
 ) -> SessionRevokedResponse:
     """Unknown and not-owned both 404 -- indistinguishable, so a session id
     cannot be probed (the S6.4 rule)."""
-    if not _services(request).auth.revoke_session(principal, session_id):
+    if not await _session_operation(request, _services(request).auth.revoke_session, principal, session_id):
         raise HTTPException(status_code=404, detail="session not found")
     return {"session_id": session_id, "revoked": True}
+
+
+async def _session_operation(request: Request, operation, *args):
+    try:
+        return await _services(request).auth_sessions.run(operation, *args)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # A late mutation can commit, but neither success nor cookie deletion
+        # is confirmed for this caller. Saved-state reads, never replay, recover.
+        raise HTTPException(status_code=503, detail='auth_session_pending',
+                            headers={'Retry-After': '1'}) from None

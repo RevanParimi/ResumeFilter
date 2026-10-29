@@ -289,6 +289,8 @@ auth_resolution_max_concurrent_requests: 8  # separate admission; allow current 
 auth_resolution_wait_seconds: 20.0         # caller wait; refusal never runs the handler
 auth_redemption_max_concurrent_requests: 2  # separate admission for complete code redemption
 auth_redemption_wait_seconds: 20.0          # caller wait; late commit may consume the code
+auth_session_max_concurrent_requests: 2     # separate admission for session management
+auth_session_wait_seconds: 20.0            # late revocation may commit; never replay
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

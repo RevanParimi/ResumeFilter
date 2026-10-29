@@ -75,26 +75,29 @@ def test_request_body_budget_default_yaml_and_env(monkeypatch):
     assert Settings(_env_file=None).max_request_body_bytes == 2048
 
 
-def test_auth_redemption_execution_defaults_yaml_and_env(monkeypatch):
+@pytest.mark.parametrize('operation', ['redemption', 'session'])
+def test_auth_redemption_execution_defaults_yaml_and_env(monkeypatch, operation):
     import yaml
     with open('config.yaml', encoding='utf-8') as file:
         raw = yaml.safe_load(file)
     settings = Settings(_env_file=None)
-    assert settings.auth_redemption_max_concurrent_requests == raw['auth_redemption_max_concurrent_requests'] == 2
-    assert settings.auth_redemption_wait_seconds == raw['auth_redemption_wait_seconds'] == 20
-    monkeypatch.setenv('DEE_AUTH_REDEMPTION_MAX_CONCURRENT_REQUESTS', '3')
-    monkeypatch.setenv('DEE_AUTH_REDEMPTION_WAIT_SECONDS', '.5')
-    assert Settings(_env_file=None).auth_redemption_max_concurrent_requests == 3
-    assert Settings(_env_file=None).auth_redemption_wait_seconds == .5
+    capacity, wait = f'auth_{operation}_max_concurrent_requests', f'auth_{operation}_wait_seconds'
+    assert getattr(settings, capacity) == raw[capacity] == 2
+    assert getattr(settings, wait) == raw[wait] == 20
+    monkeypatch.setenv('DEE_' + capacity.upper(), '3')
+    monkeypatch.setenv('DEE_' + wait.upper(), '.5')
+    assert getattr(Settings(_env_file=None), capacity) == 3
+    assert getattr(Settings(_env_file=None), wait) == .5
 
 
 @pytest.mark.parametrize('name,value', [('auth_redemption_max_concurrent_requests', 0),
     ('auth_redemption_max_concurrent_requests', -1), ('auth_redemption_wait_seconds', 0),
     ('auth_redemption_wait_seconds', -1), ('auth_redemption_wait_seconds', float('inf')),
     ('auth_redemption_wait_seconds', float('nan'))])
-def test_auth_redemption_execution_budgets_are_positive_and_finite(name, value):
+@pytest.mark.parametrize('operation', ['redemption', 'session'])
+def test_auth_redemption_execution_budgets_are_positive_and_finite(name, value, operation):
     with pytest.raises(ValidationError):
-        Settings(_env_file=None, **{name: value})
+        Settings(_env_file=None, **{name.replace('redemption', operation): value})
 
 
 @pytest.mark.parametrize("limit", [0, -1])

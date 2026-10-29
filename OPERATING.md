@@ -219,7 +219,7 @@ deadline. Budgets multiply across Services/processes and do not globally cap
 memory or DB connections. Resolved principals remain authorization snapshots;
 there is no new transaction lock across later revoke/erasure and route execution.
 Direct synchronous auth callers own scheduling. Session-management handlers and
-other SQL remain in [B2 and C3C-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3b2).
+other SQL have their own budgets below or remain in [C3C-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3c).
 
 ### Code redemption execution budget
 
@@ -252,8 +252,43 @@ unrelated admitted reads remain responsive to a held redemption worker; SQLite
 writer locks can still delay competing writes. These are per-process admission
 and caller wait budgets, not global memory/connection limits or a hard database/
 shutdown deadline. Direct synchronous service callers own scheduling. Logout,
-session list/revoke and other later SQL remain synchronous under B2/C3C-F; this
-does not close [B or combined T3 acceptance](docs/delivery/PI-R4.md#r4-s2-t3c3b).
+session list/revoke have their separate budget below; other SQL remains C3C-F.
+This does not close [combined T3 acceptance](docs/delivery/PI-R4.md#r4-s2-t3c3q).
+
+### Session management execution budget
+
+`auth_session_max_concurrent_requests` defaults to **2** per Services/app process.
+This separate queue-free pool runs complete logout, own-session list and revoke
+operations. Detached principal/id/results cross the boundary; SQL sessions open,
+run and close on their owning worker. Authentication/CSRF remain on the caller.
+Existing subject/plane isolation and account policy remain. Conditional SQL
+updates permit one revocation winner; candidate revoke audit commits with it.
+
+`auth_session_wait_seconds` defaults to **20**. Capacity must be positive and
+wait finite/positive. Configure YAML or `DEE_AUTH_SESSION_MAX_CONCURRENT_REQUESTS`
+and `DEE_AUTH_SESSION_WAIT_SECONDS`, then restart. Full/closed admission returns
+**503** `auth_session_capacity_exhausted` / `auth_session_executor_closed` before
+handler SQL. Wait expiry returns **503** `auth_session_pending`. Each includes
+`Retry-After: 1`, with no success body or cookie deletion. Confirmed logout clears
+both cookies; pending or cancelled operations can still commit later.
+
+Timeout/cancellation keeps admission until actual completion; there is no replay,
+thread kill or rollback guarantee. Device errors offer **Refresh devices**;
+an uncertain revocation disables another revoke until a saved read succeeds.
+Sign-out immediately clears sensitive UI state, waits for its server result
+before allowing another sign-in, and reports unconfirmed outcomes. Manual reload
+checks whether the retained cookie still represents an active session. A busy
+logout has not revoked it; a late committed logout can make it invalid. Do not
+infer confirmed revocation from an uncertain response or automatically retry it.
+
+Cleanup joins accepted work before owned SQL disposal. Budgets are per process,
+not global memory/connection/request limits or a hard driver/shutdown deadline.
+Public liveness/UI and unrelated admitted reads can stay responsive while a
+worker waits; SQLite writer locks can still delay competing writes. Principals
+remain authorization snapshots, with no new lock against later revoke/erasure.
+Direct synchronous callers own scheduling. Other handler/graph/store SQL remains
+under C3C-F, and combined bounded-work acceptance remains C3Q. No schema change,
+external delivery, live-data cleanup or demo restart is part of this change.
 
 ### Dual scoping: all scopes counted, any denial denies
 
