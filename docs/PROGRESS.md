@@ -4,40 +4,41 @@ Updated: 2026-10-29. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3B2 and parent B complete.** This session implements
-session management only. Its [contract](delivery/PI-R4.md#r4-s2-t3c3b2) and
-[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3b2) own scope, measurements,
-regressions, implementation review and exact checks. B1 is published at
-`4227b9c`. C3C-F/Q and C3/C/T3/F14/sprint/PI remain open.
+**R4-S2-T3C3C1 complete.** C3C was split before
+implementation into C1 (operator reads/keys, this session), C2 (shared intake),
+C3 (profile sources) and CQ (combined review). Its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c1) and
+[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c1) own scope, red regressions,
+implementation review and exact checks. Baseline/B is published at `950d641`.
+C3C and all broader parents remain open.
 
-Logout, own-device list and revoke now await complete owning-session operations
-in a separate bounded pool (default two slots / 20-second caller wait). Safe
-full/closed/pending 503/Retry-After responses never clear cookies or claim
-success. Late work retains admission and never replays; confirmed logout clears
-both cookies. Conditional SQL gives one revocation winner and atomic audit.
-UI clears sensitive state immediately, reports unconfirmed logout, prevents
-overlapping sign-in and offers manual session checking. Device errors/uncertain
-revocations require a saved-device refresh before another write; stale-account
-responses are ignored. See the [session budget](../OPERATING.md#session-management-execution-budget).
+Four operator candidate detail/resume/report reads and key issuance now await
+complete owning-session operations in a separate bounded pool (two slots /
+20-second caller wait). Safe full/closed/pending 503/Retry-After returns no
+partial record or undisclosed replacement key. Late work retains admission and
+never replays; workers join before owned SQL disposal. Final existence checks
+refuse observed candidate erasure. Candidate-row locks serialize first issue,
+rotation and erasure without changing the profile clock. A late rotation may
+invalidate the old key without delivering a replacement; recovery is deliberate
+fresh issuance, not automatic replay. See the
+[record budget](../OPERATING.md#operator-candidate-record-execution-budget).
 
-Focused pytest **311 passed / 59 skipped**, final store **29 passed / 3 skipped**,
-SQLite migrated HTTP/restart **172/172**, actual candidate/employer Chrome
-**36/36**, offline Node **78 passed**, bindings/syntax/12-module compilation and
-implementation self-review pass. Full pytest: **3815 passed, 692 skipped,
-127 warnings**. Initial actual PG focused: **371 passed / 1 failed** (existing
-one-second responsiveness check measured 1.022s during parallel full pytest;
-held SQL did not block the event loop). The unchanged isolated rerun passed
-**372 tests**, no skips. PG migrated HTTP/restart **172/172**; B1 redemption
-regression **139/139**. Both owned PG servers stopped. Working DB matches
-baseline; demo untouched. All **616 reviewed code/config hashes** match. Fakes
-prove mechanics, not live delivery/quality. Required validation/completion records
-are complete. The distinct final staged self-review precedes authorized commit/
-push; its record is in the linked evidence. The final response records the
-verified remote commit.
+Focused pytest **244 passed / 57 skipped**, SQLite migrated HTTP/restart **54/54**,
+existing portal/evaluation Chrome compatibility **1/1 + 48/48**, bindings/syntax/
+10-module compilation and implementation self-review pass. These API-only routes
+have no current UI handler; Chrome is compatibility evidence, not direct key-
+issuance UI coverage. Actual PG: **301 passed**, migrated HTTP/restart **54/54**;
+owned server stopped. Full pytest: **3860 passed, 725 skipped, 127 warnings**.
+Working DB matches baseline; demo untouched. All **616 reviewed code/config
+hashes** match. Fakes prove mechanics, not live delivery or measured quality.
 
-**Exact next: R4-S2-T3C3C - Bound intake and profile-source SQL**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c). Define bounded children there before
-implementation if needed; do not start C3C in this session.
+Required validation/completion records and the distinct final staged self-review
+are complete; linked evidence records the self-review. Authorized commit/push
+follows, and the final response reports the verified remote commit.
+
+**Exact next: R4-S2-T3C3C2 - Bound shared intake persistence**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c2). Do not implement C2 in this session;
+the parent remains open until C2/C3/CQ close.
 Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
 Later handler/graph/store SQL remains synchronous. SMTP still holds
@@ -49,6 +50,15 @@ revoke/erasure. Direct synchronous callers own scheduling. Feature overview:
 
 ## Reusable validation setup
 
+- C3C1 runner: `.pytest_cache/run_r4_s2_t3c3c1.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c1_postgres.py` /
+  `r4-s2-t3c3c1-pg-runtime.json` (stopped). Review/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c1.py check` / `preserve`.
+  Operator candidate reads/key SQL/admission/late-rotation/recovery/restart:
+  `scripts/smoke_r4_s1_t3c.py --candidate-record-workers`; add `--postgres`
+  only with an explicitly disposable `DEE_TEST_DB_URL`. Existing portal Chrome
+  compatibility: `scripts/check_ui_evaluate_browser.py`.
 - B2's sanitized runner: `.pytest_cache/run_r4_s2_t3c3b2.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3b2_postgres.py` /

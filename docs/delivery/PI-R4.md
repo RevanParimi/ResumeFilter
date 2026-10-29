@@ -423,12 +423,60 @@ C3C-F/Q and all combined T3 parents remain open. Exact next: C3C, separate sessi
 
 ###### <a id="r4-s2-t3c3c"></a>R4-S2-T3C3C - Bound intake and profile-source SQL
 
-Status: pending. Prerequisite: C3B. Measure candidate intake/resume persistence,
+Status: in progress (2026-10-29). Prerequisite: C3B, done. Measure candidate intake/resume persistence,
 candidate reads/keys and profile-source pre/post-provider SQL in `candidates`,
 `screening.ingest` and `profile_sources`; split before implementation if needed.
 Preserve cross-process identity/resume dedupe, present consent, scoped access,
 erasure and deterministic provider fallbacks. Prove concurrency/late-write
 uncertainty and migrated two-actor intake/source HTTP/restart/browser journeys.
+
+Source inventory at `950d641`: `api/candidates.py` has three synchronous read
+handlers and key issuance, shared `_ingest_one` awaits providers but calls SQL
+through `screening/ingest.py`, and source handlers/service mix SQL before/after
+async GitHub work or LinkedIn parsing/curation. Admin candidate/resume erasure
+adapters remain with shared candidate-rights work in C3E. Split before code:
+
+**<a id="r4-s2-t3c3c1"></a>R4-S2-T3C3C1 - Bound operator candidate reads and keys**
+
+Status: done (2026-10-29). This session's only implementation child.
+[C1 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c1) owns pre-implementation scope,
+red SQL/erasure/concurrency regressions, complete owning-session candidate reads/
+key workers, safe admission/wait/cancel/drain and final existence checks. Key
+issuance/rotation serializes with erasure and preserves the profile clock; late
+rotation can invalidate the old key without delivering its replacement. Recovery
+is deliberate fresh issuance, never replay. Focused/full/actual PG, migrated
+HTTP/restart, existing portal Chrome compatibility and both reviews are recorded.
+No UI handler/schema/provider/scoring change. C2/C3/CQ, C3C and broader parents
+remain open. Exact next is C3C2, separate session.
+
+**<a id="r4-s2-t3c3c2"></a>R4-S2-T3C3C2 - Bound shared intake persistence**
+
+Status: pending. Prerequisite: C1. Measure and bound candidate/resume ingest,
+fingerprint/comparison and pre/post-evaluation owning SQL in `screening/ingest`
+and both intake adapters; define smaller children before implementation if needed.
+Keep async extraction/evaluation on the caller and preserve cross-process dedupe,
+versions, tenant/consent/erasure guards and deterministic fallbacks. Require
+red/focused/full, real PG lock/race, migrated two-actor intake/restart, actual
+intake Chrome/recovery and both reviews. Late writes require honest uncertainty
+without replay; no working-store/schema change without its separate gate.
+
+**<a id="r4-s2-t3c3c3"></a>R4-S2-T3C3C3 - Bound profile-source operations**
+
+Status: pending. Prerequisite: C2. Measure candidate/handle checks, source
+save/list/final guards and curation capture before/after async GitHub fetch;
+include bounded LinkedIn parsing/SQL. Preserve advisory signals, present subject,
+provenance/erasure, guarded best-effort curation and provider fallbacks. Keep
+coroutines and live SQL sessions on their owners. Require red/focused/full,
+real PG contention/erasure, migrated source/restart and relevant browser/contract
+journeys plus both reviews. Define bounded children first if necessary.
+
+**<a id="r4-s2-t3c3cq"></a>R4-S2-T3C3CQ - Review combined intake/source acceptance**
+
+Status: pending. Prerequisites: C1-C3 and any children. Re-inventory these
+boundaries and run combined real SQLite/PG, HTTP/restart, affected Chrome and full
+regression gates. Review combined admission/uncertain writes/cleanup and preserve
+dedupe, isolation, consent/erasure and fallbacks. Only then close C3C; C3D-F/Q
+and all broader parents remain separate work. No live provider/quality claim.
 
 ###### <a id="r4-s2-t3c3d"></a>R4-S2-T3C3D - Bound evaluation, reporting and screening SQL
 
@@ -442,7 +490,8 @@ restart workflows; do not move coroutine/provider execution into a SQL session.
 ###### <a id="r4-s2-t3c3e"></a>R4-S2-T3C3E - Bound candidate rights, verification and interview SQL
 
 Status: pending. Prerequisite: C3D. Measure remaining `portal`, `verification`
-and `interviews` SQL; split into owning-operation children first. Preserve
+and `interviews` SQL, plus admin candidate/resume erasure adapters; split into
+owning-operation children first. Preserve
 consent/access/erasure, challenge ordering/rollback, ownership and advisory
 content-only scoring. Exercise actual lock/erasure interleavings, safe uncertain
 writes, migrated HTTP/restart and relevant candidate/verification/interview Chrome.

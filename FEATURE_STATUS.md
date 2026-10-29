@@ -185,5 +185,14 @@ reads and revocation with separate owning-session admission and safe uncertain
 responses. Revocations have one SQL winner and atomic audit. UI reports
 unconfirmed logout, protects sign-in overlap and requires saved-device refresh
 before another uncertain revoke. See the [session budget](OPERATING.md#session-management-execution-budget).
-C3C-F/Q and parent acceptance remain open; later handler/graph/store SQL stays
-synchronous. Exact task status and next action are owned by the PI/handoff.
+C3C-F/Q and parent acceptance remain open.
+[R4-S2-T3C3C1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c1) bounds the operator
+candidate detail/resume/report reads and access-key issuance in a separate pool.
+Pending/refused work returns no partial data or undisclosed replacement key;
+loaded results recheck observed candidate erasure. Key issuance/rotation locks
+the candidate and preserves its profile clock. A late rotation can invalidate
+the old key; recovery is deliberate fresh issuance. The
+[record budget](OPERATING.md#operator-candidate-record-execution-budget) states
+API-only scope and limits. C3C2/C3C3/CQ, C3D-F/Q and all broader parents remain
+open; other handler/graph/store SQL stays synchronous. Exact task status and next
+action are owned by the PI/handoff.

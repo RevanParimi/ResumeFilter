@@ -290,6 +290,46 @@ Direct synchronous callers own scheduling. Other handler/graph/store SQL remains
 under C3C-F, and combined bounded-work acceptance remains C3Q. No schema change,
 external delivery, live-data cleanup or demo restart is part of this change.
 
+### Operator candidate record execution budget
+
+`candidate_record_max_concurrent_requests` defaults to **2** per Services/app
+process. Its separate queue-free pool runs the complete operator candidate
+detail/resume-list/report-list GET operations and POST `/candidates/{id}/auth-key`.
+Workers own summary/payload/final existence checks and every SQL session; only
+store/bound-reader/id arguments and detached results cross the boundary. Operator
+authentication and session-CSRF stay on the caller. Other intake/source/rights
+SQL is separate work; this pool does not cover all candidate operations.
+
+`candidate_record_wait_seconds` defaults to **20**, finite/positive; capacity
+must be positive. Configure YAML or `DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS`
+and `DEE_CANDIDATE_RECORD_WAIT_SECONDS`, then restart. Full/closed admission gives
+**503** `candidate_record_capacity_exhausted` / `candidate_record_executor_closed`
+before the owning operation. Wait expiry gives **503** `candidate_record_pending`.
+Each includes `Retry-After: 1`, without partial records, a replacement key or
+cookies. Missing or observed-erased candidates give the existing generic 404.
+
+Timeout/cancellation retains admission until actual completion. A late auth-key
+POST can rotate the credential and invalidate the old key without delivering its
+replacement. Do not replay automatically or infer rollback. An authorized operator
+can deliberately issue a fresh key after the original work finishes; that fresh
+rotation invalidates any late undisclosed key. No saved read can recover plaintext
+because only its hash is stored. These are API-only operator routes today; no new
+record/key screen or automatic client recovery is provided by this change.
+
+Candidate-row locking serializes first issuance, rotation and erasure. SQLite
+uses a write-locking self-assignment preserving the profile update timestamp;
+PG uses `FOR UPDATE`. Erasure leaves no orphan/valid erased credential. Final
+existence checks refuse observed erasure but remain snapshots, without locking
+later deletion, another rotation or HTTP delivery. Independent rotations can
+invalidate an earlier delivered key as before.
+
+Cleanup joins accepted workers before owned SQL disposal. This is per-process
+admission and caller wait, not a thread kill, rollback guarantee, durable queue,
+global memory/connection/request cap or hard DB/shutdown deadline. Health and
+unrelated admitted reads can stay responsive while worker SQL waits; SQLite
+writer locks still delay competing writes. Direct synchronous callers own
+scheduling. No migration, working-data rotation or demo restart is included.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

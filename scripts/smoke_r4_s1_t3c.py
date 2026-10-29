@@ -5,7 +5,8 @@ No working data, external provider calls or existing demo restart.
 """
 
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -13,11 +14,14 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
+from threading import get_ident, local
 
 from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_r4_s1_t1a import serve
 from smoke_s62 import _export_b64
 from smoke_s82 import _code_for
+from smoke_r1_s1_t3a_v1 import database
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,15 +31,130 @@ RESUME = "Synthetic Candidate Router\nEmail: candidate-router@example.in\n" + "\
 )
 
 
+def create_candidate_record_smoke_app():
+    from sqlalchemy import event
+    from app.api import candidates as routes
+    from smoke_r4_s1_t1a import create_smoke_app
+    app = create_smoke_app()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state = local()
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            functions = {name: getattr(routes, name) for name in ('_candidate_snapshot', '_candidate_key')}
+            for name, function in functions.items():
+                def observed(*args, _function=function, _name=name, **kwargs):
+                    state.active, state.held = True, False
+                    with (scratch / 'record-operations.jsonl').open('a') as log:
+                        log.write(json.dumps({'operation': _name, 'thread': get_ident()}) + '\n')
+                    try:
+                        return _function(*args, **kwargs)
+                    finally:
+                        state.active = False
+                        if state.held:
+                            (scratch / 'record-completed').touch()
+                setattr(routes, name, observed)
+            def sql(conn, cursor, statement, parameters, context, many):
+                mode = scratch / 'record-mode'
+                if mode.exists() and getattr(state, 'active', False) and not state.held:
+                    target = ('candidates' in statement if mode.read_text() == 'read' else
+                              statement.lstrip().upper().startswith('UPDATE CANDIDATE_CREDENTIALS'))
+                    if target:
+                        state.held = True
+                        (scratch / 'record-entered').touch()
+                        deadline = time.monotonic() + 20
+                        while not (scratch / 'record-release').exists():
+                            assert time.monotonic() < deadline, 'synthetic candidate SQL gate timed out'
+                            time.sleep(.01)
+            def owner(session, transaction, connection):
+                assert session.info.setdefault('record_owner', get_ident()) == get_ident()
+                with (scratch / 'record-thread-ownership.jsonl').open('a') as log:
+                    log.write(json.dumps({'owner': session.info['record_owner'], 'current': get_ident()}) + '\n')
+            def end(session, transaction):
+                assert session.info.get('record_owner', get_ident()) == get_ident()
+            engine = services.session_factory.kw['bind']
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(services.session_factory, 'after_begin', owner)
+            event.listen(services.session_factory, 'after_transaction_end', end)
+            try:
+                yield
+            finally:
+                for name, function in functions.items():
+                    setattr(routes, name, function)
+                event.remove(engine, 'before_cursor_execute', sql)
+                event.remove(services.session_factory, 'after_begin', owner)
+                event.remove(services.session_factory, 'after_transaction_end', end)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_candidate_records(checks, scratch, base, control, operator, cid, other_id, key):
+    operations = scratch / 'record-operations.jsonl'
+    for suffix, method in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]:
+        path = f'/candidates/{cid}' + suffix
+        before = len(operations.read_text().splitlines())
+        for name in ('record-entered', 'record-completed', 'record-release'):
+            (scratch / name).unlink(missing_ok=True)
+        (scratch / 'record-mode').write_text('key' if method == 'POST' else 'read')
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(operator.request, method, path)
+            try:
+                deadline = time.monotonic() + 8
+                while not (scratch / 'record-entered').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                start = time.monotonic()
+                health, read = control.get('/healthz'), control.get('/admin/users')
+                elapsed = time.monotonic() - start
+                checks.check(f'{suffix or "detail"}: health and unrelated admitted SQL read stay responsive',
+                    health.status_code == read.status_code == 200 and elapsed < 1, f'{elapsed:.4f}s')
+                for busy_suffix, verb in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]:
+                    busy = control.request(verb, f'/candidates/{other_id}' + busy_suffix)
+                    checks.check(f'{suffix or "detail"}: shared admission refuses {busy_suffix or "detail"}',
+                        busy.status_code == 503 and busy.json() == {'detail': 'candidate_record_capacity_exhausted'}
+                        and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                response = pending.result(timeout=8)
+                checks.check(f'{suffix or "detail"}: wait expiry returns no partial read or replacement key',
+                    response.status_code == 503 and response.json() == {'detail': 'candidate_record_pending'}
+                    and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers
+                    and len(operations.read_text().splitlines()) == before + 1)
+            finally:
+                (scratch / 'record-release').touch()
+                deadline = time.monotonic() + 8
+                while not (scratch / 'record-completed').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                (scratch / 'record-mode').unlink(missing_ok=True)
+        with client(base, headers={'X-Candidate-Key': key}) as candidate:
+            checks.check(f'{suffix or "detail"}: late completion has the documented credential outcome',
+                candidate.get('/portal/me').status_code == (401 if method == 'POST' else 200))
+        if method == 'POST':
+            fresh = operator.post(path)
+            checks.check('deliberate fresh rotation recovers after an undisclosed late key', fresh.status_code == 200)
+            key = fresh.json()['access_key']
+        else:
+            checks.check(f'{suffix or "detail"}: explicit read recovers saved state', operator.get(path).status_code == 200)
+    rows = [json.loads(line) for line in (scratch / 'record-thread-ownership.jsonl').read_text().splitlines()]
+    checks.check('candidate SQL sessions keep their owning thread through transactions', rows and all(row['owner'] == row['current'] for row in rows))
+    return key
+
+
 def main():
-    checks = Smoke("R4-S1-T3C candidate/source HTTP and graceful restart")
     scratch = Path(tempfile.mkdtemp(prefix="r4-s1-t3c-"))
+    with database(scratch) as (url, pg_options):
+        return run(scratch, url, pg_options)
+
+
+def run(scratch, url, pg_options):
+    checks = Smoke("R4-S1-T3C candidate/source HTTP and graceful restart")
     print(f"Synthetic candidate evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     env.update({
         "DEE_CONFIG_FILE": str(scratch / "no-config.yaml"), "DEE_ENV": "local",
-        "DEE_CANDIDATES_DB_URL": "sqlite:///" + (scratch / "app.db").as_posix(),
+        "DEE_CANDIDATES_DB_URL": url, 'PGOPTIONS': pg_options,
         "DEE_DB_MIGRATE_ON_BOOT": "true", "DEE_API_AUTH_KEY": ADMIN,
         "DEE_OPENROUTER_API_KEY": "", "DEE_GITHUB_TOKEN": "",
         "DEE_GITHUB_API_BASE": "http://127.0.0.1:9", "DEE_SPEECH_PROVIDER": "local",
@@ -45,10 +164,13 @@ def main():
         "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if '--candidate-record-workers' in sys.argv:
+        env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
@@ -128,6 +250,8 @@ def main():
             key = require(operator.post(path + "/auth-key"))["access_key"]
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
+            if '--candidate-record-workers' in sys.argv:
+                key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key)
 
             owned = require(org_a.post("/screening/candidates", json={"resume_text": RESUME.replace("candidate-router@example.in", "candidate-employer@example.in"), "domain": "data_eng"}))
             employer_rid = owned["report"]["id"]

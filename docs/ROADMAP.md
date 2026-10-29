@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-29 - R4-S2-T3C3C1 complete; operator reads and keys.**
+  C3C was split before implementation; this session completes only C1. Four
+  operator read/key routes use bounded owning-session workers, final observed-
+  erasure checks and safe refusal/uncertainty. Key issuance/rotation serializes
+  with erasure, preserving the profile clock; late commits require deliberate
+  fresh issuance without replay. The [C1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c1)
+  owns the contract, red/green, actual SQLite/PG locks/races, migrated HTTP/restart,
+  full pytest, UI static/contract and existing Chrome compatibility checks plus
+  both reviews. No new UI screen or direct browser key-issuance claim. Required
+  gates pass; owned PG stopped, working store preserved and demo untouched.
+  Exact next is C3C2 after reviewed publication; C3C/C3/C/T3/F14/sprint/PI remain
+  open. Stop here.
+
 - **Session 2026-10-29 - R4-S2-T3C3B2 and B complete; session management.**
   Logout, own-device list and revoke use separate bounded owning-session workers.
   Uncertain outcomes never clear cookies or replay; conditional revocations have

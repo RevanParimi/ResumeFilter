@@ -7661,3 +7661,191 @@ added local documentation links/anchors**, staged whitespace and preservation
 checks pass. Both owned PG servers stopped; the demo was untouched. Publication
 uses configured `main` -> `origin/main` and per-command GCM account selection;
 the final response reports the verified remote commit. Stop after publication.
+
+### <a id="r4-s2-t3c3c1"></a>R4-S2-T3C3C1 - Bound operator candidate reads and keys
+
+Date: 2026-10-29 (client date). Baseline: `950d641`. Status: done.
+C3C was inventoried/split in its [existing PI record](PI-R4.md#r4-s2-t3c3c)
+before implementation: C1 (this session) owns three operator GET detail/resumes/
+reports routes and POST auth-key; C2 owns shared intake persistence, C3 owns
+profile-source operations and CQ their combined acceptance. Admin erasure
+adapters stay with C3E rights. Only C1 is implemented; C3C and all parents stay
+open. No new task file, schema/migration, UI handler or provider/scoring change.
+
+Pre-implementation acceptance: bound the complete three operator GET detail/
+resumes/reports operations and POST auth-key in a separate queue-free pool, with
+store/callback/id inputs and detached results only. No Request/Response/live SQL
+Session crosses threads. Require positive capacity / finite wait, safe full/
+closed/pending 503/Retry-After without partial records or undisclosed keys,
+retained admission through actual completion, consumed late failures, no replay
+and join-before-SQL disposal. Preserve operator/session/CSRF gates, generic 404,
+DTO/OpenAPI, subject isolation and plaintext-once/hash-only credentials. Recheck
+candidate existence before publishing loaded records or a key after observed
+erasure, without claiming a lock across later delivery. Late rotations can commit;
+document deliberate fresh issuance recovery. Concurrent first issues/rotations
+must serialize and erasure must leave no orphan/valid erased key. No schema or
+working-data rotation. Require red/focused/full, actual SQLite/PG locks/races/
+rollback, migrated two-actor HTTP/restart and existing candidate/source journey,
+UI static/contract checks and actual portal Chrome compatibility. No current UI
+handler consumes these API-only routes; do not claim direct key-issuance browser
+coverage or a new screen. Record implementation and distinct staged self-reviews.
+
+**Reproduction and implementation.** The four async handlers performed their
+synchronous SQL directly. Holding candidate SQL for three seconds blocked
+health and an unrelated admitted read until it finished: **4 failed, 4 skipped,
+21 deselected, 1 warning, 21.76s**. Four loaded-result erasure regressions also
+failed because detail/resume/report responses or an invalidated key could be
+published after observed candidate deletion: **4 failed, 29 deselected,
+1 warning, 4.62s**. Two controlled first-issue/rotation races proved the second
+connection could pass an in-flight issue without serialization: **2 failed,
+2 skipped, 73 deselected, 1 warning, 6.62s**. These are behavioral failures,
+not source checks or fixture/import failures.
+
+Each complete read now runs its summary, payload and final candidate-existence
+check on `Services.candidate_records`; key issuance and its final check use the
+same separate queue-free pool. The caller supplies store/bound-reader/id values,
+never Request/Response/live Session; detached values return for DTO construction.
+Safe full/closed/pending 503/Retry-After gives neither partial data nor a hidden
+replacement key. Timeout/cancel retains capacity through actual completion and
+never replays. Cleanup joins workers before owned SQL disposal. Default capacity
+is two with a finite positive 20-second caller wait, configured in Settings/YAML/
+environment. Existing auth, session precedence, CSRF, DTO/OpenAPI and 404 remain.
+
+`CandidateStore.issue_access_key` locks the candidate before reading credential
+state: PostgreSQL `FOR UPDATE`, SQLite a self-assignment UPDATE that takes its
+writer lock without changing the candidate update clock. Concurrent first issues
+or rotations serialize to one credential; erasure either wins first and refuses
+issuance or follows issuance and cascades its credential. Write failure rolls
+back; other subjects are preserved. Plaintext is still returned once, hash-only
+storage remains, and a late commit can invalidate the old key without delivering
+the new one. Recovery is a deliberate fresh rotation, never automatic replay.
+Final checks are snapshots, not locks against later erasure/rotation/delivery.
+
+Resolved findings: medium availability at `api/candidates.py` four handlers
+(event-loop SQL stalls), high privacy at the same composed read/key responses
+(observed-erasure snapshots returned), and medium correctness at
+`CandidateStore.issue_access_key` (unserialized first issue/rotation). Fixes and
+red/green, rollback and real competing-connection evidence are recorded here.
+No working data or real candidate keys were used or rotated.
+
+**Implementation self-review.** Reviewed `950d641` plus the 12-file application/
+config/test/HTTP/PI diff. Matched C1 acceptance to all four handlers and coupled
+owning operations, detached store returns, final erasure checks, admission/wait/
+cancel/drain, secret-free pending results and explicit recovery. Checked key lock
+ordering against parent erasure and credential uniqueness, preserved profile
+timestamps, rollback and unrelated subjects; existing HTTP/DTO/security guards
+remain. No blocking finding remains. This is self-review, not independent review.
+A distinct final staged review follows required validation/completion records.
+
+**Validation commands/results.** The ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3c1.py <tag> <Python args>` clears inherited DEE
+configuration/keys, selects nonexistent YAML and overrides remote-provider
+credentials. Fixtures bypass dotenv and isolate stores; subprocess apps run in
+scratch directories without `.env`. Bare Settings calls are not globally patched.
+
+- Tag `green`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  tests/test_candidate_store.py -k 'operator_candidate or competing_key_issuance'`:
+  **10 passed, 6 skipped, 94 deselected, 1 warning, 12.42s**.
+- Tag `records`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'record_admission or key_real_lock'`: **21 passed, 21 skipped,
+  33 deselected, 1 warning, 22.17s**. Four operations x release/timeout/cancel/
+  late SQL failure/erasure, no partial result/secret, retained shared admission,
+  owning worker sessions, deliberate rotation recovery and real SQLite writer
+  lock/late invalidation pass. Final focused below also adds pre-admission
+  anonymous/session-CSRF refusals during saturation.
+- Tag `key-erasure`, `-m pytest -q --tb=short tests/test_candidate_store.py
+  -k 'key_issuance or erasure_have'`: **6 passed, 6 skipped, 73 deselected,
+  1 warning, 8.65s**. First issue and rotation, both erasure orders, one surviving
+  credential, no valid erased key and unchanged profile clock pass. Final focused
+  also adds first-issue/rotation flush-failure rollback/recovery.
+- Tag `focused`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  tests/test_candidate_store.py tests/test_portal_api.py tests/test_auth_session_twins.py
+  tests/test_api_auth_gate.py tests/test_api_route_extraction.py tests/test_route_table_guard.py
+  tests/test_openapi_contract.py tests/test_service_lifecycle.py tests/test_config.py`:
+  **244 passed, 57 skipped, 1 warning, 103.40s** (wrapper 107.86s).
+- SQLite migrated HTTP: tag `http`, `scripts/smoke_r4_s1_t3c.py
+  --candidate-record-workers`: **54/54**, 22.36s. All four controlled SQL holds
+  leave health plus unrelated admitted SQL read responsive in **0.0096-0.0171s**,
+  each below one second. Shared admission refuses even another subject before
+  work, pending gives no partial response/key, read recovery is explicit, late
+  rotation invalidates the old key, deliberate fresh rotation survives restart,
+  other subjects/tenant intake/source history/CSRF and erasure remain. Two fresh
+  migrated lifespans close cleanly; SQL sessions retain thread ownership; app logs
+  omit the key and synthetic mailbox. The harness now supports disposable PG via
+  the existing owned-schema context. Last-seen writes are disabled for this probe
+  window (`3600s` interval) to isolate candidate SQL from independent auth touches.
+- Actual existing portal/evaluation Chrome compatibility: tag `browser`,
+  `scripts/check_ui_evaluate_browser.py`: **1/1 + 48/48**, 30.22s.
+  Existing operator/candidate sign-in, evaluation, feedback, consent/contact,
+  reload, failed saved-read recovery and erasure pass without console exceptions.
+  No UI handler/binding consumes these four operator API routes today; this is
+  compatibility evidence, not direct browser execution of new key issuance or a
+  candidate-record screen. HTTP above owns the changed API contract. Existing
+  CDN internet remains required; fake providers do not prove live delivery/quality.
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, pass.
+  `node --check frontend/api.js`, `frontend/support.js`, and `git diff --check`
+  pass. Tag `compile`, `-m py_compile` on all **10 changed Python modules**,
+  exit 0. Reviewed-state helper hashes **616 code/config files**.
+
+- Owned actual PostgreSQL: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c1_postgres.py`, fresh disposable **PG 18.6**,
+  Asia/Calcutta, read committed, unique test schemas. Same 10-file focused group:
+  **301 passed, 1 warning, 302.68s** (wrapper 310.01s), no skips. Includes actual
+  candidate-row `FOR UPDATE` waits observed in `pg_stat_activity`, serialized
+  first issuance/rotation, both erasure orders, flush-failure rollback, unchanged
+  profile clock, worker ownership and late-key/no-partial-result behavior. This
+  is real PG evidence, distinct from controlled SQL holds and SQLite skips.
+- Actual PG migrated HTTP: `scripts/smoke_r4_s1_t3c.py --postgres
+  --candidate-record-workers`: **54/54**, 27.70s. Held lookup/key SQL leaves
+  health plus unrelated admitted SQL read responsive in **0.0113-0.0874s**,
+  each below one second. The same admission, late rotation/manual recovery,
+  hash-only key persistence/restart, subject/tenant/CSRF/source/erasure journey
+  passes. Owned `pg_ctl -m fast` cleanup: **stop_exit 0**, 41.97s; server stopped.
+  No new migration up/down/up applies because schema/constraints are unchanged; actual transaction/thread
+  behavior is covered and scratch HTTP stores migrate through 0030.
+
+- Full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c1.py full` executes the required
+  `-m pytest -q --tb=short`: **3860 passed, 725 skipped, 127 warnings,
+  1190.52s** (wrapper 1199.30s), exit 0. Optional/environment/PG skips do not
+  establish omitted cases; the separate owned PG gate covers this task's SQL
+  cases. Existing expression-index reflection / third-party warnings remain.
+  All **616 reviewed code/config hashes** still match the final tested state.
+- Completion: **C3C1 done**. C3C2/C3C3/CQ, C3C/C3/C/T3/F14/sprint/PI remain
+  open. The contract/results are consolidated here; PI/feature/runbook link to
+  their owners and handoff/roadmap name **R4-S2-T3C3C2** next. No second child
+  implementation was started. Distinct final staged self-review and scoped
+  publication follow below.
+
+Working DB and the port-8000 demo remain outside validation. Later intake/source/
+rights SQL remains in its named children; no complete off-loop SQL claim follows.
+
+**Distinct final staged self-review (after validation/completion records).**
+Reviewed the complete `950d641`-based 17-file staged diff: four application modules,
+YAML, five pytest/fixture modules, one HTTP harness and six documentation records.
+Rechecked all four owning operations, detached arguments/results and worker-owned
+SQL sessions, final observed-erasure refusal, existing auth/session-CSRF/404/DTO
+contracts and shared admission. Full/closed/pending paths publish no partial
+record or key; cancellation/late failure retains admission, consumes completion,
+never replays and drains before owned SQL disposal. Candidate-row lock ordering,
+first issuance/rotation uniqueness, both erasure orders, preserved profile clock
+and rollback/recovery match the regressions. The late-key limitation and deliberate
+fresh rotation recovery remain explicit; final existence checks are snapshots.
+
+Matched acceptance to separate SQLite/actual PG competing-connection evidence,
+migrated HTTP/restart and the full suite. Controlled holds are not presented as
+PG lock evidence; existing Chrome is compatibility evidence for API-only changes,
+not direct key-issuance UI execution. Fakes establish no live-provider/quality or
+production-load claim. C1 alone is complete; C2/C3/CQ and broader parents remain
+open, admin erasure adapters belong to C3E, and exact next is C3C2. No blocking
+finding remains. This is self-review, not independent review. Removed one extra
+runbook blank line; this final pass changes documentation only.
+
+All **616 code/config hashes** match the reviewed/full-tested state. **717 unrelated
+tracked files, including `data/veritas.db`**, match baseline. Exactly **17 scoped
+files** are staged, with no unstaged/untracked changes, secrets, working data or
+local runtime/log artifacts. The **nine added local documentation links/anchors**,
+staged whitespace and preservation checks pass. Owned PG is stopped and the demo
+was untouched. Publication uses configured `main` -> `origin/main` with per-command
+GCM account selection; the final response reports the verified remote commit.
+Stop after publication.

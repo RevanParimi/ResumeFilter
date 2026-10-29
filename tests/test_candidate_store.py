@@ -312,12 +312,139 @@ def _new_candidate(store) -> str:
         return row.id
 
 
+@pytest.mark.parametrize('existing', [False, True], ids=['first-issue', 'rotation'])
+def test_competing_key_issuance_serializes_one_credential_without_touching_profile(database, existing):
+    from app.candidates.models import CandidateCredentialRow
+    engine, factory = database
+    store = CandidateStore(factory)
+    if existing:
+        store.issue_access_key('a')
+    survivor = store.issue_access_key('b')
+    with factory() as session:
+        before = session.get(CandidateRow, 'a').updated_at
+    ready, release, started = Event(), Event(), Event()
+    owner, pids = [], []
+    def pause(conn, cursor, statement, parameters, context, many):
+        target = ('UPDATE CANDIDATE_CREDENTIALS' if existing else 'INSERT INTO CANDIDATE_CREDENTIALS')
+        if statement.lstrip().upper().startswith(target) and not ready.is_set():
+            if engine.dialect.name == 'postgresql':
+                owner.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            ready.set()
+            assert release.wait(15)
+    def begin(session, transaction, connection):
+        if engine.dialect.name == 'postgresql':
+            pids.append(connection.scalar(text('SELECT pg_backend_pid()')))
+        started.set()
+    event.listen(engine, 'before_cursor_execute', pause)
+    event.listen(factory, 'after_begin', begin)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(store.issue_access_key, 'a')
+            try:
+                assert ready.wait(8)
+                started.clear()
+                pids.clear()
+                second = pool.submit(store.issue_access_key, 'a')
+                assert started.wait(8)
+                blocked(engine, second, owner[0] if owner else None, pids)
+            finally:
+                release.set()
+            earlier, later = first.result(timeout=8), second.result(timeout=8)
+        assert store.authenticate_candidate(earlier) is None
+        assert store.authenticate_candidate(later) == 'a'
+        assert store.authenticate_candidate(survivor) == 'b'
+        with factory() as session:
+            assert session.get(CandidateRow, 'a').updated_at == before
+            assert session.scalar(select(func.count()).select_from(CandidateCredentialRow).where(CandidateCredentialRow.candidate_id == 'a')) == 1
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', pause)
+        event.remove(factory, 'after_begin', begin)
+
+
 def test_issue_and_authenticate_roundtrip():
     store = make_candidate_store()
     cid = _new_candidate(store)
     key = store.issue_access_key(cid)
     assert isinstance(key, str) and key
     assert store.authenticate_candidate(key) == cid
+
+
+@pytest.mark.parametrize('order', ['issue-first', 'erase-first'])
+@pytest.mark.parametrize('existing', [False, True], ids=['first-issue', 'rotation'])
+def test_candidate_key_issuance_and_erasure_have_one_order(database, order, existing):
+    from app.candidates.models import CandidateCredentialRow
+    engine, factory = database
+    store = CandidateStore(factory)
+    if existing:
+        store.issue_access_key('a')
+    survivor = store.issue_access_key('b')
+    issuer_factory, eraser_factory = make_session_factory(engine), make_session_factory(engine)
+    issuer, eraser = CandidateStore(issuer_factory), CandidateStore(eraser_factory)
+    ready, release, started = Event(), Event(), Event()
+    owner, pids = [], []
+    def pause(session, *args):
+        if engine.dialect.name == 'postgresql':
+            owner.append(session.connection().scalar(text('SELECT pg_backend_pid()')))
+        ready.set()
+        assert release.wait(15)
+    def begin(session, transaction, connection):
+        if engine.dialect.name == 'postgresql':
+            pids.append(connection.scalar(text('SELECT pg_backend_pid()')))
+        started.set()
+    first_factory = issuer_factory if order == 'issue-first' else eraser_factory
+    second_factory = eraser_factory if order == 'issue-first' else issuer_factory
+    event.listen(first_factory, 'after_flush', pause)
+    event.listen(second_factory, 'after_begin', begin)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(issuer.issue_access_key if order == 'issue-first' else eraser.delete_candidate, 'a')
+            try:
+                assert ready.wait(8)
+                second = pool.submit(eraser.delete_candidate if order == 'issue-first' else issuer.issue_access_key, 'a')
+                assert started.wait(8)
+                blocked(engine, second, owner[0] if owner else None, pids)
+            finally:
+                release.set()
+            if order == 'issue-first':
+                raw = first.result(timeout=8)
+                assert second.result(timeout=8)
+                assert store.authenticate_candidate(raw) is None
+            else:
+                assert first.result(timeout=8)
+                with pytest.raises(LookupError):
+                    second.result(timeout=8)
+        assert store.get_candidate('a') is None
+        assert store.authenticate_candidate(survivor) == 'b'
+        with factory() as session:
+            assert session.scalar(select(CandidateCredentialRow).where(CandidateCredentialRow.candidate_id == 'a')) is None
+    finally:
+        release.set()
+        event.remove(first_factory, 'after_flush', pause)
+        event.remove(second_factory, 'after_begin', begin)
+
+
+@pytest.mark.parametrize('existing', [False, True], ids=['first-issue', 'rotation'])
+def test_candidate_key_write_failure_rolls_back_credential(database, existing):
+    from app.candidates.models import CandidateCredentialRow
+    _, factory = database
+    store = CandidateStore(factory)
+    old = store.issue_access_key('a') if existing else None
+    survivor = store.issue_access_key('b')
+    def fail(session, *args):
+        raise RuntimeError('synthetic key flush failure')
+    event.listen(factory, 'after_flush', fail)
+    try:
+        with pytest.raises(RuntimeError, match='synthetic key flush failure'):
+            store.issue_access_key('a')
+    finally:
+        event.remove(factory, 'after_flush', fail)
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(CandidateCredentialRow).where(CandidateCredentialRow.candidate_id == 'a')) == int(existing)
+    if old:
+        assert store.authenticate_candidate(old) == 'a'
+    assert store.authenticate_candidate(survivor) == 'b'
+    assert store.authenticate_candidate(store.issue_access_key('a')) == 'a'
 
 
 def test_authenticate_rejects_bad_and_empty_keys():

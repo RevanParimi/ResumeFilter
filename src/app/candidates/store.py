@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Callable, Literal, Optional
 
 from pydantic import BaseModel
-from sqlalchemy import and_, case, delete, func, inspect, select
+from sqlalchemy import and_, case, delete, func, inspect, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
@@ -538,7 +538,17 @@ class CandidateStore:
         ONCE, storing only its hash. Overwriting an existing credential is
         rotation. LookupError if the candidate is unknown."""
         with self._session_factory() as session:
-            if session.get(CandidateRow, candidate_id) is None:
+            # Serialize even the first credential insert against rotation and
+            # parent erasure. SQLite locks before reading mutable state; the
+            # self-assignment preserves the candidate profile update clock.
+            if session.get_bind().dialect.name == 'sqlite':
+                found = session.execute(update(CandidateRow).where(CandidateRow.id == candidate_id)
+                    .values(updated_at=CandidateRow.updated_at)
+                    .execution_options(synchronize_session=False)).rowcount == 1
+            else:
+                found = session.scalar(select(CandidateRow.id).where(
+                    CandidateRow.id == candidate_id).with_for_update()) is not None
+            if not found:
                 raise LookupError(f"unknown candidate: {candidate_id}")
             raw = secrets.token_urlsafe(self._access_key_bytes)
             cred = (

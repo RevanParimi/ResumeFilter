@@ -16,6 +16,7 @@ from pydantic import BaseModel, model_validator
 from app.api.dependencies import _services, require_api_key
 from app.candidates.schema import CandidateProfile
 from app.candidates.store import MatchedOn, ResumeSummary
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.core.resume import ResumeInputError, read_resume_input_async
 from app.domains.base import get_domain
 from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
@@ -164,12 +165,11 @@ class CandidateResumesResponse(BaseModel):
 @router.get("/candidates/{candidate_id}", response_model=CandidateDetail)
 async def get_candidate(candidate_id: str, request: Request) -> CandidateDetail:
     services = _services(request)
-    summary = services.candidates.get_candidate(candidate_id)
-    if summary is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
+    summary, profile = await _candidate_record(request, _candidate_snapshot,
+        services.candidates, candidate_id, services.candidates.latest_profile)
     return CandidateDetail(
         **summary.model_dump(),
-        latest_profile=services.candidates.latest_profile(candidate_id),
+        latest_profile=profile,
     )
 
 
@@ -178,20 +178,20 @@ async def list_candidate_resumes(
     candidate_id: str, request: Request
 ) -> CandidateResumesResponse:
     services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
+    _summary, resumes = await _candidate_record(request, _candidate_snapshot,
+        services.candidates, candidate_id, services.candidates.list_resumes)
     return CandidateResumesResponse(
         candidate_id=candidate_id,
-        resumes=services.candidates.list_resumes(candidate_id),
+        resumes=resumes,
     )
 
 
 @router.get("/candidates/{candidate_id}/reports", response_model=list[Report])
 async def list_candidate_reports(candidate_id: str, request: Request) -> list[Report]:
     services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    return services.report_store.for_candidate(candidate_id)
+    _summary, reports = await _candidate_record(request, _candidate_snapshot,
+        services.candidates, candidate_id, services.report_store.for_candidate)
+    return reports
 
 
 @router.delete("/candidates/{candidate_id}", response_model=ErasureResponse)
@@ -237,11 +237,39 @@ async def issue_candidate_key(candidate_id: str, request: Request) -> CandidateK
     ONCE. First-party self-serve registration is a productionization concern
     (PI-8); this is the offline-deterministic issuance path."""
     services = _services(request)
-    try:
-        access_key = services.candidates.issue_access_key(candidate_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail="candidate not found") from exc
+    access_key = await _candidate_record(request, _candidate_key, services.candidates, candidate_id)
     return {"candidate_id": candidate_id, "access_key": access_key}
+
+
+def _candidate_snapshot(candidates, candidate_id, read):
+    summary = candidates.get_candidate(candidate_id)
+    if summary is None:
+        raise LookupError()
+    result = read(candidate_id)
+    if candidates.get_candidate(candidate_id) is None:
+        raise LookupError()
+    return summary, result
+
+
+def _candidate_key(candidates, candidate_id):
+    key = candidates.issue_access_key(candidate_id)
+    if candidates.get_candidate(candidate_id) is None:
+        raise LookupError()
+    return key
+
+
+async def _candidate_record(request: Request, operation, *args):
+    try:
+        return await _services(request).candidate_records.run(operation, *args)
+    except LookupError:
+        raise HTTPException(status_code=404, detail='candidate not found') from None
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # Rotation may commit after the caller stops waiting, invalidating its
+        # old key without delivering the replacement. Never replay or echo it.
+        raise HTTPException(status_code=503, detail='candidate_record_pending',
+                            headers={'Retry-After': '1'}) from None
 
 
 class GitHubSourceRequest(BaseModel):
