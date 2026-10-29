@@ -196,3 +196,14 @@ the old key; recovery is deliberate fresh issuance. The
 API-only scope and limits. C3C2/C3C3/CQ, C3D-F/Q and all broader parents remain
 open; other handler/graph/store SQL stays synchronous. Exact task status and next
 action are owned by the PI/handoff.
+
+[R4-S2-T3C3C2A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2a) moves the initial
+candidate/resume/extraction transaction and batch checkpoint callbacks to a
+separate bounded pool shared by admin/employer uploads and batch processing.
+Pending writes return no partial IDs and never resume evaluation automatically;
+batch uncertainty preserves the lease/checkpoint for deliberate recovery. The
+existing screening error explains possible saving and refresh/manual restart. The
+[intake budget](OPERATING.md#candidate-intake-persistence-budget) explains late
+commits, manual recovery and identity/dedupe limits. Fingerprint/comparison,
+report/subject and batch-management SQL remain separate open work. C2's later
+children and combined gate must pass before the parent closes.

@@ -330,6 +330,44 @@ unrelated admitted reads can stay responsive while worker SQL waits; SQLite
 writer locks still delay competing writes. Direct synchronous callers own
 scheduling. No migration, working-data rotation or demo restart is included.
 
+### Candidate intake persistence budget
+
+`candidate_ingest_max_concurrent_requests` defaults to **2** per Services/app
+process and `candidate_ingest_wait_seconds` to **20**, finite/positive. Configure
+YAML or `DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS` /
+`DEE_CANDIDATE_INGEST_WAIT_SECONDS`, then restart. One separate queue-free pool
+serves admin/employer single uploads and batch processing. After async extraction,
+it runs the entire initial candidate/resume/extraction transaction and any batch
+generation/retain callbacks. Each worker owns its SQL session. Async extraction
+and evaluation remain on the caller; this budget does not cover providers.
+
+Full/closed admission gives **503** `candidate_ingest_capacity_exhausted` /
+`candidate_ingest_executor_closed`; caller wait expiry gives **503**
+`candidate_ingest_pending`. Each includes `Retry-After: 1` without partial IDs,
+success or cookies. Timeout/cancellation retains admission until actual completion,
+consumes late failure and never replays. A late initial transaction may commit
+candidate/resume/extraction and a batch input checkpoint; fingerprinting/evaluation/
+report creation does not resume for that abandoned call. Do not infer rollback.
+
+For a batch, uncertainty stops the current process call without marking its item
+failed or racing a failure write against the still-running transaction. Earlier
+items may already be complete. Read saved batch/queue state after work settles;
+deliberately resume processing after the existing claim expires. The checkpoint
+pins a retry to the committed resume, including inputs without contact hints.
+The existing browser driver stops on the error, explains that saving may continue
+and asks for refresh, then Start screening when the row says "not screened yet".
+For single uploads, read known saved state and make any fresh upload deliberately:
+dedupe requires compatible identity hints and bytes; absent stable identity hints,
+another upload can create a second subject. No new idempotency key is provided.
+
+Shutdown joins accepted ingest workers before owned SQL disposal; threads cannot
+be killed and driver waits/drain have no new hard deadline. Fingerprinting,
+comparison, report/subject SQL and batch claim/failure/terminal SQL remain outside
+this initial-transaction budget. Competing SQLite writers can still block those
+later synchronous operations; admission is not a global lock/deadline. Direct
+low-level ingest/process callers must supply the shared executor or own scheduling.
+No schema change, live-data rotation or demo restart belongs to this change.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

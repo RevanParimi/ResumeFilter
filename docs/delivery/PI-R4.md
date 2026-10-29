@@ -451,7 +451,7 @@ remain open. Exact next is C3C2, separate session.
 
 **<a id="r4-s2-t3c3c2"></a>R4-S2-T3C3C2 - Bound shared intake persistence**
 
-Status: pending. Prerequisite: C1. Measure and bound candidate/resume ingest,
+Status: in progress. Prerequisite: C1. Measure and bound candidate/resume ingest,
 fingerprint/comparison and pre/post-evaluation owning SQL in `screening/ingest`
 and both intake adapters; define smaller children before implementation if needed.
 Keep async extraction/evaluation on the caller and preserve cross-process dedupe,
@@ -459,6 +459,46 @@ versions, tenant/consent/erasure guards and deterministic fallbacks. Require
 red/focused/full, real PG lock/race, migrated two-actor intake/restart, actual
 intake Chrome/recovery and both reviews. Late writes require honest uncertainty
 without replay; no working-store/schema change without its separate gate.
+
+Inventory/split at `8c5b122`, before implementation: the shared async pipeline
+calls (A) candidate/resume/extraction ingest with transactional batch callbacks,
+(B) fingerprint save/comparison and (C) subject/report checks and report save
+around awaited evaluation. Batch callers must not synchronously write a failed
+status while an uncertain worker still owns the transaction. These boundaries
+need separate acceptance; only A is implemented in this session.
+
+**<a id="r4-s2-t3c3c2a"></a>R4-S2-T3C3C2A - Bound candidate/resume persistence**
+
+Status: done (2026-10-29). This session implements only A.
+[A contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c2a) owns the initial transaction
+scope, SQL/UI red regressions, shared bounded workers, late commit/rollback and
+batch checkpoint recovery. Safe refusal/uncertainty returns no partial IDs;
+workers retain admission and never resume evaluation or replay. Existing
+screening copy explains possible saving and deliberate recovery. Focused/full,
+actual SQLite/PG locks/races, migrated HTTP/restart, actual Chrome and both
+self-reviews are recorded there. No schema/store algorithm/provider change.
+C2B/C/Q and C2/C3C/broader parents remain open. Exact next is C2B in a new session.
+
+**<a id="r4-s2-t3c3c2b"></a>R4-S2-T3C3C2B - Bound fingerprint and comparison work**
+
+Status: pending. Prerequisite: A. Bound complete fingerprint computation/save/
+comparison operations without moving async providers or weakening subject guards,
+cross-tenant signal redaction or advisory fallback. Require red/focused/full,
+real PG contention/erasure, migrated intake/restart, relevant Chrome and both reviews.
+
+**<a id="r4-s2-t3c3c2c"></a>R4-S2-T3C3C2C - Bound intake report and subject SQL**
+
+Status: pending. Prerequisite: B. Bound pre/post-evaluation subject checks, report
+save/checkpoint and final publication checks with safe uncertain-write behavior.
+Preserve erasure/consent/tenant guards and provider ownership. Require red/focused/
+full, actual PG races, migrated HTTP/restart, affected Chrome and both reviews.
+
+**<a id="r4-s2-t3c3c2q"></a>R4-S2-T3C3C2Q - Review combined shared intake persistence**
+
+Status: pending. Prerequisites: A-C. Inventory combined boundaries and budgets;
+prove dedupe/versions, batch checkpoints, cancellation/late writes, tenant/erasure
+and fallback through actual SQLite/PG, migrated HTTP/restart, intake Chrome and
+full regression. Complete both reviews before closing C2; C3/CQ remain separate.
 
 **<a id="r4-s2-t3c3c3"></a>R4-S2-T3C3C3 - Bound profile-source operations**
 

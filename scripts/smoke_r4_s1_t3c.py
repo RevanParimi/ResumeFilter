@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import timedelta
 from threading import get_ident, local
 
 from _smoke import Smoke, base_env, client, wait_healthy
@@ -29,6 +30,127 @@ ADMIN = "synthetic-candidate-router-admin"
 RESUME = "Synthetic Candidate Router\nEmail: candidate-router@example.in\n" + "\n".join(
     (ROOT / "tests/fixtures/genuine_genai_resume.txt").read_text(encoding="utf-8").splitlines()[1:]
 )
+
+
+def create_candidate_ingest_smoke_app():
+    """Hold the real initial transaction, including a batch checkpoint."""
+    from sqlalchemy import event
+    from smoke_r4_s1_t1a import create_smoke_app
+    app = create_smoke_app()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            ingest, now = services.candidates.ingest, services.screening._now
+            def controlled_now():
+                offset = services.settings.screening_claim_timeout_seconds + 1 if (scratch / 'ingest-advanced').exists() else 0
+                return now() + timedelta(seconds=offset)
+            def controlled_ingest(*args, **kwargs):
+                with (scratch / 'ingest-operations.jsonl').open('a') as log:
+                    log.write(json.dumps({'thread': get_ident()}) + '\n')
+                mode = scratch / 'ingest-mode'
+                held = mode.exists()
+                if held:
+                    callback = kwargs.get('before_commit')
+                    def checkpoint(session, outcome):
+                        if callback is not None:
+                            callback(session, outcome)
+                        (scratch / 'ingest-outcome.json').write_text(json.dumps(outcome.model_dump()))
+                        (scratch / 'ingest-entered').touch()
+                        deadline = time.monotonic() + 20
+                        while not (scratch / 'ingest-release').exists():
+                            assert time.monotonic() < deadline, 'synthetic ingest SQL gate timed out'
+                            time.sleep(.01)
+                    kwargs['before_commit'] = checkpoint
+                try:
+                    return ingest(*args, **kwargs)
+                finally:
+                    if held:
+                        (scratch / 'ingest-completed').touch()
+            def owner(session, transaction, connection):
+                assert session.info.setdefault('ingest_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('ingest_owner', get_ident()) == get_ident()
+            services.candidates.ingest, services.screening._now = controlled_ingest, controlled_now
+            event.listen(services.session_factory, 'after_begin', owner)
+            event.listen(services.session_factory, 'after_transaction_end', end)
+            try:
+                yield
+            finally:
+                services.candidates.ingest, services.screening._now = ingest, now
+                event.remove(services.session_factory, 'after_begin', owner)
+                event.remove(services.session_factory, 'after_transaction_end', end)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b):
+    saved = {}
+    for door, actor in [('admin', operator), ('org', org_a), ('batch', org_a)]:
+        text = RESUME.replace('candidate-router@example.in', f'ingest-{door}@example.in')
+        path, body = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text}
+        batch = None
+        if door == 'batch':
+            batch = actor.post('/screening/batches', json={'name': 'Uncertain ingest', 'items': [{'resume_text': text}]}).json()['id']
+            path, body = f'/screening/batches/{batch}/process', None
+        for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
+            (scratch / name).unlink(missing_ok=True)
+        operations = scratch / 'ingest-operations.jsonl'
+        before = len(operations.read_text().splitlines())
+        (scratch / 'ingest-mode').touch()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(actor.post, path, json=body)
+            try:
+                deadline = time.monotonic() + 10
+                while not (scratch / 'ingest-entered').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                start = time.monotonic()
+                checks.check(door + ': held initial write leaves health and admitted read responsive',
+                    control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                    and time.monotonic() - start < 1, f'{time.monotonic() - start:.4f}s')
+                for url, peer in [('/candidates', operator), ('/screening/candidates', org_b)]:
+                    busy = peer.post(url, json={'resume_text': text})
+                    checks.check(door + ': shared ingest admission refuses ' + url,
+                        busy.status_code == 503 and busy.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                        and busy.headers.get('retry-after') == '1')
+                response = pending.result(timeout=8)
+                checks.check(door + ': pending write returns no IDs or misleading success',
+                    response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_pending'}
+                    and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+            finally:
+                (scratch / 'ingest-release').touch()
+                deadline = time.monotonic() + 8
+                while not (scratch / 'ingest-completed').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                (scratch / 'ingest-mode').unlink(missing_ok=True)
+        outcome = json.loads((scratch / 'ingest-outcome.json').read_text())
+        cid, resume = outcome['candidate_id'], outcome['resume_id']
+        checks.check(door + ': late commit persists once without starting evaluation',
+            len(operations.read_text().splitlines()) == before + 1
+            and control.get(f'/candidates/{cid}').json()['resume_count'] == 1
+            and control.get(f'/candidates/{cid}/reports').json() == [])
+        if batch:
+            queue = actor.get(f'/screening/batches/{batch}/queue').json()['rows']
+            checks.check('batch uncertainty retains its lease without a false failure or cross-tenant read',
+                queue[0]['status'] == 'processing' and queue[0]['error'] is None
+                and org_b.get(f'/screening/batches/{batch}/queue').status_code == 404)
+            (scratch / 'ingest-advanced').touch()
+        recovered = actor.post(path, json=body)
+        assert recovered.status_code == 200
+        if batch:
+            row = actor.get(f'/screening/batches/{batch}/queue').json()['rows'][0]
+            checks.check('explicit process after lease expiry recovers the committed input',
+                recovered.json()['processed'] == 1 and row['candidate_id'] == cid and row['resume_id'] == resume)
+        else:
+            checks.check(door + ': deliberate upload deduplicates the saved resume', recovered.json()['duplicate_resume']
+                and recovered.json()['resume_id'] == resume and recovered.json()['resume_version'] == 1)
+        url = f'/candidates/{cid}/resumes'
+        saved[url] = control.get(url).json()
+    return saved
 
 
 def create_candidate_record_smoke_app():
@@ -164,12 +286,15 @@ def run(scratch, url, pg_options):
         "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_ingest_smoke_app" if '--candidate-ingest-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
     if '--candidate-record-workers' in sys.argv:
         env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--candidate-ingest-workers' in sys.argv:
+        env.update(DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -252,6 +377,7 @@ def run(scratch, url, pg_options):
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
             if '--candidate-record-workers' in sys.argv:
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key)
+            intake_saved = check_candidate_ingests(checks, scratch, control, operator, org_a, org_b) if '--candidate-ingest-workers' in sys.argv else {}
 
             owned = require(org_a.post("/screening/candidates", json={"resume_text": RESUME.replace("candidate-router@example.in", "candidate-employer@example.in"), "domain": "data_eng"}))
             employer_rid = owned["report"]["id"]
@@ -263,6 +389,9 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
+            if intake_saved:
+                checks.check('uncertain intake and deliberate recovery survive restart',
+                    all(require(control.get(url)) == data for url, data in intake_saved.items()))
             checks.check("exact candidate resume report and source state survives restart", all(require(control.get(path + suffix)) == body for suffix, body in saved.items()))
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("candidate credential survives restart", require(candidate.get("/portal/me"))["candidate_id"] == cid)

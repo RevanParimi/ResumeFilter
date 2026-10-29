@@ -75,7 +75,7 @@ def test_request_body_budget_default_yaml_and_env(monkeypatch):
     assert Settings(_env_file=None).max_request_body_bytes == 2048
 
 
-@pytest.mark.parametrize('prefix', ['auth_redemption', 'auth_session', 'candidate_record'])
+@pytest.mark.parametrize('prefix', ['auth_redemption', 'auth_session', 'candidate_record', 'candidate_ingest'])
 def test_sql_execution_defaults_yaml_and_env(monkeypatch, prefix):
     import yaml
     with open('config.yaml', encoding='utf-8') as file:
@@ -94,7 +94,7 @@ def test_sql_execution_defaults_yaml_and_env(monkeypatch, prefix):
     ('auth_redemption_max_concurrent_requests', -1), ('auth_redemption_wait_seconds', 0),
     ('auth_redemption_wait_seconds', -1), ('auth_redemption_wait_seconds', float('inf')),
     ('auth_redemption_wait_seconds', float('nan'))])
-@pytest.mark.parametrize('prefix', ['auth_redemption', 'auth_session', 'candidate_record'])
+@pytest.mark.parametrize('prefix', ['auth_redemption', 'auth_session', 'candidate_record', 'candidate_ingest'])
 def test_sql_execution_budgets_are_positive_and_finite(name, value, prefix):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{name.replace('auth_redemption', prefix): value})

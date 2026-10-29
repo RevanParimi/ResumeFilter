@@ -10,13 +10,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.candidates import CandidateCreateRequest, CandidateCreateResponse, _ingest_one
+from app.api.candidates import CandidateCreateRequest, CandidateCreateResponse, _ingest_one, _ingest_execution_refused
 from app.api.dependencies import _rate_limited, _services, require_org
 from app.api.reports import (
     OutcomeListResponse, OutcomeRecordedResponse, OutcomeRequest,
     _outcome_flywheel_record, _outcome_recorded,
 )
 from app.core.resume import ResumeInputError, read_resume_input_async
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.ratelimit.service import RateLimited
 from app.reports.outcomes import OutcomeRefused
 from app.schemas.report import Report
@@ -260,9 +261,12 @@ async def process_screening_batch(
     model.
     """
     try:
-        result = await _services(request).screening.process(
-            org_id, batch_id, engine=request.app.state.engine
+        services = _services(request)
+        result = await services.screening.process(
+            org_id, batch_id, engine=request.app.state.engine, executor=services.candidate_ingests
         )
+    except (ExecutionPending, ExecutionUnavailable) as exc:
+        raise _ingest_execution_refused(exc) from None
     except RateLimited as exc:
         raise _rate_limited(exc) from exc
     if result is None:

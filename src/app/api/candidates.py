@@ -117,7 +117,10 @@ async def _ingest_one(
         result = await ingest_resume(
             ingest_deps(services), request.app.state.engine,
             text=text, domain=req.domain, evaluate=req.evaluate, org_id=org_id,
+            executor=services.candidate_ingests,
         )
+    except (ExecutionPending, ExecutionUnavailable) as exc:
+        raise _ingest_execution_refused(exc) from None
     except IngestRefused as exc:
         raise HTTPException(status_code=422, detail=exc.reason) from exc
 
@@ -133,6 +136,13 @@ async def _ingest_one(
         resume_farm=result.resume_farm,
         extraction_coverage=result.extraction_coverage,
     )
+
+
+def _ingest_execution_refused(exc):
+    # The initial transaction may still commit. Return no IDs or partial success,
+    # and never restart fingerprinting/evaluation when a late worker completes.
+    detail = 'candidate_ingest_pending' if isinstance(exc, ExecutionPending) else str(exc)
+    return HTTPException(status_code=503, detail=detail, headers={'Retry-After': '1'})
 
 
 @router.post("/candidates", response_model=CandidateCreateResponse)

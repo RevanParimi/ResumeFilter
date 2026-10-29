@@ -6,6 +6,20 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-29 - R4-S2-T3C3C2A complete; initial intake persistence.**
+  C2 was split before code; only A is implemented. Admin/employer uploads and
+  batches share bounded owning-session ingest workers, including batch checkpoint
+  callbacks. Safe uncertainty returns no partial IDs, retains admission and never
+  resumes evaluation or replays. Batch recovery uses saved state and deliberate
+  processing after expiry. A review finding replaced raw UI codes with guidance
+  about possible saves and manual recovery. The
+  [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2a) owns acceptance, red/green,
+  actual SQLite/PG locks/races, migrated HTTP/restart, actual Chrome, full pytest
+  and separate reviews. Required validation passes; owned PG is stopped, working
+  store preserved and demo untouched. Final staged self-review is recorded;
+  scoped publication follows.
+  Exact next is C2B in a new session; C2 and all broader parents remain open.
+
 - **Session 2026-10-29 - R4-S2-T3C3C1 complete; operator reads and keys.**
   C3C was split before implementation; this session completes only C1. Four
   operator read/key routes use bounded owning-session workers, final observed-

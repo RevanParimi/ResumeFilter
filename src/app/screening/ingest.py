@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.candidates.store import AssertedContactChangedError, CandidateErasedError, CandidateStore, IngestOutcome, MatchedOn, ResumeErasedError
 from app.core.config import Settings
+from app.core.blocking import BoundedExecutor
 from app.core.resume import ResumeInputError, validate_resume_text
 from app.reports.store import ReportStore, SubjectErasedError
 from app.schemas.extraction import ExtractionCoverage
@@ -98,11 +99,17 @@ async def ingest_resume(
     before_commit: Optional[Callable[[Session, IngestOutcome], None]] = None,
     before_report_commit: Optional[Callable[[Session, Report], None]] = None,
     before_write: Optional[Callable[[Session], None]] = None,
+    executor: Optional[BoundedExecutor] = None,
 ) -> IngestResult:
     """Upload -> extract -> store -> (auto) depth-eval, for ONE resume.
 
     ``org_id`` is the owner stamped on the resume and on the report; ``None`` is
     the admin plane, which owns nothing by design.
+
+    HTTP callers share the service-owned candidate-ingest executor. Direct
+    low-level callers that omit it retain responsibility for SQL scheduling.
+    Only the initial owning ingest transaction is bounded here; later phases
+    remain separate work. No async provider runs in its SQL session.
     """
     # Function-local: these pull in the domain registry and the graph, and a
     # top-level import would cycle back through app.services.
@@ -123,9 +130,12 @@ async def ingest_resume(
 
     result = await extract_profile(text, llm=deps.llm, settings=deps.settings)
     try:
-        outcome = deps.candidates.ingest(result, text, org_id=org_id,
-            expected_resume_id=expected_resume_id, before_commit=before_commit,
-            before_write=before_write)
+        kwargs = dict(org_id=org_id, expected_resume_id=expected_resume_id,
+                      before_commit=before_commit, before_write=before_write)
+        if executor is None:
+            outcome = deps.candidates.ingest(result, text, **kwargs)
+        else:
+            outcome = await executor.run(deps.candidates.ingest, result, text, **kwargs)
     except AssertedContactChangedError:
         raise IngestRefused("candidate_contact_changed") from None
     except CandidateErasedError:

@@ -83,6 +83,15 @@
   };
 
   // ── the process driver ────────────────────────────────────────────────────
+  screeningErrorCopy = (err) => {
+    const recovery = ' Wait and refresh the batch. When the row says not screened yet, choose Start screening. Earlier results may already be saved.';
+    if (err && err.detail === 'candidate_ingest_pending')
+      return 'This upload may still be saving.' + recovery;
+    if (err && ['candidate_ingest_capacity_exhausted', 'candidate_ingest_executor_closed'].includes(err.detail))
+      return 'Screening uploads are temporarily unavailable.' + recovery;
+    return errorCopy(err);
+  };
+
   // POST .../process does at most `screening_max_items_per_call` items, each a
   // full nine-node graph run, so the client loops. Sequential by construction:
   // the server's conditional claim stops two callers double-billing the SAME
@@ -409,7 +418,7 @@
             ? (counts.pending + counts.processing) + " not screened yet. Nothing runs until you start it — each resume is a full evaluation."
             : "Nothing left to screen."),
       driveError: !!st.driveError,
-      driveErrorText: errorCopy(st.driveError),
+      driveErrorText: this.screeningErrorCopy(st.driveError),
 
       // -- queue -----------------------------------------------------------
       candidates: queueRows,

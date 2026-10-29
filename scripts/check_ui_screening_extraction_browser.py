@@ -9,6 +9,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --auth-resolution-workers verifies session-check refusal and refresh recovery.
 --auth-redemption-workers verifies code-check refusal, uncertainty and recovery.
 --auth-session-workers verifies devices and unconfirmed logout/manual recovery.
+--candidate-ingest-workers verifies initial-write uncertainty and deliberate recovery.
 """
 
 import asyncio
@@ -41,6 +42,8 @@ async def main():
             args = ["smoke_r3_s1_t2:create_smoke_app" if arg == "app.main:app" else arg for arg in args] + ["--factory"]
             if '--pdf-execution' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--candidate-ingest-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3c:create_candidate_ingest_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -61,6 +64,10 @@ async def main():
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
+            if '--candidate-ingest-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                           DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.5',
+                           DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
             if '--auth-code-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_AUTH_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_AUTH_CODE_WAIT_SECONDS='.5')
@@ -399,6 +406,54 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
+            if '--candidate-ingest-workers' in sys.argv:
+                for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
+                    (scratch / name).unlink(missing_ok=True)
+                operations = scratch / 'ingest-operations.jsonl'
+                before = len(operations.read_text().splitlines())
+                (scratch / 'ingest-mode').touch()
+                try:
+                    assert await tab.js("window.__click('button', 'Upload')")
+                    assert await tab.wait("document.querySelector('input[type=file]')", 20, 'uncertain ingest file input')
+                    box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+                    await tab.send('DOM.setFileInputFiles', {'files': files[:1], 'objectId': box})
+                    assert await tab.wait("window.__has('file ready')", 20, 'uncertain ingest selection')
+                    assert await tab.js("window.__type('input[placeholder*=intake]', 'Uncertain browser intake', 0)")
+                    assert await tab.js("window.__click('button', 'Register batch and start screening')")
+                    async with asyncio.timeout(10):
+                        while not (scratch / 'ingest-entered').exists():
+                            await asyncio.sleep(.02)
+                    browser.S.check('actual initial SQL timeout renders uncertainty and stops the process driver',
+                        await tab.wait("window.__has('This upload may still be saving') && window.__has('When the row says not screened yet') && !window.__has('candidate_ingest_pending') && !window.__has('Stop screening')", 10, 'uncertain process stop')
+                        and len(operations.read_text().splitlines()) == before + 1)
+                    saved = next(row for row in api.get('/screening/batches').json()['batches']
+                                 if row['name'] == 'Uncertain browser intake')
+                    rows = api.get(f"/screening/batches/{saved['id']}/queue").json()['rows']
+                    browser.S.check('uncertain browser work keeps a processing lease without a false failure',
+                        rows[0]['status'] == 'processing' and rows[0]['error'] is None)
+                finally:
+                    (scratch / 'ingest-release').touch()
+                    async with asyncio.timeout(8):
+                        while not (scratch / 'ingest-completed').exists():
+                            await asyncio.sleep(.01)
+                    (scratch / 'ingest-mode').unlink(missing_ok=True)
+                # Controlled lease expiry, not a measured wall-clock delay.
+                (scratch / 'ingest-advanced').touch()
+                assert len(operations.read_text().splitlines()) == before + 1
+                assert await tab.js("window.__click('button', 'Start screening')")
+                browser.S.check('deliberate browser restart resumes the saved input after lease expiry',
+                    await tab.wait("window.__has('Nothing left to screen') && !window.__has('This upload may still be saving')", 60, 'explicit process recovery')
+                    and api.get(f"/screening/batches/{saved['id']}").json()['counts']['done'] == 1)
+                outcome = json.loads((scratch / 'ingest-outcome.json').read_text())
+                row = api.get(f"/screening/batches/{saved['id']}/queue").json()['rows'][0]
+                browser.S.check('recovery preserves the late committed candidate and resume',
+                    row['candidate_id'] == outcome['candidate_id'] and row['resume_id'] == outcome['resume_id'])
+                await tab.send('Page.reload')
+                assert await tab.wait("document.body.innerText.includes('Sign out')", 60, 'intake recovery reload')
+                await tab.js(browser.HELPERS)
+                assert await tab.js("window.__click('button', 'Batches')")
+                browser.S.check('recovered uncertain intake survives actual browser reload',
+                    await tab.wait("window.__has('Uncertain browser intake')", 30, 'saved recovered intake'))
             if '--pdf-execution' in sys.argv:
                 import base64
                 from tests.pdf_helpers import resume_pdf

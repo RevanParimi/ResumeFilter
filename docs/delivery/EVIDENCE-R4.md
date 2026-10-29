@@ -7849,3 +7849,239 @@ staged whitespace and preservation checks pass. Owned PG is stopped and the demo
 was untouched. Publication uses configured `main` -> `origin/main` with per-command
 GCM account selection; the final response reports the verified remote commit.
 Stop after publication.
+
+### <a id="r4-s2-t3c3c2a"></a>R4-S2-T3C3C2A - Bound candidate/resume persistence
+
+Date: 2026-10-29 (client date). Baseline: `8c5b122`. Status: done.
+The existing C2 PI section was split before implementation into A (initial owning
+ingest transaction), B (fingerprint/comparison), C (report/subject SQL) and Q
+(combined review). Only A is implemented; all parents and later children remain
+open. No schema/store algorithm or provider/scoring change; existing screening
+error copy now explains uncertainty/recovery without adding a screen.
+
+**Acceptance contract.** Initial transaction scope and validation were recorded
+before code; existing error-copy guidance was clarified during implementation
+review. The completed contract is consolidated here.
+
+Prerequisite: C1. Trigger: a slow candidate/resume SQL write
+currently blocks unrelated requests from admin/org uploads and batch processing.
+Run the complete existing `CandidateStore.ingest` operation, including its batch
+generation/retain callbacks, in one separate queue-free per-service worker pool.
+Only detached extraction/text/owner/expected-resume and callback values cross;
+workers open/use/close their own SQL sessions. Async extraction and evaluation
+stay on the caller. Use positive capacity and finite wait, safe 503/Retry-After
+full/closed/pending, retained admission through timeout/cancel/late failure,
+no automatic replay and join before owned SQL disposal. Both single-upload
+adapters and batch processing use the same pool; direct low-level callers may
+explicitly supply it and otherwise retain their existing scheduling contract.
+
+Pending work may commit candidate/resume/extraction and a batch input checkpoint,
+but must not continue fingerprinting/evaluation/report creation or publish partial
+IDs/success. Batch pending/admission refusals must bypass generic failure logging
+and synchronous failure writes, preserve the current lease/checkpoint and stop
+the process call with safe 503; recovery requires a saved-state read and deliberate
+processing after the existing lease expires. Preserve lease/generation/erasure
+barriers, cross-process dedupe/version/tenant ownership and rollback semantics.
+No store algorithm, schema, live-provider or working-data change. Existing screen
+error copy must explain possible saving and deliberate recovery; no new screen.
+
+Acceptance: red responsiveness regressions for both intake adapters and batch;
+focused admission/cancel/late commit/failure/checkpoint/rollback and auth/CSRF/
+ownership/erasure tests; actual SQLite/PG competing ingest/erasure connections;
+migrated two-actor HTTP/restart with uncertainty and deliberate recovery; actual
+screening Chrome error/stop/manual recovery/reload; full pytest, bindings/contracts,
+implementation self-review and distinct final staged self-review. Record limits:
+later SQL still blocks, no thread-kill/rollback promise and no new global budget.
+
+Three controlled SQL-write regressions through admin upload, employer upload and
+batch processing reproduced event-loop stalls: **3 failed, 3 skipped, 75 deselected,
+1 warning, 22.24s** (wrapper 32.77s). They failed on completed SQL holds blocking
+unrelated health/admin reads, not fixture errors. Initial green: **3 passed,
+3 skipped, 75 deselected, 1 warning, 9.59s** (wrapper 16.26s).
+
+HTTP single-upload adapters and batch processing now pass one shared per-Services
+candidate-ingest executor into the common pipeline. Only complete
+`CandidateStore.ingest` runs there, including generation/retain callbacks within
+its owning transaction; detached extraction/text/owner/expected-resume/callback
+values cross threads, never Request/Response/live sessions. Async extraction and
+evaluation stay on the caller. Direct low-level callers may supply the executor;
+omitting it retains their existing scheduling responsibility. Defaults are two
+slots and a finite positive 20-second caller wait; Settings/YAML/env configure it.
+The neutral queue-free executor retains admission on timeout/cancel/late failure,
+consumes late exceptions, never replays and joins before owned SQL disposal.
+
+Full/closed/pending return safe 503/Retry-After without partial IDs/success.
+Uncertain batch work bypasses generic failure logging and synchronous failure
+writes: its lease/checkpoint remains for saved-state reads and deliberate
+processing after existing expiry. A late transaction may commit candidate/resume/
+extraction/input checkpoint, but does not resume fingerprinting/evaluation/report
+work. Existing dedupe/version/owner/erasure/rollback contracts remain; later SQL
+and batch claim/failure/terminal management are separate open work.
+
+**Implementation self-review.** Reviewed `8c5b122` plus application/config,
+pytest/fixture, HTTP/Chrome harness and pre-implementation PI diff. Matched A's
+contract to all three API doors, whole-session ownership and frozen batch item
+callbacks; checked auth/session-CSRF/tenant gates, no partial success, late commit/
+rollback, no post-timeout provider continuation, retained lease/generation guards,
+explicit recovery and drain ordering. Resolved medium availability at the initial
+`screening/ingest.py` SQL call and its three API entry paths; batch uncertainty
+must bypass `ScreeningService.process` failure writes while SQL is still owned.
+No blocking finding remains. This is self-review, not independent review.
+Later implementation review identified a medium usability finding in
+`frontend/screening.js`: raw new ingest error codes hid the possibility of a late
+save and gave no safe recovery action. Three offline handler regressions failed
+on the actual rendered copy (**0 passed, 3 failed**, 250.71ms). The existing driver
+now explains possible saving/temporary unavailability, asks for refresh and a
+return to "not screened yet" before Start screening, and notes earlier results
+may already be saved. It still stops without replay. Reviewed the small UI/copy/
+handler/Chrome diff; **62/62** offline Node cases pass (635.11ms). No remaining
+blocking finding. The first full run was deliberately stopped during progress
+for this correction, not counted as final evidence. Backend files did not change;
+focused/PG backend evidence remains applicable. A fresh full run and affected
+UI checks below validate the final state; the distinct staged review is recorded
+after those checks and completion.
+
+**Validation commands/results.** The ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3c2a.py <tag> <Python args>` clears inherited DEE
+configuration/keys, selects nonexistent YAML and disables remote credentials.
+Fixtures bypass dotenv and use isolated stores; subprocess apps use scratch
+working directories without `.env`. Bare Settings are not globally patched.
+
+- Tag `green`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k candidate_ingest_sql`: **3 passed, 3 skipped, 75 deselected, 1 warning,
+  9.59s** (wrapper 16.26s), against the red behavior above.
+- Tag `admission-final`, same module with `-k candidate_ingest_admission`:
+  **12 passed, 12 skipped, 81 deselected, 1 warning, 30.44s** (wrapper 37.32s).
+  Three doors x release/timeout/cancel/late failure assert worker session/callback
+  ownership, caller-owned async extraction/evaluation, retained shared admission,
+  no partial response/post-timeout provider continuation, late commit or rollback,
+  surviving other subject and explicit duplicate/checkpoint recovery. Other-tenant
+  refusal and anonymous pre-admission gates remain. Test development corrected
+  checkpoint-field expectations; those fixture/assertion mistakes are not red
+  evidence or product findings.
+- Tag `lock-capacity-green`, same module with `-k
+  'candidate_ingest_real_lock or batch_ingest_capacity'`: **2 passed, 1 skipped,
+  105 deselected, 1 warning, 7.06s** (wrapper 12.76s). Actual SQLite writer wait
+  returns pending with retained capacity, later commits one resume without
+  evaluation; generic failure writes/logs are forbidden for batch full/closed
+  admission. Batch leases and auth/session-CSRF/tenant gates are asserted. Setup
+  corrections normalized initial bytes/identity using the actual extractor and
+  used a fresh batch for closed admission; no implementation change followed.
+- Tag `focused`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  tests/test_candidate_store.py tests/test_ingest_erasure_concurrency.py
+  tests/test_ingest_response_erasure.py tests/test_candidate_login_binding_concurrency.py
+  tests/test_screening_batches_api.py tests/test_screening_durable_input.py
+  tests/test_screening_unresolved_input.py tests/test_screening_report_input.py
+  tests/test_org_scope_guard.py tests/test_api_route_extraction.py
+  tests/test_route_table_guard.py tests/test_openapi_contract.py
+  tests/test_service_lifecycle.py tests/test_config.py`: **442 passed, 185 skipped,
+  3 warnings, 398.42s** (wrapper 405.62s). Includes existing dedupe/versions,
+  checkpoint generation/lease/erasure/consent/rollback, present-subject guards,
+  auth/CSRF/tenant contracts, budget validation and cancellation/drain ordering.
+- SQLite migrated HTTP: tag `http`, `scripts/smoke_r4_s1_t3c.py
+  --candidate-ingest-workers`: **41/41**, 42.02s. Three real HTTP paths held inside
+  their owning write transaction leave health plus admitted admin reads responsive
+  in **0.0197-0.0255s**, each below one second. Shared admission/pending return no
+  IDs/cookies; late commits stop before evaluation; explicit single upload dedupes
+  and batch processing after controlled lease expiry recovers the pinned input.
+  Tenant/CSRF/source/erasure checks and exact saved-state restart remain.
+- Two-process SQLite intake: tag `races`, `scripts/smoke_r4_s1_t3d.py
+  --ingest-races`: **41/41**, 53.30s. Existing controlled competing transactions
+  retain identity dedupe, separate owner resumes, unique versions without gaps,
+  scoped advisory reports, leases and graceful restart. This is subprocess/real
+  SQL evidence, distinct from TestClient and controlled wrapper holds.
+- Actual Chrome: tag `browser`, `scripts/check_ui_screening_extraction_browser.py
+  --candidate-ingest-workers`: **29/29**, 30.80s. Actual file intake/process shows
+  `candidate_ingest_pending`, stops its driver without replay and retains a
+  processing lease. Deliberate Start screening after controlled expiry recovers
+  the same late-committed candidate/resume and survives actual reload. Existing
+  queue/review/feedback/summary/deletion/read-error recovery passes without console
+  exceptions. The runner requires existing CDN internet; no live provider claims.
+  This initial run showed the raw code; final corrected-copy evidence follows below.
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**; `node --check`
+  on `frontend/api.js`, `frontend/support.js`, `frontend/screening.js` and
+  `git diff --check` pass. Tag `compile`, `-m py_compile` on all **12 changed Python
+  modules**, exit 0. Reviewed-state helper hashes **616 code/config files**.
+- Corrected UI: `node --test scripts/test_ui_screening.js`: **62 passed,
+  0 failed/skipped**, 635.11ms, including three red/green refusal-copy/stop/manual
+  recovery cases and composed evaluation compatibility. Tag `ui-final`,
+  `-m pytest -q --tb=short tests/test_ui_handlers.py tests/test_ui_mount.py`:
+  **20 passed, 1 warning, 27.59s** (wrapper 40.63s).
+- Final actual Chrome: tag `browser-final`, same `--candidate-ingest-workers`
+  command: **29/29**, 48.41s. DOM assertions now require possible-saving and
+  refresh/"not screened yet" guidance, refuse the raw internal code, confirm the
+  driver stops, manual recovery preserves the committed subject/resume and reload
+  retains the result. No console exceptions. Repeated bindings/three JS syntax/
+  whitespace and tag `compile-final` pass (all 12 Python modules, exit 0).
+  Reviewed-state hashes were refreshed only after this final UI self-review.
+- Owned actual PostgreSQL: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c2a_postgres.py`, fresh disposable **PG 18.6**,
+  Asia/Calcutta, read committed, unique test schemas. Same 15-file focused group:
+  **618 passed, 9 skipped, 3 warnings, 1046.99s** (wrapper 1056.24s). The nine
+  skips are SQLite parametrizations of PG-only lock/private-write checks, not
+  omitted PG cases. Includes actual initial-ingest row-lock wait observed in
+  `pg_stat_activity`, controlled competing dedupe/version and ingest/erasure/
+  checkpoint-generation transactions, rollback, late commits, worker/callback
+  session ownership and no post-timeout evaluation. This is real PG evidence,
+  distinct from SQLite skips and controlled wrapper holds. The later UI-only
+  correction changed no backend/config/pytest file exercised by this gate.
+- Actual PG migrated HTTP: `scripts/smoke_r4_s1_t3c.py --postgres
+  --candidate-ingest-workers`: **41/41**, 43.11s. Held owning writes leave health
+  plus admitted admin reads responsive in **0.0173-0.1622s**, each below one second.
+  Shared admission, no partial pending response, late commits, explicit duplicate/
+  checkpoint recovery after controlled expiry, tenant/CSRF/source/erasure and exact
+  saved-state restart pass. These HTTP subprocesses serve the corrected UI asset.
+- Actual PG two-process intake: `scripts/smoke_r4_s1_t3d.py --postgres
+  --ingest-races`: **41/41**, 59.70s. Same cross-process dedupe/versions/ownership/
+  lease/advisory-report and graceful restart assertions pass with real PG. Owned
+  `pg_ctl -m fast` cleanup: **stop_exit 0**, 30.13s; server stopped. No new schema
+  change requires a new migration up/down/up gate; focused existing populated
+  checkpoint migration regressions run and scratch HTTP stores migrate to 0030.
+  The working 0023 store and port-8000 demo remain untouched.
+
+- Final full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c2a.py full-final` executes the required
+  `-m pytest -q --tb=short`: **3885 passed, 741 skipped, 127 warnings,
+  1900.30s** (wrapper 1919.92s), exit 0. This fresh run includes the corrected
+  UI; the stopped earlier run is not completion evidence. Optional/environment/
+  unconfigured-PG skips establish no omitted behavior; the separate actual PG
+  gate covers this task's SQL cases. Existing expression-index reflection and
+  third-party warnings remain. All **616 reviewed code/config hashes** still match.
+- Completion: **C3C2A done**. C2B/C/Q, C2, C3C3/CQ and all broader
+  C3C/C3/C/T3/F14/sprint/PI parents remain open. No second child was implemented.
+  Exact next is **R4-S2-T3C3C2B - Bound fingerprint and comparison work**.
+  PI status, feature/runbook and handoff/roadmap link to their evidence owners.
+  Distinct final staged self-review and scoped publication follow.
+
+**Distinct final staged self-review (after validation/completion records).**
+Reviewed the full `8c5b122`-based **21-file staged diff**: six application modules,
+one frontend module, YAML, four pytest/fixture modules, three existing validation
+scripts and six documentation records. Matched the completed A contract to all
+three API doors and complete initial transactions/callbacks. Rechecked detached
+inputs/results and worker session ownership; async provider ownership; positive/
+finite budgets; safe auth/CSRF/tenant/refusal boundaries; no partial IDs or
+post-timeout evaluation; retained admission, consumed late errors and drain before
+owned SQL disposal. Batch full/pending/closed paths bypass generic failure writes
+and logging while preserving lease/generation/checkpoint recovery. Dedupe/version,
+rollback and erasure guards remain the unchanged store's contract, exercised by
+real SQLite/PG competing connections and two-process journeys.
+
+Checked human recovery text, stopped driver/manual restart/reload, exact final
+counts and the stopped first run's exclusion. Actual browser/PG/subprocess gates
+are distinct from Node/TestClient/controlled holds; fakes establish no live quality
+or production-load claim. Later fingerprint/comparison/report/batch-management SQL,
+per-process budgets, uncertain late commits, snapshot guards and absent single-
+upload idempotency remain explicit. Only A is complete; exact next is C2B and
+all broader parents remain open. No blocking finding remains. This is self-review,
+not independent review. Final edits clarify completed validation/review wording
+and wrap runbook prose; no application/test code changed after final validation.
+
+All **616 reviewed code/config hashes** still match the full-tested state.
+Exactly **21 scoped files** are staged; **713 unrelated tracked files, including
+`data/veritas.db`**, match baseline. No unstaged/untracked edits, secrets, working
+data or local runtime/log artifacts enter publication. The **seven added local
+documentation links/anchors**, staged whitespace and preservation checks pass.
+Owned PG is confirmed stopped (`pg_ctl status`: no server running); the demo was
+untouched. Configured `main` -> `origin/main` is synchronized before publication;
+use per-command GCM account selection. The final response reports the verified
+remote commit. Stop after publication.

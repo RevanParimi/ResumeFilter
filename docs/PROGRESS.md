@@ -4,52 +4,61 @@ Updated: 2026-10-29. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3C1 complete.** C3C was split before
-implementation into C1 (operator reads/keys, this session), C2 (shared intake),
-C3 (profile sources) and CQ (combined review). Its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c1) and
-[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c1) own scope, red regressions,
-implementation review and exact checks. Baseline/B is published at `950d641`.
-C3C and all broader parents remain open.
+**R4-S2-T3C3C2A complete.** Baseline `8c5b122` is published. C2 was split
+before implementation into A (initial candidate/resume transaction, this session),
+B (fingerprint/comparison), C (report/subject SQL) and Q (combined review). The
+[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2a) owns acceptance,
+red regressions, review findings and exact checks. Only A is implemented;
+C2 and all broader parents remain open.
 
-Four operator candidate detail/resume/report reads and key issuance now await
-complete owning-session operations in a separate bounded pool (two slots /
-20-second caller wait). Safe full/closed/pending 503/Retry-After returns no
-partial record or undisclosed replacement key. Late work retains admission and
-never replays; workers join before owned SQL disposal. Final existence checks
-refuse observed candidate erasure. Candidate-row locks serialize first issue,
-rotation and erasure without changing the profile clock. A late rotation may
-invalidate the old key without delivering a replacement; recovery is deliberate
-fresh issuance, not automatic replay. See the
-[record budget](../OPERATING.md#operator-candidate-record-execution-budget).
+Admin/employer uploads and batch processing share bounded initial-ingest workers
+(two slots / 20-second caller wait). Whole transactions and batch generation/
+retain callbacks stay in workers. Safe full/closed/pending 503/Retry-After returns
+no partial IDs. Timeout/cancel retains admission; late failure is consumed and
+late completion never resumes evaluation or replays. Batch uncertainty bypasses
+failure writes/logging and preserves its lease/checkpoint for deliberate recovery
+after existing expiry. Worker drain precedes owned SQL disposal; async providers
+stay on their caller. Screening errors explain possible saving and refresh/manual
+recovery. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
 
-Focused pytest **244 passed / 57 skipped**, SQLite migrated HTTP/restart **54/54**,
-existing portal/evaluation Chrome compatibility **1/1 + 48/48**, bindings/syntax/
-10-module compilation and implementation self-review pass. These API-only routes
-have no current UI handler; Chrome is compatibility evidence, not direct key-
-issuance UI coverage. Actual PG: **301 passed**, migrated HTTP/restart **54/54**;
-owned server stopped. Full pytest: **3860 passed, 725 skipped, 127 warnings**.
-Working DB matches baseline; demo untouched. All **616 reviewed code/config
-hashes** match. Fakes prove mechanics, not live delivery or measured quality.
+Focused **442 passed / 185 skipped**; actual PG **618 passed / 9 skipped**,
+migrated HTTP/restart and two-process races **41/41 each on SQLite and PG**;
+final actual Chrome **29/29**; offline UI **62/62**, UI pytest **20 passed**;
+bindings/syntax/12-module compilation and implementation self-reviews pass.
+Full pytest: **3885 passed, 741 skipped, 127 warnings**. A raw error code review
+finding was fixed; the first full run was stopped and replaced by the fresh final
+run. All **616 reviewed code/config hashes** match. Owned PG is confirmed stopped;
+working DB preserved and demo untouched. Fakes establish mechanics, not live quality.
 
-Required validation/completion records and the distinct final staged self-review
+Required validation/completion records and distinct final staged self-review
 are complete; linked evidence records the self-review. Authorized commit/push
 follows, and the final response reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3C2 - Bound shared intake persistence**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c2). Do not implement C2 in this session;
-the parent remains open until C2/C3/CQ close.
-Use per-command `-c credential.username=RevanParimi` for GCM account selection.
+**Exact next: R4-S2-T3C3C2B - Bound fingerprint and comparison work**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c2b). Do not implement B in this session;
+C2 closes only after B/C/Q. Use per-command `-c credential.username=RevanParimi`
+for GCM account selection.
 
-Later handler/graph/store SQL remains synchronous. SMTP still holds
-its candidate transaction/SQLite writer lock. Budgets are per service/process,
-not global limits; timeout cannot kill threads or promise rollback, and driver
-waits/drain have no new hard deadline. Principal snapshots do not lock later
-revoke/erasure. Direct synchronous callers own scheduling. Feature overview:
-[FEATURE_STATUS.md](../FEATURE_STATUS.md).
+Fingerprint/comparison/report and batch claim/failure/terminal SQL still run
+synchronously; competing SQLite writers can block those paths. Limits are per
+service/process; timeout cannot kill threads or promise rollback, and driver
+waits/drain have no new hard deadline. Direct low-level callers own scheduling
+unless they supply the executor. Single uploads without stable identity hints
+can create another subject on deliberate fresh upload; no new idempotency key.
+Present guards remain snapshots across later erasure/delivery.
 
 ## Reusable validation setup
 
+- C3C2A runner: `.pytest_cache/run_r4_s2_t3c3c2a.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c2a_postgres.py` /
+  `r4-s2-t3c3c2a-pg-runtime.json` (stopped). Review/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c2a.py check` / `preserve`.
+  Initial ingest SQL/admission/late-write/manual recovery/restart:
+  `scripts/smoke_r4_s1_t3c.py --candidate-ingest-workers`; two-process races:
+  `scripts/smoke_r4_s1_t3d.py --ingest-races`; add `--postgres` only with an
+  explicitly disposable `DEE_TEST_DB_URL`. Actual screening Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --candidate-ingest-workers`.
 - C3C1 runner: `.pytest_cache/run_r4_s2_t3c3c1.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3c1_postgres.py` /

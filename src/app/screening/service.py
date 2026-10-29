@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from app.core.config import Settings, get_settings
+from app.core.blocking import BoundedExecutor, ExecutionPending, ExecutionUnavailable
 from app.core.logging import get_logger
 from app.core.resume import ResumeInputError, validate_resume_text
 from app.ratelimit.schema import LimitScope
@@ -190,7 +191,8 @@ class ScreeningService:
     # ── processing ──────────────────────────────────────────────────────────
 
     async def process(
-        self, org_id: str, batch_id: str, *, engine: "EvaluationEngine"
+        self, org_id: str, batch_id: str, *, engine: "EvaluationEngine",
+        executor: Optional[BoundedExecutor] = None,
     ) -> Optional[ProcessResult]:
         """Claim and run up to ``screening_max_items_per_call`` items.
 
@@ -253,7 +255,13 @@ class ScreeningService:
                     expected_resume_id=item.expected_resume_id, before_commit=retain_input,
                     before_report_commit=bind_report,
                     before_write=check_input,
+                    executor=executor,
                 )
+            except (ExecutionPending, ExecutionUnavailable):
+                # No failure write may contend with an uncertain ingest still
+                # holding SQL. Keep its lease/checkpoint for deliberate recovery
+                # after expiry; stop this call without replay or partial success.
+                raise
             except IngestRefused as exc:
                 if not self._store.fail(item.id, lease=item.claimed_at,
                                         error=exc.reason, at=self._now(), now=self._now):

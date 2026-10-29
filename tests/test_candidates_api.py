@@ -26,6 +26,52 @@ Python, PyTorch, LangChain
 """
 
 
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+async def test_candidate_ingest_sql_leaves_unrelated_requests_responsive(database, settings, door):
+    import asyncio
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    from tests.test_screening_batches_api import _key
+    engine, factory = database
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith(('INSERT INTO CANDIDATES', 'UPDATE CANDIDATES')) and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': RESUME, 'evaluate': False}
+                if door == 'batch':
+                    saved = services.screening.register(org, name='Held SQL', domain='genai',
+                        texts=[RESUME], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{saved.id}/process', None
+                event.listen(engine, 'before_cursor_execute', sql)
+                pending = asyncio.create_task(http.post(path, headers=headers, json=payload))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'candidate ingest blocked the event loop'
+                    assert time.monotonic() - start < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
 @pytest.mark.parametrize('suffix,method', [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')])
 async def test_operator_candidate_sql_leaves_unrelated_requests_responsive(database, settings, suffix, method):
     import asyncio
@@ -65,6 +111,265 @@ async def test_operator_candidate_sql_leaves_unrelated_requests_responsive(datab
                 executor.close()
 
 
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_checkpoint(database, settings, monkeypatch, log_output, door, ending):
+    import asyncio
+    from datetime import timedelta
+    from threading import Event, get_ident
+    import httpx
+    from sqlalchemy import event, select
+    from app.candidates.models import CandidateRow, ExtractionRow, FingerprintRow, ResumeRow
+    from app.screening.models import BatchItemRow, ScreeningInputRow
+    from tests.test_screening_batches_api import _key
+    engine, factory = database
+    settings.candidate_ingest_max_concurrent_requests = 1
+    settings.candidate_ingest_wait_seconds = .1 if ending in ('timeout', 'late_failure') else 20
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    other_org, other_key = _key(services, 'Other')
+    entered, release = Event(), Event()
+    calls, outcomes, following, extracted = [], [], [], []
+    caller = get_ident()
+    text = RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))
+    original = services.candidates.ingest
+    def ingest(*args, **kwargs):
+        calls.append(get_ident())
+        callback = kwargs.get('before_commit')
+        def checkpoint(session, outcome):
+            assert get_ident() != caller
+            assert session.info['ingest_owner'] == get_ident()
+            if callback is not None:
+                callback(session, outcome)
+            outcomes.append(outcome)
+            entered.set()
+            assert release.wait(15)
+            if ending == 'late_failure':
+                raise RuntimeError('synthetic-private-ingest-error')
+        return original(*args, **{**kwargs, 'before_commit': checkpoint})
+    monkeypatch.setattr(services.candidates, 'ingest', ingest)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('ingest_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('ingest_owner', get_ident()) == get_ident()
+    event.listen(factory, 'after_begin', begin)
+    event.listen(factory, 'after_transaction_end', end)
+    import app.candidates.extractor as extractor
+    extract = extractor.extract_profile
+    async def observed_extract(*args, **kwargs):
+        extracted.append(get_ident())
+        return await extract(*args, **kwargs)
+    monkeypatch.setattr(extractor, 'extract_profile', observed_extract)
+    fingerprint = services.candidates.save_fingerprint
+    def observed_fingerprint(*args, **kwargs):
+        following.append(get_ident())
+        return fingerprint(*args, **kwargs)
+    monkeypatch.setattr(services.candidates, 'save_fingerprint', observed_fingerprint)
+    failed = []
+    fail = services.screening._store.fail
+    def observed_fail(*args, **kwargs):
+        failed.append(args)
+        return fail(*args, **kwargs)
+    monkeypatch.setattr(services.screening._store, 'fail', observed_fail)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            evaluate = app.state.engine.evaluate
+            async def observed_evaluate(**kwargs):
+                following.append(get_ident())
+                return await evaluate(**kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', observed_evaluate)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text}
+                batch = None
+                if door == 'batch':
+                    batch = services.screening.register(org, name='Uncertain write', domain='genai',
+                        texts=[text], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{batch.id}/process', None
+                    assert (await http.post(path, headers={'X-Org-Key': other_key})).status_code == 404
+                pending = asyncio.create_task(http.post(path, headers=headers, json=payload))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    for busy_path, busy_headers in [('/candidates', {}), ('/screening/candidates', {'X-Org-Key': other_key})]:
+                        busy = await http.post(busy_path, headers=busy_headers, json={'resume_text': text})
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    assert (await http.post('/candidates', headers={'X-API-Key': ''}, json={'resume_text': text})).status_code == 401
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert not following and not failed and len(calls) == 1
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.candidate_ingests._active:
+                            await asyncio.sleep(.01)
+                assert calls == [calls[0]] and calls[0] != caller and all(t == caller for t in extracted)
+                outcome = outcomes[0]
+                with factory() as session:
+                    committed = ending != 'late_failure'
+                    assert (session.get(CandidateRow, outcome.candidate_id) is not None) == committed
+                    assert (session.get(ResumeRow, outcome.resume_id) is not None) == committed
+                    assert len(list(session.scalars(select(ExtractionRow.id)))) == int(committed)
+                    if ending != 'release':
+                        assert not following and not failed
+                        assert not list(session.scalars(select(FingerprintRow)))
+                        assert services.report_store.for_candidate(outcome.candidate_id) == []
+                    if batch:
+                        row = session.scalar(select(BatchItemRow).where(BatchItemRow.batch_id == batch.id))
+                        if ending != 'release':
+                            assert row.status == 'processing' and row.error is None and row.claimed_at is not None
+                            ref = session.get(ScreeningInputRow, row.id)
+                            assert (ref is not None) == committed
+                            if ref:
+                                assert ref.resume_id == outcome.resume_id and ref.report_id is None
+                monkeypatch.setattr(services.candidates, 'ingest', original)
+                services.candidate_ingests._wait_seconds = 20
+                if batch:
+                    now = services.screening._now()
+                    monkeypatch.setattr(services.screening, '_now', lambda: now + timedelta(seconds=settings.screening_claim_timeout_seconds + 1))
+                if ending == 'release':
+                    assert responses[0].status_code == 200
+                    assert following and all(t == caller for t in following)
+                else:
+                    recovered = await http.post(path, headers=headers, json=payload)
+                    assert recovered.status_code == 200
+                    if batch:
+                        assert recovered.json()['processed'] == 1 and recovered.json()['failed'] == 0
+                        assert (await http.get(f'/screening/batches/{batch.id}/queue', headers={'X-Org-Key': other_key})).status_code == 404
+                    else:
+                        assert recovered.json()['duplicate_resume'] == committed
+                        assert recovered.json()['resume_version'] == 1
+                        if committed:
+                            assert recovered.json()['resume_id'] == outcome.resume_id
+                assert services.candidates.get_candidate('b') is not None
+                services.candidate_ingests.close()
+                closed = await http.post('/candidates', json={'resume_text': text})
+                assert closed.status_code == 503 and closed.json() == {'detail': 'candidate_ingest_executor_closed'}
+    finally:
+        release.set()
+        await services.aclose()
+        event.remove(factory, 'after_begin', begin)
+        event.remove(factory, 'after_transaction_end', end)
+    assert 'synthetic-private-ingest-error' not in log_output.text
+    assert 'batch_item_failed' not in log_output.text
+
+
+async def test_candidate_ingest_real_lock_retains_capacity_and_commits_without_evaluation(database, settings):
+    import asyncio
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event, text
+    from app.candidates.extractor import extract_profile
+    from app.core.resume import validate_resume_text
+    engine, factory = database
+    settings.candidate_ingest_max_concurrent_requests = 1
+    settings.candidate_ingest_wait_seconds = .1
+    services = make_services(settings, candidates=CandidateStore(factory))
+    resume = validate_resume_text(RESUME, settings)
+    extracted = await extract_profile(resume, llm=services.llm, settings=settings)
+    saved = services.candidates.ingest(extracted, resume)
+    entered, pids = Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith('UPDATE CANDIDATES') and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+    blocker = engine.connect()
+    if engine.dialect.name == 'sqlite':
+        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+    else:
+        blocker.execute(text('SELECT id FROM candidates WHERE id = :id FOR UPDATE'), {'id': saved.candidate_id}).all()
+    event.listen(engine, 'before_cursor_execute', sql)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/candidates', json={'resume_text': RESUME}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_pending'}
+                    busy = await http.post('/candidates', json={'resume_text': RESUME})
+                    assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                finally:
+                    blocker.rollback()
+                    blocker.close()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.candidate_ingests._active:
+                            await asyncio.sleep(.01)
+                assert services.candidates.get_candidate(saved.candidate_id).resume_count == 1
+                assert services.report_store.for_candidate(saved.candidate_id) == []
+                assert services.candidates.get_candidate('b') is not None
+    finally:
+        blocker.close()
+        await services.aclose()
+        event.remove(engine, 'before_cursor_execute', sql)
+
+
+async def test_batch_ingest_capacity_stops_without_failure_or_automatic_replay(services, monkeypatch, log_output):
+    import asyncio
+    from threading import Event
+    import httpx
+    from app.auth.schema import PrincipalKind
+    from tests.test_screening_batches_api import _key
+    org, key = _key(services)
+    _, other_key = _key(services, 'Other')
+    batch = services.screening.register(org, name='Capacity', domain='genai', texts=[RESUME], created_by_org_user_id=None)
+    fresh = services.screening.register(org, name='Closed', domain='genai', texts=[RESUME], created_by_org_user_id=None)
+    admin = services.auth._store.create_admin_user(email_hash='candidate-ingest-admin')
+    token, _ = services.auth._store.create_session(kind=PrincipalKind.ADMIN, subject_id=admin.id,
+        csrf_token='synthetic-csrf', at=datetime.now(timezone.utc))
+    services.settings.candidate_ingest_max_concurrent_requests = 1
+    entered, release = Event(), Event()
+    def held():
+        entered.set()
+        assert release.wait(10)
+    task = asyncio.create_task(services.candidate_ingests.run(held))
+    assert await asyncio.to_thread(entered.wait, 5)
+    def forbidden(*args, **kwargs):
+        pytest.fail('unadmitted batch must not write ingest or failure state')
+    monkeypatch.setattr(services.candidates, 'ingest', forbidden)
+    monkeypatch.setattr(services.screening._store, 'fail', forbidden)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = f'/screening/batches/{batch.id}/process'
+                assert (await http.post(path, headers={'X-Org-Key': other_key})).status_code == 404
+                assert (await http.post('/candidates', headers={'Cookie': f'dee_session={token}; dee_csrf=synthetic-csrf'}, json={'resume_text': RESUME})).status_code == 403
+                response = await http.post(path, headers={'X-Org-Key': key})
+                assert response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                assert response.headers['retry-after'] == '1'
+                row = services.screening.queue(org, batch.id, cursor=None, limit=None).rows[0]
+                assert row.status.value == 'processing' and row.error is None and row.candidate_id is None
+                services.candidate_ingests._closed = True
+                closed = await http.post(f'/screening/batches/{fresh.id}/process', headers={'X-Org-Key': key})
+                assert closed.status_code == 503 and closed.json() == {'detail': 'candidate_ingest_executor_closed'}
+    finally:
+        release.set()
+        await task
+    assert 'batch_item_failed' not in log_output.text
+
+
 @pytest.fixture
 def api(settings, flywheel):
     """TestClient wired to fully offline services (NullLLM, in-memory stores)."""
@@ -74,6 +379,8 @@ def api(settings, flywheel):
         yield client, services
     if services._candidate_records is not None:
         services._candidate_records.close()
+    if services._candidate_ingests is not None:
+        services._candidate_ingests.close()
 
 
 @pytest.mark.parametrize('suffix,method', [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')])

@@ -293,6 +293,8 @@ auth_session_max_concurrent_requests: 2     # separate admission for session man
 auth_session_wait_seconds: 20.0            # late revocation may commit; never replay
 candidate_record_max_concurrent_requests: 2  # operator reads/key rotation; separate admission
 candidate_record_wait_seconds: 20.0          # late key rotation may invalidate the old key
+candidate_ingest_max_concurrent_requests: 2  # shared single/batch candidate/resume persistence
+candidate_ingest_wait_seconds: 20.0          # pending writes may commit; never replay automatically
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

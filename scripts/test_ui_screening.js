@@ -25,6 +25,40 @@ function pick(c, files) {
   assert.equal(target.value, "");
 }
 
+for (const [detail, copy] of [
+  ['candidate_ingest_pending', /may still be saving/],
+  ['candidate_ingest_capacity_exhausted', /temporarily unavailable/],
+  ['candidate_ingest_executor_closed', /temporarily unavailable/]
+]) {
+  test('uncertain ingest explains saved state and requires manual recovery: ' + detail, async () => {
+    const { c, window, calls } = setup();
+    c.state.selectedBatch = 'owned';
+    c.state.batch = held(batch('owned'));
+    window.VeritasAPI.post = async p => {
+      calls.push(['POST', p]);
+      throw { status: 503, detail };
+    };
+    c.startProcessing(); await settle(); await settle();
+    const view = c.renderVals();
+    assert.equal(c.state.driving, false);
+    assert.equal(c.state.driveDone, 0);
+    assert.equal(c.state.driveFailed, 0);
+    assert.equal(calls.filter(x => x[0] === 'POST').length, 1);
+    assert.match(view.driveErrorText, copy);
+    assert.match(view.driveErrorText, /refresh.*not screened yet.*Start screening/);
+    assert.doesNotMatch(view.driveErrorText, /candidate_ingest/);
+    window.VeritasAPI.post = async p => {
+      calls.push(['POST', p]);
+      return { processed: 1, failed: 0, remaining: 0 };
+    };
+    c.startProcessing(); await settle();
+    assert.equal(c.state.driving, false);
+    assert.equal(c.state.driveDone, 1);
+    assert.equal(c.renderVals().driveError, false);
+    assert.equal(calls.filter(x => x[0] === 'POST').length, 2);
+  });
+}
+
 test("screening intake appends files, classifies types and removes/reselects", () => {
   const { c } = setup();
   pick(c, [{ name: "resume.PDF", size: 1048577 }, { name: "notes.md", size: 12 }]);
