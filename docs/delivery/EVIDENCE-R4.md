@@ -8292,3 +8292,244 @@ have not changed after validation. Configured `main` -> `origin/main` matched
 `813bde3` before publication; use per-command GCM account selection. Authorized
 commit/push follows, and the final response reports the verified remote commit.
 Stop after publication.
+
+### <a id="r4-s2-t3c3c2c"></a>R4-S2-T3C3C2C - Bound intake report and subject SQL
+
+**Status: done (2026-10-30).** Baseline `7071bc4`, prerequisite B
+published. Only C is implemented in this session; C2/Q and all broader parents
+remain open. [PI status](PI-R4.md#r4-s2-t3c3c2c).
+
+**Pre-implementation contract (consolidated from the active PI section).** Use
+the existing candidate-ingest executor for (1) the pre-evaluation subject snapshot,
+(2) the post-evaluation subject check plus complete report save/batch binding
+transaction, and (3) the final subject/report publication snapshot, including
+evaluate=False. Admission and caller wait apply separately to each complete
+operation. Keep async providers on the caller and all SQL sessions/checkpoint
+callbacks on their worker. Preserve current erasure refusals, advisory/scoring
+versions, consent and tenant projection; no schema, provider, identity or automatic
+retry change. Low-level callers without an executor remain responsible for
+scheduling. Batch claim/recovery/failure/terminal management is outside C.
+
+Acceptance: red/green SQL responsiveness across admin/org/batch at the three
+subject checks, report INSERT and final report read; cover the no-evaluation
+final guard too. Require full/closed refusal after prior work, retained admission
+through timeout/cancel/late failure, no partial IDs/cookies or late provider/
+terminal continuation, whole worker/callback session ownership and safe rollback.
+A late report/checkpoint commit may survive a failed HTTP response. Deliberate
+batch processing after lease expiry must recover that same report without
+re-evaluation; single uploads can deliberately create another report. Prove real
+SQLite/PG write contention and erasure/checkpoint races, migrated two-actor HTTP/
+restart, actual Chrome uncertainty/manual saved-report recovery/reload, full
+pytest, bindings/static checks, implementation and distinct final staged reviews.
+Only C closes after its evidence; C2/Q and all broader parents remain open.
+
+**Reproducer and implementation.** Controlled SQL stalls at the pre/post-
+evaluation subject snapshots, report INSERT, final subject check and final
+report read block the request loop across admin/org/batch; uploads without
+evaluation have the same final-subject defect. Sanitized tag `red`, `-m pytest
+-q --tb=short tests/test_candidates_api.py -k candidate_report_sql`: **17 failed,
+17 skipped, 210 deselected, 1 warning, 96.17s** (wrapper 111.52s). Every case
+reached its SQL gate and failed `intake subject/report SQL blocked the event
+loop`, not an import/fixture error.
+
+The shared pipeline now admits three complete operations on the existing ingest
+executor: the pre-evaluation subject snapshot, post-evaluation subject check plus
+whole report/batch-binding transaction, and final subject/report publication
+snapshot (including evaluate=False). No SQL session crosses its worker thread;
+batch binding callbacks stay in the save transaction. Async extraction/evaluation
+stay on the caller. Existing error codes, safe 503/Retry-After without IDs/cookies,
+retained capacity through timeout/cancel, consumed late failure and manual recovery
+apply at each boundary. A late report/checkpoint commit does not resume evaluation
+or batch completion. Deliberate batch processing after expiry recovers a saved
+report without another provider call; a fresh single upload can create another
+report. No new idempotency, migration, scorer/algorithm, provider, tenant/consent/
+erasure or identity policy. Batch claim/recovery/failure/terminal and other handler/
+graph SQL remain separate work. Direct callers omitting an executor own scheduling.
+
+**Implementation self-review.** Reviewed `7071bc4` plus the two application
+modules, two existing pytest modules, shared HTTP/Chrome harness changes and the
+pre-implementation PI contract/runbook/feature wording. Traced all three intake
+doors, preserved three subject checks and report-existence guard, complete session/
+callback ownership, post-check/report transaction grouping, async provider ownership,
+admission after earlier commits, late commit/rollback, erasure without recreation,
+safe failure mapping, retained batch lease/checkpoint and explicit report recovery.
+Checked existing advisory versions, self-exclusion, redaction, consent and service
+drain before SQL disposal. The medium availability defect is resolved at the
+shared pipeline, without another pool or generic abstraction. No blocking product
+finding remains. Same-agent self-review, not independent review.
+
+The initial green run had **6 failed / 69 passed / 75 skipped**: its post-check
+timeout/cancel assertions incorrectly expected no report, despite the specified
+post-check and save being one complete worker operation. Corrected assertions
+require the late report/checkpoint commit and deliberate recovery without another
+evaluation. No production change followed this test correction; the final green/
+full/PG runs use the corrected assertions. The 28-case admission contract extends
+the existing B test rather than duplicating its launcher; historical B commands
+remain evidence for that prior revision.
+
+**Validation.** Ignored sanitized runner `.pytest_cache/run_r4_s2_t3c3c2c.py
+<tag> <Python args>` uses the project Python, clears inherited DEE settings/keys,
+selects nonexistent YAML and disables remote credentials. Fixtures bypass dotenv;
+HTTP/browser apps run on migrated scratch storage from scratch directories without
+`.env`. No working storage or demo restart is part of the validation.
+
+- Tag `admission`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k candidate_intake_admission`: **28 passed, 354 deselected, 1 warning,
+  24.32s**. Full/closed refusal at fingerprint/pre-evaluation/save/publication/
+  no-evaluation boundaries has no partial IDs/cookies or terminal/failure writes;
+  earlier resumes, fingerprints and report checkpoints remain durable as appropriate.
+- Tag `erasure`, `-m pytest -q --tb=short tests/test_ingest_response_erasure.py
+  -k worker_publication`: **9 passed, 9 skipped, 49 deselected, 1 warning,
+  25.17s**. Three doors x candidate/resume/report erasure on a competing real
+  connection before the final worker snapshot refuse stale publication, preserve
+  the other subject, scrub batch references and refuse unsafe retry. Resume-only
+  erasure preserves the independently retained report, as existing policy requires.
+- Tag `http`, `scripts/smoke_r4_s1_t3c.py --candidate-report-workers`: **42/42**,
+  wrapper 51.31s, migrated SQLite HTTP and graceful restart. Real SQL gates at
+  pre-evaluation, report INSERT and final publication leave health and admitted
+  reads responsive in **0.0191-0.0402s**, each below one second.
+  Shared admission and pending return no partial IDs/cookies. Late saved subject/
+  report state, pinned batch input/lease and manual recovery survive restart;
+  report-checkpoint recovery performs no new evaluation. Tenant redaction,
+  CSRF/source/erasure and unrelated surviving data remain covered.
+- Tag `browser`, `scripts/check_ui_screening_extraction_browser.py
+  --candidate-report-workers`: **30/30**, wrapper 43.74s, actual Chrome. A report
+  INSERT timeout renders possible saving and refresh/manual recovery guidance, stops without
+  replay and retains its lease. Deliberate Start screening after controlled expiry
+  reuses the same late-committed candidate/resume/report without another evaluation;
+  actual reload and existing intake/queue/review/feedback/summary/deletion/read-error
+  recovery pass without console exceptions. Requires existing CDN internet.
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**; `node --check`
+  on `frontend/api.js` and `frontend/support.js` passes. `node --test
+  scripts/test_ui_screening.js`: **62 passed, 0 failed/skipped, 703.0499ms**.
+  Tag `compile`, `-m py_compile` on all **six changed Python modules**, exit 0.
+  Reviewed-state helper saved **616 code/config hashes** after implementation review.
+- Tag `green-final`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'candidate_report or candidate_intake_admission'`: **104 passed, 75 skipped,
+  203 deselected, 1 warning, 227.45s** (wrapper 240.35s). Covers the 17 SQL
+  phase/door combinations; release/timeout/cancel/late failure across pre/post-
+  evaluation, report transaction, publication and no-evaluation paths; complete
+  session/callback worker ownership, caller-only providers, retained shared
+  admission, late commit/rollback, no terminal continuation, explicit pinned input/
+  report recovery and single-upload report behavior. Actual SQLite writer wait
+  and candidate erasure refuse an orphan report. Full/closed refusal at each
+  stage preserves the correct earlier saved state without publishing it.
+- Tag `races`, `scripts/smoke_r4_s1_t3d.py --ingest-races`: **41/41**, real
+  two-process SQLite identity/resume dedupe, versions, scoped advisory reports,
+  leases and graceful saved-state restart, wrapper **95.63s**.
+
+The broader SQLite tag `focused` ran `-m pytest -q --tb=short` over
+`tests/test_candidates_api.py tests/test_similarity.py tests/test_resume_farm_assess.py
+tests/test_resume_farm_api.py tests/test_candidate_store.py tests/test_ingest_erasure_concurrency.py
+tests/test_ingest_response_erasure.py tests/test_candidate_login_binding_concurrency.py
+tests/test_screening_batches_api.py tests/test_screening_durable_input.py
+tests/test_screening_unresolved_input.py tests/test_screening_report_input.py
+tests/test_org_scope_guard.py tests/test_api_route_extraction.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py tests/test_service_lifecycle.py tests/test_config.py`:
+**629 passed, 317 skipped, 1 failed, 3 warnings, 803.39s** (wrapper 815.73s).
+Only `[sqlite-batch-subject]` missed its combined health/admitted-read latency
+gate: **1.17824s** against the unchanged one-second assertion. Both reads
+succeeded while the SQL gate remained held; the event-loop-blocking assertion
+passed. This occurred while the focused, full and PG runs overlapped. Isolated unchanged tag
+`sql-batch-subject-rerun`, `-m pytest -q --tb=short tests/test_candidates_api.py
+-k 'candidate_report_sql and batch and subject'`: **1 passed, 1 skipped,
+380 deselected, 1 warning, 11.15s** (wrapper 23.66s) resolves that check without
+changing source or thresholds. No production-load guarantee is inferred. The
+original failed run remains recorded; the separate final full run covers the
+same code.
+
+- Initial actual PG gate: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c2c_postgres.py`, owned disposable **PG 18.6**,
+  Asia/Calcutta, read committed, isolated test schemas. The same 18-file group:
+  **937 passed, 9 skipped, 1 failed, 3 warnings, 1839.45s** (wrapper 1858.08s).
+  Its sole failure was **SQLite** `[sqlite-admin-report]`, not a PG variant:
+  combined health/admitted-read latency **1.02402s** against the same one-second
+  assertion during overlapping validation. Both responses succeeded while the
+  SQL worker remained held. All actual PG cases passed, including report INSERT
+  waits observed in `pg_stat_activity`, candidate erasure/FK refusal without
+  recreation, worker/session/callback ownership, late checkpoint commit/rollback,
+  explicit recovery without evaluation and competing checkpoint/generation/lease/
+  erasure regressions. The nine skips are SQLite variants of PG-only assertions.
+  The runner correctly stopped before HTTP/races on that failed check; owned
+  `pg_ctl -m fast` stopped with **exit 0**, 37.86s. Initial focused/runtime logs
+  are retained locally with the `-initial` suffix before the scoped rerun.
+- Final full regression: `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c2c.py full-final` executes the required
+  `-m pytest -q --tb=short`: **4045 passed, 873 skipped, 127 warnings,
+  2191.76s** (wrapper 2210.97s), exit 0. Includes both previously failed SQLite
+  latency checks on the unchanged reviewed code. Optional/environment/unconfigured-
+  PG skips establish no omitted behavior; the separate actual PG gate above
+  covers this task's SQL cases. Existing expression-index reflection and third-
+  party warnings remain. No source or threshold was changed for the reruns.
+
+- Scoped PG-enabled resolution, same owned runner with these two explicit pytest
+  node arguments (all other setup unchanged):
+  `tests/test_candidates_api.py::test_candidate_report_sql_leaves_unrelated_requests_responsive[sqlite-admin-report]`
+  and the corresponding `[postgresql-admin-report]` node: **2 passed, 1 warning,
+  19.67s** (wrapper 29.39s). Fresh disposable PG 18.6, same timezone/isolation.
+  Resolves the sole initial PG-enabled group's SQLite timing miss and rechecks
+  its actual PG counterpart without relaxing the one-second threshold. The
+  final full run also passed both previously failing SQLite checks. Original
+  failed counts remain above; no aggregate green 18-file PG run is claimed
+  from this scoped rerun.
+- Actual PG migrated HTTP: `scripts/smoke_r4_s1_t3c.py --postgres
+  --candidate-report-workers`: **42/42**, 32.14s. Same three real SQL gates leave
+  health plus admitted reads responsive in **0.0119-0.1020s**, each below one
+  second. Safe admission/pending without IDs, complete late report/checkpoint
+  commit, deliberate saved-report recovery without another evaluation, tenant/
+  CSRF/erasure/source and exact saved-state graceful restart assertions pass.
+- Actual PG two-process intake: `scripts/smoke_r4_s1_t3d.py --postgres
+  --ingest-races`: **41/41**, 57.75s. Identity/resume dedupe, versions, distinct
+  owner resumes, scoped advisory reports, leases and exact graceful restart pass.
+
+Final owned `pg_ctl -m fast` cleanup: **exit 0**, 5.01s. Both the initial and
+scoped owned runtimes are confirmed stopped with `pg_ctl status`. No new schema
+change requires another migration up/down/up gate; existing populated migration
+regressions ran and scratch HTTP stores migrated to 0030. The working 0023 store
+and port-8000 demo remain untouched. All **616 reviewed code/config hashes**
+match the full-tested state. No CI, live-provider or measured quality/load claim.
+
+**Completion:** C3C2C done. C2/Q and all broader C3C/C3/C/T3/F14/sprint/PI
+parents remain open. Exact next is **R4-S2-T3C3C2Q - Review combined shared intake
+persistence**, in a separate session; do not start Q here. PI status,
+feature/runbook, handoff and roadmap link to their evidence owners. Per-operation/
+per-process admission, non-killable threads, possible late commits, snapshot
+guards, deliberate provider repetition when no report checkpoint exists, no new
+single-upload idempotency, and remaining synchronous batch/handler/graph SQL
+remain explicit. Validation used synthetic providers to prove mechanics, not
+production-load or assessment-quality guarantees. Completion records precede
+the distinct final staged self-review and standing-authorized scoped commit/push.
+
+**Distinct final staged self-review (after validation/completion records).**
+Reviewed the exact `7071bc4`-based **12-file staged diff**: two application
+modules, two existing pytest modules, two existing HTTP/Chrome scripts and six
+documentation records. Checked C's acceptance against all three API doors,
+pre/post/final guards including evaluate=False, whole worker session/callback
+ownership, caller-only async providers, separate admission after earlier commits,
+safe no-ID refusal/uncertainty, retained capacity/cancel/drain, late report and
+checkpoint commit/rollback, no abandoned provider/terminal continuation, explicit
+saved-report recovery without re-evaluation, erasure snapshots without identity
+recreation, and unchanged advisory/scoring/consent/tenant projection. Inspected
+the exact new tests and harness hooks against their callers; SQL sessions and
+batch-binding transactions stay on the worker. No new schema, provider, UI
+contract or second task is introduced. No blocking finding remains. This is
+same-agent self-review, not independent review.
+
+Compared recorded counts/commands with actual final logs, including both initial
+SQLite timing misses, their unchanged reruns and the passing full suite. The
+initial PG-enabled group is not relabeled as an all-green run; actual PG cases,
+the scoped two-node rerun and both PG journeys are recorded separately. Controlled
+holds/fakes/TestClient/source checks are distinct from real SQL/HTTP/Chrome and
+do not establish production-load or live-provider quality. C2/Q and all broader
+parents remain open. Final edits only clarify completion/review wording and wrap
+documentation; no application/test/script/config changed after final validation.
+
+All **616 code/config hashes** match the full-tested reviewed state. Exactly
+**12 scoped files** are staged; **722 unrelated tracked files**, including
+`data/veritas.db`, match baseline. No unstaged/untracked edits, secrets, working
+data or local runtime/log artifacts enter publication. The **seven added local
+documentation links/anchors**, staged whitespace and preservation checks pass.
+Both owned PG runtimes are confirmed stopped and the demo untouched. Configured
+`main` -> `origin/main` is checked before publication using per-command GCM
+account selection. Authorized commit/push follows, and the final response reports
+the verified remote commit. Stop after publication.

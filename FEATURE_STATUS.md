@@ -208,6 +208,10 @@ commits, manual recovery and identity/dedupe limits.
 [R4-S2-T3C3C2B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2b) extends the shared
 budget to complete fingerprint computation/save/comparison and advisory assessment.
 Late fingerprint completion never resumes evaluation; later admission refusal
-can follow a committed resume. Report/subject and batch-management SQL remain
-separate open work. C2's later children and combined gate must pass before the
-parent closes.
+can follow a committed resume.
+[R4-S2-T3C3C2C](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2c) extends that same
+budget to pre/post-evaluation subject SQL, complete report/checkpoint saves and
+final publication guards, including uploads without evaluation. A late report
+commit can be recovered deliberately by a batch without another evaluation.
+Batch management and other handler/graph SQL remain separate work. C2's combined
+gate must pass before the parent closes.

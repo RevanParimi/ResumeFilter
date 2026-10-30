@@ -36,7 +36,11 @@ def create_candidate_fingerprint_smoke_app():
     return create_candidate_ingest_smoke_app(fingerprint=True)
 
 
-def create_candidate_ingest_smoke_app(*, fingerprint=False):
+def create_candidate_report_smoke_app():
+    return create_candidate_ingest_smoke_app(report_sql=True)
+
+
+def create_candidate_ingest_smoke_app(*, fingerprint=False, report_sql=False):
     """Hold initial ingest or fingerprint work in the scratch application."""
     from sqlalchemy import event
     from app.candidates.models import FingerprintRow
@@ -52,6 +56,12 @@ def create_candidate_ingest_smoke_app(*, fingerprint=False):
             services = app.state.services
             ingest, now = services.candidates.ingest, services.screening._now
             farm, compute, compare = pipeline._assess_ingest_farm, similarity.fingerprint_text, services.candidates.similar_resumes
+            guard, report_save, report_get = services.candidates.require_ingest_subject, services.report_store.save, services.report_store.get
+            evaluate, caller = app.state.engine.evaluate, get_ident()
+            state, guard_calls = local(), {}
+            if report_sql:
+                (scratch / 'ingest-operations.jsonl').touch(exist_ok=True)
+                (scratch / 'ingest-evaluations.jsonl').touch(exist_ok=True)
             def hold():
                 (scratch / 'ingest-entered').touch()
                 deadline = time.monotonic() + 20
@@ -82,13 +92,57 @@ def create_candidate_ingest_smoke_app(*, fingerprint=False):
                 finally:
                     if held:
                         (scratch / 'ingest-completed').touch()
+            def report_sql_gate(conn, cursor, statement, parameters, context, many):
+                operation = getattr(state, 'operation', None)
+                target = operation != 'save' or statement.lstrip().upper().startswith('INSERT INTO REPORTS')
+                if target and mode() == operation and mode() is not None and not state.held:
+                    state.held = True
+                    with (scratch / 'ingest-operations.jsonl').open('a') as log:
+                        log.write(json.dumps({'thread': get_ident(), 'phase': state.operation}) + '\n')
+                    hold()
+            def controlled_guard(*args):
+                guard_calls[args] = guard_calls.get(args, 0) + 1
+                state.operation, state.held = ('pre' if guard_calls[args] == 1 else None), False
+                try:
+                    return guard(*args)
+                finally:
+                    if state.held:
+                        (scratch / 'ingest-completed').touch()
+                    state.operation = None
+            def controlled_report_save(report, **kwargs):
+                state.operation, state.held = 'save', False
+                if mode() == 'save':
+                    (scratch / 'ingest-report.json').write_text(json.dumps({'id': report.id}))
+                try:
+                    return report_save(report, **kwargs)
+                finally:
+                    if state.held:
+                        (scratch / 'ingest-completed').touch()
+                    state.operation = None
+            def controlled_report_get(*args):
+                state.operation, state.held = 'publication', False
+                if mode() == 'publication':
+                    (scratch / 'ingest-report.json').write_text(json.dumps({'id': args[0]}))
+                try:
+                    return report_get(*args)
+                finally:
+                    if state.held:
+                        (scratch / 'ingest-completed').touch()
+                    state.operation = None
+            async def controlled_evaluate(**kwargs):
+                assert get_ident() == caller, 'async evaluation moved off its caller'
+                report = await evaluate(**kwargs)
+                with (scratch / 'ingest-evaluations.jsonl').open('a') as log:
+                    log.write(json.dumps({'id': report.id, 'thread': get_ident()}) + '\n')
+                return report
             def controlled_now():
                 offset = services.settings.screening_claim_timeout_seconds + 1 if (scratch / 'ingest-advanced').exists() else 0
                 return now() + timedelta(seconds=offset)
             def controlled_ingest(*args, **kwargs):
-                if fingerprint:
+                if fingerprint or report_sql:
                     outcome = ingest(*args, **kwargs)
                     (scratch / 'ingest-outcome.json').write_text(json.dumps(outcome.model_dump()))
+                    guard_calls[(outcome.candidate_id, outcome.resume_id)] = 0
                     return outcome
                 with (scratch / 'ingest-operations.jsonl').open('a') as log:
                     log.write(json.dumps({'thread': get_ident()}) + '\n')
@@ -120,6 +174,11 @@ def create_candidate_ingest_smoke_app(*, fingerprint=False):
                 pipeline._assess_ingest_farm = controlled_farm
                 similarity.fingerprint_text, services.candidates.similar_resumes = controlled_compute, controlled_compare
                 event.listen(services.session_factory, 'after_flush', flushed)
+            if report_sql:
+                services.candidates.require_ingest_subject = controlled_guard
+                services.report_store.save, services.report_store.get = controlled_report_save, controlled_report_get
+                app.state.engine.evaluate = controlled_evaluate
+                event.listen(services.session_factory.kw['bind'], 'before_cursor_execute', report_sql_gate)
             event.listen(services.session_factory, 'after_begin', owner)
             event.listen(services.session_factory, 'after_transaction_end', end)
             try:
@@ -130,16 +189,23 @@ def create_candidate_ingest_smoke_app(*, fingerprint=False):
                     pipeline._assess_ingest_farm = farm
                     similarity.fingerprint_text, services.candidates.similar_resumes = compute, compare
                     event.remove(services.session_factory, 'after_flush', flushed)
+                if report_sql:
+                    services.candidates.require_ingest_subject = guard
+                    services.report_store.save, services.report_store.get = report_save, report_get
+                    app.state.engine.evaluate = evaluate
+                    event.remove(services.session_factory.kw['bind'], 'before_cursor_execute', report_sql_gate)
                 event.remove(services.session_factory, 'after_begin', owner)
                 event.remove(services.session_factory, 'after_transaction_end', end)
     app.router.lifespan_context = lifespan
     return app
 
 
-def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *, fingerprint=False):
+def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *, fingerprint=False, report_sql=False):
     saved = {}
     for door, actor in [('admin', operator), ('org', org_a), ('batch', org_a)]:
         phase = {'admin': 'compute', 'org': 'save', 'batch': 'compare'}[door] if fingerprint else 'initial write'
+        if report_sql:
+            phase = {'admin': 'pre', 'org': 'save', 'batch': 'publication'}[door]
         text = RESUME.replace('candidate-router@example.in', f'ingest-{door}@example.in')
         path, body = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text}
         batch = None
@@ -180,10 +246,14 @@ def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *,
                 (scratch / 'ingest-mode').unlink(missing_ok=True)
         outcome = json.loads((scratch / 'ingest-outcome.json').read_text())
         cid, resume = outcome['candidate_id'], outcome['resume_id']
-        checks.check(door + ': late commit persists once without starting evaluation',
+        reports = control.get(f'/candidates/{cid}/reports').json()
+        committed_report = report_sql and phase != 'pre'
+        checks.check(door + ': late work preserves saved subject/report state without replay',
             len(operations.read_text().splitlines()) == before + 1
             and control.get(f'/candidates/{cid}').json()['resume_count'] == 1
-            and control.get(f'/candidates/{cid}/reports').json() == [])
+            and len(reports) == int(committed_report))
+        report_id = reports[0]['id'] if reports else None
+        evaluations = len((scratch / 'ingest-evaluations.jsonl').read_text().splitlines()) if report_sql else None
         if batch:
             queue = actor.get(f'/screening/batches/{batch}/queue').json()['rows']
             checks.check('batch uncertainty retains its lease without a false failure or cross-tenant read',
@@ -196,11 +266,17 @@ def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *,
             row = actor.get(f'/screening/batches/{batch}/queue').json()['rows'][0]
             checks.check('explicit process after lease expiry recovers the committed input',
                 recovered.json()['processed'] == 1 and row['candidate_id'] == cid and row['resume_id'] == resume)
+            if committed_report:
+                checks.check('deliberate saved-report recovery avoids another evaluation',
+                    row['report_id'] == report_id and len((scratch / 'ingest-evaluations.jsonl').read_text().splitlines()) == evaluations)
         else:
             checks.check(door + ': deliberate upload deduplicates the saved resume', recovered.json()['duplicate_resume']
                 and recovered.json()['resume_id'] == resume and recovered.json()['resume_version'] == 1)
         url = f'/candidates/{cid}/resumes'
         saved[url] = control.get(url).json()
+        if report_sql:
+            url = f'/candidates/{cid}/reports'
+            saved[url] = control.get(url).json()
     return saved
 
 
@@ -337,14 +413,14 @@ def run(scratch, url, pg_options):
         "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app" if '--candidate-fingerprint-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_ingest_smoke_app" if '--candidate-ingest-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_report_smoke_app" if '--candidate-report-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app" if '--candidate-fingerprint-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_ingest_smoke_app" if '--candidate-ingest-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
     if '--candidate-record-workers' in sys.argv:
         env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
-    if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')):
+    if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
         env.update(DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
@@ -429,7 +505,8 @@ def run(scratch, url, pg_options):
             if '--candidate-record-workers' in sys.argv:
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key)
             intake_saved = check_candidate_ingests(checks, scratch, control, operator, org_a, org_b,
-                fingerprint='--candidate-fingerprint-workers' in sys.argv) if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')) else {}
+                fingerprint='--candidate-fingerprint-workers' in sys.argv,
+                report_sql='--candidate-report-workers' in sys.argv) if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')) else {}
 
             owned = require(org_a.post("/screening/candidates", json={"resume_text": RESUME.replace("candidate-router@example.in", "candidate-employer@example.in"), "domain": "data_eng"}))
             employer_rid = owned["report"]["id"]

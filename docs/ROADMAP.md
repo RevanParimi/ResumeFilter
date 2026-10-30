@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-30 - R4-S2-T3C3C2C complete; subject/report SQL workers.**
+  Pre-evaluation subject checks, post-evaluation checks plus whole report/batch
+  binding transactions, and final publication checks reuse the ingest executor.
+  Late commits retain checkpoints; manual batch recovery reuses the saved report
+  without another evaluation. The [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2c)
+  owns acceptance, red/green, full/actual PG, HTTP/two-process restart, actual
+  Chrome, the two SQLite timing misses and unchanged reruns, preservation and
+  reviews. Required validation is complete; working DB preserved and owned PG
+  stopped. Distinct final staged self-review is recorded; publication follows. Exact next
+  is C2Q in a separate session; C2 and all broader parents remain open.
+
 - **Session 2026-10-30 - R4-S2-T3C3C2B complete; fingerprint/comparison workers.**
   Complete deterministic computation/save/comparison/assessment reuses the shared
   ingest executor with separate admission. Late work never resumes evaluation;

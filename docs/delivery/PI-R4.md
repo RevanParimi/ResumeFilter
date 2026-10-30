@@ -495,10 +495,15 @@ follows.
 
 **<a id="r4-s2-t3c3c2c"></a>R4-S2-T3C3C2C - Bound intake report and subject SQL**
 
-Status: pending. Prerequisite: B. Bound pre/post-evaluation subject checks, report
-save/checkpoint and final publication checks with safe uncertain-write behavior.
-Preserve erasure/consent/tenant guards and provider ownership. Require red/focused/
-full, actual PG races, migrated HTTP/restart, affected Chrome and both reviews.
+Status: done (2026-10-30). Prerequisite: B, published at `7071bc4`.
+[C contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c2c) owns the pre-implementation
+scope/acceptance, red SQL regressions, bounded pre/post-evaluation and publication
+operations, late report/checkpoint commit and explicit recovery without another
+evaluation. Full/actual PG, HTTP/two-process restart, actual Chrome, the two
+SQLite timing misses and unchanged reruns, preservation and reviews are recorded
+there. No schema/provider/scoring/consent/tenant policy change. Only C closes;
+C2/Q and all broader parents remain open. Exact next: C2Q in a separate session.
+Distinct final staged self-review is recorded; scoped publication follows.
 
 **<a id="r4-s2-t3c3c2q"></a>R4-S2-T3C3C2Q - Review combined shared intake persistence**
 

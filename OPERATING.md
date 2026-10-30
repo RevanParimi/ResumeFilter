@@ -340,6 +340,11 @@ serves admin/employer single uploads and batch processing. After async extractio
 it runs the entire initial candidate/resume/extraction transaction and any batch
 generation/retain callbacks. It then acquires admission separately for complete
 fingerprint computation, idempotent save, corpus comparison and advisory assessment.
+The same pool also admits the pre-evaluation subject snapshot, the post-evaluation
+subject check plus complete report/batch-binding transaction, and the final
+subject/report publication snapshot. Uploads with evaluation disabled still use
+the final subject guard. Each operation acquires admission and caller wait
+separately; the budget is not a deadline for the whole upload.
 Each worker owns its SQL sessions. Async extraction and evaluation remain on the
 caller; this budget does not cover providers.
 
@@ -355,11 +360,20 @@ closed refusal at the fingerprint boundary can follow a committed resume, so
 even an admission refusal does not promise that the upload saved nothing. Do not
 infer rollback.
 
+A late report operation may commit the report and its batch checkpoint even if
+the caller stops waiting during the preceding subject check. Final publication
+timeout may follow a committed report too. Neither outcome resumes the caller's
+batch completion or another provider call. A single fresh upload can deliberately
+produce another report; this change adds no report idempotency key.
+
 For a batch, uncertainty stops the current process call without marking its item
 failed or racing a failure write against the still-running transaction. Earlier
 items may already be complete. Read saved batch/queue state after work settles;
 deliberately resume processing after the existing claim expires. The checkpoint
 pins a retry to the committed resume, including inputs without contact hints.
+When a report checkpoint committed, deliberate processing recovers that same
+report without repeating extraction or evaluation. Do not erase or overwrite
+the checkpoint as a speculative response to a timeout.
 The existing browser driver stops on the error, explains that saving may continue
 and asks for refresh, then Start screening when the row says "not screened yet".
 For single uploads, read known saved state and make any fresh upload deliberately:
@@ -367,8 +381,9 @@ dedupe requires compatible identity hints and bytes; absent stable identity hint
 another upload can create a second subject. No new idempotency key is provided.
 
 Shutdown joins accepted ingest workers before owned SQL disposal; threads cannot
-be killed and driver waits/drain have no new hard deadline. Report/subject SQL
-and batch claim/failure/terminal SQL remain outside this budget. Competing SQLite
+be killed and driver waits/drain have no new hard deadline. Batch claim/recovery/
+failure/terminal SQL and other handler/graph SQL remain outside this budget.
+Competing SQLite
 writers can still block those later synchronous operations; admission is not a
 global lock/deadline. Direct
 low-level ingest/process callers must supply the shared executor or own scheduling.

@@ -11,6 +11,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --auth-session-workers verifies devices and unconfirmed logout/manual recovery.
 --candidate-ingest-workers verifies initial-write uncertainty and deliberate recovery.
 --candidate-fingerprint-workers verifies fingerprint uncertainty and deliberate recovery.
+--candidate-report-workers verifies report/checkpoint uncertainty and saved-report recovery.
 """
 
 import asyncio
@@ -47,6 +48,8 @@ async def main():
                 args = ['smoke_r4_s1_t3c:create_candidate_ingest_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--candidate-fingerprint-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--candidate-report-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3c:create_candidate_report_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -67,7 +70,7 @@ async def main():
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
-            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')):
+            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.5',
                            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -409,12 +412,12 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
-            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')):
+            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)
                 operations = scratch / 'ingest-operations.jsonl'
                 before = len(operations.read_text().splitlines())
-                (scratch / 'ingest-mode').write_text('compare' if '--candidate-fingerprint-workers' in sys.argv else 'initial write')
+                (scratch / 'ingest-mode').write_text('save' if '--candidate-report-workers' in sys.argv else 'compare' if '--candidate-fingerprint-workers' in sys.argv else 'initial write')
                 try:
                     assert await tab.js("window.__click('button', 'Upload')")
                     assert await tab.wait("document.querySelector('input[type=file]')", 20, 'uncertain ingest file input')
@@ -443,6 +446,9 @@ window.fetch = (url, init) => {
                 # Controlled lease expiry, not a measured wall-clock delay.
                 (scratch / 'ingest-advanced').touch()
                 assert len(operations.read_text().splitlines()) == before + 1
+                if '--candidate-report-workers' in sys.argv:
+                    saved_report_id = json.loads((scratch / 'ingest-report.json').read_text())['id']
+                    evaluations = len((scratch / 'ingest-evaluations.jsonl').read_text().splitlines())
                 assert await tab.js("window.__click('button', 'Start screening')")
                 browser.S.check('deliberate browser restart resumes the saved input after lease expiry',
                     await tab.wait("window.__has('Nothing left to screen') && !window.__has('This upload may still be saving')", 60, 'explicit process recovery')
@@ -451,6 +457,10 @@ window.fetch = (url, init) => {
                 row = api.get(f"/screening/batches/{saved['id']}/queue").json()['rows'][0]
                 browser.S.check('recovery preserves the late committed candidate and resume',
                     row['candidate_id'] == outcome['candidate_id'] and row['resume_id'] == outcome['resume_id'])
+                if '--candidate-report-workers' in sys.argv:
+                    browser.S.check('manual recovery reuses the late committed report without another evaluation',
+                        row['report_id'] == saved_report_id
+                        and len((scratch / 'ingest-evaluations.jsonl').read_text().splitlines()) == evaluations)
                 await tab.send('Page.reload')
                 assert await tab.wait("document.body.innerText.includes('Sign out')", 60, 'intake recovery reload')
                 await tab.js(browser.HELPERS)

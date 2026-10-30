@@ -108,9 +108,8 @@ async def ingest_resume(
 
     HTTP callers share the service-owned candidate-ingest executor. Direct
     low-level callers that omit it retain responsibility for SQL scheduling.
-    Initial ingest and the complete fingerprint/comparison operation acquire
-    admission separately. Report/subject SQL remains separate work. No async
-    provider runs in a worker's SQL session.
+    Each complete ingest, fingerprint, subject or report operation acquires
+    admission separately. No async provider runs in a worker's SQL session.
     """
     # Function-local: these pull in the domain registry and the graph, and a
     # top-level import would cycle back through app.services.
@@ -157,30 +156,20 @@ async def ingest_resume(
     except ResumeErasedError:
         raise IngestRefused("resume_erased") from None
 
-    def require_subject() -> None:
+    def require_subject(report_id: Optional[str] = None) -> None:
         try:
             deps.candidates.require_ingest_subject(outcome.candidate_id, outcome.resume_id)
         except CandidateErasedError:
             raise IngestRefused("candidate_erased") from None
         except ResumeErasedError:
             raise IngestRefused("resume_erased") from None
+        if report_id is not None and deps.reports.get(report_id) is None:
+            raise IngestRefused("report_erased")
 
-    report: Optional[Report] = None
-    if evaluate:
-        # Fingerprinting is optional and comparison may outlive its commit.
-        # Do not evaluate an already erased subject, even on short input.
+    def save_report(report: Report) -> None:
+        # Own the subject check and whole report/batch-checkpoint transaction.
+        # Late completion may commit; it never resumes the abandoned caller.
         require_subject()
-        report = await engine.evaluate(
-            resume_text=text, domain=domain,
-            candidate_profile=result.profile, resume_farm=farm,
-            extraction_coverage=result.coverage,
-        )
-        require_subject()
-        report.candidate_id = outcome.candidate_id
-        # DPDP: a derived report must not outlive the erasure of its subject.
-        # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
-        # landing after the save cascades the row away -- so both halves of this
-        # race are the database's job, not a compensating delete we remember.
         try:
             if before_report_commit is None:
                 deps.reports.save(report, org_id=org_id)
@@ -189,11 +178,36 @@ async def ingest_resume(
         except SubjectErasedError:
             raise IngestRefused("candidate_erased") from None
 
+    report: Optional[Report] = None
+    if evaluate:
+        # Fingerprinting is optional and comparison may outlive its commit.
+        # Do not evaluate an already erased subject, even on short input.
+        if executor is None:
+            require_subject()
+        else:
+            await executor.run(require_subject)
+        report = await engine.evaluate(
+            resume_text=text, domain=domain,
+            candidate_profile=result.profile, resume_farm=farm,
+            extraction_coverage=result.coverage,
+        )
+        report.candidate_id = outcome.candidate_id
+        # DPDP: a derived report must not outlive the erasure of its subject.
+        # Since S8.1 the foreign key REFUSES the orphan outright, and an erasure
+        # landing after the save cascades the row away -- so both halves of this
+        # race are the database's job, not a compensating delete we remember.
+        if executor is None:
+            save_report(report)
+        else:
+            await executor.run(save_report, report)
+
     # A final snapshot, not a lock across HTTP delivery. Never return stale IDs
     # as success after observed erasure, including evaluate=False.
-    require_subject()
-    if report is not None and deps.reports.get(report.id) is None:
-        raise IngestRefused("report_erased")
+    report_id = report.id if report is not None else None
+    if executor is None:
+        require_subject(report_id)
+    else:
+        await executor.run(require_subject, report_id)
     return IngestResult(
         candidate_id=outcome.candidate_id,
         resume_id=outcome.resume_id,

@@ -23,6 +23,72 @@ SHORT = "Synthetic Short\nEmail: short@example.com\nSkills: Python"
 LONG = SHORT + "\n" + " ".join(f"synthetic{i}" for i in range(90))
 
 
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+@pytest.mark.parametrize('parent', ['candidate', 'resume', 'report'])
+async def test_worker_publication_observes_competing_erasure(database, settings, monkeypatch, door, parent):
+    import httpx
+    from app.main import create_app
+    from tests.conftest import ADMIN_HEADERS, make_services
+    _, factory = database
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    _, other_key = _key(services, 'Other')
+    ready, release = Event(), Event()
+    outcomes, guards = [], []
+    ingest, guard = services.candidates.ingest, services.candidates.require_ingest_subject
+    def observed_ingest(*args, **kwargs):
+        result = ingest(*args, **kwargs)
+        outcomes.append(result)
+        return result
+    def controlled_guard(*args):
+        guards.append(args)
+        if len(guards) == 3:
+            ready.set()
+            assert release.wait(15)
+        return guard(*args)
+    monkeypatch.setattr(services.candidates, 'ingest', observed_ingest)
+    monkeypatch.setattr(services.candidates, 'require_ingest_subject', controlled_guard)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': LONG}
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                batch = None
+                if door == 'batch':
+                    batch = services.screening.register(org, name='Publication erasure', domain='genai', texts=[LONG], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{batch.id}/process', None
+                pending = asyncio.create_task(http.post(path, headers=headers, json=payload))
+                try:
+                    assert await asyncio.to_thread(ready.wait, 10)
+                    assert (await http.get('/healthz')).status_code == 200
+                    outcome = outcomes[0]
+                    report = services.report_store.for_candidate(outcome.candidate_id)[0]
+                    store = services.report_store if parent == 'report' else services.candidates
+                    delete = store.delete if parent == 'report' else getattr(store, f'delete_{parent}')
+                    subject_id = report.id if parent == 'report' else getattr(outcome, f'{parent}_id')
+                    assert await asyncio.to_thread(delete, subject_id)
+                finally:
+                    release.set()
+                    response = await pending
+                if batch:
+                    assert response.status_code == 200 and response.json()['processed'] == 0
+                    row = services.screening.queue(org, batch.id, cursor=None, limit=None).rows[0]
+                    assert_scrubbed(factory, row.item_id, parent)
+                    retry = services.screening.retry(org, batch.id)
+                    assert (retry.requeued, retry.skipped) == (0, 1)
+                    assert (await http.get(f'/screening/batches/{batch.id}/queue', headers={'X-Org-Key': other_key})).status_code == 404
+                else:
+                    assert response.status_code == 422 and response.json() == {'detail': f'{parent}_erased'}
+                assert (services.candidates.get_candidate(outcome.candidate_id) is None) == (parent == 'candidate')
+                assert len(services.candidates.list_resumes(outcome.candidate_id)) == int(parent == 'report')
+                assert len(services.report_store.for_candidate(outcome.candidate_id)) == int(parent == 'resume')
+                assert services.candidates.get_candidate('b') is not None
+    finally:
+        release.set()
+        await services.aclose()
+
+
 def test_subject_guard_checks_both_parents_and_ownership(database):
     _, factory = database
     store = CandidateStore(factory)
