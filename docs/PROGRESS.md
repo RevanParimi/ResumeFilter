@@ -1,54 +1,60 @@
 # Current handoff
 
-Updated: 2026-10-29. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-30. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3C2A complete.** Baseline `8c5b122` is published. C2 was split
-before implementation into A (initial candidate/resume transaction, this session),
-B (fingerprint/comparison), C (report/subject SQL) and Q (combined review). The
-[contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2a) owns acceptance,
-red regressions, review findings and exact checks. Only A is implemented;
-C2 and all broader parents remain open.
+**R4-S2-T3C3C2B complete.** Baseline `813bde3` is published. This session
+completes only fingerprint/comparison work; A is complete, C/Q and all broader
+parents remain open. [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2b) owns the
+contract, regressions, checks and reviews.
 
-Admin/employer uploads and batch processing share bounded initial-ingest workers
-(two slots / 20-second caller wait). Whole transactions and batch generation/
-retain callbacks stay in workers. Safe full/closed/pending 503/Retry-After returns
-no partial IDs. Timeout/cancel retains admission; late failure is consumed and
-late completion never resumes evaluation or replays. Batch uncertainty bypasses
-failure writes/logging and preserves its lease/checkpoint for deliberate recovery
-after existing expiry. Worker drain precedes owned SQL disposal; async providers
-stay on their caller. Screening errors explain possible saving and refresh/manual
-recovery. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
+Admin/employer uploads and batches reuse the initial-ingest pool (two slots /
+20-second caller wait) for complete fingerprint computation/save/comparison/
+advisory assessment, with separate admission between phases. SQL sessions stay
+on workers; async providers stay on the caller. Safe full/closed/pending 503/
+Retry-After returns no IDs. A later refusal can follow a committed resume.
+Timeout/cancel retains admission; late work never resumes evaluation or replays.
+Batch uncertainty preserves its lease/checkpoint for deliberate recovery after
+expiry. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
 
-Focused **442 passed / 185 skipped**; actual PG **618 passed / 9 skipped**,
-migrated HTTP/restart and two-process races **41/41 each on SQLite and PG**;
-final actual Chrome **29/29**; offline UI **62/62**, UI pytest **20 passed**;
-bindings/syntax/12-module compilation and implementation self-reviews pass.
-Full pytest: **3885 passed, 741 skipped, 127 warnings**. A raw error code review
-finding was fixed; the first full run was stopped and replaced by the fresh final
-run. All **616 reviewed code/config hashes** match. Owned PG is confirmed stopped;
-working DB preserved and demo untouched. Fakes establish mechanics, not live quality.
+Red responsiveness reproduced at all three phases/doors. Focused **524 passed /
+233 skipped**; uncertainty/ownership and actual SQLite lock/erasure regressions
+pass; migrated SQLite HTTP/restart and two-process races **41/41 each**, final
+actual Chrome **29/29**, offline UI **62/62**, bindings/syntax/five-module
+compilation pass. Actual PG **748 passed / 9 skipped**; PG migrated HTTP/restart
+and two-process races **41/41 each**. Full pytest: **3939 passed, 789 skipped,
+127 warnings**. All **616 reviewed code/config hashes** match. Owned PG is
+confirmed stopped; working DB preserved and port-8000 demo untouched. Fakes
+establish mechanics, not live quality. Completion records and distinct final
+staged self-review are complete; the linked evidence records that self-review.
+Authorized commit/push follows; the final response reports the verified remote.
 
-Required validation/completion records and distinct final staged self-review
-are complete; linked evidence records the self-review. Authorized commit/push
-follows, and the final response reports the verified remote commit.
-
-**Exact next: R4-S2-T3C3C2B - Bound fingerprint and comparison work**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c2b). Do not implement B in this session;
-C2 closes only after B/C/Q. Use per-command `-c credential.username=RevanParimi`
+**Exact next: R4-S2-T3C3C2C - Bound intake report and subject SQL**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c2c). Do not implement C in this session.
+C2 closes only after C/Q. Use per-command `-c credential.username=RevanParimi`
 for GCM account selection.
 
-Fingerprint/comparison/report and batch claim/failure/terminal SQL still run
-synchronously; competing SQLite writers can block those paths. Limits are per
-service/process; timeout cannot kill threads or promise rollback, and driver
-waits/drain have no new hard deadline. Direct low-level callers own scheduling
-unless they supply the executor. Single uploads without stable identity hints
-can create another subject on deliberate fresh upload; no new idempotency key.
-Present guards remain snapshots across later erasure/delivery.
+Report/subject and batch claim/failure/terminal SQL still run synchronously;
+competing SQLite writers can block those paths. Limits are per service/process;
+timeout cannot kill threads or promise rollback, and driver waits/drain have no
+new hard deadline. Direct low-level callers own scheduling unless they supply
+the executor. Single uploads without stable identity hints can create another
+subject on deliberate fresh upload; no new idempotency key. Present guards remain
+snapshots across later erasure/delivery.
 
 ## Reusable validation setup
 
+- C3C2B runner: `.pytest_cache/run_r4_s2_t3c3c2b.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c2b_postgres.py` /
+  `r4-s2-t3c3c2b-pg-runtime.json` (stopped). Review/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c2b.py check` / `preserve`.
+  Complete fingerprint/admission/late-write/manual recovery/restart:
+  `scripts/smoke_r4_s1_t3c.py --candidate-fingerprint-workers`; two-process races:
+  `scripts/smoke_r4_s1_t3d.py --ingest-races`; add `--postgres` only with an
+  explicitly disposable `DEE_TEST_DB_URL`. Actual screening Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --candidate-fingerprint-workers`.
 - C3C2A runner: `.pytest_cache/run_r4_s2_t3c3c2a.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3c2a_postgres.py` /

@@ -204,6 +204,10 @@ Pending writes return no partial IDs and never resume evaluation automatically;
 batch uncertainty preserves the lease/checkpoint for deliberate recovery. The
 existing screening error explains possible saving and refresh/manual restart. The
 [intake budget](OPERATING.md#candidate-intake-persistence-budget) explains late
-commits, manual recovery and identity/dedupe limits. Fingerprint/comparison,
-report/subject and batch-management SQL remain separate open work. C2's later
-children and combined gate must pass before the parent closes.
+commits, manual recovery and identity/dedupe limits.
+[R4-S2-T3C3C2B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2b) extends the shared
+budget to complete fingerprint computation/save/comparison and advisory assessment.
+Late fingerprint completion never resumes evaluation; later admission refusal
+can follow a committed resume. Report/subject and batch-management SQL remain
+separate open work. C2's later children and combined gate must pass before the
+parent closes.

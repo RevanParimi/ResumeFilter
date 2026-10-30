@@ -27,6 +27,285 @@ Python, PyTorch, LangChain
 
 
 @pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+@pytest.mark.parametrize('phase', ['compute', 'save', 'compare'])
+async def test_candidate_fingerprint_work_leaves_unrelated_requests_responsive(database, settings, monkeypatch, door, phase):
+    import asyncio
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    import app.fabrication.similarity as similarity
+    from tests.test_screening_batches_api import _key
+    engine, factory = database
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    entered, release, finished = Event(), Event(), Event()
+    def hold():
+        entered.set()
+        release.wait(3)
+        finished.set()
+    compute = similarity.fingerprint_text
+    def fingerprint(*args, **kwargs):
+        if phase == 'compute':
+            hold()
+        return compute(*args, **kwargs)
+    monkeypatch.setattr(similarity, 'fingerprint_text', fingerprint)
+    def sql(conn, cursor, statement, parameters, context, many):
+        statement = statement.lstrip().upper()
+        if ((phase == 'save' and statement.startswith('INSERT INTO RESUME_FINGERPRINTS')) or
+                (phase == 'compare' and statement.startswith('SELECT RESUME_FINGERPRINTS.ID,')
+                 and 'RESUME_FINGERPRINTS.CANDIDATE_ID !=' in statement)):
+            hold()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                text = RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text, 'evaluate': False}
+                if door == 'batch':
+                    saved = services.screening.register(org, name='Held fingerprint', domain='genai',
+                        texts=[text], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{saved.id}/process', None
+                event.listen(engine, 'before_cursor_execute', sql)
+                pending = asyncio.create_task(http.post(path, headers=headers, json=payload))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8), 'fingerprint gate not reached'
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'fingerprint work blocked the event loop'
+                    assert time.monotonic() - start < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+@pytest.mark.parametrize('phase', ['compute', 'save', 'compare'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_input(database, settings, monkeypatch, log_output, door, phase, ending):
+    import asyncio
+    from datetime import timedelta
+    from threading import Event, get_ident
+    import httpx
+    from sqlalchemy import event, select
+    import app.candidates.extractor as extractor
+    import app.fabrication.similarity as similarity
+    from app.candidates.models import FingerprintRow
+    from app.screening.models import BatchItemRow, ScreeningInputRow
+    from tests.test_screening_batches_api import _key
+    _, factory = database
+    settings.candidate_ingest_max_concurrent_requests = 1
+    settings.candidate_ingest_wait_seconds = 20
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    _, other_key = _key(services, 'Other')
+    caller = get_ident()
+    entered, release = Event(), Event()
+    outcomes, worker_threads, provider_threads, failed = [], [], [], []
+    def hold():
+        entered.set()
+        assert release.wait(15)
+        if ending == 'late_failure':
+            raise RuntimeError('synthetic-private-fingerprint-error')
+    ingest, compute, compare = services.candidates.ingest, similarity.fingerprint_text, services.candidates.similar_resumes
+    def observed_ingest(*args, **kwargs):
+        result = ingest(*args, **kwargs)
+        outcomes.append(result)
+        if ending in ('timeout', 'late_failure'):
+            services.candidate_ingests._wait_seconds = .5
+        return result
+    def observed_compute(*args, **kwargs):
+        worker_threads.append(get_ident())
+        if phase == 'compute':
+            hold()
+        return compute(*args, **kwargs)
+    def observed_compare(*args, **kwargs):
+        worker_threads.append(get_ident())
+        result = compare(*args, **kwargs)
+        if phase == 'compare':
+            hold()
+        return result
+    def flushed(session, context):
+        if any(isinstance(row, FingerprintRow) for row in session.new):
+            worker_threads.append(get_ident())
+            if phase == 'save':
+                hold()
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('fingerprint_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('fingerprint_owner', get_ident()) == get_ident()
+    extract = extractor.extract_profile
+    async def observed_extract(*args, **kwargs):
+        provider_threads.append(('extract', get_ident()))
+        return await extract(*args, **kwargs)
+    def forbidden_fail(*args, **kwargs):
+        failed.append(args)
+        pytest.fail('uncertain fingerprint must not write a false batch failure')
+    monkeypatch.setattr(services.candidates, 'ingest', observed_ingest)
+    monkeypatch.setattr(similarity, 'fingerprint_text', observed_compute)
+    monkeypatch.setattr(services.candidates, 'similar_resumes', observed_compare)
+    monkeypatch.setattr(extractor, 'extract_profile', observed_extract)
+    monkeypatch.setattr(services.screening._store, 'fail', forbidden_fail)
+    for name, listener in [('after_flush', flushed), ('after_begin', begin), ('after_transaction_end', end)]:
+        event.listen(factory, name, listener)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            evaluate = app.state.engine.evaluate
+            async def observed_evaluate(**kwargs):
+                provider_threads.append(('evaluate', get_ident()))
+                return await evaluate(**kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', observed_evaluate)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                text = RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text}
+                batch = None
+                if door == 'batch':
+                    batch = services.screening.register(org, name='Uncertain fingerprint', domain='genai', texts=[text], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{batch.id}/process', None
+                pending = asyncio.create_task(http.post(path, headers=headers, json=payload))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    for busy_path, peer in [('/candidates', {}), ('/screening/candidates', {'X-Org-Key': other_key})]:
+                        busy = await http.post(busy_path, headers=peer, json={'resume_text': text})
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert not failed and not any(name == 'evaluate' for name, _ in provider_threads)
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.candidate_ingests._active:
+                            await asyncio.sleep(.01)
+                assert len(outcomes) == 1 and all(t != caller for t in worker_threads)
+                assert len(set(worker_threads)) == 1 and all(t == caller for _, t in provider_threads)
+                outcome = outcomes[0]
+                assert services.candidates.get_candidate(outcome.candidate_id).resume_count == 1
+                with factory() as session:
+                    fingerprints = list(session.scalars(select(FingerprintRow).where(FingerprintRow.resume_id == outcome.resume_id)))
+                    assert len(fingerprints) == int(ending != 'late_failure' or phase == 'compare')
+                    if batch:
+                        row = session.scalar(select(BatchItemRow).where(BatchItemRow.batch_id == batch.id))
+                        ref = session.get(ScreeningInputRow, row.id)
+                        if ending != 'release':
+                            assert ref.resume_id == outcome.resume_id
+                            assert row.status == 'processing' and row.error is None and ref.report_id is None
+                        else:
+                            assert row.status == 'done' and ref is None
+                if ending == 'release':
+                    assert responses[0].status_code == 200
+                    assert any(name == 'evaluate' for name, _ in provider_threads)
+                else:
+                    assert not any(name == 'evaluate' for name, _ in provider_threads) and not failed
+                    assert services.report_store.for_candidate(outcome.candidate_id) == []
+                    monkeypatch.setattr(similarity, 'fingerprint_text', compute)
+                    monkeypatch.setattr(services.candidates, 'similar_resumes', compare)
+                    event.remove(factory, 'after_flush', flushed)
+                    services.candidate_ingests._wait_seconds = 20
+                    if batch:
+                        now = services.screening._now()
+                        monkeypatch.setattr(services.screening, '_now', lambda: now + timedelta(seconds=settings.screening_claim_timeout_seconds + 1))
+                    recovered = await http.post(path, headers=headers, json=payload)
+                    assert recovered.status_code == 200
+                    if batch:
+                        assert recovered.json()['processed'] == 1 and recovered.json()['failed'] == 0
+                        assert (await http.get(f'/screening/batches/{batch.id}/queue', headers={'X-Org-Key': other_key})).status_code == 404
+                    else:
+                        assert recovered.json()['duplicate_resume'] and recovered.json()['resume_id'] == outcome.resume_id
+                        assert recovered.json()['resume_version'] == 1
+                assert services.candidates.get_candidate('b') is not None
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_flush', flushed), ('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-fingerprint-error' not in log_output.text and 'batch_item_failed' not in log_output.text
+
+
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
+@pytest.mark.parametrize('refusal', ['full', 'closed'])
+async def test_candidate_fingerprint_admission_can_refuse_after_resume_commit(services, monkeypatch, door, refusal):
+    import asyncio
+    from threading import Event
+    import httpx
+    from sqlalchemy import select
+    from app.candidates.models import FingerprintRow, ResumeRow
+    from tests.test_screening_batches_api import _key
+    org, key = _key(services)
+    services.settings.candidate_ingest_max_concurrent_requests = 1
+    executor = services.candidate_ingests
+    run = executor.run
+    entered, release = Event(), Event()
+    held = None
+    calls = 0
+    def hold():
+        entered.set()
+        assert release.wait(10)
+    async def controlled_run(function, /, *args, **kwargs):
+        nonlocal calls, held
+        calls += 1
+        if calls == 2:
+            if refusal == 'closed':
+                executor.close()
+            else:
+                held = asyncio.create_task(run(hold))
+                assert await asyncio.to_thread(entered.wait, 5)
+        return await run(function, *args, **kwargs)
+    monkeypatch.setattr(executor, 'run', controlled_run)
+    def forbidden(*args, **kwargs):
+        pytest.fail('unadmitted fingerprint must not run or write batch failure')
+    monkeypatch.setattr(services.candidates, 'save_fingerprint', forbidden)
+    monkeypatch.setattr(services.screening._store, 'fail', forbidden)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                text = RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))
+                path, payload = ('/candidates' if door == 'admin' else '/screening/candidates'), {'resume_text': text}
+                headers = {} if door == 'admin' else {'X-Org-Key': key}
+                batch = None
+                if door == 'batch':
+                    batch = services.screening.register(org, name='Admission after save', domain='genai', texts=[text], created_by_org_user_id=None)
+                    path, payload = f'/screening/batches/{batch.id}/process', None
+                response = await http.post(path, headers=headers, json=payload)
+                code = 'candidate_ingest_executor_closed' if refusal == 'closed' else 'candidate_ingest_capacity_exhausted'
+                assert response.status_code == 503 and response.json() == {'detail': code}
+                assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                assert calls == 2
+                with services.session_factory() as session:
+                    assert not list(session.scalars(select(FingerprintRow)))
+                    resumes = list(session.scalars(select(ResumeRow)))
+                    assert len(resumes) == 1
+                    assert services.report_store.for_candidate(resumes[0].candidate_id) == []
+                if batch:
+                    row = services.screening.queue(org, batch.id, cursor=None, limit=None).rows[0]
+                    assert row.status.value == 'processing' and row.error is None
+    finally:
+        release.set()
+        if held is not None:
+            await held
+        await services.aclose()
+
+
+@pytest.mark.parametrize('door', ['admin', 'org', 'batch'])
 async def test_candidate_ingest_sql_leaves_unrelated_requests_responsive(database, settings, door):
     import asyncio
     import time
@@ -129,7 +408,7 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
     org, key = _key(services)
     other_org, other_key = _key(services, 'Other')
     entered, release = Event(), Event()
-    calls, outcomes, following, extracted = [], [], [], []
+    calls, outcomes, following, extracted, fingerprinted = [], [], [], [], []
     caller = get_ident()
     text = RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))
     original = services.candidates.ingest
@@ -162,7 +441,7 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
     monkeypatch.setattr(extractor, 'extract_profile', observed_extract)
     fingerprint = services.candidates.save_fingerprint
     def observed_fingerprint(*args, **kwargs):
-        following.append(get_ident())
+        fingerprinted.append(get_ident())
         return fingerprint(*args, **kwargs)
     monkeypatch.setattr(services.candidates, 'save_fingerprint', observed_fingerprint)
     failed = []
@@ -205,7 +484,7 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
                         pending.cancel()
                         with pytest.raises(asyncio.CancelledError):
                             await pending
-                    assert not following and not failed and len(calls) == 1
+                    assert not following and not fingerprinted and not failed and len(calls) == 1
                 finally:
                     release.set()
                     responses = await asyncio.gather(pending, return_exceptions=True)
@@ -220,7 +499,7 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
                     assert (session.get(ResumeRow, outcome.resume_id) is not None) == committed
                     assert len(list(session.scalars(select(ExtractionRow.id)))) == int(committed)
                     if ending != 'release':
-                        assert not following and not failed
+                        assert not following and not fingerprinted and not failed
                         assert not list(session.scalars(select(FingerprintRow)))
                         assert services.report_store.for_candidate(outcome.candidate_id) == []
                     if batch:
@@ -239,6 +518,7 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
                 if ending == 'release':
                     assert responses[0].status_code == 200
                     assert following and all(t == caller for t in following)
+                    assert fingerprinted and all(t != caller for t in fingerprinted)
                 else:
                     recovered = await http.post(path, headers=headers, json=payload)
                     assert recovered.status_code == 200
@@ -261,6 +541,87 @@ async def test_candidate_ingest_admission_preserves_uncertain_write_and_batch_ch
         event.remove(factory, 'after_transaction_end', end)
     assert 'synthetic-private-ingest-error' not in log_output.text
     assert 'batch_item_failed' not in log_output.text
+
+
+@pytest.mark.parametrize('erase', [None, 'candidate', 'resume'])
+async def test_candidate_fingerprint_real_lock_retains_capacity_and_erasure(database, settings, monkeypatch, erase):
+    import asyncio
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event, select, text
+    from app.candidates.models import FingerprintRow
+    engine, factory = database
+    settings.candidate_ingest_max_concurrent_requests = 1
+    settings.candidate_ingest_wait_seconds = .5
+    services = make_services(settings, candidates=CandidateStore(factory))
+    entered, proceed, inserting = Event(), Event(), Event()
+    subject, pids = {}, []
+    save = services.candidates.save_fingerprint
+    def controlled_save(fp, **kwargs):
+        subject.update(kwargs)
+        entered.set()
+        assert proceed.wait(10)
+        return save(fp, **kwargs)
+    monkeypatch.setattr(services.candidates, 'save_fingerprint', controlled_save)
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lstrip().upper().startswith('INSERT INTO RESUME_FINGERPRINTS'):
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            inserting.set()
+    event.listen(engine, 'before_cursor_execute', sql)
+    blocker = engine.connect()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/candidates', json={'resume_text': RESUME + '\n' + ' '.join(f'synthetic{i}' for i in range(90))}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+                    else:
+                        blocker.execute(text('SELECT id FROM candidates WHERE id = :id FOR UPDATE'), {'id': subject['candidate_id']}).all()
+                        # Own both parents before allowing FK checks. Erasure
+                        # must not depend on which FK PostgreSQL checks first.
+                        blocker.execute(text('SELECT id FROM resumes WHERE id = :id FOR UPDATE'), {'id': subject['resume_id']}).all()
+                    proceed.set()
+                    assert await asyncio.to_thread(inserting.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'candidate_ingest_pending'}
+                    assert response.headers['retry-after'] == '1'
+                    busy = await http.post('/candidates', json={'resume_text': RESUME})
+                    assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_ingest_capacity_exhausted'}
+                    if erase:
+                        table = 'candidates' if erase == 'candidate' else 'resumes'
+                        blocker.execute(text(f'DELETE FROM {table} WHERE id = :id'), {'id': subject[f'{erase}_id']})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.candidate_ingests._active:
+                            await asyncio.sleep(.01)
+                with factory() as session:
+                    assert len(list(session.scalars(select(FingerprintRow)))) == int(erase is None)
+                assert services.report_store.for_candidate(subject['candidate_id']) == []
+                assert (services.candidates.get_candidate(subject['candidate_id']) is None) == (erase == 'candidate')
+                assert len(services.candidates.list_resumes(subject['candidate_id'])) == int(erase is None)
+                assert services.candidates.get_candidate('b') is not None
+    finally:
+        proceed.set()
+        blocker.close()
+        await services.aclose()
+        event.remove(engine, 'before_cursor_execute', sql)
 
 
 async def test_candidate_ingest_real_lock_retains_capacity_and_commits_without_evaluation(database, settings):

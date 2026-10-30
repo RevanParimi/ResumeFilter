@@ -465,7 +465,8 @@ calls (A) candidate/resume/extraction ingest with transactional batch callbacks,
 (B) fingerprint save/comparison and (C) subject/report checks and report save
 around awaited evaluation. Batch callers must not synchronously write a failed
 status while an uncertain worker still owns the transaction. These boundaries
-need separate acceptance; only A is implemented in this session.
+need separate acceptance; the first session implemented only A. B/C/Q own the
+remaining boundaries and combined review.
 
 **<a id="r4-s2-t3c3c2a"></a>R4-S2-T3C3C2A - Bound candidate/resume persistence**
 
@@ -481,10 +482,16 @@ C2B/C/Q and C2/C3C/broader parents remain open. Exact next is C2B in a new sessi
 
 **<a id="r4-s2-t3c3c2b"></a>R4-S2-T3C3C2B - Bound fingerprint and comparison work**
 
-Status: pending. Prerequisite: A. Bound complete fingerprint computation/save/
-comparison operations without moving async providers or weakening subject guards,
-cross-tenant signal redaction or advisory fallback. Require red/focused/full,
-real PG contention/erasure, migrated intake/restart, relevant Chrome and both reviews.
+Status: done (2026-10-30). Prerequisite: A, published at `813bde3`.
+[B contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c2b) owns the pre-implementation
+scope/acceptance, red regressions, whole-worker fingerprint/comparison operation,
+separate shared admission and late-write/manual recovery semantics. Focused/full,
+actual SQLite/PG locks/erasure, migrated HTTP/two-process restart, actual Chrome,
+preservation and review evidence are recorded there. Async providers, advisory
+semantics and tenant redaction remain. No schema/algorithm/provider change.
+Only B closes; C2C/Q and all broader parents remain open. Exact next: C2C in a
+new session. Distinct final staged self-review is recorded; scoped publication
+follows.
 
 **<a id="r4-s2-t3c3c2c"></a>R4-S2-T3C3C2C - Bound intake report and subject SQL**
 

@@ -338,8 +338,10 @@ YAML or `DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS` /
 `DEE_CANDIDATE_INGEST_WAIT_SECONDS`, then restart. One separate queue-free pool
 serves admin/employer single uploads and batch processing. After async extraction,
 it runs the entire initial candidate/resume/extraction transaction and any batch
-generation/retain callbacks. Each worker owns its SQL session. Async extraction
-and evaluation remain on the caller; this budget does not cover providers.
+generation/retain callbacks. It then acquires admission separately for complete
+fingerprint computation, idempotent save, corpus comparison and advisory assessment.
+Each worker owns its SQL sessions. Async extraction and evaluation remain on the
+caller; this budget does not cover providers.
 
 Full/closed admission gives **503** `candidate_ingest_capacity_exhausted` /
 `candidate_ingest_executor_closed`; caller wait expiry gives **503**
@@ -347,7 +349,11 @@ Full/closed admission gives **503** `candidate_ingest_capacity_exhausted` /
 success or cookies. Timeout/cancellation retains admission until actual completion,
 consumes late failure and never replays. A late initial transaction may commit
 candidate/resume/extraction and a batch input checkpoint; fingerprinting/evaluation/
-report creation does not resume for that abandoned call. Do not infer rollback.
+report creation does not resume for that abandoned call. Late fingerprint work
+may save a signature and finish comparison without resuming evaluation. A full/
+closed refusal at the fingerprint boundary can follow a committed resume, so
+even an admission refusal does not promise that the upload saved nothing. Do not
+infer rollback.
 
 For a batch, uncertainty stops the current process call without marking its item
 failed or racing a failure write against the still-running transaction. Earlier
@@ -361,10 +367,10 @@ dedupe requires compatible identity hints and bytes; absent stable identity hint
 another upload can create a second subject. No new idempotency key is provided.
 
 Shutdown joins accepted ingest workers before owned SQL disposal; threads cannot
-be killed and driver waits/drain have no new hard deadline. Fingerprinting,
-comparison, report/subject SQL and batch claim/failure/terminal SQL remain outside
-this initial-transaction budget. Competing SQLite writers can still block those
-later synchronous operations; admission is not a global lock/deadline. Direct
+be killed and driver waits/drain have no new hard deadline. Report/subject SQL
+and batch claim/failure/terminal SQL remain outside this budget. Competing SQLite
+writers can still block those later synchronous operations; admission is not a
+global lock/deadline. Direct
 low-level ingest/process callers must supply the shared executor or own scheduling.
 No schema change, live-data rotation or demo restart belongs to this change.
 

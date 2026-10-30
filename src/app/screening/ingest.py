@@ -108,8 +108,9 @@ async def ingest_resume(
 
     HTTP callers share the service-owned candidate-ingest executor. Direct
     low-level callers that omit it retain responsibility for SQL scheduling.
-    Only the initial owning ingest transaction is bounded here; later phases
-    remain separate work. No async provider runs in its SQL session.
+    Initial ingest and the complete fingerprint/comparison operation acquire
+    admission separately. Report/subject SQL remains separate work. No async
+    provider runs in a worker's SQL session.
     """
     # Function-local: these pull in the domain registry and the graph, and a
     # top-level import would cycle back through app.services.
@@ -117,7 +118,6 @@ async def ingest_resume(
     # (not `app.domains`) and `fabrication.similarity` (not `resume_farm`).
     from app.candidates.extractor import extract_profile
     from app.domains.base import get_domain
-    from app.fabrication.similarity import assess_resume_farm, fingerprint_text
 
     try:
         text = validate_resume_text(text, deps.settings)
@@ -147,27 +147,15 @@ async def ingest_resume(
     # comparison must exclude the uploader's own candidate (re-uploads and new
     # versions are legitimate), and the graph deliberately never learns the
     # candidate identity.
-    farm = ResumeFarmAssessment()  # insufficient_data when the text is too short
-    fp = fingerprint_text(text, deps.settings)
-    if fp is not None:
-        try:
-            deps.candidates.save_fingerprint(
-                fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id
-            )
-        except CandidateErasedError:
-            raise IngestRefused("candidate_erased") from None
-        except ResumeErasedError:
-            raise IngestRefused("resume_erased") from None
-        matches, corpus = deps.candidates.similar_resumes(
-            fp,
-            exclude_candidate_id=outcome.candidate_id,
-            threshold=deps.settings.rf_similar_threshold,
-            limit=deps.settings.rf_max_matches,
-        )
-        farm = assess_resume_farm(
-            matches, shingle_count=fp.shingle_count, corpus_size=corpus,
-            settings=deps.settings,
-        )
+    try:
+        if executor is None:
+            farm = _assess_ingest_farm(deps, text, outcome)
+        else:
+            farm = await executor.run(_assess_ingest_farm, deps, text, outcome)
+    except CandidateErasedError:
+        raise IngestRefused("candidate_erased") from None
+    except ResumeErasedError:
+        raise IngestRefused("resume_erased") from None
 
     def require_subject() -> None:
         try:
@@ -218,3 +206,23 @@ async def ingest_resume(
         resume_farm=farm,
         extraction_coverage=result.coverage,
     )
+
+
+def _assess_ingest_farm(deps: IngestDeps, text: str, outcome: IngestOutcome) -> ResumeFarmAssessment:
+    """Own all synchronous fingerprint work, including each complete session.
+
+    An abandoned caller may leave a saved fingerprint; this operation never
+    evaluates, publishes IDs/reports or changes a batch lease. Band raw matches
+    here; the existing org projection redacts their identity on delivery.
+    """
+    from app.fabrication.similarity import assess_resume_farm, fingerprint_text
+
+    fp = fingerprint_text(text, deps.settings)
+    if fp is None:
+        return ResumeFarmAssessment()
+    deps.candidates.save_fingerprint(fp, resume_id=outcome.resume_id, candidate_id=outcome.candidate_id)
+    matches, corpus = deps.candidates.similar_resumes(
+        fp, exclude_candidate_id=outcome.candidate_id,
+        threshold=deps.settings.rf_similar_threshold, limit=deps.settings.rf_max_matches,
+    )
+    return assess_resume_farm(matches, shingle_count=fp.shingle_count, corpus_size=corpus, settings=deps.settings)

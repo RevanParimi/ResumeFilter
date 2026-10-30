@@ -10,6 +10,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --auth-redemption-workers verifies code-check refusal, uncertainty and recovery.
 --auth-session-workers verifies devices and unconfirmed logout/manual recovery.
 --candidate-ingest-workers verifies initial-write uncertainty and deliberate recovery.
+--candidate-fingerprint-workers verifies fingerprint uncertainty and deliberate recovery.
 """
 
 import asyncio
@@ -44,6 +45,8 @@ async def main():
                 args = ['smoke_r4_s1_t3d:create_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--candidate-ingest-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3c:create_candidate_ingest_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--candidate-fingerprint-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -64,7 +67,7 @@ async def main():
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
-            if '--candidate-ingest-workers' in sys.argv:
+            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')):
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.5',
                            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -406,12 +409,12 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
-            if '--candidate-ingest-workers' in sys.argv:
+            if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)
                 operations = scratch / 'ingest-operations.jsonl'
                 before = len(operations.read_text().splitlines())
-                (scratch / 'ingest-mode').touch()
+                (scratch / 'ingest-mode').write_text('compare' if '--candidate-fingerprint-workers' in sys.argv else 'initial write')
                 try:
                     assert await tab.js("window.__click('button', 'Upload')")
                     assert await tab.wait("document.querySelector('input[type=file]')", 20, 'uncertain ingest file input')
@@ -423,7 +426,7 @@ window.fetch = (url, init) => {
                     async with asyncio.timeout(10):
                         while not (scratch / 'ingest-entered').exists():
                             await asyncio.sleep(.02)
-                    browser.S.check('actual initial SQL timeout renders uncertainty and stops the process driver',
+                    browser.S.check('actual intake operation timeout renders uncertainty and stops the process driver',
                         await tab.wait("window.__has('This upload may still be saving') && window.__has('When the row says not screened yet') && !window.__has('candidate_ingest_pending') && !window.__has('Stop screening')", 10, 'uncertain process stop')
                         and len(operations.read_text().splitlines()) == before + 1)
                     saved = next(row for row in api.get('/screening/batches').json()['batches']

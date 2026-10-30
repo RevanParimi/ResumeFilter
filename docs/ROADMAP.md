@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-30 - R4-S2-T3C3C2B complete; fingerprint/comparison workers.**
+  Complete deterministic computation/save/comparison/assessment reuses the shared
+  ingest executor with separate admission. Late work never resumes evaluation;
+  a later refusal can follow a saved resume, and batch recovery retains its
+  checkpoint/lease without replay. The [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2b)
+  owns the contract, red/green, actual SQLite/PG locks/erasure, HTTP/two-process
+  restart, actual Chrome, full pytest and reviews. Required validation passes;
+  working storage is preserved and owned PG stopped. Distinct final staged
+  self-review is recorded; scoped publication follows. Exact next is C2C in a new session;
+  C2/Q and all broader parents remain open. No second task was started.
+
 - **Session 2026-10-29 - R4-S2-T3C3C2A complete; initial intake persistence.**
   C2 was split before code; only A is implemented. Admin/employer uploads and
   batches share bounded owning-session ingest workers, including batch checkpoint

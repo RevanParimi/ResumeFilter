@@ -139,8 +139,8 @@ async def _ingest_one(
 
 
 def _ingest_execution_refused(exc):
-    # The initial transaction may still commit. Return no IDs or partial success,
-    # and never restart fingerprinting/evaluation when a late worker completes.
+    # Ingest or fingerprint work may still commit. Return no IDs or partial
+    # success, and never resume evaluation when a late worker completes.
     detail = 'candidate_ingest_pending' if isinstance(exc, ExecutionPending) else str(exc)
     return HTTPException(status_code=503, detail=detail, headers={'Retry-After': '1'})
 
