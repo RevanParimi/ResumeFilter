@@ -4,50 +4,51 @@ Updated: 2026-10-30. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3C2C complete.** Baseline `7071bc4` is published. This session
-completes only subject/report SQL; A/B are complete, C2/Q and all broader
-parents remain open. [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2c) records
-contract, implementation/review and actual checks.
+**R4-S2-T3C3C2Q complete; C2 closes.** Published baseline `7bd1788` contains
+A-C. This session reviewed their combined boundaries/budgets and needed no
+production/test change. [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q)
+owns acceptance, combined self-review, fresh validation and distinct final staged
+self-review. C3C and all broader parents remain open.
 
-The shared ingest pool (two slots / 20-second wait per operation) now admits
-pre-evaluation subject checks, post-evaluation subject check plus whole report/
-batch-binding transaction and final subject/report publication snapshots,
-including evaluate=False. Async providers stay on the caller. Safe full/closed/
-pending 503/Retry-After returns no IDs; earlier writes may already have committed.
-Timeout/cancel retains admission. Late report/checkpoint commits never resume
-evaluation or batch completion. Deliberate batch recovery after expiry reuses a
-committed report without another evaluation; fresh single uploads can produce
-another report. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
+Shared intake admission covers the initial transaction, whole fingerprint/
+comparison operation, pre-evaluation subject check, subject/report transaction
+and final publication snapshot. Providers stay on the caller. Safe 503 responses
+return no partial IDs; earlier or late writes may commit. Timeout/cancellation
+retains capacity. Abandoned work never resumes evaluation or batch completion;
+deliberate batch recovery reuses a committed report checkpoint without another
+evaluation. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
 
-Final behavior **104 passed / 75 skipped**, publication erasure **9 passed /
-9 skipped**. Broader SQLite **629 passed / 317 skipped** and initial PG **937
-passed / 9 skipped** each had one SQLite latency miss; unchanged isolated/scoped
-reruns and the final full run resolve them without threshold changes. All actual
-PG cases passed. Migrated HTTP/restart **42/42** and two-process races **41/41**
-on each DB; Chrome **30/30**, offline UI **62/62**, bindings/syntax/six-module
-compilation pass. Full pytest **4045 passed, 873 skipped, 127 warnings**.
-All **616 reviewed code/config hashes** match; both owned PG runtimes are stopped,
-working DB preserved and demo untouched. Evidence records the test corrections
-and timing misses honestly. Fakes establish mechanics, not live quality.
-Completion records and distinct final staged self-review are complete; the linked
-evidence records that self-review. Authorized commit/push follows, and the final
-response reports the verified remote commit.
+Fresh sequential full pytest: **4045 passed, 873 skipped, 127 warnings**.
+Combined SQLite/actual PG group: **1075 passed, 14 skipped**. Migrated HTTP/restart
+for initial/fingerprint/report boundaries: **41/41, 41/41, 42/42 on each DB**;
+two-process races **41/41 on each DB**. Actual Chrome **29/29, 29/29, 30/30**;
+offline UI **62/62**, bindings and syntax pass. All **616 code/config hashes**
+match; working DB preserved, owned PG confirmed stopped and demo untouched.
+Fakes establish mechanics, not live quality. Completion records and distinct
+final staged self-review precede authorized scoped commit/push; the final response
+reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3C2Q - Review combined shared intake persistence**, under
-its [contract](delivery/PI-R4.md#r4-s2-t3c3c2q). Do not start Q in this session;
-C2 closes only after Q. Use per-command `-c credential.username=RevanParimi`
-for GCM account selection.
+**Exact next: R4-S2-T3C3C3 - Bound profile-source operations**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c3), in a new session. Do not start it here.
+Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
 Batch claim/recovery/failure/terminal and other handler/graph SQL remain
-synchronous; competing SQLite writers can block those paths. Limits are per
-service/process; timeout cannot kill threads or promise rollback, and driver
-waits/drain have no new hard deadline. Direct low-level callers own scheduling
-unless they supply the executor. Single uploads without stable identity hints
-can create another subject; no new resume/report idempotency key. Present guards
-remain snapshots across later erasure/delivery.
+synchronous; competing SQLite writers can block them. Limits are per service/
+process, not a total-upload deadline. Threads cannot be killed; driver waits/drain
+have no new hard deadline. Direct low-level callers own scheduling unless they
+supply the executor. Single uploads without stable identity hints can create
+another subject; no new resume/report idempotency key. Guards remain snapshots
+across later erasure/delivery.
 
 ## Reusable validation setup
 
+- C3C2Q combined runner: `.pytest_cache/run_r4_s2_t3c3c2q.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c2q_postgres.py` /
+  `r4-s2-t3c3c2q-pg-runtime.json` (stopped). Preservation/hash helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c2q.py check` / `preserve`.
+  Reuses the A-C HTTP/Chrome flags and two-process race journey below; the
+  [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q) owns exact commands/results.
 - C3C2C runner: `.pytest_cache/run_r4_s2_t3c3c2c.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3c2c_postgres.py` /

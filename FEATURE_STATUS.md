@@ -193,7 +193,7 @@ loaded results recheck observed candidate erasure. Key issuance/rotation locks
 the candidate and preserves its profile clock. A late rotation can invalidate
 the old key; recovery is deliberate fresh issuance. The
 [record budget](OPERATING.md#operator-candidate-record-execution-budget) states
-API-only scope and limits. C3C2/C3C3/CQ, C3D-F/Q and all broader parents remain
+API-only scope and limits. C3C3/CQ, C3D-F/Q and all broader parents remain
 open; other handler/graph/store SQL stays synchronous. Exact task status and next
 action are owned by the PI/handoff.
 
@@ -213,5 +213,9 @@ can follow a committed resume.
 budget to pre/post-evaluation subject SQL, complete report/checkpoint saves and
 final publication guards, including uploads without evaluation. A late report
 commit can be recovered deliberately by a batch without another evaluation.
-Batch management and other handler/graph SQL remain separate work. C2's combined
-gate must pass before the parent closes.
+Batch management and other handler/graph SQL remain separate work.
+[R4-S2-T3C3C2Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q) closes the combined
+shared intake persistence gate with fresh SQLite/actual PostgreSQL, HTTP/restart,
+two-process races, actual Chrome/manual recovery and full regression evidence.
+No production change was needed. Profile-source operations and broader parents
+remain open.

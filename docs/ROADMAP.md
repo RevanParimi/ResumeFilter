@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-30 - R4-S2-T3C3C2Q complete; combined intake review.**
+  C2 closes after combined A-C source/budget self-review and fresh full pytest,
+  actual SQLite/PG lock/erasure cases, all three migrated HTTP/restart and Chrome
+  recovery journeys, and two-process races on both databases. No blocking finding
+  or production/test change. The [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q)
+  owns commands/results, scope/limits, preservation and distinct final staged
+  self-review. Working DB preserved, owned PG stopped and demo untouched.
+  Scoped publication follows. Exact next is C3C3 in a separate session; C3C and
+  all broader parents remain open.
+
 - **Session 2026-10-30 - R4-S2-T3C3C2C complete; subject/report SQL workers.**
   Pre-evaluation subject checks, post-evaluation checks plus whole report/batch
   binding transactions, and final publication checks reuse the ingest executor.

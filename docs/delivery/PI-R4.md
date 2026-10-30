@@ -451,7 +451,9 @@ remain open. Exact next is C3C2, separate session.
 
 **<a id="r4-s2-t3c3c2"></a>R4-S2-T3C3C2 - Bound shared intake persistence**
 
-Status: in progress. Prerequisite: C1. Measure and bound candidate/resume ingest,
+Status: done (2026-10-30). Prerequisite: C1. A-C implementation and the
+[combined Q review](EVIDENCE-R4.md#r4-s2-t3c3c2q) complete this bounded parent.
+The original contract: measure and bound candidate/resume ingest,
 fingerprint/comparison and pre/post-evaluation owning SQL in `screening/ingest`
 and both intake adapters; define smaller children before implementation if needed.
 Keep async extraction/evaluation on the caller and preserve cross-process dedupe,
@@ -507,10 +509,14 @@ Distinct final staged self-review is recorded; scoped publication follows.
 
 **<a id="r4-s2-t3c3c2q"></a>R4-S2-T3C3C2Q - Review combined shared intake persistence**
 
-Status: pending. Prerequisites: A-C. Inventory combined boundaries and budgets;
-prove dedupe/versions, batch checkpoints, cancellation/late writes, tenant/erasure
-and fallback through actual SQLite/PG, migrated HTTP/restart, intake Chrome and
-full regression. Complete both reviews before closing C2; C3/CQ remain separate.
+Status: done (2026-10-30). Prerequisites: A-C, published at `7bd1788`.
+[Combined contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c2q) owns the boundary/budget
+inventory, combined self-review, fresh full/actual SQLite/PG lock/erasure tests,
+all three migrated intake HTTP/restart and Chrome recovery journeys, two-process
+dedupe/version races, preservation and distinct final staged self-review.
+No blocking finding or production/test change. C2 closes; C3/CQ and all broader
+parents remain open. Exact next: C3C3 in a separate session. Scoped publication
+follows the recorded final review.
 
 **<a id="r4-s2-t3c3c3"></a>R4-S2-T3C3C3 - Bound profile-source operations**
 
