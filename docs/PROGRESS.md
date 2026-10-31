@@ -1,47 +1,59 @@
 # Current handoff
 
-Updated: 2026-10-30. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-10-31. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3C2Q complete; C2 closes.** Published baseline `7bd1788` contains
-A-C. This session reviewed their combined boundaries/budgets and needed no
-production/test change. [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q)
-owns acceptance, combined self-review, fresh validation and distinct final staged
-self-review. C3C and all broader parents remain open.
+**R4-S2-T3C3C3A complete; only source listing closes.** Published baseline
+`1a05df3` contains C2/Q. C3 was split before implementation into A (listing), B
+(GitHub), C (LinkedIn) and Q (combined review). The
+[A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3a) owns contract, red/green,
+implementation self-review, actual validation and distinct final staged self-review.
+C3/B/C/Q and all broader parents remain open.
 
-Shared intake admission covers the initial transaction, whole fingerprint/
-comparison operation, pre-evaluation subject check, subject/report transaction
-and final publication snapshot. Providers stay on the caller. Safe 503 responses
-return no partial IDs; earlier or late writes may commit. Timeout/cancellation
-retains capacity. Abandoned work never resumes evaluation or batch completion;
-deliberate batch recovery reuses a committed report checkpoint without another
-evaluation. See the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
+`GET /candidates/{id}/sources` now admits its complete existing service initial/
+history/final snapshot on the operator candidate-record pool (two slots /
+20-second wait per operation). Filtering, exact subject scope and observed
+candidate-erasure refusal remain. Safe full/closed/pending 503/Retry-After returns
+no data/cookies; timeout/cancel retains admission and never replays. A deliberate
+fresh GET reads current saved history. Unrelated lookup failures remain 500.
+No new pool/config/schema/provider, source write or UI. See the
+[record budget](../OPERATING.md#operator-candidate-record-execution-budget).
 
-Fresh sequential full pytest: **4045 passed, 873 skipped, 127 warnings**.
-Combined SQLite/actual PG group: **1075 passed, 14 skipped**. Migrated HTTP/restart
-for initial/fingerprint/report boundaries: **41/41, 41/41, 42/42 on each DB**;
-two-process races **41/41 on each DB**. Actual Chrome **29/29, 29/29, 30/30**;
-offline UI **62/62**, bindings and syntax pass. All **616 code/config hashes**
-match; working DB preserved, owned PG confirmed stopped and demo untouched.
-Fakes establish mechanics, not live quality. Completion records and distinct
-final staged self-review precede authorized scoped commit/push; the final response
-reports the verified remote commit.
+Focused **200 passed / 25 skipped**; shared records **29 passed / 25 skipped**.
+Full pytest **4065 passed, 891 skipped, 127 warnings**. Actual PG-enabled source
+and shared-record groups **224 passed / 1 skipped** and **54 passed**.
+Migrated source HTTP/restart **50/50 on each DB**; existing record-worker HTTP
+**54/54**, actual portal Chrome compatibility **48/48**, bindings/syntax/compilation
+pass. All **616 code/config hashes** match the full-tested state; working DB
+preserved, owned PG stopped and demo untouched. Source listing is API-only;
+portal Chrome is compatibility evidence. Fakes prove mechanics, not live quality.
+Completion records and distinct final staged self-review precede authorized
+scoped commit/push; the final response reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3C3 - Bound profile-source operations**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c3), in a new session. Do not start it here.
+**Exact next: R4-S2-T3C3C3B - Bound GitHub source SQL**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3c3b), in a new session. Do not start B here.
 Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
-Batch claim/recovery/failure/terminal and other handler/graph SQL remain
-synchronous; competing SQLite writers can block them. Limits are per service/
-process, not a total-upload deadline. Threads cannot be killed; driver waits/drain
-have no new hard deadline. Direct low-level callers own scheduling unless they
-supply the executor. Single uploads without stable identity hints can create
-another subject; no new resume/report idempotency key. Guards remain snapshots
-across later erasure/delivery.
+GitHub pre/post-provider SQL, LinkedIn parsing/SQL and batch/other handler/graph
+SQL remain synchronous. Limits are per service/process, not a total-request or
+provider deadline. Threads cannot be killed; driver waits/drain have no new hard
+deadline. Source history remains unpaged and loaded rows/final guards remain
+snapshots across later erasure/delivery. Low-level synchronous callers own
+scheduling. Intake late-commit/checkpoint and identity/idempotency limits remain
+in the [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
 
 ## Reusable validation setup
 
+- C3C3A runner: `.pytest_cache/run_r4_s2_t3c3c3a.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c3a_postgres.py` /
+  `r4-s2-t3c3c3a-pg-runtime.json` (stopped). Preservation/hash helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c3a.py check` / `preserve`.
+  Source read SQL/admission/erasure/manual recovery/graceful restart:
+  `scripts/smoke_r4_s1_t3c.py --source-read-workers`; add `--postgres` only
+  with an explicitly disposable DEE_TEST_DB_URL. Portal compatibility Chrome:
+  `scripts/check_ui_evaluate_browser.py`. Exact evidence lives in A above.
 - C3C2Q combined runner: `.pytest_cache/run_r4_s2_t3c3c2q.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3c2q_postgres.py` /

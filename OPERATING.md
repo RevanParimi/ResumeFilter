@@ -294,10 +294,12 @@ external delivery, live-data cleanup or demo restart is part of this change.
 
 `candidate_record_max_concurrent_requests` defaults to **2** per Services/app
 process. Its separate queue-free pool runs the complete operator candidate
-detail/resume-list/report-list GET operations and POST `/candidates/{id}/auth-key`.
+detail/resume-list/report-list/source-list GET operations and POST
+`/candidates/{id}/auth-key`. Source listing includes its complete service initial
+candidate check, filtered/history SELECT and final candidate-erasure snapshot.
 Workers own summary/payload/final existence checks and every SQL session; only
 store/bound-reader/id arguments and detached results cross the boundary. Operator
-authentication and session-CSRF stay on the caller. Other intake/source/rights
+authentication and session-CSRF stay on the caller. Other intake/source-write/rights
 SQL is separate work; this pool does not cover all candidate operations.
 
 `candidate_record_wait_seconds` defaults to **20**, finite/positive; capacity
@@ -307,6 +309,11 @@ and `DEE_CANDIDATE_RECORD_WAIT_SECONDS`, then restart. Full/closed admission giv
 before the owning operation. Wait expiry gives **503** `candidate_record_pending`.
 Each includes `Retry-After: 1`, without partial records, a replacement key or
 cookies. Missing or observed-erased candidates give the existing generic 404.
+Unrelated source lookup failures remain server errors; they are not classified
+as candidate erasure. A source read may finish after its caller stops waiting;
+it writes nothing and does not trigger ingestion, a provider or replay. Deliberate
+fresh GET recovers current saved history. Source rows already loaded are snapshots,
+and the final candidate check does not lock later source deletion/HTTP delivery.
 
 Timeout/cancellation retains admission until actual completion. A late auth-key
 POST can rotate the credential and invalidate the old key without delivering its

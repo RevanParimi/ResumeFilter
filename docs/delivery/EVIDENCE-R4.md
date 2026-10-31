@@ -8757,3 +8757,229 @@ stopped and the demo untouched. Configured `main` -> `origin/main` is checked;
 standing-authorized commit/push uses per-command GCM account selection, followed
 by remote-commit verification reported in the final response. Stop after
 publication; next is C3C3 in a new session.
+
+### <a id="r4-s2-t3c3c3a"></a>R4-S2-T3C3C3A - Bound profile-source listing
+
+**Status: done (2026-10-31).** Baseline `1a05df3`; C2 is published.
+This session implements only listing. C3B/C/Q, C3 and all broader parents remain
+open. [PI split/status](PI-R4.md#r4-s2-t3c3c3).
+
+**Contract specified before implementation.** `GET /candidates/{id}/sources`
+currently performs a route existence read followed by synchronous service
+pre/list/final reads on its request loop. Admit the complete existing service
+snapshot on the existing candidate-record executor; remove the redundant route
+read. Each worker owns its SQL sessions. Preserve source-type filtering, stored
+ordering/history, advisory schemas, exact candidate isolation, admin-only access
+and final observed candidate-erasure refusal. Loaded source rows remain snapshots;
+no new lock across later erasure/HTTP delivery. Reuse the candidate-record
+capacity/wait/error/close/drain contracts rather than adding another pool or
+configuration. Low-level synchronous callers still own scheduling.
+
+Acceptance: reproduce event-loop blocking with real SQL gates at the initial
+candidate read, source SELECT and final candidate snapshot. Verify responsive
+health and separately admitted SQL reads, worker/session ownership, filtered and
+empty history, unauthorized actor refusal, shared admission with other operator
+candidate reads, full/closed safe 503/Retry-After without data/cookies, retained
+admission through timeout/cancel/late failure, no automatic replay and deliberate
+fresh-read recovery. Real competing candidate erasure before the final snapshot
+must return 404 without stale sources and preserve the other subject. Prove actual
+PG read-lock waits plus erasure, migrated two-actor source HTTP/graceful restart,
+existing portal Chrome compatibility, bindings/static checks, full pytest,
+implementation and distinct final staged self-reviews. No dedicated source-list
+screen exists; Chrome compatibility is distinct from source-list API evidence.
+
+No GitHub/LinkedIn ingestion, provider, source/curation write, schema, identity,
+consent or scoring change. B/C own their remaining SQL/parsing boundaries and Q
+owns combined source closure. Working data and the existing demo stay untouched.
+Fakes/controlled stalls prove mechanics, not live-provider or production-load
+quality. Finish only A, update the handoff, review, commit/push and stop.
+
+**Reproducer and implementation.** Sanitized tag `red`, `-m pytest -q
+--tb=short tests/test_profile_sources_api.py -k source_listing_sql`: **3 failed,
+3 skipped, 10 deselected, 1 warning, 14.68s** (wrapper 21.02s). Each SQLite
+case reached its initial/history/final SQL gate and failed `source listing SQL
+blocked the event loop`, not a setup/import error. The same unchanged tests on
+the handler fix, tag `green-sql`: **3 passed, 3 skipped, 10 deselected, 1 warning,
+5.05s** (wrapper 10.79s).
+
+The handler now awaits the complete existing `ProfileSourceService.list_sources`
+operation on `services.candidate_records`, removing the redundant route read.
+The service's pre/list/final snapshots and each complete SQL session remain on
+the worker; response construction follows successful completion. Specific
+`SourceSubjectErasedError` maps to the existing 404. Shared capacity/closed/pending
+failures retain the existing safe candidate-record 503/Retry-After contract,
+without payload or cookies. A generic LookupError remains 500: reusing the broader
+candidate-record adapter would incorrectly relabel an unrelated source failure as
+erasure, so the source handler keeps its specific exception mapping. No source
+service/store/transaction/schema/config/provider change or new executor.
+
+Tag `behavior`, `-m pytest -q --tb=short tests/test_profile_sources_api.py
+-k source_listing`: **20 passed, 18 skipped, 10 deselected, 1 warning, 27.77s**
+(wrapper 33.10s). Covers all three SQL phases, release/timeout/cancel/late failure,
+retained shared admission and safe full/closed/pending errors, worker/session
+ownership, no automatic replay, deliberate fresh reads, filtered/empty/exact
+subject history, unauthorized actor refusal and unrelated lookup failure. Real
+SQLite exclusive-read contention leaves health responsive and capacity retained;
+candidate erasure on a competing connection is observed by the final snapshot
+without stale source publication or recreation. Other subject state survives.
+Actual PG counterparts are still required below; skips are not PG proof.
+
+**Implementation self-review.** Reviewed baseline `1a05df3` plus the single
+handler change, existing source-list service/store and candidate-record executor/
+lifecycle/adapter callers, the added regressions and shared HTTP harness extension.
+The read remains admin-only and exact-subject scoped; filters, history ordering,
+advisory schema, initial/final erasure checks and unrelated-error behavior stay
+intact. The redundant route read is removed only because the complete service
+snapshot owns both checks on its worker. Specific erasure mapping deliberately
+avoids the broader candidate adapter's LookupError catch. Admission, late failure
+consumption, cancellation and drain inherit the already-owned shared executor;
+there is no new pool, mutable session transfer, write or provider continuation.
+SQL gates, real lock tests and competing erasure assert boundary outcomes rather
+than source shape. The HTTP harness reuses the existing record-worker launcher
+and adds three listing phases, shared refusal and a competing-erasure case; its
+prior record-worker mode is also rechecked. No blocking finding remains. This is
+same-agent self-review, not independent review. B/C/Q and broader work stay open.
+
+**Validation setup and observed checks.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3c3a.py <tag> <Python args>` clears inherited DEE
+settings/credentials, selects nonexistent YAML and uses project Python. Fixtures
+bypass dotenv and HTTP/Chrome run from migrated scratch stores/directories with
+fake providers. Long gates run sequentially. Owned disposable PG runner/runtime:
+`.pytest_cache/run_r4_s2_t3c3c3a_postgres.py` /
+`r4-s2-t3c3c3a-pg-runtime.json`. Local helpers are reusable artifacts, not portable
+setup guarantees. No working storage or existing demo restart is involved.
+
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, all resolve.
+  `node --check frontend/api.js` and `node --check frontend/support.js`: exit 0.
+  Tag `compile`, `-m py_compile src/app/api/candidates.py
+  tests/test_profile_sources_api.py scripts/smoke_r4_s1_t3c.py`: exit 0, 0.30s.
+  Reviewed-state helper saved **616 code/config hashes**; baseline preservation
+  runner hashed **734 tracked files**.
+- Tag `http`, `scripts/smoke_r4_s1_t3c.py --source-read-workers`:
+  **50/50**, wrapper 31.22s, migrated SQLite and graceful restart. SQL holds at
+  initial candidate/history/final candidate reads leave health plus admitted
+  `/admin/users` responsive in **0.0063-0.0102s**, below one second. All existing
+  candidate detail/resume/report/key routes and source listing share refusal
+  while the listing worker remains admitted. Pending returns no partial data or
+  cookies; late reads never replay, deliberate fresh GET returns exact saved
+  history, and erasure before the final snapshot returns 404 without loaded
+  sources. Existing operator/employer/candidate actors, source/advisory/CSRF/
+  erasure contracts and exact saved-state restart pass. SQL holds establish
+  scheduling; real driver lock evidence is distinct.
+- Tag `focused`, `-m pytest -q --tb=short` over **11 existing modules**:
+  `tests/test_profile_sources_api.py`, `test_profile_sources_schema.py`,
+  `test_profile_sources_service.py`, `test_profile_sources_store.py`,
+  `test_profile_sources_transform.py`, `test_profile_source_erasure.py`,
+  `test_service_lifecycle.py`, `test_config.py`, `test_api_route_extraction.py`,
+  `test_route_table_guard.py` and `test_openapi_contract.py` (all under `tests/`):
+  **200 passed, 25 skipped, 1 warning, 51.75s** (wrapper 58.40s). Includes source
+  regressions, exact erasure/error classification, current source/curation
+  compatibility, shared executor drain before SQL disposal, unchanged configuration
+  and API route/OpenAPI contracts. Skips establish no omitted PG behavior.
+- Tag `shared-records`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'candidate_record or operator_candidate or candidate_key_real_lock'`:
+  **29 passed, 25 skipped, 328 deselected, 1 warning, 25.49s** (wrapper 29.97s).
+  Existing operator read/key admission, uncertainty, erasure and rotation remain
+  compatible with source listing sharing the pool.
+- Tag `record-http`, `scripts/smoke_r4_s1_t3c.py --candidate-record-workers`:
+  **54/54**, wrapper 24.12s. The extended shared launcher retains its prior
+  candidate read/key mode, late key rotation and deliberate fresh issuance,
+  ownership and graceful restart behavior.
+- Tag `browser`, `scripts/check_ui_evaluate_browser.py`: actual Chrome **48/48**,
+  wrapper 30.75s. Existing evaluation/report/contact/candidate portal/consent/
+  erasure, failures/manual recovery and reload remain compatible. This is portal
+  compatibility, not a source-list screen or source-provider browser journey;
+  source-list behavior is covered by the actual migrated HTTP journey. Browser
+  execution uses scratch SQLite and existing CDN internet, not live providers.
+- Full regression, `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c3a.py full`, executing the required
+  `-m pytest -q --tb=short`: **4065 passed, 891 skipped, 127 warnings,
+  1245.55s** (wrapper 1257.63s), exit 0. Includes the new source-list SQL,
+  admission/cancel/erasure and real SQLite lock cases plus all existing regression
+  and populated migration tests on the reviewed code. Optional/environment/
+  unconfigured-PG skips establish no omitted behavior. Existing third-party and
+  expression-index reflection warnings remain; actual PG evidence follows.
+- Actual PG gate, `.resume/Scripts/python.exe
+  .pytest_cache/run_r4_s2_t3c3c3a_postgres.py`: owned disposable **PG 18.6**,
+  Asia/Calcutta, read committed, isolated schemas. The same 11-file focused group
+  with `-m pytest -q --tb=short`: **224 passed, 1 skipped, 1 warning, 186.19s**
+  (wrapper 192.84s), exit 0. All real SQLite and actual PG source-list cases pass,
+  including the three SQL phases, timeout/cancel/late exception and retained
+  shared admission, specific erasure versus unrelated failure, filtered/empty/
+  exact-subject snapshots and worker/session ownership. Real PG source-table
+  access-exclusive locks produce observed `pg_stat_activity` Lock waits; health
+  remains responsive, caller wait expires safely, capacity stays retained until
+  release, and competing candidate deletion is observed without recreation or
+  affecting another subject. The one skip is the SQLite variant of an existing
+  PG-only source commit/erasure lock inspection; its actual PG counterpart passes.
+  The real SQLite exclusive-lock cases cover health/capacity, not unrelated SQL
+  read latency while the whole SQLite database is locked.
+- Same owned PG runner, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'candidate_record or operator_candidate or candidate_key_real_lock'`:
+  **54 passed, 328 deselected, 1 warning, 56.50s** (wrapper 62.35s). Existing
+  candidate read/key admission, late rotation, ownership and erasure also pass
+  with actual PG, alongside this task's shared-pool source checks.
+- Same owned PG runner, `scripts/smoke_r4_s1_t3c.py --postgres
+  --source-read-workers`: **50/50**, wrapper 33.58s. Same migrated initial/history/
+  final SQL holds, health/admitted reads, shared refusal, no partial data/cookies,
+  explicit saved-state recovery, competing erasure and exact graceful restart.
+  Health plus admitted reads take **0.0074-0.0949s**, below one second.
+  Source listing remains API-only; Chrome above is existing portal compatibility.
+- Owned PG `pg_ctl -m fast` shutdown: **exit 0**, 24.48s. Final status and
+  preservation checks are recorded with completion review below. All final
+  focused/shared-record/HTTP/Chrome/full/PG gates ran sequentially and passed on
+  their first run; only the deliberate pre-fix reproducer failed. No source/test/
+  threshold changes followed the implementation self-review.
+
+**Completion record.** C3C3A done; only source listing is bounded here. Parent C3
+was split before implementation into A (listing), B (GitHub), C (LinkedIn) and Q
+(combined review). B/C/Q, C3C/C3/C/T3/F14/sprint/PI remain open. Exact next:
+**R4-S2-T3C3C3B - Bound GitHub source SQL**, in a separate session. No new schema,
+pool, config, provider, source/curation write, identity/consent/scoring policy or
+UI was introduced. Existing populated migration regressions and migrated scratch
+journeys pass; no schema change requires a new up/down/up exercise. Low-level
+synchronous callers retain scheduling responsibility. Per-process admission,
+non-killable threads/driver waits, unpaged history and snapshot guards across later
+erasure/delivery remain limits; GitHub/LinkedIn SQL/parsing is still synchronous.
+No working data/demo change or live-provider, production-load or measured quality
+claim. The [record budget](../../OPERATING.md#operator-candidate-record-execution-budget)
+owns operating behavior; PI/feature status, roadmap and the short handoff link to
+their evidence owner. These completion records precede the distinct final staged
+self-review and authorized scoped commit/push. The final response reports the
+verified remote commit. Stop after publication.
+
+**Distinct final staged self-review (after validation/completion records).**
+Reviewed the exact `1a05df3`-based **nine-file staged diff**: the source-list
+handler in `src/app/api/candidates.py`, existing source API regressions in
+`tests/test_profile_sources_api.py`, the shared HTTP harness in
+`scripts/smoke_r4_s1_t3c.py`, and six documentation records (`FEATURE_STATUS.md`,
+`OPERATING.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`, `docs/delivery/PI-R4.md`
+and this A section). Checked every A acceptance criterion against implementation
+and actual evidence: admin-only exact-subject history, preserved filter/order/
+schema/fallback, complete initial/history/final worker ownership, specific erasure
+versus unrelated LookupError mapping, shared admission, safe no-data/cookie 503s,
+timeout/cancel/late failure/close/drain, no automatic replay and deliberate fresh
+reads. Traced the service/store and existing executor callers, real SQLite/PG
+lock and competing-erasure cases, session teardown, both shared harness modes
+and graceful saved-state restart. The read introduces no write/provider or new
+pool/config/schema. No blocking finding remains. This later review is separate
+from implementation self-review; both are same-agent, not independent review.
+
+Compared all counts/timings with their actual logs, retaining the deliberate
+pre-fix red failures and distinguishing real SQL locks, controlled HTTP holds,
+TestClient/ASGI integration, actual portal Chrome and bindings/source checks.
+There is no dedicated source-list UI; compatibility Chrome is not relabeled as
+source ingestion/browser or live-provider evidence. A closes while B/C/Q and
+every broader parent remain open. The nine added local documentation links/
+anchors, unique child IDs, acyclic split/dependency order, status/next-pointer
+consistency and staged whitespace checks pass. Final edits only add this review
+record; runtime/test code is unchanged after final validation.
+
+All **616 code/config hashes** match the full-tested reviewed state. Exactly
+**nine scoped files** are staged; **725 unrelated tracked files**, including
+`data/veritas.db`, match baseline. No unstaged/untracked work, secrets, working
+data or local runtime/log artifacts enter publication. Owned PG `pg_ctl status`
+returns **3, no server running**; its shutdown returned 0 and the demo is
+untouched. Configured `main` -> `origin/main` is checked. Standing-authorized
+commit/push uses per-command GCM account selection; the final response reports
+the verified remote commit. Stop after publication; next is C3C3B in a new session.

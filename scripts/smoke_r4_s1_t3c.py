@@ -280,7 +280,11 @@ def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *,
     return saved
 
 
-def create_candidate_record_smoke_app():
+def create_source_read_smoke_app():
+    return create_candidate_record_smoke_app(source_reads=True)
+
+
+def create_candidate_record_smoke_app(*, source_reads=False):
     from sqlalchemy import event
     from app.api import candidates as routes
     from smoke_r4_s1_t1a import create_smoke_app
@@ -292,10 +296,12 @@ def create_candidate_record_smoke_app():
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            functions = {name: getattr(routes, name) for name in ('_candidate_snapshot', '_candidate_key')}
+            target = services.profile_sources if source_reads else routes
+            names = ('list_sources',) if source_reads else ('_candidate_snapshot', '_candidate_key')
+            functions = {name: getattr(target, name) for name in names}
             for name, function in functions.items():
                 def observed(*args, _function=function, _name=name, **kwargs):
-                    state.active, state.held = True, False
+                    state.active, state.held, state.history = True, False, False
                     with (scratch / 'record-operations.jsonl').open('a') as log:
                         log.write(json.dumps({'operation': _name, 'thread': get_ident()}) + '\n')
                     try:
@@ -304,13 +310,22 @@ def create_candidate_record_smoke_app():
                         state.active = False
                         if state.held:
                             (scratch / 'record-completed').touch()
-                setattr(routes, name, observed)
+                setattr(target, name, observed)
             def sql(conn, cursor, statement, parameters, context, many):
                 mode = scratch / 'record-mode'
                 if mode.exists() and getattr(state, 'active', False) and not state.held:
-                    target = ('candidates' in statement if mode.read_text() == 'read' else
-                              statement.lstrip().upper().startswith('UPDATE CANDIDATE_CREDENTIALS'))
-                    if target:
+                    query = statement.upper()
+                    phase = mode.read_text()
+                    if source_reads:
+                        history = 'FROM PROFILE_SOURCES' in query
+                        candidate = 'FROM CANDIDATES' in query
+                        hit = (phase == 'initial' and candidate or phase == 'history' and history
+                               or phase == 'final' and candidate and state.history)
+                        state.history = state.history or history
+                    else:
+                        hit = ('candidates' in statement if phase == 'read' else
+                               statement.lstrip().upper().startswith('UPDATE CANDIDATE_CREDENTIALS'))
+                    if hit:
                         state.held = True
                         (scratch / 'record-entered').touch()
                         deadline = time.monotonic() + 20
@@ -331,7 +346,7 @@ def create_candidate_record_smoke_app():
                 yield
             finally:
                 for name, function in functions.items():
-                    setattr(routes, name, function)
+                    setattr(target, name, function)
                 event.remove(engine, 'before_cursor_execute', sql)
                 event.remove(services.session_factory, 'after_begin', owner)
                 event.remove(services.session_factory, 'after_transaction_end', end)
@@ -339,14 +354,18 @@ def create_candidate_record_smoke_app():
     return app
 
 
-def check_candidate_records(checks, scratch, base, control, operator, cid, other_id, key):
+def check_candidate_records(checks, scratch, base, control, operator, cid, other_id, key, *, source_reads=False):
     operations = scratch / 'record-operations.jsonl'
-    for suffix, method in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]:
+    cases = [('/sources', 'GET', phase) for phase in ('initial', 'history', 'final')] if source_reads else [
+        (suffix, method, 'key' if method == 'POST' else 'read')
+        for suffix, method in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]]
+    for suffix, method, phase in cases:
         path = f'/candidates/{cid}' + suffix
+        expected = operator.get(path).json() if source_reads else None
         before = len(operations.read_text().splitlines())
         for name in ('record-entered', 'record-completed', 'record-release'):
             (scratch / name).unlink(missing_ok=True)
-        (scratch / 'record-mode').write_text('key' if method == 'POST' else 'read')
+        (scratch / 'record-mode').write_text(phase)
         with ThreadPoolExecutor(max_workers=1) as pool:
             pending = pool.submit(operator.request, method, path)
             try:
@@ -357,9 +376,12 @@ def check_candidate_records(checks, scratch, base, control, operator, cid, other
                 start = time.monotonic()
                 health, read = control.get('/healthz'), control.get('/admin/users')
                 elapsed = time.monotonic() - start
-                checks.check(f'{suffix or "detail"}: health and unrelated admitted SQL read stay responsive',
+                checks.check(f'{phase} {suffix or "detail"}: health and unrelated admitted SQL read stay responsive',
                     health.status_code == read.status_code == 200 and elapsed < 1, f'{elapsed:.4f}s')
-                for busy_suffix, verb in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]:
+                busy_cases = [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]
+                if source_reads:
+                    busy_cases.append(('/sources', 'GET'))
+                for busy_suffix, verb in busy_cases:
                     busy = control.request(verb, f'/candidates/{other_id}' + busy_suffix)
                     checks.check(f'{suffix or "detail"}: shared admission refuses {busy_suffix or "detail"}',
                         busy.status_code == 503 and busy.json() == {'detail': 'candidate_record_capacity_exhausted'}
@@ -384,7 +406,31 @@ def check_candidate_records(checks, scratch, base, control, operator, cid, other
             checks.check('deliberate fresh rotation recovers after an undisclosed late key', fresh.status_code == 200)
             key = fresh.json()['access_key']
         else:
-            checks.check(f'{suffix or "detail"}: explicit read recovers saved state', operator.get(path).status_code == 200)
+            fresh = operator.get(path)
+            checks.check(f'{phase} {suffix or "detail"}: explicit read recovers saved state', fresh.status_code == 200
+                and (expected is None or fresh.json() == expected))
+    if source_reads:
+        erased = operator.post('/candidates', json={'resume_text': RESUME.replace('candidate-router@example.in', 'source-erasure@example.in'), 'evaluate': False}).json()['candidate_id']
+        path = f'/candidates/{erased}'
+        assert operator.post(path + '/sources/github', json={'handle': 'octocat'}).status_code == 200
+        for name in ('record-entered', 'record-completed', 'record-release'):
+            (scratch / name).unlink(missing_ok=True)
+        (scratch / 'record-mode').write_text('final')
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pending = pool.submit(operator.get, path + '/sources')
+            try:
+                deadline = time.monotonic() + 8
+                while not (scratch / 'record-entered').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                assert control.delete(path).status_code == 200
+            finally:
+                (scratch / 'record-release').touch()
+            response = pending.result(timeout=8)
+            checks.check('competing erasure before the final source snapshot refuses loaded history',
+                response.status_code == 404 and response.json() == {'detail': 'candidate not found'}
+                and operator.get(f'/candidates/{other_id}/sources').status_code == 200)
+        (scratch / 'record-mode').unlink(missing_ok=True)
     rows = [json.loads(line) for line in (scratch / 'record-thread-ownership.jsonl').read_text().splitlines()]
     checks.check('candidate SQL sessions keep their owning thread through transactions', rows and all(row['owner'] == row['current'] for row in rows))
     return key
@@ -413,12 +459,12 @@ def run(scratch, url, pg_options):
         "DEE_SESSION_COOKIE_SECURE": "false", "DEE_SESSION_COOKIE_SAMESITE": "lax",
         "DEE_FLYWHEEL_PATH": str(scratch / "flywheel.jsonl"),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_candidate_report_smoke_app" if '--candidate-report-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app" if '--candidate-fingerprint-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_ingest_smoke_app" if '--candidate-ingest-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3c:create_source_read_smoke_app" if '--source-read-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_report_smoke_app" if '--candidate-report-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app" if '--candidate-fingerprint-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_ingest_smoke_app" if '--candidate-ingest-workers' in sys.argv else "smoke_r4_s1_t3c:create_candidate_record_smoke_app" if '--candidate-record-workers' in sys.argv else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
-    if '--candidate-record-workers' in sys.argv:
-        env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='.3',
+    if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
+        env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='2' if '--source-read-workers' in sys.argv else '.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
         env.update(DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.3',
@@ -502,8 +548,9 @@ def run(scratch, url, pg_options):
             key = require(operator.post(path + "/auth-key"))["access_key"]
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
-            if '--candidate-record-workers' in sys.argv:
-                key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key)
+            if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
+                key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
+                    source_reads='--source-read-workers' in sys.argv)
             intake_saved = check_candidate_ingests(checks, scratch, control, operator, org_a, org_b,
                 fingerprint='--candidate-fingerprint-workers' in sys.argv,
                 report_sql='--candidate-report-workers' in sys.argv) if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')) else {}

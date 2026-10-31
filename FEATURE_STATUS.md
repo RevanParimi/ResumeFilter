@@ -219,3 +219,11 @@ shared intake persistence gate with fresh SQLite/actual PostgreSQL, HTTP/restart
 two-process races, actual Chrome/manual recovery and full regression evidence.
 No production change was needed. Profile-source operations and broader parents
 remain open.
+
+[R4-S2-T3C3C3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3a) bounds the complete
+operator source-list initial/history/final snapshot on the existing candidate-
+record pool, preserving filtering, subject scope and observed-erasure refusal.
+Busy/closed/pending reads return safe 503 without partial data; cancellation
+retains admission and a deliberate fresh GET reads current saved history. There
+is no dedicated source-list UI or new executor/config/schema. GitHub/LinkedIn
+ingestion SQL/parsing and combined source acceptance remain open under C3B/C/Q.

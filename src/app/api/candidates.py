@@ -350,12 +350,15 @@ async def list_candidate_sources(
     candidate_id: str, request: Request, source_type: Optional[ProfileSourceType] = None
 ) -> ProfileSourcesResponse:
     services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
     try:
-        return ProfileSourcesResponse(
-            candidate_id=candidate_id,
-            sources=services.profile_sources.list_sources(candidate_id, source_type),
+        sources = await services.candidate_records.run(
+            services.profile_sources.list_sources, candidate_id, source_type,
         )
     except SourceSubjectErasedError:
         raise HTTPException(status_code=404, detail="candidate not found") from None
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503, detail='candidate_record_pending',
+                            headers={'Retry-After': '1'}) from None
+    return ProfileSourcesResponse(candidate_id=candidate_id, sources=sources)

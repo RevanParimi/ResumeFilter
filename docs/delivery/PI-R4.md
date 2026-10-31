@@ -520,13 +520,59 @@ follows the recorded final review.
 
 **<a id="r4-s2-t3c3c3"></a>R4-S2-T3C3C3 - Bound profile-source operations**
 
-Status: pending. Prerequisite: C2. Measure candidate/handle checks, source
+Status: in progress (2026-10-31). Prerequisite: C2, published at `1a05df3`.
+Measure candidate/handle checks, source
 save/list/final guards and curation capture before/after async GitHub fetch;
 include bounded LinkedIn parsing/SQL. Preserve advisory signals, present subject,
 provenance/erasure, guarded best-effort curation and provider fallbacks. Keep
 coroutines and live SQL sessions on their owners. Require red/focused/full,
 real PG contention/erasure, migrated source/restart and relevant browser/contract
 journeys plus both reviews. Define bounded children first if necessary.
+
+Inventory/split at `1a05df3`, before implementation: source listing has a route
+candidate read plus service pre/list/final reads; GitHub ingestion mixes route/
+handle SQL before an awaited provider and save/curation/final SQL afterwards;
+LinkedIn ingestion includes route transport checks and synchronous parsing/save/
+curation/final reads. Keep these separate. Only A is implemented this session.
+
+**<a id="r4-s2-t3c3c3a"></a>R4-S2-T3C3C3A - Bound profile-source listing**
+
+Status: done (2026-10-31).
+[A contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c3a) owns the read-only scope,
+pre-implementation acceptance, regressions, validation and reviews. Run the
+complete existing service pre/list/final snapshot in the existing operator
+candidate-record executor, preserving filters, ordering, authorization and
+candidate-erasure refusal. Remove only the redundant route existence read.
+No new pool/config/schema or source ingestion change. Require red/focused/full,
+real PG read-lock/erasure, migrated two-actor source/restart HTTP, existing portal
+Chrome compatibility, bindings and both reviews. Listing has no dedicated UI.
+Implementation, required validation and distinct final staged self-review are
+recorded there. C3B/C/Q and all broader parents remain open. Exact next: C3C3B in
+a separate session; scoped publication follows the recorded final review.
+
+**<a id="r4-s2-t3c3c3b"></a>R4-S2-T3C3C3B - Bound GitHub source SQL**
+
+Status: pending. Prerequisite: A. Bound complete candidate/handle checks before
+async GitHub fetch and complete save/curation/final operations afterwards.
+Keep the provider on its caller, preserve advisory unavailable signals, erasure
+and best-effort guarded curation. Prove shared admission, cancellation/late commit,
+no abandoned provider continuation/replay, actual PG contention/erasure and
+migrated source/restart plus relevant browser/contract/full/review gates.
+
+**<a id="r4-s2-t3c3c3c"></a>R4-S2-T3C3C3C - Bound LinkedIn source parsing and SQL**
+
+Status: pending. Prerequisite: B. Bound candidate prechecks and complete export
+parsing/transform/save/curation/final work. Preserve existing candidate-versus-
+transport error precedence, archive limits, advisory unavailable signals and
+provenance/erasure. Prove admission, cancellation/late writes, actual PG locks/
+erasure, migrated source/restart and relevant browser/contract/full/review gates.
+
+**<a id="r4-s2-t3c3c3q"></a>R4-S2-T3C3C3Q - Review combined source operations**
+
+Status: pending. Prerequisites: A-C. Inventory combined source boundaries/budgets
+and prove ownership, fallbacks, curation/erasure and uncertainty through fresh
+SQLite/actual PG, HTTP/restart, relevant Chrome/contracts and full regression.
+Complete both reviews before closing C3. C3CQ and broader parents stay separate.
 
 **<a id="r4-s2-t3c3cq"></a>R4-S2-T3C3CQ - Review combined intake/source acceptance**
 

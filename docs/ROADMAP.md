@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-31 - R4-S2-T3C3C3A complete; source-list snapshot workers.**
+  The initial/history/final source-list operation reuses the operator candidate-
+  record pool; filtering, exact subject scope and observed erasure remain intact.
+  Specific lookup/error mapping, retained admission, safe uncertainty and fresh
+  read recovery are covered by the [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3a),
+  which owns red/green, full/actual PG, HTTP/restart, portal Chrome compatibility,
+  preservation and both reviews. Working DB preserved and demo untouched; owned
+  PG stopped. Scoped publication follows. C3 was split before implementation;
+  only A closes. Exact next: C3C3B in a separate session; C3 and broader parents
+  remain open.
+
 - **Session 2026-10-30 - R4-S2-T3C3C2Q complete; combined intake review.**
   C2 closes after combined A-C source/budget self-review and fresh full pytest,
   actual SQLite/PG lock/erasure cases, all three migrated HTTP/restart and Chrome
