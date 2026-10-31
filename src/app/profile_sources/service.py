@@ -14,6 +14,7 @@ from typing import Optional
 
 from app.candidates.schema import LinkType
 from app.candidates.store import CandidateStore, build_candidate_store
+from app.core.blocking import BoundedExecutor
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.curation.service import CurationService, reviewable_raw_term
@@ -47,17 +48,34 @@ class ProfileSourceService:
         self._curation = curation
 
     async def ingest_github(
-        self, candidate_id: str, handle: Optional[str] = None
+        self, candidate_id: str, handle: Optional[str] = None, *,
+        executor: Optional[BoundedExecutor] = None,
     ) -> ProfileSourceSignal:
-        if self._candidates.get_candidate(candidate_id) is None:
-            raise SourceSubjectErasedError()
-        login = self._resolve_handle(candidate_id, handle)
+        # HTTP supplies the shared record pool. Direct callers own scheduling.
+        # Admission/wait is separate before and after the caller-owned provider.
+        if executor is None:
+            login = self._github_login(candidate_id, handle)
+        else:
+            login = await executor.run(self._github_login, candidate_id, handle)
         raw = await self._github.gather_user_signal(login)
         signal = github_to_signal(raw, self._settings, fetched_at=datetime.now(timezone.utc))
+        if executor is None:
+            self._save_github_signal(candidate_id, signal)
+        else:
+            await executor.run(self._save_github_signal, candidate_id, signal)
+        return signal
+
+    def _github_login(self, candidate_id: str, handle: Optional[str]) -> str:
+        if self._candidates.get_candidate(candidate_id) is None:
+            raise SourceSubjectErasedError()
+        return self._resolve_handle(candidate_id, handle)
+
+    def _save_github_signal(self, candidate_id: str, signal: ProfileSourceSignal) -> None:
+        # Own all save/curation/final-guard sessions. A late completion may
+        # commit; it never resumes an abandoned caller or repeats the provider.
         row_id = self._store.save_signal(candidate_id, signal)
         self._capture_unmapped(signal, source_id=row_id)
         self._store.require_saved_signal(candidate_id, row_id)
-        return signal
 
     async def ingest_linkedin(
         self, candidate_id: str, data: bytes

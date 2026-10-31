@@ -225,5 +225,12 @@ operator source-list initial/history/final snapshot on the existing candidate-
 record pool, preserving filtering, subject scope and observed-erasure refusal.
 Busy/closed/pending reads return safe 503 without partial data; cancellation
 retains admission and a deliberate fresh GET reads current saved history. There
-is no dedicated source-list UI or new executor/config/schema. GitHub/LinkedIn
-ingestion SQL/parsing and combined source acceptance remain open under C3B/C/Q.
+is no dedicated source-list UI or new executor/config/schema. LinkedIn ingestion
+SQL/parsing and combined source acceptance remain open.
+[R4-S2-T3C3C3B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3b) extends the same pool
+to complete GitHub candidate/handle checks before its async fetch and complete
+save/curation/final guards afterwards. Provider wait holds no SQL admission.
+Timeout/cancel retains capacity and never replays; late post work may commit.
+Read saved history before a deliberate fresh POST, which may fetch and append
+another source. Existing separate commits, advisory fallbacks and guarded
+best-effort curation remain; LinkedIn and combined source acceptance stay open.

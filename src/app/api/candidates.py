@@ -305,10 +305,17 @@ async def ingest_github_source(
     (S6.1). A missing/unreachable handle returns 200 with method='unavailable';
     a handle that can't be resolved at all is 400."""
     services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
     try:
-        return await services.profile_sources.ingest_github(candidate_id, handle=req.handle)
+        return await services.profile_sources.ingest_github(
+            candidate_id, handle=req.handle, executor=services.candidate_records,
+        )
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # Source/curation commits may survive. Read saved history before a
+        # deliberate fresh POST, which can append another provider result.
+        raise HTTPException(status_code=503, detail='candidate_record_pending',
+                            headers={'Retry-After': '1'}) from None
     except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
     except ValueError as exc:

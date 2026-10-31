@@ -297,10 +297,14 @@ process. Its separate queue-free pool runs the complete operator candidate
 detail/resume-list/report-list/source-list GET operations and POST
 `/candidates/{id}/auth-key`. Source listing includes its complete service initial
 candidate check, filtered/history SELECT and final candidate-erasure snapshot.
+GitHub POST `/candidates/{id}/sources/github` uses the same pool for separately
+admitted candidate/handle resolution before its async provider and complete
+source-save/curation/final-guard work afterwards. Async GitHub fetch and the
+lightweight signal transform stay on the caller; provider wait holds no SQL slot.
 Workers own summary/payload/final existence checks and every SQL session; only
 store/bound-reader/id arguments and detached results cross the boundary. Operator
-authentication and session-CSRF stay on the caller. Other intake/source-write/rights
-SQL is separate work; this pool does not cover all candidate operations.
+authentication and session-CSRF stay on the caller. Other intake, LinkedIn and
+candidate-rights SQL is separate work; this pool does not cover all operations.
 
 `candidate_record_wait_seconds` defaults to **20**, finite/positive; capacity
 must be positive. Configure YAML or `DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS`
@@ -314,6 +318,17 @@ as candidate erasure. A source read may finish after its caller stops waiting;
 it writes nothing and does not trigger ingestion, a provider or replay. Deliberate
 fresh GET recovers current saved history. Source rows already loaded are snapshots,
 and the final candidate check does not lock later source deletion/HTTP delivery.
+
+GitHub pre-operation timeout/cancel does not later fetch or save. Post-operation
+timeout/cancel may leave a committed source and curation; source save, curation
+and final snapshot retain their existing separate transactions. Curation remains
+guarded and best-effort, so its failure can leave the source saved. Read known
+candidate source history after work settles before deciding whether to POST again.
+A deliberate fresh POST can repeat the provider and append another source; no
+new idempotency key or automatic replay is supplied. A later admission refusal
+can follow a completed provider call. Each owning operation has its own admission/
+wait budget; it is not a provider or whole-request deadline. LinkedIn parsing/
+source writes remain separate work.
 
 Timeout/cancellation retains admission until actual completion. A late auth-key
 POST can rotate the credential and invalidate the old key without delivering its

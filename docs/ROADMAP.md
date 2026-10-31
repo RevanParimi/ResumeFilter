@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-10-31 - R4-S2-T3C3C3B complete; GitHub source SQL workers.**
+  Candidate/handle resolution and source-save/curation/final guards acquire the
+  existing record pool separately, around caller-owned async GitHub. Late writes
+  may survive uncertainty; saved-history recovery and deliberate fresh append
+  preserve existing semantics. The [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3b)
+  owns red/green, full/actual PG locks/erasure/curation, migrated HTTP/restart,
+  prior harness modes, portal Chrome compatibility, preservation and both reviews.
+  Working DB preserved and demo untouched; owned PG stopped. Only B closes and
+  scoped publication follows. Exact next: C3C3C in a separate session; source
+  parent/combined review and all broader parents remain open.
+
 - **Session 2026-10-31 - R4-S2-T3C3C3A complete; source-list snapshot workers.**
   The initial/history/final source-list operation reuses the operator candidate-
   record pool; filtering, exact subject scope and observed erasure remain intact.

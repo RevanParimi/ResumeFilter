@@ -533,7 +533,8 @@ Inventory/split at `1a05df3`, before implementation: source listing has a route
 candidate read plus service pre/list/final reads; GitHub ingestion mixes route/
 handle SQL before an awaited provider and save/curation/final SQL afterwards;
 LinkedIn ingestion includes route transport checks and synchronous parsing/save/
-curation/final reads. Keep these separate. Only A is implemented this session.
+curation/final reads. Keep these separate. A/B are complete; C/Q own the remaining
+boundaries and combined source review.
 
 **<a id="r4-s2-t3c3c3a"></a>R4-S2-T3C3C3A - Bound profile-source listing**
 
@@ -552,12 +553,18 @@ a separate session; scoped publication follows the recorded final review.
 
 **<a id="r4-s2-t3c3c3b"></a>R4-S2-T3C3C3B - Bound GitHub source SQL**
 
-Status: pending. Prerequisite: A. Bound complete candidate/handle checks before
-async GitHub fetch and complete save/curation/final operations afterwards.
-Keep the provider on its caller, preserve advisory unavailable signals, erasure
-and best-effort guarded curation. Prove shared admission, cancellation/late commit,
-no abandoned provider continuation/replay, actual PG contention/erasure and
-migrated source/restart plus relevant browser/contract/full/review gates.
+Status: done (2026-10-31). Prerequisite: A, published at `96bd3a7`.
+[B contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c3b) owns the pre-implementation
+acceptance, red/green, validation and reviews. Complete candidate/handle checks
+and save/curation/final operations now acquire the existing record pool separately,
+before/after caller-owned async GitHub. Advisory fallbacks, guarded best-effort
+curation, erasure and separate commit semantics remain. Safe uncertainty retains
+capacity and never replays; saved-history reads precede deliberate fresh POST,
+which may append another source. Full/actual PG locks/erasure/curation, migrated
+HTTP/restart, prior harness modes, portal Chrome compatibility and distinct final
+staged self-review are recorded there. Only B closes; C/Q and all broader parents
+remain open. Exact next: C3C3C in a separate session. Scoped publication follows
+the recorded final review.
 
 **<a id="r4-s2-t3c3c3c"></a>R4-S2-T3C3C3C - Bound LinkedIn source parsing and SQL**
 

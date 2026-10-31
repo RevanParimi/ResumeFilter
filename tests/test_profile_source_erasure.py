@@ -28,6 +28,148 @@ def payload(kind):
         "export_b64": base64.b64encode(_linkedin_zip()).decode()}
 
 
+@pytest.mark.parametrize('phase', ['save', 'curation'])
+@pytest.mark.parametrize('erase', [False, True])
+async def test_github_worker_real_write_lock_retains_capacity_and_erasure(database, settings, monkeypatch, phase, erase):
+    import asyncio
+    import httpx
+    from tests.conftest import ADMIN_HEADERS
+    from tests.test_profile_sources_api import _github_sql_phase, _github_worker_services
+    from app.main import create_app
+    from app.curation.models import CurationObservationRow
+    from sqlalchemy import select
+    engine, factory = database
+    settings.candidate_record_max_concurrent_requests = 1
+    services, cid = _github_worker_services(settings, factory)
+    ready, proceed, inserting = Event(), Event(), Event()
+    target = services.profile_sources._store if phase == 'save' else services.curation
+    name = 'save_signal' if phase == 'save' else 'record_unmapped'
+    original = getattr(target, name)
+    def controlled(*args, **kwargs):
+        ready.set()
+        assert proceed.wait(10)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(target, name, controlled)
+    fetch = services.github.gather_user_signal
+    async def provider(login):
+        raw = await fetch(login)
+        services.candidate_records._wait_seconds = .5
+        return raw
+    monkeypatch.setattr(services.github, 'gather_user_signal', provider)
+    pids = []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if _github_sql_phase(statement, phase) and not inserting.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            inserting.set()
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            blocker = engine.connect()
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = f'/candidates/{cid}/sources/github'
+                pending = asyncio.create_task(http.post(path, json={}))
+                try:
+                    assert await asyncio.to_thread(ready.wait, 8)
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+                    elif phase == 'save':
+                        blocker.execute(text('SELECT id FROM candidates WHERE id = :id FOR UPDATE'), {'id': cid}).all()
+                    else:
+                        blocker.execute(text('LOCK TABLE curation_observations IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    assert await asyncio.to_thread(inserting.wait, 8)
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(5):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert monotonic() - start < 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'candidate_record_pending'}
+                    assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    busy = await http.get('/candidates/b/sources')
+                    assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_record_capacity_exhausted'}
+                    if erase:
+                        blocker.execute(text('DELETE FROM candidates WHERE id = :id'), {'id': cid})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(8):
+                        while services.candidate_records._active:
+                            await asyncio.sleep(.01)
+                assert services.github.user_calls == ['synthetic']
+                assert (services.candidates.get_candidate(cid) is None) == erase
+                assert len(services.profile_sources._store.signals_for_candidate(cid)) == int(not erase)
+                with factory() as session:
+                    assert len(list(session.scalars(select(CurationObservationRow)))) == int(not erase)
+                assert [s.identifier for s in services.profile_sources.list_sources('b')] == ['keep-me']
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('parent', ['candidate', 'source'])
+async def test_github_worker_final_guard_observes_competing_erasure(database, settings, monkeypatch, parent):
+    import asyncio
+    import httpx
+    from tests.conftest import ADMIN_HEADERS
+    from tests.test_profile_sources_api import _github_worker_services
+    from app.main import create_app
+    from app.curation.models import CurationObservationRow
+    from sqlalchemy import select
+    _, factory = database
+    services, cid = _github_worker_services(settings, factory)
+    ready, release = Event(), Event()
+    store = services.profile_sources._store
+    original = store.require_saved_signal
+    row_ids = []
+    def controlled(candidate_id, row_id):
+        row_ids.append(row_id)
+        ready.set()
+        assert release.wait(10)
+        return original(candidate_id, row_id)
+    monkeypatch.setattr(store, 'require_saved_signal', controlled)
+    def erase():
+        if parent == 'candidate':
+            assert CandidateStore(factory).delete_candidate(cid)
+        else:
+            with factory.begin() as session:
+                assert session.execute(delete(ProfileSourceRow).where(ProfileSourceRow.id == row_ids[0])).rowcount == 1
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(f'/candidates/{cid}/sources/github', json={}))
+                try:
+                    assert await asyncio.to_thread(ready.wait, 8)
+                    assert (await http.get('/healthz')).status_code == 200
+                    await asyncio.to_thread(erase)
+                finally:
+                    release.set()
+                    response = await pending
+                assert response.status_code == 404
+                assert response.json() == {'detail': 'candidate not found' if parent == 'candidate' else 'source not found'}
+                assert store.signals_for_candidate(cid) == [] and services.github.user_calls == ['synthetic']
+                assert (services.candidates.get_candidate(cid) is None) == (parent == 'candidate')
+                with factory() as session:
+                    assert list(session.scalars(select(CurationObservationRow))) == []
+                assert [s.identifier for s in services.profile_sources.list_sources('b')] == ['keep-me']
+    finally:
+        release.set()
+        await services.aclose()
+
+
 @pytest.mark.parametrize("order", ["erase_first", "write_first"])
 def test_insert_races_erasure_without_orphan_or_raw_error(database, order):
     engine, factory = database
