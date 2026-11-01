@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-01 - R4-S2-T3C3C3Q complete; combined source review.**
+  Source A-C and the shared record budget pass combined self-review plus fresh
+  full pytest, actual SQLite/PG contention/erasure, all four HTTP/restart modes,
+  portal compatibility and curation Chrome/restart. No production/test change.
+  The [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3q) owns exact commands,
+  results, limitations, preservation and distinct final staged self-review.
+  Working DB preserved, demo untouched and owned PG stopped. Q closes only
+  source parent C3C3; scoped publication follows final review. Exact next:
+  R4-S2-T3C3CQ in a separate session; all broader parents remain open.
+
 - **Session 2026-11-01 - R4-S2-T3C3C3C complete; LinkedIn parsing and SQL workers.**
   Candidate/transport/decode and complete parse/transform/save/curation/final
   operations acquire the existing record pool separately. Late service commits,

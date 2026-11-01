@@ -520,7 +520,9 @@ follows the recorded final review.
 
 **<a id="r4-s2-t3c3c3"></a>R4-S2-T3C3C3 - Bound profile-source operations**
 
-Status: in progress (2026-10-31). Prerequisite: C2, published at `1a05df3`.
+Status: done (2026-11-01). Prerequisite: C2, published at `1a05df3`.
+A-C implementation and the [combined Q review](EVIDENCE-R4.md#r4-s2-t3c3c3q)
+complete this bounded source parent. The original contract follows.
 Measure candidate/handle checks, source
 save/list/final guards and curation capture before/after async GitHub fetch;
 include bounded LinkedIn parsing/SQL. Preserve advisory signals, present subject,
@@ -533,8 +535,8 @@ Inventory/split at `1a05df3`, before implementation: source listing has a route
 candidate read plus service pre/list/final reads; GitHub ingestion mixes route/
 handle SQL before an awaited provider and save/curation/final SQL afterwards;
 LinkedIn ingestion includes route transport checks and synchronous parsing/save/
-curation/final reads. Keep these separate. A/B/C are complete; Q owns combined
-source review. The parent remains open until that separate gate.
+curation/final reads. Keep these separate. A/B/C and their combined Q review are
+complete; C3CQ and all broader parents remain separate work.
 
 **<a id="r4-s2-t3c3c3a"></a>R4-S2-T3C3C3A - Bound profile-source listing**
 
@@ -581,10 +583,12 @@ separate session. Scoped publication follows the recorded final staged review.
 
 **<a id="r4-s2-t3c3c3q"></a>R4-S2-T3C3C3Q - Review combined source operations**
 
-Status: pending. Prerequisites: A-C. Inventory combined source boundaries/budgets
-and prove ownership, fallbacks, curation/erasure and uncertainty through fresh
-SQLite/actual PG, HTTP/restart, relevant Chrome/contracts and full regression.
-Complete both reviews before closing C3. C3CQ and broader parents stay separate.
+Status: done (2026-11-01). Prerequisites: A-C, published through `844a05c`.
+[Q contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c3q) owns the combined inventory,
+acceptance, fresh SQLite/actual PG, all source/record HTTP/restart modes, actual
+portal/curation Chrome, full regression and both self-reviews. No production/test
+change was needed. Q closes only source parent C3C3; C3CQ and broader parents
+stay open. Exact next: R4-S2-T3C3CQ, in a separate session after scoped publication.
 
 **<a id="r4-s2-t3c3cq"></a>R4-S2-T3C3CQ - Review combined intake/source acceptance**
 

@@ -217,16 +217,15 @@ Batch management and other handler/graph SQL remain separate work.
 [R4-S2-T3C3C2Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q) closes the combined
 shared intake persistence gate with fresh SQLite/actual PostgreSQL, HTTP/restart,
 two-process races, actual Chrome/manual recovery and full regression evidence.
-No production change was needed. Profile-source operations and broader parents
-remain open.
+No production change was needed. Combined intake/source acceptance and broader
+parents remain open.
 
 [R4-S2-T3C3C3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3a) bounds the complete
 operator source-list initial/history/final snapshot on the existing candidate-
 record pool, preserving filtering, subject scope and observed-erasure refusal.
 Busy/closed/pending reads return safe 503 without partial data; cancellation
 retains admission and a deliberate fresh GET reads current saved history. There
-is no dedicated source-list UI or new executor/config/schema. Combined source
-acceptance remains open.
+is no dedicated source-list UI or new executor/config/schema.
 [R4-S2-T3C3C3B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3b) extends the same pool
 to complete GitHub candidate/handle checks before its async fetch and complete
 save/curation/final guards afterwards. Provider wait holds no SQL admission.
@@ -241,4 +240,11 @@ row limits and advisory signals remain. Accepted service work may late-commit;
 transport abandonment never later starts parsing. Saved-history recovery precedes
 a deliberate fresh POST that can append another source. Actual SQLite/PG locks,
 erasure and migrated HTTP/restart are covered; portal Chrome is compatibility
-evidence because source ingestion is API-only. Combined source Q remains open.
+evidence because source ingestion is API-only.
+[R4-S2-T3C3C3Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3q) closes combined source
+acceptance and its bounded parent after source/budget self-review and fresh
+SQLite/actual PG contention/erasure, all source/record HTTP/restart modes,
+portal compatibility, curation Chrome/restart and full regression. No production
+or test change was needed; separate commits, late-write/manual recovery and the
+documented resource/snapshot limits remain. Combined intake/source C3CQ and
+broader parents remain open.

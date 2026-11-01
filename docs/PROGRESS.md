@@ -4,53 +4,53 @@ Updated: 2026-11-01. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3C3C complete; only LinkedIn parsing/SQL closes.** Published baseline
-`2bfd3f1` contains A/B. [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3c) owns
-contract, red/green, implementation self-review, actual checks and distinct final
-staged self-review. A/B/C are complete; combined Q and all broader
-parents remain open.
+**R4-S2-T3C3C3Q and source parent C3C3 complete.** Reviewed baseline `844a05c`
+contains published A-C.
+[Q contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3q) owns the combined
+inventory, acceptance, fresh checks, source/budget self-review and distinct final
+staged self-review. C3CQ and all broader parents remain open.
 
-LinkedIn POST now uses the existing record pool for separately admitted complete
-candidate/transport/decode checks and service candidate-check/parse/transform/
-save/curation/final work. Candidate-before-transport 404/422 precedence remains.
-Shared full/closed/pending 503/Retry-After returns no partial signal, IDs or cookies.
-Timeout/cancel retains admission. Transport uncertainty never later parses/saves;
-accepted service work may commit source/curation without replay/delivery.
-Source save and guarded best-effort curation retain separate transactions. Read
-saved history after work settles before a deliberate fresh POST, which may
-append another source. See the
-[record budget](../OPERATING.md#operator-candidate-record-execution-budget).
+Combined source/budget self-review found no blocking issue; no production/test
+change was needed. Listing, GitHub SQL and LinkedIn parsing/SQL share the existing
+record pool, with owning sessions, safe refusal/uncertainty, guarded best-effort
+curation, snapshot/erasure guards and deliberate saved-history/fresh POST recovery.
+See the [record budget](../OPERATING.md#operator-candidate-record-execution-budget).
 
-Focused source/curation **338 passed / 159 skipped**; shared records **29 passed /
-25 skipped**. Full pytest **4156 passed, 978 skipped, 127 warnings**. Actual
-PG-enabled source/curation **486 passed / 11 skipped**; shared records **54 passed**.
-LinkedIn migrated HTTP/restart **87/87 on each DB**, prior GitHub/source-read/record
-modes **65/65 / 50/50 / 54/54**, actual portal Chrome compatibility **48/48**.
-Both harness cleanup and payload-probe findings were reproduced, fixed and their
-affected journeys rerun; C owns exact evidence. Final full pytest passes on the
-corrected state. Bindings, syntax and five-module compilation pass.
-All **616 code/config hashes** match the full-
-tested state; working DB preserved, owned PG confirmed stopped and demo untouched.
-Source ingestion is API-only; portal Chrome is compatibility evidence. Fakes prove
-mechanics, not live quality. Completion records and distinct final staged self-
-review precede authorized scoped commit/push; final response reports the verified
-remote commit.
+Fresh focused source/curation **338 passed / 159 skipped**, shared records
+**29 passed / 25 skipped**; full pytest **4156 passed, 978 skipped, 127 warnings**.
+Actual PG-enabled focused **486 passed / 11 skipped**, shared records **54 passed**.
+All four migrated source/record HTTP/restart modes pass on each DB: **50/50,
+65/65, 87/87, 54/54**. Portal Chrome **48/48** and curation HTTP/Chrome/restart
+**53/53** pass. Bindings **593/18**, JS syntax and ten-module compilation pass.
+All **616 tested code/config hashes** match; working DB/unrelated files are
+preserved, owned PG is confirmed stopped and demo untouched. Detailed evidence
+and both self-reviews precede authorized scoped commit/push; final response
+reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3C3Q - Review combined source operations**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3c3q), in a new session. Do not start Q here.
+**Exact next: R4-S2-T3C3CQ - Review combined intake/source acceptance**, under its
+[contract](delivery/PI-R4.md#r4-s2-t3c3cq), in a new session. Do not start it here.
 Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
-Batch/other handler/graph SQL remain synchronous.
-Budgets are per service/process and operation, not provider/whole-request deadlines.
-Threads cannot be killed; driver waits/drain have no new hard deadline. History
-remains unpaged; subject/source guards are snapshots across later erasure/delivery.
-Encoded/CSV row caps do not impose a hard expanded-ZIP memory/CPU bound.
-Direct callers omitting an executor own SQL scheduling. No new source idempotency;
-intake/checkpoint and identity limits remain in the
+Source ingestion has no dedicated UI; portal Chrome is compatibility and curation
+Chrome exercises operator review, not a source-ingestion screen. Fakes prove
+mechanics, not live quality. Accepted service work can late-commit; separate
+transactions do not promise rollback/atomicity or replay. Per-process/operation
+waits cannot kill threads or impose hard expanded-ZIP/driver/drain bounds. History
+is unpaged, final guards are snapshots, and direct callers own scheduling.
+Batch/other handler/graph SQL, intake/checkpoint and identity limits remain in the
 [intake budget](../OPERATING.md#candidate-intake-persistence-budget).
 
 ## Reusable validation setup
 
+- C3C3Q runner: `.pytest_cache/run_r4_s2_t3c3c3q.py <tag> <Python args>`;
+  omitted args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3c3q_postgres.py` /
+  `r4-s2-t3c3c3q-pg-runtime.json` (stopped). Hash/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3c3q.py check` / `preserve`.
+  Reuses all three source modes and record mode on `scripts/smoke_r4_s1_t3c.py`;
+  portal compatibility uses `scripts/check_ui_evaluate_browser.py`, and actual
+  curation uses `scripts/smoke_curation_activation.py --browser` (scratch SQLite).
+  Q evidence above owns exact commands/results; only use PG with disposable URL.
 - C3C3C runner: `.pytest_cache/run_r4_s2_t3c3c3c.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3c3c_postgres.py` /

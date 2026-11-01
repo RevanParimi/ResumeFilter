@@ -9498,3 +9498,218 @@ the remote starting commit is `2bfd3f1`. Standing-authorized scoped commit/push
 uses per-command GCM account selection, followed by exact remote-commit
 verification reported in the final response. Stop after publication; Q is a
 separate session.
+
+### <a id="r4-s2-t3c3c3q"></a>R4-S2-T3C3C3Q - Review combined source operations
+
+**Status: done (2026-11-01).** Baseline `844a05c`; source A/B/C are
+published at `96bd3a7`, `2bfd3f1` and `844a05c`. This session performs only Q;
+close source parent C3C3 only after the combined gate, leaving C3CQ and all
+broader parents open. [PI status](PI-R4.md#r4-s2-t3c3c3q).
+
+**Contract before execution.** Review the combined A-C boundaries and existing
+record budget; this is a review/acceptance task, without a planned production,
+schema, parser, provider, scoring or API change. A defect found during review
+requires a meaningful failing regression, direct scoped fix and affected reruns.
+Do not repeat the repository audit or start combined intake/source C3CQ here.
+
+Inventory the complete source-list pre/history/final snapshot, GitHub pre-SQL
+and post-SQL operations around caller-owned async fetch and synchronous transform,
+and LinkedIn
+candidate/transport/decode followed by complete parse/transform/save/curation/
+final work. All HTTP source operations share `Services.candidate_records` with
+operator candidate reads/keys; authentication/CSRF and GitHub provider remain on
+their owners. Budgets are per operation/service/process, without replay, rollback,
+thread kill, durable queue, hard expanded-ZIP resource bound or delivery lock.
+Direct service callers omitting an executor retain scheduling responsibility.
+
+Acceptance requires complete worker/session ownership, health/admitted-read
+responsiveness under controlled source work and real database contention,
+shared full/closed/pending refusal with Retry-After and no partial signal/key/
+cookies, retained admission through cancellation/timeout/late failure, provider
+wait without a SQL slot, and cleanup/drain before SQL disposal. Preserve exact
+subject/type filtering, generic observed-erasure 404 versus unrelated errors,
+candidate-before-transport precedence and existing caps/fallbacks/advisory signals.
+Separate source and best-effort guarded curation commits must retain ownership,
+raw-cell guards, expiry/cascade and sanitized failures. Late writes never replay;
+saved-history reads precede deliberate fresh POSTs that may append another source.
+
+Run fresh source/curation/API/lifecycle focused tests (the fourteen existing
+modules named in C), shared operator record regressions, full pytest, actual
+SQLite/PG read/write lock and competing-erasure cases, all three migrated source
+HTTP/restart modes and the existing record mode on both databases. Run actual
+portal Chrome compatibility and curation HTTP/browser/restart (synthetic sources,
+explicit review decisions and persistence), plus UI bindings/JS syntax and
+relevant module compilation. Source ingestion has no dedicated UI; neither portal Chrome nor
+bindings are source-browser execution. Fakes prove mechanics, not live quality.
+No migration changes are planned, so no new migration up/down/up gate applies;
+use current migrated scratch stores and existing populated migration regressions.
+
+Record combined source/budget self-review before final checks and a distinct
+final staged self-review after completion records. Preserve the working DB,
+unrelated files and demo. Only after all required evidence closes Q/C3C3, update
+the handoff to **R4-S2-T3C3CQ**, commit/push the scoped reviewed records, verify
+the remote commit and stop.
+
+**Combined source/budget self-review (2026-11-01).** Reviewed published A-C
+(`1a05df3..844a05c`) and the current route/service/store/parser, curation ownership,
+record executor/settings/lifecycle, source/curation/erasure/API regressions and
+existing HTTP/browser harnesses. Specification and correctness review found no
+blocking defect; no production/test change or artificial red test is needed for
+this acceptance task. This is a same-agent self-review, not independent review.
+
+| Boundary | Owning execution and outcome |
+|---|---|
+| Source listing | One record worker owns candidate/history/filter/final snapshot; no writes, provider or replay. Observed subject erasure refuses; later delivery remains a snapshot. |
+| GitHub pre/post SQL | Separate admissions for candidate/handle and complete save/curation/storage-ID guard. Caller-owned provider await and synchronous transform hold no SQL slot. Abandoned pre work never fetches; accepted post work may late-commit. |
+| LinkedIn transport/service | Separate admissions for candidate/size/strict decode and complete candidate/parse/transform/save/raw-cell curation/final guard. Candidate 404 precedes invalid transport 422. Abandoned transport never starts parsing; accepted service work may late-commit. |
+| Shared record budget | Existing lazy pool defaults to two active operations and a finite 20-second wait each, shared with operator reads/keys. Full/closed/pending refusal is safe, capacity remains until actual completion, and the budget is per process/operation. |
+| Source/curation ownership | Worker-local SQL sessions, detached results and storage-ID final checks; source save and guarded best-effort capture use separate transactions. FK/insert-select guards, raw-cell bounds, alias exclusion, expiry/cascade and sanitized capture failures remain. |
+| Cleanup and recovery | Shutdown refuses new work and drains accepted workers before owned SQL disposal. Saved-history reads do not ingest; deliberate fresh POST appends, with no automatic replay/idempotency guarantee. Direct callers own scheduling; ZIP expansion/driver/drain and later erasure/delivery retain their documented limits. |
+
+Authentication/admin and session-CSRF dependencies remain caller-owned. Reviewed
+the existing two-actor/exact-subject and unrelated-error cases, source listing
+filters/order, advisory/unavailable provider/parser fallbacks and raw-cell
+provenance. The prior C hook-cleanup and payload-probe findings are fixed in the
+published harness; its intended-export content assertions remain active. No
+new abstraction, executor/config/schema or hidden score/consent change is added.
+Final checks below run sequentially with fake providers and migrated scratch
+storage after this review, preserving the working DB and existing demo.
+
+**Validation setup and fresh evidence.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3c3q.py <tag> <Python args>` invokes project Python,
+clears inherited DEE settings/credentials, uses nonexistent config and disables
+remote credentials. Pytest fixtures bypass dotenv; HTTP/browser use fake providers
+and migrated scratch storage without `.env`. Sequential orchestrator:
+`.pytest_cache/final_gates_r4_s2_t3c3c3q.py`. Owned PG runner/runtime:
+`.pytest_cache/run_r4_s2_t3c3c3q_postgres.py` /
+`r4-s2-t3c3c3q-pg-runtime.json`. Helpers/logs are ignored local artifacts, not
+portable setup guarantees. Baseline hashes **734 tracked files**; reviewed-state
+helper saved **616 code/config hashes** after combined self-review.
+
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, all resolve.
+  `node --check frontend/api.js` and `node --check frontend/support.js` pass.
+  Tag `compile`, `-m py_compile` on `src/app/api/candidates.py`,
+  `src/app/profile_sources/service.py`, `src/app/profile_sources/store.py`,
+  `src/app/profile_sources/linkedin.py`, `src/app/core/blocking.py`,
+  `src/app/services/__init__.py`, `src/app/curation/store.py`,
+  `tests/test_profile_sources_api.py`, `tests/test_profile_source_erasure.py` and
+  `scripts/smoke_r4_s1_t3c.py` (**ten modules**): exit 0, 0.29s.
+- Tag `focused`, `-m pytest -q --tb=short` over **fourteen existing modules**:
+  `test_profile_sources_api`, `test_profile_sources_schema`,
+  `test_profile_sources_service`, `test_profile_sources_store`,
+  `test_profile_sources_transform`, `test_profile_source_erasure`,
+  `test_service_lifecycle`, `test_config`, `test_api_route_extraction`,
+  `test_route_table_guard`, `test_openapi_contract`, `test_curation_capture`,
+  `test_curation_input_boundary` and `test_curation_owned_store`
+  (each `tests/<name>.py`): **338 passed, 159 skipped, 38 warnings, 183.05s**
+  (wrapper 191.45s), exit 0. Combined listing/GitHub/LinkedIn admission,
+  responsiveness, cancellation/late-failure/history/manual append, real SQLite
+  lock/erasure, curation/raw-cell/ownership guards, settings, lifecycle and API
+  contracts pass. Skips do not establish PG behavior; the actual PG gate follows.
+- Tag `shared-records`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'candidate_record or operator_candidate or candidate_key_real_lock'`:
+  **29 passed, 25 skipped, 328 deselected, 1 warning, 29.37s** (wrapper 38.64s),
+  exit 0. Shared operator read/key admission, uncertainty, rotation and erasure
+  remain compatible with all source modes.
+- Tags `source-read-http`, `github-source-http`, `linkedin-source-http` and
+  `candidate-record-http`: `scripts/smoke_r4_s1_t3c.py` with respectively
+  `--source-read-workers`, `--github-source-workers`, `--linkedin-source-workers`
+  and `--candidate-record-workers`: **50/50, 65/65, 87/87 and 54/54**, all exit 0
+  (wrappers **33.74s, 30.44s, 35.10s and 19.41s**). Each uses migrated scratch
+  SQLite and real two-start graceful HTTP, exact saved state, two-actor scope,
+  observed erasure and owning-session cleanup. Ingestion modes prove shared
+  refusal, pending outcomes, late history without replay and deliberate append;
+  LinkedIn asserts intended export content, and GitHub provider wait holds no SQL
+  admission. Listing remains read-only with deliberate GET recovery; record/key
+  compatibility retains late rotation/fresh issuance and safe uncertainty.
+- SQLite source HTTP controlled holds (three listing, five GitHub and eight
+  LinkedIn phases) leave health plus unrelated admitted SQL reads responsive in
+  **0.0050-0.0237s**, each below its unchanged one-second assertion. Real SQL
+  contention/erasure comes from the focused database cases, not these gate hooks.
+- Tag `browser`, `scripts/check_ui_evaluate_browser.py`: actual portal Chrome
+  **48/48**, exit 0, wrapper **35.89s**. Evaluation/report/contact/portal/consent/
+  erasure, failures/manual recovery, reload and console checks pass. This is
+  compatibility on scratch SQLite with CDN internet, not a dedicated source UI.
+- Tag `curation-browser`, `scripts/smoke_curation_activation.py --browser`:
+  actual curation HTTP/Chrome/graceful restart **53/53**, exit 0, wrapper
+  **41.71s**. Both source types feed owned observations, erased/refused sources
+  cease contributing, raw expiry and explicit vocabulary promotion remain
+  distinct, operator map/create/ignore and stale/manual recovery persist through
+  reload/restart, and capture failures omit private terms/exception details.
+  This uses synthetic sources/fake GitHub and scratch SQLite; it proves the
+  curation screen and explicit review actions, not a source-ingestion screen or
+  live-provider/scoring quality. PG behavior remains a separate gate below.
+- Tag `full`, `.resume/Scripts/python.exe -m pytest -q --tb=short` through the
+  sanitized runner: **4156 passed, 978 skipped, 127 warnings, 1537.48s**
+  (wrapper **1548.69s**), exit 0. Code/tests remain unchanged from published
+  `844a05c`; skipped PG cases are not PG proof. The fresh actual database gate
+  runs after full regression.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3c3q_postgres.py`:
+  owned **PostgreSQL 18.6**, Asia/Calcutta, read committed. The same fourteen
+  focused modules with explicit disposable `DEE_TEST_DB_URL`: **486 passed,
+  11 skipped, 38 warnings, 668.51s** (wrapper **679.35s**), exit 0. Actual
+  independent connections observe PG Lock waits during source reads, source
+  inserts and curation writes; shared capacity, cancellation/late commits and
+  competing candidate/source erasure remain correct. This is a PG-enabled test
+  group with pure/SQLite cases too, not a claim that all 486 cases use PG.
+- PG shared-record selection, same pytest command as SQLite above: **54 passed,
+  328 deselected, 1 warning, 75.89s** (wrapper **84.04s**), exit 0. PG versions of
+  candidate/key locking, rotation and erasure now execute rather than skip.
+- PG `scripts/smoke_r4_s1_t3c.py --postgres` with the same four worker flags:
+  source listing **50/50**, GitHub **65/65**, LinkedIn **87/87**, record/key
+  **54/54**, all exit 0; wrappers **37.02s, 37.83s, 43.68s and 28.70s**.
+  All sixteen controlled source-work holds leave health/admitted SQL reads
+  responsive in **0.0096-0.2220s**, below one second. Each mode proves exact saved
+  state, two-actor isolation, observed erasure, owning sessions and graceful
+  migrated restart/cleanup on actual PG. Real contention evidence is in the
+  focused lock cases; these timing hooks do not substitute for database locks.
+  Owned PG fast stop exits **0** (21.70s). No schema/migration changed; existing
+  populated migration regressions run in full pytest and scratch HTTP uses current
+  head 0030. No new up/down/up gate is applicable, and no working DB is migrated.
+
+**Completion record (2026-11-01).** Required combined source acceptance passes
+on the reviewed `844a05c` code; no production/test/config change was needed. Q
+closes only **R4-S2-T3C3C3** after A-C. Listing remains read-only; accepted service
+work can late-commit source and separate best-effort curation, with no replay,
+rollback, atomicity or idempotency promise. Saved-history recovery and deliberate
+fresh append remain separate. Ownership/consent/erasure and advisory/fallback
+behavior are preserved. Per-process/operation budgets, direct-caller scheduling,
+unpaged history, final snapshot/delivery races and ZIP/driver/drain resource limits
+remain documented; fakes and browser actions establish mechanics, not live quality.
+C3CQ/C3C/C3/C/T3/F14/sprint/PI remain open. Exact next is
+**R4-S2-T3C3CQ** in a separate session. Distinct final staged self-review and
+standing-authorized scoped commit/push follow this completion record.
+
+Post-gate reviewed-state check confirms all **616 code/config hashes** still
+match the tested published code. Preservation check verifies **729 unrelated
+tracked files**, including the existing working `data/veritas.db`, retain baseline
+bytes; only the five scoped documentation files change. The existing demo was
+not restarted. Final staged review below is separate from the combined source/
+budget self-review above.
+
+**Distinct final staged self-review (2026-11-01).** After required validation and
+the completion record, reviewed the exact five staged files against `844a05c`:
+`FEATURE_STATUS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`,
+`docs/delivery/PI-R4.md` and this evidence file. This later pass is separate from
+the combined source/budget review. Specification review confirms every acceptance
+layer has fresh evidence, only Q/source C3C3 closes, the combined intake/source
+gate stays pending, and neither source-browser execution nor live-provider
+quality is claimed. Correctness/maintainability review compares counts, commands,
+database/browser distinctions, budgets, late-commit/recovery limits, privacy and
+scope against the tested code and actual logs. Clarified that GitHub transform
+is synchronous on the caller and enumerated compilation paths explicitly; no
+blocking finding remains and no application/test change requires reruns. Both
+reviews are same-agent **self-reviews**, not independent review.
+
+The staged documentation check derives **seven added local links**; all targets/
+anchors resolve. IDs/statuses, A-C/Q/source-parent completion, pending C3CQ,
+open broader parents and acyclic local prerequisites match the exact next pointer.
+Staged whitespace passes, index/worktree agree and only the five documentation
+files are staged; no secrets, working data, code/tests or ignored artifacts enter
+the commit. All **616** tested code/config hashes and **729** unrelated tracked
+files remain verified. Owned PG stop exits **0** and separate `pg_ctl status`
+exits **3**, no server running; working DB and demo are preserved. Configured
+`main` tracks `origin/main`, whose reviewed starting commit is `844a05c`.
+Standing-authorized scoped commit/push follows, with per-command GCM account
+selection and exact remote-commit verification reported in the final response.
+Stop after publication; exact next is C3CQ in a separate session.
