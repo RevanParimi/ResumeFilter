@@ -301,10 +301,15 @@ GitHub POST `/candidates/{id}/sources/github` uses the same pool for separately
 admitted candidate/handle resolution before its async provider and complete
 source-save/curation/final-guard work afterwards. Async GitHub fetch and the
 lightweight signal transform stay on the caller; provider wait holds no SQL slot.
+LinkedIn POST `/candidates/{id}/sources/linkedin` admits candidate lookup plus
+encoded-size/strict base64 checks/decode first, then admits the complete service
+candidate-check/ZIP/CSV parse/transform/save/curation/final-guard operation.
+Both use this same pool and own their SQL sessions. Candidate-before-transport
+404/422 precedence and the second pre-parse candidate snapshot remain intact.
 Workers own summary/payload/final existence checks and every SQL session; only
 store/bound-reader/id arguments and detached results cross the boundary. Operator
-authentication and session-CSRF stay on the caller. Other intake, LinkedIn and
-candidate-rights SQL is separate work; this pool does not cover all operations.
+authentication and session-CSRF stay on the caller. Other intake, candidate-rights
+and handler/graph SQL is separate work; this pool does not cover all operations.
 
 `candidate_record_wait_seconds` defaults to **20**, finite/positive; capacity
 must be positive. Configure YAML or `DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS`
@@ -327,8 +332,15 @@ candidate source history after work settles before deciding whether to POST agai
 A deliberate fresh POST can repeat the provider and append another source; no
 new idempotency key or automatic replay is supplied. A later admission refusal
 can follow a completed provider call. Each owning operation has its own admission/
-wait budget; it is not a provider or whole-request deadline. LinkedIn parsing/
-source writes remain separate work.
+wait budget; it is not a provider or whole-request deadline.
+
+LinkedIn transport timeout/cancel does not later parse/save. Once the complete
+service operation is admitted, a timeout during its candidate check or parsing
+can still be followed by source/curation commits. Read saved history before a
+deliberate fresh POST, which can append another export signal. Encoded input cap
+and per-CSV row cap remain unchanged; caller wait cannot kill a parsing thread
+or promise hard expanded-archive memory/CPU or shutdown limits. Bad/unrecognized
+archive fallbacks, raw-cell curation guards and advisory confidence are unchanged.
 
 Timeout/cancellation retains admission until actual completion. A late auth-key
 POST can rotate the credential and invalidate the old key without delivering its

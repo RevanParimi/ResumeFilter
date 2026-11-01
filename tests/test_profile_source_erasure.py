@@ -28,19 +28,22 @@ def payload(kind):
         "export_b64": base64.b64encode(_linkedin_zip()).decode()}
 
 
+@pytest.mark.parametrize('kind', ['github', 'linkedin'])
 @pytest.mark.parametrize('phase', ['save', 'curation'])
 @pytest.mark.parametrize('erase', [False, True])
-async def test_github_worker_real_write_lock_retains_capacity_and_erasure(database, settings, monkeypatch, phase, erase):
+async def test_source_worker_real_write_lock_retains_capacity_and_erasure(database, settings, monkeypatch, kind, phase, erase):
     import asyncio
     import httpx
     from tests.conftest import ADMIN_HEADERS
-    from tests.test_profile_sources_api import _github_sql_phase, _github_worker_services
+    from tests.test_profile_sources_api import _github_sql_phase, _source_worker_services, _linkedin_worker_b64
     from app.main import create_app
     from app.curation.models import CurationObservationRow
     from sqlalchemy import select
     engine, factory = database
     settings.candidate_record_max_concurrent_requests = 1
-    services, cid = _github_worker_services(settings, factory)
+    services, cid = _source_worker_services(settings, factory)
+    encoded = _linkedin_worker_b64()
+    body = {} if kind == 'github' else {'export_b64': encoded}
     ready, proceed, inserting = Event(), Event(), Event()
     target = services.profile_sources._store if phase == 'save' else services.curation
     name = 'save_signal' if phase == 'save' else 'record_unmapped'
@@ -56,6 +59,14 @@ async def test_github_worker_real_write_lock_retains_capacity_and_erasure(databa
         services.candidate_records._wait_seconds = .5
         return raw
     monkeypatch.setattr(services.github, 'gather_user_signal', provider)
+    from app.api import candidates as routes
+    decode = routes.base64.b64decode
+    def decoding(*args, **kwargs):
+        result = decode(*args, **kwargs)
+        if kind == 'linkedin' and args[0] == encoded:
+            services.candidate_records._wait_seconds = .5
+        return result
+    monkeypatch.setattr(routes.base64, 'b64decode', decoding)
     pids = []
     def sql(conn, cursor, statement, parameters, context, many):
         if _github_sql_phase(statement, phase) and not inserting.is_set():
@@ -68,8 +79,8 @@ async def test_github_worker_real_write_lock_retains_capacity_and_erasure(databa
             event.listen(engine, 'before_cursor_execute', sql)
             blocker = engine.connect()
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
-                path = f'/candidates/{cid}/sources/github'
-                pending = asyncio.create_task(http.post(path, json={}))
+                path = f'/candidates/{cid}/sources/{kind}'
+                pending = asyncio.create_task(http.post(path, json=body))
                 try:
                     assert await asyncio.to_thread(ready.wait, 8)
                     if engine.dialect.name == 'sqlite':
@@ -103,7 +114,7 @@ async def test_github_worker_real_write_lock_retains_capacity_and_erasure(databa
                     async with asyncio.timeout(8):
                         while services.candidate_records._active:
                             await asyncio.sleep(.01)
-                assert services.github.user_calls == ['synthetic']
+                assert services.github.user_calls == (['synthetic'] if kind == 'github' else [])
                 assert (services.candidates.get_candidate(cid) is None) == erase
                 assert len(services.profile_sources._store.signals_for_candidate(cid)) == int(not erase)
                 with factory() as session:
@@ -119,17 +130,19 @@ async def test_github_worker_real_write_lock_retains_capacity_and_erasure(databa
         await services.aclose()
 
 
+@pytest.mark.parametrize('kind', ['github', 'linkedin'])
 @pytest.mark.parametrize('parent', ['candidate', 'source'])
-async def test_github_worker_final_guard_observes_competing_erasure(database, settings, monkeypatch, parent):
+async def test_source_worker_final_guard_observes_competing_erasure(database, settings, monkeypatch, kind, parent):
     import asyncio
     import httpx
     from tests.conftest import ADMIN_HEADERS
-    from tests.test_profile_sources_api import _github_worker_services
+    from tests.test_profile_sources_api import _source_worker_services, _linkedin_worker_b64
     from app.main import create_app
     from app.curation.models import CurationObservationRow
     from sqlalchemy import select
     _, factory = database
-    services, cid = _github_worker_services(settings, factory)
+    services, cid = _source_worker_services(settings, factory)
+    body = {} if kind == 'github' else {'export_b64': _linkedin_worker_b64()}
     ready, release = Event(), Event()
     store = services.profile_sources._store
     original = store.require_saved_signal
@@ -150,7 +163,7 @@ async def test_github_worker_final_guard_observes_competing_erasure(database, se
     try:
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
-                pending = asyncio.create_task(http.post(f'/candidates/{cid}/sources/github', json={}))
+                pending = asyncio.create_task(http.post(f'/candidates/{cid}/sources/{kind}', json=body))
                 try:
                     assert await asyncio.to_thread(ready.wait, 8)
                     assert (await http.get('/healthz')).status_code == 200
@@ -160,7 +173,7 @@ async def test_github_worker_final_guard_observes_competing_erasure(database, se
                     response = await pending
                 assert response.status_code == 404
                 assert response.json() == {'detail': 'candidate not found' if parent == 'candidate' else 'source not found'}
-                assert store.signals_for_candidate(cid) == [] and services.github.user_calls == ['synthetic']
+                assert store.signals_for_candidate(cid) == [] and services.github.user_calls == (['synthetic'] if kind == 'github' else [])
                 assert (services.candidates.get_candidate(cid) is None) == (parent == 'candidate')
                 with factory() as session:
                     assert list(session.scalars(select(CurationObservationRow))) == []

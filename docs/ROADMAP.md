@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-01 - R4-S2-T3C3C3C complete; LinkedIn parsing and SQL workers.**
+  Candidate/transport/decode and complete parse/transform/save/curation/final
+  operations acquire the existing record pool separately. Late service commits,
+  saved-history recovery and deliberate fresh append preserve existing semantics.
+  The [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3c3c) owns red/green, full/
+  actual PG locks/erasure, migrated HTTP/restart, prior modes, portal Chrome
+  compatibility, corrected harness cleanup/payload findings, preservation and reviews.
+  Working DB preserved and demo untouched; owned PG stopped. Only C closes;
+  scoped publication follows final staged self-review. Exact next: C3C3Q in a
+  separate session; source and broader parents remain open.
+
 - **Session 2026-10-31 - R4-S2-T3C3C3B complete; GitHub source SQL workers.**
   Candidate/handle resolution and source-save/curation/final guards acquire the
   existing record pool separately, around caller-owned async GitHub. Late writes

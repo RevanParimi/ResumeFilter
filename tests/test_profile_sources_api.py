@@ -11,7 +11,7 @@ from tests.conftest import ADMIN_HEADERS, FakeGitHub, make_services
 from tests.test_report_erasure_concurrency import database  # noqa: F401
 
 
-def _github_worker_services(settings, factory):
+def _source_worker_services(settings, factory):
     from app.candidates.schema import CandidateProfile, ExtractionResult, LinkItem, LinkType
     from app.candidates.store import CandidateStore
     from app.services.github import GitHubRepoRaw
@@ -25,6 +25,89 @@ def _github_worker_services(settings, factory):
     services = make_services(settings, candidates=candidates, github=github)
     services.profile_sources._store.save_signal('b', _sig('keep-me'))
     return services, outcome.candidate_id
+
+
+def _linkedin_worker_b64():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('Skills.csv', 'Name\nPython\nSyntheticLang\n')
+        archive.writestr('Positions.csv', 'Company Name,Title,Finished On\nInfosys,Python Developer,\n')
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def _linkedin_sql_phase(statement, phase, candidate_reads):
+    query = statement.upper()
+    candidate = 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' not in query
+    if phase in ('transport', 'subject'):
+        return candidate and candidate_reads == (1 if phase == 'transport' else 2)
+    return _github_sql_phase(statement, phase) if phase in ('save', 'curation', 'final') else False
+
+
+@pytest.mark.parametrize('phase', ['transport', 'decode', 'subject', 'parse', 'transform', 'save', 'curation', 'final'])
+async def test_linkedin_source_work_leaves_unrelated_requests_responsive(database, settings, monkeypatch, phase):
+    import asyncio
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    from app.api import candidates as routes
+    from app.profile_sources import service as sources
+    engine, factory = database
+    services, cid = _source_worker_services(settings, factory)
+    payload = _linkedin_worker_b64()
+    entered, release, finished = Event(), Event(), Event()
+    candidate_reads = 0
+    def hold():
+        if not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    def sql(conn, cursor, statement, parameters, context, many):
+        nonlocal candidate_reads
+        query = statement.upper()
+        if 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' not in query:
+            candidate_reads += 1
+        if _linkedin_sql_phase(statement, phase, candidate_reads):
+            hold()
+    decode, parse, transform = routes.base64.b64decode, sources.parse_linkedin_export, sources.linkedin_to_signal
+    def decoding(*args, **kwargs):
+        if phase == 'decode' and args[0] == payload:
+            hold()
+        return decode(*args, **kwargs)
+    def parsing(*args, **kwargs):
+        if phase == 'parse':
+            hold()
+        return parse(*args, **kwargs)
+    def transforming(*args, **kwargs):
+        if phase == 'transform':
+            hold()
+        return transform(*args, **kwargs)
+    monkeypatch.setattr(routes.base64, 'b64decode', decoding)
+    monkeypatch.setattr(sources, 'parse_linkedin_export', parsing)
+    monkeypatch.setattr(sources, 'linkedin_to_signal', transforming)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(f'/candidates/{cid}/sources/linkedin', json={'export_b64': payload}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'LinkedIn source work blocked the event loop'
+                    assert time.monotonic() - start < 1
+                finally:
+                    release.set()
+                    response = await pending
+                assert response.status_code == 200 and response.json()['method'] == 'export'
+                assert response.json()['source_type'] == 'linkedin_export' and services.github.user_calls == []
+                assert services.curation.list_unmapped().terms[0].norm_key == 'syntheticlang'
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
 
 
 def _github_sql_phase(statement, phase):
@@ -46,7 +129,7 @@ async def test_github_source_sql_leaves_unrelated_requests_responsive(database, 
     import httpx
     from sqlalchemy import event
     engine, factory = database
-    services, cid = _github_worker_services(settings, factory)
+    services, cid = _source_worker_services(settings, factory)
     entered, release, finished = Event(), Event(), Event()
     def sql(conn, cursor, statement, parameters, context, many):
         if _github_sql_phase(statement, phase) and not entered.is_set():
@@ -78,23 +161,40 @@ async def test_github_source_sql_leaves_unrelated_requests_responsive(database, 
         await services.aclose()
 
 
-@pytest.mark.parametrize('phase', ['initial', 'handle', 'save', 'curation', 'final'])
+@pytest.mark.parametrize('kind,phase', [
+    pytest.param(kind, phase, id=f'{kind}-{phase}')
+    for kind, phases in [('github', ('initial', 'handle', 'save', 'curation', 'final')),
+                         ('linkedin', ('transport', 'decode', 'subject', 'parse', 'transform', 'save', 'curation', 'final'))]
+    for phase in phases])
 @pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
-async def test_github_source_uncertainty_retains_admission_and_committed_history(database, settings, monkeypatch, log_output, phase, ending):
+async def test_source_ingest_uncertainty_retains_admission_and_committed_history(database, settings, monkeypatch, log_output, kind, phase, ending):
     import asyncio
     from threading import Event, get_ident
     import httpx
     from sqlalchemy import event, select
+    from app.api import candidates as routes
+    from app.profile_sources import service as sources
     from app.curation.models import CurationObservationRow
     from app.profile_sources.models import ProfileSourceRow
     engine, factory = database
     settings.candidate_record_max_concurrent_requests = 1
-    if ending in ('timeout', 'late_failure') and phase in ('initial', 'handle'):
+    pre = phase in (('initial', 'handle') if kind == 'github' else ('transport', 'decode'))
+    if ending in ('timeout', 'late_failure') and pre:
         settings.candidate_record_wait_seconds = .5
-    services, cid = _github_worker_services(settings, factory)
+    services, cid = _source_worker_services(settings, factory)
+    payload = _linkedin_worker_b64()
+    body = {} if kind == 'github' else {'export_b64': payload}
     entered, release = Event(), Event()
-    workers, providers = [], []
-    caller, observing = get_ident(), True
+    workers, providers, parsed = [], [], []
+    caller, observing, candidate_reads = get_ident(), True, 0
+    def note(stage):
+        if observing:
+            workers.append(get_ident())
+        if observing and stage == phase and not entered.is_set():
+            entered.set()
+            assert release.wait(12)
+            if ending == 'late_failure':
+                raise RuntimeError('synthetic-private-source-worker-error')
     fetch = services.github.gather_user_signal
     async def provider(login):
         providers.append(get_ident())
@@ -103,18 +203,38 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
             services.candidate_records._wait_seconds = .5
         return result
     monkeypatch.setattr(services.github, 'gather_user_signal', provider)
+    decode, parse, transform = routes.base64.b64decode, sources.parse_linkedin_export, sources.linkedin_to_signal
+    def decoding(*args, **kwargs):
+        if kind == 'linkedin' and args[0] == payload:
+            note('decode')
+        result = decode(*args, **kwargs)
+        if kind == 'linkedin' and args[0] == payload and ending in ('timeout', 'late_failure'):
+            services.candidate_records._wait_seconds = .5
+        return result
+    def parsing(*args, **kwargs):
+        parsed.append(get_ident())
+        note('parse')
+        return parse(*args, **kwargs)
+    def transforming(*args, **kwargs):
+        note('transform')
+        return transform(*args, **kwargs)
+    monkeypatch.setattr(routes.base64, 'b64decode', decoding)
+    monkeypatch.setattr(sources, 'parse_linkedin_export', parsing)
+    monkeypatch.setattr(sources, 'linkedin_to_signal', transforming)
     def sql(conn, cursor, statement, parameters, context, many):
+        nonlocal candidate_reads
+        query = statement.upper()
+        if observing and 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' not in query:
+            candidate_reads += 1
         if observing and any(_github_sql_phase(statement, p) for p in ('initial', 'handle', 'save', 'curation', 'final')):
             workers.append(get_ident())
-        if observing and _github_sql_phase(statement, phase) and not entered.is_set():
-            entered.set()
-            assert release.wait(12)
-            if ending == 'late_failure':
-                raise RuntimeError('synthetic-private-github-worker-error')
+        target = _github_sql_phase(statement, phase) if kind == 'github' else _linkedin_sql_phase(statement, phase, candidate_reads)
+        if target:
+            note(phase)
     def begin(session, transaction, connection):
-        assert session.info.setdefault('github_owner', get_ident()) == get_ident()
+        assert session.info.setdefault('source_owner', get_ident()) == get_ident()
     def end(session, transaction):
-        assert session.info.get('github_owner', get_ident()) == get_ident()
+        assert session.info.get('source_owner', get_ident()) == get_ident()
     app = create_app(services)
     try:
         async with app.router.lifespan_context(app):
@@ -122,8 +242,8 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
             event.listen(factory, 'after_begin', begin)
             event.listen(factory, 'after_transaction_end', end)
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
-                path = f'/candidates/{cid}/sources/github'
-                pending = asyncio.create_task(http.post(path, json={}))
+                path = f'/candidates/{cid}/sources/{kind}'
+                pending = asyncio.create_task(http.post(path, json=body))
                 try:
                     assert await asyncio.to_thread(entered.wait, 8)
                     assert (await http.get('/healthz')).status_code == 200
@@ -135,15 +255,17 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
                         pending.cancel()
                         with pytest.raises(asyncio.CancelledError):
                             await pending
-                    for busy_path, method, body in [('/candidates/b', 'GET', None),
+                    for busy_path, method, request_body in [('/candidates/b', 'GET', None),
                             ('/candidates/b/sources', 'GET', None),
-                            ('/candidates/b/sources/github', 'POST', {'handle': 'synthetic'})]:
-                        busy = await http.request(method, busy_path, json=body)
+                            ('/candidates/b/sources/github', 'POST', {'handle': 'synthetic'}),
+                            ('/candidates/b/sources/linkedin', 'POST', {'export_b64': payload})]:
+                        busy = await http.request(method, busy_path, json=request_body)
                         assert busy.status_code == 503 and busy.json() == {'detail': 'candidate_record_capacity_exhausted'}
                         assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
-                    denied = await http.post(path, json={}, headers={'X-API-Key': ''})
-                    assert denied.status_code == 401
-                    assert len(providers) == int(phase not in ('initial', 'handle'))
+                    assert (await http.post(path, json=body, headers={'X-API-Key': ''})).status_code == 401
+                    assert len(providers) == int(kind == 'github' and not pre)
+                    if kind == 'linkedin' and pre:
+                        assert parsed == []
                 finally:
                     release.set()
                     responses = await asyncio.gather(pending, return_exceptions=True)
@@ -151,11 +273,14 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
                         while services.candidate_records._active:
                             await asyncio.sleep(.01)
                 observing = False
-                assert workers and all(worker != caller for worker in workers)
-                assert len(set(workers)) == 1 and all(thread == caller for thread in providers)
-                fetched = int(ending == 'release' or phase not in ('initial', 'handle'))
+                assert workers and all(worker != caller for worker in workers) and len(set(workers)) == 1
+                assert all(thread == caller for thread in providers) and all(thread != caller for thread in parsed)
+                fetched = int(kind == 'github' and (ending == 'release' or not pre))
                 assert len(providers) == fetched
-                committed = ending == 'release' or (phase not in ('initial', 'handle') and not (phase == 'save' and ending == 'late_failure'))
+                if kind == 'linkedin' and pre and ending != 'release':
+                    assert parsed == []
+                failed_before_save = phase in ('subject', 'parse', 'transform', 'save')
+                committed = ending == 'release' or (not pre and not (failed_before_save and ending == 'late_failure'))
                 captured = committed and not (phase == 'curation' and ending == 'late_failure')
                 with factory() as session:
                     rows = list(session.scalars(select(ProfileSourceRow).where(ProfileSourceRow.candidate_id == cid)))
@@ -165,14 +290,16 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
                 if ending == 'release':
                     assert responses[0].status_code == 200 and responses[0].json()['id'] == previous_id
                 services.candidate_records._wait_seconds = 20
-                saved = await http.get(f'/candidates/{cid}/sources?source_type=github')
+                source_type = 'github' if kind == 'github' else 'linkedin_export'
+                saved = await http.get(f'/candidates/{cid}/sources?source_type={source_type}')
                 assert saved.status_code == 200 and len(saved.json()['sources']) == int(committed)
-                assert len(providers) == fetched  # saved-history reads never fetch/replay
-                fresh = await http.post(path, json={})
-                assert fresh.status_code == 200 and len(providers) == fetched + 1
+                assert len(providers) == fetched
+                before_parse = len(parsed)
+                fresh = await http.post(path, json=body)
+                assert fresh.status_code == 200 and len(providers) == fetched + int(kind == 'github')
                 assert fresh.json()['id'] != previous_id
-                history = await http.get(f'/candidates/{cid}/sources')
-                assert len(history.json()['sources']) == int(committed) + 1
+                assert len(parsed) == before_parse + int(kind == 'linkedin')
+                assert len((await http.get(f'/candidates/{cid}/sources')).json()['sources']) == int(committed) + 1
                 assert [s.identifier for s in services.profile_sources.list_sources('b')] == ['keep-me']
     finally:
         release.set()
@@ -181,19 +308,22 @@ async def test_github_source_uncertainty_retains_admission_and_committed_history
             if event.contains(target, name, listener):
                 event.remove(target, name, listener)
         await services.aclose()
-    assert 'synthetic-private-github-worker-error' not in log_output.text
+    assert 'synthetic-private-source-worker-error' not in log_output.text
 
 
+@pytest.mark.parametrize('kind', ['github', 'linkedin'])
 @pytest.mark.parametrize('boundary', ['pre', 'post'])
 @pytest.mark.parametrize('refusal', ['full', 'closed'])
-async def test_github_source_admission_refusal_has_no_partial_signal(database, settings, monkeypatch, boundary, refusal):
+async def test_source_ingest_admission_refusal_has_no_partial_signal(database, settings, monkeypatch, kind, boundary, refusal):
     import asyncio
     from threading import Event
     import httpx
+    payload = {} if kind == 'github' else {'export_b64': _linkedin_worker_b64()}
     settings.candidate_record_max_concurrent_requests = 1
-    services, cid = _github_worker_services(settings, database[1])
+    services, cid = _source_worker_services(settings, database[1])
     entered, release = Event(), Event()
     executor, held = services.candidate_records, None
+    run, calls = executor.run, 0
     def hold():
         entered.set()
         assert release.wait(10)
@@ -202,26 +332,33 @@ async def test_github_source_admission_refusal_has_no_partial_signal(database, s
         if refusal == 'closed':
             executor.close()
         else:
-            held = asyncio.create_task(executor.run(hold))
+            held = asyncio.create_task(run(hold))
             assert await asyncio.to_thread(entered.wait, 5)
     fetch = services.github.gather_user_signal
     async def provider(login):
         result = await fetch(login)
-        if boundary == 'post':
+        if kind == 'github' and boundary == 'post':
             await refuse()
         return result
     monkeypatch.setattr(services.github, 'gather_user_signal', provider)
+    async def controlled_run(function, /, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if kind == 'linkedin' and boundary == 'post' and calls == 2:
+            await refuse()
+        return await run(function, *args, **kwargs)
+    monkeypatch.setattr(executor, 'run', controlled_run)
     app = create_app(services)
     try:
         async with app.router.lifespan_context(app):
             if boundary == 'pre':
                 await refuse()
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
-                response = await http.post(f'/candidates/{cid}/sources/github', json={})
+                response = await http.post(f'/candidates/{cid}/sources/{kind}', json=payload)
                 code = 'candidate_record_executor_closed' if refusal == 'closed' else 'candidate_record_capacity_exhausted'
                 assert response.status_code == 503 and response.json() == {'detail': code}
                 assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
-                assert services.github.user_calls == (['synthetic'] if boundary == 'post' else [])
+                assert services.github.user_calls == (['synthetic'] if kind == 'github' and boundary == 'post' else [])
                 assert services.profile_sources.list_sources(cid) == []
                 assert services.curation.list_unmapped().terms == []
     finally:
@@ -237,7 +374,7 @@ async def test_github_provider_wait_owns_no_sql_admission_or_abandoned_save(data
     from threading import get_ident
     import httpx
     settings.candidate_record_max_concurrent_requests = 1
-    services, cid = _github_worker_services(settings, database[1])
+    services, cid = _source_worker_services(settings, database[1])
     entered, release = asyncio.Event(), asyncio.Event()
     caller, providers = get_ident(), []
     fetch = services.github.gather_user_signal
@@ -699,3 +836,37 @@ def test_post_linkedin_unknown_candidate_is_404(settings, fake_github):
     with _client(services) as client:
         r = client.post("/candidates/nope/sources/linkedin", json={"export_b64": _linkedin_b64()})
         assert r.status_code == 404
+
+
+@pytest.mark.parametrize('encoded', ['!!!', 'oversize', 'non-ascii'])
+def test_linkedin_transport_preserves_candidate_error_precedence(services, monkeypatch, encoded):
+    from app.profile_sources import service as sources
+    services.settings.max_linkedin_b64_chars = 32
+    body = 'A' * 33 if encoded == 'oversize' else '\u4e00' if encoded == 'non-ascii' else encoded
+    def forbidden(*args):
+        pytest.fail('invalid transport must not parse or write a source')
+    monkeypatch.setattr(sources, 'parse_linkedin_export', forbidden)
+    with _client(services) as client:
+        cid = _candidate(client)
+        missing = client.post('/candidates/nope/sources/linkedin', json={'export_b64': body})
+        assert missing.status_code == 404 and missing.json() == {'detail': 'candidate not found'}
+        invalid = client.post(f'/candidates/{cid}/sources/linkedin', json={'export_b64': body})
+        assert invalid.status_code == 422
+        assert invalid.json() == {'detail': 'export_b64 exceeds max_linkedin_b64_chars=32' if encoded == 'oversize' else 'invalid_base64'}
+        assert services.profile_sources.list_sources(cid) == [] and services.github.user_calls == []
+
+
+def test_linkedin_worker_preserves_row_cap_and_raw_cell_curation_guards(services):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('Skills.csv', 'Name\nSyntheticLang\nPaddedLang' + ' ' * 140 + '\nThirdLang\n')
+    payload = base64.b64encode(buffer.getvalue()).decode()
+    services.settings.ps_linkedin_max_rows = 2
+    with _client(services) as client:
+        cid = _candidate(client)
+        response = client.post(f'/candidates/{cid}/sources/linkedin', json={'export_b64': payload})
+        assert response.status_code == 200 and response.json()['method'] == 'export'
+        assert {skill['name'] for skill in response.json()['skills']} == {'SyntheticLang', 'PaddedLang'}
+        assert response.json()['activity']['skills_listed'] == 2
+        assert [term.norm_key for term in services.curation.list_unmapped().terms] == ['syntheticlang']
+        assert services.github.user_calls == []

@@ -78,8 +78,16 @@ class ProfileSourceService:
         self._store.require_saved_signal(candidate_id, row_id)
 
     async def ingest_linkedin(
-        self, candidate_id: str, data: bytes
+        self, candidate_id: str, data: bytes, *,
+        executor: Optional[BoundedExecutor] = None,
     ) -> ProfileSourceSignal:
+        # The complete parse/transform/write/guard operation owns admission and
+        # all SQL sessions. An abandoned caller may still leave a committed source.
+        if executor is None:
+            return self._ingest_linkedin(candidate_id, data)
+        return await executor.run(self._ingest_linkedin, candidate_id, data)
+
+    def _ingest_linkedin(self, candidate_id: str, data: bytes) -> ProfileSourceSignal:
         if self._candidates.get_candidate(candidate_id) is None:
             raise SourceSubjectErasedError()
         raw = parse_linkedin_export(data, self._settings)

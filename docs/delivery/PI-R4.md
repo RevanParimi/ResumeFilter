@@ -533,8 +533,8 @@ Inventory/split at `1a05df3`, before implementation: source listing has a route
 candidate read plus service pre/list/final reads; GitHub ingestion mixes route/
 handle SQL before an awaited provider and save/curation/final SQL afterwards;
 LinkedIn ingestion includes route transport checks and synchronous parsing/save/
-curation/final reads. Keep these separate. A/B are complete; C/Q own the remaining
-boundaries and combined source review.
+curation/final reads. Keep these separate. A/B/C are complete; Q owns combined
+source review. The parent remains open until that separate gate.
 
 **<a id="r4-s2-t3c3c3a"></a>R4-S2-T3C3C3A - Bound profile-source listing**
 
@@ -568,11 +568,16 @@ the recorded final review.
 
 **<a id="r4-s2-t3c3c3c"></a>R4-S2-T3C3C3C - Bound LinkedIn source parsing and SQL**
 
-Status: pending. Prerequisite: B. Bound candidate prechecks and complete export
+Status: done (2026-11-01). Prerequisite: B, published at `2bfd3f1`.
+[C contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c3c) owns pre-implementation scope,
+acceptance, regressions, validation and reviews. Bound candidate prechecks and complete export
 parsing/transform/save/curation/final work. Preserve existing candidate-versus-
 transport error precedence, archive limits, advisory unavailable signals and
 provenance/erasure. Prove admission, cancellation/late writes, actual PG locks/
 erasure, migrated source/restart and relevant browser/contract/full/review gates.
+Implementation, required validation and both self-reviews are recorded there.
+Only C closes; Q and all broader parents remain open. Exact next: C3C3Q in a
+separate session. Scoped publication follows the recorded final staged review.
 
 **<a id="r4-s2-t3c3c3q"></a>R4-S2-T3C3C3Q - Review combined source operations**
 

@@ -225,12 +225,20 @@ operator source-list initial/history/final snapshot on the existing candidate-
 record pool, preserving filtering, subject scope and observed-erasure refusal.
 Busy/closed/pending reads return safe 503 without partial data; cancellation
 retains admission and a deliberate fresh GET reads current saved history. There
-is no dedicated source-list UI or new executor/config/schema. LinkedIn ingestion
-SQL/parsing and combined source acceptance remain open.
+is no dedicated source-list UI or new executor/config/schema. Combined source
+acceptance remains open.
 [R4-S2-T3C3C3B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3b) extends the same pool
 to complete GitHub candidate/handle checks before its async fetch and complete
 save/curation/final guards afterwards. Provider wait holds no SQL admission.
 Timeout/cancel retains capacity and never replays; late post work may commit.
 Read saved history before a deliberate fresh POST, which may fetch and append
 another source. Existing separate commits, advisory fallbacks and guarded
-best-effort curation remain; LinkedIn and combined source acceptance stay open.
+best-effort curation remain.
+[R4-S2-T3C3C3C](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3c) admits LinkedIn
+candidate/transport/decode checks and complete parse/transform/save/curation/final
+work separately on that same pool. Candidate-before-transport errors, archive/
+row limits and advisory signals remain. Accepted service work may late-commit;
+transport abandonment never later starts parsing. Saved-history recovery precedes
+a deliberate fresh POST that can append another source. Actual SQLite/PG locks,
+erasure and migrated HTTP/restart are covered; portal Chrome is compatibility
+evidence because source ingestion is API-only. Combined source Q remains open.

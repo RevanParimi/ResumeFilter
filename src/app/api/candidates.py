@@ -333,21 +333,35 @@ async def ingest_linkedin_source(
     422; a valid file with no recognizable LinkedIn CSVs returns 200 with
     method='unavailable'."""
     services = _services(request)
-    if services.candidates.get_candidate(candidate_id) is None:
-        raise HTTPException(status_code=404, detail="candidate not found")
-    if len(req.export_b64) > services.settings.max_linkedin_b64_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"export_b64 exceeds max_linkedin_b64_chars={services.settings.max_linkedin_b64_chars}",
-        )
     try:
-        data = base64.b64decode(req.export_b64, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="invalid_base64") from exc
-    try:
-        return await services.profile_sources.ingest_linkedin(candidate_id, data)
+        executor = services.candidate_records
+        data = await executor.run(_linkedin_data, services.candidates, services.settings,
+                                  candidate_id, req.export_b64)
+        return await services.profile_sources.ingest_linkedin(candidate_id, data, executor=executor)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # Accepted parsing/save/curation work may still commit. Read history
+        # after it settles before a deliberate POST that can append another source.
+        raise HTTPException(status_code=503, detail='candidate_record_pending',
+                            headers={'Retry-After': '1'}) from None
     except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
+
+
+def _linkedin_data(candidates, settings, candidate_id: str, export_b64: str) -> bytes:
+    # Preserve candidate-before-transport errors and keep base64 work off-loop.
+    if candidates.get_candidate(candidate_id) is None:
+        raise SourceSubjectErasedError()
+    if len(export_b64) > settings.max_linkedin_b64_chars:
+        raise HTTPException(
+            status_code=422,
+            detail=f"export_b64 exceeds max_linkedin_b64_chars={settings.max_linkedin_b64_chars}",
+        )
+    try:
+        return base64.b64decode(export_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="invalid_base64") from exc
 
 
 @router.get(

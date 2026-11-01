@@ -9230,3 +9230,271 @@ stopped and the demo untouched. Configured `main` -> `origin/main` is checked.
 Standing-authorized commit/push uses per-command GCM account selection, followed
 by remote-commit verification reported in the final response. Stop after
 publication; exact next is C3C3C in a new session.
+
+### <a id="r4-s2-t3c3c3c"></a>R4-S2-T3C3C3C - Bound LinkedIn source parsing and SQL
+
+**Status: done (2026-11-01).** Baseline `2bfd3f1`; A/B are published.
+Only C is implemented this session. Q, C3 and every broader parent stay open.
+[PI status](PI-R4.md#r4-s2-t3c3c3c).
+
+**Contract specified before implementation.** LinkedIn POST currently executes
+route candidate lookup/encoded-size/base64 checks, then service candidate lookup,
+ZIP/CSV parsing, transform, source save, guarded best-effort raw-cell curation and
+final storage-ID subject/source snapshot synchronously on the request loop.
+Reuse the existing candidate-record pool for two separately admitted complete
+operations: (1) candidate lookup plus transport checks/decode returning detached
+bytes, (2) the complete service candidate-check/parse/transform/save/curation/final
+operation. Preserve candidate-before-transport 404/422 ordering and the second
+pre-parse subject snapshot. Existing direct async service callers may omit the
+executor and retain scheduling responsibility. No new pool/config/schema or
+provider, no GitHub behavior change, no parser/scorer/curation algorithm change.
+
+Acceptance: red/green request-loop responsiveness at both candidate checks,
+base64 decode, ZIP/CSV parse, transform, source INSERT, curation SQL and final
+guard. Require worker/session ownership, shared admission with listing/GitHub/
+candidate reads, safe full/closed/pending 503/Retry-After without partial signal/
+IDs/cookies, retained admission through timeout/cancel/late failure and graceful
+drain before SQL disposal. Abandoned transport work must not later parse/save;
+abandoned service work may commit source and curation without delivery/replay.
+Keep separate transactions and best-effort failure semantics: no rollback or
+atomicity promise. Saved-history GET precedes deliberate fresh POST, which can
+append another source; add no source idempotency key or automatic replay.
+
+Preserve strict base64 and encoded cap, configured per-CSV row cap, unavailable
+archive/CSV fallbacks, raw-cell curation guards/ownership, advisory confidence,
+admin/CSRF/exact-subject isolation, specific 404/422 versus unrelated 500 handling,
+and candidate/source erasure without recreation. Prove real SQLite/PG source and
+curation write contention/erasure, migrated two-actor LinkedIn HTTP/graceful
+restart, prior source/GitHub/record compatibility, existing portal Chrome,
+relevant source/curation/API contracts, bindings/compilation, full pytest,
+implementation and distinct final staged self-reviews. No dedicated LinkedIn
+source screen exists; portal Chrome is compatibility, not source-browser proof.
+Encoded/row limits are unchanged; caller wait cannot kill a thread/parser or
+promise a hard expanded-archive memory/CPU/shutdown bound. Validation uses fake
+providers and isolated storage, preserving working DB/demo. Close only C, update
+handoff, review, commit/push and stop; combined Q remains a separate session.
+
+**Reproducer and implementation.** Tag `red`, `-m pytest -q --tb=short
+tests/test_profile_sources_api.py -k linkedin_source_work`: **8 failed,
+8 skipped, 110 deselected, 1 warning, 34.44s** (wrapper 41.58s). All transport/
+decode/subject/parse/transform/save/curation/final gates reached the intended
+`LinkedIn source work blocked the event loop` assertion. Tag `green-sql` on the
+same regressions after the fix: **8 passed, 8 skipped, 110 deselected, 1 warning,
+8.87s** (wrapper 13.49s).
+
+The route now admits `_linkedin_data` (candidate lookup, encoded cap, strict
+decode), then awaits the service with the same record executor. The service's
+optional-executor wrapper admits its complete existing synchronous core, including
+the second subject check, parse/transform, source save, raw-cell guarded capture
+and storage-ID final check. Every SQL session stays on its owning worker; only
+detached bytes/models cross the boundary. Existing direct async callers omitting
+the executor retain scheduling responsibility. Shared full/closed/pending errors
+map to safe 503/Retry-After without partial IDs/signal/cookies. Existing 404/422/
+500 classification, parser/row/transport limits, separate transactions and
+best-effort curation/advisory behavior remain. No new pool/config/schema/provider.
+
+**Behavioral checks.** Existing source fixtures and uncertainty/admission/real-
+lock/erasure tests now use explicit GitHub/LinkedIn IDs instead of copied launchers;
+the helper name is generalized. Historical B counts refer to that prior revision.
+
+- Tag `behavior`, `-m pytest -q --tb=short tests/test_profile_sources_api.py
+  -k 'source_ingest or linkedin_source_work'`: **68 passed, 68 skipped,
+  62 deselected, 1 warning, 82.38s** (wrapper 88.61s). Eight LinkedIn work phases
+  and existing GitHub phases cover release/timeout/cancel/late failure, worker/
+  session ownership, shared full/closed/pending refusal, retained admission and
+  deliberate saved-history/fresh append. Transport uncertainty never later parses;
+  the accepted complete service operation can late-commit after its subject/parse
+  gate. Source failure rolls back, curation failure preserves the source and
+  sanitizes logs, and final failure can follow both commits. LinkedIn invokes no
+  GitHub provider. No automatic replay or partial response is introduced.
+- Tag `erasure`, `-m pytest -q --tb=short tests/test_profile_source_erasure.py
+  -k source_worker`: **12 passed, 12 skipped, 31 deselected, 1 warning,
+  31.59s** (wrapper 38.49s). Both source types retain capacity through real SQLite
+  source/curation writer waits, observe competing candidate deletion and remove
+  owned observations without orphan/recreation/replay. Candidate/source-only
+  erasure before the final snapshot returns the correct safe 404 and preserves
+  the other subject. Actual PG counterparts remain required below.
+- Tag `transport`, `-m pytest -q --tb=short tests/test_profile_sources_api.py
+  -k 'linkedin_transport or linkedin_worker_preserves'`: **4 passed,
+  198 deselected, 1 warning, 3.91s** (wrapper 10.24s). Missing candidates retain
+  404 precedence over invalid/non-ASCII/oversize base64; existing candidates get
+  the exact 422 without parse/write. Configured row cap and padded raw-cell
+  exclusion remain while valid unknown skills reach guarded curation.
+
+**HTTP harness correction.** Initial tag `http`,
+`scripts/smoke_r4_s1_t3c.py --linkedin-source-workers`: **86/87**, wrapper 48.92s.
+Functional checks passed; the required lifecycle check failed because the new
+multi-owner hook restoration loop reused `owner`, overwriting the SQL session
+listener callback name. SQL disposal occurred but stopped/detached evidence was
+missing. Renamed the binding variable to preserve the callback; no application
+change followed. Tag `http-final`, same command: **87/87**, wrapper 50.59s, on
+migrated SQLite with exact saved-state graceful restart. Eight SQL/pure-work
+holds leave health plus admitted reads responsive in **0.0111-0.0174s**, each
+below the unchanged one-second assertion. Shared refusal, late saved history,
+manual fresh append, competing publication erasure and owning-session cleanup
+pass. Prior GitHub/read/record harness modes are rechecked after this correction.
+
+**Implementation self-review.** Reviewed `2bfd3f1` plus both route/service
+changes, existing candidate/source/curation stores and executor/lifecycle, the
+shared source regression extensions and HTTP harness. Verified both complete
+operations, 404-before-422 order, strict decode and unchanged row/parser/advisory
+semantics, raw-cell provenance/guards, complete session ownership, safe specific
+errors and shared uncertainty/drain. Transport abandonment cannot start service
+work; accepted service work may late-commit even while waiting at its subject
+check. Separate source/curation commits and final snapshots retain their limits;
+history reads and deliberate append remain distinct. No live sessions cross
+threads, provider work or source replay is introduced. The medium validation-
+harness cleanup finding above is resolved and its actual journey rerun passes.
+No blocking product finding remains. Same-agent self-review, not independent
+review. Only C closes after required evidence; Q and broader parents stay open.
+
+**Validation setup and final checks.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3c3c.py <tag> <Python args>` uses project Python,
+clears inherited DEE settings/credentials, selects nonexistent YAML and disables
+remote credentials. Fixtures bypass dotenv; fake-provider HTTP/Chrome apps use
+migrated scratch stores/directories without `.env`. Final long gates run
+sequentially after the harness correction. Owned disposable PG runner/runtime:
+`.pytest_cache/run_r4_s2_t3c3c3c_postgres.py` /
+`r4-s2-t3c3c3c-pg-runtime.json`. Helpers are local artifacts, not portable setup
+guarantees. No working storage or existing demo restart is involved.
+
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, all resolve.
+  `node --check frontend/api.js` and `node --check frontend/support.js`: exit 0.
+  Tag `compile`, `-m py_compile` on both changed application modules, both changed
+  pytest modules and the HTTP script (**five modules**): exit 0, 0.39s.
+  Reviewed-state helper saved **616 code/config hashes**; baseline runner hashed
+  **734 tracked files**.
+- Tag `focused`, `-m pytest -q --tb=short` over **14 existing modules**:
+  `test_profile_sources_api`, `test_profile_sources_schema`,
+  `test_profile_sources_service`, `test_profile_sources_store`,
+  `test_profile_sources_transform`, `test_profile_source_erasure`,
+  `test_service_lifecycle`, `test_config`, `test_api_route_extraction`,
+  `test_route_table_guard`, `test_openapi_contract`, `test_curation_capture`,
+  `test_curation_input_boundary` and `test_curation_owned_store`
+  (each `tests/<name>.py`): **338 passed, 159 skipped, 38 warnings, 205.87s**
+  (wrapper 213.36s), exit 0. New LinkedIn work/transport/limit cases, shared source
+  uncertainty/real SQLite locks/erasure, existing GitHub/listing, raw-observation
+  guards/ownership/best-effort capture, shared drain, settings and API/OpenAPI
+  contracts pass. Skips establish no omitted PG behavior; actual PG follows.
+- Tag `shared-records`, `-m pytest -q --tb=short tests/test_candidates_api.py
+  -k 'candidate_record or operator_candidate or candidate_key_real_lock'`:
+  **29 passed, 25 skipped, 328 deselected, 1 warning, 32.23s** (wrapper 39.52s).
+  Existing operator read/key uncertainty, rotation, erasure and shared admission
+  remain compatible with both source types.
+- Tag `github-http`, `scripts/smoke_r4_s1_t3c.py --github-source-workers`:
+  **65/65**, wrapper 37.61s. The existing GitHub mode now also probes LinkedIn
+  refusal while GitHub owns the pool (five extra assertions versus B's 60).
+  Provider/no-slot behavior, late history, manual append, ownership, erasure and
+  exact graceful restart remain intact. Tag `source-read-http`, the same script
+  with `--source-read-workers`: **50/50**, wrapper 37.09s. Both modes pass the
+  restored-listener shutdown/detachment gate after the harness correction.
+- Tag `record-http`, `scripts/smoke_r4_s1_t3c.py --candidate-record-workers`:
+  **54/54**, wrapper 43.61s. Previous candidate read/key admission, uncertainty,
+  late rotation/manual issuance and owning-session cleanup/restart remain intact.
+- Tag `browser`, `scripts/check_ui_evaluate_browser.py`: actual Chrome **48/48**,
+  wrapper 47.01s. Existing evaluation/report/contact/candidate portal/consent/
+  erasure, failures/manual recovery, reload and no console exceptions pass.
+  This is portal compatibility on scratch SQLite with CDN internet, not a new
+  LinkedIn source screen or live-provider/browser quality validation.
+- Tag `full`, `.resume/Scripts/python.exe -m pytest -q --tb=short` through the
+  sanitized runner: **4156 passed, 978 skipped, 127 warnings, 1495.95s**, exit 0.
+  Skips do not establish PG behavior; the actual database gate follows.
+- `.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3c3c_postgres.py`:
+  owned **PostgreSQL 18.6**, Asia/Calcutta, read committed. The same **14 focused
+  modules** with an explicit disposable `DEE_TEST_DB_URL`: **486 passed,
+  11 skipped, 38 warnings, 581.18s**, exit 0. Real independent-connection source/
+  curation write locks, observed PG Lock waits, retained shared capacity,
+  cancellation/late commits, competing erasure and final snapshots pass for both
+  source types. The same shared-record selection: **54 passed, 328 deselected,
+  1 warning, 67.91s**, exit 0.
+- PG `scripts/smoke_r4_s1_t3c.py --postgres --linkedin-source-workers`:
+  **87/87**, exit 0. Eight work holds leave health plus admitted reads responsive
+  in **0.0144-0.0993s**, each below one second. Exact history/manual append,
+  two-actor isolation, erasure and migrated graceful restart pass. Both source
+  HTTP modes preserve owning-session cleanup before SQL disposal. No migration/
+  schema changed: scratch HTTP uses current migrations through 0030 and existing
+  populated migration tests run; no new migration up/down/up gate is applicable.
+
+**Completion record (2026-11-01).** C acceptance and required validation are
+complete; only LinkedIn parsing/SQL closes. Existing separate commits, guarded
+best-effort curation, advisory fallbacks, erasure and strict transport/row limits
+remain. Caller abandonment can leave late service commits; saved history and a
+deliberate fresh append remain separate decisions. Threads cannot be killed;
+expanded ZIP resource/driver/drain bounds, direct-caller scheduling, unpaged
+history and later erasure/delivery snapshots retain their stated limits. Fake
+providers prove mechanics, not live quality. Q and every broader parent remain
+open; exact next is **R4-S2-T3C3C3Q** in a separate session. Distinct final staged
+self-review and authorized scoped publication follow this completion record.
+
+**Distinct final staged self-review, first pass (2026-11-01).** After the above
+completion record, reviewed the exact eleven staged files against `2bfd3f1`,
+separately from implementation review. Medium harness finding at
+`scripts/smoke_r4_s1_t3c.py::check_source_ingest`: the shared-admission probe loop
+reuses `body`, replacing the intended export for later work/fresh POSTs. Source
+counts still pass but do not prove repeated ingestion of the intended export.
+Added an observable fresh-response skills assertion to expose that mismatch.
+Application code is unaffected. C is reopened awaiting affected HTTP/full
+revalidation; the final review must finish after the correction and evidence.
+
+Tag `http-payload-red`, `scripts/smoke_r4_s1_t3c.py --linkedin-source-workers`
+with the new assertion before the fix: **79/87**, exit 1, wrapper **53.11s**.
+All eight deliberate fresh POST checks fail for missing intended skills, while
+other journey/cleanup checks pass. Renamed the probe binding to `probe_body` so
+later work retains the original export. Tag `http-payload-green`, same command:
+**87/87**, exit 0, wrapper **47.92s**. The check now proves both append semantics
+and the intended `Python`/`SyntheticLang` response content. Reviewed this small
+harness correction; no other production/test change. Refreshed reviewed hashes;
+affected GitHub/PG HTTP, script compilation and full pytest were rerun below
+before restoring completion status.
+
+Post-correction tag `compile-final-review`, `-m py_compile
+scripts/smoke_r4_s1_t3c.py`: exit 0, 0.29s. Tag `github-http-final-review`,
+`scripts/smoke_r4_s1_t3c.py --github-source-workers`: **65/65**, exit 0,
+wrapper 38.49s. Owned PG runner with `--http-only` reruns the corrected
+`scripts/smoke_r4_s1_t3c.py --postgres --linkedin-source-workers`: **87/87**,
+exit 0, 40.21s, including all eight intended-export content assertions and
+graceful saved-state restart. Held-work health/read times are **0.0060-0.0978s**;
+SQLite corrected times are **0.0077-0.0230s**. The owned PG stop exits 0.
+
+Tag `full-final-review`, `.resume/Scripts/python.exe -m pytest -q --tb=short`
+through the sanitized runner after that correction: **4156 passed, 978 skipped,
+127 warnings, 1134.26s** (wrapper **1144.57s**), exit 0. No application/pytest
+change followed the earlier actual PG 14-module/shared-record gates; the affected
+HTTP script has now been exercised on both databases with the stronger assertion.
+Reviewed-state check confirms all **616 code/config hashes** match this final
+full-tested state. Preservation check verifies **723 unrelated tracked files**,
+including the existing working `data/veritas.db`, retain baseline bytes. No demo
+restart was performed. Completion status is restored after the required reruns;
+only C closes and Q remains the exact next separate-session task.
+
+**Distinct final staged self-review, completed (2026-11-01).** After restoring
+the completion record and required correction results, reread the final staged
+scope against `2bfd3f1`: `src/app/api/candidates.py`,
+`src/app/profile_sources/service.py`, `tests/test_profile_sources_api.py`,
+`tests/test_profile_source_erasure.py`, `scripts/smoke_r4_s1_t3c.py`,
+`OPERATING.md`, `FEATURE_STATUS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`,
+`docs/delivery/PI-R4.md` and this evidence file (**eleven files**).
+
+Specification review maps all eight work phases, candidate-before-transport
+errors, shared refusal/uncertainty, complete worker/session ownership, real
+contention/erasure, curation, history/manual append and cleanup/restart to the
+recorded assertions. Correctness/maintainability review checks the unchanged
+parser and SQL transaction bodies, specific error mapping, separate commits,
+advisory/ownership/privacy behavior, optional direct-caller scheduling, executor
+drain, and the corrected hook/probe bindings. The first-pass harness finding is
+resolved by its red/green content regression and affected SQLite/PG HTTP/full
+reruns. No blocking finding remains. Both reviews are same-agent **self-reviews**,
+not independent review; no live-provider or dedicated source-browser claim.
+
+Final documentation check derives **six added local links** from the staged diff;
+all targets/anchors resolve. Unique IDs, A/B/C done, Q pending, open parents and
+acyclic prerequisites match the exact next pointer. Staged whitespace checks pass;
+index/worktree agree and only the eleven scoped files are staged, without secrets,
+working data or ignored artifacts. The final **616** tested code/config hashes
+and **723** preserved unrelated tracked files are verified above. Latest owned PG
+stop exits **0** and a separate `pg_ctl status` exits **3**, no server running.
+Working DB and demo remain preserved. Configured `main` tracks `origin/main`;
+the remote starting commit is `2bfd3f1`. Standing-authorized scoped commit/push
+uses per-command GCM account selection, followed by exact remote-commit
+verification reported in the final response. Stop after publication; Q is a
+separate session.
