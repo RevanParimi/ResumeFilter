@@ -423,7 +423,10 @@ C3C-F/Q and all combined T3 parents remain open. Exact next: C3C, separate sessi
 
 ###### <a id="r4-s2-t3c3c"></a>R4-S2-T3C3C - Bound intake and profile-source SQL
 
-Status: in progress (2026-10-29). Prerequisite: C3B, done. Measure candidate intake/resume persistence,
+Status: done (2026-11-02). Prerequisite: C3B, done. C1, C2/A-C/Q and C3/A-C/Q
+are complete; [combined CQ acceptance](EVIDENCE-R4.md#r4-s2-t3c3cq) closes this
+bounded parent. C3D-F/Q and all broader parents remain open. Original contract:
+measure candidate intake/resume persistence,
 candidate reads/keys and profile-source pre/post-provider SQL in `candidates`,
 `screening.ingest` and `profile_sources`; split before implementation if needed.
 Preserve cross-process identity/resume dedupe, present consent, scoped access,
@@ -587,16 +590,20 @@ Status: done (2026-11-01). Prerequisites: A-C, published through `844a05c`.
 [Q contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3c3q) owns the combined inventory,
 acceptance, fresh SQLite/actual PG, all source/record HTTP/restart modes, actual
 portal/curation Chrome, full regression and both self-reviews. No production/test
-change was needed. Q closes only source parent C3C3; C3CQ and broader parents
-stay open. Exact next: R4-S2-T3C3CQ, in a separate session after scoped publication.
+change was needed. Q closes only source parent C3C3; combined C3CQ acceptance
+is recorded below. All broader parents remain open.
 
 **<a id="r4-s2-t3c3cq"></a>R4-S2-T3C3CQ - Review combined intake/source acceptance**
 
-Status: pending. Prerequisites: C1-C3 and any children. Re-inventory these
-boundaries and run combined real SQLite/PG, HTTP/restart, affected Chrome and full
-regression gates. Review combined admission/uncertain writes/cleanup and preserve
-dedupe, isolation, consent/erasure and fallbacks. Only then close C3C; C3D-F/Q
-and all broader parents remain separate work. No live provider/quality claim.
+Status: done (2026-11-02). Prerequisites: C1-C3 and any children, published
+through `da6f35d`. [Combined contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3cq)
+owns the combined inventory/budget self-review, fresh full/SQLite/actual PG,
+all seven HTTP/restart modes and two-process races on both DBs, affected Chrome,
+static checks and distinct final staged self-review. No production/test change.
+The initial PG hook-wait timeout and unchanged six-case green rerun are recorded
+explicitly. CQ closes only C3C; C3D-F/Q and all broader parents remain open.
+No live provider/quality claim. Exact next: R4-S2-T3C3D in a separate session;
+scoped publication follows the recorded final review.
 
 ###### <a id="r4-s2-t3c3d"></a>R4-S2-T3C3D - Bound evaluation, reporting and screening SQL
 

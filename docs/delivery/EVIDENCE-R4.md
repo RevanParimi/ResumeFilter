@@ -9713,3 +9713,315 @@ exits **3**, no server running; working DB and demo are preserved. Configured
 Standing-authorized scoped commit/push follows, with per-command GCM account
 selection and exact remote-commit verification reported in the final response.
 Stop after publication; exact next is C3CQ in a separate session.
+
+### <a id="r4-s2-t3c3cq"></a>R4-S2-T3C3CQ - Review combined intake/source acceptance
+
+**Status: done (2026-11-02; started 2026-11-01).** Baseline `da6f35d`; C1, shared intake
+C2/A-C/Q and source C3/A-C/Q are published. This session reviews only combined
+C3C acceptance. [PI status](PI-R4.md#r4-s2-t3c3cq). The child evidence above
+owns its original red regressions and implementation decisions.
+
+**Contract before execution.** Re-inventory operator reads/keys, admin/employer
+single intake, batch intake and profile sources together. Trace the separate
+service-owned record and intake pools, all separately admitted operations,
+worker-local SQL sessions/callbacks, caller-owned async providers, retained
+capacity during timeout/cancellation/late failure and shutdown drain before
+SQL disposal. Use the existing [record](../../OPERATING.md#operator-candidate-record-execution-budget)
+and [intake budgets](../../OPERATING.md#candidate-intake-persistence-budget).
+No production, schema, provider, scoring or API change is planned. A blocking
+defect requires a meaningful failing regression, a direct fix and affected reruns.
+
+Acceptance requires responsiveness under controlled operations and actual SQL
+contention, safe full/closed/pending 503/Retry-After without partial IDs/signals/
+keys/cookies, and no automatic replay or abandoned provider/batch continuation.
+Preserve serialized key issuance/rotation and erasure, compatible identity/resume
+dedupe and versions across processes, tenant projection, present subject/consent,
+report/input checkpoints, guarded best-effort curation/provenance, source filters/
+ordering, candidate-before-transport errors and deterministic advisory fallbacks.
+Recover using saved state and deliberate fresh actions; late commits do not imply
+rollback, atomicity or idempotency. Record pool is shared by reads/keys/sources;
+intake pool is separate and shared by admin/employer/batch intake. Budgets are
+per process and operation, not total requests or global database concurrency.
+
+Run fresh combined focused tests (the union of C1/C2Q/C3Q modules), full pytest,
+actual disposable PostgreSQL lock/erasure/transaction cases, all seven existing
+record/intake/source migrated HTTP/restart modes and two-process ingest races on
+both databases. Run actual screening Chrome for all three intake boundaries,
+portal compatibility and curation HTTP/Chrome/restart; also run offline screening
+contracts, UI bindings/JS syntax and relevant compilation. Source/record/key APIs
+have no dedicated screen: portal compatibility and curation actions are distinct
+from source-ingestion browser execution. Fake providers prove mechanics, not live
+quality. Current migrated scratch stores and populated migration regressions are
+required; no new up/down/up gate applies without schema changes.
+
+Review the combined C1-C3 diff and callers for specification compliance,
+correctness and simplicity before final checks. Record findings and limitations;
+a clean acceptance review needs no speculative code change or duplicate test.
+After validation/completion records, perform the distinct final staged self-review,
+commit/push scoped changes, verify the remote commit and stop. Preserve working
+`data/veritas.db`, unrelated work and the existing demo. Only CQ/C3C may close;
+exact next is **R4-S2-T3C3D**, in a separate session. Rights, other handler/graph
+and batch scheduling SQL remain in their existing later workstreams. Final guards
+remain snapshots; threads/driver waits/ZIP expansion/drain retain documented
+limits, and direct low-level callers retain scheduling responsibility.
+
+**Combined implementation/budget self-review (2026-11-01).** Reviewed the
+published C1-C3 change `950d641..da6f35d` (27 files), current route/service/store
+callers, shared executor and service lifecycle, both runbook budgets and existing
+behavioral/API/browser harnesses. Specification and correctness review found no
+blocking finding; no production/test/config change or artificial red test is
+needed for this acceptance review. This is same-agent self-review, not independent
+review. Child records retain the original defect reproductions and resolutions.
+
+| Boundary | Combined ownership, outcome and recovery |
+|---|---|
+| Operator records/keys | One record operation owns summary/payload/final existence sessions. Key issuance locks the candidate before credential mutation, serializing first issue, rotation and erasure while preserving the profile clock. Late undisclosed rotation requires deliberate fresh issuance; plaintext is not recoverable from storage. |
+| Initial intake | Both single adapters and batch processing supply the same separate intake pool. The complete candidate/resume/extraction transaction and batch generation/retain callbacks stay on one worker; cross-process identity/dedupe/version logic is unchanged. |
+| Fingerprint and report | Separately admitted complete fingerprint/save/compare/assessment, pre-subject, post-subject/report/checkpoint and publication operations retain owning sessions. Async extraction/evaluation remains on the caller, outside SQL admission. No-evaluation uploads still check the subject. |
+| Batch uncertainty | Pending/full/closed propagates before false failure or terminal writes. Accepted work can commit input/report checkpoints after caller departure; no abandoned evaluation/next-item continuation occurs. Saved-state reads and deliberate processing after lease expiry recover the same report when its checkpoint exists. |
+| Source listing/GitHub/LinkedIn | Listing and both source types share the record pool with reads/keys. Listing owns pre/history/final reads; GitHub separately admits pre/post SQL around caller-owned async fetch and synchronous transform; LinkedIn separately admits candidate/transport and complete parse/save/curation/final work. |
+| Consent, isolation and erasure | Existing auth/session-CSRF gates and tenant response projection remain. Subject/FK/storage-ID guards refuse observed erasure, unrelated source errors are not relabeled erasure, and separate guarded best-effort curation preserves provenance/raw-cell limits/expiry/cascade. Final guards cannot lock later delivery. |
+| Admission and cleanup | Each pool defaults to two active operations and a finite 20-second wait per operation, without queue/replay. Active futures retain admission through timeout/cancel/late failure. Service close refuses new work, drains both pools, then disposes owned SQL and clients. No session/Request/Response crosses a worker boundary. |
+
+Reviewed tests against user-visible results: shared saturation/closed refusal,
+no partial IDs/keys/signals/cookies, caller/provider and worker/session/callback
+ownership, actual SQL locks and competing erasure, rollback and saved-state
+recovery, tenant/CSRF and source content/fallbacks. Screening UI stops its driver,
+explains possible saving and requires deliberate recovery; offline contracts
+and actual Chrome remain separate checks. The two pools are not a global DB lock;
+batch scheduling/recovery/terminal, rights and other graph/handler SQL remain
+outside these budgets. Later-boundary refusal may follow earlier commits and
+provider calls. Unpaged histories, direct-caller scheduling, duplicate fresh
+provider/report/source work, identity hints, final snapshots and thread/ZIP/
+driver/drain limits remain explicit. No new abstraction, migration, policy or
+accuracy claim is added. Fresh checks below use this unchanged reviewed code.
+
+**Fresh validation setup and static evidence.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3cq.py <tag> <Python args>` invokes project Python,
+clears inherited DEE settings/credentials, selects nonexistent YAML and disables
+remote credentials. Fixtures bypass dotenv; HTTP/browser applications use fake
+providers, migrated scratch stores and scratch working directories without `.env`.
+Sequential orchestrator: `.pytest_cache/final_gates_r4_s2_t3c3cq.py`. Owned PG
+runner/runtime: `.pytest_cache/run_r4_s2_t3c3cq_postgres.py` /
+`r4-s2-t3c3cq-pg-runtime.json`. These helpers/logs are ignored local artifacts,
+not portable setup guarantees. Baseline hashes **734 tracked files**; reviewed
+state saves **616 code/config hashes** before checks. Working storage/demo is
+excluded. Long timing-sensitive checks run sequentially.
+
+The combined focused command is `-m pytest -q --tb=short` over **34 existing
+modules**, the deduplicated C1/C2Q/C3Q union (each `tests/<name>.py`):
+`test_candidates_api`, `test_similarity`, `test_resume_farm_assess`,
+`test_resume_farm_api`, `test_candidate_store`, `test_ingest_erasure_concurrency`,
+`test_ingest_response_erasure`, `test_candidate_login_binding_concurrency`,
+`test_screening_batches_api`, `test_screening_durable_input`,
+`test_screening_unresolved_input`, `test_screening_report_input`,
+`test_org_scope_guard`, `test_api_route_extraction`, `test_route_table_guard`,
+`test_openapi_contract`, `test_service_lifecycle`, `test_config`,
+`test_fingerprint_store`, `test_fingerprint_erasure_concurrency`,
+`test_screening_erasure_concurrency`, `test_report_erasure_concurrency`,
+`test_profile_sources_api`, `test_profile_sources_schema`,
+`test_profile_sources_service`, `test_profile_sources_store`,
+`test_profile_sources_transform`, `test_profile_source_erasure`,
+`test_curation_capture`, `test_curation_input_boundary`, `test_curation_owned_store`,
+`test_portal_api`, `test_auth_session_twins` and `test_api_auth_gate`.
+
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, all resolve.
+  `node --check frontend/api.js`, `frontend/support.js` and
+  `frontend/screening.js`: exit 0.
+- `node --test scripts/test_ui_screening.js`: **62 passed, 0 failed/skipped,
+  344.6804ms**, exit 0. Offline contracts cover driver stop, uncertainty copy,
+  saved-state guidance and deliberate recovery; this is separate from Chrome.
+- Tag `compile`, `-m py_compile` on **19 modules**: `src/app/api/candidates.py`,
+  `src/app/api/screening.py`, `src/app/candidates/store.py`,
+  `src/app/screening/ingest.py`, `src/app/screening/service.py`,
+  `src/app/profile_sources/service.py`, `src/app/profile_sources/store.py`,
+  `src/app/profile_sources/linkedin.py`, `src/app/core/blocking.py`,
+  `src/app/core/config.py`, `src/app/services/__init__.py`,
+  `src/app/curation/store.py`, `tests/test_candidates_api.py`,
+  `tests/test_candidate_store.py`, `tests/test_profile_sources_api.py`,
+  `tests/test_profile_source_erasure.py`, `tests/test_ingest_response_erasure.py`,
+  `scripts/smoke_r4_s1_t3c.py` and
+  `scripts/check_ui_screening_extraction_browser.py`: exit 0, **0.34s**.
+
+- Tag `focused`, the 34-module command above on isolated SQLite:
+  **942 passed, 543 skipped, 40 warnings, 747.52s** (wrapper **758.02s**), exit 0.
+  Combined record/intake/source admission, session/provider ownership, late
+  commit/rollback/checkpoint recovery, SQLite locks/erasure, dedupe/version,
+  tenant/consent and deterministic fallback contracts pass. Skips establish no
+  PostgreSQL behavior; the actual disposable PG gate is separate below.
+
+**Migrated SQLite HTTP/restart and actual Chrome.** All commands below use
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3cq.py <tag> <script>
+<flag>` with the named tag. Every journey exits 0 and uses migrated scratch
+storage, real application startup/HTTP and fake providers.
+
+| Tag | Script and flag | Result | Wrapper seconds |
+|---|---|---|---|
+| `candidate-record-http` | `scripts/smoke_r4_s1_t3c.py --candidate-record-workers` | **54/54** | 23.58 |
+| `candidate-ingest-http` | same script, `--candidate-ingest-workers` | **41/41** | 17.68 |
+| `candidate-fingerprint-http` | same script, `--candidate-fingerprint-workers` | **41/41** | 17.17 |
+| `candidate-report-http` | same script, `--candidate-report-workers` | **42/42** | 18.03 |
+| `source-read-http` | same script, `--source-read-workers` | **50/50** | 26.86 |
+| `github-source-http` | same script, `--github-source-workers` | **65/65** | 28.23 |
+| `linkedin-source-http` | same script, `--linkedin-source-workers` | **87/87** | 36.17 |
+| `races` | `scripts/smoke_r4_s1_t3d.py --ingest-races` | **41/41** | 36.81 |
+| `browser-ingest` | `scripts/check_ui_screening_extraction_browser.py --candidate-ingest-workers` | **29/29** | 25.48 |
+| `browser-fingerprint` | same browser script, `--candidate-fingerprint-workers` | **29/29** | 24.22 |
+| `browser-report` | same browser script, `--candidate-report-workers` | **30/30** | 23.61 |
+| `portal-browser` | `scripts/check_ui_evaluate_browser.py` | **1/1 + 48/48** | 32.54 |
+| `curation-browser` | `scripts/smoke_curation_activation.py --browser` | **53/53** | 34.96 |
+
+All seven worker HTTP modes use two fresh migrated lifespans through **0030**,
+owning sessions and graceful restart/cleanup. Across **29 controlled holds**,
+health plus unrelated admitted reads respond in **0.0075-0.0242s**, each below
+the unchanged one-second assertion. These hooks prove composition/scheduling;
+the focused real driver-lock cases provide contention evidence. Safe refusals,
+exact late saved state, no abandoned continuation/replay, deliberate rotation/
+input/report/history recovery, tenant/CSRF/erasure and surviving other subjects
+pass. GitHub provider wait holds no record slot; LinkedIn asserts intended export
+content and candidate-before-transport errors. Source capture retains separate
+best-effort curation commits. The two-process journey proves compatible identity
+dedupe, owner-specific resumes/version ordering, scoped advisory results and
+saved-state restart.
+
+The three screening Chrome runs exercise real rendered uncertainty copy, driver
+stop without replay, retained leases, deliberate recovery after controlled expiry,
+exact late committed candidate/resume state and reload; report recovery reuses
+the saved report without another evaluation. Portal Chrome covers evaluation/
+report/contact/consent/access/erasure compatibility and manual error recovery.
+Curation HTTP/Chrome/restart covers source-owned observations, erasure/refusal,
+raw expiry versus explicit vocabulary promotion, operator map/create/ignore and
+stale/manual recovery. No uncaught browser console failure is reported. Chrome
+still uses existing CDN internet. Portal compatibility and curation actions are
+not direct browser execution of API-only source ingestion or key issuance, and
+synthetic sources/fakes establish no live-provider or measured-quality claim.
+
+**Fresh full regression.** Tag `full`, `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3cq.py full`, invokes the required
+`-m pytest -q --tb=short`: **4156 passed, 978 skipped, 127 warnings,
+1906.58s** (wrapper **1919.19s**), exit 0. This includes actual SQLite behavior,
+populated migration regressions, domain/advisory/fallback, consent/erasure,
+tenant and lifecycle compatibility on the unchanged reviewed code. Existing
+third-party/expression-index reflection warnings remain. Optional/environment/
+unconfigured-PG skips prove no omitted behavior; actual PG results follow.
+
+**Actual PostgreSQL focused evidence and retained failure (2026-11-01/02).**
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3cq_postgres.py` created
+owned disposable **PG 18.6**, Asia/Calcutta, read committed, isolated schemas.
+The same 34-module focused command completed **1459 passed, 1 failed,
+25 skipped, 40 warnings, 2590.78s** (wrapper **2609.57s**), exit 1. The sole
+failure was
+`tests/test_candidates_api.py::test_candidate_fingerprint_real_lock_retains_capacity_and_erasure[postgresql-resume]`
+at line 849: `assert await asyncio.to_thread(entered.wait, 8)`. The request did
+not reach the fingerprint-save hook within that test wait, before the intended
+fingerprint SQL-lock/erasure assertions. This is not a passing lock test or a
+proved production defect; the exact cause of the missed hook is not established.
+The runner stopped before HTTP gates and owned PG fast stop exited **0**
+(**38.97s**). Original focused log/runtime are retained separately.
+
+Other focused cases execute actual competing connections and observed
+`pg_stat_activity` Lock waits for candidate keys, initial/fingerprint/report
+writes, source reads/inserts and curation. Ownership, late state, cancellation,
+rollback, erasure/constraints, dedupe, tenant and consent/fallback cases pass.
+The 25 skips are SQLite variants of PG-only lock inspections; their actual PG
+counterparts execute. This is a PG-enabled group that also includes pure/SQLite
+cases, not a claim that all passing cases use PostgreSQL.
+
+Fresh owned rerun, with separate logs/runtime and unchanged code/tests/limits:
+`.resume/Scripts/python.exe .pytest_cache/rerun_r4_s2_t3c3cq_postgres.py
+tests/test_candidates_api.py -k candidate_fingerprint_real_lock_retains_capacity_and_erasure`.
+All **6 passed, 376 deselected, 1 warning, 20.56s** (wrapper **30.20s**), exit 0.
+This reruns all no-erasure/candidate-erasure/resume-erasure variants on SQLite
+and actual PG, including the original failed node, with the original 8-second
+hook wait, 0.5-second operation wait and one-second responsiveness assertion.
+No timeout relaxation, test/code fix or hidden green rerun of the original
+34-module command is claimed. The isolated rerun supplies the missing lock/
+erasure evidence; the initial hook-wait miss remains a validation
+limitation. That runner continues with all seven PG HTTP/restart modes and
+two-process ingest races below.
+
+**Migrated actual PostgreSQL HTTP/restart evidence (2026-11-02).** The fresh
+owned rerun continued after the six-case green selection. Each command is
+`scripts/smoke_r4_s1_t3c.py --postgres <flag>` against the explicitly disposable
+database, with the same flags as SQLite above. All exit 0:
+
+| Flag | Result | Wrapper seconds |
+|---|---|---|
+| `--candidate-record-workers` | **54/54** | 40.68 |
+| `--candidate-ingest-workers` | **41/41** | 33.79 |
+| `--candidate-fingerprint-workers` | **41/41** | 35.72 |
+| `--candidate-report-workers` | **42/42** | 39.05 |
+| `--source-read-workers` | **50/50** | 42.78 |
+| `--github-source-workers` | **65/65** | 47.68 |
+| `--linkedin-source-workers` | **87/87** | 53.82 |
+
+`scripts/smoke_r4_s1_t3d.py --postgres --ingest-races`: **41/41**, exit 0,
+wrapper **54.98s**. These actual PG migrated two-start/two-actor flows preserve
+the same saved state, ownership, uncertainty/manual recovery, dedupe/version,
+tenant/CSRF/erasure and graceful restart contracts as SQLite. Across **29
+controlled holds**, health/admitted reads respond in **0.0176-0.1581s**, below
+the unchanged one-second limit. Real contention is established by the separate
+competing-connection tests, not these hooks. Owned PG fast stop exits **0**
+(**4.60s**); separate `pg_ctl status` returns **3** for both original and rerun
+instances, no server running. No schema/migration change requires a new up/down/up
+gate; populated migration regressions run in full pytest and scratch applications
+migrate to 0030. Working storage is not migrated and the demo is untouched.
+
+**Completion record (2026-11-02).** CQ and bounded parent **R4-S2-T3C3C** are
+done after C1/C2/C3 and this combined acceptance review. No production/test/config
+change was needed. Fresh full, focused SQLite, actual PG (with the original
+hook-wait failure and unchanged six-case rerun explicitly retained), all seven
+HTTP/restart modes and two-process races on each DB, actual screening/portal/
+curation Chrome, offline contracts and static checks establish the bounded
+acceptance. The missed eight-second hook wait remains a test-timing limitation;
+its cause is not claimed proved or fixed. No blocking product defect was found.
+
+The two separate pools retain owning sessions, safe refusal/uncertainty and
+drain-before-disposal. Late commits, separate transactions, saved-state/manual
+recovery and lack of automatic replay remain deliberate. Advisory/human review,
+tenant isolation, present consent/erasure, truthful AI-assisted writing and
+deterministic fallbacks remain unchanged. Per-process/operation budgets, identity
+hints, direct scheduling, unpaged history, final snapshots and thread/ZIP/driver/
+drain limits remain documented; fakes prove mechanics rather than live quality.
+C3D-F/Q, C3/C/T3/F14/sprint/PI remain open. Exact next is
+**R4-S2-T3C3D**, a separate session to inventory evaluation/reporting/screening SQL
+and define bounded children before implementation. No next task was started.
+
+Post-gate verification confirms all **616 tested code/config hashes** match.
+Both owned PG instances are confirmed stopped; working `data/veritas.db`,
+unrelated files and the existing demo are preserved. Distinct final staged
+self-review and standing-authorized scoped commit/push follow this completion
+record; final publication is reported with the verified remote commit.
+
+**Distinct final staged self-review (2026-11-02).** After required validation
+and the completion record, reviewed the exact five staged files against
+`da6f35d`: `FEATURE_STATUS.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`,
+`docs/delivery/PI-R4.md` and this evidence file. This later review is separate
+from the combined implementation/budget self-review. Specification review maps
+every required layer to its actual evidence, closes only CQ/C3C and leaves
+C3D-F/Q and broader parents open. The local prerequisite order remains acyclic:
+C1, C2/A-C/Q and C3/A-C/Q precede CQ; C3D follows the closed C3C parent.
+The exact next task is C3D in a separate session.
+
+Correctness/maintainability review compared the staged claims with code, logs,
+run commands, counts and limits. It preserves the failed initial PG command,
+its precise pre-lock hook-wait assertion and unproved cause, the unchanged
+six-case rerun and the absence of a green 34-module PG rerun. SQLite/PG,
+controlled holds/real locks, offline contracts/actual Chrome and compatibility/
+API-only source ingestion remain distinct; no live quality claim is made.
+Fixed the evidence header's stale in-progress status to match the completion
+record. Removed superseded handoff helper listings in favor of the combined
+runner and existing child evidence; detailed results retain one owner here.
+No blocking finding remains. Both reviews are same-agent **self-reviews**,
+not independent review; no application/test change requires another pytest run.
+
+Documentation checks verify **11 added local links/anchors**, unique task/evidence
+anchors, completed child/parent statuses and the exact next pointer. Staged
+whitespace and index/worktree agreement pass. All **616 tested code/config
+hashes** and **729 unrelated tracked files**, including working `data/veritas.db`,
+remain verified. Both owned PG instances have stop exit **0** and separate status
+exit **3**; demo untouched. Only the five scoped documentation files are staged,
+with no secrets, working data or local runtime artifacts. Configured `main`
+tracks `origin/main`; standing-authorized scoped commit/push follows using
+per-command GCM account selection, with exact remote-commit verification reported
+in the final response. Stop after publication; do not begin C3D here.

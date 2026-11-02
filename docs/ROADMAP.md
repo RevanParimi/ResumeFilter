@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-02 - R4-S2-T3C3CQ complete; combined intake/source review.**
+  C1/C2/C3 and their separate record/intake budgets pass combined self-review
+  and fresh full/SQLite/actual PG, all seven HTTP/restart modes and two-process
+  races on both DBs, screening/portal/curation Chrome and static checks. No
+  production/test change. The [CQ evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3cq)
+  owns commands, the retained PG hook-wait failure and unchanged six-case rerun,
+  limitations, preservation and distinct final staged self-review. Working DB
+  preserved, demo untouched and both owned PG instances stopped. CQ closes only
+  bounded parent C3C; scoped publication follows final review. Exact next:
+  R4-S2-T3C3D in a separate session; broader parents remain open.
+
 - **Session 2026-11-01 - R4-S2-T3C3C3Q complete; combined source review.**
   Source A-C and the shared record budget pass combined self-review plus fresh
   full pytest, actual SQLite/PG contention/erasure, all four HTTP/restart modes,

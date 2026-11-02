@@ -185,7 +185,7 @@ reads and revocation with separate owning-session admission and safe uncertain
 responses. Revocations have one SQL winner and atomic audit. UI reports
 unconfirmed logout, protects sign-in overlap and requires saved-device refresh
 before another uncertain revoke. See the [session budget](OPERATING.md#session-management-execution-budget).
-C3C-F/Q and parent acceptance remain open.
+C3D-F/Q and broader parent acceptance remain open.
 [R4-S2-T3C3C1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c1) bounds the operator
 candidate detail/resume/report reads and access-key issuance in a separate pool.
 Pending/refused work returns no partial data or undisclosed replacement key;
@@ -193,7 +193,7 @@ loaded results recheck observed candidate erasure. Key issuance/rotation locks
 the candidate and preserves its profile clock. A late rotation can invalidate
 the old key; recovery is deliberate fresh issuance. The
 [record budget](OPERATING.md#operator-candidate-record-execution-budget) states
-API-only scope and limits. C3C3/CQ, C3D-F/Q and all broader parents remain
+API-only scope and limits. C3D-F/Q and all broader parents remain
 open; other handler/graph/store SQL stays synchronous. Exact task status and next
 action are owned by the PI/handoff.
 
@@ -217,8 +217,8 @@ Batch management and other handler/graph SQL remain separate work.
 [R4-S2-T3C3C2Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2q) closes the combined
 shared intake persistence gate with fresh SQLite/actual PostgreSQL, HTTP/restart,
 two-process races, actual Chrome/manual recovery and full regression evidence.
-No production change was needed. Combined intake/source acceptance and broader
-parents remain open.
+No production change was needed; combined intake/source acceptance is recorded
+below. Broader parents remain open.
 
 [R4-S2-T3C3C3A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c3a) bounds the complete
 operator source-list initial/history/final snapshot on the existing candidate-
@@ -246,5 +246,11 @@ acceptance and its bounded parent after source/budget self-review and fresh
 SQLite/actual PG contention/erasure, all source/record HTTP/restart modes,
 portal compatibility, curation Chrome/restart and full regression. No production
 or test change was needed; separate commits, late-write/manual recovery and the
-documented resource/snapshot limits remain. Combined intake/source C3CQ and
-broader parents remain open.
+documented resource/snapshot limits remain.
+[R4-S2-T3C3CQ](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3cq) closes combined intake/
+source acceptance and bounded parent C3C after fresh full/SQLite/actual PG,
+all seven HTTP/restart modes and two-process races on each DB, affected Chrome
+and separate self-reviews. The original PG hook-wait timeout and unchanged
+six-case rerun are retained in the evidence. No production/test change was
+needed; separate record/intake pools, late commits, manual recovery and the
+documented budgets/limits remain. C3D-F/Q and broader parents remain open.
