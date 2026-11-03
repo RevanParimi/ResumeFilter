@@ -32,6 +32,123 @@ RESUME = "Synthetic Candidate Router\nEmail: candidate-router@example.in\n" + "\
 )
 
 
+def create_report_read_smoke_app():
+    """Exercise real report workers with bounded synthetic SQL holds."""
+    from sqlalchemy import event
+    from smoke_r4_s1_t1a import create_smoke_app
+    app = create_smoke_app()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state = local()
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            pool, caller = services.report_records, get_ident()
+            run = pool.run
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller, 'report SQL ran on its caller'
+                    state.active, state.held = True, False
+                    with (scratch / 'report-read-operations.jsonl').open('a') as log:
+                        log.write(json.dumps({'operation': operation.__name__, 'thread': get_ident()}) + '\n')
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        state.active = False
+                        if state.held:
+                            (scratch / 'report-read-completed').touch()
+                return await run(owned)
+            pool.run = tracked
+            def sql(conn, cursor, statement, parameters, context, many):
+                if (scratch / 'report-read-mode').exists() and getattr(state, 'active', False) and not state.held and 'FROM REPORTS' in statement.upper():
+                    state.held = True
+                    (scratch / 'report-read-entered').touch()
+                    deadline = time.monotonic() + 20
+                    while not (scratch / 'report-read-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic report SQL hold timed out'
+                        time.sleep(.01)
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('report_read_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('report_read_owner', get_ident()) == get_ident()
+            listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
+                (services.session_factory, 'after_begin', begin),
+                (services.session_factory, 'after_transaction_end', end)]
+            for target, name, listener in listeners:
+                event.listen(target, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'report-read-release').touch()
+                await pool.aclose()
+                pool.run = run
+                for target, name, listener in listeners:
+                    event.remove(target, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_report_reads(checks, scratch, control, org_a, org_b, report_id, candidate_id):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    require(control.post(f'/report/{report_id}/outcome', json={'outcome': 'inconclusive', 'notes': 'Private operator review'}))
+    require(org_a.post(f'/screening/reports/{report_id}/outcome', json={'outcome': 'verified_genuine', 'notes': 'Owned employer review'}))
+    cases = [(control, f'/report/{report_id}'), (control, f'/report/{report_id}/outcomes'),
+        (org_a, f'/screening/reports/{report_id}'),
+        (org_a, f'/screening/candidates/{candidate_id}/reports'),
+        (org_a, f'/screening/reports/{report_id}/outcomes')]
+    saved = []
+    for http, path in cases:
+        expected = require(http.get(path))
+        for name in ('entered', 'release', 'completed'):
+            (scratch / f'report-read-{name}').unlink(missing_ok=True)
+        operations = scratch / 'report-read-operations.jsonl'
+        count = len(operations.read_text().splitlines())
+        (scratch / 'report-read-mode').touch()
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(http.get, path)
+                try:
+                    deadline = time.monotonic() + 10
+                    while not (scratch / 'report-read-entered').exists():
+                        assert time.monotonic() < deadline
+                        time.sleep(.01)
+                    start = time.monotonic()
+                    assert control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                    elapsed = time.monotonic() - start
+                    checks.check('held report SQL leaves health and admitted reads responsive', elapsed < 1, f'{elapsed:.4f}s')
+                    for peer in (control, org_b):
+                        url = f'/report/{report_id}' if peer is control else f'/screening/reports/{report_id}'
+                        busy = peer.get(url)
+                        checks.check('report pool is shared across operator and employer reads',
+                            require(busy, 503) == {'detail': 'report_record_capacity_exhausted'}
+                            and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                    response = pending.result(timeout=5)
+                    checks.check('report wait refuses partial history or report and retains admission',
+                        require(response, 503) == {'detail': 'report_record_pending'}
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers
+                        and control.get(f'/report/{report_id}').status_code == 503)
+                finally:
+                    (scratch / 'report-read-release').touch()
+        finally:
+            deadline = time.monotonic() + 10
+            while not (scratch / 'report-read-completed').exists():
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            (scratch / 'report-read-mode').unlink(missing_ok=True)
+        checks.check('late report read does not replay or write', len(operations.read_text().splitlines()) == count + 1)
+        checks.check('deliberate report GET recovers exact saved state', require(http.get(path)) == expected)
+        saved.append((http, path, expected))
+    own = require(org_a.get(f'/screening/reports/{report_id}/outcomes'))['outcomes']
+    checks.check('employer history excludes private operator judgments', len(own) == 1 and own[0]['notes'] == 'Owned employer review')
+    checks.check('foreign and absent report reads are indistinguishable',
+        require(org_b.get(f'/screening/reports/{report_id}'), 404) == require(org_b.get('/screening/reports/missing'), 404)
+        and require(org_b.get(f'/screening/candidates/{candidate_id}/reports')) == [])
+    return saved
+
+
 def create_candidate_fingerprint_smoke_app():
     return create_candidate_ingest_smoke_app(fingerprint=True)
 
@@ -638,6 +755,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--report-read-workers', 'create_report_read_smoke_app'),
         ('--linkedin-source-workers', 'create_linkedin_source_smoke_app'),
         ('--github-source-workers', 'create_github_source_smoke_app'),
         ('--source-read-workers', 'create_source_read_smoke_app'),
@@ -667,6 +785,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
         env.update(DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--report-read-workers' in sys.argv:
+        env.update(DEE_REPORT_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_REPORT_RECORD_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -759,6 +880,8 @@ def run(scratch, url, pg_options):
 
             owned = require(org_a.post("/screening/candidates", json={"resume_text": RESUME.replace("candidate-router@example.in", "candidate-employer@example.in"), "domain": "data_eng"}))
             employer_rid = owned["report"]["id"]
+            report_reads = check_report_reads(checks, scratch, control, org_a, org_b, employer_rid,
+                owned['candidate_id']) if '--report-read-workers' in sys.argv else []
             checks.check("shared employer intake retains tenant ownership", org_b.get(f"/screening/reports/{employer_rid}").status_code == 404
                 and require(org_a.get(f"/screening/reports/{employer_rid}"))["id"] == employer_rid)
             farms = (owned["resume_farm"], owned["report"]["resume_farm"])
@@ -767,6 +890,9 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
+            if report_reads:
+                checks.check('report reads and scoped history survive migrated graceful restart',
+                    all(require(http.get(url)) == data for http, url, data in report_reads))
             if intake_saved:
                 checks.check('uncertain intake and deliberate recovery survive restart',
                     all(require(control.get(url)) == data for url, data in intake_saved.items()))

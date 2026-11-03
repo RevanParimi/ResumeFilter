@@ -54,6 +54,27 @@ function component(kind = "org", post) {
 }
 
 
+for (const kind of ["admin", "org"]) for (const detail of [
+  "report_record_capacity_exhausted", "report_record_executor_closed", "report_record_pending"
+]) {
+  test("report read refusal preserves saved reference and manual recovery: " + kind + "/" + detail, async () => {
+    const { c, calls, window } = component(kind);
+    window.VeritasAPI.get = async p => { calls.push(["GET", p]); throw { status: 503, kind: "http", detail }; };
+    c.openReport(report.id)(); await settle();
+    const view = c.renderVals();
+    assert.match(view.reportErrorText, /temporarily unavailable.*reload the report/i);
+    assert.match(view.outcomesErrorText, /temporarily unavailable.*reload the report/i);
+    assert.doesNotMatch(view.reportErrorText + view.outcomesErrorText, /report_record/);
+    assert.match(window.location.hash, new RegExp(report.id));
+    assert.equal(calls.length, 2);
+    window.VeritasAPI.get = async p => { calls.push(["GET", p]); return p.endsWith("/outcomes") ? { outcomes: [] } : report; };
+    c.retryReport(); await settle();
+    assert.equal(c.state.report.data.id, report.id);
+    assert.equal(calls.length, 4);
+    assert.equal(calls.filter(call => call[0] === "POST").length, 0);
+  });
+}
+
 for (const detail of ["auth_resolution_capacity_exhausted", "auth_resolution_executor_closed", "auth_resolution_pending"]) {
   test("session-check refusal preserves a refresh path without sending code or replay: " + detail, async () => {
     const { c, calls, window } = component("candidate");

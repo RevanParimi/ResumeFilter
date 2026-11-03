@@ -433,6 +433,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._candidate_records.close()
     if bundle._candidate_ingests is not None:
         bundle._candidate_ingests.close()
+    if bundle._report_records is not None:
+        bundle._report_records.close()
 
 
 @pytest.fixture

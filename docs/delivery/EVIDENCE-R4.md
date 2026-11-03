@@ -10025,3 +10025,356 @@ with no secrets, working data or local runtime artifacts. Configured `main`
 tracks `origin/main`; standing-authorized scoped commit/push follows using
 per-command GCM account selection, with exact remote-commit verification reported
 in the final response. Stop after publication; do not begin C3D here.
+
+### <a id="r4-s2-t3c3d1"></a>R4-S2-T3C3D1 - Bound report and outcome-history reads
+
+**Status: done (2026-11-03; started 2026-11-02).** Baseline `392793f`. Parent D was
+inventoried/split in its [PI record](PI-R4.md#r4-s2-t3c3d) before implementation.
+Only D1 is implemented this session; D2-D6/Q and broader parents remain open.
+
+**Pre-implementation contract.** Five GET operations: operator `/report/{id}`
+and `/report/{id}/outcomes`; employer `/screening/reports/{id}`,
+`/screening/candidates/{id}/reports` and `/screening/reports/{id}/outcomes`.
+Synchronous SQL currently blocks the async caller. Run each complete operation
+in a lazy service-owned `report_records` pool using the existing BoundedExecutor,
+positive capacity (default 2) and finite positive caller wait (default 20 seconds).
+Workers own every SQL session and return detached results; Request/Response,
+auth/session-CSRF dependencies and async providers stay on the caller. Preserve
+existing DTO/OpenAPI, redaction, ownership, generic absent/foreign 404, empty
+candidate-report list and outcome ordering/provenance. Complete history reads
+perform a final report/ownership snapshot to refuse observed erasure before
+publishing loaded notes. Single-statement report/list reads remain snapshots;
+no lock across later delivery is promised.
+
+Full/closed/pending returns safe 503/Retry-After without partial reports/history
+or cookies. Timeout/cancel retains admission until actual completion, consumes
+late failure and never replays. Deliberate GET recovers saved state without
+evaluation/write/provider work. Shutdown refuses new work and drains report
+workers before owned SQL disposal. Budget is per service/process/operation,
+not a global DB or whole-workflow deadline; direct service callers own scheduling.
+No schema/migration, working-store, scorer/provider, outcome POST, evaluation
+save or batch-control change. No new abstraction or dedicated UI.
+
+Require behavioral red then green for responsiveness and loaded-history erasure,
+focused/full pytest, actual SQLite/PG read locks and competing erasure, shared
+cross-plane admission/cancellation/late failure/session ownership/recovery,
+two-actor migrated scratch HTTP/graceful restart and actual saved-report Chrome
+including failure/reload recovery. Run bindings/JS syntax/relevant compilation.
+Use offline fakes/isolated stores and existing harnesses; fakes prove mechanics,
+not quality. No migration change calls for a new up/down/up gate; run current
+head scratch migrations and existing populated migration regressions. Record
+implementation self-review and distinct final staged self-review after required
+validation/completion, then commit/push scoped changes, verify remote and stop.
+
+**Reproduction and implementation.** Tag `red` on the sanitized project runner
+`.pytest_cache/run_r4_s2_t3c3d1.py`, `-m pytest -q --tb=short tests/test_api.py -k
+'report_read_sql or report_history_refuses'`: **7 failed, 7 skipped,
+35 deselected, 1 warning, 24.24s** (wrapper **31.94s**). All five held-SQL reads
+blocked unrelated requests; both history routes returned loaded notes as 200
+after report deletion. These are behavioral failures, not source/import checks.
+
+Resolved medium availability findings at the five GET handlers in
+`api/reports.py` and `api/screening.py`, and high privacy findings at operator
+history and `OrgScopedAccess.outcomes` (observed report erasure after notes load).
+The separate lazy report pool owns complete SQL operations, including existing
+scope/redaction and history final existence/ownership checks. Shared safe
+full/closed/pending refusal, retained capacity/no replay and drain-before-SQL
+reuse the existing executor. Async HTTP/auth/providers remain on their owners;
+only bound store/service methods, stores and IDs cross the worker boundary.
+Single-query report/list snapshots, operator cross-tenant access, employer
+redaction/private-note filtering, ordering, empty lists and generic 404 remain.
+No outcome POST, evaluation-save, batch, schema, provider or scorer change.
+The [report read budget](../../OPERATING.md#report-read-execution-budget) owns
+defaults, settings, safe refusal, recovery and limits.
+
+**Focused validation and fixture correction.** Tag `green` selected the original
+regressions, configuration, shutdown and scope guards: **64 passed, 7 skipped,
+75 deselected, 1 warning, 20.97s**. The first 12-module focused run then recorded
+**282 passed, 6 failed, 39 skipped, 2 warnings, 133.98s**. Its six SQLite employer
+lock variants acquired a database-wide exclusive lock before authentication;
+the request failed there before entering the report operation. Corrected the
+test to authenticate and pause the admitted report worker just before SELECT,
+then acquire a real competing lock and release it into that lock. No product
+or timeout change masks these failures. PG still observes actual driver Lock
+waits; authentication is explicitly outside this report budget.
+
+Tag `focused-final`, `-m pytest -q --tb=short` over `tests/test_api.py`,
+`test_report_store.py`, `test_screening_scope.py`, `test_screening_api.py`,
+`test_screening_outcome_api.py`, `test_service_lifecycle.py`, `test_config.py`,
+`test_org_scope_guard.py`, `test_api_route_extraction.py`, `test_route_table_guard.py`,
+`test_openapi_contract.py` and `test_report_response_erasure.py`
+(all under `tests/`): **288 passed, 39 skipped, 2 warnings, 71.40s**, exit 0.
+Coverage includes all five shared full/closed/read-wait/cancel/late-failure paths,
+worker/session ownership, authentication before refusal, actual SQLite read locks,
+both erasure outcomes, saved-read recovery, settings and shutdown cancellation.
+Added the related post-load employer ownership-change case during review;
+tag `history-final`, `-m pytest -q --tb=short tests/test_api.py -k
+report_history_refuses`: **3 passed, 3 skipped, 105 deselected, 1 warning, 4.74s**,
+exit 0 (wrapper **9.52s**). The full/PG gates below use this final test state.
+
+**Implementation self-review (2026-11-02).** Reviewed `392793f` plus the current
+route/scope/settings/lifecycle, test/HTTP harness and runbook diff. Specification
+review traces all five GETs and their complete store/service work, dependencies,
+detached DTOs, shared admission and separate owning sessions. Correctness review
+checks scope/404/redaction/provenance, final history erasure/ownership snapshots,
+no partial errors/cookies, retained futures/no replay, explicit GET recovery and
+shutdown drain. Added the ownership-change regression and simplified one count
+assertion. The HTTP harness holds actual report-worker SQL, asserts session
+ownership, cross-plane capacity and exact saved history/restart, and keeps hooks
+until accepted work drains. The read budget is separate from earlier auth SQL,
+later write/batch work and other pools, without a hard driver/drain/global bound.
+No blocking finding remains. This is self-review, not independent review. Final
+checks below use unchanged reviewed production/harness code and final tests;
+distinct final staged self-review follows validation/completion records.
+
+**Review follow-up before the final full run.** Inspection found that the shared
+borrowed-service fixture in `tests/conftest.py` did not close the newly added
+report pool. Added the same explicit close used for the existing pools; production
+shutdown already drained it. Re-reviewed this test-resource fix and final state.
+The first full attempt had one failure indicator and reached 27% when stopped
+because its already-imported fixture lacked that cleanup. Its exact failure
+assertion/cause is unavailable: no completed summary was produced and no causal
+claim connects that indicator to the cleanup omission. Verified and terminated
+only the pytest descendant of the owned D1 runner, leaving the demo untouched.
+The runner exited **4294967295**; retained logs are
+`r4-s2-t3c3d1-full-incomplete.txt` and `r4-s2-t3c3d1-final-gates-incomplete.txt`.
+This attempt is incomplete, not a passing full gate. No threshold was changed.
+Static/Chrome/HTTP results above use unchanged application/harness code; the
+fresh full/PG gates below use the corrected fixture and a new reviewed-state
+hash snapshot. No independent review is claimed.
+
+The follow-up ownership review found local report-reading fixtures too. Reused
+the shared `services` fixture for API, candidate API and error-logging clients;
+custom retention, standalone screening-cookie and new loaded-history cases now
+register explicit bundle cleanup. Existing direct async owners already close
+their bundles; refused auth-only report requests never allocate the report pool.
+This avoids another copied cleanup implementation. The second full attempt was
+stopped at **1%**, with **no failure indicator**, to include these final fixture
+corrections; its runner also exited **4294967295**. Separate retained logs use
+`full-fixture-followup-incomplete` / `final-gates-fixture-followup-incomplete`.
+Neither partial attempt is full regression evidence or a proved diagnosis of the
+first indicator. Application/harness code and timeout assertions remain unchanged.
+
+Tag `focused-owned`, the same twelve modules plus `tests/test_error_logging.py`,
+`tests/test_flywheel_retention.py` and all **21** functions in
+`tests/test_candidates_api.py` requesting `api` or `_client` fixtures (selected by
+their AST argument names as `tests/test_candidates_api.py::<function>`):
+**332 passed, 40 skipped, 2 warnings, 118.46s** (wrapper **125.73s**), exit 0.
+Exact expanded selection is retained in the local runner's
+`r4-s2-t3c3d1-focused-files.json`; the same fourteen modules and fixture-callers
+run in the actual PG gate. Re-reviewed the final cleanup changes against those
+callers and existing borrowed-SQL semantics; no blocking finding remains. The
+final full/PG runs below start only after this complete focused pass and new
+616-file reviewed snapshot, with affected fixture compilation rerun.
+
+**Completed full run and recovery-probe regressions.** The subsequent complete
+full command recorded **4200 passed, 2 failed, 1016 skipped, 127 warnings,
+1648.49s** (wrapper **1658.89s**), exit 1. Retained log:
+`r4-s2-t3c3d1-full-recovery-probes-red.txt`. Failures were
+`test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_input[sqlite-timeout-save-admin]`
+(recovery returned 503 instead of 200) and
+`test_source_ingest_uncertainty_retains_admission_and_committed_history[sqlite-timeout-linkedin-transform]`
+(recovered-history JSON lacked `sources`). These cases do not execute the new
+D1 report-read handlers. Collection-only diagnosis identified the first node
+before the full assertion report; no passing result is inferred from collection.
+
+Inspection found both probes re-applied their initial 0.5-second budget during
+deliberate recovery after the tests restored 20 seconds. The fingerprint ingest
+callback now arms its short wait only for the initial scenario; source provider/
+decode callbacks respect the existing `observing` flag. Initial 0.5-second timeout,
+admission/cancellation/late-write and recovery assertions are unchanged. This is
+a scoped test-probe correction, not a product deadline/fallback change or a
+threshold relaxation of the behavior being tested. Re-reviewed both probe scopes
+and preserved the failed full command without claiming it passed.
+
+Tag `recovery-probes`, `-m pytest -q --tb=short
+tests/test_candidates_api.py::test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_input
+tests/test_profile_sources_api.py::test_source_ingest_uncertainty_retains_admission_and_committed_history`:
+**88 passed, 88 skipped, 1 warning, 151.26s** (wrapper **159.98s**), exit 0.
+Both entire parameterized families, rather than just failed nodes, execute.
+The original PG selection is extended with these same two families. Final full
+and PG commands below use these final probes, recompiled affected tests and a
+new reviewed-state snapshot. Application/harness code remains unchanged.
+
+**Validation setup and initial static/browser gates.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3d1.py <tag> <Python args>` clears inherited DEE
+settings/keys, uses nonexistent config and disables remote credentials. Fixtures
+bypass dotenv and isolate stores; subprocess apps use fake providers and migrated
+scratch working directories without `.env`. Sequential orchestrator:
+`.pytest_cache/final_gates_r4_s2_t3c3d1.py`. Owned disposable PG runner/runtime:
+`.pytest_cache/run_r4_s2_t3c3d1_postgres.py` / `r4-s2-t3c3d1-pg-runtime.json`.
+These are local ignored helpers/logs, not portable setup guarantees. Baseline:
+**734 tracked hashes**; final reviewed state: **616 code/config hashes**.
+
+- `node scripts/check_ui_bindings.js`: **593 bindings / 18 states**, all resolve.
+  `node --check frontend/api.js` and `node --check frontend/support.js`: exit 0.
+- Tag `compile`, `-m py_compile` on nine modules: `src/app/api/reports.py`,
+  `src/app/api/screening.py`, `src/app/screening/scope.py`,
+  `src/app/services/__init__.py`, `src/app/core/config.py`, `tests/test_api.py`,
+  `tests/test_config.py`, `tests/test_service_lifecycle.py` and
+  `scripts/smoke_r4_s1_t3c.py`: exit 0, **0.30s**.
+- Tag `browser`, `scripts/check_ui_evaluate_browser.py`: actual Chrome
+  **1/1 + 48/48**, exit 0, wrapper **36.91s**. Real saved report/history reads,
+  tenant/private-note behavior, reload without another upload, native erased
+  report 404/recovery, feedback/consent/portal compatibility and console checks
+  pass. Existing transport-injected errors remain UI failure/recovery checks;
+  they are not real worker stalls. HTTP below owns actual worker refusal/pending.
+  Chrome requires existing CDN internet; fakes do not prove live delivery/quality.
+- Tag `http`, `scripts/smoke_r4_s1_t3c.py --report-read-workers`: migrated
+  SQLite HTTP/two-start graceful restart **54/54**, exit 0. Five controlled
+  report-worker SQL holds test health/admitted reads under the unchanged
+  one-second limit, shared cross-plane refusal, pending/no partial result/cookies,
+  retained admission, no replay/write, deliberate exact GET recovery, private
+  operator notes excluded from employer history, generic foreign/absent 404,
+  empty candidate lists and exact report/history persistence through restart.
+  Existing candidate/intake/source/CSRF/erasure compatibility remains in the
+  same journey. Worker/session hooks drain before cleanup. These controlled
+  holds prove composition; separate real driver-lock regressions prove SQL
+  contention. No working DB or existing demo is used/restarted.
+
+**Final full regression (2026-11-02).** Tag `full`, `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d1.py full`, executing `-m pytest -q --tb=short`:
+**4202 passed, 1016 skipped, 127 warnings, 1818.00s** (wrapper **1832.27s**),
+exit 0. This is the completed fresh full run on the final backend/config and
+test/fixture/probe state. The UI review follow-up below validates three later
+HTML/consumer-test changes; backend bytes remain identical. Both earlier complete-run failures now pass; both
+incomplete attempts and the failed complete command remain recorded above.
+No result from an interrupted run is counted as green. The suite includes
+populated migrations, advisory/domain/fallback, consent/erasure, tenant, batch
+and lifecycle compatibility. Existing third-party/expression-index reflection
+warnings and optional/unconfigured-PG skips remain; skips prove no omitted case.
+
+Tag `compile-fixture`, `-m py_compile tests/conftest.py tests/test_api.py
+tests/test_candidates_api.py tests/test_error_logging.py
+tests/test_flywheel_retention.py tests/test_api_route_extraction.py
+tests/test_profile_sources_api.py`: exit 0, **0.45s**. Together with the nine-module
+command above this checks **15 distinct modules**, including all final fixture/
+probe corrections. The reviewed-state snapshot was saved immediately before
+this compilation/full run; actual PG and preservation checks follow.
+
+**Actual PostgreSQL and final application evidence.**
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d1_postgres.py` created
+owned disposable **PG 18.6**, Asia/Calcutta, read committed. The fourteen-module,
+21 candidate-fixture caller and two repaired-family selection described above
+completed **548 passed, 0 skipped, 2 warnings, 875.47s** (wrapper **888.66s**),
+exit 0. Actual PG variants observe competing-connection Lock waits through
+`pg_stat_activity`, retain capacity through caller departure and refuse erased
+report/history snapshots without touching another subject. Session/worker and
+scope/redaction/provenance, authentication-before-admission, shutdown, uncertain
+intake/source recovery and final ownership changes pass. This PG-enabled group
+also contains pure/SQLite cases; not all 548 are PostgreSQL cases.
+
+The runner then executed `scripts/smoke_r4_s1_t3c.py --postgres
+--report-read-workers`: **54/54**, exit 0, wrapper **38.66s**. Migrated two-actor
+HTTP and graceful restart retain the same contracts as SQLite above. Five
+controlled holds leave health plus admitted SQL reads responsive in
+**0.0171-0.0927s**, below one second; SQLite's five holds measured
+**0.0046-0.0192s**. These holds establish scheduling/composition, separately from
+real driver-lock tests. Current scratch migration head is **0030** on both DBs;
+no schema change requires a new migration up/down/up gate. Working DB is not
+migrated. Owned PG fast stop exits **0** (**42.29s**); separate `pg_ctl status`
+exits **3**, no server running. Final orchestrator exits **0**.
+
+**Final review UI follow-up (2026-11-03).** Inspection found that the shared
+`errorCopy` would display raw `report_record_*` strings in saved report/history
+errors. Medium usability/contract finding at `frontend/Veritas.dc.html:errorCopy`:
+a valid saved read under full/closed/pending refusal gave implementation text
+without recovery guidance. Added one shared message asking the user to wait,
+then reload the saved report. Existing references and read-only retry remain.
+
+`node --test --test-name-pattern="report read refusal" scripts/test_ui_evaluate.js`
+first produced **6 failed, 0 passed** (raw codes observed), then **6 passed,
+0 failed/skipped, 289.8321ms**. Both operator/employer report and history errors
+retain the reference, issue no POST and recover through deliberate reload.
+Only **three files** changed after full/PG: the HTML message,
+`scripts/test_ui_evaluate.js` and `scripts/check_ui_evaluate_browser.py`.
+The backend/fixture/probe snapshot is retained separately as
+`r4-s2-t3c3d1-backend-reviewed-state.json`; all other tested hashes match it.
+
+Affected gates ran sequentially via ignored
+`.pytest_cache/final_ui_gates_r4_s2_t3c3d1.py`. Tag `ui-pytest`,
+`-m pytest -q --tb=short tests/test_ui_handlers.py tests/test_ui_mount.py`:
+**20 passed, 1 warning, 16.48s**, exit 0. This executes the full shipped UI
+handler suites including the new cases and validates mounted/served assets.
+Bindings remain **593/18**; JS syntax for `frontend/api.js`, `frontend/support.js`
+and `scripts/test_ui_evaluate.js` passes. `-m py_compile
+scripts/check_ui_evaluate_browser.py` passes, taking explicit compilation to
+**16 distinct modules** across this task.
+
+Tag `browser-final`, `scripts/check_ui_evaluate_browser.py`: actual Chrome
+**1/1 + 50/50**, exit 0. The additional controlled report-read 503 checks verify
+rendered human guidance without raw codes, retained saved ID and manual recovery
+of the same report with unchanged saved-report inventory. That 503 is injected
+in browser transport; real worker admission/pending/SQL/restart remains proved
+by SQLite/PG HTTP above. Native successful report/history reads, erased-report
+404 and reload/error/consent/feedback/portal compatibility remain active. No
+backend/schema/provider change or live-quality claim follows from this UI fix.
+Affected UI checks cover the final HTML/browser-test state; the completed full
+and PG runs cover the unchanged backend.
+
+**Completion record (2026-11-03).** Only **R4-S2-T3C3D1** closes. All five
+operator/employer report/history GETs now bound complete SQL in the separate
+report-record pool. Loaded history refuses observed report erasure or changed
+employer ownership. Full/closed/pending responses are safe and shared across
+planes, retained capacity never replays, and deliberate GET recovers saved state.
+Saved-read failures offer human reload guidance while retaining their report
+reference. Production shutdown and borrowed test owners drain their pools. Defaults,
+authentication, tenant projection, advisory/human review, consent/erasure,
+domain-independent/scorer/fallback semantics and existing DTOs remain explicit.
+No outcome-write/evaluation-save/batch/schema or working-store change is claimed.
+
+Final full **4202/1016**, actual PG **548**, HTTP/restart **54/54 on each DB**,
+final UI pytest **20**, actual Chrome **50/50**, six refusal-copy regressions,
+bindings/syntax and 16-module compilation pass. Earlier interrupted
+and failed runs, fixture corrections and repaired recovery probes are retained
+above, not recast as passing tests. Fakes prove mechanics, not live quality.
+Single-query/final history guards remain snapshots, lists remain unpaged, and
+per-process/operation waits do not bound auth/global SQL, driver waits or drain.
+D2-D6/Q, C3D and all broader parents remain open. Exact next:
+**R4-S2-T3C3D2 - Bound human-outcome writes**, in a separate session.
+
+All **616 tested code/config hashes** match the final reviewed state. Working
+`data/veritas.db` and unrelated files are preserved; the existing demo is
+untouched and owned PG is confirmed stopped. Distinct final staged self-review
+follows this completion record, then standing-authorized scoped commit/push
+and exact remote verification. No second child implementation was started.
+
+**Distinct final staged self-review (2026-11-03).** After required validation
+and the completion record, reviewed the exact **25 staged files** against
+`392793f`: five application modules, YAML, the existing HTML message, three
+HTTP/UI/browser scripts, nine pytest/fixture modules and six documentation
+records. This later pass is separate from implementation review and its fixture/
+probe follow-ups. Specification review maps all five GETs to owning operations,
+scope/DTO/404/list contracts, history erasure/ownership guards, safe admission,
+retained futures/no replay, saved-state recovery and drain-before-disposal.
+Only D1 closes; D2-D6/Q, C3D and broader parents remain open. The local child
+prerequisites remain acyclic and the exact next pointer is D2.
+
+Correctness/maintainability review traced auth and worker/session boundaries,
+read-only data behavior, detached results and final snapshots; settings/lazy
+pool ownership, borrowed test cleanup, late failures and cross-plane saturation;
+and raw-code UI guidance with reference-preserving manual recovery. The UI
+finding is resolved with red/green cases and actual Chrome. Repaired recovery
+probes preserve their initial short waits and leave deliberate recovery at its
+intended normal budget. Existing advisory, tenant/consent/erasure, scorer/domain
+and deterministic fallback semantics remain. No blocking finding remains.
+Both reviews are same-agent **self-reviews**, not independent review.
+
+Reviewed all initial failures and interrupted attempts against the logs; none
+is relabeled green. Full **4202/1016**, actual PG-enabled **548**, HTTP **54/54**
+on each DB, final UI pytest **20** and Chrome **50/50** have their proper scopes.
+All backend hashes match the full/PG snapshot; only the three explicitly
+revalidated HTML/UI/browser files differ from that snapshot. UI-injected 503s,
+real HTTP worker holds and actual driver locks remain distinct evidence, and
+fakes establish no live-provider/quality or global resource guarantee.
+
+Final documentation checks verify **9 added local links/anchors**, unique IDs,
+D1-only completion and pending children, local dependency order and exact next.
+Staged whitespace and index/worktree agreement pass. All **616 final tested
+code/config hashes** match; **709 unrelated tracked files**, including working
+`data/veritas.db`, retain baseline bytes. Owned PG has stop exit **0** and
+separate status exit **3**; the demo is untouched. Staging contains no secrets,
+working data or ignored runtime artifacts. Configured `main` tracks
+`origin/main`; standing-authorized scoped commit/push follows using per-command
+GCM account selection. Final response reports the verified remote commit.
+Stop after publication; do not begin D2 here.

@@ -15,12 +15,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from tests.conftest import ADMIN_HEADERS, make_services
+from tests.conftest import ADMIN_HEADERS
 
 
 @pytest.fixture
-def client(settings, flywheel):
-    services = make_services(settings, flywheel=flywheel)
+def client(services):
     with TestClient(
         create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS
     ) as c:

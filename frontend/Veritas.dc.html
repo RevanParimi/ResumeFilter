@@ -1631,6 +1631,8 @@ const CSRF_COPY = "Your sign-in moved on while this page was open. Sign in again
 function errorCopy(err) {
   if (!err) return "";
   if (AUTH_RESOLUTION_ERRORS.includes(err.detail)) return "Sign-in checks are temporarily unavailable. Wait a moment, then refresh.";
+  if (["report_record_capacity_exhausted", "report_record_executor_closed", "report_record_pending"].includes(err.detail))
+    return "Saved reports are temporarily unavailable. Wait a moment, then reload the report.";
   if (err.kind === "consent") return CONSENT_COPY;
   if (err.kind === "csrf") return CSRF_COPY;
   if (err.kind === "email_down") return "No email provider is configured on this API, so no code can be sent. Set DEE_EMAIL_PROVIDER to send one.";

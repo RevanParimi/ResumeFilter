@@ -126,7 +126,12 @@ class OrgScopedAccess:
         the same row set, and the customer is not its audience. ``None`` for
         "not yours, or absent"; an empty list means "yours, nothing recorded".
         """
-        return self._reports.outcomes_for_org(org_id, report_id)
+        found = self._reports.outcomes_for_org(org_id, report_id)
+        # Refuse erasure or changed ownership observed after loading notes.
+        # This remains a snapshot, not a lock across later HTTP delivery.
+        if found is None or self._reports.get_for_org(org_id, report_id) is None:
+            return None
+        return found
 
 
 def build_org_scoped_access(

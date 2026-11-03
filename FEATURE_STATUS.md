@@ -254,3 +254,15 @@ and separate self-reviews. The original PG hook-wait timeout and unchanged
 six-case rerun are retained in the evidence. No production/test change was
 needed; separate record/intake pools, late commits, manual recovery and the
 documented budgets/limits remain. C3D-F/Q and broader parents remain open.
+
+[R4-S2-T3C3D1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d1) bounds the five
+operator/employer report and outcome-history GET operations in a separate pool.
+Busy/closed/pending reads return safe 503 without partial reports/notes; admission
+persists through timeout/cancellation and saved-state recovery is a deliberate
+GET. History checks refuse observed erasure or changed employer ownership before
+publishing loaded notes. Read failures offer reload guidance while keeping the
+saved reference. Tenant projection, private-note filtering, generic 404,
+empty candidate-report lists and advisory/scorer semantics remain. The
+[report read budget](OPERATING.md#report-read-execution-budget) states defaults
+and snapshot/driver/drain limits. Outcome writes, evaluation publication and
+batch SQL remain D2-D6/Q; C3D and broader parents stay open.

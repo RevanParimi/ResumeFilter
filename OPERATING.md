@@ -423,6 +423,37 @@ global lock/deadline. Direct
 low-level ingest/process callers must supply the shared executor or own scheduling.
 No schema change, live-data rotation or demo restart belongs to this change.
 
+### Report read execution budget
+
+`report_record_max_concurrent_requests` defaults to **2** per Services/app
+process, and `report_record_wait_seconds` to a finite positive **20 seconds**.
+Configure YAML or `DEE_REPORT_RECORD_MAX_CONCURRENT_REQUESTS` /
+`DEE_REPORT_RECORD_WAIT_SECONDS`, then restart. One separate queue-free pool
+serves operator GET `/report/{id}` and `/report/{id}/outcomes`, and employer GET
+`/screening/reports/{id}`, `/screening/candidates/{id}/reports` and
+`/screening/reports/{id}/outcomes`. Each complete operation owns its SQL sessions;
+auth/session dependencies remain on their caller and are outside this budget.
+Employer report projections, private-note filtering, ordering, absent/foreign 404
+and empty candidate-report lists retain their existing contracts. History reads
+recheck report existence/ownership before publishing loaded notes. Final checks
+and single-query report/list reads remain snapshots across later deletion/delivery.
+
+Full/closed admission returns **503** `report_record_capacity_exhausted` /
+`report_record_executor_closed`; caller wait expiry returns **503**
+`report_record_pending`. Each has `Retry-After: 1`, without partial report/history
+or cookies. Timeout/cancel retains capacity until actual completion, consumes late
+failure and never replays. These operations do not evaluate or write reports/
+outcomes. Deliberate fresh
+GET recovers current saved state; an admitted late read does not activate a retry.
+Shutdown refuses new work and joins accepted report workers before SQL disposal.
+
+This is a per-process/operation read budget, not a global SQL limit or whole-request
+deadline. Driver waits/drain cannot be killed or given a hard new deadline. Lists
+remain unpaged. Direct synchronous service/store callers own scheduling. Outcome
+POSTs, `/evaluate` report persistence, batch and other handler/graph SQL are
+separate later work; earlier authentication/DB contention can still refuse or
+fail before a report worker is admitted. No schema or working-store change.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

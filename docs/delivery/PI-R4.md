@@ -607,12 +607,85 @@ scoped publication follows the recorded final review.
 
 ###### <a id="r4-s2-t3c3d"></a>R4-S2-T3C3D - Bound evaluation, reporting and screening SQL
 
-Status: pending. Prerequisite: C3C. Measure `reports`, `screening` and
+Status: in progress (2026-11-02). Prerequisite: C3C, published at `392793f`.
+Original contract: measure `reports`, `screening` and
 graph/service SQL around async provider calls; define bounded operation children
 before implementation. Preserve report publication/delivery/consent guards,
 outcome scope, batch leases/terminal outcomes and retry semantics. Require actual
 PG contention, late committed-result uncertainty and affected HTTP/browser/
 restart workflows; do not move coroutine/provider execution into a SQL session.
+
+Inventory/split at `392793f`, before implementation: operator report/outcome
+reads and employer scoped report/history reads are synchronous; outcome POSTs
+combine validation, SQL and an optional observer; `/evaluate` saves/checks SQL
+after caller-owned graph evaluation. The graph nodes themselves perform no direct
+SQL (production flywheel is a null observer); do not invent a graph SQL worker.
+Batch handlers call synchronous register/read/retry/delete operations, while
+`ScreeningService.process` still performs limiter/ownership/claim/recovery SQL
+before awaiting the already-bounded intake and failure/terminal/count SQL after.
+Keep complete transactions, scope/redaction and callback/session ownership.
+
+**<a id="r4-s2-t3c3d1"></a>R4-S2-T3C3D1 - Bound report and outcome-history reads**
+
+Status: done (2026-11-03; started 2026-11-02). This session's only implementation child.
+[D1 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d1) owns pre-implementation scope,
+red/green, bounded complete owning-session reads, final history erasure/ownership
+snapshots, safe uncertainty/no replay, shutdown and borrowed-fixture cleanup.
+Final full/actual SQLite/PG locks, two-actor HTTP/restart, actual saved-report
+Chrome, initial incomplete/failed gates, recovery-probe fixes, human read-refusal guidance and both self-reviews
+are recorded there. Auth, tenant projection, generic 404, empty lists and ordering
+remain. No outcome-write/evaluation-save/batch/schema/scoring change. Only D1
+closes; D2-D6/Q, C3D and all broader parents remain open. Exact next: D2 in a
+separate session. Scoped publication follows the recorded final staged review.
+
+**<a id="r4-s2-t3c3d2"></a>R4-S2-T3C3D2 - Bound human-outcome writes**
+
+Status: pending. Prerequisite: D1. Bound both operator and employer complete
+lookup/validation/append operations, preserving author/tenant/claim/note scope,
+FK/erasure and optional observer semantics. Prove real PG contention, uncertain
+late append without replay, saved-history recovery, HTTP/restart and actual
+outcome Chrome; record red/focused/full and both reviews. Separate commits do
+not promise rollback or idempotency.
+
+**<a id="r4-s2-t3c3d3"></a>R4-S2-T3C3D3 - Bound standalone evaluation publication**
+
+Status: pending. Prerequisite: D2. Bound complete `/evaluate` report-save/final
+snapshot after caller-owned async graph work; preserve advisory/domain/fallback,
+report erasure and safe uncertainty without another evaluation. Prove real PG
+locks/late save, migrated HTTP/restart, evaluation Chrome, red/focused/full and
+both reviews. Inventory indirect graph/service SQL again; no provider runs in a
+worker SQL session.
+
+**<a id="r4-s2-t3c3d4"></a>R4-S2-T3C3D4 - Bound batch management operations**
+
+Status: pending. Prerequisite: D3. Bound complete register/detail/list/queue/
+summary/retry/delete operations; preserve scoped pagination, counts, retention,
+retry/erasure and uncertainty. Split before implementation if needed. Require
+red/focused/full, actual PG competing SQL, two-actor HTTP/restart, batch Chrome
+and both reviews; no durable worker or implicit process retry.
+
+**<a id="r4-s2-t3c3d5"></a>R4-S2-T3C3D5 - Bound batch admission and recovery SQL**
+
+Status: pending. Prerequisite: D4. Bound limiter/ownership/claim/input/report
+recovery before awaited intake, keeping lease/generation checks and complete
+transactions on their owners. Split bounded operations before code if needed.
+Require actual PG/two-process races, late claim/recovery uncertainty without
+automatic provider continuation, HTTP/restart/Chrome, red/focused/full and reviews.
+
+**<a id="r4-s2-t3c3d6"></a>R4-S2-T3C3D6 - Bound batch terminal SQL**
+
+Status: pending. Prerequisite: D5. Bound post-intake failure/completion/count SQL
+and any remaining process boundaries; preserve one acknowledged terminal outcome,
+leases, erasure, retry and saved checkpoints. Require actual PG/two-process
+contention, late terminal uncertainty without replay, HTTP/restart/Chrome,
+red/focused/full and both reviews. Durable continuation remains T4.
+
+**<a id="r4-s2-t3c3dq"></a>R4-S2-T3C3DQ - Review combined evaluation/reporting/screening acceptance**
+
+Status: pending. Prerequisites: D1-D6 and any children. Re-inventory uncovered
+SQL and aggregate budgets; run combined full/SQLite/actual PG, two-actor and
+two-process migrated HTTP/restart, affected Chrome and both reviews. Only then
+close C3D; C3E-F/Q and broader parents remain open. No live quality claim.
 
 ###### <a id="r4-s2-t3c3e"></a>R4-S2-T3C3E - Bound candidate rights, verification and interview SQL
 

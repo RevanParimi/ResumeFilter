@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-03 - R4-S2-T3C3D1 complete; bounded report/history reads.**
+  Split C3D before implementation; only D1 closes. Five operator/employer GETs
+  use owning report workers with safe refusal/uncertainty, retained admission,
+  explicit saved-state recovery, human refusal guidance and final history
+  erasure/ownership checks.
+  The [D1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d1) owns red/green, final
+  full/actual PG/HTTP/restart/Chrome, earlier incomplete/failed runs, fixture/
+  recovery-probe corrections, preservation and both reviews. No write/schema/
+  scorer change; working DB preserved, demo untouched and owned PG stopped.
+  Scoped publication follows final staged self-review. Exact next: R4-S2-T3C3D2
+  in a separate session; D2-D6/Q and broader parents remain open.
+
 - **Session 2026-11-02 - R4-S2-T3C3CQ complete; combined intake/source review.**
   C1/C2/C3 and their separate record/intake budgets pass combined self-review
   and fresh full/SQLite/actual PG, all seven HTTP/restart modes and two-process

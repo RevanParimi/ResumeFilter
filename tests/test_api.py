@@ -10,11 +10,260 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS, make_services
+from tests.test_report_erasure_concurrency import database
 
 RESUME = (
     "- Fine-tuned GPT-4 to improve accuracy.\n"
     "- Built production RAG at scale for support tickets.\n"
 )
+
+
+REPORT_READS = [
+    ('operator-report', '/report/{rid}', 'get'),
+    ('operator-history', '/report/{rid}/outcomes', 'outcomes'),
+    ('employer-report', '/screening/reports/{rid}', 'get_for_org'),
+    ('employer-candidate', '/screening/candidates/a/reports', 'for_candidate_and_org'),
+    ('employer-history', '/screening/reports/{rid}/outcomes', 'outcomes_for_org'),
+]
+
+
+def _report_read_setup(settings, factory):
+    from app.candidates.store import CandidateStore
+    from app.reports.schema import OutcomeRecord
+    from tests.test_report_store import _report
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org = services.ledger.create_organization('Report owner')
+    other = services.ledger.create_organization('Other report owner')
+    key = services.ledger.issue_api_key(org.id)
+    other_key = services.ledger.issue_api_key(other.id)
+    owned, kept = _report(candidate_id='a'), _report(candidate_id='b')
+    services.report_store.save(owned, org_id=org.id)
+    services.report_store.save(kept, org_id=other.id)
+    services.report_store.add_outcome(OutcomeRecord(report_id=owned.id,
+        outcome='inconclusive', recorded_by='organization', org_id=org.id, notes='Owned review'))
+    return services, owned, kept, key, other_key
+
+
+@pytest.mark.parametrize('case,path,method', REPORT_READS, ids=[r[0] for r in REPORT_READS])
+async def test_report_read_sql_leaves_unrelated_requests_responsive(database, settings, case, path, method):
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    engine, factory = database
+    services, report, _, key, _ = _report_read_setup(settings, factory)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'from reports' in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                headers = {'X-Org-Key': key} if case.startswith('employer') else {}
+                pending = asyncio.create_task(http.get(path.format(rid=report.id), headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'report read blocked the event loop'
+                    assert time.monotonic() - start < 1
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('door,change', [('operator', 'erase'), ('employer', 'erase'), ('employer', 'owner')])
+def test_report_history_refuses_observed_erasure(database, settings, monkeypatch, request, door, change):
+    _, factory = database
+    services, report, kept, key, _ = _report_read_setup(settings, factory)
+    request.addfinalizer(lambda: asyncio.run(services.aclose()))
+    store = services.report_store
+    from app.reports.models import ReportRow
+    with factory() as session:
+        other_org = session.get(ReportRow, kept.id).org_id
+    method = 'outcomes' if door == 'operator' else 'outcomes_for_org'
+    read = getattr(store, method)
+    def erased(*args):
+        loaded = read(*args)
+        if change == 'erase':
+            assert store.delete(report.id)
+        else:
+            store.save(report, org_id=other_org)
+        return loaded
+    monkeypatch.setattr(store, method, erased)
+    with TestClient(create_app(services), headers=ADMIN_HEADERS) as http:
+        path = f'/report/{report.id}/outcomes' if door == 'operator' else f'/screening/reports/{report.id}/outcomes'
+        response = http.get(path, headers={'X-Org-Key': key} if door == 'employer' else {})
+        assert response.status_code == 404
+        assert response.json() == {'detail': 'report not found'}
+        assert store.get(kept.id) == kept
+
+
+@pytest.mark.parametrize('case,path,method', REPORT_READS, ids=[r[0] for r in REPORT_READS])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_report_read_admission_ownership_and_recovery(database, settings, monkeypatch, log_output, case, path, method, ending):
+    from threading import Event, get_ident
+    import httpx
+    from sqlalchemy import event
+    _, factory = database
+    settings.report_record_max_concurrent_requests = 1
+    settings.report_record_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    services, report, kept, key, other_key = _report_read_setup(settings, factory)
+    caller, calls = get_ident(), []
+    entered, release = Event(), Event()
+    original = getattr(services.report_store, method)
+    def observed(*args):
+        calls.append(get_ident())
+        entered.set()
+        assert release.wait(15)
+        if ending == 'late_failure':
+            raise RuntimeError('synthetic-private-report-read-error')
+        return original(*args)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('read_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('read_owner', get_ident()) == get_ident()
+    app = create_app(services)
+    headers = {'X-Org-Key': key} if case.startswith('employer') else {}
+    path = path.format(rid=report.id)
+    try:
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                expected = (await http.get(path, headers=headers)).json()
+                monkeypatch.setattr(services.report_store, method, observed)
+                event.listen(factory, 'after_begin', begin)
+                event.listen(factory, 'after_transaction_end', end)
+                pending = asyncio.create_task(http.get(path, headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == 200
+                    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as anonymous:
+                        assert (await anonymous.get(path)).status_code == 401
+                    for peer_path, peer_headers in [(f'/report/{kept.id}', {}),
+                            (f'/screening/reports/{kept.id}', {'X-Org-Key': other_key})]:
+                        busy = await http.get(peer_path, headers=peer_headers)
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'report_record_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'report_record_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.report_records._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0] != caller
+                if ending == 'release':
+                    assert responses[0].status_code == 200 and responses[0].json() == expected
+                monkeypatch.setattr(services.report_store, method, original)
+                services.report_records._wait_seconds = 20
+                fresh = await http.get(path, headers=headers)
+                assert fresh.status_code == 200 and fresh.json() == expected
+                assert services.report_store.get(kept.id) == kept
+                assert (await http.get(f'/screening/reports/{report.id}', headers={'X-Org-Key': other_key})).status_code == 404
+                assert (await http.get('/screening/candidates/a/reports', headers={'X-Org-Key': other_key})).json() == []
+                services.report_records.close()
+                closed = await http.get(path, headers=headers)
+                assert closed.status_code == 503 and closed.json() == {'detail': 'report_record_executor_closed'}
+                assert closed.headers['retry-after'] == '1' and 'set-cookie' not in closed.headers
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-report-read-error' not in log_output.text
+
+
+@pytest.mark.parametrize('case,path,method', REPORT_READS, ids=[r[0] for r in REPORT_READS])
+@pytest.mark.parametrize('erase', [False, True])
+async def test_report_reads_real_lock_and_erasure(database, settings, case, path, method, erase):
+    import time
+    from threading import Event
+    import httpx
+    from sqlalchemy import event, text
+    engine, factory = database
+    settings.report_record_max_concurrent_requests = 1
+    settings.report_record_wait_seconds = .2
+    services, report, kept, key, _ = _report_read_setup(settings, factory)
+    entered, proceed, pids = Event(), Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'from reports' in statement.lower() and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    app = create_app(services)
+    blocker = None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            headers = {'X-Org-Key': key} if case.startswith('employer') else {}
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.get(path.format(rid=report.id), headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    # Authenticate before a database-wide SQLite read lock.
+                    # Hold the worker just before its report SELECT, then use
+                    # a real competing connection to block that SQL operation.
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE')
+                    else:
+                        blocker.execute(text('LOCK TABLE reports IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'report_record_pending'}
+                    busy = await http.get(f'/report/{kept.id}')
+                    assert busy.status_code == 503 and busy.json() == {'detail': 'report_record_capacity_exhausted'}
+                    if erase:
+                        blocker.execute(text('DELETE FROM reports WHERE id = :id'), {'id': report.id})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.report_records._active:
+                            await asyncio.sleep(.01)
+                services.report_records._wait_seconds = 20
+                fresh = await http.get(path.format(rid=report.id), headers=headers)
+                assert fresh.status_code == (404 if erase and case != 'employer-candidate' else 200)
+                if erase and case == 'employer-candidate':
+                    assert fresh.json() == []
+                assert services.report_store.get(kept.id) == kept
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
 
 
 async def _body_gate(events, *, headers=(), limit=8, trace=None, scope_type="http"):
@@ -124,9 +373,8 @@ async def test_body_replay_then_delegates_disconnect_to_the_original_receive():
 
 
 @pytest.fixture
-def api(settings, flywheel):
+def api(services):
     """TestClient wired to fully offline services (NullLLM, in-memory stores)."""
-    services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
     with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services

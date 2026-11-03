@@ -174,6 +174,7 @@ async def test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_i
     caller = get_ident()
     entered, release = Event(), Event()
     outcomes, worker_threads, provider_threads, failed = [], [], [], []
+    timeout_probe = True
     def hold():
         entered.set()
         assert release.wait(15)
@@ -183,7 +184,7 @@ async def test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_i
     def observed_ingest(*args, **kwargs):
         result = ingest(*args, **kwargs)
         outcomes.append(result)
-        if ending in ('timeout', 'late_failure'):
+        if timeout_probe and ending in ('timeout', 'late_failure'):
             services.candidate_ingests._wait_seconds = .5
         return result
     def observed_compute(*args, **kwargs):
@@ -283,6 +284,7 @@ async def test_candidate_fingerprint_uncertainty_preserves_admission_and_saved_i
                     monkeypatch.setattr(similarity, 'fingerprint_text', compute)
                     monkeypatch.setattr(services.candidates, 'similar_resumes', compare)
                     event.remove(factory, 'after_flush', flushed)
+                    timeout_probe = False
                     services.candidate_ingests._wait_seconds = 20
                     if batch:
                         now = services.screening._now()
@@ -1083,16 +1085,11 @@ async def test_batch_ingest_capacity_stops_without_failure_or_automatic_replay(s
 
 
 @pytest.fixture
-def api(settings, flywheel):
+def api(services):
     """TestClient wired to fully offline services (NullLLM, in-memory stores)."""
-    services = make_services(settings, flywheel=flywheel)
     app = create_app(services)
     with TestClient(app, raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
-    if services._candidate_records is not None:
-        services._candidate_records.close()
-    if services._candidate_ingests is not None:
-        services._candidate_ingests.close()
 
 
 @pytest.mark.parametrize('suffix,method', [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')])
@@ -1512,7 +1509,7 @@ def test_report_not_persisted_if_candidate_erased_during_eval(api):
 # Candidate auth api
 
 @pytest.fixture
-def _client(settings):
+def _client(services):
     # NOTE: this repo's installed Starlette/FastAPI only runs the app's
     # lifespan (which sets app.state.services) when the TestClient is used as
     # a context manager (see every other tests/test_*_api.py `with _client(...)
@@ -1522,11 +1519,8 @@ def _client(settings):
     # `_services(request)` correctly, AND the lifespan shutdown (closing the
     # background portal thread) runs on fixture teardown even if the test
     # body raises.
-    services = make_services(settings)
     with TestClient(create_app(services), raise_server_exceptions=False, headers=ADMIN_HEADERS) as client:
         yield client, services
-    if services._candidate_records is not None:
-        services._candidate_records.close()
 
 
 def _make_candidate(client) -> str:

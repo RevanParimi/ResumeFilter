@@ -325,8 +325,9 @@ def test_screening_workflow_preserves_tenancy_outcomes_and_batch_lifecycle(servi
         assert a.get(report_path).status_code == 200
 
 
-def test_screening_cookie_csrf_and_human_provenance(cfg, capture_path, genuine_resume):
+def test_screening_cookie_csrf_and_human_provenance(cfg, capture_path, genuine_resume, request):
     services = make_services(cfg)
+    request.addfinalizer(lambda: asyncio.run(services.aclose()))
     with TestClient(screening_app(services), raise_server_exceptions=False) as client:
         email = "screening-router@example.in"
         assert client.post("/auth/org/signup", json={"email": email, "organization_name": "Router session"}).status_code == 202

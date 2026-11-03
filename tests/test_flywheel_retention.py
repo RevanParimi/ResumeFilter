@@ -1,5 +1,6 @@
 """New evaluation data stays in the erasable report/outcome store, not JSONL."""
 
+import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
@@ -14,10 +15,11 @@ def _resume(email):
 
 
 @pytest.fixture
-def retention_api(settings, tmp_path):
+def retention_api(settings, tmp_path, request):
     path = tmp_path / "legacy" / "flywheel.jsonl"
     cfg = settings.model_copy(update={"flywheel_path": str(path)})
     services = make_services(cfg, flywheel=build_flywheel(cfg))
+    request.addfinalizer(lambda: asyncio.run(services.aclose()))
     with TestClient(create_app(services), headers=ADMIN_HEADERS,
                     raise_server_exceptions=False) as client:
         yield client, services, path

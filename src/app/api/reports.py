@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.dependencies import _services, require_api_key
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.core.resume import ResumeInputError
 from app.domains.base import get_domain
 from app.reports.outcomes import OutcomeRefused, build_outcome
@@ -100,10 +101,28 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
 
 @report_router.get("/report/{report_id}", response_model=Report)
 async def get_report(report_id: str, request: Request) -> Report:
-    report = _services(request).report_store.get(report_id)
+    report = await _report_record(request, _services(request).report_store.get, report_id)
     if report is None:
         raise HTTPException(status_code=404, detail="report not found")
     return report
+
+
+async def _report_record(request: Request, operation, *args):
+    try:
+        return await _services(request).report_records.run(operation, *args)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # A late read retains admission but never writes or repeats evaluation.
+        raise HTTPException(status_code=503, detail='report_record_pending',
+                            headers={'Retry-After': '1'}) from None
+
+
+def _report_history(store, report_id):
+    if store.get(report_id) is None:
+        return None
+    outcomes = store.outcomes(report_id)
+    return outcomes if store.get(report_id) is not None else None
 
 
 def _outcome_flywheel_record(rec: OutcomeRecord) -> dict:
@@ -169,9 +188,10 @@ async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) 
 @report_router.get("/report/{report_id}/outcomes", response_model=OutcomeListResponse)
 async def list_outcomes(report_id: str, request: Request) -> OutcomeListResponse:
     services = _services(request)
-    if services.report_store.get(report_id) is None:
+    outcomes = await _report_record(request, _report_history, services.report_store, report_id)
+    if outcomes is None:
         raise HTTPException(status_code=404, detail="report not found")
     return {
         "report_id": report_id,
-        "outcomes": [o.model_dump(mode="json") for o in services.report_store.outcomes(report_id)],
+        "outcomes": [o.model_dump(mode="json") for o in outcomes],
     }

@@ -199,7 +199,7 @@ async def test_source_ingest_uncertainty_retains_admission_and_committed_history
     async def provider(login):
         providers.append(get_ident())
         result = await fetch(login)
-        if ending in ('timeout', 'late_failure'):
+        if observing and ending in ('timeout', 'late_failure'):
             services.candidate_records._wait_seconds = .5
         return result
     monkeypatch.setattr(services.github, 'gather_user_signal', provider)
@@ -208,7 +208,7 @@ async def test_source_ingest_uncertainty_retains_admission_and_committed_history
         if kind == 'linkedin' and args[0] == payload:
             note('decode')
         result = decode(*args, **kwargs)
-        if kind == 'linkedin' and args[0] == payload and ending in ('timeout', 'late_failure'):
+        if observing and kind == 'linkedin' and args[0] == payload and ending in ('timeout', 'late_failure'):
             services.candidate_records._wait_seconds = .5
         return result
     def parsing(*args, **kwargs):

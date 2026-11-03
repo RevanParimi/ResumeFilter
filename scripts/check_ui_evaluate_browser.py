@@ -231,6 +231,31 @@ window.fetch = async (url, init) => {
         await tab.js("window.VeritasAPI.post=window.__feedbackPost")
         await reload()
         checks.check("reload fetches the same authorized report without another upload", await report_ref() == rid)
+        saved_reports_path = f"/candidates/{actual['candidate_id']}/reports"
+        saved_reports_before = admin.get(saved_reports_path).json()
+        injected = await tab.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
+window.__reportReadNative = window.fetch;
+window.fetch = (url, init) => {
+ const path = String(url);
+ if ((!init || !init.method || init.method === 'GET') &&
+     (path.includes('/screening/reports/') || path.includes('/report/')))
+   return Promise.resolve(new Response(JSON.stringify({detail:'report_record_pending'}),
+     {status:503, headers:{'Content-Type':'application/json','Retry-After':'1'}}));
+ return window.__reportReadNative(url, init);
+};
+"""})
+        try:
+            await reload()
+            checks.check("saved-report read refusal shows reload guidance without internal codes",
+                await tab.wait("window.__has('Saved reports are temporarily unavailable') && window.__has('Reload saved report') && !window.__has('report_record_pending')", 20)
+                and await tab.js("new URLSearchParams(location.hash.slice(1)).get('report')") == rid)
+        finally:
+            await tab.send("Page.removeScriptToEvaluateOnNewDocument", {"identifier": injected['identifier']})
+            await tab.js("window.fetch = window.__reportReadNative; window.__nativeFetch = window.__reportReadNative")
+            await install_transport()
+        assert await tab.js("window.__click('button', 'Reload saved report')")
+        checks.check("manual saved-report reload recovers the same report without another upload",
+            await report_ref() == rid and admin.get(saved_reports_path).json() == saved_reports_before)
         await install_transport()
         await back()
         checks.check("resume input is not persisted through reload", await tab.js("document.querySelector('#instant-resume').value") == "")

@@ -15,6 +15,7 @@ from app.api.dependencies import _rate_limited, _services, require_org
 from app.api.reports import (
     OutcomeListResponse, OutcomeRecordedResponse, OutcomeRequest,
     _outcome_flywheel_record, _outcome_recorded,
+    _report_record,
 )
 from app.core.resume import ResumeInputError, read_resume_input_async
 from app.core.blocking import ExecutionPending, ExecutionUnavailable
@@ -64,7 +65,7 @@ async def screening_get_report(
 ) -> Report:
     """404 -- never 403 -- for a report this org did not commission: a 403
     would confirm it exists."""
-    found = _services(request).screening_scope.report(org_id, report_id)
+    found = await _report_record(request, _services(request).screening_scope.report, org_id, report_id)
     if found is None:
         raise HTTPException(status_code=404, detail="report not found")
     return found
@@ -78,7 +79,7 @@ async def screening_candidate_reports(
 ) -> list[Report]:
     """This org's own reports about one person. A person they have never
     uploaded yields an empty list, not a 404."""
-    return _services(request).screening_scope.reports_for_candidate(
+    return await _report_record(request, _services(request).screening_scope.reports_for_candidate,
         org_id, candidate_id
     )
 
@@ -135,7 +136,7 @@ async def screening_list_outcomes(
     (`GET /report/{id}/outcomes`) returns everything on purpose; that is the
     operator's cross-tenant support view.
     """
-    found = _services(request).screening_scope.outcomes(org_id, report_id)
+    found = await _report_record(request, _services(request).screening_scope.outcomes, org_id, report_id)
     if found is None:
         raise HTTPException(status_code=404, detail="report not found")
     return OutcomeListResponse(report_id=report_id, outcomes=found)
