@@ -450,8 +450,8 @@ Shutdown refuses new work and joins accepted report workers before SQL disposal.
 This is a per-process/operation read budget, not a global SQL limit or whole-request
 deadline. Driver waits/drain cannot be killed or given a hard new deadline. Lists
 remain unpaged. Direct synchronous service/store callers own scheduling. Outcome
-POSTs have the separate budget below; `/evaluate` report persistence, batch and
-other handler/graph SQL are separate later work; earlier authentication/DB
+POSTs and `/evaluate` publication have the separate budgets below; batch and
+other handler SQL are separate later work; earlier authentication/DB
 contention can still refuse or fail before a report worker is admitted. No schema
 or working-store change.
 
@@ -491,8 +491,41 @@ Shutdown refuses new work and joins accepted outcome workers before SQL disposal
 These are per-process/operation budgets, not global SQL, whole-request, driver or
 drain deadlines. Direct synchronous callers own scheduling. Report ownership and
 delivery remain snapshots; there is no new transaction/authorization policy,
-schema or working-store migration. Evaluation publication and batch SQL remain
-separate D3-D6 work.
+schema or working-store migration. Standalone evaluation publication has the
+separate budget below; batch SQL remains D4-D6 work.
+
+### Standalone evaluation publication budget
+
+POST `/evaluate` keeps async assessment/PDF/providers on their existing caller.
+A separate queue-free pool owns complete report save and final existence lookup.
+`evaluation_record_max_concurrent_requests` defaults to **2** per Services/app
+process; `evaluation_record_wait_seconds` defaults to finite positive **20
+seconds**. Set YAML or `DEE_EVALUATION_RECORD_MAX_CONCURRENT_REQUESTS` /
+`DEE_EVALUATION_RECORD_WAIT_SECONDS`, then restart. Report/outcome pools remain
+separate. Auth/CSRF, input/domain checks and graph work occur before admission;
+the budget does not limit whole evaluations or earlier provider work.
+
+Full/closed admission returns **503** `evaluation_record_capacity_exhausted` /
+`evaluation_record_executor_closed`, before saving that assessment. Wait expiry
+returns **503** with `detail: {code: "evaluation_record_pending", report_id: ...}`.
+All three carry `Retry-After: 1`, with no report body or cookies. Pending work
+retains admission through actual completion, including caller timeout/cancel and
+late failure. Save and final lookup use complete owning sessions; the final
+erasure check remains a snapshot. Shutdown drains accepted work before disposing
+SQL; driver waits/drain have no new hard deadline. Direct synchronous callers
+own scheduling. No automatic save/evaluation replay or durable continuation.
+
+Use GET `/report/{report_id}` to recover a pending result. It may return 404
+before a late save completes, so wait and reload the same reference. The UI
+retains input/reference, blocks another evaluation and offers saved-report
+recovery. "Start a fresh evaluation" only releases that UI guard; the next
+deliberate submission creates a new assessment and may save another report.
+Report reads do not prove old work has stopped. If transport fails before the
+reference arrives, the client cannot recover an unknown ID; existing uncertainty
+guidance still applies. This adds no candidate/fingerprint, schema, idempotency
+key or scoring change. Drafts and the pending guard are page memory; opening
+the saved report puts its reference in the URL for later GET/reload. Reloading
+does not prove old work ended. Batch publication remains separate D4-D6 work.
 
 ### Dual scoping: all scopes counted, any denial denies
 

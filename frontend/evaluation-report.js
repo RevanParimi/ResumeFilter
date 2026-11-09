@@ -146,8 +146,13 @@
   };
   clearEvalFile = () => { if (!this._evaluating) this.setState({ evalFile: null, evalError: null }); };
   viewEvaluation = () => { if (this.state.evalReportId) this.openReport(this.state.evalReportId, "evaluate")(); };
+  startFreshEvaluation = () => {
+    if (!this._evaluating && this.state.evalPublicationPending) {
+      this.setState({ evalPublicationPending: false, evalReportId: null, evalError: null });
+    }
+  };
   runEvaluate = async () => {
-    if (this._evaluating || this._gone) return;
+    if (this._evaluating || this._gone || this.state.evalPublicationPending) return;
     const st = this.state, me = st.me;
     if (!me || (me.kind !== "org" && me.kind !== "admin")) {
       this.setState({ evalError: { detail: "Instant check requires an organisation or operator session." } });
@@ -180,7 +185,10 @@
       if (this.state.screen === "evaluate") this.openReport(report.id, "evaluate")();
     } catch (err) {
       if (!current() || err.kind === "session_lost") return;
-      this.setState({ evalError: err });
+      const pending = me.kind === "admin" && err.detail === "evaluation_record_pending"
+        && typeof err.reportId === "string" && !!err.reportId;
+      this.setState(Object.assign({ evalError: err }, pending
+        ? { evalPublicationPending: true, evalReportId: err.reportId } : {}));
     } finally {
       if (current()) {
         this._evaluating = null;
@@ -207,15 +215,23 @@
       goEvaluate: this.goEvaluate,
       runEvaluate: this.runEvaluate,
       textArea: TEXT_AREA,
-      evaluateAction: st.evalBusy ? "Evaluating…" : st.evalError ? "Retry evaluation" : "Evaluate this resume",
+      evaluateAction: st.evalBusy ? "Evaluating…" : st.evalPublicationPending ? "Check saved report below"
+        : st.evalError ? "Retry evaluation" : "Evaluate this resume",
+      evalSubmitDisabled: !!(st.evalBusy || st.evalPublicationPending),
+      evalPublicationPending: st.evalPublicationPending,
+      startFreshEvaluation: this.startFreshEvaluation,
       evalRunning: st.evalBusy, evalBusy: st.evalBusy, evalProgress: st.evalProgress,
       evalNoticeBox: NOTICE_BOX, evalErrorBox: ERROR_BOX,
       evalText: st.evalText, evalGithub: st.evalGithub, evalPortfolio: st.evalPortfolio,
       setEvalText: this.setEvalText, setEvalGithub: this.setEvalGithub, setEvalPortfolio: this.setEvalPortfolio,
       pickEvalFile: this.pickEvalFile, clearEvalFile: this.clearEvalFile,
       hasEvalFile: !!st.evalFile, evalFileLabel: st.evalFile ? st.evalFile.name : "PDF or pasted text; selecting one replaces the other.",
-      evalError: !!st.evalError,
-      evalErrorText: st.evalError ? (st.evalError.status === 403 && st.evalError.kind !== "csrf"
+      evalError: !!st.evalError || st.evalPublicationPending,
+      evalErrorText: st.evalPublicationPending
+        ? "Your report may still be saving. Open saved report, then reload it if unavailable. A fresh evaluation may create another report."
+        : st.evalError && ["evaluation_record_capacity_exhausted", "evaluation_record_executor_closed"].includes(st.evalError.detail)
+          ? "Report saving is temporarily unavailable. This assessment was not saved. Wait a moment before starting a fresh evaluation."
+          : st.evalError ? (st.evalError.status === 403 && st.evalError.kind !== "csrf"
         ? "This account is not permitted to evaluate this resume."
         : errorCopy(st.evalError)) + (["network", "timeout"].includes(st.evalError.kind) || st.evalError.status >= 500
           ? " The server may have saved the run. Retrying may create another saved evaluation; retry only when ready." : "") : "",

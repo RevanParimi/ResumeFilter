@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-10 - R4-S2-T3C3D3 complete; bounded standalone publication.**
+  `/evaluate` keeps graph/providers on the async caller and bounds complete
+  report save/final snapshot separately. Pending publication returns a report
+  reference; the UI preserves drafts and offers GET recovery without replay,
+  with explicit fresh-evaluation intent before another POST. The
+  [D3 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d3) owns red/green, full/actual
+  PG locks/erasure, migrated HTTP/restart, real Chrome, limitations and reviews,
+  including the final-review pending-label correction and corrected-state reruns.
+  Working DB and unrelated files preserved, demo not restarted, owned PG stopped.
+  Only D3 closes; scoped publication follows final staged self-review. Exact
+  next: R4-S2-T3C3D4 in a separate session; broader parents remain open.
+
 - **Session 2026-11-09 - R4-S2-T3C3D2 complete; bounded human-outcome writes.**
   Both outcome POSTs use a separate owning-operation pool; unconfirmed saves
   preserve drafts and require fresh saved-history recovery without replay.

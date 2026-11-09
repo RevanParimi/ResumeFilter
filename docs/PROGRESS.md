@@ -1,45 +1,56 @@
 # Current handoff
 
-Updated: 2026-11-09. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-10. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D2 complete.** Baseline/published D1 is `513a911`.
-[D2 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) owns acceptance,
-red/green, failed attempts, final checks and the separate review records.
+**R4-S2-T3C3D3 complete.** Published baseline D2 is `202c5ee`.
+[D3 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d3) owns acceptance,
+red/green, implementation review, final checks and the separate staged review.
 
-Both human-outcome POSTs use a separate owning-operation pool for report/tenant
-lookup, shared claim/note validation, append and the existing optional observer.
-Full/closed admission refuses safely; accepted work retains admission through
-actual completion after timeout/cancel. Late SQL or observer failure never
-triggers replay. The UI preserves drafts and
-requires successful fresh saved-history recovery after an unconfirmed write,
-with report/account/stale-read guards. Read admission remains independent.
-Auth/CSRF, tenant/author/user scope, private-note filtering, generic 404,
-FK/erasure and advisory/scorer semantics remain.
+Standalone `/evaluate` keeps graph/PDF/providers on the async caller and bounds
+complete report save/final snapshot on a separate owning-operation pool. Pending
+503 carries only a stable code/reference; accepted work retains admission through
+actual completion, without replay. The UI preserves input/reference, blocks
+another evaluation and offers GET recovery. Explicit fresh-evaluation intent
+releases the UI guard without posting. Pending IDs use a neutral reference label.
+Auth/CSRF, operator scope, erasure snapshots, advisory/domain/fallback and success
+DTOs remain.
 
-The pending full pytest run finished **4252 passed, 1058 skipped, 127 warnings**
-on 3 November; closure verified its log and unchanged **616** code/config hashes.
-Actual PG-enabled focused, migrated SQLite/PG HTTP/restart and actual outcome
-Chrome pass; evidence distinguishes them from skipped/offline cases. Closure
-reran focused outcome regressions, offline UI, bindings, syntax and compilation.
-Working DB and unrelated files are preserved, demo untouched, owned PG stopped.
+Corrected-state full pytest **4275 passed, 1073 skipped, 127 warnings**; actual
+PG-enabled focused **501 passed, no skips**. Migrated SQLite/PG HTTP/graceful
+restart both **36/36**; corrected Chrome **62/62**; offline UI **68**, bindings
+**601/18**, syntax and 9-module compilation pass. The first full run, final-review
+label finding, browser red/green and corrected rerun are retained in evidence.
+All **616** corrected code/config hashes match. Working DB/unrelated files are
+preserved, demo not restarted, owned PG stopped. Completion records and resumed
+final staged self-review precede scoped commit/push; final response reports the
+verified remote commit.
 
-**Exact next: R4-S2-T3C3D3 - Bound standalone evaluation publication**, in a
-separate session. Stop after D2's distinct final staged self-review and scoped
-commit/push/remote verification; do not start D3 here. D3-D6/Q, C3D and broader
-parents remain open. Use per-command `-c credential.username=RevanParimi` for
-GCM account selection.
+**Exact next: R4-S2-T3C3D4 - Bound batch management operations**, in a separate
+session. Stop after D3 publication; do not start D4 here. D4-D6/Q, C3D and all
+broader parents remain open. Use per-command
+`-c credential.username=RevanParimi` for GCM account selection.
 
-The [outcome budget](../OPERATING.md#human-outcome-write-execution-budget) owns
-two-slot/20-second defaults and limits. History remains a snapshot: a late save
-can still finish after recovery. Fresh POST is additive, not idempotent.
-Per-process waits are not global DB/auth, whole-request, driver or drain deadlines;
-direct synchronous callers own scheduling. Evaluation publication and batch SQL
-remain D3-D6 work; fakes prove mechanics, not live-provider quality.
+The [publication budget](../OPERATING.md#standalone-evaluation-publication-budget)
+owns defaults/limits. Recovery reads remain snapshots; late saves can still
+finish and fresh assessments may create another report. Drafts/guards are page
+memory; opening the saved report puts its reference in the URL. Transport loss
+before a reference arrives cannot recover an unknown ID. Per-process waits are
+not global DB/auth, whole-request, driver or drain deadlines. Direct synchronous
+callers own scheduling; fakes prove mechanics, not live-provider quality.
 
 ## Reusable validation setup
 
+- D3 runner: `.pytest_cache/run_r4_s2_t3c3d3.py <tag> <Python args>`; omitted args
+  run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3d3_postgres.py` / `r4-s2-t3c3d3-pg-runtime.json`
+  (stopped).
+  Hash/preservation helper: `.pytest_cache/review_state_r4_s2_t3c3d3.py check` /
+  `preserve`. Migrated HTTP/restart: `scripts/smoke_r4_s1_t3c.py
+  --evaluation-publication-workers`; add `--postgres` only with an explicitly
+  disposable URL. Actual Chrome: `scripts/check_ui_evaluate_browser.py
+  --evaluation-publication-workers`. D3 evidence owns exact commands/results.
 - D2 runner: `.pytest_cache/run_r4_s2_t3c3d2.py <tag> <Python args>`; omitted args
   run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3d2_postgres.py` / `r4-s2-t3c3d2-pg-runtime.json`

@@ -54,6 +54,89 @@ function component(kind = "org", post) {
 }
 
 
+test("unconfirmed publication preserves a reference and recovers by GET without another evaluation", async () => {
+  const { c, calls, window } = component("admin", async () => {
+    throw { status: 503, kind: "http", detail: "evaluation_record_pending", reportId: report.id };
+  });
+  const input = c.state.evalText;
+  await c.runEvaluate();
+  assert.equal(c.state.evalReportId, report.id);
+  assert.equal(c.state.evalText, input);
+  assert.equal(c.state.evalPublicationPending, true);
+  assert.equal(c.renderVals().evalSubmitDisabled, true);
+  assert.match(c.renderVals().evalErrorText, /may still be saving.*open saved report/i);
+  assert.doesNotMatch(c.renderVals().evalErrorText, /evaluation_record/);
+  await c.runEvaluate();
+  assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = async p => {
+    if (!p.endsWith('/outcomes')) throw { status: 404, detail: 'report not found' };
+    return get(p);
+  };
+  c.viewEvaluation(); await settle();
+  assert.equal(c.state.report.error.status, 404);
+  assert.equal(c.state.evalPublicationPending, true);
+  window.VeritasAPI.get = get;
+  c.retryReport(); await settle();
+  assert.equal(c.state.report.data.id, report.id);
+  assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  c.goEvaluate(); c.startFreshEvaluation();
+  assert.equal(c.state.evalPublicationPending, false);
+  assert.equal(c.state.evalText, input);
+  assert.equal(calls.filter(x => x[0] === "POST").length, 1);
+  window.VeritasAPI.post = async p => { calls.push(['POST', p]); return report; };
+  await c.runEvaluate();
+  assert.equal(calls.filter(x => x[0] === "POST").length, 2);
+});
+
+for (const detail of ['evaluation_record_capacity_exhausted', 'evaluation_record_executor_closed']) {
+  test('definite publication refusal retains input and permits deliberate fresh evaluation: ' + detail, async () => {
+    const { c, calls } = component('admin', async () => { throw { status: 503, kind: 'http', detail }; });
+    const input = c.state.evalText;
+    await c.runEvaluate();
+    assert.equal(c.state.evalText, input);
+    assert.equal(c.state.evalReportId, null);
+    assert.equal(c.state.evalPublicationPending, false);
+    assert.match(c.renderVals().evalErrorText, /not saved.*fresh evaluation/i);
+    assert.doesNotMatch(c.renderVals().evalErrorText, /evaluation_record|may have saved/);
+    await c.runEvaluate();
+    assert.equal(calls.filter(x => x[0] === 'POST').length, 2);
+  });
+}
+
+test('late pending publication preserves navigation and loses all recovery state on account change', async () => {
+  let reject;
+  const { c } = component('admin', () => new Promise((_resolve, no) => { reject = no; }));
+  const pending = c.runEvaluate(); await settle(); c.nav('devices')();
+  reject({ status: 503, kind: 'http', detail: 'evaluation_record_pending', reportId: report.id }); await pending;
+  assert.equal(c.state.screen, 'devices');
+  assert.equal(c.state.evalReportId, report.id);
+  c.setEvalText({ target: { value: 'Edited draft' } });
+  assert.equal(c.state.evalPublicationPending, true);
+  c.handleSessionLost();
+  assert.equal(c.state.evalPublicationPending, false);
+  assert.equal(c.state.evalReportId, null);
+  assert.equal(c.state.evalText, '');
+  c.setState({ me: { kind: 'admin' }, evalText: 'New account draft', screen: 'evaluate' });
+  const next = c.runEvaluate(); await settle();
+  c.handleSessionLost();
+  c.setState({ me: { kind: 'admin' }, evalText: 'Another account draft', screen: 'evaluate' });
+  reject({ status: 503, kind: 'http', detail: 'evaluation_record_pending', reportId: report.id }); await next;
+  assert.equal(c.state.evalReportId, null);
+  assert.equal(c.state.evalPublicationPending, false);
+  assert.equal(c.state.evalText, 'Another account draft');
+});
+
+test("API preserves a pending publication reference without exposing object detail", async () => {
+  const window = { location: { search: '' }, document: { cookie: '' },
+    localStorage: { getItem: () => null }, fetch: async () => ({ ok: false, status: 503,
+      headers: { get: () => 'application/json' }, json: async () => ({ detail: {
+        code: 'evaluation_record_pending', report_id: report.id } }) }) };
+  new Function('window', apiSource)(window);
+  await assert.rejects(window.VeritasAPI.post('/evaluate', {}), error =>
+    error.detail === 'evaluation_record_pending' && error.reportId === report.id && error.kind === 'http');
+});
+
 for (const kind of ["admin", "org"]) for (const error of [
   { status: 503, kind: "http", detail: "outcome_record_pending" },
   { status: 500, kind: "http", detail: "server_error" },

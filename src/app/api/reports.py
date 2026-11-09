@@ -91,12 +91,25 @@ async def evaluate(req: EvaluateRequest, request: Request) -> Report:
     except KeyError as exc:  # unknown domain
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    services.report_store.save(report)
-    # Report-only deletion can win after save, even without a candidate link.
-    # This is a response snapshot, not a lock across HTTP delivery.
-    if services.report_store.get(report.id) is None:
+    try:
+        present = await services.evaluation_records.run(_publish_evaluation, services.report_store, report)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # The owning save may still commit. Recover this ID by GET, never replay.
+        raise HTTPException(status_code=503,
+            detail={'code': 'evaluation_record_pending', 'report_id': report.id},
+            headers={'Retry-After': '1'}) from None
+    if not present:
         raise HTTPException(status_code=422, detail="report_erased")
     return report
+
+
+def _publish_evaluation(store, report):
+    store.save(report)
+    # Report-only deletion can win after save, even without a candidate link.
+    # This is a response snapshot, not a lock across HTTP delivery.
+    return store.get(report.id) is not None
 
 
 @report_router.get("/report/{report_id}", response_model=Report)

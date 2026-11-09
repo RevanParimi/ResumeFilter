@@ -39,7 +39,8 @@ async def main():
 
     def launch(args, **kwargs):
         if "app.main:app" in args:
-            factory = ('smoke_r4_s1_t3c:create_outcome_write_browser_app' if '--outcome-write-workers' in sys.argv
+            factory = ('smoke_r4_s1_t3c:create_evaluation_publication_browser_app' if '--evaluation-publication-workers' in sys.argv
+                else 'smoke_r4_s1_t3c:create_outcome_write_browser_app' if '--outcome-write-workers' in sys.argv
                 else 'smoke_r3_s1_t2:create_smoke_app')
             args = [factory if a == "app.main:app" else a for a in args] + ["--factory"]
             inherited = kwargs["env"]
@@ -61,6 +62,9 @@ async def main():
             state["db"] = env["DEE_CANDIDATES_DB_URL"]
             if '--outcome-write-workers' in sys.argv:
                 env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'))
+            if '--evaluation-publication-workers' in sys.argv:
+                env.update(DEE_EVALUATION_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_EVALUATION_RECORD_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'))
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
@@ -179,6 +183,63 @@ window.fetch = async (url, init) => {
         async def back():
             assert await tab.js("window.__click('button', 'Back to Instant check')")
             assert await tab.wait("document.querySelector('#instant-resume')", 15)
+
+        async def publication_recovery():
+            for phase in ('save', 'final'):
+                await back(); await paste(text)
+                for name in ('entered', 'release', 'completed'):
+                    (scratch / ('publication-' + name)).unlink(missing_ok=True)
+                (scratch / 'publication-mode').write_text(phase)
+                before_posts = await tab.js('window.__posts.length')
+                before_graph = len((scratch / 'publication-assessments.jsonl').read_text().splitlines())
+                await tab.js("""window.__publicationPost=window.VeritasAPI.post;
+window.VeritasAPI.post=(p,b,o)=>window.__publicationPost(p,b,o).catch(e=>{
+ if(p==='/evaluate') window.__publicationRef=e.reportId;
+ throw e;
+});""")
+                try:
+                    await evaluate()
+                    async with asyncio.timeout(10):
+                        while not (scratch / 'publication-entered').exists():
+                            await asyncio.sleep(.02)
+                    checks.check(phase + ' actual publication timeout preserves input and readable recovery reference',
+                        await tab.wait("window.__has('may still be saving') && window.__publicationRef && window.__has('Open saved report')", 15)
+                        and await tab.js("document.querySelector('#instant-resume').value") == text
+                        and await tab.js("[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Check saved report below')).disabled")
+                        and not await tab.js("window.__has('evaluation_record_pending')"))
+                    rid = await tab.js('window.__publicationRef')
+                    checks.check(phase + ' pending reference does not claim the report is saved',
+                        await tab.js('window.__has(' + json.dumps('Report reference: ' + rid) + ')')
+                        and not await tab.js("window.__has('Saved report:')"))
+                    assert admin.get(f'/report/{rid}').status_code == (404 if phase == 'save' else 200)
+                    await tab.js("window.__click('button', 'Check saved report below')")
+                    assert await tab.js("window.__click('button', 'Open saved report')")
+                    checks.check(phase + ' saved-report recovery reads while publication admission is held',
+                        await tab.wait("window.__has('Reload saved report')" if phase == 'save' else "window.__has('Claim by claim')", 15)
+                        and await tab.js('window.__posts.length') == before_posts + 1)
+                finally:
+                    (scratch / 'publication-release').touch()
+                    async with asyncio.timeout(10):
+                        while not (scratch / 'publication-completed').exists():
+                            await asyncio.sleep(.02)
+                    (scratch / 'publication-mode').unlink(missing_ok=True)
+                    await tab.js('window.VeritasAPI.post=window.__publicationPost')
+                if phase == 'save':
+                    assert await tab.js("window.__click('button', 'Reload saved report')")
+                checks.check(phase + ' manual GET recovers the exact late report without another assessment',
+                    await report_ref() == rid and await tab.js('window.__posts.length') == before_posts + 1
+                    and len((scratch / 'publication-assessments.jsonl').read_text().splitlines()) == before_graph + 1
+                    and admin.get(f'/report/{rid}').json()['candidate_id'] is None)
+                await back()
+                assert await tab.js("window.__click('button', 'Start a fresh evaluation')")
+                checks.check(phase + ' explicit fresh action preserves draft without posting',
+                    await tab.js('window.__posts.length') == before_posts + 1
+                    and await tab.js("document.querySelector('#instant-resume').value") == text
+                    and not await tab.js("window.__has('Start a fresh evaluation')"))
+                await tab.js('location.hash=' + json.dumps('report=' + rid + '&from=evaluate'))
+                await reload()
+                checks.check(phase + ' late report reference survives actual browser reload', await report_ref() == rid
+                    and await tab.js('window.__posts.length') == 0)
 
         async def outcome_worker_recovery(report_id, plane, phase):
             path = ('/report/' if plane == 'operator' else '/screening/reports/') + report_id + '/outcomes'
@@ -405,6 +466,8 @@ void 0;
             await outcome_worker_recovery(operator_id, 'operator', 'append')
         await reload()
         checks.check("operator report reload retains actual ID", await report_ref() == operator_id)
+        if '--evaluation-publication-workers' in sys.argv:
+            await publication_recovery()
         assert await tab.js("window.__click('button', 'Sign out')")
         assert await tab.wait("window.__has('Sign in')", 15)
         await login("Candidate", "instant-candidate@example.com", signup=True)

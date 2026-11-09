@@ -654,12 +654,18 @@ separate session. D3-D6/Q, C3D and all broader parents remain open.
 
 **<a id="r4-s2-t3c3d3"></a>R4-S2-T3C3D3 - Bound standalone evaluation publication**
 
-Status: pending. Prerequisite: D2. Bound complete `/evaluate` report-save/final
+Status: done (2026-11-10; started 2026-11-09). Prerequisite: D2, published at `202c5ee`.
+[D3 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d3) owns acceptance and checks.
+Bound complete `/evaluate` report-save/final
 snapshot after caller-owned async graph work; preserve advisory/domain/fallback,
 report erasure and safe uncertainty without another evaluation. Prove real PG
 locks/late save, migrated HTTP/restart, evaluation Chrome, red/focused/full and
 both reviews. Inventory indirect graph/service SQL again; no provider runs in a
-worker SQL session.
+worker SQL session. Implementation, required validation, implementation
+self-review and distinct final staged self-review are recorded in the evidence,
+including the pending-label finding and corrected-state reruns. Scoped
+publication follows. Only D3 closes; exact next is D4 in a
+separate session. D4-D6/Q, C3D and all broader parents remain open.
 
 **<a id="r4-s2-t3c3d4"></a>R4-S2-T3C3D4 - Bound batch management operations**
 

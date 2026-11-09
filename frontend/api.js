@@ -121,6 +121,7 @@
     if (!body || typeof body !== "object") return String(body || "");
     var d = body.detail;
     if (typeof d === "string") return d;
+    if (d && d.code === "evaluation_record_pending") return d.code;
     if (Array.isArray(d)) {
       return d
         .map(function (item) {
@@ -214,7 +215,12 @@
                 /* a broken handler must not mask the original 401 */
               }
             }
-            throw ApiError(res.status, detail, kind);
+            var error = ApiError(res.status, detail, kind);
+            if (res.status === 503 && detail === "evaluation_record_pending" && parsed &&
+                parsed.detail && typeof parsed.detail.report_id === "string") {
+              error.reportId = parsed.detail.report_id;
+            }
+            throw error;
           });
       });
 

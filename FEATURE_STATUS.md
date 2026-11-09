@@ -264,8 +264,8 @@ publishing loaded notes. Read failures offer reload guidance while keeping the
 saved reference. Tenant projection, private-note filtering, generic 404,
 empty candidate-report lists and advisory/scorer semantics remain. The
 [report read budget](OPERATING.md#report-read-execution-budget) states defaults
-and snapshot/driver/drain limits. Evaluation publication and batch SQL remain
-D3-D6/Q; C3D and broader parents stay open.
+and snapshot/driver/drain limits. Standalone publication has its own budget
+below; batch SQL remains D4-D6/Q. C3D and broader parents stay open.
 
 [R4-S2-T3C3D2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) bounds both human-outcome
 POSTs in a separate pool covering lookup, shared validation, SQL append and the
@@ -277,3 +277,13 @@ another submission. That read is a snapshot and a fresh judgment is additive.
 Tenant/author/user scope, private-note filtering, FK/erasure and advisory policy
 remain. The [outcome budget](OPERATING.md#human-outcome-write-execution-budget)
 owns defaults and limits; the evidence owns validation and task status.
+
+[R4-S2-T3C3D3](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d3) bounds standalone
+evaluation report publication after async assessment, using a separate owning
+save/final-read pool. Pending publication returns a report reference for GET
+recovery without another assessment. The UI preserves input/reference and
+requires deliberate fresh-evaluation intent before another POST; late saves
+remain possible and fresh assessments may create another report. Operator scope,
+erasure snapshots, advisory/domain/fallback and existing success DTOs remain.
+The [publication budget](OPERATING.md#standalone-evaluation-publication-budget)
+owns defaults/limits; batch SQL and broader acceptance remain D4-D6/Q work.

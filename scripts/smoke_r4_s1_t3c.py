@@ -32,6 +32,145 @@ RESUME = "Synthetic Candidate Router\nEmail: candidate-router@example.in\n" + "\
 )
 
 
+def create_evaluation_publication_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_evaluation_publication_smoke_app(base_factory=create_smoke_app)
+
+
+def create_evaluation_publication_smoke_app(*, base_factory=None):
+    """Hold real standalone publication; keep graph/providers on their caller."""
+    from sqlalchemy import event
+    from app.reports.models import ReportRow
+    from smoke_r4_s1_t1a import create_smoke_app
+    app = (base_factory or create_smoke_app)()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state = local()
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            pool, caller = services.evaluation_records, get_ident()
+            run, get, assess, complete = pool.run, services.report_store.get, app.state.engine.evaluate, services.llm.acomplete_json
+            def hold(phase):
+                mode = scratch / 'publication-mode'
+                if not getattr(state, 'active', False) or state.held or not mode.exists() or mode.read_text() != phase:
+                    return
+                state.held = True
+                (scratch / 'publication-entered').touch()
+                deadline = time.monotonic() + 30
+                while not (scratch / 'publication-release').exists():
+                    assert time.monotonic() < deadline, 'synthetic publication hold timed out'
+                    time.sleep(.01)
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller
+                    state.active, state.held = True, False
+                    with (scratch / 'publication-operations.jsonl').open('a') as log:
+                        log.write(json.dumps({'operation': operation.__name__, 'report_id': args[1].id}) + '\n')
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        state.active = False
+                        if state.held:
+                            (scratch / 'publication-completed').touch()
+                return await run(owned)
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                with (scratch / 'publication-assessments.jsonl').open('a') as log:
+                    log.write('{}\n')
+                return await assess(**kwargs)
+            async def llm(**kwargs):
+                assert get_ident() == caller, 'provider moved into a publication worker'
+                return await complete(**kwargs)
+            def read(*args):
+                hold('final')
+                return get(*args)
+            def flushed(session, context):
+                if any(isinstance(row, ReportRow) for row in session.new):
+                    hold('save')
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('publication_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('publication_owner', get_ident()) == get_ident()
+            listeners = [('after_flush', flushed), ('after_begin', begin), ('after_transaction_end', end)]
+            pool.run, services.report_store.get = tracked, read
+            app.state.engine.evaluate, services.llm.acomplete_json = evaluate, llm
+            for name, listener in listeners:
+                event.listen(services.session_factory, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'publication-release').touch()
+                await pool.aclose()
+                pool.run, services.report_store.get = run, get
+                app.state.engine.evaluate, services.llm.acomplete_json = assess, complete
+                for name, listener in listeners:
+                    event.remove(services.session_factory, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_evaluation_publication(checks, scratch, control, operator, employer):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def count(name):
+        path = scratch / ('publication-' + name + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    snapshots = []
+    for phase in ('save', 'final'):
+        for name in ('entered', 'release', 'completed'):
+            (scratch / ('publication-' + name)).unlink(missing_ok=True)
+        (scratch / 'publication-mode').write_text(phase)
+        operations, assessments = count('operations'), count('assessments')
+        body = {'resume_text': RESUME, 'domain': 'data_eng'}
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(operator.post, '/evaluate', json=body)
+                try:
+                    deadline = time.monotonic() + 10
+                    while not (scratch / 'publication-entered').exists():
+                        assert time.monotonic() < deadline
+                        time.sleep(.01)
+                    start = time.monotonic()
+                    checks.check('publication SQL leaves unrelated HTTP responsive',
+                        control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                        and time.monotonic() - start < 1)
+                    response = pending.result(timeout=5)
+                    detail = require(response, 503)['detail']
+                    rid = detail['report_id']
+                    checks.check('pending publication returns only recovery reference and stable code',
+                        set(detail) == {'code', 'report_id'} and detail['code'] == 'evaluation_record_pending'
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                    checks.check('saved-report reads have independent admission during publication',
+                        control.get(f'/report/{rid}').status_code == (404 if phase == 'save' else 200))
+                    refused = control.post('/evaluate', json=body)
+                    checks.check('full publication admission refuses without a partial report',
+                        require(refused, 503) == {'detail': 'evaluation_record_capacity_exhausted'}
+                        and refused.headers.get('retry-after') == '1')
+                finally:
+                    (scratch / 'publication-release').touch()
+        finally:
+            deadline = time.monotonic() + 10
+            while not (scratch / 'publication-completed').exists():
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            (scratch / 'publication-mode').unlink(missing_ok=True)
+        saved = require(operator.get(f'/report/{rid}'))
+        checks.check('late publication saves exactly once with caller-owned graph and providers',
+            count('operations') == operations + 1 and count('assessments') == assessments + 2
+            and saved['candidate_id'] is None and saved['advisory'] and saved['human_review_required'])
+        checks.check('employer cannot read operator publication through either report door',
+            employer.get(f'/report/{rid}').status_code == 401
+            and employer.get(f'/screening/reports/{rid}').status_code == 404)
+        snapshots.append((rid, saved))
+        fresh = require(operator.post('/evaluate', json=body))
+        checks.check('deliberate fresh evaluation creates another report after read recovery', fresh['id'] != rid
+            and count('operations') == operations + 2 and count('assessments') == assessments + 3)
+    return snapshots
+
+
 def create_outcome_write_browser_app():
     from smoke_r3_s1_t2 import create_smoke_app
     return create_outcome_write_smoke_app(base_factory=create_smoke_app)
@@ -900,6 +1039,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--evaluation-publication-workers', 'create_evaluation_publication_smoke_app'),
         ('--outcome-write-workers', 'create_outcome_write_smoke_app'),
         ('--report-read-workers', 'create_report_read_smoke_app'),
         ('--linkedin-source-workers', 'create_linkedin_source_smoke_app'),
@@ -937,6 +1077,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--outcome-write-workers' in sys.argv:
         env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--evaluation-publication-workers' in sys.argv:
+        env.update(DEE_EVALUATION_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_EVALUATION_RECORD_WAIT_SECONDS='.5',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -1032,6 +1175,7 @@ def run(scratch, url, pg_options):
             report_reads = check_report_reads(checks, scratch, control, org_a, org_b, employer_rid,
                 owned['candidate_id']) if '--report-read-workers' in sys.argv else []
             outcome_writes = check_outcome_writes(checks, scratch, control, org_a, org_b, employer_rid) if '--outcome-write-workers' in sys.argv else []
+            publications = check_evaluation_publication(checks, scratch, control, operator, org_b) if '--evaluation-publication-workers' in sys.argv else []
             checks.check("shared employer intake retains tenant ownership", org_b.get(f"/screening/reports/{employer_rid}").status_code == 404
                 and require(org_a.get(f"/screening/reports/{employer_rid}"))["id"] == employer_rid)
             farms = (owned["resume_farm"], owned["report"]["resume_farm"])
@@ -1040,6 +1184,9 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
+            if publications:
+                checks.check('exact standalone reports survive migrated graceful restart',
+                    all(require(control.get(f'/report/{rid}')) == saved for rid, saved in publications))
             if outcome_writes:
                 checks.check('exact outcome history and private-note projection survive migrated graceful restart',
                     all(require(http.get(url)) == data for http, url, data in outcome_writes))

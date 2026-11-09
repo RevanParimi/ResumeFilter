@@ -10633,3 +10633,255 @@ restaged and checked after review; no code changed. Configured `main` tracks
 `origin/main`; standing-authorized scoped commit/push follows with per-command
 GCM account selection. Final response reports the verified remote commit.
 Stop after publication; do not begin D3 here.
+
+### <a id="r4-s2-t3c3d3"></a>R4-S2-T3C3D3 - Bound standalone evaluation publication
+
+**Status: done (2026-11-10; started 2026-11-09).** Baseline `202c5ee`;
+D2 is published.
+Only D3 is authorized for this continuation. [PI status](PI-R4.md#r4-s2-t3c3d3).
+
+**Pre-implementation contract.** POST `/evaluate` keeps domain/input checks,
+async graph/PDF/providers and its existing null production observer on their
+current callers. A separate lazy service-owned `evaluation_records` pool
+(positive capacity 2, finite positive wait 20 seconds by default) owns complete
+report save and final existence snapshot. Only stores and detached Report data
+cross the boundary; SQL sessions remain worker-owned. Preserve operator auth/
+CSRF, input/domain precedence, deterministic fallbacks, domain independence,
+advisory/human review, report-only erasure and existing success DTO/OpenAPI.
+No schema, candidate/fingerprint creation, graph scoring/provider scheduling,
+durable continuation or idempotency changes; batch/intake publication stays out
+of this task.
+
+Full/closed admission returns safe 503 with Retry-After; pending accepted work
+retains its slot through timeout/cancel/late failure and shutdown drain. Never
+replay save or graph work. Pending 503 carries only stable code and detached
+report reference in `detail: {code: evaluation_record_pending, report_id: ...}`;
+it cannot return report claims or imply rollback/commit. Saved-report GET remains
+independently admitted. The UI preserves input/reference, displays human guidance,
+blocks another evaluation while this known publication is unconfirmed, and offers
+read-only saved-report recovery, including 404 then manual reload after a late
+commit. Explicitly starting a fresh evaluation only releases the UI guard; it
+does not POST. Failed/stale reads, navigation or changed account cannot trigger
+another assessment or overwrite another session. A fresh evaluation may create
+another report. A response lost before its reference arrives cannot recover an
+unknown ID; existing network/timeout uncertainty remains explicit, without
+automatic retry. Reads/delivery are snapshots, not locks or proof old work ended.
+Per-process wait budgets do not impose driver, whole-request or drain deadlines.
+
+Re-inventory: `graph/build.py` awaits graph nodes; ingest uses the existing PDF
+executor, other async nodes call LLM/GitHub, scoring/cross-field are pure, and
+report assembly invokes the optional observer. No graph node calls a SQL store
+or creates a Session; production's observer remains null. No invented graph SQL
+worker. Provider/graph execution must be asserted to stay on its async caller.
+
+Required evidence: SQL save/final-read responsiveness red/green; offline UI
+pending-reference/no-replay red/green; admission/timeout/cancel/late failure,
+session ownership, final erasure and drain regressions; actual SQLite/PG competing
+locks with late commit/rollback/erasure; migrated HTTP and graceful restart with
+operator versus employer/anonymous access; actual evaluation Chrome with real
+publication hold and manual GET recovery; focused/full pytest, populated schema
+compatibility, UI bindings/syntax and compilation. No schema change requires a
+new migration up/down/up. Record implementation self-review, final-gate state,
+completion and a distinct final staged self-review before scoped commit/push and
+remote verification. Preserve working DB, unrelated files and existing demo;
+stop after D3. Exact next is D4 in a separate session; broader parents stay open.
+
+**Implementation and reproduction (2026-11-09).** A small synchronous helper
+owns save/final lookup on `evaluation_records`; graph/PDF/provider work remains
+on its existing async caller. Services closes/drains the new lazy pool before
+SQL disposal; borrowed test fixtures close it. Pending 503 returns the stable
+code/reference object described above. API client preserves it as `reportId`;
+the UI retains input/reference and requires explicit fresh-evaluation intent
+before another POST, while saved-report recovery only GETs. Session loss clears
+the guard/reference and late account/navigation callbacks remain guarded.
+
+Sanitized runner `.pytest_cache/run_r4_s2_t3c3d3.py <tag> <Python args>` clears
+inherited DEE credentials/config and selects fake/offline providers without
+application `.env`. It captures local ignored logs. Exact arguments/results:
+
+- `red -m pytest -q --tb=short tests/test_api.py -k evaluation_publication_sql`:
+  **2 failed, 2 skipped, 195 deselected**; both SQLite SQL holds prevent unrelated
+  requests completing before the hold ends. `green` with the same suffix:
+  **2 passed, 2 skipped, 195 deselected**. Skips are unconfigured PG variants.
+- `node --test --test-name-pattern='unconfirmed publication|pending publication
+  reference' scripts/test_ui_evaluate.js`: **2 failed**, missing retained
+  reference and structured-error decoding. Final expanded `node --test
+  scripts/test_ui_evaluate.js`: **68 passed**; includes pending recovery after
+  404, no POST replay, definite refusals, explicit fresh action, edits, account
+  reset and stale account/navigation callbacks. Handler contracts are not Chrome.
+- `workers -m pytest -q --tb=short tests/test_api.py -k evaluation_publication`:
+  **15 passed, 15 skipped, 195 deselected, 1 warning**. Both worker phases cover
+  release/timeout/cancel/late failure, independent reads, owning sessions and
+  single save/no graph replay. Actual competing SQLite writes/reads prove late
+  commit, rollback after INSERT, candidate FK erasure and final report-only
+  erasure. PostgreSQL evidence is a separate required gate below.
+- `http scripts/smoke_r4_s1_t3c.py --evaluation-publication-workers`: **36/36**
+  migrated SQLite HTTP/graceful restart. Actual graph and LLM callbacks assert
+  caller ownership; uncommitted append/final-read holds assert worker/session
+  ownership, health/unrelated HTTP, independent report reads, safe reference/
+  capacity responses, late single commit/no replay, employer refusal through
+  both doors, deliberate fresh report and exact saved state after restart.
+- `browser scripts/check_ui_evaluate_browser.py --evaluation-publication-workers`:
+  **60/60**, plus harness **1/1**. Actual Chrome exercises both real publication
+  worker holds, disabled submission, input/reference preservation, actual 404
+  before late commit, manual GET recovery, no extra graph/POST, explicit fresh
+  action without POST and actual reload of each late report. Existing evaluation/
+  PDF/CSRF/expiry/outcome/ownership/contact/portal/consent/erasure journeys also
+  pass, with no console exceptions. Existing CDN access is still required;
+  fake/capture providers prove mechanics, not delivery or assessment quality.
+
+**Implementation self-review (2026-11-09, baseline `202c5ee` plus D3 diff).**
+Specification review traced complete publication, separate pool/admission,
+safe reference-only uncertainty, no automatic graph/save replay, read recovery,
+erasure/advisory/domain/DTO compatibility and lifecycle acceptance. Correctness/
+maintainability review examined actual route dependencies, store transactions,
+graph/provider call sites, SQL/cancellation/late-failure ownership and UI error
+decoding/draft/account/navigation/reset paths. The new structured detail is
+limited to pending standalone publication; existing success schemas and other
+error decoding remain. No blocking finding remains. Driver/drain and snapshot
+limits and unknown-ID transport failure remain explicit. This is same-agent
+self-review, not independent review. Required final full/PG/static gates and
+distinct final staged self-review remain pending; D3 is not done yet.
+
+**Final gates (reviewed state: 616 code/config hashes).** Snapshot saved with
+`.resume/Scripts/python.exe .pytest_cache/review_state_r4_s2_t3c3d3.py save`;
+subsequent `check` is unchanged. `preserve` confirms **715** unrelated tracked
+files, including the working DB, retain baseline bytes. Static checks:
+`node scripts/check_ui_bindings.js` **601 distinct bindings / 18 states**;
+`node --check` for `frontend/api.js`, `frontend/support.js`,
+`frontend/evaluation-report.js`, `scripts/test_ui_evaluate.js`; project-Python
+`py_compile.compile(..., doraise=True)` for all **9 changed Python modules**;
+`git diff --check` all pass. Final HTTP/Chrome/offline UI results above apply to
+this unchanged code state.
+
+Owned PG gate `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d3_postgres.py`: **501 passed, no skips, 17 warnings
+in 419.40 seconds**. Its exact selection is `-m pytest -q --tb=short
+tests/test_api.py tests/test_report_store.py tests/test_report_outcomes.py
+tests/test_screening_scope.py tests/test_screening_outcome_api.py
+tests/test_report_erasure_concurrency.py tests/test_report_response_erasure.py
+tests/test_service_lifecycle.py tests/test_config.py tests/test_org_scope_guard.py
+tests/test_api_route_extraction.py tests/test_route_table_guard.py
+tests/test_openapi_contract.py tests/test_error_logging.py
+tests/test_flywheel_retention.py tests/test_migrations.py`.
+Both SQLite/PG variants pass, including new actual competing driver locks:
+SQLite BEGIN IMMEDIATE/EXCLUSIVE and PostgreSQL reports-table SHARE ROW EXCLUSIVE/
+ACCESS EXCLUSIVE locks, with pg_stat_activity Lock waits observed. They prove
+late save/final read, rollback after INSERT, candidate FK and report-only erasure,
+preserved unrelated reports, owning sessions and GET recovery. Existing normal
+API/store/tenant/outcome/claim/note/erasure, lifecycle/budget, route/OpenAPI and
+populated-schema compatibility regressions pass. No schema change requires a
+new PG migration up/down/up; existing migrated HTTP is not mislabeled as that.
+
+The same runner's `scripts/smoke_r4_s1_t3c.py --postgres
+--evaluation-publication-workers` passes **36/36** on a disposable database.
+Portable PostgreSQL **18.6**, timezone **Asia/Calcutta**, isolation **read
+committed**; synthetic 25-second statement timeout is a test guard, not a
+production driver deadline. Local ignored runtime record:
+`.pytest_cache/r4-s2-t3c3d3-pg-runtime.json`; stop exit **0** and independent
+`pg_ctl status` exit **3**, no server running. No credentials, runtime stores or
+working data are included in publication. Full pytest remains running; task
+completion and distinct final staged self-review are still pending.
+
+**First full regression and completion record (2026-11-09).** `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d3.py full` (sanitized project Python `-m pytest -q
+--tb=short`): **4275 passed, 1073 skipped, 127 warnings in 1462.86 seconds**.
+Skips include unconfigured PG/optional cases and do not replace the separate
+actual PG-enabled gate. Warnings are the existing Starlette/httpx deprecation
+and SQLite expression-index reflection/Alembic comparison limits. Full log and
+exit **0** verified; subsequent reviewed-state `check` confirms all **616**
+code/config hashes unchanged at that point. The later staged-review finding
+below reopens final-state validation.
+
+All D3 acceptance/required validation and implementation self-review are
+complete. Only D3 closes. Final staged self-review and scoped publication follow
+this completion record. Exact next: **R4-S2-T3C3D4 - Bound batch management
+operations**, in a separate session. D4-D6/Q, C3D and all broader parents remain
+open. Auth/CSRF, operator scope, erasure snapshots, domain/advisory/fallback and
+success DTO semantics remain. Page-memory guards, unknown-ID transport failures,
+late saves/additive fresh assessments, per-process admission and unbounded
+driver/drain limits remain explicit. No live-provider quality, independent
+review, working-store migration or demo restart is claimed.
+
+**Distinct final staged self-review - finding (2026-11-09).** After the initial
+completion record, reviewed the exact 20-file staged scope against `202c5ee`.
+Specification/correctness review found one **Important / blocking** user-status issue in
+`frontend/Veritas.dc.html`'s Instant check reference box: pending publication
+sets `evalReportId` before commit, but the box says "Saved report". The separate
+uncertainty guidance does not make that saved-state assertion correct; a held
+uncommitted save can still fail or roll back. Keep the reference box neutral
+("Report reference") for both pending and confirmed IDs. Add actual Chrome
+assertions during both publication holds to reproduce the misleading status,
+then rerun browser/UI/static/full checks against the corrected reviewed state.
+This finding reopens D3 validation; the first full run remains evidence for its
+earlier code state and is not claimed as the final corrected-state gate.
+
+**Finding resolution and affected checks.** `browser-label-red
+scripts/check_ui_evaluate_browser.py --evaluation-publication-workers` through
+the sanitized runner finishes **60/62**, failing exactly the two new real Chrome
+pending-reference assertions (uncommitted save and post-commit final lookup).
+The Instant check box now says "Report reference" for any returned ID; the
+loaded saved-report screen retains its confirmed saved-state label. Corrected
+`browser-final` with the same suffix passes **62/62**, plus harness **1/1**, no
+console exceptions. Fresh offline UI **68**, bindings **601/18**, the four JS
+syntax checks and changed Chrome-harness compilation pass. No other failure is
+hidden or counted as validation.
+
+Only `frontend/Veritas.dc.html` and the Chrome harness changed after the initial
+full run; backend/config/pytest/HTTP-harness code is identical. The actual
+PG-enabled **501** and both HTTP **36/36** gates therefore remain applicable.
+Saved a revised **616** code/config hash snapshot before `full-final` and
+`browser-final`; the corrected full result is recorded below. Re-review of the neutral
+label and actual browser assertions resolves the Important finding; final task
+completion/publication waits for corrected-state full pytest and the resumed
+staged review. No independent review is claimed.
+
+**Corrected-state full regression and completion (2026-11-10).** The existing
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d3.py full-final`
+completed with exit **0**: **4275 passed, 1073 skipped, 127 warnings in 1694.07
+seconds**. It runs sanitized project Python `-m pytest -q --tb=short`. This
+continuation inspected the finished log and process result, without restarting
+the suite. Skips/warnings retain the qualifications above; actual PG evidence
+remains separate. Reviewed-state `check` confirms all **616** corrected
+code/config hashes unchanged; preservation confirms **714** unrelated tracked
+files, including the working DB, retain baseline bytes. Corrected Chrome is
+**62/62**, with the two staged-review label regressions passing.
+
+The Important status-label finding is resolved, required corrected-state checks
+are complete and only D3 closes. Resume final staged self-review after this
+completion record, then publish the scoped changes and verify the remote.
+Exact next: **R4-S2-T3C3D4 - Bound batch management operations**, in a separate
+session; D4-D6/Q, C3D and broader parents remain open. No further code change,
+working-store migration, demo restart, live-provider quality or independent
+review is claimed.
+
+**Resumed distinct final staged self-review (2026-11-10, after corrected
+completion).** Reviewed `202c5ee` plus the exact **20-file** staged D3 scope:
+report API, Services/config/YAML, four pytest modules, API client/evaluation JS/
+template, offline UI and HTTP/Chrome harnesses, and feature/operating/handoff/
+roadmap/PI/evidence documentation. All **14** staged code/config files match
+the corrected validated working files after Git line-ending normalization;
+all **616** corrected code/config hashes match the final-gate snapshot.
+
+Specification review reconfirmed complete save/final lookup, caller-owned graph/
+providers, separate admission, stable reference-only pending response, GET
+recovery/no replay, explicit fresh intent, erasure/tenant/auth/advisory/domain/
+DTO compatibility and drain-before-disposal. Correctness/maintainability review
+retraced the actual route/store and worker-session boundaries, pending/error
+decoding, draft/account/navigation guards and corrected reference rendering.
+The Important finding from the first staged review is resolved by the neutral
+label, actual Chrome red/green and corrected-state full suite. Reviewed the
+restaged label and Chrome assertions again; no further blocking finding remains.
+This is same-agent self-review, not independent review or live-provider quality
+validation. Snapshot, page-memory, unknown-ID transport and driver/drain limits
+remain explicit.
+
+Scope/preservation checks confirm **714** unrelated tracked files, including the
+working DB, unchanged; no working data, secrets or ignored local artifacts are
+staged. All **7** added local Markdown links/anchors resolve; added-text
+credential-pattern scan and `git diff --cached --check` pass. Owned PG status
+again exits **3**, reporting no server running. This review record and PI status
+wording were restaged/read after review; no code changed. Configured `main`
+tracks `origin/main`; standing-authorized scoped commit/push follows using
+per-command GCM account selection. Final response reports the verified remote
+commit. Stop after publication; do not start D4 here.

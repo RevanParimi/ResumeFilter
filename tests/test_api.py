@@ -18,6 +18,247 @@ RESUME = (
 )
 
 
+@pytest.mark.parametrize('phase', ['save', 'final'])
+async def test_evaluation_publication_sql_leaves_unrelated_requests_responsive(database, settings, monkeypatch, phase):
+    from threading import Event, get_ident
+    import httpx
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    from tests.test_report_store import _report
+    engine, factory = database
+    services = make_services(settings, candidates=CandidateStore(factory))
+    report, caller = _report(), get_ident()
+    entered, release, finished, committed = Event(), Event(), Event(), Event()
+    async def assess(**kwargs):
+        assert get_ident() == caller
+        await asyncio.sleep(0)
+        return report
+    def sql(conn, cursor, statement, parameters, context, many):
+        query = statement.lower()
+        if not entered.is_set() and ((phase == 'save' and query.lstrip().startswith('insert into reports'))
+                or (phase == 'final' and committed.is_set() and 'from reports' in query)):
+            entered.set()
+            release.wait(3)
+            finished.set()
+    def commit(session):
+        committed.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(app.state.engine, 'evaluate', assess)
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(factory, 'after_commit', commit)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/evaluate', json={'resume_text': RESUME}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'evaluation publication SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql), (factory, 'after_commit', commit)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('phase', ['save', 'final'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_evaluation_publication_admission_ownership_and_recovery(database, settings, monkeypatch, log_output, phase, ending):
+    from threading import Event, get_ident, current_thread
+    import httpx
+    from sqlalchemy import event
+    from app.candidates.store import CandidateStore
+    from tests.test_report_store import _report
+    _, factory = database
+    settings.evaluation_record_max_concurrent_requests = 1
+    settings.evaluation_record_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    services = make_services(settings, candidates=CandidateStore(factory))
+    report, caller, assessments, calls, sql_threads = _report(), get_ident(), [], [], set()
+    entered, release = Event(), Event()
+    save, get = services.report_store.save, services.report_store.get
+    async def assess(**kwargs):
+        assert get_ident() == caller
+        assessments.append(True)
+        await asyncio.sleep(0)
+        return report
+    def hold():
+        calls.append(get_ident())
+        entered.set()
+        assert release.wait(15)
+        if ending == 'late_failure':
+            raise RuntimeError('synthetic-private-publication-failure')
+    def write(value, **kwargs):
+        if phase == 'save':
+            hold()
+        return save(value, **kwargs)
+    def read(*args):
+        if phase == 'final' and current_thread().name.startswith('evaluation-record'):
+            hold()
+        return get(*args)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('publication_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('evaluation-record'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('publication_owner', get_ident()) == get_ident()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(app.state.engine, 'evaluate', assess)
+            monkeypatch.setattr(services.report_store, 'save', write)
+            monkeypatch.setattr(services.report_store, 'get', read)
+            event.listen(factory, 'after_begin', begin)
+            event.listen(factory, 'after_transaction_end', end)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/evaluate', json={'resume_text': RESUME}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == 200
+                    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as anonymous:
+                        assert (await anonymous.post('/evaluate', json={'resume_text': RESUME})).status_code == 401
+                    busy = await http.post('/evaluate', json={'resume_text': RESUME})
+                    assert busy.status_code == 503 and busy.json() == {'detail': 'evaluation_record_capacity_exhausted'}
+                    assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    snapshot = await http.get(f'/report/{report.id}')
+                    assert snapshot.status_code == (404 if phase == 'save' else 200)
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': {
+                            'code': 'evaluation_record_pending', 'report_id': report.id}}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                        assert report.summary not in response.text
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert len(services.evaluation_records._active) == 1
+                finally:
+                    release.set()
+                    results = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.evaluation_records._active:
+                            await asyncio.sleep(.01)
+                assert len(assessments) == 2  # Two deliberate POSTs; never an automatic replay.
+                assert len(calls) == 1 and calls[0] != caller and sql_threads <= {calls[0]}
+                if ending == 'release':
+                    assert results[0].status_code == 200 and results[0].json()['id'] == report.id
+                committed = ending != 'late_failure' or phase == 'final'
+                assert (get(report.id) == report) == committed
+                fresh = await http.get(f'/report/{report.id}')
+                assert fresh.status_code == (200 if committed else 404)
+                assert len(assessments) == 2  # GET recovery does not assess again.
+                monkeypatch.setattr(services.report_store, 'save', save)
+                monkeypatch.setattr(services.report_store, 'get', get)
+                services.evaluation_records.close()
+                closed = await http.post('/evaluate', json={'resume_text': RESUME})
+                assert closed.status_code == 503 and closed.json() == {'detail': 'evaluation_record_executor_closed'}
+                assert closed.headers['retry-after'] == '1' and 'set-cookie' not in closed.headers
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-publication-failure' not in log_output.text
+
+
+@pytest.mark.parametrize('case', ['save_commit', 'save_rollback', 'save_erase', 'final_read', 'final_erase'])
+async def test_evaluation_publication_real_lock_commit_rollback_and_erasure(database, settings, monkeypatch, case):
+    from threading import Event, current_thread
+    import httpx
+    from sqlalchemy import event, text
+    from app.candidates.store import CandidateStore
+    from app.reports.models import ReportRow
+    from tests.test_report_store import _report
+    engine, factory = database
+    settings.evaluation_record_max_concurrent_requests = 1
+    settings.evaluation_record_wait_seconds = .2
+    services = make_services(settings, candidates=CandidateStore(factory))
+    report, kept = _report(candidate_id='a'), _report(candidate_id='b')
+    services.report_store.save(kept)
+    final = case.startswith('final')
+    entered, proceed, pids = Event(), Event(), []
+    async def assess(**kwargs):
+        return report
+    get = services.report_store.get
+    def read(*args):
+        if final and current_thread().name.startswith('evaluation-record'):
+            entered.set()
+            assert proceed.wait(10)
+        return get(*args)
+    def sql(conn, cursor, statement, parameters, context, many):
+        query = statement.lower()
+        target = ('from reports' in query if final else query.lstrip().startswith('insert into reports'))
+        if target and current_thread().name.startswith('evaluation-record'):
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            if not final:
+                entered.set()
+                assert proceed.wait(10)
+    def flushed(session, context):
+        if case == 'save_rollback' and current_thread().name.startswith('evaluation-record') and any(isinstance(row, ReportRow) for row in session.new):
+            raise RuntimeError('synthetic report rollback after INSERT')
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(app.state.engine, 'evaluate', assess)
+            monkeypatch.setattr(services.report_store, 'get', read)
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(factory, 'after_flush', flushed)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/evaluate', json={'resume_text': RESUME}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE' if final else 'BEGIN IMMEDIATE')
+                    else:
+                        blocker.execute(text('LOCK TABLE reports IN ' + ('ACCESS EXCLUSIVE' if final else 'SHARE ROW EXCLUSIVE') + ' MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not pids or not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[-1]}):
+                                    await asyncio.sleep(.01)
+                    assert (await http.get('/healthz')).status_code == 200
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': {
+                        'code': 'evaluation_record_pending', 'report_id': report.id}}
+                    assert len(services.evaluation_records._active) == 1
+                    if case == 'save_erase':
+                        blocker.execute(text("DELETE FROM candidates WHERE id = 'a'"))
+                        blocker.commit()
+                    elif case == 'final_erase':
+                        blocker.execute(text('DELETE FROM reports WHERE id = :rid'), {'rid': report.id})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.evaluation_records._active:
+                            await asyncio.sleep(.01)
+                committed = case in ('save_commit', 'final_read')
+                assert (get(report.id) == report) == committed
+                fresh = await http.get(f'/report/{report.id}')
+                assert fresh.status_code == (200 if committed else 404)
+                assert get(kept.id) == kept
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql), (factory, 'after_flush', flushed)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+        await services.aclose()
+
+
 REPORT_READS = [
     ('operator-report', '/report/{rid}', 'get'),
     ('operator-history', '/report/{rid}/outcomes', 'outcomes'),
