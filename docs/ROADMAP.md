@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-09 - R4-S2-T3C3D2 complete; bounded human-outcome writes.**
+  Both outcome POSTs use a separate owning-operation pool; unconfirmed saves
+  preserve drafts and require fresh saved-history recovery without replay.
+  The [D2 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) owns red/green,
+  implementation review, full/actual PG/HTTP/restart/Chrome results and the
+  distinct final staged review. This continuation verified the completed full
+  run and unchanged code hashes, then reran focused/static/UI contracts.
+  Working DB and unrelated files preserved, demo untouched, owned PG stopped.
+  Only D2 closes; scoped publication follows final review. Exact next:
+  R4-S2-T3C3D3 in a separate session; C3D and broader parents remain open.
+
 - **Session 2026-11-03 - R4-S2-T3C3D1 complete; bounded report/history reads.**
   Split C3D before implementation; only D1 closes. Five operator/employer GETs
   use owning report workers with safe refusal/uncertainty, retained admission,

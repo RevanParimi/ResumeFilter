@@ -266,6 +266,285 @@ async def test_report_reads_real_lock_and_erasure(database, settings, case, path
         await services.aclose()
 
 
+@pytest.mark.parametrize('door', ['operator', 'employer'])
+@pytest.mark.parametrize('phase', ['lookup', 'append', 'observer'])
+async def test_outcome_write_sql_and_observer_leave_unrelated_requests_responsive(database, settings, door, phase):
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    engine, factory = database
+    services, report, _, key, _ = _report_read_setup(settings, factory)
+    entered, release, finished = Event(), Event(), Event()
+    def hold():
+        entered.set()
+        release.wait(3)
+        finished.set()
+    def sql(conn, cursor, statement, parameters, context, many):
+        query = statement.lower()
+        if not entered.is_set() and ((phase == 'lookup' and 'from reports' in query)
+                or (phase == 'append' and query.lstrip().startswith('insert into outcomes'))):
+            hold()
+    observe = services.flywheel.log
+    def observer(record):
+        if phase == 'observer' and record.get('record_type') == 'outcome':
+            hold()
+        observe(record)
+    services.flywheel.log = observer
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = f'/report/{report.id}/outcome' if door == 'operator' else f'/screening/reports/{report.id}/outcome'
+                pending = asyncio.create_task(http.post(path, headers={'X-Org-Key': key} if door == 'employer' else {},
+                    json={'outcome': 'inconclusive', 'notes': 'Synthetic review'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'outcome SQL/observer blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('door', ['operator', 'employer'])
+@pytest.mark.parametrize('phase', ['lookup', 'append', 'observer'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_outcome_write_admission_ownership_and_recovery(database, settings, monkeypatch, log_output, door, phase, ending):
+    from threading import Event, get_ident, current_thread
+    import httpx
+    from sqlalchemy import event
+    _, factory = database
+    settings.outcome_record_max_concurrent_requests = 1
+    settings.outcome_record_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    services, report, kept, key, other_key = _report_read_setup(settings, factory)
+    caller, calls, observed, sql_threads = get_ident(), [], [], set()
+    entered, release = Event(), Event()
+    def hold():
+        calls.append(get_ident())
+        entered.set()
+        assert release.wait(15)
+        if ending == 'late_failure':
+            raise RuntimeError('synthetic-private-outcome-error')
+    read_method = 'get' if door == 'operator' else 'get_for_org'
+    read, append, observe = getattr(services.report_store, read_method), services.report_store.add_outcome, services.flywheel.log
+    def lookup(*args, **kwargs):
+        if phase == 'lookup' and current_thread().name.startswith('outcome-record'):
+            hold()
+        return read(*args, **kwargs)
+    def write(*args, **kwargs):
+        if phase == 'append':
+            hold()
+        return append(*args, **kwargs)
+    def observer(record):
+        if record.get('record_type') == 'outcome':
+            observed.append(record)
+            if phase == 'observer':
+                hold()
+        return observe(record)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('outcome_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('outcome-record'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('outcome_owner', get_ident()) == get_ident()
+    app = create_app(services)
+    path = f'/report/{report.id}/outcome' if door == 'operator' else f'/screening/reports/{report.id}/outcome'
+    headers = {'X-Org-Key': key} if door == 'employer' else {}
+    body = {'outcome': 'verified_genuine', 'notes': 'Private synthetic review draft'}
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(services.report_store, read_method, lookup)
+            monkeypatch.setattr(services.report_store, 'add_outcome', write)
+            monkeypatch.setattr(services.flywheel, 'log', observer)
+            event.listen(factory, 'after_begin', begin)
+            event.listen(factory, 'after_transaction_end', end)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(path, headers=headers, json=body))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == 200
+                    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as anonymous:
+                        assert (await anonymous.post(path, json=body)).status_code == 401
+                    for peer_path, peer_headers in [(f'/report/{kept.id}/outcome', {}),
+                            (f'/screening/reports/{kept.id}/outcome', {'X-Org-Key': other_key})]:
+                        busy = await http.post(peer_path, headers=peer_headers, json=body)
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'outcome_record_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    # Reads have separate admission even after SQL commits but
+                    # before an optional observer finishes or fails.
+                    history = await http.get(f'/report/{report.id}/outcomes')
+                    assert history.status_code == 200
+                    assert len(history.json()['outcomes']) == (2 if phase == 'observer' else 1)
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'outcome_record_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    # A caller's timeout/cancel cannot release this admission.
+                    busy = await http.post(path, headers=headers, json=body)
+                    assert busy.json() == {'detail': 'outcome_record_capacity_exhausted'}
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.outcome_records._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0] != caller
+                assert sql_threads <= {calls[0]}
+                if ending == 'release':
+                    assert responses[0].status_code == 200
+                saved = services.report_store.outcomes(report.id)
+                committed = ending != 'late_failure' or phase == 'observer'
+                assert len(saved) == (2 if committed else 1)
+                if committed:
+                    rec = saved[-1]
+                    assert rec.notes == body['notes'] and rec.claim_id is None
+                    assert rec.recorded_by.value == ('operator' if door == 'operator' else 'organization')
+                    assert (rec.org_id is not None) == (door == 'employer')
+                    assert rec.recorded_by_org_user_id is None  # API-key principal, not a user session.
+                    assert observed == [{'record_type': 'outcome', 'report_id': report.id, 'claim_id': None,
+                        'outcome': body['outcome'], 'recorded_by': rec.recorded_by.value, 'org_id': rec.org_id}]
+                else:
+                    assert observed == []
+                monkeypatch.setattr(services.report_store, read_method, read)
+                monkeypatch.setattr(services.report_store, 'add_outcome', append)
+                monkeypatch.setattr(services.flywheel, 'log', observe)
+                services.outcome_records._wait_seconds = 20
+                fresh = await http.get(f'/report/{report.id}/outcomes')
+                assert len(fresh.json()['outcomes']) == len(saved)
+                assert (await http.post(f'/screening/reports/{report.id}/outcome',
+                    headers={'X-Org-Key': other_key}, json=body)).status_code == 404
+                assert (await http.post(path, headers=headers, json={**body, 'claim_id': 'foreign-claim'})).status_code == 422
+                assert len(services.report_store.outcomes(report.id)) == len(saved)
+                # A new deliberate POST is additive, not an idempotent replay.
+                assert (await http.post(path, headers=headers, json=body)).status_code == 200
+                assert len(services.report_store.outcomes(report.id)) == len(saved) + 1
+                assert services.report_store.outcomes(kept.id) == []
+                services.outcome_records.close()
+                closed = await http.post(path, headers=headers, json=body)
+                assert closed.status_code == 503 and closed.json() == {'detail': 'outcome_record_executor_closed'}
+                assert closed.headers['retry-after'] == '1' and 'set-cookie' not in closed.headers
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-outcome-error' not in log_output.text
+    assert body['notes'] not in log_output.text
+
+
+@pytest.mark.parametrize('door', ['operator', 'employer'])
+@pytest.mark.parametrize('failure', ['validation', 'admission', 'pending'])
+def test_outcome_observer_failure_after_commit_is_not_a_definite_refusal(database, settings, monkeypatch, request, door, failure):
+    from app.core.blocking import ExecutionPending, ExecutionUnavailable
+    from app.reports.outcomes import OutcomeRefused
+    _, factory = database
+    services, report, _, key, _ = _report_read_setup(settings, factory)
+    request.addfinalizer(lambda: asyncio.run(services.aclose()))
+    def observe(record):
+        if failure == 'validation':
+            raise OutcomeRefused('synthetic', 'synthetic-private-observer-error')
+        if failure == 'admission':
+            raise ExecutionUnavailable('outcome_record_capacity_exhausted')
+        raise ExecutionPending()
+    monkeypatch.setattr(services.flywheel, 'log', observe)
+    with TestClient(create_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as http:
+        path = f'/report/{report.id}/outcome' if door == 'operator' else f'/screening/reports/{report.id}/outcome'
+        response = http.post(path, headers={'X-Org-Key': key} if door == 'employer' else {}, json={'outcome': 'inconclusive'})
+        assert response.status_code == 500
+        assert response.json()['detail'] == 'internal_error'
+        assert len(http.get(f'/report/{report.id}/outcomes').json()['outcomes']) == 2
+        assert len(services.report_store.outcomes(report.id)) == 2
+    assert 'synthetic-private-observer-error' not in response.text
+
+
+@pytest.mark.parametrize('door', ['operator', 'employer'])
+@pytest.mark.parametrize('resolution', ['commit', 'rollback', 'erase'])
+async def test_outcome_write_real_lock_late_commit_rollback_and_erasure(database, settings, door, resolution):
+    from threading import Event, current_thread
+    import time
+    import httpx
+    from sqlalchemy import event, text
+    from app.reports.models import OutcomeRow
+    engine, factory = database
+    settings.outcome_record_max_concurrent_requests = 1
+    settings.outcome_record_wait_seconds = .2
+    services, report, kept, key, _ = _report_read_setup(settings, factory)
+    entered, proceed, pids = Event(), Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if statement.lower().lstrip().startswith('insert into outcomes') and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    def flushed(session, context):
+        if resolution == 'rollback' and current_thread().name.startswith('outcome-record') and any(isinstance(row, OutcomeRow) for row in session.new):
+            raise RuntimeError('synthetic rollback after outcome SQL')
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(factory, 'after_flush', flushed)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = f'/report/{report.id}/outcome' if door == 'operator' else f'/screening/reports/{report.id}/outcome'
+                pending = asyncio.create_task(http.post(path, headers={'X-Org-Key': key} if door == 'employer' else {}, json={'outcome': 'inconclusive'}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN IMMEDIATE')
+                    else:
+                        blocker.execute(text('LOCK TABLE outcomes IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    start = time.monotonic()
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert time.monotonic() - start < 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'outcome_record_pending'}
+                    # Refusal happens before lookup, including another door.
+                    busy = await http.post(f'/report/{kept.id}/outcome', json={'outcome': 'inconclusive'})
+                    assert busy.json() == {'detail': 'outcome_record_capacity_exhausted'}
+                    if resolution == 'erase':
+                        blocker.execute(text('DELETE FROM reports WHERE id = :id'), {'id': report.id})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.outcome_records._active:
+                            await asyncio.sleep(.01)
+                assert len(services.report_store.outcomes(report.id)) == {'commit': 2, 'rollback': 1, 'erase': 0}[resolution]
+                fresh = await http.get(f'/report/{report.id}/outcomes')
+                assert fresh.status_code == (404 if resolution == 'erase' else 200)
+                assert services.report_store.get(kept.id) == kept
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql), (factory, 'after_flush', flushed)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+        await services.aclose()
+
+
 async def _body_gate(events, *, headers=(), limit=8, trace=None, scope_type="http"):
     """Drive actual ASGI receive events, including events left unread on refusal."""
     from app.core.request_body import RequestBodyLimitMiddleware

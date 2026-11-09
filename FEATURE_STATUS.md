@@ -264,5 +264,16 @@ publishing loaded notes. Read failures offer reload guidance while keeping the
 saved reference. Tenant projection, private-note filtering, generic 404,
 empty candidate-report lists and advisory/scorer semantics remain. The
 [report read budget](OPERATING.md#report-read-execution-budget) states defaults
-and snapshot/driver/drain limits. Outcome writes, evaluation publication and
-batch SQL remain D2-D6/Q; C3D and broader parents stay open.
+and snapshot/driver/drain limits. Evaluation publication and batch SQL remain
+D3-D6/Q; C3D and broader parents stay open.
+
+[R4-S2-T3C3D2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) bounds both human-outcome
+POSTs in a separate pool covering lookup, shared validation, SQL append and the
+existing optional observer. Read admission remains independent. Timeout/cancel
+retains capacity through actual completion, without automatic replay; a late
+append or observer failure does not imply rollback. The UI preserves notes and
+requires a successful fresh history read after uncertainty before allowing
+another submission. That read is a snapshot and a fresh judgment is additive.
+Tenant/author/user scope, private-note filtering, FK/erasure and advisory policy
+remain. The [outcome budget](OPERATING.md#human-outcome-write-execution-budget)
+owns defaults and limits; the evidence owns validation and task status.

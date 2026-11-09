@@ -528,6 +528,8 @@ class Settings(BaseSettings):
     candidate_ingest_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     report_record_max_concurrent_requests: int = Field(default=2, ge=1)
     report_record_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
+    outcome_record_max_concurrent_requests: int = Field(default=2, ge=1)
+    outcome_record_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     # DOUBLE-GUARDED at the route, exactly like verif_otp_debug_echo: the login
     # code is echoed in the 202 body only when env == "local" AND this is true.
     # It exists so a developer clicking through the UI is not reading six digits

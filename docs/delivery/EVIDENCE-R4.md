@@ -10378,3 +10378,258 @@ working data or ignored runtime artifacts. Configured `main` tracks
 `origin/main`; standing-authorized scoped commit/push follows using per-command
 GCM account selection. Final response reports the verified remote commit.
 Stop after publication; do not begin D2 here.
+
+### <a id="r4-s2-t3c3d2"></a>R4-S2-T3C3D2 - Bound human-outcome writes
+
+**Status: done (2026-11-09; started 2026-11-03).** Baseline `513a911`;
+D1 is published. Only D2 closes. [PI status](PI-R4.md#r4-s2-t3c3d2).
+
+**Pre-implementation contract.** Bound both POST `/report/{id}/outcome` and
+`/screening/reports/{id}/outcome`: complete report/ownership lookup, shared
+claim/note validation, SQL append and existing minimal optional observer. Reuse
+BoundedExecutor with a separate lazy service-owned `outcome_records` pool
+(positive capacity default 2, finite positive wait default 20 seconds), so saved
+report/history reads retain their independent admission. Workers own complete
+SQL sessions; auth/session-CSRF and extraction/evaluation/providers stay on the
+caller. Pass stores, bound synchronous methods and detached IDs/values, never
+Request/Response/live Session. Preserve operator versus employer author/user/org
+provenance, claim/note limits, generic absent/foreign 404, FK/erasure, unchanged
+DTO/OpenAPI and the null production observer. No new schema, transaction/identity
+policy, duplicate durable sink, idempotency key or replay/durable worker.
+
+Full/closed/pending returns safe 503 with Retry-After and no partial outcome or
+cookies. Admission remains held through timeout/cancel/late failure; accepted
+work can commit even when the caller abandons during lookup. Observer work can
+finish/fail after the separate SQL commit; preserve those semantics without
+claiming atomicity/rollback. Never resume an abandoned request or repeat append.
+Read current saved history after work settles before a deliberate new judgment;
+fresh POST appends and can duplicate a prior judgment. Reads/final delivery and
+authorization remain snapshots. Direct synchronous callers own scheduling;
+driver waits and shutdown drain have no new hard kill/deadline.
+
+UI must retain notes/reference on uncertain POST, show human guidance and block
+another submission for that report until a subsequent successful saved-history
+read. Failed/stale reads cannot unlock it, and navigation/account changes must
+not leak drafts or clear another report's pending guard. History is a snapshot,
+not proof that an earlier late save can no longer finish; communicate that limit.
+Known pre-admission refusal remains distinct from unconfirmed writes. No automatic
+POST retry; successful manual refresh does not itself record a judgment.
+
+Require meaningful red/green SQL responsiveness and UI uncertainty regressions;
+focused/full pytest; actual SQLite/PG competing writes, late commit/rollback,
+erasure/FK and owning sessions; two-actor migrated HTTP/graceful restart and
+actual outcome Chrome with worker timeout, late saved history and manual recovery.
+Run offline UI contracts/bindings/syntax and relevant compilation. Fakes prove
+mechanics, not delivery/assessment quality. No schema change calls for a new
+up/down/up gate; use current migrated scratch stores/populated migration tests.
+Preserve working DB, unrelated work and existing demo. Record implementation
+self-review, required checks/completion and a distinct final staged self-review,
+then commit/push scoped changes and verify remote. Stop; exact next is D3 in a
+separate session, with C3D and all broader parents still open.
+
+**Implementation and reproduction.** The two POSTs now pass complete synchronous
+operations to a separate lazy, service-owned outcome pool. Operator lookup/
+validation/append is a small synchronous helper; employer ownership stays in the
+existing scoped service. The shared worker invokes the existing minimal observer
+after SQL. No Request, Response or live Session crosses the boundary; caller
+auth/CSRF and detached author/user IDs remain explicit. Admission, late completion
+and drain reuse BoundedExecutor. Shared fixture cleanup closes the new pool.
+
+The shipped UI tracks pending/unconfirmed submissions per report and instance,
+preserves the current draft, and uses a guarded manual history read to recover.
+Only a successful fresh list begun after uncertainty releases the guard. Reads
+begun while the POST was pending, failed/stale reads and another report/account's
+callbacks cannot release it. Known full/closed refusal permits deliberate retry;
+unknown 5xx/network/timeout requires history. Recovery warns that late saves can
+still finish. Successful POST preserves edits typed while it was pending. Failed
+initial history has its own draft-preserving read action.
+
+Sanitized runner `.pytest_cache/run_r4_s2_t3c3d2.py` clears inherited DEE config/
+credentials, uses fake/offline providers and captures local ignored logs. Tags
+below identify its log; suffixes are the actual Python arguments:
+
+- `red -m pytest -q --tb=short tests/test_api.py -k outcome_write_sql`: **6 failed,
+  6 skipped**, all six SQLite reproductions show unrelated requests cannot finish
+  until lookup/append/observer releases. `green` with the same suffix: **6 passed,
+  6 skipped**. These skips are not PG evidence.
+- `node --test --test-name-pattern="unconfirmed outcome" scripts/test_ui_evaluate.js`
+  (local `ui-red` log): **8 failures**, each allows a second POST without history.
+  Final `node --test scripts/test_ui_evaluate.js`: **63 passed** (`ui-final`).
+- Initial expanded `workers -m pytest -q --tb=short tests/test_api.py -k
+  outcome_write`: **21 failed, 15 passed, 36 skipped**. Test defects used the wrong
+  provenance attribute and attached the employer lookup hold to `get` instead of
+  `get_for_org`; corrected both. `workers-fixed` with the same suffix: **36 passed,
+  36 skipped**. A narrow `worker-probe` release/append/operator SQLite case also
+  passes. No failed attempt is claimed as validation.
+
+**Implementation self-review (2026-11-03, baseline `513a911` plus D2 diff).**
+Specification review maps both POSTs to complete owning operations, separate read
+admission, safe refusal/uncertainty, retained futures/no replay, saved-state
+recovery, tenant/claim/note/provenance/FK contracts and drain-before-disposal.
+The SQL model, DTO/OpenAPI and advisory/scorer policy are unchanged. Direct
+callers still own scheduling, and snapshots/commits are not locks or atomicity.
+
+Correctness/maintainability review traced actual route/dependency/scope/store
+callers, pool construction/cleanup, session ownership, SQL rollback/erasure,
+minimal observer metadata, UI navigation/account identity and recovery tokens.
+One blocking finding in `_observe_outcome`: an observer throwing OutcomeRefused
+or executor exceptions after a successful commit could masquerade as validation
+or refusal before admission. New `observer-red` tests reproduce **6 failed,
+6 skipped**. The worker now wraps those observer-only exception types as an
+ordinary server failure, preserving SQL and generic 500 semantics. The first
+`observer-green` attempt had **2 failed, 4 passed, 6 skipped** solely because a
+new assertion incorrectly forbade existing operator traceback logging; changed
+the assertion to protect the HTTP response, without broadening logging policy.
+The minimal observer payload still contains no notes. Final focused/full gates
+below include the corrected test. A second UI finding was missing read recovery
+after initial history failure while recording is disabled; the dedicated reload
+and behavioral regression resolve it. No remaining blocking implementation
+finding; runtime gates are still pending. This is a same-agent self-review,
+not independent review.
+
+**Final gates (2026-11-03; completion verified 2026-11-09).** Code/config snapshot: **616 hashes**, saved by
+`.pytest_cache/review_state_r4_s2_t3c3d2.py save`; subsequent `check` is unchanged.
+Local `preserve` confirms working DB and unrelated tracked files retain baseline
+bytes. All final gates use the corrected implementation/tests; the first broad
+focused run had already imported the obsolete logging assertion and finished
+**2 failed, 379 passed, 88 skipped, 2 warnings**. Its exact selection was
+`focused -m pytest -q --tb=short tests/test_api.py tests/test_report_store.py
+tests/test_report_outcomes.py tests/test_screening_scope.py
+tests/test_screening_outcome_api.py tests/test_report_erasure_concurrency.py
+tests/test_report_response_erasure.py tests/test_service_lifecycle.py
+tests/test_config.py tests/test_org_scope_guard.py tests/test_api_route_extraction.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py
+tests/test_error_logging.py tests/test_flywheel_retention.py
+tests/test_ui_handlers.py tests/test_ui_mount.py`. Those two failures are the
+recorded test-policy mistake, not a successful gate. Corrected `observer-final
+-m pytest -q --tb=short tests/test_api.py -k outcome_observer_failure` passes
+**6 passed, 6 skipped**. Final all-outcome focused, full and actual PG-enabled
+focused results are recorded below.
+
+Final `focused-final -m pytest -q --tb=short tests/test_api.py -k
+'outcome_write or outcome_observer'`: **42 passed, 42 skipped, 111 deselected,
+1 warning**. This corrected selection covers all new outcome cases; SQLite-only
+skips do not substitute for the PG-enabled gate. Together with the final
+full/PG gates, this replaces the obsolete-assertion broad run as validation.
+
+Final `http-final scripts/smoke_r4_s1_t3c.py --outcome-write-workers`: **67/67**
+SQLite migrated two-actor HTTP and graceful restart. Initial `http` also passed
+67/67 before the observer-only exception correction; only the final rerun is
+used as final-state evidence. Both routes exercise lookup, genuinely uncommitted
+append and post-commit observer holds; health/unrelated APIs, independent saved
+history, cross-door capacity/refusal, wait expiry, retained admission, single
+late append/no replay, exact provenance, foreign/absent 404, claim/note refusal,
+deliberate fresh append and exact private/scoped history after restart. Both
+starts confirm revision 0030, one SQL factory and graceful disposal. The hooks
+assert caller/worker separation, session thread ownership and minimal metadata;
+they are controlled holds, distinct from the real competing-driver lock tests.
+
+Final `browser-final scripts/check_ui_evaluate_browser.py --outcome-write-workers`:
+**60/60**, plus harness **1/1**. Actual Chrome on migrated scratch SQL performs
+both employer post-commit observer and operator uncommitted append timeouts;
+rendered guidance excludes raw codes, draft/reference remain, disabled buttons
+do not POST, failed history leaves the guard, release commits once, and manual
+fresh history preserves notes and releases the guard without replay. It also
+exercises normal org/operator feedback, actual lost acknowledgement after commit,
+report reload, evaluation/PDF, expiry/CSRF, ownership, contact and candidate
+consent/access/erasure; no console exceptions. Initial `browser` was also 60/60;
+the final rerun includes the later initial-history recovery binding. Browser
+transport-injected read failures and real outcome-worker holds remain distinct.
+Chrome still needs the existing CDN; fake/capture providers make no live quality
+or delivery claim.
+
+Static checks: `node scripts/check_ui_bindings.js` **598 distinct bindings / 18
+states**, `node --check` for `frontend/api.js`, `frontend/support.js`,
+`frontend/evaluation-report.js` and `scripts/test_ui_evaluate.js`; project-Python
+`py_compile.compile(..., doraise=True)` for all **10 changed Python modules**;
+`git diff --check` all pass. UI's **63** offline cases are handler contracts,
+not substituted for Chrome. No new schema/migration: existing populated-schema
+regressions and migrated scratch HTTP own compatibility; working DB stays 0023.
+
+Owned PG gate `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d2_postgres.py`: **463 passed, no skips, 17 warnings**
+in the final PG-enabled focused selection. It uses the broad focused selection
+above minus `tests/test_ui_handlers.py` / `tests/test_ui_mount.py`, plus
+`tests/test_migrations.py`. This selection includes actual SQLite and PostgreSQL
+variants, normal API/store/claim/note/provenance/erasure contracts, shared
+admission/timeout/cancel/late observer failures, owning sessions and shutdown,
+positive finite budgets, route/OpenAPI compatibility and existing populated
+SQLite migrations. New lock cases use a real competing writer/connection:
+SQLite BEGIN IMMEDIATE and PostgreSQL outcome-table lock, verified through
+pg_stat_activity Lock waits. Both routes prove late single commit, rollback
+after actual INSERT, and erasure before blocked append; kept reports/outcomes
+survive and saved-history recovery reflects the actual committed state. No
+schema change requires a new migration; this is not a claim of a new PG
+up/down/up migration gate.
+
+The same runner's `scripts/smoke_r4_s1_t3c.py --postgres --outcome-write-workers`
+passes **67/67** on its disposable PG database. The portable instance reports
+PostgreSQL **18.6**, timezone **Asia/Calcutta**, isolation **read committed**;
+its synthetic 25-second statement timeout is a test guard, not a production
+driver/drain guarantee. Runtime evidence is local
+`.pytest_cache/r4-s2-t3c3d2-pg-runtime.json`; stop exit **0**, independent
+`pg_ctl status` exit **3** (no server running). Credentials and runtime stores
+are ignored artifacts, absent from this record and publication.
+
+**Full regression and closure (2026-11-09).** The pending `full` invocation of
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d2.py full` completed on
+3 November: **4252 passed, 1058 skipped, 127 warnings in 2322.00 seconds**.
+It runs project Python `-m pytest -q --tb=short` with the sanitized environment
+described above. The continuation inspected its complete local `full` log;
+no full-suite rerun today is claimed. Skips include unconfigured PG/optional
+cases and do not replace the separate actual PG result. Warnings concern the
+existing Starlette/httpx deprecation and SQLite expression-index reflection/
+Alembic comparison limits.
+
+The closure reran `.resume/Scripts/python.exe
+.pytest_cache/review_state_r4_s2_t3c3d2.py check`: all **616** code/config hashes
+match the reviewed final-gate snapshot. `preserve` confirms **715** unrelated
+tracked files, including the working DB, retain baseline bytes. No application,
+test or configuration edits were needed in this continuation. Fresh
+`closure-focused -m pytest -q --tb=short tests/test_api.py -k
+'outcome_write or outcome_observer'` through the same sanitized runner passes
+**42 passed, 42 skipped, 111 deselected, 1 warning**. Fresh
+`node --test scripts/test_ui_evaluate.js`: **63 passed**; bindings **598/18**,
+the four JS syntax checks listed above, compilation of all **10** changed Python
+modules and `git diff --check` pass. Existing final PG/HTTP/browser logs were
+verified against the unchanged state; they were not rerun today. Independent
+`pg_ctl status` again exits **3**, reporting no owned server running. Demo and
+working data remain untouched.
+
+All D2 acceptance/required validation gates and the implementation self-review
+are recorded. Only D2 closes; final staged self-review/publication follows this
+completion record. Exact next: **R4-S2-T3C3D3 - Bound standalone evaluation
+publication**, in a separate session. D3-D6/Q, C3D and broader parents remain
+open. Per-process budgets, saved-history snapshots/possible late saves, additive
+fresh POSTs, separate SQL/observer commits, no hard driver/drain deadline and
+fake-provider/browser-CDN limits remain as stated above.
+
+**Distinct final staged self-review (2026-11-09, after completion record).**
+Reviewed baseline `513a911` plus the exact **20-file** staged D2 scope: both API
+modules, Services/config/YAML, four pytest modules, evaluation-report JS/template,
+offline UI checks, HTTP/browser harnesses, feature/operating documentation and
+handoff/PI/evidence/roadmap. The **14** staged code/config files match the
+validated working files after Git's line-ending normalization; all **616**
+reviewed code/config hashes still match the final-gate snapshot.
+
+Specification review maps both outcome doors, complete owning operations,
+independent read admission, safe refusals/uncertainty, retained work/no replay,
+draft recovery, provenance/tenant/claim/note/FK/erasure and lifecycle acceptance
+to the implementation and recorded behavioral evidence. Correctness and
+maintainability review retraced route dependencies and detached author IDs,
+session ownership/rollback, post-commit observer exception mapping, pool drain,
+per-report/account/stale-read UI guards, and actual lock/HTTP/Chrome assertions.
+The separate commits, snapshot and driver limits remain explicit; no DTO/schema,
+provider or advisory/scorer policy change was introduced. No blocking finding
+remains. This is a same-agent self-review, not independent review or a claim
+about live-provider quality.
+
+Final preservation after adding the roadmap entry confirms **714** unrelated
+tracked files, including the working DB, unchanged. The staged diff excludes
+working data, secrets and ignored runtime artifacts. All **7** added local
+Markdown links/anchors resolve; added-text credential-pattern scan and
+`git diff --cached --check` pass. This review record and status wording were
+restaged and checked after review; no code changed. Configured `main` tracks
+`origin/main`; standing-authorized scoped commit/push follows with per-command
+GCM account selection. Final response reports the verified remote commit.
+Stop after publication; do not begin D3 here.

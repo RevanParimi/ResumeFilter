@@ -11,6 +11,8 @@
     OUTCOME_NOTES_MAX, SMALL_GHOST, avatar, chip, initials, gradBar, num, pct,
     confWord, fmtDateTime
   }) => class extends Base {
+  _outcomeSubmissions = new Map();
+  _outcomeHistoryRequest = null;
   reportPath = (reportId) => (this.state.me && this.state.me.kind === "admin"
     ? "/report/" : "/screening/reports/") + encodeURIComponent(reportId);
   clearReportLocation = () => {
@@ -22,12 +24,19 @@
     const me = this.state.me;
     if (!me || (me.kind !== "org" && me.kind !== "admin")) return;
     if (me.kind === "admin") origin = "evaluate";
+    let pending = this._outcomeSubmissions.get(reportId);
+    if (pending && pending.me !== me) {
+      this._outcomeSubmissions.delete(reportId);
+      pending = null;
+    }
     this.setState({
       screen: "report", report: IDLE, outcomes: IDLE, reportOrigin: origin,
       // Notes belong to the report you were looking at. Carrying them onto the
       // next candidate is how a sentence about one person ends up filed
       // against another.
-      outcomeNotes: "", outcomeError: null, outcomeBusy: null
+      outcomeNotes: "", outcomeError: null,
+      outcomeBusy: pending && pending.state === "pending" ? pending.label : null,
+      outcomeNeedsRefresh: !!pending, outcomeHistoryReloaded: false
     });
     this._recording = null;
     // Same late-reply guard as the batch reads: two quick clicks must not leave
@@ -41,8 +50,7 @@
     // The report and its judgments are two reads because they are two routes;
     // both carry the SAME guard, or a late outcome list lands on the report you
     // navigated to next.
-    this.load("outcomes",
-              () => API.get(path + "/outcomes", { timeoutMs: EVAL_TIMEOUT_MS }), still);
+    this.reloadOutcomeHistory();
     window.scrollTo(0, 0);
   };
   retryReport = () => { if (this._viewReport) this.openReport(this._viewReport, this.state.reportOrigin)(); };
@@ -53,6 +61,30 @@
 
   setOutcomeNotes = (e) => this.setState({ outcomeNotes: e.target.value });
 
+  reloadOutcomeHistory = () => {
+    const reportId = this._viewReport, me = this.state.me;
+    if (this._gone || !reportId || !me || !["org", "admin"].includes(me.kind)) return Promise.resolve(null);
+    const token = this._outcomeHistoryRequest = {};
+    const pending = this._outcomeSubmissions.get(reportId);
+    // Only a read begun after uncertainty can release that guard. A read already
+    // in flight when the POST fails is not recovery from that failure.
+    const recovering = pending && pending.me === me && pending.state === "uncertain";
+    const error = this.state.outcomeError;
+    const current = () => !this._gone && this.state.me === me && this._viewReport === reportId
+      && this._outcomeHistoryRequest === token;
+    return this.load("outcomes", () => API.get(this.reportPath(reportId) + "/outcomes",
+      { timeoutMs: EVAL_TIMEOUT_MS }), current).then(data => {
+      if (!current() || !data || !Array.isArray(data.outcomes)) return data;
+      if (recovering && this._outcomeSubmissions.get(reportId) === pending) {
+        this._outcomeSubmissions.delete(reportId);
+        this.setState({ outcomeNeedsRefresh: false, outcomeHistoryReloaded: true, outcomeError: null });
+      } else if (!this._outcomeSubmissions.has(reportId) && this.state.outcomeError === error) {
+        this.setState({ outcomeError: null });
+      }
+      return data;
+    });
+  };
+
   // One click records one judgment. Deliberately NOT armed-then-confirmed like
   // the batch delete: this appends a row, it destroys nothing, and a reviewer
   // who changes their mind records that too (the list is append-only and shown
@@ -61,46 +93,40 @@
   recordOutcome = (label) => () => {
     const reportId = this._viewReport;
     const me = this.state.me;
-    // The in-flight guard is an INSTANCE FIELD rather than state — but be
-    // precise about why, because the obvious reason is WRONG and was measured
-    // to be wrong. The process driver needs a field because its loop consults
-    // the flag on the tick that starts it, before setState has flushed. A
-    // click handler is different: React flushes discrete events synchronously,
-    // so `state.outcomeBusy` IS already set by the time a second click runs,
-    // and a state-based guard was probed in a real browser and held (two
-    // clicks in one synchronous block still recorded one judgement).
-    //
-    // The field stays because it does not depend on that flushing behaviour
-    // holding — this list is append-only, so a double-record is permanent —
-    // and because it is the same spelling as `_driving` and `_viewReport`
-    // beside it. It is belt-and-braces, not a bug fix, and the check in
-    // scripts/check_ui_screening_browser.py says so.
-    if (this._gone || !reportId || this._recording || !me || !["org", "admin"].includes(me.kind)) return;
-    const token = this._recording = {};
+    if (this._gone || !reportId || !me || !["org", "admin"].includes(me.kind)
+        || this.state.outcomes.loading || this.state.outcomes.error) return;
+    const previous = this._outcomeSubmissions.get(reportId);
+    if (previous && previous.me === me) return;
+    const token = { me, label, state: "pending" };
+    this._outcomeSubmissions.set(reportId, token);
+    this._recording = token;
+    const notes = this.state.outcomeNotes;
     const path = this.reportPath(reportId);
     const current = () => !this._gone && this.state.me === me && this._viewReport === reportId;
-    this.setState({ outcomeBusy: label, outcomeError: null });
+    this.setState({ outcomeBusy: label, outcomeError: null, outcomeHistoryReloaded: false });
     API.post(path + "/outcome",
-             { outcome: label, notes: this.state.outcomeNotes }, { timeoutMs: EVAL_TIMEOUT_MS }).then(
+             { outcome: label, notes }, { timeoutMs: EVAL_TIMEOUT_MS }).then(
       () => {
-        // Released whatever happened next, including a navigation away: a
-        // guard that only clears on the path the user stayed on would leave
-        // the next report unable to record anything at all.
-        if (this._recording !== token) return;
-        this._recording = null;
+        if (this._outcomeSubmissions.get(reportId) !== token) return;
+        this._outcomeSubmissions.delete(reportId);
+        if (this._recording === token) this._recording = null;
         if (!current()) return;
-        this.setState({ outcomeBusy: null, outcomeNotes: "" });
-        this.load("outcomes",
-                  () => API.get(path + "/outcomes", { timeoutMs: EVAL_TIMEOUT_MS }), current);
+        this.setState({ outcomeBusy: null, outcomeNeedsRefresh: false,
+          outcomeNotes: this.state.outcomeNotes === notes ? "" : this.state.outcomeNotes });
+        this.reloadOutcomeHistory();
       },
       (err) => {
-        if (this._recording !== token) return;
-        this._recording = null;
+        if (this._outcomeSubmissions.get(reportId) !== token) return;
+        if (this._recording === token) this._recording = null;
+        const refused = err && ["outcome_record_capacity_exhausted", "outcome_record_executor_closed"].includes(err.detail);
+        const uncertain = !refused && err && (["network", "timeout"].includes(err.kind) || err.status >= 500);
+        if (uncertain) token.state = "uncertain";
+        else this._outcomeSubmissions.delete(reportId);
         if (err && err.kind === "session_lost") return;
         if (!current()) return;
         // The notes are NOT cleared on failure: they are the thing that was
         // just refused, and retyping them is the user paying for our error.
-        this.setState({ outcomeBusy: null, outcomeError: err });
+        this.setState({ outcomeBusy: null, outcomeError: err, outcomeNeedsRefresh: !!uncertain });
       }
     );
   };
@@ -286,15 +312,17 @@
         (m, o) => Object.assign(m, { [o.value]: this.recordOutcome(o.value) }), {}
       );
     }
+    const outcomeDisabled = !!(st.outcomeBusy || st.outcomeNeedsRefresh || st.outcomes.loading || st.outcomes.error);
     const outcomeButtons = OUTCOME_LABELS.map((o) => ({
       label: st.outcomeBusy === o.value ? "Recording…" : o.label,
       record: this._outcomeHandlers[o.value],
+      disabled: outcomeDisabled,
       // Busy is per-BUTTON, not global: a spinner on all four would be lying
       // about which judgment is in flight.
       style: Object.assign({}, SMALL_GHOST, {
         padding: "9px 12px", textAlign: "left",
-        opacity: st.outcomeBusy && st.outcomeBusy !== o.value ? 0.5 : 1,
-        cursor: st.outcomeBusy ? "default" : "pointer"
+        opacity: outcomeDisabled && st.outcomeBusy !== o.value ? 0.5 : 1,
+        cursor: outcomeDisabled ? "default" : "pointer"
       })
     }));
     const outcomeRows = ((st.outcomes.data && st.outcomes.data.outcomes) || []).map((o) => {
@@ -373,10 +401,16 @@
       outcomeNotesMax: OUTCOME_NOTES_MAX,
       outcomeNotesCount: st.outcomeNotes.length + " / " + OUTCOME_NOTES_MAX,
       outcomeButtons,
-      outcomeError: !!st.outcomeError,
-      outcomeErrorText: errorCopy(st.outcomeError) + (st.outcomeError &&
-        (["network", "timeout"].includes(st.outcomeError.kind) || st.outcomeError.status >= 500)
-        ? " Your judgement may have been saved. Reload saved feedback before recording again." : ""),
+      outcomeError: !!st.outcomeError || st.outcomeNeedsRefresh,
+      outcomeErrorText: st.outcomeNeedsRefresh
+        ? "Your judgement may still be saving. Wait, then reload saved feedback before recording again."
+        : st.outcomeError && ["outcome_record_capacity_exhausted", "outcome_record_executor_closed"].includes(st.outcomeError.detail)
+          ? "Feedback recording is temporarily unavailable. Wait a moment, then try again."
+          : errorCopy(st.outcomeError),
+      reloadOutcomeHistory: this.reloadOutcomeHistory,
+      outcomeHistoryLoading: st.outcomes.loading,
+      outcomeHistoryReloaded: st.outcomeHistoryReloaded,
+      outcomeHistoryRetry: !!st.outcomes.error && !st.outcomeError && !st.outcomeNeedsRefresh,
       // The RECORD action and the LIST read fail separately and are shown
       // separately. A failed list used to render nothing at all — no history,
       // no empty state, no error — which invites recording the same judgement

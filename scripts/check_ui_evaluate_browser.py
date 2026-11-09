@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 
 import httpx
@@ -38,7 +39,9 @@ async def main():
 
     def launch(args, **kwargs):
         if "app.main:app" in args:
-            args = ["smoke_r3_s1_t2:create_smoke_app" if a == "app.main:app" else a for a in args] + ["--factory"]
+            factory = ('smoke_r4_s1_t3c:create_outcome_write_browser_app' if '--outcome-write-workers' in sys.argv
+                else 'smoke_r3_s1_t2:create_smoke_app')
+            args = [factory if a == "app.main:app" else a for a in args] + ["--factory"]
             inherited = kwargs["env"]
             env = {k: v for k, v in inherited.items() if not k.startswith("DEE_")}
             env.update({k: v for k, v in inherited.items() if k in {
@@ -56,6 +59,9 @@ async def main():
                 "PYTHONPATH": os.pathsep.join(str(p) for p in (browser.ROOT / "src", browser.ROOT / "scripts", browser.ROOT)),
             })
             state["db"] = env["DEE_CANDIDATES_DB_URL"]
+            if '--outcome-write-workers' in sys.argv:
+                env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'))
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt":
             kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -174,6 +180,52 @@ window.fetch = async (url, init) => {
             assert await tab.js("window.__click('button', 'Back to Instant check')")
             assert await tab.wait("document.querySelector('#instant-resume')", 15)
 
+        async def outcome_worker_recovery(report_id, plane, phase):
+            path = ('/report/' if plane == 'operator' else '/screening/reports/') + report_id + '/outcomes'
+            before = len(admin.get(f'/report/{report_id}/outcomes').json()['outcomes'])
+            for name in ('entered', 'release', 'completed'):
+                (scratch / f'outcome-write-{name}').unlink(missing_ok=True)
+            (scratch / 'outcome-write-mode').write_text(phase)
+            await tab.js("""window.__workerPost=window.VeritasAPI.post; window.__outcomeCount=0;
+window.VeritasAPI.post=(p,b,o)=>{if(p.endsWith('/outcome')) window.__outcomeCount++; return window.__workerPost(p,b,o);};
+window.__type('input[placeholder="What did you find out, and how?"]', 'Synthetic worker recovery draft');""")
+            try:
+                assert await tab.js("window.__click('button', 'Inconclusive')")
+                async with asyncio.timeout(10):
+                    while not (scratch / 'outcome-write-entered').exists():
+                        await asyncio.sleep(.02)
+                checks.check(plane + ' actual worker timeout retains draft and disables another judgment',
+                    await tab.wait("window.__has('may still be saving') && [...document.querySelectorAll('button')].filter(b=>['Verified genuine','Verified fabricated','Candidate clarified','Inconclusive'].includes(b.textContent.trim())).every(b=>b.disabled)", 15)
+                    and await tab.js("document.querySelector('input[placeholder=\"What did you find out, and how?\"]').value") == 'Synthetic worker recovery draft'
+                    and not await tab.js("window.__has('outcome_record_pending')"))
+                await tab.js("window.__click('button', 'Inconclusive')")
+                checks.check(plane + ' disabled judgment never replays pending POST', await tab.js('window.__outcomeCount') == 1)
+                # An independently successful read can see the committed row
+                # while the observer still holds write admission.
+                snapshot = admin.get(f'/report/{report_id}/outcomes').json()['outcomes']
+                checks.check(plane + ' reads stay available during actual write hold', len(snapshot) == before + (phase == 'observer'))
+                await tab.js("""window.__workerGet=window.VeritasAPI.get;
+window.VeritasAPI.get=(p,o)=>p.endsWith('/outcomes') ? Promise.reject({status:503,kind:'http',detail:'report_record_pending'}) : window.__workerGet(p,o);""")
+                assert await tab.js("window.__click('button', 'Reload saved feedback')")
+                checks.check(plane + ' failed history refresh keeps save guard and draft',
+                    await tab.wait("window.__has('Saved reports are temporarily unavailable')", 10)
+                    and await tab.js("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Inconclusive').disabled"))
+                await tab.js('window.VeritasAPI.get=window.__workerGet')
+            finally:
+                (scratch / 'outcome-write-release').touch()
+                async with asyncio.timeout(10):
+                    while not (scratch / 'outcome-write-completed').exists():
+                        await asyncio.sleep(.02)
+                (scratch / 'outcome-write-mode').unlink(missing_ok=True)
+                await tab.js('window.VeritasAPI.post=window.__workerPost; if(window.__workerGet) window.VeritasAPI.get=window.__workerGet')
+            assert await tab.js("window.__click('button', 'Reload saved feedback')")
+            checks.check(plane + ' fresh history recovers late save without another POST',
+                await tab.wait("window.__has('Saved feedback reloaded') && window.__has('Synthetic worker recovery draft')", 15)
+                and len((await tab.js(f'window.VeritasAPI.get({json.dumps(path)})'))['outcomes']) == before + 1
+                and await tab.js('window.__outcomeCount') == 1
+                and await tab.js("document.querySelector('input[placeholder=\"What did you find out, and how?\"]').value") == 'Synthetic worker recovery draft'
+                and not await tab.js("[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='Inconclusive').disabled"))
+
         await login("Organisation", "instant-org@example.com", signup=True)
         assert await tab.js("window.__click('button', 'Instant check')")
         assert await tab.wait("document.querySelector('#instant-resume')", 15)
@@ -219,7 +271,7 @@ window.fetch = async (url, init) => {
         await tab.js("window.__type('input[placeholder=\"What did you find out, and how?\"]', 'Synthetic follow-up notes'); window.__feedbackPost=window.VeritasAPI.post; window.VeritasAPI.post=(p,b,o)=>window.__feedbackPost(p,b,p.endsWith('/outcome') ? {timeoutMs:2000} : o); window.__loseOutcomeAck=true")
         assert await tab.js("window.__click('button', 'Inconclusive')")
         checks.check("lost feedback acknowledgement settles visibly and retains notes",
-            await tab.wait("window.__has('Reload saved feedback before recording again')", 15)
+            await tab.wait("window.__has('reload saved feedback before recording again')", 15)
             and await tab.js("document.querySelector('input[placeholder=\"What did you find out, and how?\"]').value") == "Synthetic follow-up notes"
             and await tab.js("window.__savedOutcomeAck") is True)
         checks.check("lost acknowledgement may already have saved the actual second judgement",
@@ -229,6 +281,8 @@ window.fetch = async (url, init) => {
             await tab.wait("window.__has('2 judgements, oldest first')", 15)
             and len((await tab.js(f"window.VeritasAPI.get('/screening/reports/{rid}/outcomes')"))["outcomes"]) == 2)
         await tab.js("window.VeritasAPI.post=window.__feedbackPost")
+        if '--outcome-write-workers' in sys.argv:
+            await outcome_worker_recovery(rid, 'employer', 'observer')
         await reload()
         checks.check("reload fetches the same authorized report without another upload", await report_ref() == rid)
         saved_reports_path = f"/candidates/{actual['candidate_id']}/reports"
@@ -347,6 +401,8 @@ void 0;
         assert await tab.js("window.__click('button', 'Verified genuine')")
         checks.check("operator feedback uses admin report routes", await tab.wait("window.__has('One judgement recorded')", 15)
             and len(admin.get(f"/report/{operator_id}/outcomes").json()["outcomes"]) == 1)
+        if '--outcome-write-workers' in sys.argv:
+            await outcome_worker_recovery(operator_id, 'operator', 'append')
         await reload()
         checks.check("operator report reload retains actual ID", await report_ref() == operator_id)
         assert await tab.js("window.__click('button', 'Sign out')")

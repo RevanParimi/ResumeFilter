@@ -32,6 +32,151 @@ RESUME = "Synthetic Candidate Router\nEmail: candidate-router@example.in\n" + "\
 )
 
 
+def create_outcome_write_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_outcome_write_smoke_app(base_factory=create_smoke_app)
+
+
+def create_outcome_write_smoke_app(*, base_factory=None):
+    """Hold actual owning writes, including uncommitted SQL and observers."""
+    from sqlalchemy import event
+    from app.reports.models import OutcomeRow
+    from smoke_r4_s1_t1a import create_smoke_app
+    app = (base_factory or create_smoke_app)()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state = local()
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services = app.state.services
+            pool, caller = services.outcome_records, get_ident()
+            run, observe = pool.run, services.flywheel.log
+            def hold(phase):
+                mode = scratch / 'outcome-write-mode'
+                if not getattr(state, 'active', False) or state.held or not mode.exists() or mode.read_text() != phase:
+                    return
+                state.held = True
+                (scratch / 'outcome-write-entered').touch()
+                deadline = time.monotonic() + 30
+                while not (scratch / 'outcome-write-release').exists():
+                    assert time.monotonic() < deadline, 'synthetic outcome hold timed out'
+                    time.sleep(.01)
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller, 'outcome SQL ran on its caller'
+                    state.active, state.held = True, False
+                    with (scratch / 'outcome-write-operations.jsonl').open('a') as log:
+                        log.write(json.dumps({'operation': operation.__name__, 'thread': get_ident()}) + '\n')
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        state.active = False
+                        if state.held:
+                            (scratch / 'outcome-write-completed').touch()
+                return await run(owned)
+            pool.run = tracked
+            def sql(conn, cursor, statement, parameters, context, many):
+                if 'FROM REPORTS' in statement.upper():
+                    hold('lookup')
+            def flushed(session, context):
+                if any(isinstance(row, OutcomeRow) for row in session.new):
+                    hold('append')
+            def observer(record):
+                if record.get('record_type') == 'outcome':
+                    assert set(record) == {'record_type', 'report_id', 'claim_id', 'outcome', 'recorded_by', 'org_id'}
+                    hold('observer')
+                return observe(record)
+            services.flywheel.log = observer
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('outcome_write_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('outcome_write_owner', get_ident()) == get_ident()
+            listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
+                (services.session_factory, 'after_flush', flushed),
+                (services.session_factory, 'after_begin', begin),
+                (services.session_factory, 'after_transaction_end', end)]
+            for target, name, listener in listeners:
+                event.listen(target, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'outcome-write-release').touch()
+                await pool.aclose()
+                pool.run, services.flywheel.log = run, observe
+                for target, name, listener in listeners:
+                    event.remove(target, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_outcome_writes(checks, scratch, control, org_a, org_b, report_id):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    for http in (control, org_a):
+        path = f'/report/{report_id}/outcome' if http is control else f'/screening/reports/{report_id}/outcome'
+        for phase in ('lookup', 'append', 'observer'):
+            history_path = f'/report/{report_id}/outcomes'
+            before = require(control.get(history_path))['outcomes']
+            for name in ('entered', 'release', 'completed'):
+                (scratch / f'outcome-write-{name}').unlink(missing_ok=True)
+            operations = scratch / 'outcome-write-operations.jsonl'
+            count = len(operations.read_text().splitlines()) if operations.exists() else 0
+            (scratch / 'outcome-write-mode').write_text(phase)
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(http.post, path, json={'outcome': 'inconclusive', 'notes': f'Synthetic {phase} review'})
+                    try:
+                        deadline = time.monotonic() + 10
+                        while not (scratch / 'outcome-write-entered').exists():
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        start = time.monotonic()
+                        assert control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                        checks.check('outcome SQL/observer leaves unrelated HTTP responsive', time.monotonic() - start < 1)
+                        snapshot = require(control.get(history_path))['outcomes']
+                        checks.check('read pool remains available across uncommitted append and committed observer',
+                            len(snapshot) == len(before) + (phase == 'observer'))
+                        for peer, url in ((control, f'/report/{report_id}/outcome'),
+                                (org_b, f'/screening/reports/{report_id}/outcome')):
+                            busy = peer.post(url, json={'outcome': 'inconclusive'})
+                            checks.check('operator and employer share bounded outcome admission',
+                                require(busy, 503) == {'detail': 'outcome_record_capacity_exhausted'}
+                                and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                        response = pending.result(timeout=5)
+                        checks.check('uncertain write keeps admission and returns no partial success',
+                            require(response, 503) == {'detail': 'outcome_record_pending'}
+                            and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers
+                            and require(http.post(path, json={'outcome': 'inconclusive'}), 503) == {'detail': 'outcome_record_capacity_exhausted'})
+                    finally:
+                        (scratch / 'outcome-write-release').touch()
+            finally:
+                deadline = time.monotonic() + 10
+                while not (scratch / 'outcome-write-completed').exists():
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                (scratch / 'outcome-write-mode').unlink(missing_ok=True)
+            checks.check('late outcome completes once without automatic replay', len(operations.read_text().splitlines()) == count + 1)
+            after = require(control.get(history_path))['outcomes']
+            checks.check('fresh history recovers exact late judgment and provenance', len(after) == len(before) + 1
+                and after[-1]['notes'] == f'Synthetic {phase} review'
+                and after[-1]['recorded_by'] == ('operator' if http is control else 'organization')
+                and (after[-1]['org_id'] is None) == (http is control))
+    checks.check('foreign and absent outcome writes are indistinguishable',
+        require(org_b.post(f'/screening/reports/{report_id}/outcome', json={'outcome': 'inconclusive'}), 404)
+        == require(org_b.post('/screening/reports/missing/outcome', json={'outcome': 'inconclusive'}), 404))
+    before = require(control.get(f'/report/{report_id}/outcomes'))['outcomes']
+    require(org_a.post(f'/screening/reports/{report_id}/outcome', json={'outcome': 'inconclusive', 'claim_id': 'foreign-claim'}), 422)
+    require(org_a.post(f'/screening/reports/{report_id}/outcome', json={'outcome': 'inconclusive', 'notes': 'x' * 10001}), 422)
+    checks.check('claim and note refusals do not append', require(control.get(f'/report/{report_id}/outcomes'))['outcomes'] == before)
+    require(org_a.post(f'/screening/reports/{report_id}/outcome', json={'outcome': 'inconclusive', 'notes': 'Deliberate new judgment'}))
+    checks.check('deliberate new POST appends after saved-history recovery',
+        len(require(control.get(f'/report/{report_id}/outcomes'))['outcomes']) == len(before) + 1)
+    return [(http, path, require(http.get(path))) for http, path in
+        ((control, f'/report/{report_id}/outcomes'), (org_a, f'/screening/reports/{report_id}/outcomes'))]
+
+
 def create_report_read_smoke_app():
     """Exercise real report workers with bounded synthetic SQL holds."""
     from sqlalchemy import event
@@ -755,6 +900,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--outcome-write-workers', 'create_outcome_write_smoke_app'),
         ('--report-read-workers', 'create_report_read_smoke_app'),
         ('--linkedin-source-workers', 'create_linkedin_source_smoke_app'),
         ('--github-source-workers', 'create_github_source_smoke_app'),
@@ -788,6 +934,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--report-read-workers' in sys.argv:
         env.update(DEE_REPORT_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_REPORT_RECORD_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--outcome-write-workers' in sys.argv:
+        env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -882,6 +1031,7 @@ def run(scratch, url, pg_options):
             employer_rid = owned["report"]["id"]
             report_reads = check_report_reads(checks, scratch, control, org_a, org_b, employer_rid,
                 owned['candidate_id']) if '--report-read-workers' in sys.argv else []
+            outcome_writes = check_outcome_writes(checks, scratch, control, org_a, org_b, employer_rid) if '--outcome-write-workers' in sys.argv else []
             checks.check("shared employer intake retains tenant ownership", org_b.get(f"/screening/reports/{employer_rid}").status_code == 404
                 and require(org_a.get(f"/screening/reports/{employer_rid}"))["id"] == employer_rid)
             farms = (owned["resume_farm"], owned["report"]["resume_farm"])
@@ -890,6 +1040,9 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
+            if outcome_writes:
+                checks.check('exact outcome history and private-note projection survive migrated graceful restart',
+                    all(require(http.get(url)) == data for http, url, data in outcome_writes))
             if report_reads:
                 checks.check('report reads and scoped history survive migrated graceful restart',
                     all(require(http.get(url)) == data for http, url, data in report_reads))

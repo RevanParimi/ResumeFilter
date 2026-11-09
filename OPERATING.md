@@ -450,9 +450,49 @@ Shutdown refuses new work and joins accepted report workers before SQL disposal.
 This is a per-process/operation read budget, not a global SQL limit or whole-request
 deadline. Driver waits/drain cannot be killed or given a hard new deadline. Lists
 remain unpaged. Direct synchronous service/store callers own scheduling. Outcome
-POSTs, `/evaluate` report persistence, batch and other handler/graph SQL are
-separate later work; earlier authentication/DB contention can still refuse or
-fail before a report worker is admitted. No schema or working-store change.
+POSTs have the separate budget below; `/evaluate` report persistence, batch and
+other handler/graph SQL are separate later work; earlier authentication/DB
+contention can still refuse or fail before a report worker is admitted. No schema
+or working-store change.
+
+### Human-outcome write execution budget
+
+`outcome_record_max_concurrent_requests` defaults to **2** per Services/app
+process, and `outcome_record_wait_seconds` to a finite positive **20 seconds**.
+Configure YAML or `DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS` /
+`DEE_OUTCOME_RECORD_WAIT_SECONDS`, then restart. One separate queue-free pool
+serves operator POST `/report/{id}/outcome` and employer POST
+`/screening/reports/{id}/outcome`. Complete report/ownership lookup, shared
+claim/note validation, append and optional observer run on the owning worker.
+Auth/session/CSRF remains on the caller. Private notes, tenant/author/user
+provenance, generic 404 and FK/erasure semantics retain their existing contracts.
+Production's observer is null; it does not add a second retained outcome sink.
+
+Full/closed admission returns **503** `outcome_record_capacity_exhausted` /
+`outcome_record_executor_closed`; wait expiry returns **503**
+`outcome_record_pending`. Each has `Retry-After: 1`, without partial success or
+cookies. Timeout/cancel keeps capacity until actual completion. Accepted work
+can append even if the caller abandons during lookup. The observer follows the
+separate SQL commit and can fail afterwards; its failure cannot mean validation
+or refusal before admission. Existing generic 500 handling remains. No automatic
+POST replay, rollback guarantee, idempotency key or durable continuation is added.
+
+Read current saved history after work settles before deciding on a fresh POST.
+The separate report pool remains available when write admission is held, subject
+to ordinary database/auth contention. The UI preserves notes and reference after
+an unconfirmed write, blocks another submission for that report, and requires a
+successful history read begun after uncertainty to release that guard. Failed,
+stale or already pending reads cannot release it. Manual history recovery does
+not POST or clear the draft. A read remains a snapshot: a late append can still
+finish afterwards. A deliberate new judgment is additive and can duplicate an
+earlier one; reloading the page also cannot prove that old work has stopped.
+
+Shutdown refuses new work and joins accepted outcome workers before SQL disposal.
+These are per-process/operation budgets, not global SQL, whole-request, driver or
+drain deadlines. Direct synchronous callers own scheduling. Report ownership and
+delivery remain snapshots; there is no new transaction/authorization policy,
+schema or working-store migration. Evaluation publication and batch SQL remain
+separate D3-D6 work.
 
 ### Dual scoping: all scopes counted, any denial denies
 

@@ -297,6 +297,8 @@ candidate_ingest_max_concurrent_requests: 2  # shared single/batch candidate/res
 candidate_ingest_wait_seconds: 20.0          # pending writes may commit; never replay automatically
 report_record_max_concurrent_requests: 2    # complete operator/employer report/history reads
 report_record_wait_seconds: 20.0            # per read operation, with retained admission
+outcome_record_max_concurrent_requests: 2   # complete human-outcome writes and optional observer
+outcome_record_wait_seconds: 20.0           # uncertain writes keep admission until actual completion
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

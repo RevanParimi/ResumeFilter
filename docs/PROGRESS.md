@@ -1,45 +1,55 @@
 # Current handoff
 
-Updated: 2026-11-03. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-09. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D1 complete; C3D was inventoried/split before implementation.**
-[D1 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d1) owns scope, red/green,
-required checks, failed/incomplete attempts, fixture/recovery-probe corrections,
-implementation and distinct final staged self-reviews. Baseline `392793f`;
-only D1 closes. D2-D6/Q, C3D and all broader parents remain open.
+**R4-S2-T3C3D2 complete.** Baseline/published D1 is `513a911`.
+[D2 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) owns acceptance,
+red/green, failed attempts, final checks and the separate review records.
 
-Five operator/employer report/history GETs now use a separate owning-session
-report pool. Loaded history refuses observed erasure or changed employer
-ownership; shared safe full/closed/pending responses retain admission through
-actual completion and never replay. Recovery is deliberate GET, with human reload guidance for read refusals. Auth, tenant
-projection, private-note filtering, generic 404, empty lists and advisory/scorer
-semantics remain. Borrowed test owners now close their report pools; two old
-timeout probes no longer re-arm short waits during deliberate recovery.
+Both human-outcome POSTs use a separate owning-operation pool for report/tenant
+lookup, shared claim/note validation, append and the existing optional observer.
+Full/closed admission refuses safely; accepted work retains admission through
+actual completion after timeout/cancel. Late SQL or observer failure never
+triggers replay. The UI preserves drafts and
+requires successful fresh saved-history recovery after an unconfirmed write,
+with report/account/stale-read guards. Read admission remains independent.
+Auth/CSRF, tenant/author/user scope, private-note filtering, generic 404,
+FK/erasure and advisory/scorer semantics remain.
 
-Final full pytest **4202 passed, 1016 skipped, 127 warnings**; actual PG-enabled
-focused **548 passed, no skips**. Both DBs' migrated two-actor HTTP/graceful restart
-pass **54/54**; actual saved-report/evaluation/feedback/portal Chrome **50/50**, affected UI pytest **20 passed**,
-bindings **593/18**, JS syntax and 16-module compilation pass. Earlier failed/
-incomplete checks remain in the evidence. All **616 tested code/config hashes**
-match; working DB/unrelated files are preserved, owned PG is confirmed stopped
-and demo untouched. Completion records and distinct final staged review precede
-standing-authorized scoped commit/push; final response reports verified remote.
+The pending full pytest run finished **4252 passed, 1058 skipped, 127 warnings**
+on 3 November; closure verified its log and unchanged **616** code/config hashes.
+Actual PG-enabled focused, migrated SQLite/PG HTTP/restart and actual outcome
+Chrome pass; evidence distinguishes them from skipped/offline cases. Closure
+reran focused outcome regressions, offline UI, bindings, syntax and compilation.
+Working DB and unrelated files are preserved, demo untouched, owned PG stopped.
 
-**Exact next: R4-S2-T3C3D2 - Bound human-outcome writes**, under its
-[contract](delivery/PI-R4.md#r4-s2-t3c3d2), in a new session. Do not start it here.
-Use per-command `-c credential.username=RevanParimi` for GCM account selection.
+**Exact next: R4-S2-T3C3D3 - Bound standalone evaluation publication**, in a
+separate session. Stop after D2's distinct final staged self-review and scoped
+commit/push/remote verification; do not start D3 here. D3-D6/Q, C3D and broader
+parents remain open. Use per-command `-c credential.username=RevanParimi` for
+GCM account selection.
 
-The [report read budget](../OPERATING.md#report-read-execution-budget) owns the
-new two-slot/20-second defaults and limits. Reads/final guards remain snapshots,
-histories remain unpaged and per-process/operation waits are not global DB/auth,
-whole-request, driver or drain deadlines. Direct synchronous callers own
-scheduling. Outcome-write, evaluation-publication and batch SQL remain separate
-D2-D6 work; provider fakes prove mechanics, not live quality.
+The [outcome budget](../OPERATING.md#human-outcome-write-execution-budget) owns
+two-slot/20-second defaults and limits. History remains a snapshot: a late save
+can still finish after recovery. Fresh POST is additive, not idempotent.
+Per-process waits are not global DB/auth, whole-request, driver or drain deadlines;
+direct synchronous callers own scheduling. Evaluation publication and batch SQL
+remain D3-D6 work; fakes prove mechanics, not live-provider quality.
 
 ## Reusable validation setup
 
+- D2 runner: `.pytest_cache/run_r4_s2_t3c3d2.py <tag> <Python args>`; omitted args
+  run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3d2_postgres.py` / `r4-s2-t3c3d2-pg-runtime.json`
+  (stopped). Hash/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3d2.py check` / `preserve`. Both-door
+  outcome-worker HTTP/restart: `scripts/smoke_r4_s1_t3c.py --outcome-write-workers`;
+  append `--postgres` only with an explicitly disposable URL. Actual outcome
+  worker Chrome: `scripts/check_ui_evaluate_browser.py --outcome-write-workers`.
+  D2 evidence above owns exact selections, red/green, failed test-policy/fixture
+  attempts, static commands and results.
 - D1 runner: `.pytest_cache/run_r4_s2_t3c3d1.py <tag> <Python args>`;
   omitted args run full pytest. Final full/PG orchestrator:
   `.pytest_cache/final_gates_r4_s2_t3c3d1.py`. Owned PG runner/runtime:

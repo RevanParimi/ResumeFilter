@@ -541,13 +541,17 @@
 
                 <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px;">
                   <sc-for list="{{ outcomeButtons }}" as="o" hint-placeholder-count="4">
-                    <button onClick="{{ o.record }}" style="{{ o.style }}" style-hover="background:var(--hover)">{{ o.label }}</button>
+                    <button onClick="{{ o.record }}" disabled="{{ o.disabled }}" style="{{ o.style }}" style-hover="background:var(--hover)">{{ o.label }}</button>
                   </sc-for>
                 </div>
 
                 <sc-if value="{{ outcomeError }}" hint-placeholder-val="{{ false }}">
                   <div style="{{ uploadErrorBox }}">{{ outcomeErrorText }}</div>
-                  <button onClick="{{ retryReport }}" style="{{ smallGhost }}">Reload saved feedback</button>
+                  <button onClick="{{ reloadOutcomeHistory }}" disabled="{{ outcomeHistoryLoading }}" style="{{ smallGhost }}">Reload saved feedback</button>
+                </sc-if>
+
+                <sc-if value="{{ outcomeHistoryReloaded }}" hint-placeholder-val="{{ false }}">
+                  <p style="{{ uploadErrorBox }}">Saved feedback reloaded. An earlier save can still finish later. Check saved judgements before recording another.</p>
                 </sc-if>
 
                 <sc-if value="{{ hasOutcomes }}" hint-placeholder-val="{{ true }}">
@@ -571,6 +575,9 @@
 
                 <sc-if value="{{ outcomesError }}" hint-placeholder-val="{{ false }}">
                   <div style="{{ uploadErrorBox }}">{{ outcomesErrorText }} Anything already recorded is still there — this is the list that could not be read.</div>
+                  <sc-if value="{{ outcomeHistoryRetry }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ reloadOutcomeHistory }}" style="{{ smallGhost }}">Reload saved feedback</button>
+                  </sc-if>
                 </sc-if>
               </div>
             </sc-if>
@@ -1759,7 +1766,7 @@ class Component extends window.VeritasEmployerRoles(
     files: [], uploadBusy: false, uploadError: null, uploadNotice: null,
     batchNameInput: "",
     // the outcome loop (S8.5) — the customer's own judgment on a report
-    outcomeNotes: "", outcomeBusy: null, outcomeError: null };
+    outcomeNotes: "", outcomeBusy: null, outcomeError: null, outcomeNeedsRefresh: false, outcomeHistoryReloaded: false };
 
   // ── remote-resource helper ────────────────────────────────────────────────
   // Every fetch goes through here so loading/error handling cannot drift, and
@@ -1824,6 +1831,8 @@ class Component extends window.VeritasEmployerRoles(
     this._evaluating = null;
     this._viewReport = null;
     this._recording = null;
+    this._outcomeSubmissions.clear();
+    this._outcomeHistoryRequest = null;
     this._contactAction = null;
     this._contactLoad = null;
     this._orgLoad = null;
@@ -1850,7 +1859,7 @@ class Component extends window.VeritasEmployerRoles(
       portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE, sessionNeedsRefresh: false,
       jobList: IDLE, board: IDLE, comp: IDLE,
       batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
-      outcomes: IDLE, outcomeNotes: "", outcomeBusy: null, outcomeError: null,
+      outcomes: IDLE, outcomeNotes: "", outcomeBusy: null, outcomeError: null, outcomeNeedsRefresh: false, outcomeHistoryReloaded: false,
       selectedBatch: null, driving: false, driveError: null
     });
   };
@@ -1967,6 +1976,8 @@ class Component extends window.VeritasEmployerRoles(
     this._contactAction = null;
     this._contactLoad = null;
     this._recording = null;
+    this._outcomeSubmissions.clear();
+    this._outcomeHistoryRequest = null;
     this._orgAction = null;
     this._orgLoad = null;
     this._usersAction = null;

@@ -14,13 +14,12 @@ from app.api.candidates import CandidateCreateRequest, CandidateCreateResponse, 
 from app.api.dependencies import _rate_limited, _services, require_org
 from app.api.reports import (
     OutcomeListResponse, OutcomeRecordedResponse, OutcomeRequest,
-    _outcome_flywheel_record, _outcome_recorded,
+    _outcome_record, _outcome_recorded,
     _report_record,
 )
 from app.core.resume import ResumeInputError, read_resume_input_async
 from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.ratelimit.service import RateLimited
-from app.reports.outcomes import OutcomeRefused
 from app.schemas.report import Report
 from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
@@ -103,21 +102,13 @@ async def screening_record_outcome(
     confirm the report exists to anyone who guessed an id.
     """
     services = _services(request)
-    try:
-        rec = services.screening_scope.record_outcome(
-            org_id, report_id,
-            outcome=req.outcome,
-            claim_id=req.claim_id,
-            notes=req.notes,
-            max_notes_chars=services.settings.max_outcome_notes_chars,
-            org_user_id=_org_user_id(request),
-        )
-    except OutcomeRefused as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    rec = await _outcome_record(request, services.screening_scope.record_outcome,
+        org_id, report_id, outcome=req.outcome, claim_id=req.claim_id, notes=req.notes,
+        max_notes_chars=services.settings.max_outcome_notes_chars,
+        org_user_id=_org_user_id(request))
     if rec is None:
         raise HTTPException(status_code=404, detail="report not found")
 
-    services.flywheel.log(_outcome_flywheel_record(rec))
     return _outcome_recorded(rec)
 
 

@@ -153,6 +153,43 @@ def _outcome_recorded(rec: OutcomeRecord) -> OutcomeRecordedResponse:
     )
 
 
+def _operator_outcome(store, report_id, **values):
+    report = store.get(report_id)
+    if report is None:
+        return None
+    rec = build_outcome(report, recorded_by=OutcomeSource.OPERATOR, **values)
+    # Erasure can win between lookup and append; the store owns FK rollback.
+    return rec if store.add_outcome(rec) else None
+
+
+def _observe_outcome(observer, operation, *args, **kwargs):
+    rec = operation(*args, **kwargs)
+    if rec is not None:
+        # The optional observer runs after the SQL commit, not atomically with it.
+        try:
+            observer.log(_outcome_flywheel_record(rec))
+        except (OutcomeRefused, ExecutionUnavailable, ExecutionPending):
+            # An observer's exception must not masquerade as input validation
+            # or refusal before admission: the outcome is already committed.
+            raise RuntimeError('outcome_observer_failed') from None
+    return rec
+
+
+async def _outcome_record(request: Request, operation, *args, **kwargs):
+    services = _services(request)
+    try:
+        return await services.outcome_records.run(
+            _observe_outcome, services.flywheel, operation, *args, **kwargs)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        # Accepted work can still append. A history read, never replay, is recovery.
+        raise HTTPException(status_code=503, detail='outcome_record_pending',
+                            headers={'Retry-After': '1'}) from None
+    except OutcomeRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @report_router.post("/report/{report_id}/outcome", response_model=OutcomeRecordedResponse)
 async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) -> OutcomeRecordedResponse:
     """The OPERATOR's door. The customer's is
@@ -160,28 +197,11 @@ async def record_outcome(report_id: str, req: OutcomeRequest, request: Request) 
     `build_outcome` -- a rule enforced at one entry point and forgotten at the
     second is this repo's signature defect (S8.5 spec §3)."""
     services = _services(request)
-    report = services.report_store.get(report_id)
-    if report is None:
+    rec = await _outcome_record(request, _operator_outcome, services.report_store, report_id,
+        outcome=req.outcome, claim_id=req.claim_id, notes=req.notes,
+        max_notes_chars=services.settings.max_outcome_notes_chars)
+    if rec is None:
         raise HTTPException(status_code=404, detail="report not found")
-    try:
-        rec = build_outcome(
-            report,
-            outcome=req.outcome,
-            claim_id=req.claim_id,
-            notes=req.notes,
-            max_notes_chars=services.settings.max_outcome_notes_chars,
-            recorded_by=OutcomeSource.OPERATOR,
-        )
-    except OutcomeRefused as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    # False means the report was erased between the read above and this write
-    # -- a candidate's own DPDP erasure landing mid-call. 404, which by then is
-    # simply true. The org-plane twin folds the same case into its own None.
-    if not services.report_store.add_outcome(rec):
-        raise HTTPException(status_code=404, detail="report not found")
-    # Same sink as the evaluation rows, so training joins read one stream.
-    services.flywheel.log(_outcome_flywheel_record(rec))
     return _outcome_recorded(rec)
 
 

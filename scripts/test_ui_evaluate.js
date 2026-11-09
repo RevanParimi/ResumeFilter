@@ -54,6 +54,132 @@ function component(kind = "org", post) {
 }
 
 
+for (const kind of ["admin", "org"]) for (const error of [
+  { status: 503, kind: "http", detail: "outcome_record_pending" },
+  { status: 500, kind: "http", detail: "server_error" },
+  { status: 0, kind: "timeout", detail: "timeout" },
+  { status: 0, kind: "network", detail: "network" }
+]) {
+  test("unconfirmed outcome requires fresh history before another POST: " + kind + "/" + error.detail, async () => {
+    const { c, calls, window } = component(kind, async () => { throw error; });
+    c.openReport(report.id)(); await settle();
+    c.setOutcomeNotes({ target: { value: "Keep this review draft" } });
+    c.recordOutcome("inconclusive")(); await settle();
+    c.recordOutcome("inconclusive")(); await settle();
+    assert.equal(calls.filter(call => call[0] === "POST").length, 1);
+    assert.equal(c.state.outcomeNotes, "Keep this review draft");
+    assert.equal(c.state.outcomeNeedsRefresh, true);
+    assert.match(c.renderVals().outcomeErrorText, /may still be saving.*reload saved feedback/i);
+    assert.doesNotMatch(c.renderVals().outcomeErrorText, /outcome_record/);
+    assert(c.renderVals().outcomeButtons.every(button => button.disabled));
+    const get = window.VeritasAPI.get;
+    window.VeritasAPI.get = async () => { throw { status: 503, kind: "http", detail: "report_record_pending" }; };
+    await c.reloadOutcomeHistory();
+    c.recordOutcome("inconclusive")(); await settle();
+    assert.equal(calls.filter(call => call[0] === "POST").length, 1);
+    window.VeritasAPI.get = get;
+    await c.reloadOutcomeHistory();
+    assert.equal(c.state.outcomeNeedsRefresh, false);
+    assert.equal(c.state.outcomeNotes, "Keep this review draft");
+    assert.equal(c.state.outcomeHistoryReloaded, true);
+    assert.equal(calls.filter(call => call[0] === "POST").length, 1);
+    window.VeritasAPI.post = async p => { calls.push(["POST", p]); return {}; };
+    c.recordOutcome("verified_genuine")(); await settle();
+    assert.equal(calls.filter(call => call[0] === "POST").length, 2);
+    assert.equal(c.state.outcomeNotes, "");
+  });
+}
+
+for (const kind of ["admin", "org"]) for (const detail of [
+  "outcome_record_capacity_exhausted", "outcome_record_executor_closed"
+]) {
+  test("definite outcome refusal permits deliberate retry without false save warning: " + kind + "/" + detail, async () => {
+    const { c, calls } = component(kind, async () => { throw { status: 503, kind: "http", detail }; });
+    c.openReport(report.id)(); await settle();
+    c.state.outcomeNotes = "Refused draft";
+    c.recordOutcome("inconclusive")(); await settle();
+    assert.equal(c.state.outcomeNeedsRefresh, false);
+    assert.match(c.renderVals().outcomeErrorText, /temporarily unavailable.*try again/i);
+    assert.doesNotMatch(c.renderVals().outcomeErrorText, /outcome_record|may still be saving/);
+    c.recordOutcome("inconclusive")(); await settle();
+    assert.equal(calls.filter(call => call[0] === "POST").length, 2);
+    assert.equal(c.state.outcomeNotes, "Refused draft");
+  });
+}
+
+test("history begun before uncertainty and stale refresh cannot unlock another submission", async () => {
+  let rejectPost, oldRead, latestRead;
+  const { c, calls, window } = component("org", () => new Promise((_resolve, reject) => { rejectPost = reject; }));
+  c.openReport(report.id)(); await settle();
+  c.recordOutcome("inconclusive")();
+  window.VeritasAPI.get = () => new Promise(resolve => { oldRead = resolve; });
+  const early = c.reloadOutcomeHistory();
+  rejectPost({ status: 503, kind: "http", detail: "outcome_record_pending" }); await settle();
+  oldRead({ outcomes: [] }); await early;
+  assert.equal(c.state.outcomeNeedsRefresh, true);
+  c.recordOutcome("inconclusive")();
+  assert.equal(calls.filter(call => call[0] === "POST").length, 1);
+  const stale = c.reloadOutcomeHistory();
+  window.VeritasAPI.get = () => new Promise(resolve => { latestRead = resolve; });
+  const latest = c.reloadOutcomeHistory();
+  oldRead({ outcomes: [] }); await stale;
+  assert.equal(c.state.outcomeNeedsRefresh, true);
+  latestRead({ outcomes: [] }); await latest;
+  assert.equal(c.state.outcomeNeedsRefresh, false);
+  assert.equal(calls.filter(call => call[0] === "POST").length, 1);
+});
+
+test("pending outcome survives report navigation and does not release another report's guard", async () => {
+  const pending = [];
+  const { c, calls } = component("org", () => new Promise((_resolve, reject) => { pending.push(reject); }));
+  c.openReport("first")(); await settle(); c.recordOutcome("inconclusive")();
+  c.openReport("second")(); await settle(); c.recordOutcome("verified_genuine")();
+  pending[0]({ status: 503, kind: "http", detail: "outcome_record_pending" }); await settle();
+  assert.equal(c.state.outcomeBusy, "verified_genuine");
+  c.openReport("first")(); await settle(); // This new history read is recovery.
+  assert.equal(c.state.outcomeNeedsRefresh, false);
+  assert.equal(c.state.outcomeHistoryReloaded, true);
+  c.openReport("second")(); await settle(); // Still waiting, not recovery yet.
+  assert.equal(c.state.outcomeNeedsRefresh, true);
+  assert.equal(c.state.outcomeBusy, "verified_genuine");
+  c.recordOutcome("inconclusive")();
+  assert.equal(calls.filter(call => call[0] === "POST").length, 2);
+  pending[1]({ status: 0, kind: "network" }); await settle();
+  c.state.outcomeNotes = "Second report draft";
+  await c.reloadOutcomeHistory();
+  assert.equal(c.state.outcomeNeedsRefresh, false);
+  assert.equal(c.state.outcomeNotes, "Second report draft");
+});
+
+test("successful save preserves reviewer edits made while the POST was pending", async () => {
+  let resolvePost;
+  const { c } = component("org", () => new Promise(resolve => { resolvePost = resolve; }));
+  c.openReport(report.id)(); await settle();
+  c.state.outcomeNotes = "Submitted draft";
+  c.recordOutcome("inconclusive")();
+  c.setOutcomeNotes({ target: { value: "New follow-up draft" } });
+  resolvePost({}); await settle();
+  assert.equal(c.state.outcomeNotes, "New follow-up draft");
+  assert.equal(c.state.outcomeBusy, null);
+});
+
+test("failed initial history offers a draft-preserving manual read before recording", async () => {
+  const { c, calls, window } = component();
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = p => p.endsWith('/outcomes')
+    ? Promise.reject({ status: 503, kind: 'http', detail: 'report_record_pending' }) : get(p);
+  c.openReport(report.id)(); await settle();
+  c.state.outcomeNotes = 'History read failed, keep draft';
+  assert.equal(c.renderVals().outcomeHistoryRetry, true);
+  c.recordOutcome('inconclusive')();
+  assert.equal(calls.filter(call => call[0] === 'POST').length, 0);
+  window.VeritasAPI.get = get;
+  await c.reloadOutcomeHistory();
+  assert.equal(c.renderVals().outcomeHistoryRetry, false);
+  assert.equal(c.state.outcomeNotes, 'History read failed, keep draft');
+  assert(c.renderVals().outcomeButtons.every(button => !button.disabled));
+});
+
 for (const kind of ["admin", "org"]) for (const detail of [
   "report_record_capacity_exhausted", "report_record_executor_closed", "report_record_pending"
 ]) {

@@ -640,12 +640,17 @@ separate session. Scoped publication follows the recorded final staged review.
 
 **<a id="r4-s2-t3c3d2"></a>R4-S2-T3C3D2 - Bound human-outcome writes**
 
-Status: pending. Prerequisite: D1. Bound both operator and employer complete
+Status: done (2026-11-09; started 2026-11-03). Prerequisite: D1, published at `513a911`.
+[D2 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d2) owns this session's scope,
+acceptance and checks. Bound both operator and employer complete
 lookup/validation/append operations, preserving author/tenant/claim/note scope,
 FK/erasure and optional observer semantics. Prove real PG contention, uncertain
 late append without replay, saved-history recovery, HTTP/restart and actual
 outcome Chrome; record red/focused/full and both reviews. Separate commits do
-not promise rollback or idempotency.
+not promise rollback or idempotency. Required validation, implementation
+self-review and the distinct final staged self-review are recorded there;
+scoped publication follows. Only D2 closes; exact next is D3 in a
+separate session. D3-D6/Q, C3D and all broader parents remain open.
 
 **<a id="r4-s2-t3c3d3"></a>R4-S2-T3C3D3 - Bound standalone evaluation publication**
 
