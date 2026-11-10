@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-10 - R4-S2-T3C3D4A complete; bounded batch view reads.**
+  Split D4 before implementation; only A closes. Detail/list/queue/summary use
+  a separate owning-session pool, final batch visibility and preserved cursors.
+  Visible GET recovery and account/refresh/page guards retain selection and
+  drafts without starting screening; filtered empty pages and partial summary
+  name/counts are handled honestly. The
+  [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) owns red/green, review
+  corrections, interrupted attempts, full/actual PG/HTTP/restart/Chrome and reviews.
+  Working DB/unrelated files preserved, demo not restarted, owned PG stopped.
+  Distinct final staged self-review is recorded; publication follows. Next: D4B in a
+  separate session; D4 and broader parents remain open.
+
 - **Session 2026-11-10 - R4-S2-T3C3D3 complete; bounded standalone publication.**
   `/evaluate` keeps graph/providers on the async caller and bounds complete
   report save/final snapshot separately. Pending publication returns a report

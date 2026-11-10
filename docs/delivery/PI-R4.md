@@ -669,11 +669,56 @@ separate session. D4-D6/Q, C3D and all broader parents remain open.
 
 **<a id="r4-s2-t3c3d4"></a>R4-S2-T3C3D4 - Bound batch management operations**
 
-Status: pending. Prerequisite: D3. Bound complete register/detail/list/queue/
+Status: in progress (2026-11-10). Prerequisite: D3, published at `7c36a7f`.
+Bound complete register/detail/list/queue/
 summary/retry/delete operations; preserve scoped pagination, counts, retention,
 retry/erasure and uncertainty. Split before implementation if needed. Require
 red/focused/full, actual PG competing SQL, two-actor HTTP/restart, batch Chrome
 and both reviews; no durable worker or implicit process retry.
+
+Split before implementation because reads, registration and retry/delete have
+distinct admission and recovery contracts. Only A is this session's task; D4
+remains open until A-C and Q close.
+
+**<a id="r4-s2-t3c3d4a"></a>R4-S2-T3C3D4A - Bound batch view reads**
+
+Status: done (2026-11-10). Prerequisite: D3, published at `7c36a7f`.
+[A contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d4a) owns detail/list/queue/summary
+owning-session read operations, separate admission (default four slots for three
+parallel queue reads plus discovery), safe refusal/pending and retained capacity,
+final batch visibility snapshots, pagination/count/privacy compatibility and
+read-only UI recovery with account/navigation/stale-page guards. Require SQL/UI
+red-green, focused/full pytest, actual PG locks/deletion/erasure, migrated two-
+actor HTTP/restart, real batch Chrome, static checks and both self-reviews.
+No registration, retry/delete, process/provider, schema or scoring change.
+Implementation, review findings/resolutions and required full/actual PG/HTTP/
+Chrome/static validation are recorded in the evidence. Distinct final staged
+self-review is recorded after completion; scoped publication follows. Only A
+closes; exact next is B in a separate session. D4 and broader parents remain open.
+
+**<a id="r4-s2-t3c3d4b"></a>R4-S2-T3C3D4B - Bound batch registration**
+
+Status: pending. Prerequisite: A. Keep transport/PDF decoding on its existing
+caller; bound complete validation/create/detail work. Preserve all-or-nothing
+registration, tenant/author provenance, caps and retention. Define pending-ID
+recovery before implementation; uncertain registration must not replay or auto-
+process. Require real PG late commit/rollback, migrated HTTP/restart, registration
+Chrome, red/focused/full and both reviews. No durable continuation.
+
+**<a id="r4-s2-t3c3d4c"></a>R4-S2-T3C3D4C - Bound batch retry and deletion**
+
+Status: pending. Prerequisite: B. Bound complete scoped retry/delete operations;
+retain lease/input-generation/erasure, skipped versus requeued, cascade and
+absent/foreign 404 contracts. Unconfirmed writes require saved-state reads without
+automatic retry or processing. Require actual PG contention/late commit/rollback,
+two-actor migrated HTTP/restart, retry/delete Chrome, red/focused/full and reviews.
+
+**<a id="r4-s2-t3c3d4q"></a>R4-S2-T3C3D4Q - Review combined batch management**
+
+Status: pending. Prerequisites: A-C and any children. Re-inventory management
+routes and budgets, run combined full/SQLite/actual PG, pagination/retention/
+erasure, two-actor migrated HTTP/restart, affected Chrome and both reviews.
+Only then close D4; D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d5"></a>R4-S2-T3C3D5 - Bound batch admission and recovery SQL**
 

@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from threading import get_ident, local, Lock
 
 import check_ui_screening_contract as contract
 from _smoke import Smoke, base_env, client, wait_healthy
@@ -38,6 +39,157 @@ from smoke_s82 import _code_for
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
+
+
+def create_batch_read_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_batch_read_smoke_app(base_factory=create_smoke_app)
+
+
+def create_batch_read_smoke_app(*, base_factory=None):
+    """Real batch SQL holds; instrumentation never runs in the demo app."""
+    from sqlalchemy import event
+    app = (base_factory or sql_app)()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state, mutex = local(), Lock()
+    def record(kind, **values):
+        with mutex, (scratch / ('batch-read-' + kind + '.jsonl')).open('a') as log:
+            log.write(json.dumps(values) + '\n')
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services, caller = app.state.services, get_ident()
+            pool = services.batch_reads
+            run, assess = pool.run, app.state.engine.evaluate
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller
+                    state.method, state.held = operation.__name__, False
+                    record('operations', method=state.method)
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        if state.held:
+                            record('completed', method=state.method)
+                        state.method = None
+                return await run(owned)
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                record('evaluations')
+                return await assess(**kwargs)
+            def sql(conn, cursor, statement, parameters, context, many):
+                mode = scratch / 'batch-read-mode'
+                method = getattr(state, 'method', None)
+                if method and not state.held and 'from screening_batches' in statement.lower() and mode.exists() and mode.read_text() == method:
+                    state.held = True
+                    record('entered', method=method)
+                    deadline = time.monotonic() + 30
+                    while not (scratch / 'batch-read-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic batch read hold timed out'
+                        time.sleep(.01)
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('batch_read_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('batch_read_owner', get_ident()) == get_ident()
+            listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
+                (services.session_factory, 'after_begin', begin), (services.session_factory, 'after_transaction_end', end)]
+            pool.run, app.state.engine.evaluate = tracked, evaluate
+            for target, name, listener in listeners:
+                event.listen(target, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'batch-read-release').touch()
+                await pool.aclose()
+                pool.run, app.state.engine.evaluate = run, assess
+                for target, name, listener in listeners:
+                    event.remove(target, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_batch_reads(checks, scratch, control, actor, other, path):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def count(kind):
+        p = scratch / ('batch-read-' + kind + '.jsonl')
+        return len(p.read_text().splitlines()) if p.exists() else 0
+    def arm(method):
+        for kind in ('entered', 'completed'):
+            (scratch / ('batch-read-' + kind + '.jsonl')).unlink(missing_ok=True)
+        (scratch / 'batch-read-release').unlink(missing_ok=True)
+        (scratch / 'batch-read-mode').write_text(method)
+    def release():
+        (scratch / 'batch-read-release').touch()
+        deadline = time.monotonic() + 10
+        while count('completed') < 1:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        (scratch / 'batch-read-mode').unlink(missing_ok=True)
+    views = [('get', path), ('list', '/screening/batches?limit=1'),
+        ('queue', path + '/queue?limit=1'), ('summary', path + '/summary')]
+    for method, url in views:
+        expected = require(actor.get(url))
+        operations, evaluations = count('operations'), count('evaluations')
+        arm(method)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(actor.get, url)
+                try:
+                    deadline = time.monotonic() + 10
+                    while count('entered') < 1:
+                        assert time.monotonic() < deadline
+                        time.sleep(.01)
+                    start = time.monotonic()
+                    checks.check(method + ': held batch SQL leaves unrelated HTTP responsive',
+                        control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                        and time.monotonic() - start < 1)
+                    for _, peer in views:
+                        refused = other.get(peer)
+                        checks.check(method + ': all batch read doors share retained admission',
+                            require(refused, 503) == {'detail': 'batch_read_capacity_exhausted'}
+                            and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                    response = pending.result(timeout=5)
+                    checks.check(method + ': pending read returns safe 503 without a partial view',
+                        require(response, 503) == {'detail': 'batch_read_pending'}
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                finally:
+                    release()
+        finally:
+            (scratch / 'batch-read-release').touch()
+        checks.check(method + ': late read is not replayed and recovery only reads saved state',
+            count('operations') == operations + 1 and count('evaluations') == evaluations
+            and require(actor.get(url)) == expected)
+    # Actual erasure while a worker is held before its SELECT; this is distinct
+    # from the competing-driver lock cases in pytest.
+    resume = contract._resume('Synthetic Batch Read Erasure', 'batch-read-erasure@example.in')
+    erased = require(actor.post('/screening/batches', json={'name': 'Read erasure', 'items': [{'resume_text': resume}]}))
+    erase_path = '/screening/batches/' + erased['id']
+    require(actor.post(erase_path + '/process'))
+    subject = require(actor.get(erase_path + '/queue'))['rows'][0]['candidate_id']
+    evaluations = count('evaluations')
+    arm('queue')
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(actor.get, erase_path + '/queue')
+            try:
+                deadline = time.monotonic() + 10
+                while count('entered') < 1:
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                require(control.delete('/candidates/' + subject))
+                require(pending.result(timeout=5), 503)
+            finally:
+                release()
+    finally:
+        (scratch / 'batch-read-release').touch()
+    row = require(actor.get(erase_path + '/queue'))['rows'][0]
+    checks.check('worker reads retain real erasure projection and saved counters',
+        all(row[key] is None for key in ('candidate_id', 'resume_id', 'report_id'))
+        and require(actor.get(erase_path))['counts']['done'] == 1 and count('evaluations') == evaluations)
+    return [(url, require(actor.get(url))) for _, url in views] + [(erase_path + '/queue', {'rows': [row], 'next_cursor': None})]
 
 
 def install_controlled_pdf_worker(scratch):
@@ -407,6 +559,7 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
+    batch_reads = '--batch-read-workers' in sys.argv
     pdf_execution = '--pdf-execution' in sys.argv
     body_limit = "--body-limit" in sys.argv
     ingest_races = "--ingest-races" in sys.argv
@@ -439,10 +592,13 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if batch_reads:
+        env.update(DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_READ_WAIT_SECONDS='.5',
+            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if body_limit:
         env.update(DEE_MAX_REQUEST_BODY_BYTES="64000", VERITAS_BODY_LIMIT_SMOKE="true")
     if pdf_execution:
@@ -543,6 +699,7 @@ def run(scratch, url, pg_options):
             checks.check("processing respects configured item bound", first["processed"] == cap and first["remaining"] == 1)
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
+            batch_views = check_batch_reads(checks, scratch, control, actor, other, path) if batch_reads else []
             saved = {suffix: require(actor.get(path + suffix)) for suffix in ("", "/queue", "/summary")}
             saved_report = require(actor.get(report_path))
             checks.check("completed queue and summary remain advisory", saved[""]["counts"]["done"] == cap + 1
@@ -696,6 +853,9 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if batch_reads:
+                checks.check('exact scoped batch views and erased projection survive graceful restart',
+                    all(require(actor.get(url)) == body for url, body in batch_views))
             if pdf_execution:
                 checks.check('PDF intake persists with tenant isolation after graceful restart',
                     require(actor.get(pdf_path)) == pdf_saved and other.get(pdf_path).status_code == 404)

@@ -527,6 +527,36 @@ key or scoring change. Drafts and the pending guard are page memory; opening
 the saved report puts its reference in the URL for later GET/reload. Reloading
 does not prove old work ended. Batch publication remains separate D4-D6 work.
 
+### Batch view read execution budget
+
+`batch_read_max_concurrent_requests` defaults to **4** per Services/app process;
+`batch_read_wait_seconds` defaults to finite positive **20 seconds**. Configure
+YAML or `DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS` / `DEE_BATCH_READ_WAIT_SECONDS`,
+then restart. A separate queue-free pool serves employer GET batch list, detail,
+queue and summary. Four slots accommodate the UI's three parallel view reads and
+one discovery/list read; further concurrent reads may refuse. Complete SQL,
+scope checks, cursor/count validation and projection run on the owning worker.
+Auth/CSRF stays on its existing caller; direct synchronous callers own scheduling.
+
+Full/closed admission returns **503** `batch_read_capacity_exhausted` /
+`batch_read_executor_closed`; wait expiry returns **503** `batch_read_pending`.
+All carry `Retry-After: 1`, without a partial view or cookies. Timeout/cancel/late
+failure retains admission until actual completion. No automatic read replay or
+write/provider work is added. Shutdown drains accepted reads before SQL disposal;
+these are per-process admission/wait budgets, not global SQL, whole-request,
+driver or drain deadlines. The existing client deadline remains separate.
+Summary still reads the whole batch; this adds no paging or memory limit.
+
+Final batch visibility checks refuse observed deletion/ownership loss; list drops
+those entries while preserving the store's original keyset cursor. Counts,
+individual queue values and scope/delivery remain snapshots, not locks against
+later erasure or updates. Pagination, retention, private projections and advisory
+semantics remain. Manual UI recovery preserves selection/reference and drafts,
+only GETs saved state and never starts screening. Initial detail/list/discovery
+failures retain visible recovery; old account/refresh/page replies cannot replace
+new state. Paging waits for a pending base refresh. Registration, retry/delete
+and processing SQL remain D4B/C and D5-D6; D4 and broader parents stay open.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

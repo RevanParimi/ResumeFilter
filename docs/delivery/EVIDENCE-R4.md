@@ -10885,3 +10885,288 @@ wording were restaged/read after review; no code changed. Configured `main`
 tracks `origin/main`; standing-authorized scoped commit/push follows using
 per-command GCM account selection. Final response reports the verified remote
 commit. Stop after publication; do not start D4 here.
+
+### <a id="r4-s2-t3c3d4a"></a>R4-S2-T3C3D4A - Bound batch view reads
+
+**Status: done (2026-11-10).** Baseline `7c36a7f`; D3 is published.
+D4 was split before implementation in its existing PI section. Only A is this
+session's task; B/C/Q and the parent remain open.
+[PI status](PI-R4.md#r4-s2-t3c3d4a).
+
+**Pre-implementation contract.** Bound complete employer GET batch detail,
+batch list, ranked queue and summary operations, including validation, scope,
+all constituent SQL reads and DTO projection. Use a separate lazy service-owned
+`batch_reads` BoundedExecutor: capacity default **4**, finite positive wait **20
+seconds**. Four slots accommodate the existing three parallel queue reads and
+one list/discovery read; this is per-process admission, not global SQL scheduling.
+Pass bound synchronous service methods and detached org/ID/cursor/limit values;
+Request/Response/live Sessions never cross the worker boundary. Auth/CSRF stays
+on its current caller. Direct synchronous callers own scheduling.
+
+Full/closed/pending returns safe 503 with Retry-After, no partial view/cookies;
+timeout/cancel/late failure retains admission through actual completion. No read
+replay, graph/provider work, registration, retry/delete or process work is added.
+Keep success DTO/OpenAPI, generic absent/foreign 404, invalid cursor/limit 422,
+list ordering/keyset cursors, stale-lease/input-generation counts, retention,
+private projections and advisory/scorer semantics. Final batch-visibility checks
+refuse observed deletion/ownership loss; list drops those entries without
+inventing a new cursor. Individual values and final scope/delivery remain
+snapshots, not locks across later erasure or updates.
+
+UI renders human read-refusal guidance, keeps the selected batch/reference and
+upload draft, and exposes read-only recovery even when initial detail/discovery
+failed. A refresh must never POST/register/process/retry/delete. Preserve loaded
+rows on pagination failure; prevent late account/navigation/base-page/pagination
+responses overwriting current state. A newer refresh supersedes older reads.
+Use the existing client deadline; read admission/driver waits and shutdown drain
+are separate and have no new hard kill/deadline.
+
+Required evidence: SQL responsiveness and final scope red-green; UI refusal,
+initial recovery and stale-read/account regressions; admission/timeout/cancel/
+late failure, owning sessions and drain; actual SQLite/PG competing reads,
+deletion/ownership and visible erasure; migrated two-actor HTTP/graceful restart;
+actual batch Chrome with worker holds/refusal/timeout/manual GET recovery/reload.
+Run focused/full pytest, existing populated-schema compatibility, offline UI,
+bindings/syntax and compilation. No new schema requires migration up/down/up.
+Record implementation and distinct final staged self-reviews, completion and
+scoped commit/push/remote verification. Preserve working DB/unrelated work and
+existing demo. Stop after A; exact next is D4B in a separate session.
+
+**Implementation and reproductions (2026-11-10).** Four GET handlers submit
+complete synchronous service operations to a separate lazy `batch_reads` pool.
+Existing method-local SQL sessions stay on that worker; auth/CSRF stays on the
+caller. Final batch scope checks refuse loaded views after observed deletion/
+ownership loss; list filtering preserves the store's original keyset cursor.
+Services drains the pool before SQL disposal; borrowed fixtures close it.
+Registration/retry/delete/process/provider scheduling is unchanged. Internal
+synchronous uses of the strengthened read methods still own their scheduling.
+
+The UI preserves selection/reference and upload drafts, renders human refusal
+copy and exposes GET recovery outside the loaded-detail guard, on the summary,
+and for failed list/discovery. Account/request/base-page tokens reject late
+callbacks; paging retains rows on failure and ignores stale replies. Existing
+client deadlines apply. No read-recovery action POSTs or starts a process loop.
+
+Sanitized runner `.pytest_cache/run_r4_s2_t3c3d4a.py <tag> <Python args>` clears
+inherited DEE config/credentials and uses fake/offline providers without loading
+application `.env`. Local ignored logs use each tag below; suffixes are actual
+Python arguments:
+
+- `red -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+  'batch_read_sql or batch_read_refuses'`: **12 failed, 12 skipped, 21 deselected,
+  1 warning**. Four SQLite SQL holds block unrelated requests; all eight loaded
+  scope-loss variants deliver obsolete views. `green` with the same suffix:
+  **12 passed, 12 skipped, 21 deselected, 1 warning**. Skips are unconfigured PG.
+- `node --test --test-name-pattern='bounded batch' scripts/test_ui_screening.js`:
+  **5 failed**, exposing raw read codes and stale refresh/page overwrites. Final
+  `node --test scripts/test_ui_screening.js`: **95 passed** (includes **68** shared
+  evaluation cases imported by the existing fixture). These are offline handler
+  contracts, not Chrome.
+- `workers -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+  batch_read`: **40 passed, 40 skipped, 21 deselected, 1 warning**. Covers all four
+  routes, release/timeout/cancel/late failure, retained cross-door capacity, safe
+  full/closed/pending responses, session thread ownership, no graph invocation/
+  replay, exact recovery, foreign/absent 404, malformed cursors and kept batches.
+  SQLite competing BEGIN EXCLUSIVE locks prove late read/deletion/ownership
+  interleavings; PG variants remain a separate required gate.
+- `cursor -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+  original_page_cursor`: **1 passed, 1 skipped, 101 deselected, 1 warning**. A
+  removed scoped entry leaves its original cursor intact and the next page
+  reaches the remaining owned entry. Final full/PG include this added case.
+- `http scripts/smoke_r4_s1_t3d.py --batch-read-workers`: **50/50**, migrated
+  SQLite two-actor HTTP/graceful restart. SQL holds cover all four methods,
+  unrelated responsiveness, retained admission, safe response/no cookies, exact
+  GET recovery/no evaluation and persisted views/cursors. A separate actual
+  candidate erasure before a held SELECT proves detached queue IDs and retained
+  counters, with exact erased projection after restart. Controlled hooks are
+  distinct from actual competing-driver locks in pytest.
+- Initial `browser` launch completed the base **24/24** journey before the new
+  worker branch was wired; local wiring guards rejected an ambiguous repeated
+  insertion target. That preflight is not worker-browser validation. After
+  wiring, `browser-workers scripts/check_ui_screening_extraction_browser.py
+  --batch-read-workers`: **36/36**. Final `browser-final` with the same suffix
+  also passes **36/36** after the review fix below. Actual Chrome covers all four
+  worker timeouts, human guidance/reference, four occupied read slots, initial
+  discovery failure after actual reload and manual GET recovery, without POST
+  or another assessment. Existing file/register/process/report/summary/delete/
+  reload contracts also pass; no console exceptions. CDN access is still needed;
+  fake/capture providers prove mechanics, not live delivery or assessment quality.
+
+**Implementation self-review (2026-11-10, `7c36a7f` plus D4A diff).** Specification
+review maps the four read doors, complete owning operations, independent budgets,
+safe admission/retained late work, final batch visibility, ordering/cursors,
+counts/retention/erasure and UI read-only recovery to source and behavioral
+evidence. Correctness/maintainability review traced route auth/arguments,
+service/store sessions and projections, worker cleanup, final scope snapshots,
+account/navigation/read/page identity, error placement and actual hook/lock
+assertions. No schema, success DTO/OpenAPI, provider/scorer or write scheduling
+change. Scope checks remain snapshots; individual values are not delivery locks.
+
+One Important finding in `frontend/screening.js`: paging during an in-flight base
+refresh could use its previous cursor, creating a page from obsolete state. New
+`node --test --test-name-pattern='bounded batch pagination waits'
+scripts/test_ui_screening.js` reproduces **1 failed** (four requests instead of
+the three refresh reads). The paging handler now refuses while its base resource
+loads and its affordance stays hidden; the final **95** offline cases and
+**36/36** Chrome pass. No blocking implementation finding remains. This is
+same-agent self-review, not independent review. Full/actual PG/final static state
+and the distinct final staged self-review are still required; A is not done yet.
+
+**Additional implementation-review finding and final state.** A scope-filtered
+page can be empty while its original cursor still leads to older owned batches.
+The prior UI treated that as an empty account. New `node --test
+--test-name-pattern='bounded batch discovery preserves'
+scripts/test_ui_screening.js` reproduces **1 failed**. Empty-state copy now
+requires an exhausted cursor; initial discovery with a continuation offers
+manual batch-list navigation. Recovery remains GET-only. The first `full` run
+was stopped at roughly **1%** to apply this review correction and is not a
+completed/final gate; owned pytest processes were stopped without touching PG
+or working data. PG backend/HTTP code is unchanged by this UI/harness-only fix.
+
+Corrected offline UI passes **96 cases** (including the same **68** shared
+evaluation cases), bindings **605/18**, four JS syntax checks and updated Chrome-
+harness compilation pass. The final browser rerun adds an explicitly injected
+empty-cursor transport shape to test rendered discovery/recovery; actual cursor/
+scope behavior is proved separately by the real SQLite/PG API cases. No fake
+reply is claimed as database evidence. The final reviewed code/config snapshot
+contains **616** hashes; final full and actual PG results remain to be recorded.
+
+**Partial-summary review correction.** A check of entry routing confirmed
+Summary already uses guarded discovery when no batch is selected; no discovery
+routing change was needed or made. Its regression passed before the fix. A
+separate partial-read case first used an incomplete summary fixture and raised
+TypeError; that attempt is not a defect reproducer. With the complete fixture,
+`node --test --test-name-pattern='bounded batch summary'
+scripts/test_ui_screening.js` reports **1 passed, 1 failed**: a selected batch
+with a successful summary but failed detail was labeled "No batch selected".
+The name now falls back to the same batch's loaded summary (or a clear missing-
+detail label for a selected ID). This resolves the actual user-status finding.
+
+The early `full-final` run was stopped at approximately **2%** for this review
+correction; it is not a completed/final gate. No backend, API test or HTTP-harness
+code changed while PG validation continued. Corrected offline UI is **98 cases**
+(the same **68** shared evaluation cases plus screening cases), bindings
+**605/18**, syntax and updated Chrome-harness compilation pass. Actual
+`browser-reviewed scripts/check_ui_screening_extraction_browser.py
+--batch-read-workers` passes **39/39**, including real detail-worker timeout on
+the summary screen without a false missing-selection label, and discovery from
+an unselected list. Its injected empty-cursor rendering check remains distinct
+from the real database cursor test. All review findings are resolved; final
+full validation uses the new `full-reviewed` tag and corrected hash snapshot.
+
+**Partial-summary counts and final gate selection.** Extending that same
+partial-summary regression with `summaryMeta` reproduces **1 failed**: the name
+was fixed but the view still rendered "Complete - 0 of 0 processed" because its
+counts depended only on the failed detail. Counts now fall back to the loaded
+summary's own counts when detail is absent. The summary DTO is unchanged. The
+corrected `browser-complete` run passes **39/39**, including an actual detail
+worker timeout while the summary still renders its saved name and **1 of 1**
+processed. Offline UI remains **98 passed**; bindings **605/18**, syntax and
+updated harness compilation pass.
+
+The early `full-reviewed` run was stopped at about **2%** to finish this
+partial-summary correction. No interrupted run is counted as full regression.
+The completed implementation review now covers initial/partial/error states on
+queue, summary and batches, scoped empty pages and pagination, stale account/
+navigation/base replies and read-only recovery. No blocking finding remains.
+Saved a corrected **616**-hash code/config snapshot before the final `full-gate`
+invocation. PG backend/API/HTTP sources have not changed during these UI-only
+corrections; the existing actual PG run remains applicable. Full regression is
+still running; completion and final staged self-review remain required.
+
+**Final validation and completion (2026-11-10).** The existing sanitized
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d4a.py full-gate`
+completed with exit **0**: **4324 passed, 1114 skipped, 127 warnings in 1952.46
+seconds**. It runs project Python `-m pytest -q --tb=short`; this continuation
+verified its finished log and process result without restarting it. The three
+interrupted early runs above remain excluded. Skips include unconfigured PG/
+optional cases; warnings concern the existing Starlette/httpx deprecation and
+SQLite expression-index reflection/Alembic comparison limits.
+
+Owned PG runner `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d4a_postgres.py` passed **719 tests, 10 skipped,
+18 warnings in 1119.30 seconds**. Its `-m pytest -q --tb=short` selection was
+`tests/test_screening_batches_api.py tests/test_screening_service.py
+tests/test_screening_store.py tests/test_screening_schema.py
+tests/test_screening_scope.py tests/test_screening_models.py
+tests/test_screening_projection.py tests/test_screening_durable_input.py
+tests/test_screening_report_input.py tests/test_screening_refusal_retention.py
+tests/test_screening_unresolved_input.py tests/test_screening_erasure_concurrency.py
+tests/test_config_screening.py tests/test_service_lifecycle.py tests/test_config.py
+tests/test_org_scope_guard.py tests/test_api_route_extraction.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py
+tests/test_error_logging.py tests/test_migrations.py`.
+The 10 skips are SQLite variants of PostgreSQL-only lock-inspection/private-row
+write cases; their PG variants ran. New batch-read regressions run on both actual
+SQLite and PostgreSQL, including retained admission, late read failure, owning
+sessions, foreign/absent scope, final deletion/owner loss, cursor preservation
+and competing SQLite BEGIN EXCLUSIVE / PostgreSQL batch_items ACCESS EXCLUSIVE
+locks with pg_stat_activity Lock waits observed. Existing retention/lease/input-
+generation/erasure, DTO/OpenAPI and populated-schema compatibility cases pass.
+No schema change calls for a new migration up/down/up gate.
+
+The same runner's `scripts/smoke_r4_s1_t3d.py --postgres --batch-read-workers`
+passes **50/50**, matching SQLite's **50/50**. Both use current migrated scratch
+SQL, two actors, actual erasure projection and graceful HTTP restart. Portable
+PG **18.6**, timezone **Asia/Calcutta**, isolation **read committed**; its
+synthetic 25-second statement timeout is a test guard, not a production deadline.
+Owned runtime `.pytest_cache/r4-s2-t3c3d4a-pg-runtime.json` records stop exit **0**;
+independent `pg_ctl status` exits **3**, no server running. Credentials/runtime
+stores stay ignored and are excluded from publication.
+
+Final `browser-complete` is **39/39**, offline UI **98** (including **68** shared
+evaluation cases), bindings **605/18**, four JS syntax checks and all **10**
+changed Python modules' compilation pass. Scope-filtered empty-page Chrome uses
+an explicitly injected transport shape; actual cursor/scope correctness has
+separate database evidence. Final full/Chrome cover corrected partial-summary
+name/count fallbacks. Reviewed-state `check` confirms all **616** corrected
+code/config hashes unchanged; preservation confirms **715** unrelated tracked
+files, including the working DB, retain baseline bytes before the roadmap entry.
+Demo was not started/restarted. Fakes prove mechanics, not live-provider quality.
+
+All A acceptance, required validation and implementation-review resolutions are
+recorded. Only **R4-S2-T3C3D4A** closes; distinct final staged self-review and
+scoped publication follow this completion record. Exact next:
+**R4-S2-T3C3D4B - Bound batch registration**, in a separate session. B/C/Q, D4,
+D5-D6/Q, C3D and broader parents stay open. Individual values/counts and final
+scope/delivery remain snapshots; summary is whole-batch; direct/internal callers
+own scheduling and per-process waits do not impose global SQL/auth, whole-request,
+driver, drain or memory limits. No independent review is claimed.
+
+**Distinct final staged self-review (2026-11-10, after completion).** Reviewed
+the exact staged D4A diff against published baseline `7c36a7f`, separately from
+the implementation review and final test run. Its **20-file** scope is:
+`config.yaml`; `src/app/api/screening.py`, `src/app/core/config.py`,
+`src/app/screening/service.py`, `src/app/services/__init__.py`;
+`frontend/screening.js`, `frontend/Veritas.dc.html`;
+`tests/conftest.py`, `tests/test_config.py`, `tests/test_screening_batches_api.py`,
+`tests/test_service_lifecycle.py`; `scripts/test_ui_screening.js`,
+`scripts/smoke_r4_s1_t3d.py`, `scripts/check_ui_screening_extraction_browser.py`;
+and `FEATURE_STATUS.md`, `OPERATING.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`,
+`docs/delivery/PI-R4.md`, `docs/delivery/EVIDENCE-R4.md`.
+
+Specification review traced all four complete read operations and detached
+arguments through auth, admission, worker-local sessions, projections and final
+scope snapshots; mapped each acceptance requirement to the recorded behavioral
+checks; and confirmed only A closes. Correctness/maintainability review checked
+retained capacity after timeout/cancellation/late failure, shutdown ordering,
+safe full/closed/pending responses, foreign/absent refusal, original cursors,
+counts/retention/erasure and existing internal synchronous callers. UI review
+traced selected-batch/account/refresh/base-page identities, failed discovery,
+paging failure, empty pages with continuation, partial summary name/counts and
+manual GET recovery without registration, processing or assessment replay.
+Registration/retry/delete/process scheduling, schema, success DTOs/OpenAPI,
+providers, consent, advisory/scorer and deterministic fallback behavior remain.
+No blocking finding remains; no further application change was needed.
+
+Staged validation confirms **14 code/config files** match the validated snapshot
+(Git newline normalization accounted for), with all **616** reviewed code/config
+hashes unchanged. All **7** added local Markdown links/anchors resolve; staged
+whitespace checks pass, no unstaged changes remain, and added-text credential-
+marker/artifact checks pass. Preservation confirms **714** unrelated tracked
+files, including the working DB, retain baseline bytes after the roadmap entry.
+The final evidence/status prose was then checked and restaged; it needs no
+application rerun. No local logs, credentials, runtimes or working data are in
+scope. This is same-agent self-review, not independent review or live-provider
+quality validation. Scoped commit/push and remote verification follow; stop
+after publication with D4B next in a separate session.

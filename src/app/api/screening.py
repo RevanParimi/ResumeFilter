@@ -223,7 +223,8 @@ async def list_screening_batches(
     limit: Optional[int] = None,
 ) -> BatchPage:
     try:
-        return _services(request).screening.list(org_id, cursor=cursor, limit=limit)
+        return await _batch_read(request, _services(request).screening.list,
+            org_id, cursor=cursor, limit=limit)
     except (InvalidCursor, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -233,7 +234,7 @@ async def get_screening_batch(
     batch_id: str, request: Request, org_id: str = Depends(require_org)
 ) -> BatchDetail:
     """404 -- never 403 -- for another org's batch."""
-    found = _services(request).screening.get(org_id, batch_id)
+    found = await _batch_read(request, _services(request).screening.get, org_id, batch_id)
     if found is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return found
@@ -296,7 +297,7 @@ async def screening_batch_queue(
 ) -> QueuePage:
     """The fraud-screen read-model: riskiest first, unscreened rows last."""
     try:
-        page = _services(request).screening.queue(
+        page = await _batch_read(request, _services(request).screening.queue,
             org_id, batch_id, cursor=cursor, limit=limit
         )
     except (InvalidCursor, ValueError) as exc:
@@ -310,7 +311,7 @@ async def screening_batch_queue(
 async def screening_batch_summary(
     batch_id: str, request: Request, org_id: str = Depends(require_org)
 ) -> BatchSummary:
-    found = _services(request).screening.summary(org_id, batch_id)
+    found = await _batch_read(request, _services(request).screening.summary, org_id, batch_id)
     if found is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return found
@@ -326,3 +327,13 @@ async def delete_screening_batch(
     if not _services(request).screening.delete(org_id, batch_id):
         raise HTTPException(status_code=404, detail="batch not found")
     return BatchDeleteResponse(batch_id=batch_id, deleted=True)
+
+
+async def _batch_read(request: Request, operation, *args, **kwargs):
+    try:
+        return await _services(request).batch_reads.run(operation, *args, **kwargs)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503, detail='batch_read_pending',
+                            headers={'Retry-After': '1'}) from None

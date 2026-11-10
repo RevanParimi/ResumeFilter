@@ -25,6 +25,141 @@ function pick(c, files) {
   assert.equal(target.value, "");
 }
 
+for (const detail of ['batch_read_pending', 'batch_read_capacity_exhausted', 'batch_read_executor_closed']) {
+  test('bounded batch read refusal preserves reference/draft and recovers only by GET: ' + detail, async () => {
+    const { c, window, calls } = setup();
+    c.state.selectedBatch = 'owned';
+    c.state.batchNameInput = 'Keep draft';
+    c.state.files = [{ name: 'pending.txt', kind: 'text', file: {} }];
+    const get = window.VeritasAPI.get;
+    window.VeritasAPI.get = async () => { throw { status: 503, kind: 'http', detail }; };
+    await c.refreshBatch();
+    assert.equal(c.state.selectedBatch, 'owned');
+    assert.equal(c.state.batchNameInput, 'Keep draft');
+    assert.equal(c.state.files.length, 1);
+    assert.match(c.renderVals().queueErrorText, /temporarily unavailable.*refresh/i);
+    assert.doesNotMatch(c.renderVals().queueErrorText, /batch_read/);
+    window.VeritasAPI.get = get;
+    c.refresh(); await settle();
+    assert.equal(c.state.batch.data.id, 'owned');
+    assert.equal(calls.filter(x => x[0] !== 'GET').length, 0);
+    c.state.selectedBatch = null;
+    window.VeritasAPI.get = async () => { throw { status: 503, kind: 'http', detail }; };
+    c.loadScreening(); await settle();
+    assert.equal(c.renderVals().queueError, true);
+    assert.equal(typeof c.renderVals().reloadBatches, 'function');
+    window.VeritasAPI.get = get;
+    c.renderVals().reloadBatches(); await settle();
+    assert.equal(c.state.batchList.error, null);
+    assert.equal(calls.filter(x => x[0] !== 'GET').length, 0);
+  });
+}
+
+test('bounded batch reads ignore superseded refreshes and replaced accounts', async () => {
+  const { c, window } = setup();
+  c.state.selectedBatch = 'owned';
+  const pending = [];
+  window.VeritasAPI.get = p => new Promise(resolve => pending.push({ p, resolve }));
+  const first = c.refreshBatch();
+  const second = c.refreshBatch();
+  pending.slice(3).forEach(x => x.resolve(x.p.includes('/queue') ? { rows: [{ item_id: 'new' }] } : batch('owned')));
+  await second;
+  pending.slice(0,3).forEach(x => x.resolve(x.p.includes('/queue') ? { rows: [{ item_id: 'old' }] } : batch('owned')));
+  await first;
+  assert.equal(c.state.queue.data.rows[0].item_id, 'new');
+  const lost = c.refreshBatch();
+  const list = c.loadBatches();
+  c.handleSessionLost(); c.setState({ me: { kind: 'org' }, screen: 'queue' });
+  pending.slice(6).forEach(x => x.resolve(x.p === '/screening/batches'
+    ? { batches: [batch('foreign')] } : batch('foreign')));
+  await Promise.all([lost, list]);
+  assert.equal(c.state.batch.data, null);
+  assert.equal(c.state.batchList.data, null);
+  assert.equal(c.state.selectedBatch, null);
+});
+
+test('bounded batch pagination cannot append after a fresh page or account change', async () => {
+  const { c, window } = setup();
+  c.state.selectedBatch = 'owned';
+  c.state.queue = held({ rows: [{ item_id: 'base' }], next_cursor: 'cursor' });
+  let finish;
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = () => new Promise(resolve => { finish = resolve; });
+  c.moreQueue();
+  window.VeritasAPI.get = get;
+  await c.refreshBatch();
+  finish({ rows: [{ item_id: 'stale' }], next_cursor: null }); await settle();
+  assert.deepEqual(c.state.queue.data.rows, []);
+  assert.equal(c.state.moreBusy, null);
+  c.state.batchList = held({ batches: [batch('owned')], next_cursor: 'cursor' });
+  window.VeritasAPI.get = () => new Promise(resolve => { finish = resolve; });
+  c.moreBatches();
+  c.handleSessionLost(); c.setState({ me: { kind: 'org' } });
+  finish({ batches: [batch('foreign')], next_cursor: null }); await settle();
+  assert.equal(c.state.batchList.data, null);
+});
+
+test('bounded batch pagination waits for the current base-page refresh', async () => {
+  const { c, window } = setup();
+  c.state.selectedBatch = 'owned';
+  c.state.queue = held({ rows: [], next_cursor: 'old-cursor' });
+  const pending = [];
+  window.VeritasAPI.get = p => new Promise(resolve => pending.push({ p, resolve }));
+  const refreshing = c.refreshBatch();
+  c.moreQueue();
+  assert.equal(pending.length, 3, 'a new page cannot use the previous cursor during refresh');
+  assert.equal(c.renderVals().hasMoreQueue, false);
+  pending.forEach(x => x.resolve(x.p.endsWith('/queue') ? { rows: [], next_cursor: null } : batch('owned')));
+  await refreshing;
+});
+
+test('bounded batch discovery preserves an empty scoped page with a continuation cursor', async () => {
+  const { c, window, calls } = setup();
+  c.state.batchList = held({ batches: [], next_cursor: 'remaining-owned' });
+  const view = c.renderVals();
+  assert.equal(view.batchesEmpty, false);
+  assert.equal(view.noBatch, false);
+  assert.equal(view.batchDiscoveryMore, true);
+  window.VeritasAPI.get = async p => {
+    calls.push(['GET', p]);
+    return { batches: [batch('remaining')], next_cursor: null };
+  };
+  c.moreBatches(); await settle();
+  assert.deepEqual(c.state.batchList.data.batches.map(b => b.id), ['remaining']);
+  assert.equal(calls.length, 1);
+  assert(calls[0][1].includes('cursor=remaining-owned'));
+});
+
+test('bounded batch summary discovers a saved batch when no selection exists', async () => {
+  const { c, window, calls } = setup();
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = async p => p === '/screening/batches'
+    ? { batches: [batch('owned')], next_cursor: null } : get(p);
+  c.goSummary(); await settle(); await settle();
+  assert.equal(c.state.screen, 'summary');
+  assert.equal(c.state.selectedBatch, 'owned');
+  assert.equal(c.state.batch.data.id, 'owned');
+  assert.equal(calls.filter(x => x[0] !== 'GET').length, 0);
+});
+
+test('bounded batch summary retains its saved name when the detail read fails', async () => {
+  const { c, window } = setup();
+  c.state.selectedBatch = 'owned';
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = async p => {
+    if (p.endsWith('/summary')) return { batch_id: 'owned', name: 'Saved summary name', domain: 'data_eng',
+      status: 'complete', counts: { pending: 0, processing: 0, done: 1, failed: 0 },
+      n_screened: 1, by_risk_band: { low: 1 }, top_signals: [] };
+    if (!p.endsWith('/queue')) throw { status: 503, detail: 'batch_read_pending' };
+    return get(p);
+  };
+  await c.refreshBatch();
+  assert.equal(c.renderVals().batchName, 'Saved summary name');
+  assert.match(c.renderVals().summaryMeta, /1 of 1 processed/);
+  assert.equal(c.renderVals().batchReference, 'owned');
+  assert.equal(c.renderVals().queueError, true);
+});
+
 for (const [detail, copy] of [
   ['candidate_ingest_pending', /may still be saving/],
   ['candidate_ingest_capacity_exhausted', /temporarily unavailable/],

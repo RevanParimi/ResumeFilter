@@ -13,6 +13,282 @@ from tests.conftest import ADMIN_HEADERS
 from app.screening.models import BatchItemRow
 from app.screening.schema import ItemStatus
 from tests.test_screening_service import _PausedEngine
+from tests.test_report_erasure_concurrency import database
+
+
+BATCH_READS = [
+    ('detail', '/screening/batches/{bid}', 'get'),
+    ('list', '/screening/batches', 'list'),
+    ('queue', '/screening/batches/{bid}/queue', 'queue'),
+    ('summary', '/screening/batches/{bid}/summary', 'summary'),
+]
+
+
+def _batch_read_setup(settings, factory, resume):
+    from app.candidates.store import CandidateStore
+    from tests.conftest import make_services
+    services = make_services(settings, candidates=CandidateStore(factory))
+    org, key = _key(services)
+    other, other_key = _key(services, 'Other batch reader')
+    def register(owner, name):
+        return services.screening.register(owner, name=name, domain='genai',
+            texts=[resume + f'\nSynthetic item {i}' for i in range(2)], created_by_org_user_id=None).id
+    return services, org, key, register(org, 'Owned batch'), other, other_key, register(other, 'Kept batch')
+
+
+@pytest.mark.parametrize('case,path,method', BATCH_READS, ids=[row[0] for row in BATCH_READS])
+async def test_batch_read_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume, case, path, method):
+    from threading import Event
+    from sqlalchemy import event
+    engine, factory = database
+    services, _, key, bid, _, _, _ = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'from batch_items' in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.get(path.format(bid=bid), headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'batch view SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('case,path,method', BATCH_READS, ids=[row[0] for row in BATCH_READS])
+@pytest.mark.parametrize('change', ['delete', 'owner'])
+def test_batch_read_refuses_observed_scope_loss(database, settings, genuine_resume, monkeypatch, case, path, method, change):
+    from app.screening.models import ScreeningBatchRow
+    _, factory = database
+    services, org, key, bid, other, other_key, kept = _batch_read_setup(settings, factory, genuine_resume)
+    target = 'queue_page' if case == 'queue' else 'counts'
+    original = getattr(services.screening._store, target)
+    def changed(*args, **kwargs):
+        value = original(*args, **kwargs)
+        with factory() as session:
+            row = session.get(ScreeningBatchRow, bid)
+            if change == 'delete':
+                session.delete(row)
+            else:
+                row.org_id = other
+            session.commit()
+        return value
+    try:
+        with _client(services) as http:
+            with monkeypatch.context() as patch:
+                patch.setattr(services.screening._store, target, changed)
+                response = http.get(path.format(bid=bid), headers={'X-Org-Key': key})
+            if case == 'list':
+                assert response.status_code == 200 and response.json()['batches'] == []
+            else:
+                assert response.status_code == 404 and response.json() == {'detail': 'batch not found'}
+            assert http.get(f'/screening/batches/{kept}', headers={'X-Org-Key': other_key}).status_code == 200
+    finally:
+        asyncio.run(services.aclose())
+
+
+@pytest.mark.parametrize('case,path,method', BATCH_READS, ids=[row[0] for row in BATCH_READS])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'late_failure'])
+async def test_batch_read_admission_sessions_and_recovery(database, settings, genuine_resume, monkeypatch, log_output, case, path, method, ending):
+    from threading import Event, get_ident, current_thread
+    from sqlalchemy import event
+    _, factory = database
+    settings.batch_read_max_concurrent_requests = 1
+    settings.batch_read_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    services, org, key, bid, other, other_key, kept = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release, calls, sql_threads = Event(), Event(), [], set()
+    caller = get_ident()
+    original = getattr(services.screening, method)
+    args = (org,) if case == 'list' else (org, bid)
+    kwargs = {'cursor': None, 'limit': 1} if case in ('list', 'queue') else {}
+    params = {'limit': 1} if kwargs else {}
+    expected = original(*args, **kwargs).model_dump(mode='json')
+    def held(*values, **options):
+        calls.append(get_ident())
+        entered.set()
+        assert release.wait(15)
+        if ending == 'late_failure':
+            raise RuntimeError('synthetic-private-batch-read-error')
+        return original(*values, **options)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('batch_view_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('batch-read'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('batch_view_owner', get_ident()) == get_ident()
+    async def no_assessment(**kwargs):
+        pytest.fail('reading a batch must not assess a resume')
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(services.screening, method, held)
+            monkeypatch.setattr(app.state.engine, 'evaluate', no_assessment)
+            event.listen(factory, 'after_begin', begin)
+            event.listen(factory, 'after_transaction_end', end)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.get(path.format(bid=bid), params=params, headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as anonymous:
+                        assert (await anonymous.get(path.format(bid=bid))).status_code == 401
+                    for _, peer_path, _ in BATCH_READS:
+                        busy = await http.get(peer_path.format(bid=kept), headers={'X-Org-Key': other_key})
+                        assert busy.status_code == 503 and busy.json() == {'detail': 'batch_read_capacity_exhausted'}
+                        assert busy.headers['retry-after'] == '1' and 'set-cookie' not in busy.headers
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_read_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert len(services.batch_reads._active) == 1
+                finally:
+                    release.set()
+                    results = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_reads._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0] != caller and sql_threads <= {calls[0]}
+                if ending == 'release':
+                    assert results[0].status_code == 200 and results[0].json() == expected
+                monkeypatch.setattr(services.screening, method, original)
+                services.batch_reads._wait_seconds = 20
+                fresh = await http.get(path.format(bid=bid), params=params, headers={'X-Org-Key': key})
+                assert fresh.status_code == 200 and fresh.json() == expected
+                assert len(calls) == 1  # No background replay after timeout/cancel/failure.
+                for suffix in ('', '/queue', '/summary'):
+                    foreign = await http.get(f'/screening/batches/{bid}' + suffix, headers={'X-Org-Key': other_key})
+                    absent = await http.get('/screening/batches/missing' + suffix, headers={'X-Org-Key': other_key})
+                    assert foreign.status_code == absent.status_code == 404 and foreign.json() == absent.json()
+                for target in ('/screening/batches', f'/screening/batches/{bid}/queue'):
+                    assert (await http.get(target, params={'cursor': '!!!'}, headers={'X-Org-Key': key})).status_code == 422
+                assert services.screening.get(other, kept).counts.pending == 2
+                services.batch_reads.close()
+                closed = await http.get(path.format(bid=bid), headers={'X-Org-Key': key})
+                assert closed.status_code == 503 and closed.json() == {'detail': 'batch_read_executor_closed'}
+                assert closed.headers['retry-after'] == '1' and 'set-cookie' not in closed.headers
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-batch-read-error' not in log_output.text
+
+
+@pytest.mark.parametrize('case,path,method', BATCH_READS, ids=[row[0] for row in BATCH_READS])
+@pytest.mark.parametrize('change', ['release', 'delete', 'owner'])
+async def test_batch_read_real_lock_and_scope_loss(database, settings, genuine_resume, case, path, method, change):
+    from threading import Event, current_thread
+    from sqlalchemy import event, text
+    engine, factory = database
+    settings.batch_read_max_concurrent_requests = 1
+    settings.batch_read_wait_seconds = .2
+    services, org, key, bid, other, other_key, kept = _batch_read_setup(settings, factory, genuine_resume)
+    entered, proceed, pids = Event(), Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'from batch_items' in statement.lower() and current_thread().name.startswith('batch-read') and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.get(path.format(bid=bid), headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE')
+                    else:
+                        blocker.execute(text('LOCK TABLE batch_items IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    assert (await http.get('/healthz')).status_code == 200
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'batch_read_pending'}
+                    assert len(services.batch_reads._active) == 1
+                    if change == 'delete':
+                        blocker.execute(text('DELETE FROM screening_batches WHERE id = :bid'), {'bid': bid})
+                        blocker.commit()
+                    elif change == 'owner':
+                        blocker.execute(text('UPDATE screening_batches SET org_id = :org WHERE id = :bid'), {'org': other, 'bid': bid})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_reads._active:
+                            await asyncio.sleep(.01)
+                fresh = await http.get(path.format(bid=bid), headers={'X-Org-Key': key})
+                if case == 'list':
+                    assert fresh.status_code == 200
+                    assert [b['id'] for b in fresh.json()['batches']] == ([bid] if change == 'release' else [])
+                else:
+                    assert fresh.status_code == (200 if change == 'release' else 404)
+                assert services.screening.get(other, kept).counts.pending == 2
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+def test_batch_read_scope_filter_preserves_the_original_page_cursor(database, settings, genuine_resume, monkeypatch):
+    from app.screening.models import ScreeningBatchRow
+    _, factory = database
+    services, org, key, bid, other, _, _ = _batch_read_setup(settings, factory, genuine_resume)
+    second = services.screening.register(org, name='Another owned batch', domain='genai',
+        texts=[genuine_resume], created_by_org_user_id=None).id
+    original = services.screening.list(org, cursor=None, limit=1)
+    cut_id = original.batches[0].id
+    assert original.next_cursor
+    counts = services.screening._store.counts
+    def changed(*args, **kwargs):
+        value = counts(*args, **kwargs)
+        with factory() as session:
+            session.get(ScreeningBatchRow, cut_id).org_id = other
+            session.commit()
+        return value
+    try:
+        with _client(services) as http:
+            with monkeypatch.context() as patch:
+                patch.setattr(services.screening._store, 'counts', changed)
+                page = http.get('/screening/batches?limit=1', headers={'X-Org-Key': key}).json()
+            assert page == {'batches': [], 'next_cursor': original.next_cursor}
+            next_page = http.get('/screening/batches', params={'limit': 1, 'cursor': page['next_cursor']},
+                headers={'X-Org-Key': key}).json()
+            assert {row['id'] for row in next_page['batches']} == {bid, second} - {cut_id}
+    finally:
+        asyncio.run(services.aclose())
 
 
 # Screening batches api

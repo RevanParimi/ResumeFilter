@@ -112,6 +112,16 @@ class Services:
     _report_records: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _outcome_records: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _evaluation_records: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _batch_reads: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def batch_reads(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('batch_read_executor_closed')
+        if self._batch_reads is None:
+            self._batch_reads = BoundedExecutor(self.settings.batch_read_max_concurrent_requests,
+                self.settings.batch_read_wait_seconds, name='batch_read')
+        return self._batch_reads
 
     @property
     def evaluation_records(self) -> BoundedExecutor:
@@ -229,7 +239,8 @@ class Services:
         await asyncio.gather(*(executor.aclose() for executor in
             (self._auth_codes, self._contact_codes, self._auth_resolution, self._auth_redemption,
              self._auth_sessions, self._candidate_records, self._candidate_ingests,
-             self._report_records, self._outcome_records, self._evaluation_records) if executor is not None))
+             self._report_records, self._outcome_records, self._evaluation_records,
+             self._batch_reads) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

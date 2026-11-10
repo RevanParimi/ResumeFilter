@@ -287,3 +287,13 @@ remain possible and fresh assessments may create another report. Operator scope,
 erasure snapshots, advisory/domain/fallback and existing success DTOs remain.
 The [publication budget](OPERATING.md#standalone-evaluation-publication-budget)
 owns defaults/limits; batch SQL and broader acceptance remain D4-D6/Q work.
+
+[R4-S2-T3C3D4A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) bounds complete batch
+detail/list/queue/summary reads on a separate owning-session pool. Final batch
+visibility refuses observed scope loss without rewriting keyset cursors; values
+remain snapshots. Human refusal guidance and visible GET recovery preserve the
+selected reference/draft without starting screening. Account/refresh/page guards
+reject late callbacks and paging waits for the current base read. The
+[batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
+and limits. Registration/retry/delete, processing and combined acceptance remain
+D4B/C/Q and D5-D6/Q; D4 and broader parents remain open.

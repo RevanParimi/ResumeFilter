@@ -4,44 +4,53 @@ Updated: 2026-11-10. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D3 complete.** Published baseline D2 is `202c5ee`.
-[D3 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d3) owns acceptance,
-red/green, implementation review, final checks and the separate staged review.
+**R4-S2-T3C3D4A complete.** Published baseline D3 is `7c36a7f`.
+[A contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) owns acceptance,
+red/green, review findings/resolutions, final checks and the staged review.
+D4 was split before implementation; only A closes, with B/C/Q still open.
 
-Standalone `/evaluate` keeps graph/PDF/providers on the async caller and bounds
-complete report save/final snapshot on a separate owning-operation pool. Pending
-503 carries only a stable code/reference; accepted work retains admission through
-actual completion, without replay. The UI preserves input/reference, blocks
-another evaluation and offers GET recovery. Explicit fresh-evaluation intent
-releases the UI guard without posting. Pending IDs use a neutral reference label.
-Auth/CSRF, operator scope, erasure snapshots, advisory/domain/fallback and success
-DTOs remain.
+Four employer batch view GETs use complete owning-session reads on a separate
+pool (four slots accommodate three parallel view reads plus discovery). Final
+batch visibility refuses observed deletion/ownership loss without rewriting
+cursors. Safe full/closed/pending responses retain accepted admission through
+actual completion, without replay or assessment. Human GET recovery preserves
+selection/reference and upload drafts; account/refresh/page guards reject stale
+callbacks. Paging waits for its base read, a filtered empty page can continue,
+and a partial summary retains its saved name/counts. Auth/CSRF, projections,
+retention, success DTOs, advisory/scoring and write scheduling remain.
 
-Corrected-state full pytest **4275 passed, 1073 skipped, 127 warnings**; actual
-PG-enabled focused **501 passed, no skips**. Migrated SQLite/PG HTTP/graceful
-restart both **36/36**; corrected Chrome **62/62**; offline UI **68**, bindings
-**601/18**, syntax and 9-module compilation pass. The first full run, final-review
-label finding, browser red/green and corrected rerun are retained in evidence.
-All **616** corrected code/config hashes match. Working DB/unrelated files are
-preserved, demo not restarted, owned PG stopped. Completion records and resumed
-final staged self-review precede scoped commit/push; final response reports the
-verified remote commit.
+Final full pytest **4324 passed, 1114 skipped, 127 warnings**. Actual PG-enabled
+selection **719 passed, 10 SQLite-only skips, 18 warnings**; both databases'
+migrated two-actor HTTP/graceful restart **50/50**; actual worker Chrome **39/39**.
+Offline UI **98** (including 68 shared evaluation cases), bindings **605/18**,
+syntax and 10-module compilation pass. Earlier interrupted/failed attempts remain
+in evidence. All **616** corrected code/config hashes match. Working DB/unrelated
+files preserved, demo not restarted, owned PG confirmed stopped. Completion
+records and distinct final staged self-review are recorded; scoped commit/push
+follows. The final response reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3D4 - Bound batch management operations**, in a separate
-session. Stop after D3 publication; do not start D4 here. D4-D6/Q, C3D and all
-broader parents remain open. Use per-command
-`-c credential.username=RevanParimi` for GCM account selection.
+**Exact next: R4-S2-T3C3D4B - Bound batch registration**, in a separate session.
+Stop after A publication; do not start B here. B/C/Q, D4, D5-D6/Q, C3D and broader
+parents remain open. Use per-command `-c credential.username=RevanParimi` for
+GCM account selection.
 
-The [publication budget](../OPERATING.md#standalone-evaluation-publication-budget)
-owns defaults/limits. Recovery reads remain snapshots; late saves can still
-finish and fresh assessments may create another report. Drafts/guards are page
-memory; opening the saved report puts its reference in the URL. Transport loss
-before a reference arrives cannot recover an unknown ID. Per-process waits are
-not global DB/auth, whole-request, driver or drain deadlines. Direct synchronous
-callers own scheduling; fakes prove mechanics, not live-provider quality.
+The [batch read budget](../OPERATING.md#batch-view-read-execution-budget) owns
+defaults/limits. Counts, individual values and scope/delivery remain snapshots,
+not erasure/update locks; summary still reads the whole batch. Direct/internal
+callers own scheduling. Per-process waits do not bound global SQL/auth, whole
+requests, drivers, drain or memory. Fakes prove mechanics, not live quality.
 
 ## Reusable validation setup
 
+- D4A runner: `.pytest_cache/run_r4_s2_t3c3d4a.py <tag> <Python args>`; omitted
+  args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3d4a_postgres.py` / `r4-s2-t3c3d4a-pg-runtime.json`
+  (stopped).
+  Hash/preservation helper: `.pytest_cache/review_state_r4_s2_t3c3d4a.py check` /
+  `preserve`. HTTP/restart: `scripts/smoke_r4_s1_t3d.py --batch-read-workers`;
+  add `--postgres` only with an explicitly disposable URL. Actual Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --batch-read-workers`.
+  A evidence owns the exact selections, commands, failed/incomplete attempts.
 - D3 runner: `.pytest_cache/run_r4_s2_t3c3d3.py <tag> <Python args>`; omitted args
   run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3d3_postgres.py` / `r4-s2-t3c3d3-pg-runtime.json`

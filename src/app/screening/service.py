@@ -100,7 +100,7 @@ class ScreeningService:
         if record is None:
             return None
         counts = self._store.counts(org_id, batch_id, now=now)
-        if counts is None:
+        if counts is None or self._store.batch_row(org_id, batch_id) is None:
             # Deleted between the two reads (a second tab). Absent, not a 500.
             return None
         return BatchDetail(
@@ -119,7 +119,7 @@ class ScreeningService:
         views = []
         for record in records:
             counts = self._store.counts(org_id, record.id, now=now)
-            if counts is None:
+            if counts is None or self._store.batch_row(org_id, record.id) is None:
                 # Deleted since the page SELECT; serve the rest of the page.
                 continue
             views.append(BatchView(
@@ -135,7 +135,7 @@ class ScreeningService:
             org_id, batch_id, cursor=cursor,
             limit=clamp_limit(limit, self._settings), now=self._now(),
         )
-        if page is None:
+        if page is None or self._store.batch_row(org_id, batch_id) is None:
             return None
         rows, next_cursor = page
         return QueuePage(rows=[self._row(i) for i in rows], next_cursor=next_cursor)
@@ -161,6 +161,9 @@ class ScreeningService:
                 key = item.signals.loudest_signal
                 signals[key] = signals.get(key, 0) + 1
 
+        # Final visibility is a snapshot, not a lock across later delivery.
+        if self._store.batch_row(org_id, batch_id) is None:
+            return None
         return BatchSummary(
             batch_id=record.id, name=record.name, domain=record.domain,
             status=derive_status(counts), counts=counts,

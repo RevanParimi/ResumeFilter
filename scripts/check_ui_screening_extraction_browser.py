@@ -26,6 +26,113 @@ import tempfile
 import check_ui_screening_browser as browser
 
 
+async def check_batch_read_workers(tab, scratch, api, bid):
+    def count(kind):
+        path = scratch / ('batch-read-' + kind + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    def arm(method):
+        for kind in ('entered', 'completed'):
+            (scratch / ('batch-read-' + kind + '.jsonl')).unlink(missing_ok=True)
+        (scratch / 'batch-read-release').unlink(missing_ok=True)
+        (scratch / 'batch-read-mode').write_text(method)
+    async def marker(kind, n=1):
+        async with asyncio.timeout(10):
+            while count(kind) < n:
+                await asyncio.sleep(.01)
+    async def release(n=1):
+        (scratch / 'batch-read-release').touch()
+        await marker('completed', n)
+        (scratch / 'batch-read-mode').unlink(missing_ok=True)
+    async def watch_posts():
+        await tab.js("""window.__batchReadNative=window.fetch; window.__batchReadPosts=0;
+window.fetch=(u,o)=>{if(o&&o.method&&!['GET','HEAD'].includes(o.method.toUpperCase())) window.__batchReadPosts++;
+return window.__batchReadNative(u,o);};""")
+    await watch_posts()
+    evaluations = count('evaluations')
+    for method, action, success in (
+        ('list', "window.__click('button','Batches')", "window.__has('Router reload intake')"),
+        ('get', "window.__click('button','Batch summary')", "window.__has('What was loudest, and how often')"),
+        ('queue', "window.__click('button','Screening queue')", "window.__has('Nothing left to screen')"),
+        ('summary', "window.__click('button','Batch summary')", "window.__has('What was loudest, and how often')")):
+        arm(method)
+        try:
+            assert await tab.js(action)
+            await marker('entered')
+            browser.S.check(method + ': actual read timeout has visible human guidance and a manual GET action',
+                await tab.wait("window.__has('Saved batch views are temporarily unavailable') && window.__has('Reload saved batch')", 15)
+                and not await tab.js("document.body.innerText.includes('batch_read_')")
+                and (method == 'list' or await tab.js('window.__has(' + json.dumps('Batch reference: ' + bid) + ')'))
+                and (method != 'get' or await tab.js("window.__has('Router reload intake') && window.__has('1 of 1 processed') && !window.__has('No batch selected')")))
+        finally:
+            await release()
+        assert await tab.js("window.__click('button', 'Reload saved batches')" if method == 'list'
+                            else "window.__click('button', 'Reload saved batch')")
+        browser.S.check(method + ': manual recovery renders saved data without POST or another assessment',
+            await tab.wait(success + " && !window.__has('Saved batch views are temporarily unavailable')", 20)
+            and await tab.js('window.__batchReadPosts') == 0 and count('evaluations') == evaluations)
+    arm('list')
+    try:
+        await tab.js("window.__heldBatchReads=Promise.all(Array.from({length:4},()=>fetch('/screening/batches',{credentials:'include'}).then(r=>r.status))); void 0;")
+        await marker('entered', 4)
+        assert await tab.js("window.__click('button', 'Batches')")
+        browser.S.check('four occupied slots refuse actual UI discovery while preserving a read-only recovery',
+            await tab.wait("window.__has('Saved batch views are temporarily unavailable') && window.__has('Reload saved batches')", 15)
+            and not await tab.js("document.body.innerText.includes('batch_read_')"))
+    finally:
+        await release(4)
+    assert await tab.js('window.__heldBatchReads') == [503]*4
+    assert await tab.js("window.__click('button', 'Reload saved batches')")
+    browser.S.check('capacity returns through manual GET without starting screening',
+        await tab.wait("window.__has('Router reload intake') && !window.__has('Saved batch views are temporarily unavailable')", 20)
+        and await tab.js('window.__batchReadPosts') == 0 and count('evaluations') == evaluations)
+    arm('list')
+    try:
+        before = await tab.js('performance.timeOrigin')
+        await tab.send('Page.reload')
+        assert await tab.wait(f"performance.timeOrigin !== {before} && document.body.innerText.includes('Sign out')", 60)
+        await tab.js(browser.HELPERS)
+        await watch_posts()
+        await marker('entered')
+        browser.S.check('initial queue discovery refusal remains visible after actual document reload',
+            await tab.wait("window.__has('Saved batch views are temporarily unavailable') && window.__has('Reload saved batch')", 15)
+            and not await tab.js("window.__has('Nothing screened yet')"))
+    finally:
+        await release()
+    assert await tab.js("window.__click('button', 'Reload saved batch')")
+    browser.S.check('fresh discovery restores the saved selection with no registration or process replay',
+        await tab.wait("window.__has('Router reload intake') && window.__has('Nothing left to screen')", 25)
+        and await tab.js('window.__batchReadPosts') == 0 and count('evaluations') == evaluations
+        and api.get(f'/screening/batches/{bid}').json()['counts']['done'] == 1)
+    # Inject only the transport shape of a scope-filtered page. Real cursor/
+    # ownership behavior is covered separately by SQLite/PG API regressions.
+    script = await tab.send('Page.addScriptToEvaluateOnNewDocument', {'source': """
+window.__batchCutFetch=window.fetch; window.__batchCutUsed=false;
+window.fetch=(u,o)=>{if(!window.__batchCutUsed && String(u).split('?')[0].endsWith('/screening/batches')) {
+ window.__batchCutUsed=true; return Promise.resolve(new Response(JSON.stringify({batches:[],next_cursor:'opaque-scope-boundary'}),
+ {status:200,headers:{'content-type':'application/json'}})); } return window.__batchCutFetch(u,o);};
+"""})
+    try:
+        before = await tab.js('performance.timeOrigin')
+        await tab.send('Page.reload')
+        assert await tab.wait(f"performance.timeOrigin !== {before} && document.body.innerText.includes('Sign out')", 60)
+        await tab.js(browser.HELPERS)
+        browser.S.check('scope-filtered discovery page with a cursor does not claim the account is empty',
+            await tab.wait("window.__has('Load the next page to check for saved batches') && window.__has('View saved batches')", 20)
+            and not await tab.js("window.__has('Nothing screened yet') || window.__has('No batches yet')"))
+    finally:
+        await tab.send('Page.removeScriptToEvaluateOnNewDocument', {'identifier': script['identifier']})
+        await tab.js('window.fetch=window.__batchCutFetch')
+    await watch_posts()
+    assert await tab.js("window.__click('button','View saved batches')")
+    browser.S.check('manual batch navigation recovers the persisted rows without a write',
+        await tab.wait("window.__has('Router reload intake')", 20)
+        and await tab.js('window.__batchReadPosts') == 0 and count('evaluations') == evaluations)
+    assert await tab.js("window.__click('button','Batch summary')")
+    browser.S.check('summary discovers a saved batch from an unselected list without starting work',
+        await tab.wait("window.__has('What was loudest, and how often') && window.__has('Router reload intake')", 20)
+        and await tab.js('window.__batchReadPosts') == 0 and count('evaluations') == evaluations)
+
+
 async def main():
     scratch = Path(tempfile.mkdtemp(prefix="r4-s1-t3d-browser-"))
     print(f"Synthetic screening browser evidence: {scratch}", flush=True)
@@ -50,6 +157,8 @@ async def main():
                 args = ['smoke_r4_s1_t3c:create_candidate_fingerprint_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--candidate-report-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3c:create_candidate_report_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--batch-read-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3d:create_batch_read_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -67,6 +176,10 @@ async def main():
             })
             if "--body-limit" in sys.argv:
                 env["DEE_MAX_REQUEST_BODY_BYTES"] = "64000"
+            if '--batch-read-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS='4', DEE_BATCH_READ_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                            DEE_PDF_MAX_CONCURRENT_PARSES='1', DEE_PDF_PARSE_TIMEOUT_SECONDS='15')
@@ -412,6 +525,8 @@ window.fetch = (url, init) => {
             browser.S.check("batch list recovers using saved server state",
                 await tab.wait("window.__has('Router reload intake') && !window.__has('Synthetic batch read failure')", 20, "batch recovery")
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
+            if '--batch-read-workers' in sys.argv:
+                await check_batch_read_workers(tab, scratch, api, bid)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)

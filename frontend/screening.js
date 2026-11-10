@@ -5,25 +5,37 @@
   "use strict";
 
   global.VeritasScreening = (Base, {
-    API, errorCopy, IDLE, BATCH_STATUS, ITEM_STATUS, RISK_BAND, BAND,
+    API, EVAL_TIMEOUT_MS, errorCopy, IDLE, BATCH_STATUS, ITEM_STATUS, RISK_BAND, BAND,
     SIGNAL_LABEL, SUB_BAND_LABEL, SMALL_MUTED, SMALL_GHOST, GHOST_BTN,
     SMALL_PRIMARY_FLAT, ERROR_BOX, fmtDate, fmtDateTime, gradBar, shortId,
     avatar, chip, num, riskBar, confBarStyle
   }) => class extends Base {
+  _batchListRequest = null;
+  _batchReadRequest = null;
+  _batchPageRequest = null;
   // ── screening ─────────────────────────────────────────────────────────────
   // Opening the queue with no batch chosen picks the newest, because the list
   // is newest-first server-side. An org that has uploaded nothing lands on an
   // EMPTY QUEUE, not an error — the first screen every new customer sees
   // (UI.md §9).
   loadScreening = () => {
-    if (this.state.selectedBatch) { this.refreshBatch(); return; }
-    this.load("batchList", () => API.get("/screening/batches")).then((page) => {
+    if (this.state.selectedBatch) return this.refreshBatch();
+    const me = this.state.me, screen = this.state.screen;
+    return this.loadBatches().then((page) => {
+      if (this._gone || this.state.me !== me || this.state.screen !== screen || this.state.selectedBatch) return;
       const first = page && page.batches && page.batches[0];
-      if (first) { this.setState({ selectedBatch: first.id }); this.refreshBatch(first.id); }
+      if (first) { this.setState({ selectedBatch: first.id }); return this.refreshBatch(first.id); }
     });
   };
 
-  loadBatches = () => this.load("batchList", () => API.get("/screening/batches"));
+  loadBatches = () => {
+    const me = this.state.me, token = this._batchListRequest = {};
+    if (this._gone || !me) return Promise.resolve(null);
+    this._batchPageRequest = null;
+    this.setState({ moreBusy: null });
+    return this.load("batchList", () => API.get("/screening/batches", { timeoutMs: EVAL_TIMEOUT_MS }),
+      () => !this._gone && this.state.me === me && this._batchListRequest === token);
+  };
 
   // Three reads, one batch: detail carries progress, summary carries the
   // whole-batch band counts the header shows, queue carries the ranked page.
@@ -32,18 +44,23 @@
   // "11 on this page".
   refreshBatch = (id) => {
     const batchId = id || this.state.selectedBatch;
-    if (!batchId) return Promise.resolve(null);
+    const me = this.state.me;
+    if (!batchId || this._gone || !me) return Promise.resolve(null);
     // Tracked in an instance field, not state: the guard has to be correct the
     // instant the user clicks, and setState has not flushed by then.
     this._viewBatch = batchId;
-    const still = () => this._viewBatch === batchId;
+    const token = this._batchReadRequest = {};
+    this._batchPageRequest = null;
+    this.setState({ moreBusy: null });
+    const still = () => !this._gone && this.state.me === me && this._viewBatch === batchId
+      && this._batchReadRequest === token;
     return Promise.all([
-      this.load("batch", () => API.get("/screening/batches/" + batchId), still),
-      this.load("summary", () => API.get("/screening/batches/" + batchId + "/summary"), still),
-      this.load("queue", () => API.get("/screening/batches/" + batchId + "/queue"), still)
+      this.load("batch", () => API.get("/screening/batches/" + batchId, { timeoutMs: EVAL_TIMEOUT_MS }), still),
+      this.load("summary", () => API.get("/screening/batches/" + batchId + "/summary", { timeoutMs: EVAL_TIMEOUT_MS }), still),
+      this.load("queue", () => API.get("/screening/batches/" + batchId + "/queue", { timeoutMs: EVAL_TIMEOUT_MS }), still)
     ]);
   };
-  refresh = () => { this.refreshBatch(); };
+  refresh = () => this.state.selectedBatch ? this.refreshBatch() : this.loadScreening();
 
   selectBatch = (id) => () => {
     // Switching batches must not leave the previous one's rows on screen while
@@ -63,16 +80,21 @@
   loadMore = (key, path, field) => () => {
     const held = this.state[key].data;
     const cursor = held && held.next_cursor;
-    if (!cursor || this.state.moreBusy === key) return;
+    const me = this.state.me, batchId = this.state.selectedBatch;
+    if (!cursor || this.state[key].loading || this.state.moreBusy === key || this._gone || !me) return;
+    const token = this._batchPageRequest = {};
+    const still = () => !this._gone && this.state.me === me && this._batchPageRequest === token
+      && this.state[key].data === held && (key !== "queue" || this.state.selectedBatch === batchId);
     this.setState({ moreBusy: key });
-    API.get(path + (path.indexOf("?") === -1 ? "?" : "&") + "cursor=" + encodeURIComponent(cursor)).then(
-      (page) => this.setState((s) => ({
+    API.get(path + (path.indexOf("?") === -1 ? "?" : "&") + "cursor=" + encodeURIComponent(cursor),
+      { timeoutMs: EVAL_TIMEOUT_MS }).then(
+      (page) => { if (still()) this.setState({
         moreBusy: null,
         [key]: { loading: false, error: null, data: Object.assign({}, page, {
-          [field]: ((s[key].data && s[key].data[field]) || []).concat(page[field] || [])
+          [field]: (held[field] || []).concat(page[field] || [])
         }) }
-      })),
-      (err) => this.setState((s) => ({ moreBusy: null, [key]: { loading: false, data: s[key].data, error: err } }))
+      }); },
+      (err) => { if (still()) this.setState({ moreBusy: null, [key]: { loading: false, data: held, error: err } }); }
     );
   };
   moreBatches = this.loadMore("batchList", "/screening/batches", "batches");
@@ -84,6 +106,8 @@
 
   // ── the process driver ────────────────────────────────────────────────────
   screeningErrorCopy = (err) => {
+    if (err && ['batch_read_pending', 'batch_read_capacity_exhausted', 'batch_read_executor_closed'].includes(err.detail))
+      return 'Saved batch views are temporarily unavailable. Wait a moment, then refresh. Refreshing reads saved state and does not start screening.';
     const recovery = ' Wait and refresh the batch. When the row says not screened yet, choose Start screening. Earlier results may already be saved.';
     if (err && err.detail === 'candidate_ingest_pending')
       return 'This upload may still be saving.' + recovery;
@@ -280,6 +304,7 @@
     const sum = st.summary.data;
     const queue = st.queue.data;
     const listed = st.batchList.data;
+    const readError = st.queue.error || st.summary.error || st.batch.error || (!st.selectedBatch && st.batchList.error);
 
     // -- batches -----------------------------------------------------------
     const batchRows = listed && listed.batches ? listed.batches.map((b) => {
@@ -314,7 +339,7 @@
     }) : [];
 
     // -- the selected batch's header ---------------------------------------
-    const counts = (batch && batch.counts) || null;
+    const counts = (batch && batch.counts) || (sum && sum.counts) || null;
     const total = counts ? counts.pending + counts.processing + counts.done + counts.failed : 0;
     const settled = counts ? counts.done + counts.failed : 0;
     const byBand = (sum && sum.by_risk_band) || {};
@@ -367,16 +392,19 @@
     return {
       // -- navigation + shared -------------------------------------------
       refresh: this.refresh,
+      reloadBatches: this.loadBatches,
+      batchReference: st.selectedBatch || "",
+      hasBatchReference: !!st.selectedBatch,
       startProcessing: this.startProcessing, stopProcessing: this.stopProcessing,
       moreBatches: this.moreBatches, moreQueue: this.moreQueue,
 
       // -- batches --------------------------------------------------------
       batchRows,
       batchesLoading: st.batchList.loading,
-      batchesEmpty: !!listed && batchRows.length === 0,
+      batchesEmpty: !!listed && batchRows.length === 0 && !listed.next_cursor,
       batchesError: !!st.batchList.error,
-      batchesErrorText: errorCopy(st.batchList.error),
-      hasMoreBatches: !!(listed && listed.next_cursor),
+      batchesErrorText: this.screeningErrorCopy(st.batchList.error),
+      hasMoreBatches: !!(listed && listed.next_cursor) && !st.batchList.loading,
       moreBatchesLabel: st.moreBusy === "batchList" ? "Loading…" : "Load more batches",
 
       // -- the selected batch ---------------------------------------------
@@ -384,8 +412,12 @@
       // A brand-new organisation has uploaded nothing. That is the correct
       // resting state and the first screen every customer ever sees (UI.md §9)
       // — an empty queue, never an error.
-      noBatch: !st.selectedBatch && !st.batchList.loading && !!listed,
-      batchName: batch ? (batch.name || "Untitled batch") : "No batch selected",
+      noBatch: !st.selectedBatch && !st.batchList.loading && !!listed
+        && !(listed.batches || []).length && !listed.next_cursor,
+      batchDiscoveryMore: !st.selectedBatch && !st.batchList.loading && !!listed
+        && !(listed.batches || []).length && !!listed.next_cursor,
+      batchName: batch ? (batch.name || "Untitled batch") : sum ? (sum.name || "Untitled batch")
+        : st.selectedBatch ? "Batch details unavailable" : "No batch selected",
       batchMeta: batch
         ? fmtDateTime(batch.created_at) + " · " + batch.domain + " · " + total + (total === 1 ? " resume" : " resumes")
         : "",
@@ -397,8 +429,8 @@
       batchFailed: counts ? counts.failed : 0,
       hasFailed: !!(counts && counts.failed > 0),
       queueLoading: st.queue.loading || st.summary.loading,
-      queueError: !!(st.queue.error || st.summary.error || st.batch.error),
-      queueErrorText: errorCopy(st.queue.error || st.summary.error || st.batch.error),
+      queueError: !!readError,
+      queueErrorText: this.screeningErrorCopy(readError),
 
       // -- the driver ------------------------------------------------------
       driving: st.driving,
@@ -429,7 +461,7 @@
       // SCREENING.md §6 states for the curation queue, and keyset paging is
       // stable against inserts, not against re-observation. Each tick reloads
       // page one anyway.
-      hasMoreQueue: !!(queue && queue.next_cursor) && !st.driving,
+      hasMoreQueue: !!(queue && queue.next_cursor) && !st.driving && !st.queue.loading,
       moreQueueLabel: st.moreBusy === "queue" ? "Loading…" : "Load more",
       bandElevated: byBand.elevated || 0,
       bandModerate: byBand.moderate || 0,
