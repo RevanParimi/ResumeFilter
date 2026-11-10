@@ -158,12 +158,13 @@ class ScreeningStore:
         domain: str,
         created_by_org_user_id: Optional[str],
         texts: list[str],
+        batch_id: Optional[str] = None,
     ) -> str:
         """Register a batch and its items. NO evaluation -- a row insert."""
         with self._session_factory() as s:
             generation = self._generation(s, lock=True)
             batch = ScreeningBatchRow(
-                org_id=org_id, name=name, domain=domain,
+                id=batch_id, org_id=org_id, name=name, domain=domain,
                 created_by_org_user_id=created_by_org_user_id,
             )
             s.add(batch)

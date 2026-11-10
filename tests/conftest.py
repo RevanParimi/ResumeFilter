@@ -441,6 +441,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._evaluation_records.close()
     if bundle._batch_reads is not None:
         bundle._batch_reads.close()
+    if bundle._batch_registrations is not None:
+        bundle._batch_registrations.close()
 
 
 @pytest.fixture

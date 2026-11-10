@@ -26,6 +26,78 @@ import tempfile
 import check_ui_screening_browser as browser
 
 
+async def check_batch_registration_workers(tab, scratch, api, files):
+    def count(kind):
+        path = scratch / ('registration-' + kind + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    for ending in ('commit', 'rollback'):
+        assert await tab.js("window.__click('button', 'Upload')")
+        assert await tab.wait("document.querySelector('input[type=file]')", 20)
+        await tab.js("window.__click('button', 'Clear')")
+        await tab.js("window.__click('button', 'Start a fresh registration')")
+        box = await tab.js("document.querySelector('input[type=file]')", by_value=False)
+        await tab.send('DOM.setFileInputFiles', {'files': files[:1], 'objectId': box})
+        name = 'Browser uncertain ' + ending
+        assert await tab.js(f"window.__type('input[placeholder*=intake]', {json.dumps(name)}, 0)")
+        operations, evaluations = count('operations'), count('evaluations')
+        entered, completed = count('entered'), count('completed')
+        (scratch / 'registration-release').unlink(missing_ok=True)
+        (scratch / 'registration-mode').write_text(ending)
+        try:
+            assert await tab.js("window.__click('button', 'Register batch and start screening')")
+            async with asyncio.timeout(10):
+                while count('entered') == entered:
+                    await asyncio.sleep(.01)
+            browser.S.check(ending + ': pending registration renders human recovery and preserves its draft',
+                await tab.wait("window.__has('Registration may still be saving') && window.__has('Batch reference:')", 20)
+                and await tab.js(f"document.querySelector('input[placeholder*=intake]').value === {json.dumps(name)}")
+                and await tab.js("window.__has('file ready') && !document.body.innerText.includes('batch_registration_')"))
+            browser.S.check(ending + ': duplicate registration remains disabled',
+                await tab.js("Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Register batch')).disabled"))
+            peer = api.post('/screening/batches', json={'items': [{'resume_text': 'Synthetic admission payload'}]})
+            browser.S.check(ending + ': actual full admission refuses another registration',
+                peer.status_code == 503 and peer.json() == {'detail': 'batch_registration_capacity_exhausted'})
+            assert await tab.js("window.__click('button', 'Check saved batch')")
+            browser.S.check(ending + ': premature 404 does not unlock registration or lose the reference',
+                await tab.wait("window.__has('does not prove registration failed') && window.__has('Batch reference:')", 20)
+                and await tab.js("Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Register batch')).disabled")
+                and count('operations') == operations + 1 and count('evaluations') == evaluations)
+        finally:
+            (scratch / 'registration-release').touch()
+        async with asyncio.timeout(10):
+            while count('completed') == completed:
+                await asyncio.sleep(.01)
+        (scratch / 'registration-mode').unlink(missing_ok=True)
+        assert await tab.js("window.__click('button', 'Check saved batch')")
+        if ending == 'commit':
+            browser.S.check('late saved registration opens its queue without starting screening',
+                await tab.wait("window.__has('Start screening') && window.__has('Browser uncertain commit')", 20)
+                and count('operations') == operations + 1 and count('evaluations') == evaluations)
+            saved = next(b for b in api.get('/screening/batches').json()['batches'] if b['name'] == name)
+            browser.S.check('late saved registration remains entirely unscreened',
+                api.get('/screening/batches/' + saved['id']).json()['counts'] == {
+                    'pending': 1, 'processing': 0, 'done': 0, 'failed': 0})
+        else:
+            browser.S.check('late rolled-back registration still requires a deliberate fresh action',
+                await tab.wait("window.__has('does not prove registration failed')", 20)
+                and not any(b['name'] == name for b in api.get('/screening/batches').json()['batches'])
+                and count('operations') == operations + 1 and count('evaluations') == evaluations)
+            assert await tab.js("window.__click('button', 'Start a fresh registration')")
+            browser.S.check('fresh action enables submission and preserves files without sending a request',
+                await tab.wait("!document.body.innerText.includes('Batch reference:')", 20)
+                and not await tab.js("Array.from(document.querySelectorAll('button')).find(b => b.innerText.includes('Register batch')).disabled")
+                and count('operations') == operations + 1)
+    evaluations = count('evaluations')
+    await tab.js('window.__registrationReload = true')
+    await tab.send('Page.reload')
+    assert await tab.wait("!window.__registrationReload && document.body.innerText.includes('Sign out')", 40)
+    await tab.js(browser.HELPERS)
+    assert await tab.js("window.__click('button', 'Batches')")
+    browser.S.check('reloaded document discovers the committed registration without screening it',
+        await tab.wait("window.__has('Browser uncertain commit') && !window.__has('Browser uncertain rollback')", 20)
+        and count('evaluations') == evaluations)
+
+
 async def check_batch_read_workers(tab, scratch, api, bid):
     def count(kind):
         path = scratch / ('batch-read-' + kind + '.jsonl')
@@ -159,6 +231,8 @@ async def main():
                 args = ['smoke_r4_s1_t3c:create_candidate_report_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-read-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_read_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--batch-registration-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3d:create_batch_registration_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -179,6 +253,10 @@ async def main():
             if '--batch-read-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS='4', DEE_BATCH_READ_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+            if '--batch-registration-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_REGISTRATION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
@@ -527,6 +605,8 @@ window.fetch = (url, init) => {
                 and api.get(f"/screening/batches/{bid}").status_code == 200)
             if '--batch-read-workers' in sys.argv:
                 await check_batch_read_workers(tab, scratch, api, bid)
+            if '--batch-registration-workers' in sys.argv:
+                await check_batch_registration_workers(tab, scratch, api, files)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)

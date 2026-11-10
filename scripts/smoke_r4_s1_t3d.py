@@ -41,6 +41,137 @@ ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
 
 
+def create_batch_registration_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_batch_registration_smoke_app(base_factory=create_smoke_app)
+
+
+def create_batch_registration_smoke_app(*, base_factory=None):
+    """Controlled real registration SQL, confined to the scratch harness."""
+    from sqlalchemy import event
+    app = (base_factory or sql_app)()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state, mutex = local(), Lock()
+    def record(kind, **values):
+        with mutex, (scratch / ('registration-' + kind + '.jsonl')).open('a') as log:
+            log.write(json.dumps(values) + '\n')
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services, caller = app.state.services, get_ident()
+            pool = services.batch_registrations
+            run, assess = pool.run, app.state.engine.evaluate
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller
+                    state.active, state.held, state.mode = True, False, None
+                    record('operations', batch_id=kwargs['batch_id'])
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        if state.held:
+                            record('completed', batch_id=kwargs['batch_id'])
+                        state.active = False
+                return await run(owned)
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                record('evaluations')
+                return await assess(**kwargs)
+            def sql(conn, cursor, statement, parameters, context, many):
+                mode = scratch / 'registration-mode'
+                if getattr(state, 'active', False) and not state.held and 'screening_erasure_state' in statement.lower() and mode.exists():
+                    state.held, state.mode = True, mode.read_text()
+                    record('entered')
+                    deadline = time.monotonic() + 30
+                    while not (scratch / 'registration-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic registration hold timed out'
+                        time.sleep(.01)
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('registration_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('registration_owner', get_ident()) == get_ident()
+            def commit(session):
+                if getattr(state, 'active', False) and state.mode == 'rollback':
+                    session.flush()
+                    raise RuntimeError('synthetic-private-registration-rollback')
+            listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
+                (services.session_factory, 'after_begin', begin), (services.session_factory, 'after_transaction_end', end),
+                (services.session_factory, 'before_commit', commit)]
+            pool.run, app.state.engine.evaluate = tracked, evaluate
+            for target, name, listener in listeners:
+                event.listen(target, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'registration-release').touch()
+                await pool.aclose()
+                pool.run, app.state.engine.evaluate = run, assess
+                for target, name, listener in listeners:
+                    event.remove(target, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_batch_registration(checks, scratch, control, actor, other):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def count(kind):
+        p = scratch / ('registration-' + kind + '.jsonl')
+        return len(p.read_text().splitlines()) if p.exists() else 0
+    saved = []
+    for ending in ('commit', 'rollback'):
+        (scratch / 'registration-release').unlink(missing_ok=True)
+        (scratch / 'registration-mode').write_text(ending)
+        entered, completed = count('entered'), count('completed')
+        operations, evaluations = count('operations'), count('evaluations')
+        payload = {'name': 'Uncertain ' + ending, 'domain': 'data_eng',
+            'items': [{'resume_text': contract._resume('Synthetic Registration', 'registration@example.in')}] * 2}
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(actor.post, '/screening/batches', json=payload)
+                try:
+                    deadline = time.monotonic() + 10
+                    while count('entered') == entered:
+                        assert time.monotonic() < deadline
+                        time.sleep(.01)
+                    start = time.monotonic()
+                    checks.check(ending + ': held registration leaves unrelated HTTP responsive',
+                        control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                        and time.monotonic() - start < 1)
+                    refused = other.post('/screening/batches', json=payload)
+                    checks.check(ending + ': full admission never creates a peer batch',
+                        require(refused, 503) == {'detail': 'batch_registration_capacity_exhausted'}
+                        and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                    response = pending.result(timeout=5)
+                    detail = require(response, 503)['detail']
+                    bid, path = detail['batch_id'], '/screening/batches/' + detail['batch_id']
+                    checks.check(ending + ': pending response provides only a recovery reference',
+                        set(detail) == {'code', 'batch_id'} and detail['code'] == 'batch_registration_pending'
+                        and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                    checks.check(ending + ': early saved-state read can be absent while registration is live',
+                        actor.get(path).status_code == other.get(path).status_code == 404)
+                finally:
+                    (scratch / 'registration-release').touch()
+        finally:
+            (scratch / 'registration-release').touch()
+        deadline = time.monotonic() + 10
+        while count('completed') == completed:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        (scratch / 'registration-mode').unlink(missing_ok=True)
+        response = actor.get(path)
+        body = require(response, 200 if ending == 'commit' else 404)
+        checks.check(ending + ': late atomic result is recovered without replay or processing',
+            count('operations') == operations + 1 and count('evaluations') == evaluations
+            and (ending != 'commit' or body['counts'] == {'pending': 2, 'processing': 0, 'done': 0, 'failed': 0}))
+        checks.check(ending + ': saved result remains scoped to its author and tenant',
+            other.get(path).status_code == 404 and (ending != 'commit' or bool(body['created_by_org_user_id'])))
+        saved.append((path, response.status_code, body))
+    return saved
+
+
 def create_batch_read_browser_app():
     from smoke_r3_s1_t2 import create_smoke_app
     return create_batch_read_smoke_app(base_factory=create_smoke_app)
@@ -559,6 +690,7 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
+    batch_registrations = '--batch-registration-workers' in sys.argv
     batch_reads = '--batch-read-workers' in sys.argv
     pdf_execution = '--pdf-execution' in sys.argv
     body_limit = "--body-limit" in sys.argv
@@ -592,10 +724,13 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if batch_registrations:
+        env.update(DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_REGISTRATION_WAIT_SECONDS='.5',
+            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if batch_reads:
         env.update(DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_READ_WAIT_SECONDS='.5',
             DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -699,6 +834,7 @@ def run(scratch, url, pg_options):
             checks.check("processing respects configured item bound", first["processed"] == cap and first["remaining"] == 1)
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
+            registrations = check_batch_registration(checks, scratch, control, actor, other) if batch_registrations else []
             batch_views = check_batch_reads(checks, scratch, control, actor, other, path) if batch_reads else []
             saved = {suffix: require(actor.get(path + suffix)) for suffix in ("", "/queue", "/summary")}
             saved_report = require(actor.get(report_path))
@@ -853,6 +989,10 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if batch_registrations:
+                checks.check('late registration commit and rollback survive graceful restart without processing',
+                    all(actor.get(url).status_code == status and require(actor.get(url), status) == body
+                        and other.get(url).status_code == 404 for url, status, body in registrations))
             if batch_reads:
                 checks.check('exact scoped batch views and erased projection survive graceful restart',
                     all(require(actor.get(url)) == body for url, body in batch_views))

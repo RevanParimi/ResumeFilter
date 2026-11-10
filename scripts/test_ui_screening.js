@@ -25,6 +25,97 @@ function pick(c, files) {
   assert.equal(target.value, "");
 }
 
+test('pending registration retains its reference and draft; early 404 and recovery never replay or screen', async () => {
+  const { c, window, calls } = setup();
+  c.state.screen = 'upload';
+  pick(c, [{ name: 'resume.txt', text: 'Synthetic truthful experience' }]);
+  c.state.batchNameInput = 'Keep registration draft';
+  window.VeritasAPI.post = async p => {
+    calls.push(['POST', p]);
+    throw { status: 503, detail: 'batch_registration_pending', batchId: 'saved-reference' };
+  };
+  await c.submitUpload(); await settle();
+  assert.equal(c.state.uploadBatchId, 'saved-reference');
+  assert.equal(c.state.uploadUncertain, true);
+  assert.equal(c.state.files.length, 1);
+  assert.equal(c.state.batchNameInput, 'Keep registration draft');
+  assert.match(c.renderVals().uploadErrorText, /may still be saving.*check saved batch/i);
+  assert.equal(c.renderVals().uploadDisabled, true);
+  await c.submitUpload(); await settle();
+  const get = window.VeritasAPI.get;
+  window.VeritasAPI.get = async () => { throw { status: 404, detail: 'batch not found' }; };
+  await c.checkUploadBatch();
+  assert.equal(c.state.uploadUncertain, true);
+  assert.equal(c.state.uploadBatchId, 'saved-reference');
+  assert.match(c.renderVals().uploadErrorText, /does not prove.*failed/i);
+  window.VeritasAPI.get = get;
+  await c.checkUploadBatch(); await settle();
+  assert.equal(c.state.selectedBatch, 'saved-reference');
+  assert.equal(c.state.screen, 'queue');
+  assert.equal(c.state.files.length, 1);
+  assert.equal(calls.filter(x => x[0] === 'POST').length, 1);
+  c.handleSessionLost();
+  assert.equal(c.state.uploadBatchId, null);
+  assert.equal(c.state.uploadUncertain, false);
+});
+
+test('API preserves the pending batch ID while keeping structured details out of copy', async () => {
+  const ctx = { location: { search: '' }, document: { cookie: '' }, localStorage: { getItem: () => null },
+    fetch: async () => ({ ok: false, status: 503, headers: { get: () => 'application/json' },
+      json: async () => ({ detail: { code: 'batch_registration_pending', batch_id: 'pending-id' } }) }) };
+  new Function('window', require('node:fs').readFileSync(require('node:path').join(__dirname, '../frontend/api.js'), 'utf8'))(ctx);
+  await assert.rejects(ctx.VeritasAPI.post('/screening/batches', {}), err =>
+    err.detail === 'batch_registration_pending' && err.batchId === 'pending-id');
+});
+
+for (const detail of ['batch_registration_capacity_exhausted', 'batch_registration_executor_closed', 'network', 'server_error']) {
+  test('registration refusal/uncertainty retains draft without automatic replay: ' + detail, async () => {
+    const { c, window, calls } = setup();
+    c.state.screen = 'upload';
+    pick(c, [{ name: 'resume.txt', text: 'Synthetic truthful experience' }]);
+    window.VeritasAPI.post = async p => { calls.push(['POST', p]); throw {
+      status: detail === 'network' ? 0 : 503, detail }; };
+    await c.submitUpload();
+    const uncertain = ['network', 'server_error'].includes(detail);
+    assert.equal(c.state.uploadUncertain, uncertain);
+    assert.equal(c.state.files.length, 1);
+    assert.doesNotMatch(c.renderVals().uploadErrorText, /batch_registration_/);
+    if (uncertain) {
+      assert.match(c.renderVals().uploadErrorText, /open Batches.*duplicate/i);
+      await c.submitUpload();
+      assert.equal(calls.length, 1);
+      c.freshUpload();
+    }
+    await c.submitUpload();
+    assert.equal(calls.length, 2);
+  });
+}
+
+for (const change of ['account', 'navigation', 'roundtrip', 'files', 'unmount']) {
+  test('late registration success cannot screen after ' + change, async () => {
+    const { c, window, calls } = setup();
+    c.state.screen = 'upload';
+    pick(c, [{ name: 'resume.txt', text: 'Synthetic truthful experience' }]);
+    let resolve;
+    window.VeritasAPI.post = p => { calls.push(['POST', p]); return new Promise(ok => { resolve = ok; }); };
+    const pending = c.submitUpload(); await settle();
+    await c.submitUpload();
+    assert.equal(calls.length, 1);
+    if (change === 'account') { c.handleSessionLost(); c.state.me = { kind: 'org' }; }
+    if (change === 'navigation') c.state.screen = 'batches';
+    if (change === 'roundtrip') { c.goBatches(); c.goUpload(); }
+    if (change === 'files') c.clearFiles();
+    if (change === 'unmount') c._gone = true;
+    resolve(batch('saved')); await pending;
+    assert.equal(calls.filter(x => x[0] === 'POST').length, 1);
+    assert.equal(c.state.selectedBatch, null);
+    if (['navigation', 'roundtrip', 'files'].includes(change)) {
+      assert.equal(c.state.uploadBatchId, 'saved');
+      assert.equal(c.state.uploadUncertain, true);
+    } else assert.equal(c.state.uploadBatchId, null);
+  });
+}
+
 for (const detail of ['batch_read_pending', 'batch_read_capacity_exhausted', 'batch_read_executor_closed']) {
   test('bounded batch read refusal preserves reference/draft and recovers only by GET: ' + detail, async () => {
     const { c, window, calls } = setup();

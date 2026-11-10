@@ -695,7 +695,7 @@
             </div>
 
             <div style="max-width:640px; display:flex; align-items:center; gap:10px; margin-top:14px;">
-              <button onClick="{{ submitUpload }}" style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">{{ uploadLabel }}</button>
+              <button onClick="{{ submitUpload }}" disabled="{{ uploadDisabled }}" style="{{ smallPrimaryFlat }}" style-hover="filter:brightness(1.08)">{{ uploadLabel }}</button>
               <sc-if value="{{ hasFiles }}" hint-placeholder-val="{{ false }}">
                 <button onClick="{{ clearFiles }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Clear</button>
                 <span style="font-size:11.5px; color:var(--muted);">{{ fileCountLabel }}</span>
@@ -704,6 +704,14 @@
 
             <sc-if value="{{ uploadError }}" hint-placeholder-val="{{ false }}">
               <div style="{{ uploadErrorBox }}">{{ uploadErrorText }}</div>
+            </sc-if>
+            <sc-if value="{{ uploadUncertain }}">
+              <p>Check saved batches before registering again. A fresh registration can create a duplicate.</p>
+              <sc-if value="{{ uploadHasReference }}">
+                <p>Batch reference: {{ uploadReference }}</p>
+                <button onClick="{{ checkUploadBatch }}" disabled="{{ uploadCheckBusy }}" style="{{ smallGhost }}">Check saved batch</button>
+              </sc-if>
+              <button onClick="{{ freshUpload }}" disabled="{{ uploadCheckBusy }}" style="{{ smallGhost }}">Start a fresh registration</button>
             </sc-if>
 
             <h2 style="{{ h2 }}">What happens next</h2>
@@ -1783,6 +1791,7 @@ class Component extends window.VeritasEmployerRoles(
     driving: false, driveError: null, driveDone: 0, driveFailed: 0,
     // upload
     files: [], uploadBusy: false, uploadError: null, uploadNotice: null,
+    uploadUncertain: false, uploadBatchId: null, uploadCheckBusy: false,
     batchNameInput: "",
     // the outcome loop (S8.5) — the customer's own judgment on a report
     outcomeNotes: "", outcomeBusy: null, outcomeError: null, outcomeNeedsRefresh: false, outcomeHistoryReloaded: false };
@@ -1840,6 +1849,7 @@ class Component extends window.VeritasEmployerRoles(
   }
 
   handleSessionLost = () => {
+    this._uploadRequest = this._uploadCheckRequest = null;
     this._batchListRequest = this._batchReadRequest = this._batchPageRequest = null;
     this._viewBatch = null;
     this._sessionAction = null;
@@ -1862,6 +1872,8 @@ class Component extends window.VeritasEmployerRoles(
     this._usersAction = null;
     this.clearReportLocation();
     this.setState({
+      files: [], batchNameInput: '', uploadBusy: false, uploadError: null, uploadNotice: null,
+      uploadUncertain: false, uploadBatchId: null, uploadCheckBusy: false,
       evalText: "", evalFile: null, evalGithub: "", evalPortfolio: "",
       evalBusy: false, evalProgress: "", evalError: null, evalReportId: null, evalPublicationPending: false,
       contactList: IDLE, contactMethod: "otp_email", contactDestination: "", contactCode: "",
@@ -1925,6 +1937,8 @@ class Component extends window.VeritasEmployerRoles(
   });
 
   nav = (screen) => () => {
+    if (this._uploadRequest) this._uploadRequest.navigated = true;
+    if (this._uploadCheckRequest) this._uploadCheckRequest.navigated = true;
     if (screen !== "interview") this.clearInterview();
     this._viewReport = null;
     if (screen !== "curation") this.clearCuration();

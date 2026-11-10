@@ -121,7 +121,7 @@
     if (!body || typeof body !== "object") return String(body || "");
     var d = body.detail;
     if (typeof d === "string") return d;
-    if (d && d.code === "evaluation_record_pending") return d.code;
+    if (d && ["evaluation_record_pending", "batch_registration_pending"].includes(d.code)) return d.code;
     if (Array.isArray(d)) {
       return d
         .map(function (item) {
@@ -219,6 +219,10 @@
             if (res.status === 503 && detail === "evaluation_record_pending" && parsed &&
                 parsed.detail && typeof parsed.detail.report_id === "string") {
               error.reportId = parsed.detail.report_id;
+            }
+            if (res.status === 503 && detail === "batch_registration_pending" && parsed &&
+                parsed.detail && typeof parsed.detail.batch_id === "string") {
+              error.batchId = parsed.detail.batch_id;
             }
             throw error;
           });

@@ -6,6 +6,7 @@ Candidate intake and human-outcome contracts retain their existing API owners.
 from __future__ import annotations
 
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
@@ -203,13 +204,24 @@ async def create_screening_batch(
 ) -> BatchDetail:
     services = _services(request)
     texts = await _batch_texts(req, services.settings, services.pdf)
+    batch_id = str(uuid4())
     try:
-        return services.screening.register(
+        detail = await services.batch_registrations.run(services.screening.register,
             org_id, name=req.name, domain=req.domain, texts=texts,
             created_by_org_user_id=_org_user_id(request),
+            batch_id=batch_id,
         )
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503,
+            detail={'code': 'batch_registration_pending', 'batch_id': batch_id},
+            headers={'Retry-After': '1'}) from None
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if detail is None:
+        raise HTTPException(status_code=404, detail='batch not found')
+    return detail
 
 
 @org_router.get(

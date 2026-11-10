@@ -13,6 +13,8 @@
   _batchListRequest = null;
   _batchReadRequest = null;
   _batchPageRequest = null;
+  _uploadRequest = null;
+  _uploadCheckRequest = null;
   // ── screening ─────────────────────────────────────────────────────────────
   // Opening the queue with no batch chosen picks the newest, because the list
   // is newest-first server-side. An org that has uploaded nothing lands on an
@@ -243,7 +245,43 @@
       + " — nothing was registered. Fix or remove that file and upload again.";
   };
 
+  uploadErrorCopy = (err) => {
+    if (this.state.uploadUncertain) {
+      const recovery = this.state.uploadBatchId
+        ? ' Check saved batch after waiting.' : ' Wait, then open Batches to look for the saved registration.';
+      if (err && err.status === 404)
+        return 'This batch is not visible yet. That does not prove registration failed.' + recovery;
+      return 'Registration may still be saving.' + recovery
+        + ' Checking saved state does not start screening. A fresh registration can create a duplicate.';
+    }
+    if (err && ['batch_registration_capacity_exhausted', 'batch_registration_executor_closed'].includes(err.detail))
+      return 'Registration is temporarily unavailable. Nothing was registered by this request. Wait, then try again.';
+    return errorCopy(err);
+  };
+  freshUpload = () => {
+    if (this._uploadRequest || this.state.uploadCheckBusy) return;
+    this._uploadCheckRequest = null;
+    this.setState({ uploadUncertain: false, uploadBatchId: null, uploadError: null });
+  };
+  checkUploadBatch = async () => {
+    const id = this.state.uploadBatchId, me = this.state.me, screen = this.state.screen;
+    if (!id || !me || this._gone || this.state.uploadCheckBusy) return;
+    const token = this._uploadCheckRequest = {};
+    const still = () => !this._gone && this.state.me === me && this._uploadCheckRequest === token
+      && this.state.uploadBatchId === id;
+    this.setState({ uploadCheckBusy: true });
+    try {
+      await API.get('/screening/batches/' + encodeURIComponent(id), { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!still()) return;
+      this.setState({ uploadCheckBusy: false, uploadError: null });
+      if (this.state.screen === screen && !token.navigated) this.selectBatch(id)();
+    } catch (err) {
+      if (still()) this.setState({ uploadCheckBusy: false, uploadError: err });
+    }
+  };
+
   submitUpload = () => {
+    if (this._gone || !this.state.me || this._uploadRequest || this.state.uploadUncertain) return;
     const files = this.state.files;
     if (!files.length) { this.setState({ uploadError: { detail: "Choose at least one resume." } }); return; }
     const bad = files.filter((f) => f.kind === "unsupported");
@@ -252,9 +290,15 @@
         "This API reads PDF and plain text only. Remove: " + bad.map((f) => f.name).join(", ") } });
       return;
     }
+    const me = this.state.me, screen = this.state.screen;
+    const name = this.state.batchNameInput, domain = this.state.domain;
+    const token = this._uploadRequest = {};
+    const still = () => !this._gone && this.state.me === me && this._uploadRequest === token;
     this.setState({ uploadBusy: true, uploadError: null, uploadNotice: null });
-    Promise.all(files.map(this._readFile))
+    let sent = false;
+    return Promise.all(files.map(this._readFile))
       .then((items) => {
+        if (!still()) return null;
         // An EMPTY text file passes every check above and then fails Pydantic's
         // "at least one of resume_text/resume_pdf_b64" as a VALIDATION error —
         // a list-shaped detail carrying a field path, not the readable
@@ -265,13 +309,22 @@
         if (empties.length) {
           throw { local: true, detail: "Nothing to screen in: " + empties.join(", ") };
         }
+        sent = true;
         return API.post("/screening/batches", {
-          name: (this.state.batchNameInput || "").trim(),
-          domain: this.state.domain,
+          name: (name || "").trim(),
+          domain,
           items
         });
       })
       .then((batch) => {
+        if (!still() || !batch) return;
+        this._uploadRequest = null;
+        if (token.navigated || this.state.screen !== screen || this.state.files !== files
+            || this.state.batchNameInput !== name || this.state.domain !== domain) {
+          this.setState({ uploadBusy: false, uploadUncertain: true, uploadBatchId: batch.id,
+            uploadError: { detail: 'saved_batch_available' } });
+          return;
+        }
         // Registering N resumes is an unambiguous instruction to screen them,
         // so the driver starts here — and ONLY here. Merely opening a batch
         // with pending items must never trigger billed work (spec 0.3).
@@ -285,11 +338,17 @@
         window.scrollTo(0, 0);
       })
       .catch((err) => {
+        if (!still()) return;
+        this._uploadRequest = null;
         // A 401 has already sent the user to login; anything on top of that
         // would be a second explanation for one event.
         if (err && err.kind === "session_lost") { this.setState({ uploadBusy: false }); return; }
+        const uncertain = sent && (!err || err.detail === 'batch_registration_pending'
+          || !err.status || err.status >= 500) && !(err &&
+            ['batch_registration_capacity_exhausted', 'batch_registration_executor_closed'].includes(err.detail));
         this.setState({
           uploadBusy: false,
+          uploadUncertain: !!uncertain, uploadBatchId: (err && err.batchId) || null,
           uploadError: err && err.local ? err
             : Object.assign({}, err, { detail: this._nameIndex(err && err.detail, files) })
         });
@@ -502,8 +561,14 @@
       pickFiles: this.pickFiles, clearFiles: this.clearFiles, submitUpload: this.submitUpload,
       batchNameInput: st.batchNameInput, setBatchNameInput: this.setBatchNameInput,
       uploadLabel: st.uploadBusy ? "Registering…" : "Register batch and start screening",
+      uploadDisabled: !!(st.uploadBusy || st.uploadUncertain),
+      uploadUncertain: !!st.uploadUncertain,
+      uploadHasReference: !!st.uploadBatchId,
+      uploadReference: st.uploadBatchId || '',
+      uploadCheckBusy: !!st.uploadCheckBusy,
+      checkUploadBatch: this.checkUploadBatch, freshUpload: this.freshUpload,
       uploadError: !!st.uploadError,
-      uploadErrorText: errorCopy(st.uploadError),
+      uploadErrorText: this.uploadErrorCopy(st.uploadError),
       uploadErrorBox: ERROR_BOX
     };
   }

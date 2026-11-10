@@ -677,8 +677,8 @@ red/focused/full, actual PG competing SQL, two-actor HTTP/restart, batch Chrome
 and both reviews; no durable worker or implicit process retry.
 
 Split before implementation because reads, registration and retry/delete have
-distinct admission and recovery contracts. Only A is this session's task; D4
-remains open until A-C and Q close.
+distinct admission and recovery contracts. A/B are complete; C/Q remain open.
+D4 remains open until A-C and Q close.
 
 **<a id="r4-s2-t3c3d4a"></a>R4-S2-T3C3D4A - Bound batch view reads**
 
@@ -698,12 +698,18 @@ closes; exact next is B in a separate session. D4 and broader parents remain ope
 
 **<a id="r4-s2-t3c3d4b"></a>R4-S2-T3C3D4B - Bound batch registration**
 
-Status: pending. Prerequisite: A. Keep transport/PDF decoding on its existing
-caller; bound complete validation/create/detail work. Preserve all-or-nothing
-registration, tenant/author provenance, caps and retention. Define pending-ID
-recovery before implementation; uncertain registration must not replay or auto-
-process. Require real PG late commit/rollback, migrated HTTP/restart, registration
-Chrome, red/focused/full and both reviews. No durable continuation.
+Status: done (2026-11-10). Prerequisite: A, published at `9e3ea7f`.
+[B contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d4b) owns the pre-implementation
+scope, red/green, review findings/resolutions and final checks. Transport/PDF
+decoding retains its caller; complete service validation/create/detail uses a
+separate owning-session pool. Pending server batch IDs support explicit GET-only
+recovery without registration or processing replay. Atomic creation, provenance,
+caps/generation/retention, auth/CSRF and success DTOs remain. No schema or durable
+continuation change. Full/actual PG locks and late commit/rollback, two-actor
+migrated HTTP/restart, registration Chrome, static checks and implementation
+self-review are recorded, including the distinct final staged self-review after
+completion. Scoped publication follows. Only B closes; exact next is C in a separate
+session. D4/Q, D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d4c"></a>R4-S2-T3C3D4C - Bound batch retry and deletion**
 

@@ -295,5 +295,14 @@ remain snapshots. Human refusal guidance and visible GET recovery preserve the
 selected reference/draft without starting screening. Account/refresh/page guards
 reject late callbacks and paging waits for the current base read. The
 [batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
-and limits. Registration/retry/delete, processing and combined acceptance remain
-D4B/C/Q and D5-D6/Q; D4 and broader parents remain open.
+and limits. Retry/delete, processing and combined acceptance remain
+D4C/Q and D5-D6/Q; D4 and broader parents remain open.
+
+[R4-S2-T3C3D4B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) bounds complete
+batch registration separately from PDF decoding and batch views. Uncertain
+registration returns a server batch reference; the UI retains drafts and uses
+explicit saved-state reads, with no automatic registration or processing replay.
+Only confirmed initial success on the same account, screen and draft starts
+screening. The [registration budget](OPERATING.md#batch-registration-execution-budget)
+owns defaults, recovery behavior and limitations. Validation status belongs to
+the linked task evidence; broader D4 work remains open.

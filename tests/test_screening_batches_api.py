@@ -24,6 +24,38 @@ BATCH_READS = [
 ]
 
 
+async def test_batch_registration_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume):
+    from threading import Event
+    from sqlalchemy import event
+    engine, factory = database
+    services, _, key, _, _, _, _ = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'insert into screening_batches' in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/screening/batches', headers={'X-Org-Key': key},
+                    json={'name': 'Responsive registration', 'items': [{'resume_text': genuine_resume}]}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'batch registration SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
 def _batch_read_setup(settings, factory, resume):
     from app.candidates.store import CandidateStore
     from tests.conftest import make_services
@@ -34,6 +66,180 @@ def _batch_read_setup(settings, factory, resume):
         return services.screening.register(owner, name=name, domain='genai',
             texts=[resume + f'\nSynthetic item {i}' for i in range(2)], created_by_org_user_id=None).id
     return services, org, key, register(org, 'Owned batch'), other, other_key, register(other, 'Kept batch')
+
+
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'rollback'])
+async def test_batch_registration_admission_and_owning_sessions(database, settings, genuine_resume, monkeypatch, log_output, ending):
+    from threading import Event, get_ident, current_thread
+    from sqlalchemy import event
+    engine, factory = database
+    settings.batch_registration_max_concurrent_requests = 1
+    settings.batch_registration_wait_seconds = .2 if ending in ('timeout', 'rollback') else 20
+    services, _, key, _, other, other_key, kept = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release = Event(), Event()
+    caller, calls, sql_threads = get_ident(), [], set()
+    original = services.screening.register
+    def register(*args, **kwargs):
+        calls.append((get_ident(), kwargs['batch_id']))
+        entered.set()
+        assert release.wait(10)
+        return original(*args, **kwargs)
+    def begin(session, transaction, conn):
+        assert session.info.setdefault('registration_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('batch-registration'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('registration_owner', get_ident()) == get_ident()
+    def commit(session):
+        if ending == 'rollback' and current_thread().name.startswith('batch-registration'):
+            session.flush()
+            raise RuntimeError('synthetic-private-registration-rollback')
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(services.screening, 'register', register)
+            for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+                event.listen(factory, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                payload = {'name': 'Uncertain batch', 'domain': 'data_eng', 'items': [{'resume_text': genuine_resume}] * 2}
+                pending = asyncio.create_task(http.post('/screening/batches', json=payload, headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == 200
+                    # Read admission remains available while registration is full.
+                    assert (await http.get('/screening/batches/' + kept, headers={'X-Org-Key': other_key})).status_code == 200
+                    refused = await http.post('/screening/batches', json=payload, headers={'X-Org-Key': other_key})
+                    assert refused.status_code == 503 and refused.json() == {'detail': 'batch_registration_capacity_exhausted'}
+                    assert refused.headers['retry-after'] == '1' and 'set-cookie' not in refused.headers
+                    if ending in ('timeout', 'rollback'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': {
+                            'code': 'batch_registration_pending', 'batch_id': calls[0][1]}}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert len(services.batch_registrations._active) == 1
+                finally:
+                    release.set()
+                    results = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_registrations._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0][0] != caller and sql_threads == {calls[0][0]}
+                path = '/screening/batches/' + calls[0][1]
+                saved = await http.get(path, headers={'X-Org-Key': key})
+                assert saved.status_code == (404 if ending == 'rollback' else 200)
+                if ending != 'rollback':
+                    assert saved.json()['counts'] == {'pending': 2, 'processing': 0, 'done': 0, 'failed': 0}
+                    assert saved.json()['domain'] == 'data_eng' and saved.json()['created_by_org_user_id'] is None
+                    if ending == 'release':
+                        assert results[0].json() == saved.json()
+                foreign = await http.get(path, headers={'X-Org-Key': other_key})
+                absent = await http.get('/screening/batches/missing', headers={'X-Org-Key': other_key})
+                assert foreign.status_code == absent.status_code == 404 and foreign.json() == absent.json()
+                assert services.screening.get(other, kept).counts.pending == 2
+                assert len(calls) == 1
+                services.batch_registrations.close()
+                refused = await http.post('/screening/batches', json=payload, headers={'X-Org-Key': key})
+                assert refused.status_code == 503 and refused.json() == {'detail': 'batch_registration_executor_closed'}
+                assert refused.headers['retry-after'] == '1'
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-registration-rollback' not in log_output.text
+
+
+@pytest.mark.parametrize('ending', ['commit', 'rollback'])
+async def test_batch_registration_real_sql_lock_late_atomic_result(database, settings, genuine_resume, ending):
+    from threading import Event, current_thread
+    from sqlalchemy import event, text, select, func
+    from app.screening.models import ScreeningBatchRow
+    engine, factory = database
+    settings.batch_registration_max_concurrent_requests = 1
+    settings.batch_registration_wait_seconds = .2
+    services, org, key, _, _, other_key, _ = _batch_read_setup(settings, factory, genuine_resume)
+    entered, proceed, pids = Event(), Event(), []
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'screening_erasure_state' in statement.lower() and current_thread().name.startswith('batch-registration') and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    def commit(session):
+        if ending == 'rollback' and current_thread().name.startswith('batch-registration'):
+            session.flush()  # Prove the real insert and all child inserts roll back.
+            raise RuntimeError('synthetic-private-registration-rollback')
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(factory, 'before_commit', commit)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/screening/batches', headers={'X-Org-Key': key},
+                    json={'name': 'Locked registration', 'items': [{'resume_text': genuine_resume}] * 2}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE')
+                    else:
+                        blocker.execute(text('LOCK TABLE screening_batches IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    assert (await http.get('/healthz')).status_code == 200
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503
+                    detail = response.json()['detail']
+                    assert detail['code'] == 'batch_registration_pending'
+                    bid = detail['batch_id']
+                    assert len(services.batch_registrations._active) == 1
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_registrations._active:
+                            await asyncio.sleep(.01)
+                saved = await http.get('/screening/batches/' + bid, headers={'X-Org-Key': key})
+                assert saved.status_code == (200 if ending == 'commit' else 404)
+                if ending == 'commit':
+                    assert saved.json()['counts'] == {'pending': 2, 'processing': 0, 'done': 0, 'failed': 0}
+                assert (await http.get('/screening/batches/' + bid, headers={'X-Org-Key': other_key})).status_code == 404
+                with factory() as session:
+                    assert session.scalar(select(func.count()).select_from(ScreeningBatchRow).where(ScreeningBatchRow.id == bid)) == int(ending == 'commit')
+                    assert session.scalar(select(func.count()).select_from(BatchItemRow).where(BatchItemRow.batch_id == bid)) == (2 if ending == 'commit' else 0)
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql), (factory, 'before_commit', commit)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+        await services.aclose()
+
+
+def test_batch_registration_observed_deletion_returns_absent_not_assertion(services, genuine_resume, monkeypatch):
+    _, key = _key(services)
+    create = services.screening._store.create_batch
+    def deleted(org_id, **kwargs):
+        bid = create(org_id, **kwargs)
+        assert services.screening._store.delete_batch(org_id, bid)
+        return bid
+    monkeypatch.setattr(services.screening._store, 'create_batch', deleted)
+    with _client(services) as http:
+        response = _register(http, key, [genuine_resume])
+        assert response.status_code == 404 and response.json() == {'detail': 'batch not found'}
 
 
 @pytest.mark.parametrize('case,path,method', BATCH_READS, ids=[row[0] for row in BATCH_READS])

@@ -67,7 +67,8 @@ class ScreeningService:
         domain: str,
         texts: list[str],
         created_by_org_user_id: Optional[str],
-    ) -> BatchDetail:
+        batch_id: Optional[str] = None,
+    ) -> Optional[BatchDetail]:
         """Register items. NO evaluation -- see spec §0.3: there is no worker
         anywhere in app/, and 500 nine-node graph runs cannot happen inside one
         request."""
@@ -87,10 +88,10 @@ class ScreeningService:
         batch_id = self._store.create_batch(
             org_id, name=name, domain=domain,
             created_by_org_user_id=created_by_org_user_id, texts=validated,
+            batch_id=batch_id,
         )
-        detail = self.get(org_id, batch_id)
-        assert detail is not None  # just created, by this org
-        return detail
+        # Concurrent deletion/ownership loss can follow the acknowledged commit.
+        return self.get(org_id, batch_id)
 
     # ── reads ───────────────────────────────────────────────────────────────
 

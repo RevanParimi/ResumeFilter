@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-10 - R4-S2-T3C3D4B complete; bounded batch registration.**
+  Complete validation/create/detail uses a separate owning-session pool while
+  transport/PDF retains its caller. Pending batch references support explicit
+  GET-only recovery without registration or screening replay; account/draft/
+  navigation guards prevent stale success from starting work. The
+  [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) owns the contract, red/green,
+  review resolutions, final full/actual PG/HTTP/restart/Chrome/static checks and
+  interrupted attempts. Working DB/unrelated files preserved, demo untouched,
+  both owned PG instances stopped. Distinct final staged self-review is recorded;
+  scoped publication follows. Next: D4C in a separate session; D4 and broader
+  parents remain open.
+
 - **Session 2026-11-10 - R4-S2-T3C3D4A complete; bounded batch view reads.**
   Split D4 before implementation; only A closes. Detail/list/queue/summary use
   a separate owning-session pool, final batch visibility and preserved cursors.

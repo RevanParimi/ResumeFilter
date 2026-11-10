@@ -554,8 +554,45 @@ later erasure or updates. Pagination, retention, private projections and advisor
 semantics remain. Manual UI recovery preserves selection/reference and drafts,
 only GETs saved state and never starts screening. Initial detail/list/discovery
 failures retain visible recovery; old account/refresh/page replies cannot replace
-new state. Paging waits for a pending base refresh. Registration, retry/delete
-and processing SQL remain D4B/C and D5-D6; D4 and broader parents stay open.
+new state. Paging waits for a pending base refresh. Registration has a separate
+budget below; retry/delete and processing SQL remain D4C and D5-D6 work.
+
+### Batch registration execution budget
+
+`batch_registration_max_concurrent_requests` defaults to **2** per Services/app
+process; `batch_registration_wait_seconds` defaults to finite positive **20
+seconds**. Configure YAML or `DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS` /
+`DEE_BATCH_REGISTRATION_WAIT_SECONDS`, then restart. A separate queue-free pool
+runs complete service validation, atomic batch/items creation and final scoped
+detail reads. Transport/body checks and PDF decoding retain their existing
+callers and limits. Auth/CSRF and provider execution are not moved into a SQL
+session; registration does not evaluate resumes. Direct synchronous callers own
+their scheduling. Author/tenant provenance, item caps, input generation, retention
+and success DTOs remain unchanged. There is no new schema or durable continuation.
+
+Full/closed admission returns **503** `batch_registration_capacity_exhausted` /
+`batch_registration_executor_closed`, before registration starts. Wait expiry
+returns **503** with `detail: {code: "batch_registration_pending", batch_id: ...}`.
+All carry `Retry-After: 1`. The server allocates the UUID before admission and
+uses it for that insert; it is a scoped recovery reference, not a client
+idempotency key. Accepted work retains its slot until actual completion even
+after timeout/cancellation/late failure. Shutdown drains it before SQL disposal.
+These are per-process admission/wait budgets, not global SQL/auth, whole-request,
+transport/PDF, driver, drain or memory deadlines.
+
+For uncertain registration, wait and GET `/screening/batches/{batch_id}` or list
+saved batches. An early 404 does not prove rollback: a late commit may still
+appear. Never replay the POST or automatically process it. The UI preserves
+files/name/reference, blocks duplicate submission and offers **Check saved
+batch**, which only reads saved state and opens the queue. Explicit **Start a
+fresh registration** preserves the draft and warns that a duplicate is possible.
+Network/5xx uncertainty without an ID points to Batches. Account changes discard
+recovery/input state; stale callbacks cannot restore it. Navigation or changed
+drafts prevent late initial success from starting screening. Only confirmed
+initial success on the same account, screen and draft can start it. References
+and files are not persisted in browser storage; reload discovers saved batches
+without starting work. Final detail/scope checks are snapshots, not locks over
+later deletion or delivery. D4C/Q and D5-D6/Q remain open.
 
 ### Dual scoping: all scopes counted, any denial denies
 

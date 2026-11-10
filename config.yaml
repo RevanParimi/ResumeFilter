@@ -303,6 +303,8 @@ evaluation_record_max_concurrent_requests: 2 # standalone report save and final 
 evaluation_record_wait_seconds: 20.0        # pending report ID supports read-only recovery
 batch_read_max_concurrent_requests: 4       # three parallel queue reads plus batch-list discovery
 batch_read_wait_seconds: 20.0               # complete scoped view; late reads keep admission
+batch_registration_max_concurrent_requests: 2 # complete validation, creation and scoped detail
+batch_registration_wait_seconds: 20.0       # pending batch ID supports GET-only recovery
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

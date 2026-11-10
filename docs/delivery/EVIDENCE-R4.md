@@ -11170,3 +11170,222 @@ application rerun. No local logs, credentials, runtimes or working data are in
 scope. This is same-agent self-review, not independent review or live-provider
 quality validation. Scoped commit/push and remote verification follow; stop
 after publication with D4B next in a separate session.
+
+### <a id="r4-s2-t3c3d4b"></a>R4-S2-T3C3D4B - Bound batch registration
+
+Started 2026-11-10 at published A baseline `9e3ea7f`; this session's only task.
+[PI status/contract](PI-R4.md#r4-s2-t3c3d4b) and
+[operating budget](../../OPERATING.md#batch-registration-execution-budget).
+Required final regression/database validation is initially pending; results and
+completion review are recorded below as they finish. D4C/Q, D5-D6/Q, C3D and
+broader parents stay open.
+
+**Acceptance and implementation.** The pre-implementation contract was written
+in the PI before code changes and consolidated here at closure.
+`/screening/batches` keeps transport/PDF
+decoding on the existing async caller, then submits complete service validation,
+atomic batch/items creation and final scoped detail to a separate
+`batch_registration` pool. Defaults: two accepted operations and finite positive
+20-second caller wait, configurable through YAML/environment. Each complete SQL
+session remains on its worker, including post-commit refreshes. No provider or
+coroutine runs inside a SQL session. Direct synchronous callers retain their
+existing scheduling responsibility. There is no schema, success DTO, auth/CSRF,
+provenance, item-cap, input-generation, retention or scoring change.
+
+The handler allocates a server UUID before admission and passes it through the
+existing insert; this is a recovery reference, not a client idempotency key.
+Full/closed admission returns safe 503 strings before registration runs; pending
+returns 503 with only `{code: batch_registration_pending, batch_id: <uuid>}`.
+All carry `Retry-After: 1`. Accepted work keeps its slot through actual completion
+after timeout/cancellation/late failure; shutdown joins it before SQL disposal.
+A final observed deletion/ownership loss returns generic 404 rather than an
+assertion. Creation remains all-or-nothing, while the later detail read is a
+separate snapshot and can observe concurrent removal.
+
+The client preserves files/name and pending reference, blocks duplicate submit,
+and offers **Check saved batch** (GET only) and deliberate **Start a fresh
+registration** with a duplicate warning. A premature 404 cannot prove rollback;
+it keeps the guard/reference. Generic network/5xx uncertainty also blocks replay
+and points to Batches if no ID arrived. Saved-state recovery never starts
+screening. Only confirmed initial success on the same account, screen and draft
+starts the existing driver. Navigation, including away-and-back, prevents late
+success from starting it. Account loss discards files/reference and rejects stale
+callbacks. Reload discovers saved batches without automatic processing; sensitive
+inputs/references are not added to browser storage. There is no durable
+continuation, global resource deadline or new idempotency promise.
+
+**Red/green and focused evidence.** Commands use `.resume/Scripts/python.exe`.
+Ignored sanitized runner `.pytest_cache/run_r4_s2_t3c3d4b.py <tag> <Python args>`
+clears inherited DEE values, supplies no-config/no-key/null-mail settings and logs
+locally; omitted Python args run `-m pytest -q --tb=short`. `baseline` hashes all
+734 tracked files for preservation. No working storage or demo was used.
+
+- `red -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+  registration_sql`: **1 intended failure, 1 PG environment skip, 103
+  deselected, 1 warning**. Held INSERT SQL blocked the request loop until the
+  release guard expired; unrelated health/admin requests only ran afterwards.
+- `node --test --test-name-pattern="pending registration retains"
+  scripts/test_ui_screening.js`: **1 intended failure**; the pending reference
+  was undefined. These are behavioral reproductions, not fixture/import failures.
+- `green` with the same SQL selection: **1 passed, 1 skipped, 103 deselected**.
+  `registration ... -k registration`: **8 passed, 7 skipped, 102 deselected,
+  1 warning**. Worker/session ownership, shared full/closed admission, independent
+  read admission, cancellation/late success/rollback, safe errors and real SQLite
+  lock/atomic-result assertions pass. PG skips are not PG evidence.
+- `focused -m pytest -q --tb=short` over `tests/test_screening_batches_api.py`,
+  `test_screening_service.py`, `test_screening_store.py`, `test_config.py`,
+  `test_service_lifecycle.py`, `test_openapi_contract.py`: **238 passed, 61
+  skipped, 1 warning**. This preceded the borrowed-fixture cleanup and final
+  observed-deletion test; later final gates own those changes.
+- `focused-reviewed ... tests/test_screening_batches_api.py -k registration`:
+  **9 passed, 7 skipped, 102 deselected, 1 warning**; additionally covers observed
+  post-commit deletion returning 404. Final full regression includes fixture cleanup.
+- `node --test scripts/test_ui_screening.js`: final **109 passed**, including
+  68 shared evaluation checks. Pending/early-404/read-only recovery, API parsing,
+  full/closed refusal, generic uncertainty/fresh intent, double submit, account,
+  navigation, away/back, changed files and unmount guards are exercised. One
+  intermediate away/back test failed because its tally counted navigation GETs
+  as writes; the corrected tally counts POSTs, and all checks pass.
+
+**Implementation self-review.** Reviewed the diff and affected callers against
+`9e3ea7f`: worker/session ownership, atomic creation, recovery reference scope,
+auth/CSRF/provenance, erasure generation/retention, admission uncertainty,
+shutdown, legacy direct callers and UI stale/draft/navigation behavior.
+No independent reviewer was used. Resolved findings:
+
+1. Medium, `frontend/screening.js` success callback / shared `nav`: an upload
+   response after navigating away and back could pass a screen-name comparison
+   and start screening. Navigation now marks the captured request; late success
+   retains read-only recovery instead. The explicit away/back UI regression
+   passes, as do current Chrome recovery journeys.
+2. Medium, `tests/conftest.py` borrowed `services` teardown: the new lazy pool
+   needed the same explicit close as other borrowed fixture pools. Added cleanup;
+   the production Services drain already includes the new pool. The first full
+   run was stopped incomplete for this correction, not counted as passing;
+   `full-final` runs the corrected state. The stop helper also reported an
+   already-exited runner PID after its child stopped; no unrelated process was
+   targeted. Lifecycle cancellation/drain checks include the new pool.
+
+**Actual application/browser evidence.** Sanitized runner `http
+scripts/smoke_r4_s1_t3d.py --batch-registration-workers`: **33/33** on migrated
+scratch SQLite with two authenticated employers and graceful HTTP restart.
+Controlled real registration SQL demonstrates responsive unrelated HTTP, safe
+full/pending, early absence while live, late atomic commit/rollback, GET-only
+recovery with no evaluation/replay, named author provenance, tenant isolation,
+saved state across restart and CSRF. This is actual subprocess HTTP, not TestClient.
+
+`browser` and `browser-reviewed scripts/check_ui_screening_extraction_browser.py
+--batch-registration-workers`: both **37/37** actual Chrome checks. The second
+uses the corrected navigation guard. Real held registration SQL drives the
+rendered pending reference/draft, disabled duplicate submit, actual full admission,
+early 404, late committed queue still wholly unscreened, rolled-back absence,
+explicit fresh intent without a request, reload discovery and no console
+exceptions. Existing successful initial registration still starts processing.
+Chrome uses existing CDN internet and fake external providers, not live quality
+validation. The fixture-close-only change afterwards does not alter this browser
+composition (its Services are owned and drained by the harness).
+
+Static checks: `node scripts/check_ui_bindings.js` **612 distinct bindings / 18
+states**; `node --check frontend/api.js`, `frontend/support.js`,
+`frontend/screening.js` pass. `compile -m py_compile` passes for the **11** changed
+Python modules. Hash helper `.pytest_cache/review_state_r4_s2_t3c3d4b.py save`
+records all **616** final code/config hashes. Required full/PG final counts and
+distinct final staged self-review/publication are not claimed until recorded.
+
+**Actual PostgreSQL results.** Owned sanitized runner
+`.pytest_cache/run_r4_s2_t3c3d4b_postgres.py` passes **741 tests, 10 SQLite-only
+skips, 18 warnings**. It selects the 21 existing modules: screening batch API,
+service, store, schema, scope, models, projection, durable input, report input,
+refusal retention, unresolved input, erasure concurrency; screening config,
+service lifecycle, general config, org scope guard, API route extraction, route
+table guard, OpenAPI contract, error logging and migrations. This collection
+preceded the final observed-deletion test and fixture-close correction; it is
+not mislabeled as the complete corrected selection.
+
+`.pytest_cache/run_r4_s2_t3c3d4b_postgres_final.py
+tests/test_screening_batches_api.py tests/test_service_lifecycle.py` reruns the
+affected families on the corrected state: **149 passed, no skips, 1 warning**.
+Both disposable databases use PostgreSQL **18.6**, timezone **Asia/Calcutta** and
+**read committed** isolation. The `database` fixture executes its actual PG
+parameter cases: competing ACCESS EXCLUSIVE table locks are observed through
+`pg_stat_activity`, caller waits expire while the real driver remains blocked,
+and released writes either commit the complete batch/two items or roll back all
+rows after a real flush. Scope/counters, retained slots, session ownership,
+cancellation and no replay remain covered. SQLite tests and skips are not used
+as substitutes for those PG cases. No new migration was needed; the broad
+migration module and both actual HTTP compositions still migrate scratch SQL
+to `0030_screening_ingest_facts`.
+
+Both runners then execute `scripts/smoke_r4_s1_t3d.py --postgres
+--batch-registration-workers`: each **33/33**, matching SQLite. HTTP/restart
+includes late commit/rollback, recovery, author/tenant/CSRF and no automatic
+evaluation. Their synthetic 25-second statement timeout is only a test guard.
+Both owned runtime records (`r4-s2-t3c3d4b-pg-runtime.json` and
+`r4-s2-t3c3d4b-final-pg-runtime.json`) report stop exit **0**; independent
+`pg_ctl status` exits **3** for each, no server running. Scratch credentials,
+stores and logs remain ignored and excluded from publication. The final full
+regression is still required before completion; these results do not close B
+on their own.
+
+**Final regression and completion (2026-11-10).** Sanitized runner `full-final`
+executes `.resume/Scripts/python.exe -m pytest -q --tb=short` on the corrected
+reviewed state: **4340 passed, 1121 skipped, 127 warnings**, exit **0** (pytest
+2143.87 seconds). The initial stopped full attempt remains incomplete; it is not
+substituted for this result. PG environment/optional skips are not execution
+evidence for the omitted cases; the actual PG gates above provide their named
+database evidence. Final code/config remains the same **616-file** snapshot used
+by the corrected focused/Chrome/static gates. All B acceptance and required
+validation are complete, with no unresolved implementation-review blocker.
+
+The working database and unrelated tracked files retain their initial bytes.
+The existing demo was not started/restarted. Both owned PG instances are stopped.
+No local logs, credentials, runtime stores or working data belong to publication.
+The operating budget owns limitations: UUIDs are references rather than
+idempotency keys, early absence cannot prove rollback, explicit fresh intent can
+duplicate, final visibility is a snapshot, and per-process admission/waits do not
+bound global SQL/auth, whole requests, driver/drain or memory. Fakes prove
+mechanics, not live-provider quality; no independent review is claimed.
+
+Only **R4-S2-T3C3D4B** closes. Exact next is **R4-S2-T3C3D4C - Bound batch retry
+and deletion**, in a separate session. C/Q, D4, D5-D6/Q, C3D and broader parents
+remain open. Distinct final staged self-review, scoped publication and remote
+verification follow this completion record; do not start C in this session.
+
+**Distinct final staged self-review (2026-11-10, after completion).** Reviewed
+the exact staged B diff against published baseline `9e3ea7f`, separately from
+implementation review and the final regression. The **22-file** scope is:
+`config.yaml`; `src/app/api/screening.py`, `src/app/core/config.py`,
+`src/app/screening/service.py`, `src/app/screening/store.py`,
+`src/app/services/__init__.py`; `frontend/Veritas.dc.html`, `frontend/api.js`,
+`frontend/screening.js`; `tests/conftest.py`, `tests/test_config.py`,
+`tests/test_screening_batches_api.py`, `tests/test_service_lifecycle.py`;
+`scripts/smoke_r4_s1_t3d.py`, `scripts/check_ui_screening_extraction_browser.py`,
+`scripts/test_ui_screening.js`; `FEATURE_STATUS.md`, `OPERATING.md`,
+`docs/PROGRESS.md`, `docs/ROADMAP.md`, `docs/delivery/PI-R4.md` and this evidence
+record. No independent reviewer was used.
+
+Specification review maps each B acceptance requirement to the recorded red,
+worker ownership/admission/atomicity, actual PG lock, late commit/rollback,
+two-actor migrated HTTP/restart, actual Chrome and final regression evidence.
+Only B closes; C/Q and broader parents remain open. Correctness/maintainability
+review retraced server-generated ID insertion, complete worker-owned sessions,
+scope/provenance, post-commit absence, unchanged caps/generation/retention,
+timeout/cancel/late failure capacity, shutdown and borrowed-fixture cleanup.
+UI review retraced API parsing, pending/generic uncertainty, early 404,
+GET-only recovery, explicit fresh intent, double-submit, account/session loss,
+navigation/away-back/changed-draft/unmount guards and reload discovery. Checked
+scratch-only hold/rollback instrumentation, provider counters, listener cleanup,
+real PG lock observation and test-versus-browser claims. No blocking finding
+remains; no further application change was needed.
+
+Staged validation confirms all **16** changed code/config files match the
+validated snapshot, accounting for Git newline normalization; all **616** code/
+config hashes remain unchanged. All **8** added local Markdown links/anchors
+resolve. Staged whitespace, added-text credential-marker and artifact-exclusion
+checks pass, with no unstaged changes. Preservation confirms **712** unrelated
+tracked files, including the working DB, retain baseline bytes. Final review/
+status prose was restaged and rechecked; it requires no application rerun.
+Both owned PG instances remain stopped and the demo remains untouched. These
+are same-agent self-reviews and fake-provider functional checks, not independent
+review or live quality validation. Scoped commit/push and remote verification
+follow; stop after B publication with D4C next in a separate session.
