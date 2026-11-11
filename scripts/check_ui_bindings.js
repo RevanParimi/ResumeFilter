@@ -193,6 +193,11 @@ const STATES = {
     screen: "queue", plane: "org", me: { kind: "org", organization_id: "org_1" },
     batchList: held({ batches: [], next_cursor: null }),
   },
+  "org, uncertain batch change after saved-state check": {
+    screen: "batches", plane: "org", me: { kind: "org", organization_id: "org_1" },
+    batchChanges: { [BATCH.id]: { action: "delete", uncertain: true, checked: true,
+      error: { status: 503, detail: "batch_mutation_pending" }, checking: false, notice: "Saved state checked" } },
+  },
   "org, driving": {
     screen: "queue", plane: "org", me: { kind: "org", organization_id: "org_1" },
     selectedBatch: BATCH.id, batch: held(BATCH), queue: held(QUEUE), summary: held(SUMMARY),

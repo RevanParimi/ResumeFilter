@@ -640,11 +640,12 @@ class ScreeningStore:
         ``process`` call remains the only door that evaluates anything.
         """
         with self._session_factory() as s:
-            batch = s.get(ScreeningBatchRow, batch_id)
+            # Order erasure/SQLite writers before the current parent snapshot;
+            # the PG row lock then keeps ownership stable through requeue commit.
+            generation = self._generation(s, lock=True)
+            batch = s.get(ScreeningBatchRow, batch_id, with_for_update=True)
             if batch is None or batch.org_id != org_id:
                 return None
-
-            generation = self._generation(s, lock=True)
             failed = s.execute(
                 select(BatchItemRow).where(
                     BatchItemRow.batch_id == batch_id,
@@ -677,12 +678,12 @@ class ScreeningStore:
     def delete_batch(self, org_id: str, batch_id: str) -> bool:
         """Delete the batch, its items and their text. Items CASCADE."""
         with self._session_factory() as s:
-            batch = s.get(ScreeningBatchRow, batch_id)
-            if batch is None or batch.org_id != org_id:
-                return False
-            s.delete(batch)
+            # Scope belongs on the write, so a concurrent ownership change
+            # cannot turn an earlier authorized snapshot into a foreign delete.
+            result = s.execute(delete(ScreeningBatchRow).where(
+                ScreeningBatchRow.id == batch_id, ScreeningBatchRow.org_id == org_id))
             s.commit()
-            return True
+            return result.rowcount == 1
 
     # ── reads ───────────────────────────────────────────────────────────────
 

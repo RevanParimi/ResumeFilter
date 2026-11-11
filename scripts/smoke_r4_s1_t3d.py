@@ -46,32 +46,58 @@ def create_batch_registration_browser_app():
     return create_batch_registration_smoke_app(base_factory=create_smoke_app)
 
 
-def create_batch_registration_smoke_app(*, base_factory=None):
-    """Controlled real registration SQL, confined to the scratch harness."""
+def create_batch_mutation_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_batch_registration_smoke_app(base_factory=create_smoke_app, _mutation=True)
+
+
+def create_batch_mutation_smoke_app():
+    return create_batch_registration_smoke_app(_mutation=True)
+
+
+def create_batch_registration_smoke_app(*, base_factory=None, _mutation=False):
+    """Controlled real batch SQL, confined to the scratch harness."""
     from sqlalchemy import event
     app = (base_factory or sql_app)()
     original = app.router.lifespan_context
     scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
     state, mutex = local(), Lock()
+    prefix = 'mutation' if _mutation else 'registration'
     def record(kind, **values):
-        with mutex, (scratch / ('registration-' + kind + '.jsonl')).open('a') as log:
+        with mutex, (scratch / (prefix + '-' + kind + '.jsonl')).open('a') as log:
             log.write(json.dumps(values) + '\n')
     @asynccontextmanager
     async def lifespan(app):
         async with original(app):
             services, caller = app.state.services, get_ident()
-            pool = services.batch_registrations
+            pool = services.batch_mutations if _mutation else services.batch_registrations
             run, assess = pool.run, app.state.engine.evaluate
+            create_batch = services.screening._store.create_batch
+            def seeded_batch(*args, **kwargs):
+                bid = create_batch(*args, **kwargs)
+                if kwargs['name'].startswith('Mutation '):
+                    from sqlalchemy import select
+                    from app.screening.models import BatchItemRow
+                    with services.session_factory() as session:
+                        rows = session.scalars(select(BatchItemRow).where(BatchItemRow.batch_id == bid)
+                            .order_by(BatchItemRow.created_at, BatchItemRow.id)).all()
+                        assert len(rows) == 2
+                        for row in rows:
+                            row.status, row.error = 'failed', 'internal_error'
+                        rows[1].raw_text = ''
+                        session.commit()
+                return bid
             async def tracked(operation, *args, **kwargs):
                 def owned():
                     assert get_ident() != caller
-                    state.active, state.held, state.mode = True, False, None
-                    record('operations', batch_id=kwargs['batch_id'])
+                    bid = args[-1] if _mutation else kwargs['batch_id']
+                    state.active, state.held, state.mode, state.action = True, False, None, operation.__name__
+                    record('operations', batch_id=bid, action=state.action)
                     try:
                         return operation(*args, **kwargs)
                     finally:
                         if state.held:
-                            record('completed', batch_id=kwargs['batch_id'])
+                            record('completed', batch_id=bid)
                         state.active = False
                 return await run(owned)
             async def evaluate(**kwargs):
@@ -79,12 +105,16 @@ def create_batch_registration_smoke_app(*, base_factory=None):
                 record('evaluations')
                 return await assess(**kwargs)
             def sql(conn, cursor, statement, parameters, context, many):
-                mode = scratch / 'registration-mode'
-                if getattr(state, 'active', False) and not state.held and 'screening_erasure_state' in statement.lower() and mode.exists():
-                    state.held, state.mode = True, mode.read_text()
+                mode = scratch / (prefix + '-mode')
+                needle = 'delete from screening_batches' if _mutation and getattr(state, 'action', None) == 'delete' else 'screening_erasure_state'
+                if not getattr(state, 'active', False) or state.held or needle not in statement.lower():
+                    return
+                selected = mode.read_text() if mode.exists() else None
+                if selected and (not _mutation or selected.split(':')[0] == state.action):
+                    state.held, state.mode = True, selected
                     record('entered')
                     deadline = time.monotonic() + 30
-                    while not (scratch / 'registration-release').exists():
+                    while not (scratch / (prefix + '-release')).exists():
                         assert time.monotonic() < deadline, 'synthetic registration hold timed out'
                         time.sleep(.01)
             def begin(session, transaction, connection):
@@ -92,25 +122,102 @@ def create_batch_registration_smoke_app(*, base_factory=None):
             def end(session, transaction):
                 assert session.info.get('registration_owner', get_ident()) == get_ident()
             def commit(session):
-                if getattr(state, 'active', False) and state.mode == 'rollback':
+                if getattr(state, 'active', False) and state.mode and state.mode.split(':')[-1] == 'rollback':
                     session.flush()
                     raise RuntimeError('synthetic-private-registration-rollback')
             listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
                 (services.session_factory, 'after_begin', begin), (services.session_factory, 'after_transaction_end', end),
                 (services.session_factory, 'before_commit', commit)]
             pool.run, app.state.engine.evaluate = tracked, evaluate
+            if _mutation:
+                services.screening._store.create_batch = seeded_batch
             for target, name, listener in listeners:
                 event.listen(target, name, listener)
             try:
                 yield
             finally:
-                (scratch / 'registration-release').touch()
+                (scratch / (prefix + '-release')).touch()
                 await pool.aclose()
                 pool.run, app.state.engine.evaluate = run, assess
+                services.screening._store.create_batch = create_batch
                 for target, name, listener in listeners:
                     event.remove(target, name, listener)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_batch_mutations(checks, scratch, control, actor, other):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def count(kind):
+        p = scratch / ('mutation-' + kind + '.jsonl')
+        return len(p.read_text().splitlines()) if p.exists() else 0
+    saved = []
+    for action in ('retry', 'delete'):
+        for ending in ('commit', 'rollback'):
+            label = action + '/' + ending
+            resume = contract._resume('Synthetic Mutation', 'mutation@example.in')
+            created = require(actor.post('/screening/batches', json={'name': 'Mutation ' + label,
+                'items': [{'resume_text': resume}] * 2}))
+            path = '/screening/batches/' + created['id']
+            assert created['counts']['failed'] == 2
+            operations, evaluations = count('operations'), count('evaluations')
+            entered, completed = count('entered'), count('completed')
+            (scratch / 'mutation-release').unlink(missing_ok=True)
+            (scratch / 'mutation-mode').write_text(action + ':' + ending)
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(actor.post if action == 'retry' else actor.delete,
+                        path + ('/retry' if action == 'retry' else ''))
+                    try:
+                        deadline = time.monotonic() + 10
+                        while count('entered') == entered:
+                            assert time.monotonic() < deadline
+                            time.sleep(.01)
+                        start = time.monotonic()
+                        checks.check(label + ': held mutation SQL leaves unrelated HTTP responsive',
+                            control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                            and time.monotonic() - start < 1)
+                        for verb, suffix in ((other.post, '/retry'), (other.delete, '')):
+                            response = verb(path + suffix)
+                            checks.check(label + ': retry/delete share full admission before scope lookup',
+                                require(response, 503) == {'detail': 'batch_mutation_capacity_exhausted'}
+                                and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                        response = pending.result(timeout=5)
+                        checks.check(label + ': pending mutation returns no false confirmation',
+                            require(response, 503) == {'detail': 'batch_mutation_pending'}
+                            and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                        checks.check(label + ': early GET still sees the pre-write state without replay',
+                            require(actor.get(path)) == created and other.get(path).status_code == 404
+                            and count('operations') == operations + 1 and count('evaluations') == evaluations)
+                    finally:
+                        (scratch / 'mutation-release').touch()
+            finally:
+                (scratch / 'mutation-release').touch()
+            deadline = time.monotonic() + 10
+            while count('completed') == completed:
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            (scratch / 'mutation-mode').unlink(missing_ok=True)
+            gone = action == 'delete' and ending == 'commit'
+            response = actor.get(path)
+            body = require(response, 404 if gone else 200)
+            checks.check(label + ': late atomic result is readable with no provider or write replay',
+                count('operations') == operations + 1 and count('evaluations') == evaluations
+                and (gone or body['counts'] == {'pending': int(action == 'retry' and ending == 'commit'),
+                    'processing': 0, 'done': 0, 'failed': 1 if action == 'retry' and ending == 'commit' else 2}))
+            checks.check(label + ': foreign writes and reads remain indistinguishable from absence',
+                all(verb(path + suffix).status_code == verb('/screening/batches/missing' + suffix).status_code == 404
+                    for verb, suffix in ((other.get, ''), (other.post, '/retry'), (other.delete, ''))))
+            if action == 'retry' and ending == 'commit':
+                # Human intent is a distinct later request, after read recovery.
+                result = require(actor.post(path + '/process'))
+                checks.check('explicit later process alone evaluates the requeued item',
+                    result['processed'] == 1 and count('evaluations') == evaluations + 1)
+                body = require(actor.get(path))
+            saved.append((path, response.status_code, body))
+    return saved
 
 
 def check_batch_registration(checks, scratch, control, actor, other):
@@ -690,6 +797,7 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
+    batch_mutations = '--batch-mutation-workers' in sys.argv
     batch_registrations = '--batch-registration-workers' in sys.argv
     batch_reads = '--batch-read-workers' in sys.argv
     pdf_execution = '--pdf-execution' in sys.argv
@@ -724,12 +832,15 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_mutation_smoke_app" if batch_mutations else "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
     if batch_registrations:
         env.update(DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_REGISTRATION_WAIT_SECONDS='.5',
+            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if batch_mutations:
+        env.update(DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_MUTATION_WAIT_SECONDS='.5',
             DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if batch_reads:
         env.update(DEE_BATCH_READ_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_READ_WAIT_SECONDS='.5',
@@ -835,6 +946,7 @@ def run(scratch, url, pg_options):
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
             registrations = check_batch_registration(checks, scratch, control, actor, other) if batch_registrations else []
+            mutations = check_batch_mutations(checks, scratch, control, actor, other) if batch_mutations else []
             batch_views = check_batch_reads(checks, scratch, control, actor, other, path) if batch_reads else []
             saved = {suffix: require(actor.get(path + suffix)) for suffix in ("", "/queue", "/summary")}
             saved_report = require(actor.get(report_path))
@@ -989,6 +1101,10 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if batch_mutations:
+                checks.check('all late mutation results survive graceful restart with tenant isolation',
+                    all(actor.get(url).status_code == status and require(actor.get(url), status) == body
+                        and other.get(url).status_code == 404 for url, status, body in mutations))
             if batch_registrations:
                 checks.check('late registration commit and rollback survive graceful restart without processing',
                     all(actor.get(url).status_code == status and require(actor.get(url), status) == body

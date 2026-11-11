@@ -26,6 +26,121 @@ import tempfile
 import check_ui_screening_browser as browser
 
 
+async def check_batch_mutation_workers(tab, scratch, api):
+    from check_ui_screening_contract import _resume
+    def count(kind):
+        path = scratch / ('mutation-' + kind + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    await tab.js("""
+window.__mutationPanel = id => Array.from(document.querySelectorAll('div')).find(d =>
+ d.firstElementChild && d.firstElementChild.textContent.trim() === 'Batch reference: ' + id);
+window.__mutationClick = (id, label) => {
+ const p = window.__mutationPanel(id);
+ const b = p && Array.from(p.querySelectorAll('button')).find(b => b.innerText.includes(label));
+ if (!b || b.disabled) return false;
+ b.click(); return true;
+};
+window.__mutationRow = name => Array.from(document.querySelectorAll('[role=button]')).find(r => r.innerText.includes(name));
+window.__mutationReads = 0;
+window.__mutationFetch = window.fetch;
+window.fetch = (url, init) => window.__mutationFetch(url, init).then(response => {
+ if ((!init || !init.method || init.method === 'GET') && String(url).endsWith(window.__mutationPath || '/__none')) window.__mutationReads++;
+ return response;
+});
+""")
+    saved = []
+    for action in ('retry', 'delete'):
+        for ending in ('commit', 'rollback'):
+            name = 'Mutation browser ' + action + ' ' + ending
+            created = api.post('/screening/batches', json={'name': name,
+                'items': [{'resume_text': _resume('Synthetic Mutation Browser', 'mutation-browser@example.in')}] * 2}).json()
+            bid, path = created['id'], '/screening/batches/' + created['id']
+            js_id, js_name = json.dumps(bid), json.dumps(name)
+            panel = f'window.__mutationPanel({js_id})'
+            assert await tab.js("window.__click('button', 'Batches')")
+            assert await tab.wait(f'window.__mutationRow({js_name})', 20)
+            if action == 'retry':
+                assert await tab.js(f'window.__mutationRow({js_name}).click(); true')
+                assert await tab.wait("Array.from(document.querySelectorAll('button')).some(b => b.innerText === 'Retry failed items')", 20)
+            else:
+                assert await tab.js(f"window.__mutationRow({js_name}).querySelector('button').click(); true")
+                assert await tab.wait("window.__has('Delete batch')", 20)
+            operations, evaluations = count('operations'), count('evaluations')
+            entered, completed = count('entered'), count('completed')
+            (scratch / 'mutation-release').unlink(missing_ok=True)
+            (scratch / 'mutation-mode').write_text(action + ':' + ending)
+            await tab.js('window.__mutationPath = ' + json.dumps(path))
+            try:
+                assert await tab.js("window.__click('button', " + json.dumps('Retry failed items' if action == 'retry' else 'Delete batch') + ')')
+                async with asyncio.timeout(10):
+                    while count('entered') == entered:
+                        await asyncio.sleep(.01)
+                browser.S.check(action + '/' + ending + ': actual pending mutation retains a human recovery reference',
+                    await tab.wait(f"{panel} && {panel}.innerText.includes('may still be saving')", 20)
+                    and not await tab.js("document.body.innerText.includes('batch_mutation_')")
+                    and count('operations') == operations + 1 and count('evaluations') == evaluations)
+                disabled = "Array.from(document.querySelectorAll('button')).find(b => b.innerText === 'Retry failed items').disabled" if action == 'retry' else f"window.__mutationRow({js_name}).querySelector('button').disabled"
+                browser.S.check(action + '/' + ending + ': another write is disabled during uncertainty', await tab.js(disabled))
+                reads = await tab.js('window.__mutationReads')
+                assert await tab.js(f"window.__mutationClick({js_id}, 'Check saved state')")
+                browser.S.check(action + '/' + ending + ': early saved-state read does not replay or unlock mutation',
+                    await tab.wait(f"window.__mutationReads > {reads} && {panel}.innerText.includes('Saved batch found')", 20)
+                    and await tab.js(disabled) and count('operations') == operations + 1
+                    and count('evaluations') == evaluations)
+            finally:
+                (scratch / 'mutation-release').touch()
+            async with asyncio.timeout(10):
+                while count('completed') == completed:
+                    await asyncio.sleep(.01)
+            (scratch / 'mutation-mode').unlink(missing_ok=True)
+            reads = await tab.js('window.__mutationReads')
+            assert await tab.js(f"window.__mutationClick({js_id}, 'Check saved state')")
+            notice = 'not visible to this account' if action == 'delete' and ending == 'commit' else 'Saved batch found'
+            assert await tab.wait(f"window.__mutationReads > {reads} && {panel}.innerText.includes({json.dumps(notice)}) && !Array.from({panel}.querySelectorAll('button')).find(b => b.innerText === 'Check saved state').disabled", 20)
+            browser.S.check(action + '/' + ending + ': late committed/rolled-back state is recovered without processing',
+                api.get(path).status_code == (404 if action == 'delete' and ending == 'commit' else 200)
+                and count('operations') == operations + 1 and count('evaluations') == evaluations)
+            if action == 'retry':
+                if ending == 'commit':
+                    assert await tab.wait("window.__has('1 not screened yet')", 20)
+                    browser.S.check('recovered retry keeps Start disabled until fresh human intent',
+                        await tab.js("Array.from(document.querySelectorAll('button')).find(b => b.innerText === 'Start screening').disabled"))
+                assert await tab.js(f"window.__mutationClick({js_id}, 'Allow another change')")
+                if ending == 'rollback':
+                    assert await tab.js("window.__click('button', 'Retry failed items')")
+                    browser.S.check('confirmed retry reports queued/skipped and never starts screening',
+                        await tab.wait(f"{panel}.innerText.includes('1 queued, 1 skipped')", 20)
+                        and count('operations') == operations + 2 and count('evaluations') == evaluations)
+                else:
+                    assert await tab.js("window.__click('button', 'Start screening')")
+                    browser.S.check('separate explicit Start alone processes the requeued item',
+                        await tab.wait("window.__has('Nothing left to screen')", 40)
+                        and api.get(path).json()['counts']['done'] == 1 and count('evaluations') == evaluations + 1)
+            elif ending == 'rollback':
+                assert await tab.js(f"window.__mutationClick({js_id}, 'Allow another change')")
+                assert await tab.js(f"window.__mutationRow({js_name}).querySelector('button').click(); true")
+                assert await tab.js("window.__click('button', 'Delete batch')")
+                browser.S.check('rolled-back delete can be deliberately confirmed again after checking',
+                    await tab.wait(f"{panel}.innerText.includes('Batch deleted')", 20)
+                    and api.get(path).status_code == 404 and count('operations') == operations + 2
+                    and count('evaluations') == evaluations)
+            else:
+                browser.S.check('deleted batch retains its recovery reference after leaving the list',
+                    await tab.js(f"!window.__mutationRow({js_name}) && !!{panel}"))
+            response = api.get(path)
+            saved.append((path, response.status_code, response.json()))
+    evaluations = count('evaluations')
+    await tab.js('window.__mutationReload = true')
+    await tab.send('Page.reload')
+    assert await tab.wait("!window.__mutationReload && document.body.innerText.includes('Sign out')", 40)
+    await tab.js(browser.HELPERS)
+    assert await tab.js("window.__click('button', 'Batches')")
+    browser.S.check('mutation results survive actual page reload with no automatic assessment',
+        await tab.wait("window.__has('Mutation browser retry') && !window.__has('Mutation browser delete')", 20)
+        and all((response := api.get(path)).status_code == status and response.json() == body for path, status, body in saved)
+        and count('evaluations') == evaluations)
+
+
 async def check_batch_registration_workers(tab, scratch, api, files):
     def count(kind):
         path = scratch / ('registration-' + kind + '.jsonl')
@@ -233,6 +348,8 @@ async def main():
                 args = ['smoke_r4_s1_t3d:create_batch_read_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-registration-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_registration_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
+            if '--batch-mutation-workers' in sys.argv:
+                args = ['smoke_r4_s1_t3d:create_batch_mutation_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if any(flag in sys.argv for flag in ('--auth-code-workers', '--auth-resolution-workers', '--auth-redemption-workers', '--auth-session-workers')):
                 args = ['smoke_r4_s1_t3a:create_auth_code_smoke_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             inherited = kwargs["env"]
@@ -257,6 +374,10 @@ async def main():
             if '--batch-registration-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_REGISTRATION_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+            if '--batch-mutation-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_MUTATION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
             if '--pdf-execution' in sys.argv:
                 env.update(VERITAS_PDF_EXECUTION_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
@@ -607,6 +728,8 @@ window.fetch = (url, init) => {
                 await check_batch_read_workers(tab, scratch, api, bid)
             if '--batch-registration-workers' in sys.argv:
                 await check_batch_registration_workers(tab, scratch, api, files)
+            if '--batch-mutation-workers' in sys.argv:
+                await check_batch_mutation_workers(tab, scratch, api)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)

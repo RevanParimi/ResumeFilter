@@ -296,7 +296,7 @@ selected reference/draft without starting screening. Account/refresh/page guards
 reject late callbacks and paging waits for the current base read. The
 [batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
 and limits. Retry/delete, processing and combined acceptance remain
-D4C/Q and D5-D6/Q; D4 and broader parents remain open.
+D4Q and D5-D6/Q; D4 and broader parents remain open.
 
 [R4-S2-T3C3D4B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) bounds complete
 batch registration separately from PDF decoding and batch views. Uncertain
@@ -306,3 +306,12 @@ Only confirmed initial success on the same account, screen and draft starts
 screening. The [registration budget](OPERATING.md#batch-registration-execution-budget)
 owns defaults, recovery behavior and limitations. Validation status belongs to
 the linked task evidence; broader D4 work remains open.
+
+[R4-S2-T3C3D4C](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4c) bounds complete
+batch retry/delete operations on a separate owning-session pool and enforces
+current tenant ownership at the write boundary. Retry only requeues eligible
+failures; processing requires a separate human action. Uncertain changes retain
+their batch reference and require GET-only recovery plus explicit intent before
+another write or Start. The [mutation budget](OPERATING.md#batch-retry-and-deletion-execution-budget)
+owns defaults and limits. Validation status belongs to the linked evidence;
+D4Q and broader parents remain open.

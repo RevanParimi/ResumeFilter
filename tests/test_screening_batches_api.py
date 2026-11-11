@@ -23,6 +23,255 @@ BATCH_READS = [
     ('summary', '/screening/batches/{bid}/summary', 'summary'),
 ]
 
+BATCH_MUTATIONS = [('retry', 'post', '/retry'), ('delete', 'delete', '')]
+
+
+def _batch_mutation_setup(settings, factory, resume):
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    setup = _batch_read_setup(settings, factory, resume)
+    services, org, _, bid, _, _, _ = setup
+    services.screening._store.add_items(org, bid, texts=[resume, resume])
+    with factory() as session:
+        rows = session.scalars(select(BatchItemRow).where(BatchItemRow.batch_id == bid)
+            .order_by(BatchItemRow.created_at, BatchItemRow.id)).all()
+        for row in rows[:2]:
+            row.status, row.error = 'failed', 'internal_error'
+        rows[1].raw_text = ''
+        rows[2].status, rows[2].claimed_at = 'processing', datetime.now(timezone.utc)
+        rows[3].status, rows[3].raw_text = 'done', ''
+        session.commit()
+    return setup
+
+
+@pytest.mark.parametrize('action,verb,suffix', BATCH_MUTATIONS, ids=['retry', 'delete'])
+async def test_batch_mutation_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume, action, verb, suffix):
+    from threading import Event
+    from sqlalchemy import event
+    engine, factory = database
+    services, _, key, bid, _, _, _ = _batch_mutation_setup(settings, factory, genuine_resume)
+    entered, release, finished = Event(), Event(), Event()
+    needle = 'update batch_items' if action == 'retry' else 'delete from screening_batches'
+    def sql(conn, cursor, statement, parameters, context, many):
+        if needle in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.request(verb, '/screening/batches/' + bid + suffix, headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'batch mutation SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('action,verb,suffix', BATCH_MUTATIONS, ids=['retry', 'delete'])
+def test_batch_mutation_refuses_ownership_change_before_write(database, settings, genuine_resume, action, verb, suffix):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, current_thread
+    from sqlalchemy import event, text
+    engine, factory = database
+    services, org, _, bid, other, _, _ = _batch_mutation_setup(settings, factory, genuine_resume)
+    entered, release = Event(), Event()
+    needle = 'screening_erasure_state' if action == 'retry' else 'delete from screening_batches'
+    def sql(conn, cursor, statement, parameters, context, many):
+        if needle in statement.lower() and current_thread().name.startswith('scope-change') and not entered.is_set():
+            entered.set()
+            assert release.wait(10)
+    event.listen(engine, 'before_cursor_execute', sql)
+    try:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix='scope-change') as pool:
+            pending = pool.submit(getattr(services.screening, action), org, bid)
+            try:
+                assert entered.wait(8)
+                with engine.begin() as connection:
+                    connection.execute(text('UPDATE screening_batches SET org_id = :org WHERE id = :bid'), {'org': other, 'bid': bid})
+            finally:
+                release.set()
+            assert pending.result(timeout=10) == (None if action == 'retry' else False)
+        assert services.screening.get(org, bid) is None
+        assert services.screening.get(other, bid).counts.model_dump() == {'pending': 0, 'processing': 1, 'done': 1, 'failed': 2}
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+        asyncio.run(services.aclose())
+
+
+@pytest.mark.parametrize('action,verb,suffix', BATCH_MUTATIONS, ids=['retry', 'delete'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'rollback'])
+async def test_batch_mutation_admission_owning_sessions_and_recovery(database, settings, genuine_resume, monkeypatch, log_output, action, verb, suffix, ending):
+    from threading import Event, get_ident, current_thread
+    from sqlalchemy import event
+    engine, factory = database
+    settings.batch_mutation_max_concurrent_requests = 1
+    settings.batch_mutation_wait_seconds = .2 if ending in ('timeout', 'rollback') else 20
+    services, org, key, bid, other, other_key, kept = _batch_mutation_setup(settings, factory, genuine_resume)
+    original = getattr(services.screening, action)
+    entered, release, calls, sql_threads = Event(), Event(), [], set()
+    caller = get_ident()
+    def operation(*args):
+        calls.append(get_ident())
+        entered.set()
+        assert release.wait(10)
+        return original(*args)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('mutation_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('batch-mutation'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('mutation_owner', get_ident()) == get_ident()
+    def commit(session):
+        if ending == 'rollback' and current_thread().name.startswith('batch-mutation'):
+            session.flush()
+            raise RuntimeError('synthetic-private-batch-mutation-error')
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(services.screening, action, operation)
+            for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+                event.listen(factory, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = '/screening/batches/' + bid
+                pending = asyncio.create_task(http.request(verb, path + suffix, headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    read = await http.get(path, headers={'X-Org-Key': key})
+                    assert read.status_code == 200 and read.json()['counts']['failed'] == 2
+                    for _, peer_verb, peer_suffix in BATCH_MUTATIONS:
+                        refused = await http.request(peer_verb, '/screening/batches/' + kept + peer_suffix, headers={'X-Org-Key': other_key})
+                        assert refused.status_code == 503 and refused.json() == {'detail': 'batch_mutation_capacity_exhausted'}
+                        assert refused.headers['retry-after'] == '1' and 'set-cookie' not in refused.headers
+                    if ending in ('timeout', 'rollback'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_mutation_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert len(services.batch_mutations._active) == 1
+                finally:
+                    release.set()
+                    results = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_mutations._active:
+                            await asyncio.sleep(.01)
+                assert len(calls) == 1 and calls[0] != caller and sql_threads == {calls[0]}
+                monkeypatch.setattr(services.screening, action, original)
+                event.remove(factory, 'before_commit', commit)
+                saved = await http.get(path, headers={'X-Org-Key': key})
+                assert saved.status_code == (404 if action == 'delete' and ending != 'rollback' else 200)
+                if saved.status_code == 200:
+                    assert saved.json()['counts'] == {'pending': int(ending != 'rollback'), 'processing': 1, 'done': 1,
+                        'failed': 1 if ending != 'rollback' else 2}
+                if ending == 'release':
+                    assert results[0].json() == ({'batch_id': bid, 'requeued': 1, 'skipped': 1}
+                        if action == 'retry' else {'batch_id': bid, 'deleted': True})
+                for _, peer_verb, peer_suffix in BATCH_MUTATIONS:
+                    foreign = await http.request(peer_verb, path + peer_suffix, headers={'X-Org-Key': other_key})
+                    absent = await http.request(peer_verb, '/screening/batches/missing' + peer_suffix, headers={'X-Org-Key': other_key})
+                    assert foreign.status_code == absent.status_code == 404 and foreign.json() == absent.json()
+                assert services.screening.get(other, kept).counts.pending == 2
+                services.batch_mutations.close()
+                for _, peer_verb, peer_suffix in BATCH_MUTATIONS:
+                    refused = await http.request(peer_verb, path + peer_suffix, headers={'X-Org-Key': key})
+                    assert refused.status_code == 503 and refused.json() == {'detail': 'batch_mutation_executor_closed'}
+                    assert refused.headers['retry-after'] == '1' and 'set-cookie' not in refused.headers
+    finally:
+        release.set()
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+    assert 'synthetic-private-batch-mutation-error' not in log_output.text
+
+
+@pytest.mark.parametrize('action,verb,suffix', BATCH_MUTATIONS, ids=['retry', 'delete'])
+@pytest.mark.parametrize('ending', ['commit', 'rollback'])
+async def test_batch_mutation_real_lock_and_late_atomic_result(database, settings, genuine_resume, action, verb, suffix, ending):
+    from threading import Event, current_thread
+    from sqlalchemy import event, text, select, func
+    engine, factory = database
+    settings.batch_mutation_max_concurrent_requests = 1
+    settings.batch_mutation_wait_seconds = .2
+    services, _, key, bid, _, other_key, kept = _batch_mutation_setup(settings, factory, genuine_resume)
+    entered, proceed, pids = Event(), Event(), []
+    needle = 'screening_erasure_state' if action == 'retry' else 'delete from screening_batches'
+    def sql(conn, cursor, statement, parameters, context, many):
+        if needle in statement.lower() and current_thread().name.startswith('batch-mutation') and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    def commit(session):
+        if ending == 'rollback' and current_thread().name.startswith('batch-mutation'):
+            session.flush()
+            raise RuntimeError('synthetic-private-batch-mutation-error')
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            event.listen(factory, 'before_commit', commit)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path = '/screening/batches/' + bid
+                pending = asyncio.create_task(http.request(verb, path + suffix, headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 10)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE')
+                    else:
+                        blocker.execute(text('LOCK TABLE screening_batches IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid = :pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    assert (await http.get('/healthz')).status_code == 200
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'batch_mutation_pending'}
+                    assert len(services.batch_mutations._active) == 1
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.batch_mutations._active:
+                            await asyncio.sleep(.01)
+                saved = await http.get(path, headers={'X-Org-Key': key})
+                gone = action == 'delete' and ending == 'commit'
+                assert saved.status_code == (404 if gone else 200)
+                if not gone:
+                    assert saved.json()['counts'] == {'pending': int(action == 'retry' and ending == 'commit'),
+                        'processing': 1, 'done': 1, 'failed': 1 if action == 'retry' and ending == 'commit' else 2}
+                with factory() as session:
+                    assert session.scalar(select(func.count()).select_from(BatchItemRow).where(BatchItemRow.batch_id == bid)) == (0 if gone else 4)
+                assert (await http.get('/screening/batches/' + kept, headers={'X-Org-Key': other_key})).status_code == 200
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql), (factory, 'before_commit', commit)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+        await services.aclose()
+
 
 async def test_batch_registration_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume):
     from threading import Event

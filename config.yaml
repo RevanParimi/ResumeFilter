@@ -305,6 +305,8 @@ batch_read_max_concurrent_requests: 4       # three parallel queue reads plus ba
 batch_read_wait_seconds: 20.0               # complete scoped view; late reads keep admission
 batch_registration_max_concurrent_requests: 2 # complete validation, creation and scoped detail
 batch_registration_wait_seconds: 20.0       # pending batch ID supports GET-only recovery
+batch_mutation_max_concurrent_requests: 2   # complete scoped retry/delete transactions
+batch_mutation_wait_seconds: 20.0           # uncertain changes require human saved-state recovery
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

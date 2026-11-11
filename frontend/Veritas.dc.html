@@ -275,6 +275,21 @@
             </div>
           </sc-if>
 
+          <sc-if value="{{ showBatchChanges }}">
+            <sc-for list="{{ batchChangeRows }}" as="change">
+              <div style="{{ uploadErrorBox }}">
+                <div>Batch reference: {{ change.id }}</div>
+                <div>{{ change.message }}</div>
+                <div>{{ change.notice }}</div>
+                <sc-if value="{{ change.uncertain }}">
+                  <button onClick="{{ change.check }}" disabled="{{ change.checking }}" style="{{ smallGhost }}">Check saved state</button>
+                  <sc-if value="{{ change.checked }}">
+                    <button onClick="{{ change.allow }}" disabled="{{ change.checking }}" style="{{ smallGhost }}">Allow another change</button>
+                  </sc-if>
+                </sc-if>
+              </div>
+            </sc-for>
+          </sc-if>
           <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ true }}">
             <sc-if value="{{ batchDiscoveryMore }}" hint-placeholder-val="{{ false }}">
               <p>Load the next page to check for saved batches.</p>
@@ -328,7 +343,10 @@
                 </div>
                 <div style="display:flex; gap:7px;">
                   <button onClick="{{ refresh }}" style="{{ ghostBtn }}" style-hover="background:var(--hover)">Refresh</button>
-                  <button onClick="{{ driveAction }}" style="{{ driveBtn }}" style-hover="filter:brightness(1.08)">{{ driveLabel }}</button>
+                  <sc-if value="{{ hasFailed }}">
+                    <button onClick="{{ retryFailed }}" disabled="{{ retryDisabled }}" style="{{ ghostBtn }}">Retry failed items</button>
+                  </sc-if>
+                  <button onClick="{{ driveAction }}" disabled="{{ driveDisabled }}" style="{{ driveBtn }}" style-hover="filter:brightness(1.08)">{{ driveLabel }}</button>
                 </div>
               </div>
 
@@ -754,14 +772,14 @@
                       <div style="font-size:10.5px; color:var(--muted); margin-top:4px;">{{ b.progressLabel }}</div>
                     </div>
                     <div style="text-align:right; min-width:70px;">
-                      <button onClick="{{ b.arm }}" style="{{ b.deleteBtn }}" style-hover="background:var(--hover)">{{ b.deleteLabel }}</button>
+                      <button onClick="{{ b.arm }}" disabled="{{ b.deleteDisabled }}" style="{{ b.deleteBtn }}" style-hover="background:var(--hover)">{{ b.deleteLabel }}</button>
                     </div>
                   </div>
                   <sc-if value="{{ b.armed }}" hint-placeholder-val="{{ false }}">
                     <div style="padding:11px 16px; background:var(--missBg); border-top:1px solid var(--missEdge);">
                       <div style="font-size:12px; line-height:1.55; color:var(--text); max-width:74ch;">Delete “{{ b.name }}”? This removes the batch, its rows and any resume text still held for it. Candidates and reports already created from it are not deleted — those belong to the people they describe.</div>
                       <div style="display:flex; gap:7px; margin-top:9px;">
-                        <button onClick="{{ b.confirm }}" style="{{ dangerBtn }}" style-hover="filter:brightness(1.08)">Delete batch</button>
+                        <button onClick="{{ b.confirm }}" disabled="{{ b.deleteDisabled }}" style="{{ dangerBtn }}" style-hover="filter:brightness(1.08)">Delete batch</button>
                         <button onClick="{{ b.cancel }}" style="{{ smallGhost }}" style-hover="background:var(--hover)">Keep it</button>
                       </div>
                     </div>
@@ -1786,6 +1804,7 @@ class Component extends window.VeritasEmployerRoles(
     selectedJob: null, busyId: null, erasureConfirm: "",
     // screening
     selectedBatch: null, moreBusy: null, deleteArmed: null,
+    batchChanges: {},
     // the process driver (spec 0.2): the client does the work, so its state is
     // real UI state rather than a spinner over somebody else's queue.
     driving: false, driveError: null, driveDone: 0, driveFailed: 0,
@@ -1849,6 +1868,7 @@ class Component extends window.VeritasEmployerRoles(
   }
 
   handleSessionLost = () => {
+    this._batchChangeRequests.clear();
     this._uploadRequest = this._uploadCheckRequest = null;
     this._batchListRequest = this._batchReadRequest = this._batchPageRequest = null;
     this._viewBatch = null;
@@ -1873,6 +1893,7 @@ class Component extends window.VeritasEmployerRoles(
     this.clearReportLocation();
     this.setState({
       files: [], batchNameInput: '', uploadBusy: false, uploadError: null, uploadNotice: null,
+      batchChanges: {}, deleteArmed: null,
       uploadUncertain: false, uploadBatchId: null, uploadCheckBusy: false,
       evalText: "", evalFile: null, evalGithub: "", evalPortfolio: "",
       evalBusy: false, evalProgress: "", evalError: null, evalReportId: null, evalPublicationPending: false,

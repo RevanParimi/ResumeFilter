@@ -15,6 +15,99 @@
   _batchPageRequest = null;
   _uploadRequest = null;
   _uploadCheckRequest = null;
+  _batchChangeRequests = new Map();
+
+  setBatchChange = (id, patch) => this.setState(s => ({
+    batchChanges: Object.assign({}, s.batchChanges, {
+      [id]: Object.assign({}, (s.batchChanges || {})[id], patch)
+    })
+  }));
+  batchChangeBlocked = (id) => {
+    const change = (this.state.batchChanges || {})[id];
+    return this._batchChangeRequests.has(id) || !!(change && (change.busy || change.uncertain));
+  };
+  forgetBatch = (id) => {
+    const selected = this.state.selectedBatch === id;
+    if (selected) {
+      this._viewBatch = this._batchReadRequest = this._batchPageRequest = null;
+      this._driving = false;
+    }
+    this.setState({
+      selectedBatch: selected ? null : this.state.selectedBatch,
+      driving: selected ? false : this.state.driving,
+      queue: selected ? IDLE : this.state.queue,
+      summary: selected ? IDLE : this.state.summary,
+      batch: selected ? IDLE : this.state.batch
+    });
+  };
+  changeBatch = async (id, action) => {
+    const me = this.state.me;
+    if (!id || !me || this._gone || this.batchChangeBlocked(id)) return;
+    const token = {};
+    this._batchChangeRequests.set(id, token);
+    const still = () => !this._gone && this.state.me === me && this._batchChangeRequests.get(id) === token;
+    if (this._driveBatch === id) this._halt();
+    this.setBatchChange(id, { action, busy: true, uncertain: false, checked: false, error: null, notice: '' });
+    try {
+      const path = '/screening/batches/' + encodeURIComponent(id);
+      const result = await (action === 'delete'
+        ? API.del(path, { timeoutMs: EVAL_TIMEOUT_MS })
+        : API.post(path + '/retry', {}, { timeoutMs: EVAL_TIMEOUT_MS }));
+      if (!still()) return;
+      this._batchChangeRequests.delete(id);
+      this.setBatchChange(id, { busy: false, notice: action === 'delete' ? 'Batch deleted.'
+        : (result.requeued || 0) + ' queued, ' + (result.skipped || 0)
+          + ' skipped because fresh input is needed. Check the saved batch, then choose Start screening when ready.' });
+      if (action === 'delete') this.forgetBatch(id);
+      else if (this.state.selectedBatch === id) this.refreshBatch(id);
+      this.loadBatches();
+    } catch (error) {
+      if (!still()) return;
+      this._batchChangeRequests.delete(id);
+      if (error && error.kind === 'session_lost') return;
+      const refused = error && ['batch_mutation_capacity_exhausted', 'batch_mutation_executor_closed'].includes(error.detail);
+      const uncertain = !refused && (!error || !error.status || error.status >= 500);
+      this.setBatchChange(id, { busy: false, error, uncertain, checked: false });
+    }
+  };
+  retryFailed = () => {
+    const id = this.state.selectedBatch;
+    const counts = (this.state.batch.data && this.state.batch.data.counts)
+      || (this.state.summary.data && this.state.summary.data.counts);
+    if (!id || !counts || !counts.failed) return;
+    return this.changeBatch(id, 'retry');
+  };
+  checkBatchChange = async (id) => {
+    const me = this.state.me, change = (this.state.batchChanges || {})[id];
+    if (!me || this._gone || !change || !change.uncertain || this._batchChangeRequests.has(id)) return;
+    const token = {};
+    this._batchChangeRequests.set(id, token);
+    const still = () => !this._gone && this.state.me === me && this._batchChangeRequests.get(id) === token;
+    this.setBatchChange(id, { checking: true });
+    try {
+      const saved = await API.get('/screening/batches/' + encodeURIComponent(id), { timeoutMs: EVAL_TIMEOUT_MS });
+      if (!still()) return;
+      this._batchChangeRequests.delete(id);
+      this.setBatchChange(id, { checking: false, checked: true,
+        notice: 'Saved batch found. An earlier change may still finish later. Check again before repeating it.' });
+      if (this.state.selectedBatch === id) this.refreshBatch(saved.id);
+      this.loadBatches();
+    } catch (error) {
+      if (!still()) return;
+      this._batchChangeRequests.delete(id);
+      const absent = error && error.status === 404;
+      this.setBatchChange(id, { checking: false, checked: !!absent, notice: absent
+        ? 'This batch is not visible to this account. An earlier change may still finish later.'
+        : 'Saved state could not be checked. Wait, then Check saved state again.' });
+      if (absent) { this.forgetBatch(id); this.loadBatches(); }
+    }
+  };
+  allowBatchChange = (id) => {
+    const change = (this.state.batchChanges || {})[id];
+    if (this._batchChangeRequests.has(id) || !change || !change.checked) return;
+    this.setBatchChange(id, { uncertain: false, error: null,
+      notice: 'Another change is now allowed. An earlier change may still finish later; nothing was repeated automatically.' });
+  };
   // ── screening ─────────────────────────────────────────────────────────────
   // Opening the queue with no batch chosen picks the newest, because the list
   // is newest-first server-side. An org that has uploaded nothing lands on an
@@ -136,7 +229,7 @@
     this._tick(batchId);
   };
   startProcessing = () => {
-    if (this._driving || !this.state.selectedBatch) return;
+    if (this._driving || !this.state.selectedBatch || this.batchChangeBlocked(this.state.selectedBatch)) return;
     this._drive(this.state.selectedBatch);
   };
 
@@ -182,6 +275,7 @@
   // caught and no unit test could have.
   armDelete = (id) => (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
+    if (this.batchChangeBlocked(id)) return;
     this.setState({ deleteArmed: id });
   };
   cancelDelete = (e) => {
@@ -190,26 +284,8 @@
   };
   confirmDelete = (id) => (e) => {
     if (e && e.stopPropagation) e.stopPropagation();
-    this.setState({ busyId: id, deleteArmed: null });
-    if (this._driveBatch === id) this._driving = false;
-    API.del("/screening/batches/" + id).then(
-      () => {
-        const wasSelected = this.state.selectedBatch === id;
-        // Drop the view token too, or an in-flight refresh of the batch that
-        // was just deleted lands afterwards and repopulates the screen.
-        if (wasSelected) this._viewBatch = null;
-        this.setState({
-          busyId: null,
-          selectedBatch: wasSelected ? null : this.state.selectedBatch,
-          driving: wasSelected ? false : this.state.driving,
-          queue: wasSelected ? IDLE : this.state.queue,
-          summary: wasSelected ? IDLE : this.state.summary,
-          batch: wasSelected ? IDLE : this.state.batch
-        });
-        this.loadBatches();
-      },
-      (err) => this.setState({ busyId: null, batchList: { loading: false, data: this.state.batchList.data, error: err } })
-    );
+    this.setState({ deleteArmed: null });
+    return this.changeBatch(id, 'delete');
   };
 
   // ── upload ────────────────────────────────────────────────────────────────
@@ -359,6 +435,21 @@
    * in SCREENING.md, so the mapping can be checked without reading other screens. */
   screeningVals() {
     const st = this.state;
+    const batchChanges = st.batchChanges || {};
+    const changeRows = Object.entries(batchChanges).map(([id, change]) => {
+      const refused = change.error && ['batch_mutation_capacity_exhausted', 'batch_mutation_executor_closed'].includes(change.error.detail);
+      return {
+        id, message: change.busy ? 'Saving batch change…' : change.uncertain
+          ? (change.action === 'delete' ? 'Deletion' : 'Retry') + ' may still be saving. Wait, then Check saved state. No change or screening is repeated automatically.'
+          : refused ? 'Batch changes are temporarily unavailable. Nothing was changed by this request. Wait, then try again.'
+          : change.error ? errorCopy(change.error) : change.notice,
+        notice: change.uncertain ? change.notice : '',
+        uncertain: !!change.uncertain, checked: !!change.checked,
+        checking: !!change.checking,
+        check: this.rowHandler('checkBatchChange', id, () => () => this.checkBatchChange(id)),
+        allow: this.rowHandler('allowBatchChange', id, () => () => this.allowBatchChange(id))
+      };
+    });
     const batch = st.batch.data;
     const sum = st.summary.data;
     const queue = st.queue.data;
@@ -392,13 +483,15 @@
         arm: this.rowHandler("arm", b.id, () => this.armDelete(b.id)),
         confirm: this.rowHandler("del", b.id, () => this.confirmDelete(b.id)),
         cancel: this.cancelDelete,
-        deleteLabel: st.busyId === b.id ? "Deleting…" : "Delete",
-        deleteBtn: st.busyId === b.id ? SMALL_MUTED : SMALL_GHOST
+        deleteLabel: batchChanges[b.id] && batchChanges[b.id].busy ? "Saving…" : "Delete",
+        deleteDisabled: this.batchChangeBlocked(b.id),
+        deleteBtn: this.batchChangeBlocked(b.id) ? SMALL_MUTED : SMALL_GHOST
       };
     }) : [];
 
     // -- the selected batch's header ---------------------------------------
     const counts = (batch && batch.counts) || (sum && sum.counts) || null;
+    const mutationBlocked = this.batchChangeBlocked(st.selectedBatch);
     const total = counts ? counts.pending + counts.processing + counts.done + counts.failed : 0;
     const settled = counts ? counts.done + counts.failed : 0;
     const byBand = (sum && sum.by_risk_band) || {};
@@ -494,14 +587,20 @@
       // -- the driver ------------------------------------------------------
       driving: st.driving,
       driveLabel: st.driving ? "Stop screening" : (settled >= total && total > 0 ? "All screened" : "Start screening"),
-      canDrive: !!(counts && counts.pending + counts.processing > 0),
+      canDrive: !mutationBlocked && !!(counts && counts.pending + counts.processing > 0),
+      driveDisabled: !st.driving && (mutationBlocked || !(counts && counts.pending + counts.processing > 0)),
+      canRetry: !mutationBlocked && !st.driving && !!(counts && counts.failed),
+      retryDisabled: mutationBlocked || st.driving || !(counts && counts.failed),
+      retryFailed: this.retryFailed,
+      showBatchChanges: ['queue', 'summary', 'batches'].includes(st.screen) && changeRows.length > 0,
+      batchChangeRows: changeRows,
       // With nothing left to screen the button is inert rather than firing a
       // call the server answers 0/0/0 to. An affordance that does nothing is
       // the same mistake as one that always fails.
       driveBtn: st.driving ? GHOST_BTN
-        : (counts && counts.pending + counts.processing > 0 ? SMALL_PRIMARY_FLAT : SMALL_MUTED),
+        : (!mutationBlocked && counts && counts.pending + counts.processing > 0 ? SMALL_PRIMARY_FLAT : SMALL_MUTED),
       driveAction: st.driving ? this.stopProcessing
-        : (counts && counts.pending + counts.processing > 0 ? this.startProcessing : this.noop),
+        : (!mutationBlocked && counts && counts.pending + counts.processing > 0 ? this.startProcessing : this.noop),
       driveStatus: st.driving
         ? "Screening from this browser — " + st.driveDone + " done, " + st.driveFailed
           + " failed this run. Leave the page and the batch pauses; it resumes where it stopped."

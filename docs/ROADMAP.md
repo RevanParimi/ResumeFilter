@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-11 - R4-S2-T3C3D4C complete; bounded retry/delete.**
+  Complete transactions run on a separate owning-session pool. Locked current
+  ownership / conditional DELETE refuses stale cross-tenant writes. The new
+  failed-item retry action only requeues; uncertain changes preserve references
+  and require saved-state GET plus explicit intent, with no automatic replay or
+  assessment. The [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4c) owns scope,
+  red/green, review resolutions, final full/actual PG/HTTP/restart/Chrome/static
+  gates and corrected stalled-transport checks. Working DB/unrelated files are
+  preserved, demo untouched and both owned PG instances stopped. Distinct final
+  staged self-review and its harness correction/reruns are recorded; scoped
+  publication follows. Only C closes; next is D4Q in a
+  separate session, with D4 and broader parents still open.
+
 - **Session 2026-11-10 - R4-S2-T3C3D4B complete; bounded batch registration.**
   Complete validation/create/detail uses a separate owning-session pool while
   transport/PDF retains its caller. Pending batch references support explicit

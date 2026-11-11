@@ -11389,3 +11389,286 @@ Both owned PG instances remain stopped and the demo remains untouched. These
 are same-agent self-reviews and fake-provider functional checks, not independent
 review or live quality validation. Scoped commit/push and remote verification
 follow; stop after B publication with D4C next in a separate session.
+
+### <a id="r4-s2-t3c3d4c"></a>R4-S2-T3C3D4C - Bound batch retry and deletion
+
+Started 2026-11-11 at published B baseline `62c9331`; this session's only task.
+[PI contract/status](PI-R4.md#r4-s2-t3c3d4c) and
+[operating budget](../../OPERATING.md#batch-retry-and-deletion-execution-budget).
+Implementation is complete; required full/actual PG validation is initially in
+progress. Results and completion/final review are recorded below when available.
+Only C is in scope; D4Q, D5-D6/Q, C3D and broader parents remain open.
+
+**Pre-implementation acceptance and resulting behavior.** The PI contract was
+written before implementation. Both employer retry/delete handlers now submit
+complete synchronous service/store work to a separate `batch_mutation` executor:
+default two accepted operations and a finite positive 20-second caller wait,
+configurable through YAML/environment. Sessions and complete transactions stay
+on their owning worker. Auth/CSRF remains at the existing boundary. Full/closed
+admission returns safe 503 strings before mutation; wait expiry returns
+`batch_mutation_pending`, with Retry-After: 1 and no false confirmation. The
+existing request path supplies the batch recovery ID. Timeout/cancellation/late
+failure retains admission until actual completion; shutdown drains before SQL
+disposal. There is no automatic write replay, provider work or durable continuation.
+
+Scope inventory found that an ownership change after an initial read could let
+retry or delete modify another tenant's batch. Retry now orders generation/
+SQLite writer locking before a current parent read, with a PG row lock through
+commit. Delete uses a direct conditional organisation/ID DELETE; DB cascades
+retain their existing ownership. Scope loss refuses the write, with generic 404
+for absent and foreign targets. Atomic requeue/skipped counts, live leases,
+blocked/erased input, retention, cascades and success DTOs remain. No schema,
+registration, assessment/scorer or consent change is introduced.
+
+The previously missing **Retry failed items** UI action only requeues. Both
+mutations stop the local driver and never start processing. Per-batch recovery
+keeps action/reference/error even if the batch disappears from the list;
+uncertainty blocks duplicate writes and Start screening. **Check saved state**
+only GETs saved state. A successful/404 check exposes the separate **Allow another
+change** action; a failed read cannot unlock another write. Reads cannot prove
+that an earlier change ended, and the warning remains visible. Confirmed retry
+reports queued/skipped counts and requires a separate Start action. Deletion
+retains its two-click confirmation. Account loss discards references and rejects
+late callbacks; another selected batch, navigation and upload drafts survive
+unrelated completion. Page reload reads persisted results without auto-assessment.
+
+**Red/green evidence and local runners.** All Python commands use
+`.resume/Scripts/python.exe`. Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3d4c.py <tag> <Python args>` clears inherited DEE
+configuration/keys, bypasses .env/config.yaml, uses null mail and local fake
+providers, and records local logs. Omitted Python args execute full
+`-m pytest -q --tb=short`. Its `baseline` hashes all **734** tracked files;
+working storage and the existing demo are not used for validation.
+
+- `red -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+  "mutation_sql or mutation_refuses"`: **4 intended failures, 4 PG environment
+  skips, 118 deselected, 1 warning**. Held retry/DELETE SQL blocked health/admin
+  requests; actual competing ownership updates then left retry/delete modifying
+  the now-foreign batch. These are behavioral failures, not broken fixtures.
+- `node --test --test-name-pattern="pending batch delete"
+  scripts/test_ui_screening.js`: intended assertion failure because uncertain
+  deletion retained no recovery guard. The first probe dereferenced missing
+  state and raised TypeError; it was corrected to an explicit guard assertion
+  and rerun red before implementation. The TypeError is not counted as the
+  behavioral red result.
+- `green` repeats the SQL selection: **4 passed, 4 skipped, 118 deselected,
+  1 warning**. Actual PG evidence is separate below.
+- `focused -m pytest -q --tb=short` over `tests/test_screening_batches_api.py`,
+  `test_screening_store.py`, `test_screening_service.py`, `test_config.py`,
+  `test_service_lifecycle.py`: **246 passed, 65 skipped, 1 warning**. This early
+  collection preceded the admission/real-lock additions; final full/PG own those.
+- `mutations ... tests/test_screening_batches_api.py -k mutation` initially:
+  **2 failed, 14 passed, 16 skipped, 118 deselected, 1 warning**. The injected
+  before-commit rollback hook remained installed for subsequent foreign/absent
+  DELETE probes, producing artificial 500s. Restoring the original operation and
+  removing that hook after primary completion fixes the harness isolation.
+  `mutations-fixed` repeats it: **16 passed, 16 skipped, 118 deselected,
+  1 warning**. Worker/session ownership, responsive unrelated work, shared full/
+  closed admission, independent read admission, timeout/cancel/late completion,
+  real SQLite lock waits, late atomic commit/rollback and foreign/absent recovery
+  are exercised. Lease/done/skipped rows and the other tenant's batch stay intact.
+- Final `node --test scripts/test_ui_screening.js`: **133 passed**, including
+  **68** shared evaluation checks. New cases cover both verbs' pending/definite
+  refusals/generic uncertainty, read-before-fresh-intent, read failure, no replay/
+  process, disappeared references, partial-summary retry, stale account,
+  selection and unmount callbacks. Initial UI failures were an overly generic
+  saved-read fixture (which replaced failures with pending counts) and the old
+  delete-error assertion expecting a list-read error; the fixture now represents
+  the actual saved failed rows, and the changed UI contract checks its mutation
+  panel. All final cases pass.
+
+**Application and browser evidence.** Sanitized runner `http
+scripts/smoke_r4_s1_t3d.py --batch-mutation-workers`: **50/50** on migrated scratch
+SQLite, two authenticated employers and graceful HTTP restart. The shared
+registration SQL harness takes an explicit mutation mode rather than introducing
+another duplicate launcher. Synthetic failed-item fixtures are confined to that
+mode and its scratch factory; production gains no test controls. Real held SQL
+checks responsive unrelated HTTP, both verbs' shared admission, early pre-write
+reads, late commit/rollback, no replay/provider work, queued/skipped behavior,
+foreign/absent refusal and exact saved state across restart. An explicit later
+process request alone evaluates the requeued item. Existing registration mode
+`registration-http scripts/smoke_r4_s1_t3d.py --batch-registration-workers` still
+passes **33/33** after the harness reuse. HTTP/subprocess evidence is distinct
+from TestClient regressions.
+
+`browser scripts/check_ui_screening_extraction_browser.py
+--batch-mutation-workers`: **46/46** actual Chrome checks. Existing intake/
+queue/report/feedback/summary/delete actions remain exercised. Controlled real
+SQL drives pending retry/delete, disabled duplicate buttons, early saved-state
+reads that cannot unlock/replay, late commit/rollback, retained reference after
+list removal, explicit fresh intent, confirmed retry queued/skipped copy,
+separate human Start, deliberate delete after rollback, exact page-reload state
+and no console exceptions. This uses existing CDN internet and fake external
+providers, not an offline renderer or live quality validation.
+
+**Implementation self-review.** Reviewed the code diff/callers at `62c9331`
+plus the scoped uncommitted implementation, separately from completion review.
+Specification review maps both operations and the previously missing UI retry
+flow to the contract, while leaving processing SQL and D4Q acceptance open.
+Correctness/maintainability review traced worker-owned sessions, scope at the
+write, generation/parent ordering, conditional DELETE/cascades, lease/erasure/
+retention, safe refusals, uncertainty/drain, and stale/per-batch UI state. Resolved:
+
+1. High, `src/app/screening/store.py` retry/delete: ownership changed between
+   the initial authorized snapshot and write could mutate a foreign batch.
+   Current locked parent reads / conditional DELETE fix this; the four SQL red/
+   green cases and named actual PG gate cover it. No cross-tenant success is
+   accepted after observed ownership loss.
+2. Medium, mutation controls in `frontend/Veritas.dc.html` / `screening.js`:
+   handler guards alone did not visibly disable Start, and `!canRetry` was not a
+   supported plain binding. Added explicit disabled mappings and binding fixture
+   coverage for uncertain recovery. The initial binding check reported nine
+   misses (the expression plus absent mutation-row fixture); corrected checks
+   resolve **626 bindings / 19 states**, and Chrome verifies disabled actions.
+
+No blocking implementation finding remains. Same-agent self-review is not an
+independent review. Static checks pass: `node scripts/check_ui_bindings.js`,
+`node --check frontend/api.js`, `frontend/support.js`, `frontend/screening.js`;
+`compile -m py_compile` passes for all **10** changed Python modules. Hash helper
+`.pytest_cache/review_state_r4_s2_t3c3d4c.py save` records **616** final code/config
+hashes; `check` reports no changes. Required full/PG results and distinct final
+staged review/publication are not claimed until appended below.
+
+**Continued implementation review: stalled transport.** Medium finding in
+`frontend/screening.js`: the mutation calls omitted the existing HTTP deadline,
+so a transport that never settled could leave the UI busy indefinitely even
+though server-side SQL waits are bounded. Added the shared 180-second client
+deadline to both POST retry and DELETE; expiry uses the same uncertain reference/
+no-replay guard. This deadline is separate from the server's 20-second wait and
+cannot prove rollback. No Python/SQL operation changed.
+
+`node --test --test-name-pattern="HTTP expires" scripts/test_ui_screening.js`
+is red first: **2 intended assertion failures**, busy remains true for stalled
+retry/delete. The real API adapter is exercised with a deliberately shortened
+15ms deadline, not a preconstructed timeout exception. After the fix, the whole
+UI module is **135 passed**, including both stalled-transport regressions and
+the 68 shared cases; bindings remain **626/19**, and all three JS syntax checks
+pass. `ui-python-final -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py`: **20 passed, 1 warning**. The pending full run had started
+before this client-only correction; Python/SQL stayed unchanged and its shipped
+handler tests read JS at test execution. The affected UI/asset tests are also
+explicitly rerun here, with final Chrome results recorded below. The final
+616-file snapshot was refreshed after these two JS file changes, rather than
+claiming they matched the earlier snapshot.
+
+**Final client/browser and actual PostgreSQL evidence.**
+`browser-final scripts/check_ui_screening_extraction_browser.py
+--batch-mutation-workers` passes **46/46** on the corrected deadline-enabled
+client. The run includes the actual controls and recovery/reload journey above;
+stalled-transport expiry itself is separately exercised through the real API
+adapter in the offline regressions. No browser failure is hidden by this rerun.
+
+Owned sanitized runner `.pytest_cache/run_r4_s2_t3c3d4c_postgres.py` executes the
+21-module screening/API/store/schema/scope/projection/input/erasure/config/
+lifecycle/route/OpenAPI/logging/migration selection inherited from B:
+**782 passed, 10 SQLite-only skips, 18 warnings**. Actual PG fixture cases use
+competing connections: ACCESS EXCLUSIVE table locks are observed through
+`pg_stat_activity`, HTTP waits expire while the driver remains blocked, and
+released retry/delete operations either commit completely or roll back after
+real SQL/flush. Both verbs refuse controlled ownership loss; a retained live
+lease/done row is not requeued, and skipped rows/other-tenant batches remain.
+Deletion commits remove all batch children; rollback preserves them. No SQLite
+fixture or skipped PG case is substituted for actual PostgreSQL behavior.
+
+The runner then executes `scripts/smoke_r4_s1_t3d.py --postgres
+--batch-mutation-workers`: **50/50**, matching SQLite, with migrated scratch SQL,
+two authenticated employers, late commit/rollback, no replay/provider work,
+deliberate later processing, CSRF/tenant scope and graceful HTTP restart. The
+server is PostgreSQL **18.6**, timezone **Asia/Calcutta**, isolation **read
+committed**; the synthetic 25-second statement timeout is a test guard rather
+than a production deadline. No schema changed; the existing migration module
+and actual HTTP startup still migrate scratch stores to
+`0030_screening_ingest_facts`.
+
+Owned runtime `.pytest_cache/r4-s2-t3c3d4c-pg-runtime.json` records stop exit **0**;
+independent `pg_ctl status` exits **3**, no server running. Credentials, runtime
+stores and logs remain ignored. The PG gate's Python/SQL is unchanged by the
+client-only deadline correction; affected JS/asset/Chrome checks were rerun as
+recorded. All **616** final code/config hashes match the refreshed snapshot;
+working DB/unrelated files remain preserved and the demo was not restarted.
+Required full regression and distinct final staged review/publication remain
+pending until recorded; these gates alone do not close C.
+
+**Final regression and completion (2026-11-11).** Sanitized runner `full`
+executes `.resume/Scripts/python.exe -m pytest -q --tb=short`: **4364 passed,
+1137 skipped, 127 warnings**, exit **0** (pytest 16039.21 seconds). Python/SQL
+stayed unchanged after full collection. The client-only deadline correction and
+its JS regressions landed before full's shipped-handler test execution; those
+tests read the final JS at execution, and the affected UI/asset selection and
+actual Chrome were separately rerun as recorded. This does not substitute
+earlier UI or binding checks for final browser evidence. Environment/optional
+skips are not proof for omitted cases; actual PG validation above owns its cases.
+
+All **616** final code/config hashes match the refreshed snapshot. All C
+acceptance and required validation are complete, with no unresolved
+implementation-review blocker. Working DB and unrelated tracked files retain
+baseline bytes; the demo was not started/restarted and owned PG is confirmed
+stopped. Local logs, credentials, stores and runtimes are excluded from
+publication. Per-process budgets are not global SQL/auth, whole-request,
+driver/drain or memory deadlines. Saved-state reads cannot prove an earlier
+write ended; explicit subsequent intent can overlap late completion. These are
+functional fake-provider checks, not measured quality or independent review.
+
+Only **R4-S2-T3C3D4C** closes. Exact next: **R4-S2-T3C3D4Q - Review combined
+batch management**, in a separate session. D4, D5-D6/Q, C3D and broader parents
+remain open. Distinct final staged self-review, scoped commit/push and remote
+verification follow this completion record; do not start Q here.
+
+**Distinct final staged self-review (2026-11-11, after completion).** Reviewed
+the exact staged C diff against published baseline `62c9331`, separately from
+implementation review and full regression. The **21-file** scope is:
+`config.yaml`; `src/app/api/screening.py`, `src/app/core/config.py`,
+`src/app/screening/store.py`, `src/app/services/__init__.py`;
+`frontend/Veritas.dc.html`, `frontend/screening.js`; `tests/conftest.py`,
+`tests/test_config.py`, `tests/test_screening_batches_api.py`,
+`tests/test_service_lifecycle.py`; `scripts/check_ui_bindings.js`,
+`scripts/check_ui_screening_extraction_browser.py`, `scripts/smoke_r4_s1_t3d.py`,
+`scripts/test_ui_screening.js`; `FEATURE_STATUS.md`, `OPERATING.md`,
+`docs/PROGRESS.md`, `docs/ROADMAP.md`, `docs/delivery/PI-R4.md` and this evidence.
+This is same-agent self-review, not an independent review.
+
+Specification review maps both complete operations, current ownership,
+atomicity/lease/input/erasure/retention, safe uncertainty and human recovery to
+the recorded SQL red/green, actual PG lock/late result, migrated two-actor HTTP/
+restart, actual Chrome and final pytest evidence. It confirms only C closes;
+D4Q and broader parents remain open. Correctness/maintainability review retraced
+worker-owned sessions and complete commits, generation-before-parent ordering,
+conditional DELETE/cascades, unchanged success DTO/auth/CSRF, retained capacity
+after timeout/cancel/late failure, shutdown and borrowed-fixture cleanup. UI
+review covers shared/per-batch guards, definite refusal versus uncertainty,
+response-body/client deadline, saved GET failure/absence, explicit later intent,
+disabled write/Start controls, two-click delete, queued/skipped copy and stale
+account/selection/unmount callbacks. Reviewed scratch-only seeding and SQL hold/
+rollback instrumentation, counters, cleanup and the distinctions between source,
+offline handler, actual HTTP/PG/browser and quality evidence.
+
+One final-review finding was resolved: Low, shared scratch SQL hook in
+`scripts/smoke_r4_s1_t3d.py`. It read the mode file for unrelated SQL before
+filtering for the controlled worker operation. A concurrent flag removal could
+cause a harness-only FileNotFoundError/500; this was identified by review, not
+reported as an observed HTTP failure. The hook now returns before file access
+for unrelated/finished SQL and reuses its captured mode value. Production and
+pytest regression code did not change. Affected validation was rerun:
+`http-final scripts/smoke_r4_s1_t3d.py --batch-mutation-workers` **50/50**,
+`registration-http-final scripts/smoke_r4_s1_t3d.py --batch-registration-workers`
+**33/33**, `browser-staged scripts/check_ui_screening_extraction_browser.py
+--batch-mutation-workers` **46/46**. `compile-staged -m py_compile
+scripts/smoke_r4_s1_t3d.py` passes. Owned
+`.pytest_cache/run_r4_s2_t3c3d4c_postgres_final.py --http-only` reruns migrated PG
+HTTP/restart: **50/50**; runtime `r4-s2-t3c3d4c-final-pg-runtime.json` reports stop
+exit **0**, independent `pg_ctl status` exits **3**. Both owned PG instances are
+stopped. This harness-only correction supersedes its earlier snapshot; the
+final 616-file snapshot was refreshed, rather than implying unchanged harness
+bytes across the full run. No further blocking finding remains.
+
+Final staged validation confirms all **15** changed code/config files match
+the validated refreshed snapshot, accounting for Git newline normalization;
+all **616** code/config hashes match. All **8** added local Markdown targets/
+anchors resolve. Staged whitespace, added-text credential-marker and artifact-
+exclusion checks pass, and no unstaged changes remain. Preservation confirms
+**713** unrelated tracked files, including the working DB, retain baseline
+bytes. Final evidence/status prose was restaged and rechecked; it needs no
+application rerun. The demo remains untouched. No logs, credentials, runtimes,
+working data, live-provider quality claim or independent review are published.
+Scoped commit/push and remote verification follow; stop after C publication
+with D4Q next in a separate session.

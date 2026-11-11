@@ -677,7 +677,7 @@ red/focused/full, actual PG competing SQL, two-actor HTTP/restart, batch Chrome
 and both reviews; no durable worker or implicit process retry.
 
 Split before implementation because reads, registration and retry/delete have
-distinct admission and recovery contracts. A/B are complete; C/Q remain open.
+distinct admission and recovery contracts. A-C are complete; Q remains open.
 D4 remains open until A-C and Q close.
 
 **<a id="r4-s2-t3c3d4a"></a>R4-S2-T3C3D4A - Bound batch view reads**
@@ -713,11 +713,21 @@ session. D4/Q, D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d4c"></a>R4-S2-T3C3D4C - Bound batch retry and deletion**
 
-Status: pending. Prerequisite: B. Bound complete scoped retry/delete operations;
-retain lease/input-generation/erasure, skipped versus requeued, cascade and
-absent/foreign 404 contracts. Unconfirmed writes require saved-state reads without
-automatic retry or processing. Require actual PG contention/late commit/rollback,
-two-actor migrated HTTP/restart, retry/delete Chrome, red/focused/full and reviews.
+Status: done (2026-11-11). Prerequisite: B, published at `62c9331`.
+[C contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d4c) owns pre-implementation scope,
+red/green, findings/resolutions and final checks. Complete retry/delete work uses
+a separate owning-session pool. Current locked ownership / conditional DELETE
+refuses stale foreign writes; requeue/skipped, lease/generation/erasure,
+retention/cascade and generic 404 contracts remain. The new UI retry only
+requeues; uncertain changes retain references and require saved-state GET plus
+separate human intent, without write/provider replay. Existing HTTP deadlines
+also enter guarded recovery. No schema, success DTO, registration or scorer
+change. Full/actual PG locks and late commit/rollback, two-actor migrated HTTP/
+restart, actual retry/delete Chrome, static checks and implementation self-review
+are recorded, including the distinct final staged self-review and its harness
+correction/reruns after completion. Scoped publication follows. Only C closes;
+exact next is D4Q in a separate session. D4,
+D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d4q"></a>R4-S2-T3C3D4Q - Review combined batch management**
 

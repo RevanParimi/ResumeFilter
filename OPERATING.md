@@ -554,8 +554,8 @@ later erasure or updates. Pagination, retention, private projections and advisor
 semantics remain. Manual UI recovery preserves selection/reference and drafts,
 only GETs saved state and never starts screening. Initial detail/list/discovery
 failures retain visible recovery; old account/refresh/page replies cannot replace
-new state. Paging waits for a pending base refresh. Registration has a separate
-budget below; retry/delete and processing SQL remain D4C and D5-D6 work.
+new state. Paging waits for a pending base refresh. Registration and mutations
+have separate budgets below; processing SQL remains D5-D6 work.
 
 ### Batch registration execution budget
 
@@ -592,7 +592,48 @@ drafts prevent late initial success from starting screening. Only confirmed
 initial success on the same account, screen and draft can start it. References
 and files are not persisted in browser storage; reload discovers saved batches
 without starting work. Final detail/scope checks are snapshots, not locks over
-later deletion or delivery. D4C/Q and D5-D6/Q remain open.
+later deletion or delivery. The combined D4Q and processing D5-D6/Q remain open.
+
+### Batch retry and deletion execution budget
+
+`batch_mutation_max_concurrent_requests` defaults to **2** per Services/app
+process; `batch_mutation_wait_seconds` defaults to finite positive **20 seconds**.
+Configure YAML or `DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS` /
+`DEE_BATCH_MUTATION_WAIT_SECONDS`, then restart. A separate queue-free pool owns
+complete scoped retry/delete operations and their sessions/transactions. It does
+not share batch-view or registration admission. Auth/CSRF stays at its existing
+boundary. Retry orders generation locking before a current locked parent read;
+delete puts the organisation and ID directly on the DELETE predicate. Ownership
+changes cannot turn a stale authorized read into a foreign mutation. Existing
+requeued/skipped counts, live leases, erased/blocked input, retention and cascade
+behavior remain. No schema, success DTO or assessment change is introduced.
+
+Full/closed admission returns **503** `batch_mutation_capacity_exhausted` /
+`batch_mutation_executor_closed`; caller wait expiry returns **503**
+`batch_mutation_pending`. All carry `Retry-After: 1`. The request path already
+contains the recovery batch ID. Timeout/cancellation/late failure retains the
+accepted slot through actual commit/rollback, and shutdown drains accepted work
+before SQL disposal. Both UI writes use the existing 180-second HTTP deadline;
+expiry enters uncertain saved-state recovery and does not prove rollback.
+That client deadline is separate from the server's per-operation wait.
+Direct synchronous callers own their scheduling. These are
+per-process admission/wait limits, not global SQL/auth, whole-request, driver,
+shutdown/drain or memory deadlines. There is no durable continuation.
+
+The UI's **Retry failed items** only requeues; it never starts screening. Both
+mutations stop the local driver. An unconfirmed change retains its action and
+batch reference, including after the batch disappears from the list, and blocks
+duplicate writes and Start screening. **Check saved state** only GETs saved state.
+A successful/404 read allows the separate **Allow another change** action; a
+failed read does not. Reads cannot prove an earlier write has ended. That warning
+remains visible before another deliberate change. Nothing is automatically
+retried or processed; Start screening remains a separate human action. Foreign
+and missing writes both return generic 404. Present visibility/counts are
+snapshots, and a late write may still finish after recovery. Account changes
+discard recovery references; stale account/unmount callbacks and mutations of
+another batch cannot replace the selected batch or upload drafts. Page reload
+reads persisted results without starting work. D4Q and broader parents remain
+open until their separate acceptance gates close.
 
 ### Dual scoping: all scopes counted, any denial denies
 

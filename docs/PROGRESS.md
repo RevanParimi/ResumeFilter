@@ -1,49 +1,58 @@
 # Current handoff
 
-Updated: 2026-11-10. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-11. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D4B complete.** Published A baseline is `9e3ea7f`.
-[B contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) owns acceptance,
+**R4-S2-T3C3D4C complete.** Published B baseline is `62c9331`.
+[C contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4c) owns acceptance,
 red/green, review findings/resolutions, final checks and completion review.
-Only B closes; C/Q and D4 remain open.
+Only C closes; D4Q and broader parents remain open.
 
-Registration now bounds complete validation/create/detail on a separate owning-
-session pool, retaining admission through actual completion. Pending responses
-provide a server batch reference. The UI retains drafts, prevents duplicate
-submit, treats early 404 as uncertain and recovers by explicit GET without
-registration or screening replay. Navigation/account/draft guards prevent late
-success from starting work. Confirmed initial same-screen success still starts
-screening. No schema, success DTO, auth/CSRF, retention or scorer change.
+Complete retry/delete transactions use a separate owning-session pool. Retry
+locks generation/current ownership; delete scopes the DELETE predicate, refusing
+stale writes after ownership loss. Requeue/skipped, leases, erasure/retention and
+cascade semantics remain. The new UI retry action only requeues. Uncertain
+changes retain per-batch references and block repeat writes/Start; saved-state
+GET plus separate human intent is required before another change. A read cannot
+prove an earlier write ended. Account/unmount/selection guards preserve other
+work. No schema, success DTO, registration or scorer change.
 
-Final full pytest **4340 passed, 1121 skipped, 127 warnings**. Migrated SQLite
-two-actor HTTP/graceful restart **33/33**; actual Chrome **37/37**, repeated after
-navigation correction; offline UI **109**, bindings **612/18**, syntax and
-11-module compilation pass.
-Broad PG-enabled selection **741 passed, 10 SQLite-only skips**; corrected
-API/lifecycle rerun **149 passed**; both PG HTTP/restarts **33/33**. Both owned PG
-instances are independently confirmed stopped.
-The initial full run was stopped incomplete to add borrowed-fixture pool cleanup;
-`full-final` owns the passing corrected run. Detailed failures/limits remain in
-evidence. All **616** code/config hashes match. Working DB/unrelated files are
-preserved; demo not restarted. Completion and the distinct final staged
-self-review are recorded in evidence; scoped commit/push follows, with the
-verified remote commit reported in the final response.
+Final full pytest **4364 passed, 1137 skipped, 127 warnings**. Actual PG-enabled
+selection **782 passed, 10 SQLite-only skips, 18 warnings**; both databases'
+migrated two-actor HTTP/graceful restart **50/50**. Corrected-state Chrome
+**46/46**; existing registration HTTP **33/33**; offline UI **135**, bindings
+**626/19**, targeted Python UI/assets **20 passed**, syntax and 10-module compile
+pass. Evidence owns earlier fixture/binding failures and the client-deadline
+red/green, plus final-state reruns. All **616** code/config hashes match.
+Working DB/unrelated files preserved; demo not restarted; both owned PG instances
+confirmed stopped. Completion and the distinct final staged self-review are recorded in
+evidence; scoped commit/push follows. Final response reports the verified remote
+commit.
 
-**Exact next: R4-S2-T3C3D4C - Bound batch retry and deletion**, in a separate
-session. Stop after B publication; do not start C here. C/Q, D4, D5-D6/Q, C3D
-and broader parents remain open. Use per-command
+**Exact next: R4-S2-T3C3D4Q - Review combined batch management**, in a separate
+session. Stop after C publication; do not start Q here. D4, D5-D6/Q, C3D and
+broader parents remain open. Use per-command
 `-c credential.username=RevanParimi` for GCM account selection.
 
-The [registration budget](../OPERATING.md#batch-registration-execution-budget)
-owns defaults/limits. UUIDs are recovery references, not idempotency keys.
-Early absence cannot prove rollback; fresh registration can duplicate. Final
-scope/detail checks are snapshots, and per-process waits do not bound global SQL,
+The [mutation budget](../OPERATING.md#batch-retry-and-deletion-execution-budget)
+owns defaults/limits. Present visibility/counts are snapshots; an earlier write
+may still finish after recovery. Per-process waits do not bound global SQL/auth,
 whole requests, drivers, drain or memory. Fakes prove mechanics, not live quality.
 
 ## Reusable validation setup
 
+- C runner: `.pytest_cache/run_r4_s2_t3c3d4c.py <tag> <Python args>`; omitted
+  args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3d4c_postgres.py` /
+  `r4-s2-t3c3d4c-pg-runtime.json`; final harness HTTP-only rerun:
+  `.pytest_cache/run_r4_s2_t3c3d4c_postgres_final.py --http-only` /
+  `r4-s2-t3c3d4c-final-pg-runtime.json` (both stopped). Hash/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3d4c.py check` / `preserve`.
+  HTTP/restart: `scripts/smoke_r4_s1_t3d.py --batch-mutation-workers`;
+  add `--postgres` only with an explicitly disposable URL. Actual Chrome:
+  `scripts/check_ui_screening_extraction_browser.py --batch-mutation-workers`.
+  C evidence owns exact selections, failed attempts and final counts.
 - B runner: `.pytest_cache/run_r4_s2_t3c3d4b.py <tag> <Python args>`; omitted
   args run full pytest. Owned PG runner/runtime:
   `.pytest_cache/run_r4_s2_t3c3d4b_postgres.py` /

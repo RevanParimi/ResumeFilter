@@ -290,7 +290,7 @@ async def retry_screening_batch(
     remaining text is reported as `skipped` rather than quietly re-queued: a
     `requeued` count the next process call cannot honour is a lie.
     """
-    result = _services(request).screening.retry(org_id, batch_id)
+    result = await _batch_mutation(request, _services(request).screening.retry, org_id, batch_id)
     if result is None:
         raise HTTPException(status_code=404, detail="batch not found")
     return result
@@ -336,9 +336,19 @@ async def delete_screening_batch(
     """A real delete path on a new table, shipped in the sprint that creates it
     -- `batch_items.raw_text` is personal data with no candidate to cascade
     from (spec §4.2)."""
-    if not _services(request).screening.delete(org_id, batch_id):
+    if not await _batch_mutation(request, _services(request).screening.delete, org_id, batch_id):
         raise HTTPException(status_code=404, detail="batch not found")
     return BatchDeleteResponse(batch_id=batch_id, deleted=True)
+
+
+async def _batch_mutation(request: Request, operation, *args):
+    try:
+        return await _services(request).batch_mutations.run(operation, *args)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503, detail='batch_mutation_pending',
+                            headers={'Retry-After': '1'}) from None
 
 
 async def _batch_read(request: Request, operation, *args, **kwargs):

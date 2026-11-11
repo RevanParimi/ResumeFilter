@@ -25,6 +25,151 @@ function pick(c, files) {
   assert.equal(target.value, "");
 }
 
+for (const action of ['delete', 'retry']) {
+  test('stalled ' + action + ' HTTP expires into guarded saved-state recovery', async () => {
+    const { c, window } = setup();
+    c.state.selectedBatch = 'owned';
+    c.state.batch = held(batch('owned', { failed: 1, pending: 1, processing: 0, done: 0 }));
+    const captured = window.VeritasAPI;
+    window.document.cookie = 'dee_csrf=synthetic-token';
+    let rejectTransport;
+    window.fetch = (_path, init) => new Promise((_resolve, reject) => {
+      rejectTransport = reject;
+      if (init.signal) init.signal.addEventListener('abort', () => reject(new Error('synthetic stall')));
+    });
+    new Function('window', require('node:fs').readFileSync(require('node:path').join(__dirname, '../frontend/api.js'), 'utf8'))(window);
+    const real = window.VeritasAPI;
+    captured.post = (p, body, opts) => real.post(p, body, opts ? { timeoutMs: 15 } : undefined);
+    captured.del = (p, opts) => real.del(p, opts ? { timeoutMs: 15 } : undefined);
+    const pending = action === 'delete' ? c.confirmDelete('owned')() : c.retryFailed();
+    try {
+      await new Promise(resolve => setTimeout(resolve, 40));
+      assert.equal(c.state.batchChanges.owned.busy, false, 'stalled mutation must settle');
+      assert.equal(c.state.batchChanges.owned.error.kind, 'timeout');
+      assert.equal(c.state.batchChanges.owned.uncertain, true);
+      assert.equal(c.state.selectedBatch, 'owned');
+      assert.equal(c.renderVals().driveDisabled, true);
+    } finally { rejectTransport(new Error('synthetic cleanup')); await pending; }
+  });
+
+  test('pending batch ' + action + ' keeps its reference and requires read plus human intent before another write', async () => {
+    const { c, window, calls } = setup();
+    c.state.screen = action === 'delete' ? 'batches' : 'queue';
+    c.state.selectedBatch = 'owned';
+    c.state.batch = held(batch('owned', { failed: 2, pending: 0, processing: 0, done: 0 }));
+    if (action === 'retry') {
+      const read = window.VeritasAPI.get;
+      window.VeritasAPI.get = async path => path === '/screening/batches/owned'
+        ? batch('owned', { failed: 2, pending: 0, processing: 0, done: 0 }) : read(path);
+    }
+    c.state.files = [{ name: 'Keep draft.txt' }];
+    c.state.batchNameInput = 'Keep name';
+    const mutate = async p => { calls.push(['WRITE', p]); throw { status: 503, detail: 'batch_mutation_pending' }; };
+    window.VeritasAPI.del = window.VeritasAPI.post = mutate;
+    const perform = () => action === 'delete' ? c.confirmDelete('owned')() : c.retryFailed();
+    await perform(); await settle();
+    assert.equal(c.state.batchChanges?.owned?.uncertain, true, 'uncertain deletion must retain a recovery guard');
+    assert.equal(c.state.selectedBatch, 'owned');
+    const view = c.renderVals().batchChangeRows.find(r => r.id === 'owned');
+    assert.match(view.message, /may still.*saving.*Check saved state/i);
+    assert.equal(c.renderVals().canDrive, false);
+    await perform();
+    const get = window.VeritasAPI.get;
+    window.VeritasAPI.get = async () => { throw { status: 503, detail: 'batch_read_pending' }; };
+    await c.checkBatchChange('owned');
+    assert.equal(c.state.batchChanges.owned.checked, false);
+    c.allowBatchChange('owned'); await perform();
+    assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+    window.VeritasAPI.get = get;
+    await c.checkBatchChange('owned'); await settle();
+    assert.equal(c.state.batchChanges.owned.checked, true);
+    assert.equal(c.state.batchChanges.owned.uncertain, true);
+    await perform();
+    assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+    assert.equal(c.state.files[0].name, 'Keep draft.txt');
+    assert.equal(c.state.batchNameInput, 'Keep name');
+    c.allowBatchChange('owned');
+    assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+    await perform();
+    assert.equal(calls.filter(x => x[0] === 'WRITE').length, 2);
+    assert.equal(calls.filter(x => x[1] && x[1].endsWith('/process')).length, 0);
+  });
+
+  for (const detail of ['batch_mutation_capacity_exhausted', 'batch_mutation_executor_closed', 'network', 'server_error']) {
+    test(action + ' distinguishes refusal from uncertainty without replay: ' + detail, async () => {
+      const { c, window, calls } = setup();
+      c.state.selectedBatch = 'owned';
+      c.state.batch = held(batch('owned', { failed: 1, pending: 0, processing: 0, done: 0 }));
+      const mutate = async p => { calls.push(['WRITE', p]); throw { status: detail === 'network' ? 0 : 503, detail }; };
+      window.VeritasAPI.del = window.VeritasAPI.post = mutate;
+      const perform = () => action === 'delete' ? c.confirmDelete('owned')() : c.retryFailed();
+      await perform();
+      const uncertain = ['network', 'server_error'].includes(detail);
+      assert.equal(c.state.batchChanges.owned.uncertain, uncertain);
+      assert.doesNotMatch(c.renderVals().batchChangeRows[0].message, /batch_mutation_/);
+      if (uncertain) {
+        assert.equal(c.renderVals().driveDisabled, true);
+        c.allowBatchChange('owned');
+      }
+      await perform();
+      assert.equal(calls.filter(x => x[0] === 'WRITE').length, uncertain ? 1 : 2);
+    });
+  }
+
+  for (const ending of ['success', 'pending']) for (const change of ['account', 'selection', 'unmount']) {
+    test('late ' + action + '/' + ending + ' preserves ' + change, async () => {
+      const { c, window, calls } = setup();
+      c.state.selectedBatch = 'owned';
+      c.state.batch = held(batch('owned', { failed: 1, pending: 0, processing: 0, done: 0 }));
+      let resolve, reject;
+      const mutate = p => { calls.push(['WRITE', p]); return new Promise((ok, no) => { resolve = ok; reject = no; }); };
+      window.VeritasAPI.del = window.VeritasAPI.post = mutate;
+      const pending = action === 'delete' ? c.confirmDelete('owned')() : c.retryFailed();
+      if (change === 'account') { c.handleSessionLost(); c.state.me = { kind: 'org' }; c.state.batchNameInput = 'Another account draft'; }
+      if (change === 'selection') c.selectBatch('other')();
+      if (change === 'unmount') c._gone = true;
+      if (ending === 'success') resolve({ requeued: 1, skipped: 0, deleted: true });
+      else reject({ status: 503, detail: 'batch_mutation_pending' });
+      await pending; await settle();
+      assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+      if (change === 'selection') assert.equal(c.state.selectedBatch, 'other');
+      if (change === 'account') {
+        assert.deepEqual(c.state.batchChanges, {});
+        assert.equal(c.state.batchNameInput, 'Another account draft');
+      }
+    });
+  }
+}
+
+test('missing saved batch keeps uncertainty recoverable after it disappears from the list', async () => {
+  const { c, window, calls } = setup();
+  c.state.selectedBatch = 'owned';
+  window.VeritasAPI.del = async p => { calls.push(['WRITE', p]); throw { status: 503, detail: 'batch_mutation_pending' }; };
+  await c.confirmDelete('owned')();
+  window.VeritasAPI.get = async p => {
+    if (p === '/screening/batches') return { batches: [], next_cursor: null };
+    throw { status: 404, detail: 'batch not found' };
+  };
+  await c.checkBatchChange('owned'); await settle();
+  assert.equal(c.state.selectedBatch, null);
+  assert.equal(c.state.batchChanges.owned.uncertain, true);
+  assert.equal(c.state.batchChanges.owned.checked, true);
+  assert.equal(c.renderVals().batchChangeRows[0].id, 'owned');
+  assert.match(c.renderVals().batchChangeRows[0].notice, /not visible.*may still finish/i);
+  assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+});
+
+test('confirmed retry uses partial summary counts, reports skipped items and waits for explicit Start', async () => {
+  const { c, window, calls } = setup();
+  c.state.selectedBatch = 'owned';
+  c.state.summary = held({ counts: { failed: 2, pending: 0, processing: 0, done: 0 } });
+  window.VeritasAPI.post = async p => { calls.push(['WRITE', p]); return { batch_id: 'owned', requeued: 1, skipped: 1 }; };
+  await c.retryFailed(); await settle();
+  assert.match(c.renderVals().batchChangeRows[0].message, /1 queued, 1 skipped.*Start screening/i);
+  assert.equal(calls.filter(x => x[0] === 'WRITE').length, 1);
+  assert.equal(c._driving, undefined);
+});
+
 test('pending registration retains its reference and draft; early 404 and recovery never replay or screen', async () => {
   const { c, window, calls } = setup();
   c.state.screen = 'upload';
@@ -507,7 +652,7 @@ test("batch read and delete errors render server failures and recover without de
   assert.equal(c.state.selectedBatch, "owned");
   assert.equal(c.state.batch.data.id, "owned");
   assert.equal(c.state.busyId, null);
-  assert.match(c.renderVals().batchesErrorText, /Synthetic delete refusal/);
+  assert.match(c.renderVals().batchChangeRows.find(r => r.id === 'owned').message, /Synthetic delete refusal/);
 });
 
 test("screening mappings use whole-batch bands, screened shares and stable report callbacks", () => {
