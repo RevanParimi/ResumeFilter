@@ -4,35 +4,30 @@ Updated: 2026-11-11. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D4C complete.** Published B baseline is `62c9331`.
-[C contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4c) owns acceptance,
-red/green, review findings/resolutions, final checks and completion review.
-Only C closes; D4Q and broader parents remain open.
+**R4-S2-T3C3D4Q complete; D4 complete.** A-C baseline is published at `1e59735`.
+[Q contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q) owns combined
+acceptance, commands, failed attempts and reviews. Final full pytest:
+**4365 passed, 1138 skipped, 127 warnings**. Fresh actual PG-enabled selection:
+**784 passed, 10 skips, 18 warnings**; combined migrated two-actor HTTP/graceful
+restart: **121/121 each on SQLite and PG**. Actual combined Chrome **74/74**;
+offline UI **135**, Python UI/assets **20 passed**, bindings/syntax/compile pass.
 
-Complete retry/delete transactions use a separate owning-session pool. Retry
-locks generation/current ownership; delete scopes the DELETE predicate, refusing
-stale writes after ownership loss. Requeue/skipped, leases, erasure/retention and
-cascade semantics remain. The new UI retry action only requeues. Uncertain
-changes retain per-batch references and block repeat writes/Start; saved-state
-GET plus separate human intent is required before another change. A read cannot
-prove an earlier write ended. Account/unmount/selection guards preserve other
-work. No schema, success DTO, registration or scorer change.
+No production change was needed. Review covers all seven management routes,
+separate default read/registration/mutation admission (4/2/2), owning sessions,
+safe late-result recovery, pagination, retention, tenant isolation and erasure.
+The combined HTTP journey explicitly proves that erasure blocks older unresolved
+registrations across tenants and retry skips them without assessment. Uncertain
+writes still require saved-state GET plus separate human intent; a read cannot
+prove an earlier write ended. Processing SQL remains D5-D6 work.
 
-Final full pytest **4364 passed, 1137 skipped, 127 warnings**. Actual PG-enabled
-selection **782 passed, 10 SQLite-only skips, 18 warnings**; both databases'
-migrated two-actor HTTP/graceful restart **50/50**. Corrected-state Chrome
-**46/46**; existing registration HTTP **33/33**; offline UI **135**, bindings
-**626/19**, targeted Python UI/assets **20 passed**, syntax and 10-module compile
-pass. Evidence owns earlier fixture/binding failures and the client-deadline
-red/green, plus final-state reruns. All **616** code/config hashes match.
-Working DB/unrelated files preserved; demo not restarted; both owned PG instances
-confirmed stopped. Completion and the distinct final staged self-review are recorded in
-evidence; scoped commit/push follows. Final response reports the verified remote
-commit.
+All 616 code/config hashes match the validated state. Working DB/unrelated files
+and the demo remain untouched; owned PG is confirmed stopped. Completion and
+distinct final staged self-review are recorded; scoped publication follows.
+The final response reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3D4Q - Review combined batch management**, in a separate
-session. Stop after C publication; do not start Q here. D4, D5-D6/Q, C3D and
-broader parents remain open. Use per-command
+**Exact next: R4-S2-T3C3D5 - Bound batch admission and recovery SQL**, in a
+separate session. Stop after Q publication; do not start D5 here. D5-D6/Q, C3D
+and broader parents remain open. Use per-command
 `-c credential.username=RevanParimi` for GCM account selection.
 
 The [mutation budget](../OPERATING.md#batch-retry-and-deletion-execution-budget)
@@ -42,175 +37,33 @@ whole requests, drivers, drain or memory. Fakes prove mechanics, not live qualit
 
 ## Reusable validation setup
 
-- C runner: `.pytest_cache/run_r4_s2_t3c3d4c.py <tag> <Python args>`; omitted
-  args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d4c_postgres.py` /
-  `r4-s2-t3c3d4c-pg-runtime.json`; final harness HTTP-only rerun:
-  `.pytest_cache/run_r4_s2_t3c3d4c_postgres_final.py --http-only` /
-  `r4-s2-t3c3d4c-final-pg-runtime.json` (both stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3d4c.py check` / `preserve`.
-  HTTP/restart: `scripts/smoke_r4_s1_t3d.py --batch-mutation-workers`;
-  add `--postgres` only with an explicitly disposable URL. Actual Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --batch-mutation-workers`.
-  C evidence owns exact selections, failed attempts and final counts.
-- B runner: `.pytest_cache/run_r4_s2_t3c3d4b.py <tag> <Python args>`; omitted
-  args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d4b_postgres.py` /
-  `r4-s2-t3c3d4b-pg-runtime.json`; corrected affected-family rerun:
-  `.pytest_cache/run_r4_s2_t3c3d4b_postgres_final.py` /
-  `r4-s2-t3c3d4b-final-pg-runtime.json` (both stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3d4b.py check` / `preserve`.
-  HTTP/restart: `scripts/smoke_r4_s1_t3d.py --batch-registration-workers`;
-  add `--postgres` only with an explicitly disposable URL. Actual Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --batch-registration-workers`.
-  B evidence owns exact selections, failed/incomplete attempts and final counts.
-- D4A runner: `.pytest_cache/run_r4_s2_t3c3d4a.py <tag> <Python args>`; omitted
-  args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d4a_postgres.py` / `r4-s2-t3c3d4a-pg-runtime.json`
-  (stopped).
-  Hash/preservation helper: `.pytest_cache/review_state_r4_s2_t3c3d4a.py check` /
-  `preserve`. HTTP/restart: `scripts/smoke_r4_s1_t3d.py --batch-read-workers`;
-  add `--postgres` only with an explicitly disposable URL. Actual Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --batch-read-workers`.
-  A evidence owns the exact selections, commands, failed/incomplete attempts.
-- D3 runner: `.pytest_cache/run_r4_s2_t3c3d3.py <tag> <Python args>`; omitted args
-  run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d3_postgres.py` / `r4-s2-t3c3d3-pg-runtime.json`
-  (stopped).
-  Hash/preservation helper: `.pytest_cache/review_state_r4_s2_t3c3d3.py check` /
-  `preserve`. Migrated HTTP/restart: `scripts/smoke_r4_s1_t3c.py
-  --evaluation-publication-workers`; add `--postgres` only with an explicitly
-  disposable URL. Actual Chrome: `scripts/check_ui_evaluate_browser.py
-  --evaluation-publication-workers`. D3 evidence owns exact commands/results.
-- D2 runner: `.pytest_cache/run_r4_s2_t3c3d2.py <tag> <Python args>`; omitted args
-  run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d2_postgres.py` / `r4-s2-t3c3d2-pg-runtime.json`
-  (stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3d2.py check` / `preserve`. Both-door
-  outcome-worker HTTP/restart: `scripts/smoke_r4_s1_t3c.py --outcome-write-workers`;
-  append `--postgres` only with an explicitly disposable URL. Actual outcome
-  worker Chrome: `scripts/check_ui_evaluate_browser.py --outcome-write-workers`.
-  D2 evidence above owns exact selections, red/green, failed test-policy/fixture
-  attempts, static commands and results.
-- D1 runner: `.pytest_cache/run_r4_s2_t3c3d1.py <tag> <Python args>`;
-  omitted args run full pytest. Final full/PG orchestrator:
-  `.pytest_cache/final_gates_r4_s2_t3c3d1.py`. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d1_postgres.py` /
-  `r4-s2-t3c3d1-pg-runtime.json` (stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3d1.py check` / `preserve`.
-  Report-worker HTTP/restart: `scripts/smoke_r4_s1_t3c.py --report-read-workers`;
-  add `--postgres` only with an explicitly disposable URL. Actual saved-report
-  Chrome: `scripts/check_ui_evaluate_browser.py`. D1 evidence above owns exact
-  focused selection, compile/browser/static commands, failed attempts and results.
-- CQ runner: `.pytest_cache/run_r4_s2_t3c3cq.py <tag> <Python args>`;
-  omitted args run full pytest. Sequential orchestrator:
-  `.pytest_cache/final_gates_r4_s2_t3c3cq.py`. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3cq_postgres.py` /
-  `r4-s2-t3c3cq-pg-runtime.json`; separate unchanged-family rerun:
-  `.pytest_cache/rerun_r4_s2_t3c3cq_postgres.py` /
-  `r4-s2-t3c3cq-rerun-pg-runtime.json` (both stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3cq.py check` / `preserve`.
-  CQ evidence above owns exact commands/results for all seven record/intake/source
-  modes on `scripts/smoke_r4_s1_t3c.py`, two-process races, affected Chrome and the
-  retained initial PG failure. Only use PG with an explicitly disposable URL.
-  Earlier C1/C2/C3 helpers/results remain in their linked evidence records.
-- B2's sanitized runner: `.pytest_cache/run_r4_s2_t3c3b2.py <tag> <Python args>`;
-  omitted args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3b2_postgres.py` /
-  `r4-s2-t3c3b2-pg-runtime.json` (stopped). Review/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3b2.py check` / `preserve`.
-  Three-plane session SQL/admission/late-write/manual recovery/restart:
-  `scripts/smoke_r4_s1_t3a.py --auth-session-workers`; real Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --auth-session-workers`.
-  Add HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
-- B1's sanitized runner: `.pytest_cache/run_r4_s2_t3c3b1.py <tag> <Python args>`;
-  omitted args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3b1_postgres.py` /
-  `r4-s2-t3c3b1-pg-runtime.json` (stopped). Review/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3b1.py check` / `preserve`.
-  Redemption SQL/query/late-commit/admission/recovery/restart:
-  `scripts/smoke_r4_s1_t3a.py --auth-redemption-workers`; real Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --auth-redemption-workers`.
-  Add HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
-  --tb=short`. Use fake providers and isolated stores, never working storage.
-  C3A's runner: `.pytest_cache/run_r4_s2_t3c3a.py <tag> <Python args>`;
-  omitted args run full pytest. Clear inherited DEE config/keys and avoid .env.
-- Principal resolution SQL/touch admission/uncertainty/graceful restart:
-  `scripts/smoke_r4_s1_t3a.py --auth-resolution-workers`; real Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --auth-resolution-workers`.
-  Add HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
-  Owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c3a_postgres.py` /
-  `r4-s2-t3c3a-pg-runtime.json`, stopped. Reviewed-state/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3a.py check` / `preserve`.
-- Contact code admission/SQL/mail stalls/late completion/recovery/graceful restart:
-  `scripts/smoke_r3_s1_t2.py --contact-code-workers`; actual Chrome:
-  `scripts/check_ui_verification_browser.py --contact-code-workers`.
-  Append HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
-  C2's owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c2_postgres.py` /
-  `r4-s2-t3c2-pg-runtime.json`, stopped.
-- Auth code worker admission/SQL/mail stalls/late success/graceful restart:
-  `scripts/smoke_r4_s1_t3a.py --auth-code-workers`; actual Chrome:
-  `scripts/check_ui_screening_extraction_browser.py --auth-code-workers`.
-  Append HTTP `--postgres` only with an explicitly disposable `DEE_TEST_DB_URL`.
-  C1's owned PG runner/runtime: `.pytest_cache/run_r4_s2_t3c1_postgres.py` /
-  `r4-s2-t3c1-pg-runtime.json`, stopped. Resend/contact/portal Chrome:
-  `scripts/check_ui_evaluate_browser.py`.
-- Aggregate request bodies / partial-upload latency / graceful HTTP restart:
-  `scripts/smoke_r4_s1_t3d.py --body-limit`. Actual screening Chrome including
-  ingress refusal, Clear/fresh-file recovery and reload:
-  `scripts/check_ui_screening_extraction_browser.py --body-limit`.
-- PDF child stalls/shared admission/timeout/recovery/graceful HTTP restart:
-  `scripts/smoke_r4_s1_t3d.py --pdf-execution`. Actual PDF 503/fresh-file
-  recovery/reload Chrome: `scripts/check_ui_screening_extraction_browser.py
-  --pdf-execution`.
-- Two-process batch scheduling/terminal outcomes/retry/graceful restart:
-  `scripts/smoke_r4_s1_t3d.py --persistence` (or `--expiry` / `--outcomes` /
-  scheduling `--leases`);
-  append `--postgres` only with an
-  explicitly disposable DEE_TEST_DB_URL. Latest owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t1b2b2b_postgres.py` / `r4-s2-t1b2b2b-pg-runtime.json`;
-  stopped.
-- Candidate/resume creation contention across two app processes and restart:
-  `scripts/smoke_r4_s1_t3d.py --ingest-races`; add `--postgres` only with an
-  explicitly disposable `DEE_TEST_DB_URL`. T2's owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t2_postgres.py` / `r4-s2-t2-pg-runtime.json`, stopped.
-  It covers this journey and the focused group named in T2 evidence.
-- Combined R4-S1 production composition/API/UI/graceful restart:
-  `scripts/smoke_r4_s1_t1b.py --integration`; append `--postgres` only with an
-  explicitly disposable DEE_TEST_DB_URL. Q's owned PG runner/runtime:
-  `.pytest_cache/run_r4_s1_q_postgres.py` / `r4-s1-q-pg-runtime.json`; stopped.
-- Screening/UI HTTP contract/graceful restart: `scripts/smoke_r4_s1_t3d.py`.
-  Actual screening Chrome: `scripts/check_ui_screening_extraction_browser.py`.
-  Candidate/source/ownership/graceful restart: `scripts/smoke_r4_s1_t3c.py`.
-  Evaluation/report/outcome/restart journey: `scripts/smoke_r3_s1_q.py`
-  (Windows stop is forced). Auth/ledger/employer/features/portal/graceful SQL journey: `scripts/smoke_r4_s1_t3a.py`.
-  Contract fixture: `tests/fixtures/api_contract_r4_s1_t3.json`; pure extractions
-  retain it. Provenance journey: `scripts/smoke_r4_s1_t2.py` (blocked Chroma imports,
-  default/legacy settings, migrated HTTP and graceful restart). Provider lifecycle
-  journey: `scripts/smoke_r4_s1_t1b.py`, or
-  `--postgres` with an explicitly disposable DEE_TEST_DB_URL. Prior owned PG
-  runner/runtime: `.pytest_cache/run_r4_s1_t1b_postgres.py` /
-  `r4-s1-t1b-pg-runtime.json`; server stopped. Portable PG distribution metadata:
-  `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`. These local artifacts are not
-  portable setup guarantees. PG HTTP proves PG behavior; SQLite fixtures and
-  skipped lock cases do not. T1A owns the actual controlled lock/migration gate.
-- Curation migrated HTTP/graceful restart: `scripts/smoke_curation_activation.py`;
-  add `--browser` for real Chrome, including process restart and auth recovery.
-- Operator accounts/retention/metrics/signal-quality migrated HTTP/graceful restart:
-  `scripts/smoke_r3_s2_q.py`; add `--browser` for real account/curation Chrome.
-- Interview mixed-channel/graceful restart: `scripts/smoke_r3_s3_t3.py --combined`.
-- Candidate portal/consent/access/erasure Chrome: `scripts/check_ui_evaluate_browser.py`.
-- Employer Roles/compensation/report Chrome: `scripts/check_ui_review_context_browser.py`.
-- Actual Chrome: `scripts/check_ui_evaluate_browser.py` and
-  `scripts/check_ui_interview_integration_browser.py`; screening contracts:
-  `scripts/check_ui_screening_contract.py`. Chrome needs existing CDN internet.
-  Bindings: `node scripts/check_ui_bindings.js`; JS syntax: `node --check
-  frontend/api.js` and `frontend/support.js`. Bindings/source checks are not Chrome.
-- CPython 3.13.11/current dependencies remain in use; optional Parquet and
-  environment skips do not prove omitted cases. Synthetic providers/media prove
-  mechanics, not live ASR/codec compatibility, factual accuracy or measured quality.
-  Same-agent diff self-review is not independent review.
+  --tb=short`. Use fake providers/isolated stores, sanitize inherited DEE
+  configuration/keys and avoid the working `.env`.
+- Q runner: `.pytest_cache/run_r4_s2_t3c3d4q.py <tag> <Python args>`; omitted
+  args run full pytest. Owned PG runner/runtime:
+  `.pytest_cache/run_r4_s2_t3c3d4q_postgres.py` /
+  `r4-s2-t3c3d4q-pg-runtime.json` (stopped). Hash/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3d4q.py check` / `preserve`.
+  Portable PG distribution metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
+  These ignored local artifacts are not portable setup guarantees.
+- Combined management HTTP/restart: `scripts/smoke_r4_s1_t3d.py
+  --batch-management`; actual Chrome: `scripts/check_ui_screening_extraction_browser.py
+  --batch-management`. Add HTTP `--postgres` only with an explicitly disposable
+  `DEE_TEST_DB_URL`. Q evidence owns commands, results and failed attempts;
+  historical A-C/other setup stays in its linked PI evidence, not this handoff.
+- Next processing work can reuse `scripts/smoke_r4_s1_t3d.py --persistence`
+  (or `--expiry`, `--outcomes`, `--leases`, `--ingest-races`) for two-process
+  leases/input/report/terminal and restart journeys. Existing controlled SQL/
+  HTTP/browser harnesses should be extended rather than copied.
+- UI: `node scripts/check_ui_bindings.js`; `node --check frontend/api.js`,
+  `frontend/support.js`, `frontend/screening.js`. Actual Chrome needs existing
+  CDN internet; bindings/source checks are not browser execution.
+- CPython 3.13.11/current dependencies remain in use. Optional/environment skips
+  do not prove omitted cases. Synthetic providers/media prove mechanics, not live
+  ASR/codec compatibility, factual accuracy or measured quality. Same-agent
+  self-review is not independent review. Historical detailed commands and counts
+  belong to [PI evidence](delivery/EVIDENCE-R4.md).
 
 ## Standing constraints and risks
 

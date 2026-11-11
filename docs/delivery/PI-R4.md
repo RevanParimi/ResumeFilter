@@ -669,7 +669,7 @@ separate session. D4-D6/Q, C3D and all broader parents remain open.
 
 **<a id="r4-s2-t3c3d4"></a>R4-S2-T3C3D4 - Bound batch management operations**
 
-Status: in progress (2026-11-10). Prerequisite: D3, published at `7c36a7f`.
+Status: done (2026-11-11). Prerequisite: D3, published at `7c36a7f`.
 Bound complete register/detail/list/queue/
 summary/retry/delete operations; preserve scoped pagination, counts, retention,
 retry/erasure and uncertainty. Split before implementation if needed. Require
@@ -677,8 +677,9 @@ red/focused/full, actual PG competing SQL, two-actor HTTP/restart, batch Chrome
 and both reviews; no durable worker or implicit process retry.
 
 Split before implementation because reads, registration and retry/delete have
-distinct admission and recovery contracts. A-C are complete; Q remains open.
-D4 remains open until A-C and Q close.
+distinct admission and recovery contracts. A-C and Q are complete; the
+[combined Q evidence](EVIDENCE-R4.md#r4-s2-t3c3d4q) owns closure and the aggregate
+budget/acceptance review. D4 closes; D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d4a"></a>R4-S2-T3C3D4A - Bound batch view reads**
 
@@ -731,10 +732,17 @@ D5-D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d4q"></a>R4-S2-T3C3D4Q - Review combined batch management**
 
-Status: pending. Prerequisites: A-C and any children. Re-inventory management
-routes and budgets, run combined full/SQLite/actual PG, pagination/retention/
-erasure, two-actor migrated HTTP/restart, affected Chrome and both reviews.
-Only then close D4; D5-D6/Q, C3D and broader parents remain open.
+Status: done (2026-11-11). Prerequisites: A-C, published at `1e59735`.
+[Q contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d4q) owns the retained acceptance
+contract, seven-route inventory and aggregate default 4/2/2 budget, combined
+source self-review, fresh full/SQLite/actual PG, pagination/retention/erasure,
+two-actor migrated HTTP/restart, combined Chrome and static checks. New coverage
+occupies all eight default slots and composes A/B/C recovery in one app;
+cross-pool admission and both tenants' erasure-blocked unresolved input are
+checked explicitly. No production change or new product red/green was needed.
+Completion and distinct final staged self-review are recorded; scoped publication
+follows. Q closes D4 only. Exact next: D5 in a separate session; D5-D6/Q, C3D and
+broader parents remain open. No independent-review or quality claim is made.
 
 **<a id="r4-s2-t3c3d5"></a>R4-S2-T3C3D5 - Bound batch admission and recovery SQL**
 

@@ -44,6 +44,108 @@ def _batch_mutation_setup(settings, factory, resume):
     return setup
 
 
+async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch):
+    """One app, all eight default slots, then independent saved-state recovery."""
+    from threading import Condition, Event, current_thread, get_ident
+    from sqlalchemy import event
+    engine, factory = database
+    services, org, key, bid, other, other_key, kept = _batch_mutation_setup(settings, factory, genuine_resume)
+    deleted = services.screening.register(org, name='Separate deletion', domain='genai',
+        texts=[genuine_resume], created_by_org_user_id=None).id
+    capacities = {'batch-read': 4, 'batch-registration': 2, 'batch-mutation': 2}
+    assert [getattr(services, name)._capacity for name in ('batch_reads', 'batch_registrations', 'batch_mutations')] == [4, 2, 2]
+    release = {name: Event() for name in capacities}
+    entered = {name: 0 for name in capacities}
+    seen, condition, pending, evaluations = set(), Condition(), [], []
+    def sql(conn, cursor, statement, parameters, context, many):
+        plane = next((name for name in capacities if current_thread().name.startswith(name)), None)
+        if plane is None:
+            return
+        identity = (plane, get_ident())
+        with condition:
+            if identity in seen:
+                return
+            seen.add(identity)
+            entered[plane] += 1
+            condition.notify_all()
+        assert release[plane].wait(15), 'combined admission hold was not released'
+    def wait_for(plane, count):
+        with condition:
+            return condition.wait_for(lambda: entered[plane] >= count, timeout=10)
+    def begin(session, transaction, conn):
+        assert session.info.setdefault('combined_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('combined_owner', get_ident()) == get_ident()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            assess = app.state.engine.evaluate
+            async def evaluate(*args, **kwargs):
+                evaluations.append(True)
+                return await assess(*args, **kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', evaluate)
+            for target, name, listener in [(engine, 'before_cursor_execute', sql),
+                (factory, 'after_begin', begin), (factory, 'after_transaction_end', end)]:
+                event.listen(target, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                headers, foreign = {'X-Org-Key': key}, {'X-Org-Key': other_key}
+                path = '/screening/batches/' + bid
+                groups = {name: [] for name in capacities}
+                async def accept(plane, method, url, **kwargs):
+                    task = asyncio.create_task(http.request(method, url, headers=headers, **kwargs))
+                    pending.append(task)
+                    groups[plane].append(task)
+                    assert await asyncio.to_thread(wait_for, plane, len(groups[plane]))
+                for _, url, _ in BATCH_READS:
+                    await accept('batch-read', 'GET', url.format(bid=bid))
+                payload = {'name': 'Combined registered', 'items': [{'resume_text': genuine_resume}]}
+                for _ in range(2):
+                    await accept('batch-registration', 'POST', '/screening/batches', json=payload)
+                await accept('batch-mutation', 'POST', path + '/retry')
+                await accept('batch-mutation', 'DELETE', '/screening/batches/' + deleted)
+                assert entered == capacities
+                for method, url, kwargs, detail in [
+                    ('GET', path, {}, 'batch_read_capacity_exhausted'),
+                    ('POST', '/screening/batches', {'json': payload}, 'batch_registration_capacity_exhausted'),
+                    ('DELETE', path, {}, 'batch_mutation_capacity_exhausted'),
+                ]:
+                    response = await http.request(method, url, headers=foreign, **kwargs)
+                    assert response.status_code == 503 and response.json() == {'detail': detail}
+                    assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                release['batch-read'].set()
+                assert all(response.status_code == 200 for response in await asyncio.gather(*groups['batch-read']))
+                assert len(services.batch_registrations._active) == len(services.batch_mutations._active) == 2
+                saved = await http.get(path, headers=headers)
+                assert saved.status_code == 200 and saved.json()['counts']['failed'] == 2
+                assert (await http.get(path, headers=foreign)).status_code == 404
+                release['batch-registration'].set()
+                registrations = await asyncio.gather(*groups['batch-registration'])
+                assert len({response.json()['id'] for response in registrations}) == 2
+                for response in registrations:
+                    assert response.status_code == 200 and response.json()['counts']['pending'] == 1
+                    assert (await http.get('/screening/batches/' + response.json()['id'], headers=foreign)).status_code == 404
+                assert len(services.batch_mutations._active) == 2
+                release['batch-mutation'].set()
+                retried, removed = await asyncio.gather(*groups['batch-mutation'])
+                assert retried.json() == {'batch_id': bid, 'requeued': 1, 'skipped': 1}
+                assert removed.json() == {'batch_id': deleted, 'deleted': True}
+                assert (await http.get(path, headers=headers)).json()['counts'] == {
+                    'pending': 1, 'processing': 1, 'done': 1, 'failed': 1}
+                assert (await http.get('/screening/batches/' + deleted, headers=headers)).status_code == 404
+                assert (await http.get('/screening/batches/' + kept, headers=foreign)).json()['counts']['pending'] == 2
+                assert not evaluations
+    finally:
+        for flag in release.values():
+            flag.set()
+        await asyncio.gather(*pending, return_exceptions=True)
+        await services.aclose()
+        for target, name, listener in [(engine, 'before_cursor_execute', sql),
+            (factory, 'after_begin', begin), (factory, 'after_transaction_end', end)]:
+            if event.contains(target, name, listener):
+                event.remove(target, name, listener)
+
+
 @pytest.mark.parametrize('action,verb,suffix', BATCH_MUTATIONS, ids=['retry', 'delete'])
 async def test_batch_mutation_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume, action, verb, suffix):
     from threading import Event

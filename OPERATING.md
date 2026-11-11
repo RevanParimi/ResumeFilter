@@ -592,7 +592,8 @@ drafts prevent late initial success from starting screening. Only confirmed
 initial success on the same account, screen and draft can start it. References
 and files are not persisted in browser storage; reload discovers saved batches
 without starting work. Final detail/scope checks are snapshots, not locks over
-later deletion or delivery. The combined D4Q and processing D5-D6/Q remain open.
+later deletion or delivery. Combined management acceptance is linked below;
+processing D5-D6/Q remains open.
 
 ### Batch retry and deletion execution budget
 
@@ -632,8 +633,14 @@ and missing writes both return generic 404. Present visibility/counts are
 snapshots, and a late write may still finish after recovery. Account changes
 discard recovery references; stale account/unmount callbacks and mutations of
 another batch cannot replace the selected batch or upload drafts. Page reload
-reads persisted results without starting work. D4Q and broader parents remain
-open until their separate acceptance gates close.
+reads persisted results without starting work.
+
+[Combined management acceptance](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q)
+closes D4 across all seven routes: the defaults total eight admitted operations
+per Services/app process across the three separate pools (four reads, two
+registrations and two mutations). This is not a global SQL/auth or whole-request
+bound. `/process` admission/recovery and terminal SQL remain D5-D6 work; broader acceptance and
+durable continuation remain open.
 
 ### Dual scoping: all scopes counted, any denial denies
 

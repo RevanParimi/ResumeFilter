@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-10-29. This is the common feature summary. For the exact next
+Updated: 2026-11-11. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -265,7 +265,7 @@ saved reference. Tenant projection, private-note filtering, generic 404,
 empty candidate-report lists and advisory/scorer semantics remain. The
 [report read budget](OPERATING.md#report-read-execution-budget) states defaults
 and snapshot/driver/drain limits. Standalone publication has its own budget
-below; batch SQL remains D4-D6/Q. C3D and broader parents stay open.
+below; batch processing SQL remains D5-D6/Q. C3D and broader parents stay open.
 
 [R4-S2-T3C3D2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) bounds both human-outcome
 POSTs in a separate pool covering lookup, shared validation, SQL append and the
@@ -286,7 +286,7 @@ requires deliberate fresh-evaluation intent before another POST; late saves
 remain possible and fresh assessments may create another report. Operator scope,
 erasure snapshots, advisory/domain/fallback and existing success DTOs remain.
 The [publication budget](OPERATING.md#standalone-evaluation-publication-budget)
-owns defaults/limits; batch SQL and broader acceptance remain D4-D6/Q work.
+owns defaults/limits; batch processing SQL and broader acceptance remain D5-D6/Q work.
 
 [R4-S2-T3C3D4A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) bounds complete batch
 detail/list/queue/summary reads on a separate owning-session pool. Final batch
@@ -295,8 +295,8 @@ remain snapshots. Human refusal guidance and visible GET recovery preserve the
 selected reference/draft without starting screening. Account/refresh/page guards
 reject late callbacks and paging waits for the current base read. The
 [batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
-and limits. Retry/delete, processing and combined acceptance remain
-D4Q and D5-D6/Q; D4 and broader parents remain open.
+and limits. Registration and mutations below have separate budgets; processing
+and broader acceptance remain D5-D6/Q work.
 
 [R4-S2-T3C3D4B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) bounds complete
 batch registration separately from PDF decoding and batch views. Uncertain
@@ -305,7 +305,7 @@ explicit saved-state reads, with no automatic registration or processing replay.
 Only confirmed initial success on the same account, screen and draft starts
 screening. The [registration budget](OPERATING.md#batch-registration-execution-budget)
 owns defaults, recovery behavior and limitations. Validation status belongs to
-the linked task evidence; broader D4 work remains open.
+the linked task evidence; combined management acceptance is recorded below.
 
 [R4-S2-T3C3D4C](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4c) bounds complete
 batch retry/delete operations on a separate owning-session pool and enforces
@@ -313,5 +313,12 @@ current tenant ownership at the write boundary. Retry only requeues eligible
 failures; processing requires a separate human action. Uncertain changes retain
 their batch reference and require GET-only recovery plus explicit intent before
 another write or Start. The [mutation budget](OPERATING.md#batch-retry-and-deletion-execution-budget)
-owns defaults and limits. Validation status belongs to the linked evidence;
-D4Q and broader parents remain open.
+owns defaults and limits. Validation status belongs to the linked evidence.
+
+[R4-S2-T3C3D4Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q) completes combined
+management acceptance and closes D4. All seven management routes retain separate
+read/registration/mutation admission, owning sessions, scoped late results and
+human saved-state recovery. Combined capacity, pagination/retention/erasure,
+two-tenant restart and actual Chrome journeys are covered without a production
+or scoring change. Processing SQL and broader gates remain D5-D6/Q, C3D and its
+parents; per-process budgets do not bound global SQL/auth or complete requests.

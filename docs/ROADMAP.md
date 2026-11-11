@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-11 - R4-S2-T3C3D4Q complete; D4 management gate closed.**
+  Reviewed all seven routes and aggregate 4/2/2 default admission. New combined
+  tests occupy all default slots and compose A/B/C recovery over one app,
+  including both tenants' erasure-blocked unresolved input and exact restart
+  snapshots. No production change was needed. The
+  [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q) owns the contract, source
+  self-review, full/actual PG, migrated HTTP/restart, Chrome and static results.
+  Working DB/unrelated files are preserved, demo untouched and owned PG stopped.
+  Distinct final staged self-review is recorded; scoped publication follows.
+  Next: D5 in a separate session; D5-D6/Q, C3D and broader parents remain open.
+
 - **Session 2026-11-11 - R4-S2-T3C3D4C complete; bounded retry/delete.**
   Complete transactions run on a separate owning-session pool. Locked current
   ownership / conditional DELETE refuses stale cross-tenant writes. The new

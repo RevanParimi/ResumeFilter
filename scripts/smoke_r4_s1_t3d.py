@@ -11,6 +11,7 @@ B2b2b adds first-report reuse without provider replay, including after restart.
 --ingest-races adds R4-S2-T2's controlled candidate/resume creation contention.
 --body-limit adds R4-S2-T3A's aggregate ingress refusal and slow-upload checks.
 --pdf-execution adds R4-S2-T3B's real child stall/admission/timeout checks.
+--batch-management composes A/B/C controls and cross-pool/erasure acceptance.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -39,6 +40,120 @@ from smoke_s82 import _code_for
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
+
+
+def create_batch_management_smoke_app(*, base_factory=None):
+    """Compose existing A/B/C controls over one real Services/app lifecycle."""
+    def mutation():
+        return create_batch_registration_smoke_app(base_factory=base_factory, _mutation=True)
+    def registration():
+        return create_batch_registration_smoke_app(base_factory=mutation)
+    return create_batch_read_smoke_app(base_factory=registration)
+
+
+def create_batch_management_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_batch_management_smoke_app(base_factory=create_smoke_app)
+
+
+def check_batch_management_isolation(checks, scratch, control, actor, other, path):
+    """Each occupied plane leaves the other two usable, in one migrated app."""
+    def count(prefix, kind):
+        file = scratch / (prefix + '-' + kind + '.jsonl')
+        return len(file.read_text().splitlines()) if file.exists() else 0
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def payload(label):
+        return {'name': 'Combined ' + label, 'items': [{'resume_text':
+            contract._resume('Synthetic Combined', 'combined@example.in')}]}
+    registrations = []
+    planes = [('batch-read', 'get', actor.get, path, None, 'batch_read'),
+        ('registration', 'commit', actor.post, '/screening/batches', payload('held registration'), 'batch_registration'),
+        ('mutation', 'retry:commit', actor.post, path + '/retry', None, 'batch_mutation')]
+    for prefix, mode, operation, url, body, code in planes:
+        entered, completed = count(prefix, 'entered'), count(prefix, 'completed')
+        operations = count(prefix, 'operations')
+        evaluations = [count(name, 'evaluations') for name, *_ in planes]
+        (scratch / (prefix + '-release')).unlink(missing_ok=True)
+        (scratch / (prefix + '-mode')).write_text(mode)
+        try:
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                pending = executor.submit(operation, url, **({'json': body} if body else {}))
+                try:
+                    deadline = time.monotonic() + 10
+                    while count(prefix, 'entered') == entered:
+                        assert time.monotonic() < deadline
+                        time.sleep(.01)
+                    checks.check(prefix + ': unrelated admin/health remain responsive',
+                        control.get('/healthz').status_code == control.get('/admin/users').status_code == 200)
+                    if prefix != 'batch-read':
+                        checks.check(prefix + ': saved-state read has separate admission', actor.get(path).status_code == 200)
+                    if prefix != 'registration':
+                        created = require(other.post('/screening/batches', json=payload(prefix + ' neighbour')))
+                        registrations.append(('other', '/screening/batches/' + created['id'], created))
+                        checks.check(prefix + ': another tenant can register without processing', created['counts']['pending'] == 1)
+                    if prefix != 'mutation':
+                        checks.check(prefix + ': retry admission is independent and does not assess',
+                            require(actor.post(path + '/retry'))['requeued'] == 0)
+                    if prefix == 'batch-read':
+                        refused = other.get(path)
+                    elif prefix == 'registration':
+                        refused = other.post('/screening/batches', json=payload('refused'))
+                    else:
+                        refused = other.delete(path)
+                    checks.check(prefix + ': only its own full pool refuses admission',
+                        require(refused, 503) == {'detail': code + '_capacity_exhausted'}
+                        and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                    response = pending.result(timeout=5)
+                    detail = require(response, 503)['detail']
+                    checks.check(prefix + ': uncertainty retains the accepted operation without replay',
+                        (detail['code'] if isinstance(detail, dict) else detail) == code + '_pending'
+                        and count(prefix, 'operations') == operations + 1)
+                    pending_id = detail['batch_id'] if prefix == 'registration' else None
+                finally:
+                    (scratch / (prefix + '-release')).touch()
+        finally:
+            (scratch / (prefix + '-release')).touch()
+        deadline = time.monotonic() + 10
+        while count(prefix, 'completed') == completed:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        (scratch / (prefix + '-mode')).unlink(missing_ok=True)
+        checks.check(prefix + ': no management operation assesses a resume',
+            [count(name, 'evaluations') for name, *_ in planes] == evaluations)
+        if pending_id:
+            target = '/screening/batches/' + pending_id
+            created = require(actor.get(target))
+            registrations.append(('actor', target, created))
+            checks.check('held registration commits once with scoped GET recovery',
+                created['counts']['pending'] == 1 and other.get(target).status_code == 404)
+    return registrations
+
+
+def check_combined_erasure_fence(checks, scratch, actor, other, registrations, neighbours):
+    """A's deliberate erasure changes older unresolved B/neighbor snapshots."""
+    def count():
+        file = scratch / 'batch-read-evaluations.jsonl'
+        return len(file.read_text().splitlines()) if file.exists() else 0
+    evaluations, snapshots = count(), []
+    for owner, path, original in neighbours + [('actor', path, body) for path, status, body in registrations if status == 200]:
+        client, foreign = (actor, other) if owner == 'actor' else (other, actor)
+        response = client.get(path)
+        assert response.status_code == 200, response.text
+        current, total = response.json(), sum(original['counts'].values())
+        checks.check(owner + ': actual erasure blocks older unresolved registrations across tenants',
+            current['counts'] == {'pending': 0, 'processing': 0, 'done': 0, 'failed': total}
+            and all(current[key] == value for key, value in original.items() if key not in ('counts', 'status'))
+            and foreign.get(path).status_code == 404)
+        retried = client.post(path + '/retry')
+        checks.check(owner + ': blocked input is skipped without another assessment',
+            retried.status_code == 200 and retried.json()['requeued'] == 0 and retried.json()['skipped'] == total
+            and count() == evaluations)
+        snapshots.append((owner, path, current))
+    registrations = [(path, status, next(body for owner, target, body in snapshots if owner == 'actor' and target == path))
+        if status == 200 else (path, status, body) for path, status, body in registrations]
+    return registrations, snapshots
 
 
 def create_batch_registration_browser_app():
@@ -797,9 +912,10 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
-    batch_mutations = '--batch-mutation-workers' in sys.argv
-    batch_registrations = '--batch-registration-workers' in sys.argv
-    batch_reads = '--batch-read-workers' in sys.argv
+    batch_management = '--batch-management' in sys.argv
+    batch_mutations = batch_management or '--batch-mutation-workers' in sys.argv
+    batch_registrations = batch_management or '--batch-registration-workers' in sys.argv
+    batch_reads = batch_management or '--batch-read-workers' in sys.argv
     pdf_execution = '--pdf-execution' in sys.argv
     body_limit = "--body-limit" in sys.argv
     ingest_races = "--ingest-races" in sys.argv
@@ -809,7 +925,8 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes or ingest_races
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T3B bounded PDF execution / HTTP / restart" if pdf_execution
+    checks = Smoke("R4-S2-T3C3D4Q combined batch management / HTTP / restart" if batch_management
+                   else "R4-S2-T3B bounded PDF execution / HTTP / restart" if pdf_execution
                    else "R4-S2-T3A aggregate request body limits / HTTP / restart" if body_limit
                    else "R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
                    else "R4-S2-T1B2b2b authorized report recovery / two workers / restart" if persistence
@@ -832,7 +949,7 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_mutation_smoke_app" if batch_mutations else "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_management_smoke_app" if batch_management else "smoke_r4_s1_t3d:create_batch_mutation_smoke_app" if batch_mutations else "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
@@ -945,9 +1062,12 @@ def run(scratch, url, pg_options):
             checks.check("processing respects configured item bound", first["processed"] == cap and first["remaining"] == 1)
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
+            neighbours = check_batch_management_isolation(checks, scratch, control, actor, other, path) if batch_management else []
             registrations = check_batch_registration(checks, scratch, control, actor, other) if batch_registrations else []
             mutations = check_batch_mutations(checks, scratch, control, actor, other) if batch_mutations else []
             batch_views = check_batch_reads(checks, scratch, control, actor, other, path) if batch_reads else []
+            if batch_management:
+                registrations, neighbours = check_combined_erasure_fence(checks, scratch, actor, other, registrations, neighbours)
             saved = {suffix: require(actor.get(path + suffix)) for suffix in ("", "/queue", "/summary")}
             saved_report = require(actor.get(report_path))
             checks.check("completed queue and summary remain advisory", saved[""]["counts"]["done"] == cap + 1
@@ -1101,6 +1221,10 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if batch_management:
+                checks.check('both tenants retain exact blocked registrations across combined graceful restart',
+                    all((actor if owner == 'actor' else other).get(url).json() == body
+                        for owner, url, body in neighbours))
             if batch_mutations:
                 checks.check('all late mutation results survive graceful restart with tenant isolation',
                     all(actor.get(url).status_code == status and require(actor.get(url), status) == body
