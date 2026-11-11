@@ -44,6 +44,197 @@ def _batch_mutation_setup(settings, factory, resume):
     return setup
 
 
+@pytest.mark.parametrize('needle', ['rate_limit_counters', 'from screening_batches', 'update batch_items'],
+    ids=['limiter', 'ownership', 'claim'])
+async def test_batch_admission_sql_leaves_unrelated_requests_responsive(database, settings, genuine_resume, needle):
+    from threading import Event
+    from sqlalchemy import event
+    engine, factory = database
+    services, _, key, bid, _, _, _ = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if needle in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/screening/batches/' + bid + '/process', headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'batch admission SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('change,phase', [('ownership', 'before_write'), ('ownership', 'materialize'),
+    ('generation', 'materialize'), ('lease', 'materialize')])
+def test_batch_admission_refuses_stale_claim_context(database, settings, genuine_resume, change, phase):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import datetime, timezone, timedelta
+    from threading import Event, current_thread
+    from sqlalchemy import event, text
+    engine, factory = database
+    services, org, _, bid, other, _, kept = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release = Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        statement = statement.lower()
+        selected = ('screening_erasure_state' in statement or 'update batch_items' in statement) if phase == 'before_write' else 'left outer join screening_item_inputs' in statement
+        if selected and current_thread().name.startswith('claim-scope') and not entered.is_set():
+            entered.set()
+            assert release.wait(10)
+    event.listen(engine, 'before_cursor_execute', sql)
+    try:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix='claim-scope') as pool:
+            pending = pool.submit(services.screening._store.claim, org, bid, limit=1,
+                now=datetime.now(timezone.utc), timeout_seconds=settings.screening_claim_timeout_seconds)
+            try:
+                assert entered.wait(8)
+                with engine.begin() as connection:
+                    if change == 'ownership':
+                        connection.execute(text('UPDATE screening_batches SET org_id = :org WHERE id = :bid'), {'org': other, 'bid': bid})
+                    elif change == 'generation':
+                        connection.execute(text('UPDATE screening_erasure_state SET generation = generation + 1'))
+                    else:
+                        from sqlalchemy import update
+                        connection.execute(update(BatchItemRow).where(BatchItemRow.batch_id == bid,
+                            BatchItemRow.status == 'processing').values(claimed_at=datetime.now(timezone.utc) + timedelta(seconds=1)))
+            finally:
+                release.set()
+            assert pending.result(timeout=10) == [], 'stale claim returned retained input'
+        if change == 'ownership':
+            assert services.screening.get(org, bid) is None
+        counts = services.screening.get(other if change == 'ownership' else org, bid).counts
+        if change == 'generation':
+            assert counts.failed == 2 and counts.pending == counts.processing == 0
+            assert services.screening.get(other, kept).counts.failed == 2
+        else:
+            assert counts.pending == (2 if phase == 'before_write' else 1)
+            assert counts.processing == (0 if phase == 'before_write' else 1)
+            assert services.screening.get(other, kept).counts.pending == 2
+    finally:
+        release.set()
+        event.remove(engine, 'before_cursor_execute', sql)
+        asyncio.run(services.aclose())
+
+
+@pytest.mark.parametrize('phase', ['first', 'next'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'rollback'])
+async def test_batch_admission_retains_slots_without_late_provider_continuation(database, settings, genuine_resume, monkeypatch, log_output, phase, ending):
+    from datetime import timedelta
+    from threading import Event, get_ident, current_thread, local
+    from sqlalchemy import event
+    engine, factory = database
+    settings.batch_admission_max_concurrent_requests = 1
+    settings.batch_admission_wait_seconds = .15 if ending in ('timeout', 'rollback') else 20
+    services, org, key, bid, _, other_key, kept = _batch_read_setup(settings, factory, genuine_resume)
+    entered, release, state = Event(), Event(), local()
+    caller, claims, sql_threads, evaluations, rate_hits = get_ident(), [], set(), [], []
+    claim, enforce = services.screening._store.claim, services.screening._limiter.enforce
+    hold = 1 if phase == 'first' else 2
+    pending = None
+    def claiming(*args, **kwargs):
+        claims.append(get_ident())
+        state.claiming = True
+        try:
+            return claim(*args, **kwargs)
+        finally:
+            state.claiming = False
+    def limiting(*args, **kwargs):
+        rate_hits.append(get_ident())
+        return enforce(*args, **kwargs)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('admission_owner', get_ident()) == get_ident()
+        if current_thread().name.startswith('batch-admission'):
+            sql_threads.add(get_ident())
+    def end(session, transaction):
+        assert session.info.get('admission_owner', get_ident()) == get_ident()
+    def commit(session):
+        if getattr(state, 'claiming', False) and len(claims) == hold:
+            entered.set()
+            assert release.wait(10)
+            if ending == 'rollback':
+                raise RuntimeError('synthetic-private-admission-rollback')
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            assess = app.state.engine.evaluate
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                evaluations.append(True)
+                return await assess(**kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', evaluate)
+            monkeypatch.setattr(services.screening._store, 'claim', claiming)
+            monkeypatch.setattr(services.screening._limiter, 'enforce', limiting)
+            for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+                event.listen(factory, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path, headers = '/screening/batches/' + bid, {'X-Org-Key': key}
+                pending = asyncio.create_task(http.post(path + '/process', headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    saved = await http.get(path, headers=headers)
+                    assert saved.status_code == 200 and saved.json()['counts']['done'] == hold - 1
+                    assert len(evaluations) == hold - 1 and len(rate_hits) == 1
+                    for target in (bid, kept, 'missing'):
+                        response = await http.post('/screening/batches/' + target + '/process', headers={'X-Org-Key': other_key})
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_capacity_exhausted'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    if ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    elif ending != 'release':
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    assert len(claims) == hold and len(evaluations) == hold - 1
+                finally:
+                    release.set()
+                if ending == 'release':
+                    response = await pending
+                    assert response.status_code == 200 and response.json()['processed'] == 2
+                for _ in range(200):
+                    if not services.batch_admissions._active:
+                        break
+                    await asyncio.sleep(.01)
+                assert not services.batch_admissions._active
+                assert caller not in claims + rate_hits and sql_threads == set(claims + rate_hits)
+                if ending != 'release':
+                    assert len(evaluations) == hold - 1 and len(claims) == hold
+                    counts = (await http.get(path, headers=headers)).json()['counts']
+                    assert counts['done'] == hold - 1 and counts['processing'] == int(ending != 'rollback')
+                    assert (await http.get('/screening/batches/' + kept, headers={'X-Org-Key': other_key})).json()['counts']['pending'] == 2
+                    clock = services.screening._now()
+                    services.screening._now = lambda: clock + timedelta(seconds=settings.screening_claim_timeout_seconds + 1)
+                    response = await http.post(path + '/process', headers=headers)
+                    assert response.status_code == 200 and response.json()['processed'] == 3 - hold
+                    assert len(evaluations) == 2
+                await services.batch_admissions.aclose()
+                response = await http.post(path + '/process', headers=headers)
+                assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_executor_closed'}
+                assert 'synthetic-private-admission-rollback' not in str(log_output)
+    finally:
+        release.set()
+        if pending is not None:
+            await asyncio.gather(pending, return_exceptions=True)
+        await services.aclose()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end), ('before_commit', commit)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+
+
 async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch):
     """One app, all eight default slots, then independent saved-state recovery."""
     from threading import Condition, Event, current_thread, get_ident

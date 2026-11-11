@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-11 - R4-S2-T3C3D5A complete; bounded process admission/claims.**
+  Split D5 before implementation; only A closes. Limiter/ownership/first claim
+  and later one-item claims use a separate owning-session pool. Current locked
+  ownership and final tenant/lease/generation checks refuse stale claims/input.
+  Pending claims never continue assessment automatically; UI recovery is GET
+  plus separate human Start after lease expiry, acknowledging earlier results.
+  The [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) owns contract, red/green,
+  review resolutions, full/actual PG, two-process HTTP/restart, Chrome and static
+  gates, including corrected harness attempts. Working DB/unrelated files and
+  demo are untouched; owned PG is stopped. Distinct final staged self-review is
+  recorded; scoped publication follows. Next: D5B in a separate session;
+  D5/B/Q, D6/Q, C3D and broader parents remain open.
+
 - **Session 2026-11-11 - R4-S2-T3C3D4Q complete; D4 management gate closed.**
   Reviewed all seven routes and aggregate 4/2/2 default admission. New combined
   tests occupy all default slots and compose A/B/C recovery over one app,

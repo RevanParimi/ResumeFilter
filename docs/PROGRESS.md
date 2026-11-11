@@ -1,56 +1,53 @@
 # Current handoff
 
-Updated: 2026-11-11. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-12. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D4Q complete; D4 complete.** A-C baseline is published at `1e59735`.
-[Q contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q) owns combined
-acceptance, commands, failed attempts and reviews. Final full pytest:
-**4365 passed, 1138 skipped, 127 warnings**. Fresh actual PG-enabled selection:
-**784 passed, 10 skips, 18 warnings**; combined migrated two-actor HTTP/graceful
-restart: **121/121 each on SQLite and PG**. Actual combined Chrome **74/74**;
-offline UI **135**, Python UI/assets **20 passed**, bindings/syntax/compile pass.
+**R4-S2-T3C3D5A complete.** D4/Q baseline is published at `8a36c08`. D5 was split before
+implementation into A admission/claims, B saved-input/report recovery and Q
+combined acceptance. Only A is this session's scope. Its
+[PI status](delivery/PI-R4.md#r4-s2-t3c3d5a) and
+[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) own scope and checks.
 
-No production change was needed. Review covers all seven management routes,
-separate default read/registration/mutation admission (4/2/2), owning sessions,
-safe late-result recovery, pagination, retention, tenant isolation and erasure.
-The combined HTTP journey explicitly proves that erasure blocks older unresolved
-registrations across tenants and retry skips them without assessment. Uncertain
-writes still require saved-state GET plus separate human intent; a read cannot
-prove an earlier write ended. Processing SQL remains D5-D6 work.
+Process limiter/ownership/first claim and later one-item claims use a separate
+owning-session pool (default 2 / finite 20s wait). Current ownership is locked
+before claim writes; post-commit materialization checks ownership, lease and
+input generation. Pending claims may finish SQL but never resume assessment;
+the UI stops and requires saved-state GET plus separate human intent after lease
+expiry. Recovery SQL remains B; terminal/count SQL remains D6, continuation T4.
 
-All 616 code/config hashes match the validated state. Working DB/unrelated files
-and the demo remain untouched; owned PG is confirmed stopped. Completion and
-distinct final staged self-review are recorded; scoped publication follows.
-The final response reports the verified remote commit.
+Fresh SQLite admission selection: **15 passed, 15 PG environment skips**;
+corrected migrated two-process HTTP/restart **53/53**, actual Chrome **37/37**,
+offline UI **138**, Python UI **20 passed**, static checks pass. Actual PG-enabled
+selection: **867 passed / 10 skips / 18 warnings**; admission and persistence
+HTTP/restart: **53/53** and **71/71**. Full pytest: **4388 passed, 1153 skipped,
+127 warnings**. All 616 code/config hashes match. Owned PG is confirmed stopped;
+working DB/unrelated files and demo remain untouched. Evidence owns red/green,
+failed harness attempts, completion and distinct final staged self-review.
+Scoped publication follows; final response reports the verified remote commit.
 
-**Exact next: R4-S2-T3C3D5 - Bound batch admission and recovery SQL**, in a
-separate session. Stop after Q publication; do not start D5 here. D5-D6/Q, C3D
-and broader parents remain open. Use per-command
-`-c credential.username=RevanParimi` for GCM account selection.
-
-The [mutation budget](../OPERATING.md#batch-retry-and-deletion-execution-budget)
-owns defaults/limits. Present visibility/counts are snapshots; an earlier write
-may still finish after recovery. Per-process waits do not bound global SQL/auth,
-whole requests, drivers, drain or memory. Fakes prove mechanics, not live quality.
+**Exact next: R4-S2-T3C3D5B - Bound saved batch input and report recovery**, in a
+separate session. Stop after A publication; do not start B here. D5/B/Q, D6/Q,
+C3D and broader parents remain open.
+Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
 ## Reusable validation setup
 
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers/isolated stores, sanitize inherited DEE
   configuration/keys and avoid the working `.env`.
-- Q runner: `.pytest_cache/run_r4_s2_t3c3d4q.py <tag> <Python args>`; omitted
+- A runner: `.pytest_cache/run_r4_s2_t3c3d5a.py <tag> <Python args>`; omitted
   args run full pytest. Owned PG runner/runtime:
-  `.pytest_cache/run_r4_s2_t3c3d4q_postgres.py` /
-  `r4-s2-t3c3d4q-pg-runtime.json` (stopped). Hash/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3d4q.py check` / `preserve`.
+  `.pytest_cache/run_r4_s2_t3c3d5a_postgres.py` /
+  `r4-s2-t3c3d5a-pg-runtime.json` (stopped). Hash/preservation helper:
+  `.pytest_cache/review_state_r4_s2_t3c3d5a.py check` / `preserve`.
   Portable PG distribution metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
   These ignored local artifacts are not portable setup guarantees.
-- Combined management HTTP/restart: `scripts/smoke_r4_s1_t3d.py
-  --batch-management`; actual Chrome: `scripts/check_ui_screening_extraction_browser.py
-  --batch-management`. Add HTTP `--postgres` only with an explicitly disposable
-  `DEE_TEST_DB_URL`. Q evidence owns commands, results and failed attempts;
+- Admission HTTP/restart: `scripts/smoke_r4_s1_t3d.py
+  --batch-admission-workers`; actual Chrome: `scripts/check_ui_screening_extraction_browser.py
+  --batch-admission-workers`. Add HTTP `--postgres` only with an explicitly disposable
+  `DEE_TEST_DB_URL`. A evidence owns commands, results and failed attempts;
   historical A-C/other setup stays in its linked PI evidence, not this handoff.
 - Next processing work can reuse `scripts/smoke_r4_s1_t3d.py --persistence`
   (or `--expiry`, `--outcomes`, `--leases`, `--ingest-races`) for two-process

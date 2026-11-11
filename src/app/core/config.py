@@ -538,6 +538,8 @@ class Settings(BaseSettings):
     batch_registration_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     batch_mutation_max_concurrent_requests: int = Field(default=2, ge=1)
     batch_mutation_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
+    batch_admission_max_concurrent_requests: int = Field(default=2, ge=1)
+    batch_admission_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     # DOUBLE-GUARDED at the route, exactly like verif_otp_debug_echo: the login
     # code is echoed in the 202 body only when env == "local" AND this is true.
     # It exists so a developer clicking through the UI is not reading six digits

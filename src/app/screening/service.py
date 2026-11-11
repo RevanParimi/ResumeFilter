@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 log = get_logger("screening.service")
 
 
+class BatchAdmissionPending(ExecutionPending):
+    """Admission may still consume allowance or commit a claim; never continue it."""
+
+
 class ScreeningService:
     def __init__(
         self,
@@ -194,9 +198,22 @@ class ScreeningService:
 
     # ── processing ──────────────────────────────────────────────────────────
 
+    def _claim(self, org_id: str, batch_id: str):
+        return self._store.claim(org_id, batch_id, limit=1, now=self._now(),
+            timeout_seconds=self._settings.screening_claim_timeout_seconds)
+
+    def _admit(self, org_id: str, batch_id: str):
+        # Count once per call, before ownership/claims, including guessed IDs.
+        self._limiter.enforce(self._limiter.rules_for('screening_process'),
+            {LimitScope.ORG: org_id}, now=self._now())
+        if self._store.batch_row(org_id, batch_id) is None:
+            return None
+        return self._claim(org_id, batch_id)
+
     async def process(
         self, org_id: str, batch_id: str, *, engine: "EvaluationEngine",
         executor: Optional[BoundedExecutor] = None,
+        admission_executor: Optional[BoundedExecutor] = None,
     ) -> Optional[ProcessResult]:
         """Claim and run up to ``screening_max_items_per_call`` items.
 
@@ -207,28 +224,22 @@ class ScreeningService:
         Claim only when work starts. Cancellation propagates with at most this
         call's active lease outstanding; its existing timeout allows recovery.
         """
-        # BEFORE the claim, deliberately. A bound that runs after the work it
-        # bounds is the S8.4 Phase B finding (4) shape -- and here it would
-        # additionally strand every item this call claimed in `processing`
-        # until the claim timeout expired, for a call that did nothing.
-        #
-        # Before the ownership read too, so a refusal is indistinguishable
-        # whichever batch id was guessed.
-        self._limiter.enforce(
-            self._limiter.rules_for("screening_process"),
-            {LimitScope.ORG: org_id},
-            now=self._now(),
-        )
+        async def admission(operation):
+            if admission_executor is None:
+                return operation(org_id, batch_id)
+            try:
+                return await admission_executor.run(operation, org_id, batch_id)
+            except ExecutionPending:
+                raise BatchAdmissionPending() from None
 
-        if self._store.batch_row(org_id, batch_id) is None:
+        claimed = await admission(self._admit)
+        if claimed is None:
             return None
 
         processed = failed = 0
-        for _ in range(self._settings.screening_max_items_per_call):
-            claimed = self._store.claim(
-                org_id, batch_id, limit=1, now=self._now(),
-                timeout_seconds=self._settings.screening_claim_timeout_seconds,
-            )
+        for index in range(self._settings.screening_max_items_per_call):
+            if index:
+                claimed = await admission(self._claim)
             if not claimed:
                 break
             item = claimed[0]

@@ -25,6 +25,34 @@ function pick(c, files) {
   assert.equal(target.value, "");
 }
 
+for (const detail of ['batch_admission_pending', 'batch_admission_capacity_exhausted', 'batch_admission_executor_closed']) {
+  test(detail + ' halts the driver and keeps recovery read-only until another human action', async () => {
+    const { c, window, calls } = setup();
+    const files = c.state.files = [{ name: 'retained draft.txt', kind: 'text', text: 'draft' }];
+    c.state.selectedBatch = 'owned';
+    c.state.batch = held(batch('owned'));
+    let posts = 0;
+    window.VeritasAPI.post = async () => { posts++; throw { status: 503, detail }; };
+    c.startProcessing();
+    await settle();
+    assert.equal(c.state.driving, false);
+    assert.equal(c.state.selectedBatch, 'owned');
+    assert.equal(c.state.files, files);
+    const message = c.renderVals().driveErrorText;
+    assert.match(message, /refresh saved state/);
+    assert.match(message, /Earlier results may already be saved/);
+    assert.doesNotMatch(message, /batch_admission_/);
+    if (detail === 'batch_admission_pending') assert.match(message, /claim to expire/);
+    await c.refresh();
+    await settle();
+    assert.equal(posts, 1);
+    assert.equal(calls.filter(call => call[0] === 'GET').length, 3);
+    c.startProcessing();
+    await settle();
+    assert.equal(posts, 2, 'only explicit Start sends another process request');
+  });
+}
+
 for (const action of ['delete', 'retry']) {
   test('stalled ' + action + ' HTTP expires into guarded saved-state recovery', async () => {
     const { c, window } = setup();

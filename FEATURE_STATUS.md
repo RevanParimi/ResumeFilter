@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-11-11. This is the common feature summary. For the exact next
+Updated: 2026-11-12. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -322,3 +322,14 @@ human saved-state recovery. Combined capacity, pagination/retention/erasure,
 two-tenant restart and actual Chrome journeys are covered without a production
 or scoring change. Processing SQL and broader gates remain D5-D6/Q, C3D and its
 parents; per-process budgets do not bound global SQL/auth or complete requests.
+
+[R4-S2-T3C3D5A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) bounds batch process
+limiter/initial ownership/first claim and later one-item claims on a separate
+owning-session pool. Locked current ownership and final tenant/lease/generation
+checks refuse stale input materialization. Late claims never continue assessment;
+UI recovery reads saved state and requires separate human Start after lease expiry,
+with earlier results explicitly acknowledged. The
+[admission budget](OPERATING.md#batch-process-admission-execution-budget) owns
+defaults and limits. Validation status belongs to the evidence; saved-input/report
+recovery remains D5B, terminal/count SQL D6, durable continuation T4, with D5/Q
+and broader parents still open.

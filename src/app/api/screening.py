@@ -24,6 +24,7 @@ from app.ratelimit.service import RateLimited
 from app.schemas.report import Report
 from app.screening.pagination import InvalidCursor
 from app.screening.projection import redact_ingest_response_for_org
+from app.screening.service import BatchAdmissionPending
 from app.screening.schema import (
     BatchDetail, BatchPage, BatchSummary, ProcessResult, QueuePage, RetryResult,
 )
@@ -268,8 +269,12 @@ async def process_screening_batch(
     try:
         services = _services(request)
         result = await services.screening.process(
-            org_id, batch_id, engine=request.app.state.engine, executor=services.candidate_ingests
+            org_id, batch_id, engine=request.app.state.engine, executor=services.candidate_ingests,
+            admission_executor=services.batch_admissions,
         )
+    except BatchAdmissionPending:
+        raise HTTPException(status_code=503, detail='batch_admission_pending',
+            headers={'Retry-After': '1'}) from None
     except (ExecutionPending, ExecutionUnavailable) as exc:
         raise _ingest_execution_refused(exc) from None
     except RateLimited as exc:

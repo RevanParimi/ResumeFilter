@@ -12,6 +12,7 @@ B2b2b adds first-report reuse without provider replay, including after restart.
 --body-limit adds R4-S2-T3A's aggregate ingress refusal and slow-upload checks.
 --pdf-execution adds R4-S2-T3B's real child stall/admission/timeout checks.
 --batch-management composes A/B/C controls and cross-pool/erasure acceptance.
+--batch-admission-workers verifies process admission/claims without late continuation.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -40,6 +41,175 @@ from smoke_s82 import _code_for
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-screening-router-admin"
+
+
+def create_batch_admission_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    return create_batch_admission_smoke_app(base_factory=create_smoke_app)
+
+
+def create_batch_admission_smoke_app(*, base_factory=None):
+    """Hold real admission SQL; another app still contends through the database."""
+    from sqlalchemy import event
+    app = (base_factory or create_smoke_app)()
+    original = app.router.lifespan_context
+    scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    state, mutex = local(), Lock()
+    def record(kind, **values):
+        with mutex, (scratch / ('admission-' + kind + '.jsonl')).open('a') as log:
+            log.write(json.dumps({'pid': os.getpid(), **values}) + '\n')
+    @asynccontextmanager
+    async def lifespan(app):
+        async with original(app):
+            services, caller = app.state.services, get_ident()
+            pool = services.batch_admissions
+            run, assess, now = pool.run, app.state.engine.evaluate, services.screening._now
+            async def tracked(operation, *args, **kwargs):
+                def owned():
+                    assert get_ident() != caller
+                    state.active, state.held, state.claiming, state.mode = True, False, False, None
+                    record('operations', batch_id=args[1], action=operation.__name__)
+                    try:
+                        return operation(*args, **kwargs)
+                    finally:
+                        if state.held:
+                            record('completed')
+                        record('finished')
+                        state.active = False
+                return await run(owned)
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                record('evaluations')
+                return await assess(**kwargs)
+            def clock():
+                offset = services.settings.screening_claim_timeout_seconds + 1 if (scratch / 'admission-advance').exists() else 0
+                return now() + timedelta(seconds=offset)
+            def gate(phase):
+                if not getattr(state, 'active', False) or state.held:
+                    return
+                mode_file = scratch / 'admission-mode'
+                selected = mode_file.read_text() if mode_file.exists() else ''
+                if selected.split(':')[0] != phase:
+                    return
+                owner = scratch / 'admission-owner'
+                try:
+                    with owner.open('x') as file:
+                        file.write(str(os.getpid()))
+                except FileExistsError:
+                    if owner.read_text() != str(os.getpid()):
+                        return
+                state.held, state.mode = True, selected
+                record('entered', mode=selected)
+                deadline = time.monotonic() + 30
+                while not (scratch / 'admission-release').exists():
+                    assert time.monotonic() < deadline, 'synthetic admission hold timed out'
+                    time.sleep(.01)
+            def sql(conn, cursor, statement, parameters, context, many):
+                if not getattr(state, 'active', False):
+                    return
+                statement = statement.lower()
+                if 'rate_limit_counters' in statement:
+                    gate('limiter')
+                elif 'from screening_batches' in statement:
+                    gate('ownership')
+                if 'update batch_items' in statement:
+                    state.claiming = True
+            def begin(session, transaction, connection):
+                assert session.info.setdefault('admission_owner', get_ident()) == get_ident()
+            def end(session, transaction):
+                assert session.info.get('admission_owner', get_ident()) == get_ident()
+            def commit(session):
+                if getattr(state, 'active', False) and state.claiming:
+                    gate('claim')
+                    if state.mode == 'claim:rollback':
+                        raise RuntimeError('synthetic-private-admission-rollback')
+            listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
+                (services.session_factory, 'after_begin', begin), (services.session_factory, 'after_transaction_end', end),
+                (services.session_factory, 'before_commit', commit)]
+            pool.run, app.state.engine.evaluate, services.screening._now = tracked, evaluate, clock
+            for target, name, listener in listeners:
+                event.listen(target, name, listener)
+            try:
+                yield
+            finally:
+                (scratch / 'admission-release').touch()
+                await pool.aclose()
+                pool.run, app.state.engine.evaluate, services.screening._now = run, assess, now
+                for target, name, listener in listeners:
+                    event.remove(target, name, listener)
+    app.router.lifespan_context = lifespan
+    return app
+
+
+def check_batch_admission(checks, scratch, control, actor, other, server):
+    def count(kind):
+        file = scratch / ('admission-' + kind + '.jsonl')
+        return len(file.read_text().splitlines()) if file.exists() else 0
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    saved = []
+    for mode in ('limiter', 'ownership', 'claim:commit', 'claim:rollback'):
+        created = require(actor.post('/screening/batches', json={'name': 'Admission ' + mode,
+            'items': [{'resume_text': contract._resume('Synthetic Admission ' + mode, 'admission@example.in')}]}))
+        path = '/screening/batches/' + created['id']
+        entered, completed, finished, operations, evaluations = [count(kind) for kind in
+            ('entered', 'completed', 'finished', 'operations', 'evaluations')]
+        for name in ('admission-release', 'admission-owner'):
+            (scratch / name).unlink(missing_ok=True)
+        (scratch / 'admission-mode').write_text(mode)
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0)); second_port = sock.getsockname()[1]
+        with server(second_port, scratch / 'admission-second-stop') as second_base:
+            with client(second_base, cookies=actor.cookies, headers={'X-CSRF-Token': actor.headers['X-CSRF-Token']}) as peer:
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        pending = executor.submit(actor.post, path + '/process')
+                        try:
+                            deadline = time.monotonic() + 10
+                            while count('entered') == entered:
+                                assert time.monotonic() < deadline
+                                time.sleep(.01)
+                            checks.check(mode + ': held admission leaves health/admin/saved GET responsive',
+                                control.get('/healthz').status_code == control.get('/admin/users').status_code == actor.get(path).status_code == 200)
+                            refused = other.post(path + '/process')
+                            checks.check(mode + ': full admission refuses before scope lookup',
+                                require(refused, 503) == {'detail': 'batch_admission_capacity_exhausted'}
+                                and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                            checks.check(mode + ': pending admission has no partial success or provider continuation',
+                                require(pending.result(timeout=5), 503) == {'detail': 'batch_admission_pending'}
+                                and count('operations') == operations + 1 and count('evaluations') == evaluations)
+                            if mode == 'claim:commit':
+                                peer_response = peer.post(path + '/process')
+                                checks.check('second app independently admits but times out on the shared claim lock',
+                                    require(peer_response, 503) == {'detail': 'batch_admission_pending'}
+                                    and count('operations') == operations + 2 and count('evaluations') == evaluations)
+                        finally:
+                            (scratch / 'admission-release').touch()
+                finally:
+                    (scratch / 'admission-release').touch()
+        deadline = time.monotonic() + 10
+        accepted = 2 if mode == 'claim:commit' else 1
+        while count('completed') == completed or count('finished') < finished + accepted:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        (scratch / 'admission-mode').unlink(missing_ok=True)
+        current = require(actor.get(path))
+        checks.check(mode + ': late claim/rollback changes only saved lease state, never assessment',
+            current['counts'] == {'pending': int(mode == 'claim:rollback'),
+                'processing': int(mode != 'claim:rollback'), 'done': 0, 'failed': 0}
+            and count('evaluations') == evaluations and other.get(path).status_code == 404)
+        (scratch / 'admission-advance').touch()
+        try:
+            checks.check(mode + ': explicit GET after deterministic expiry does not process',
+                require(actor.get(path))['counts']['pending'] == 1 and count('evaluations') == evaluations)
+            processed = require(actor.post(path + '/process'))
+            checks.check(mode + ': only separate human intent assesses once after lease recovery',
+                processed['processed'] == 1 and processed['remaining'] == 0 and count('evaluations') == evaluations + 1)
+        finally:
+            (scratch / 'admission-advance').unlink(missing_ok=True)
+        saved.append((path, {suffix: require(actor.get(path + suffix)) for suffix in ('', '/queue', '/summary')}))
+    return saved
 
 
 def create_batch_management_smoke_app(*, base_factory=None):
@@ -912,6 +1082,7 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
+    batch_admissions = '--batch-admission-workers' in sys.argv
     batch_management = '--batch-management' in sys.argv
     batch_mutations = batch_management or '--batch-mutation-workers' in sys.argv
     batch_registrations = batch_management or '--batch-registration-workers' in sys.argv
@@ -922,10 +1093,11 @@ def run(scratch, url, pg_options):
     persistence = "--persistence" in sys.argv
     expiry = "--expiry" in sys.argv or persistence
     terminal_outcomes = "--outcomes" in sys.argv or expiry
-    leases = "--leases" in sys.argv or terminal_outcomes or ingest_races
+    leases = "--leases" in sys.argv or terminal_outcomes or ingest_races or batch_admissions
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T3C3D4Q combined batch management / HTTP / restart" if batch_management
+    checks = Smoke("R4-S2-T3C3D5A batch admission / two processes / restart" if batch_admissions
+                   else "R4-S2-T3C3D4Q combined batch management / HTTP / restart" if batch_management
                    else "R4-S2-T3B bounded PDF execution / HTTP / restart" if pdf_execution
                    else "R4-S2-T3A aggregate request body limits / HTTP / restart" if body_limit
                    else "R4-S2-T2 candidate/resume ingest races / two workers / restart" if ingest_races
@@ -949,10 +1121,13 @@ def run(scratch, url, pg_options):
         "DEE_CORS_ALLOWED_ORIGINS": json.dumps([contract.UI_ORIGIN]),
         "DEE_SCREENING_MAX_ITEMS_PER_CALL": str(cap),
         "VERITAS_SQL_SMOKE_EVENTS": str(events),
-        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_management_smoke_app" if batch_management else "smoke_r4_s1_t3d:create_batch_mutation_smoke_app" if batch_mutations else "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
+        "VERITAS_SQL_SMOKE_FACTORY": "smoke_r4_s1_t3d:create_batch_admission_smoke_app" if batch_admissions else "smoke_r4_s1_t3d:create_batch_management_smoke_app" if batch_management else "smoke_r4_s1_t3d:create_batch_mutation_smoke_app" if batch_mutations else "smoke_r4_s1_t3d:create_batch_registration_smoke_app" if batch_registrations else "smoke_r4_s1_t3d:create_batch_read_smoke_app" if batch_reads else "smoke_r4_s1_t3d:create_smoke_app" if leases or body_limit or pdf_execution else "smoke_r4_s1_t1a:create_smoke_app",
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
+    if batch_admissions:
+        env.update(DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_ADMISSION_WAIT_SECONDS='.5',
+            DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if batch_registrations:
         env.update(DEE_BATCH_REGISTRATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_REGISTRATION_WAIT_SECONDS='.5',
             DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -1062,6 +1237,7 @@ def run(scratch, url, pg_options):
             checks.check("processing respects configured item bound", first["processed"] == cap and first["remaining"] == 1)
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
+            admissions = check_batch_admission(checks, scratch, control, actor, other, server) if batch_admissions else []
             neighbours = check_batch_management_isolation(checks, scratch, control, actor, other, path) if batch_management else []
             registrations = check_batch_registration(checks, scratch, control, actor, other) if batch_registrations else []
             mutations = check_batch_mutations(checks, scratch, control, actor, other) if batch_mutations else []
@@ -1221,6 +1397,10 @@ def run(scratch, url, pg_options):
                                 outcome_saved[outcome_path] = state
         with server():
             public_ui()
+            if batch_admissions:
+                checks.check('late admission recovery survives graceful restart without foreign visibility',
+                    all(require(actor.get(target + suffix)) == body and other.get(target + suffix).status_code == 404
+                        for target, views in admissions for suffix, body in views.items()))
             if batch_management:
                 checks.check('both tenants retain exact blocked registrations across combined graceful restart',
                     all((actor if owner == 'actor' else other).get(url).json() == body
@@ -1286,7 +1466,7 @@ def run(scratch, url, pg_options):
             checks.check("owner can delete batch after restart", require(actor.delete(path)) == {"batch_id": bid, "deleted": True}
                 and actor.get(path).status_code == 404 and actor.get(report_path).status_code == 200)
     lifecycle = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
-    starts = 3 if leases else 2
+    starts = (3 if leases else 2) + len(admissions)
     checks.check("all migrated workers share SQL topology and shut down gracefully", sum(row["event"] == "started" and row["revision"] == "0030_screening_ingest_facts" and row["one_factory"] for row in lifecycle) == starts
         and sum(row["event"] == "disposed" for row in lifecycle) == starts
         and sum(row["event"] == "stopped" and row["detached"] for row in lifecycle) == starts)

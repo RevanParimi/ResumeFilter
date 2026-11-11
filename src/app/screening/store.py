@@ -216,7 +216,10 @@ class ScreeningStore:
         double bill.
         """
         with self._session_factory() as s:
-            batch = s.get(ScreeningBatchRow, batch_id)
+            # Order erasure/SQLite writers before reading current ownership;
+            # the parent lock keeps PG ownership stable through claim commit.
+            self._generation(s, lock=True)
+            batch = s.get(ScreeningBatchRow, batch_id, with_for_update=True)
             if batch is None or batch.org_id != org_id:
                 return []
             domain = batch.domain
@@ -245,10 +248,13 @@ class ScreeningStore:
                 return []
             rows = s.execute(
                 select(BatchItemRow, ScreeningInputRow.resume_id, ResumeRow.raw_text)
+                .join(ScreeningBatchRow, ScreeningBatchRow.id == BatchItemRow.batch_id)
                 .outerjoin(ScreeningInputRow, ScreeningInputRow.id == BatchItemRow.id)
                 .outerjoin(ResumeRow, and_(ResumeRow.id == ScreeningInputRow.resume_id,
                                           ResumeRow.org_id == org_id))
-                .where(BatchItemRow.id.in_(claimed))
+                .where(BatchItemRow.id.in_(claimed), ScreeningBatchRow.org_id == org_id,
+                    BatchItemRow.status == ItemStatus.PROCESSING.value,
+                    BatchItemRow.claimed_at == now, ~self._blocked_input())
             ).all()
             order = {item_id: i for i, item_id in enumerate(claimed)}
             rows = sorted(rows, key=lambda r: order[r[0].id])

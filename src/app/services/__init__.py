@@ -115,6 +115,16 @@ class Services:
     _batch_reads: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _batch_registrations: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _batch_mutations: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _batch_admissions: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def batch_admissions(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('batch_admission_executor_closed')
+        if self._batch_admissions is None:
+            self._batch_admissions = BoundedExecutor(self.settings.batch_admission_max_concurrent_requests,
+                self.settings.batch_admission_wait_seconds, name='batch_admission')
+        return self._batch_admissions
 
     @property
     def batch_mutations(self) -> BoundedExecutor:
@@ -260,7 +270,8 @@ class Services:
             (self._auth_codes, self._contact_codes, self._auth_resolution, self._auth_redemption,
              self._auth_sessions, self._candidate_records, self._candidate_ingests,
              self._report_records, self._outcome_records, self._evaluation_records,
-             self._batch_reads, self._batch_registrations, self._batch_mutations) if executor is not None))
+             self._batch_reads, self._batch_registrations, self._batch_mutations,
+             self._batch_admissions) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

@@ -11890,3 +11890,262 @@ exactly. Final review/status prose is restaged and checked before publication;
 no unstaged edits or local logs/data/credentials/runtimes are included. Owned PG
 is stopped and the demo remains untouched. Authorized scoped commit/push and
 remote verification follow; stop with D5 next in a separate session.
+
+### <a id="r4-s2-t3c3d5a"></a>R4-S2-T3C3D5A - Bound batch process admission and claims
+
+Status: done (2026-11-11). Published prerequisite D4/Q:
+`8a36c08`. [PI status](PI-R4.md#r4-s2-t3c3d5a) links to this retained contract
+and records the split before implementation: A admission/claims, B saved-input/
+report recovery, then Q.
+Only A is this session's task; D5 remains open. Terminal/count SQL remains D6
+and durable continuation remains T4.
+
+**Acceptance and behavior.** POST `/screening/batches/{id}/process` runs the
+complete limiter/initial ownership/first-claim operation, then each subsequent
+one-item claim, on a separate Services-owned `batch_admissions` pool. Defaults
+are two slots / finite positive 20s caller wait. This is independent admission
+from management reads, registration, mutations and intake, not independent SQL
+locks or a global SQL/auth, request, driver/drain, provider or memory deadline.
+Rate enforcement still precedes ownership and claims, once per process call;
+missing/foreign IDs retain the same 404/429 policy. Rate allowance and a claim
+are separate commits, not one atomic transaction; late allowance consumption is
+not refunded. One item is claimed only when its work starts. Direct synchronous
+service callers retain their own scheduling unless given the admission executor.
+
+Claim now orders generation locking before a current locked parent read and
+keeps ownership stable through the claim commit. Post-commit input materialization
+checks current tenant, processing state, exact lease and unblocked input generation.
+It returns plain claimed-item data, never an open Session. SQL locks serialize
+these writes across app processes; pool slots do not override those locks.
+Provider/graph work stays on the async caller. Recovery and terminal/count SQL
+are deliberately still outside A; this does not claim all process SQL is bounded.
+
+Full/closed admission returns safe 503 `batch_admission_capacity_exhausted` /
+`batch_admission_executor_closed`, before accepting that step. Caller wait expiry
+returns 503 `batch_admission_pending`, no partial success or provider continuation.
+All carry Retry-After: 1. A later step may refuse after earlier results were saved.
+Timeout/cancel/late rollback retains admission until actual completion; there is
+no caller failure write, automatic cleanup, replay or continuation of an uncertain
+claim. Late SQL may leave a live lease. UI guidance stops the driver, preserves
+selection/drafts, offers saved-state GET and requires separate human Start after
+lease expiry. An early read cannot prove a write ended. Shutdown drains accepted
+operations before SQL disposal; borrowed test fixtures close the new pool.
+Existing success DTO/schema, item caps, scopes, TTL/erasure/checkpoints, advisory
+domain-independent scoring and deterministic fallbacks remain unchanged.
+
+**Behavioral red/green.** Ignored sanitized runner
+`.pytest_cache/run_r4_s2_t3c3d5a.py <tag> <Python args>` uses the project venv,
+no-config YAML path, blank provider keys, localhost GitHub fallback and null mail.
+The task fixture explicitly uses `_env_file=None`; subprocess apps use scratch
+directories, disposable SQL and fake providers. A no-config YAML path alone does
+not disable dotenv. Baseline hashes 734 tracked files; reviewed-state helper
+hashes 616 code/config files. Commands below use this runner unless stated.
+
+`red -m pytest -q --tb=short tests/test_screening_batches_api.py -k batch_admission`
+on production baseline: **5 failed, 5 PG environment skips, 152 deselected,
+1 warning** (29.86s). Three genuine failures show limiter, initial ownership and
+claim SQL finish their held wait before health/admin can respond: the event loop
+was blocked. A fourth genuine failure shows a stale owner receiving a claim and
+retained input after ownership changes before the write. The fifth was a harness
+error: the post-commit SQL hook named `screening_inputs` rather than the existing
+`screening_item_inputs` table; it is not counted as product reproduction.
+After correcting the hook, `red-materialize -m pytest -q --tb=short
+tests/test_screening_batches_api.py -k 'admission and materialize'` still on old
+production: **1 failed, 1 PG skip, 160 deselected, 1 warning** (2.58s), now for
+the intended stale-owner/input result after commit. These tests were subsequently
+grouped as `test_batch_admission_refuses_stale_claim_context` with additional
+generation and replacement-lease acceptance cases.
+
+After the fix, `green -m pytest -q --tb=short tests/test_screening_batches_api.py
+-k batch_admission`: **5 passed, 5 PG skips, 152 deselected, 1 warning** (10.02s).
+Expanded `admission` with the same arguments: **15 passed, 15 PG skips,
+152 deselected, 1 warning** (11.85s). It covers SQL responsiveness; stale owner,
+generation and lease refusal; first/subsequent claims under release, timeout,
+cancellation and late rollback; retained full/closed admission, owning-session
+thread affinity, one rate hit per call, previous acknowledged work, other-tenant
+survival, caller-owned assessment, no late continuation and separate deliberate
+recovery. Existing rate-spend tests own no-claim-on-429/ordering regressions.
+Configuration/default/YAML/env and lifecycle tests include the new pool.
+
+**Implementation self-review (2026-11-11).** Same-agent review of `8a36c08` plus
+the uncommitted API/Settings/config, ScreeningService/Store, Services, fixture/
+regression, screening handler and smoke/browser changes. Specification review
+maps the complete first/subsequent operations, independent admission, refusal/
+uncertainty, manual recovery and lifecycle to tests; B and D6 are still explicit
+residuals. Correctness review traced all Session creation/commit/materialization/
+close on their worker, plain cross-thread values, generation-before-parent lock
+ordering, conditional lease claim, post-commit tenant/lease/generation snapshots,
+limiter ordering/counting, safe error/429/404 mapping, retained capacity under
+cancellation and swallowed late failure, graceful drain and borrowed cleanup.
+It checked that no new provider executes in a worker or automatically follows
+late completion, previous results are not falsely denied by UI refusal copy,
+and selected batch/drafts survive read-only/manual recovery. The scratch harness
+uses one app lifecycle per process, controlled SQL/commit holds and deterministic
+clock advancement, not measured wall-clock lease expiry. No unresolved product
+blocker remains from this pass; this is not independent review or live-quality
+validation. Final regression and the distinct completion review remain pending.
+
+Resolved product findings in this review scope:
+
+- **High**, `src/app/screening/service.py:process`: a driver wait in limiter,
+  ownership or claim SQL occupied the async caller and delayed unrelated HTTP.
+  The separate owning-operation pool and three held-SQL red/green regressions
+  resolve those admission boundaries; B/D6 residuals are not claimed fixed.
+- **High**, `src/app/screening/store.py:claim`: ownership loss after the parent
+  read or before post-commit materialization could still return retained input
+  to the stale owner. Generation/current parent locking and final scoped lease/
+  generation predicates resolve the reproduced interleavings. Additional tests
+  refuse replacement leases and newly blocked input while preserving valid work.
+
+**Migrated HTTP/browser and static checks.**
+
+- `http scripts/smoke_r4_s1_t3d.py --batch-admission-workers`: **52/53**, failed
+  only the lifecycle tally, which still expected three app instances despite
+  four additional owned secondary starts. The check now includes those starts
+  and still requires every expected migration/shared topology/disposal/detach.
+  Corrected `http-final` with the same script/flag: **53/53** on scratch SQLite.
+  This is actual two-actor/two-process HTTP, real shared claim-lock contention,
+  held limiter/ownership/claim commit/rollback, no late assessment, GET then
+  explicit recovery, preserved active-item scheduling and graceful restart.
+- `browser scripts/check_ui_screening_extraction_browser.py
+  --batch-admission-workers`: **35/37**. Two waits incorrectly looked for summary
+  wording on the queue. The queue now checks its actual completed state plus API
+  done count and exactly one assessment. Corrected `browser-final`: **37/37**,
+  actual Chrome/CDP with real pending claims, capacity refusal, early GET, late
+  commit/rollback, separate Start after deterministic expiry and document reload;
+  no console exceptions. It uses existing CDN assets, not an offline browser.
+- `node --test scripts/test_ui_screening.js`: **138 passed**, no failure/skip,
+  including three new admission refusal/pending driver/draft/recovery cases.
+  Shared API cases are included, not added again to pytest/browser counts.
+- `ui -m pytest -q --tb=short tests/test_ui_handlers.py tests/test_ui_mount.py`:
+  **20 passed, 1 warning** (12.67s). `node scripts/check_ui_bindings.js`:
+  **626 distinct bindings / 19 states**, all resolve. Syntax checks for
+  `frontend/api.js`, `frontend/support.js` and `frontend/screening.js` pass.
+- `.resume/Scripts/python.exe -m py_compile` passes for the 11 changed Python
+  modules: API screening, core config, screening service/store, Services,
+  `tests/conftest.py`, config, batch API and lifecycle tests, plus both smoke/
+  browser scripts. `git diff --check` passes. All 616 code/config hashes match
+  the reviewed snapshot; no code changed after final gates began.
+
+**Fresh PostgreSQL selection (2026-11-11).** `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d5a_postgres.py` owns a new disposable PostgreSQL
+**18.6**, **Asia/Calcutta**, **read committed**, random localhost port and
+scratch database/schema. It supplies the explicit test URL only to children,
+sanitizes DEE/provider configuration and stops its server in finally. No URL/
+password is emitted as evidence. Its command is `.resume/Scripts/python.exe
+-m pytest -q --tb=short` over these 25 modules:
+
+```text
+tests/test_screening_batches_api.py tests/test_screening_service.py
+tests/test_screening_store.py tests/test_screening_schema.py
+tests/test_screening_scope.py tests/test_screening_models.py
+tests/test_screening_projection.py tests/test_screening_durable_input.py
+tests/test_screening_report_input.py tests/test_screening_refusal_retention.py
+tests/test_screening_unresolved_input.py tests/test_screening_erasure_concurrency.py
+tests/test_config_screening.py tests/test_service_lifecycle.py tests/test_config.py
+tests/test_org_scope_guard.py tests/test_api_route_extraction.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py tests/test_error_logging.py
+tests/test_migrations.py tests/test_ratelimit_spend.py tests/test_ratelimit_store.py
+tests/test_ratelimit_service.py tests/test_config_ratelimit.py
+```
+
+Result: **867 passed, 10 SQLite-only skips, 18 warnings**, exit **0** (854.93s).
+This includes SQLite and actual PG variants plus config/contract tests, not 867
+exclusively PostgreSQL cases. All new admission/context/late-result cases run
+against both databases. Existing actual competing-connection/lock/erasure,
+checkpoint/TTL/refusal, scope/pagination and shutdown regressions pass. No schema
+change is made; existing migration compatibility and migrated app journeys own
+that gate. Skipped SQLite-only cases are not PG evidence.
+
+The runner then executes `.resume/Scripts/python.exe
+scripts/smoke_r4_s1_t3d.py --postgres --batch-admission-workers`: **53/53**, and
+`scripts/smoke_r4_s1_t3d.py --postgres --persistence`: **71/71**, both exit **0**.
+These are actual migrated PostgreSQL/two-actor/two-process HTTP and graceful
+restart journeys. The admission journey includes actual shared SQL-lock
+contention between independently admitted app processes and no late provider
+continuation; persistence covers existing active-item scheduling, checkpoint
+recovery, lease/generation/erasure/expiry, exact saved views and restart without
+unrequested evaluation. These compatibility checks do not claim B/D6 SQL is
+already bounded. The new journey's seven app instances and the persistence
+journey's three all satisfy the shared factory/revision/dispose/detach checks.
+
+Owned runtime `.pytest_cache/r4-s2-t3c3d5a-pg-runtime.json` reports stop exit **0**;
+subsequent `pg_ctl status` exits **3** (server not running). The instance is
+confirmed stopped. No working DB or demo lifecycle was involved.
+
+**Final regression and completion (2026-11-11).** `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d5a.py full` executes the required
+`.resume/Scripts/python.exe -m pytest -q --tb=short`: **4388 passed, 1153 skipped,
+127 warnings**, exit **0** (1566.63s). All code/config bytes remain unchanged
+through the final gates; the 616-file reviewed-state snapshot matches. Optional/
+environment skips do not prove omitted behavior; actual PG above owns those
+required cases. Earlier fixture/harness failures remain recorded and corrected
+gates supersede them.
+
+The A acceptance contract is complete: bounded owning admission/one-item claim
+operations, safe full/closed/pending behavior, retained late work without model
+continuation, current claim/input scope, preserved rate/lease/generation/TTL and
+valid work, human-only recovery and lifecycle. No unresolved implementation
+self-review blocker remains. No schema/scorer change, live-provider compatibility,
+measured quality or independent-review claim is made. Current reads/materialization
+are snapshots; per-process admission/wait limits do not bound global SQL/auth,
+whole requests, drivers, drain, provider concurrency or memory. A late step may
+consume allowance/leave a lease after the caller stops waiting; earlier results
+may already exist and reads cannot prove old work ended.
+
+Only **R4-S2-T3C3D5A** closes. D5/B/Q, D6/Q, C3D and broader parents remain open.
+Exact next: **R4-S2-T3C3D5B - Bound saved batch input and report recovery**, in a
+separate session. No B implementation is started. Working DB/unrelated files
+retain baseline bytes, the demo is untouched and the owned PG instance is
+confirmed stopped. Logs, stores, credentials and runtimes remain ignored local
+artifacts. The distinct final staged self-review and authorized scoped commit/
+push/remote verification follow this completion record; then stop.
+
+**Distinct final staged self-review (2026-11-12, after completion).** Reviewed
+the exact staged 20-file A diff against published baseline `8a36c08`, separately
+from implementation review and final testing. Scope: `config.yaml`;
+`src/app/api/screening.py`, `src/app/core/config.py`, `src/app/screening/service.py`,
+`src/app/screening/store.py`, `src/app/services/__init__.py`;
+`frontend/screening.js`; `tests/conftest.py`, `tests/test_config.py`,
+`tests/test_screening_batches_api.py`, `tests/test_service_lifecycle.py`;
+`scripts/smoke_r4_s1_t3d.py`, `scripts/check_ui_screening_extraction_browser.py`,
+`scripts/test_ui_screening.js`; `FEATURE_STATUS.md`, `OPERATING.md`,
+`docs/PROGRESS.md`, `docs/ROADMAP.md`, `docs/delivery/PI-R4.md` and this evidence.
+This is same-agent self-review, not independent review. Acceptance/completion
+was recorded on 11 November; this later review crossed into 12 November locally.
+
+Specification review mapped the complete first/subsequent admission operations,
+rate ordering, safe uncertainty, current claim/input scope and human recovery
+to the recorded red/green, actual PG/two-process lock/late result, migrated
+HTTP/restart, actual Chrome and full regression evidence. It confirmed that
+only A closes, with D5/B/Q and broader gates open and B next in a separate
+session. Configuration defaults versus controlled harness settings, snapshots
+versus locks, fake mechanics versus quality and source/bindings versus actual
+browser/database execution remain explicitly distinguished.
+
+Correctness/maintainability review retraced worker-local Sessions and plain
+claimed-item return values, limiter-before-ownership/claim and one hit per call,
+generation/current-parent locking, conditional claims and final tenant/exact
+lease/generation predicates, unchanged 404/429/success contracts, typed pending
+mapping, full/closed admission and retained capacity through timeout/cancellation/
+late rollback. It checked no competing failure write or late provider continuation,
+caller-owned assessment, previous saved results in refusal copy, read-only/manual
+UI recovery, graceful drain and borrowed cleanup. Regression review checked
+real stores/counters, first/subsequent cases, generation/replacement-lease and
+other-tenant assertions, release/finally paths, single-process gate ownership
+with real second-process SQL contention, deterministic expiry, exact restart
+views and strict counts for all expected app lifecycles. Documentation ownership,
+next pointer, budget limits and preserved standing risks were also checked.
+No additional acceptance/correctness blocker or unresolved scoped finding remains;
+this review introduced no code change and required no affected application rerun.
+
+Final scoped checks confirm all 14 changed code/config files match the validated
+snapshot and staged blobs with Git newline normalization, and all 616 code/config
+hashes match. All eight added local Markdown targets/anchors resolve. Staged
+whitespace, credential-marker and artifact-exclusion checks pass. Preservation
+confirms 714 unrelated tracked files, including the working DB, retain baseline
+bytes; standing handoff constraints match baseline staged text exactly. Final
+review/status/date prose is restaged and checked before publication. No unstaged
+edits, local logs/data/credentials/runtimes or demo restart are included. Owned PG
+is stopped. Authorized scoped commit/push and remote verification follow; stop
+with D5B next in a separate session.

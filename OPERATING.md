@@ -642,6 +642,47 @@ registrations and two mutations). This is not a global SQL/auth or whole-request
 bound. `/process` admission/recovery and terminal SQL remain D5-D6 work; broader acceptance and
 durable continuation remain open.
 
+### Batch process admission execution budget
+
+`batch_admission_max_concurrent_requests` defaults to **2** per Services/app
+process; `batch_admission_wait_seconds` defaults to finite positive **20 seconds**.
+Configure YAML or `DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS` /
+`DEE_BATCH_ADMISSION_WAIT_SECONDS`, then restart. POST batch `/process` runs
+limiter enforcement, initial ownership and first claim in one complete worker
+operation; subsequent one-item claims use the same pool. Each Session, commit
+and input materialization stays with its worker. Rate enforcement still happens
+once per process call before ownership/claims, including guessed IDs. Rate
+allowance and claim are separate commits; uncertainty can consume allowance.
+Providers/graph stay on the async caller, and direct synchronous service callers
+own their scheduling unless supplied an admission executor.
+
+Full/closed admission returns **503** `batch_admission_capacity_exhausted` /
+`batch_admission_executor_closed` before accepting that step; wait expiry returns
+**503** `batch_admission_pending`. All carry `Retry-After: 1`. A refusal can
+follow earlier saved results in a multi-item call. There is no partial success,
+automatic replay or provider continuation after pending/cancelled admission.
+The accepted operation retains its slot through actual completion/rollback and
+shutdown drains it before SQL disposal. Late SQL may consume rate allowance or
+leave a processing lease; the caller does not race it with a failure/cleanup write.
+
+Wait and refresh saved state. A read cannot prove the earlier operation ended.
+If the item remains in progress, wait for its lease to expire before choosing
+**Start screening**. Refresh only reads; separate human Start performs recovery.
+UI guidance preserves the selected batch/draft, warns that earlier results may
+already be saved, stops the driver and never retries itself. Claims lock generation
+before current parent ownership, then recheck tenant, exact lease, processing
+state and unblocked input when materializing after commit. Present reads and
+materialization are snapshots, not delivery locks. Existing item caps, privacy,
+erasure/TTL, success/404/429 and advisory scoring contracts remain.
+
+This pool is separate from the eight default management slots, not a global
+SQL/auth, whole-request, driver/drain, provider or memory budget. Generation and
+row locks can serialize operations across pools/processes. Saved-input/report
+recovery remains D5B and post-intake terminal/count SQL remains D6; not all
+process SQL has moved. Durable continuation remains T4. The
+[A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) owns validation/status;
+D5/B/Q and broader gates remain open. No schema or scorer change is introduced.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.
