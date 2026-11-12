@@ -555,7 +555,7 @@ semantics remain. Manual UI recovery preserves selection/reference and drafts,
 only GETs saved state and never starts screening. Initial detail/list/discovery
 failures retain visible recovery; old account/refresh/page replies cannot replace
 new state. Paging waits for a pending base refresh. Registration and mutations
-have separate budgets below; processing SQL remains D5-D6 work.
+have separate budgets below; remaining processing SQL is D6 work.
 
 ### Batch registration execution budget
 
@@ -593,7 +593,7 @@ initial success on the same account, screen and draft can start it. References
 and files are not persisted in browser storage; reload discovers saved batches
 without starting work. Final detail/scope checks are snapshots, not locks over
 later deletion or delivery. Combined management acceptance is linked below;
-processing D5-D6/Q remains open.
+remaining processing D6/Q work stays open.
 
 ### Batch retry and deletion execution budget
 
@@ -639,8 +639,8 @@ reads persisted results without starting work.
 closes D4 across all seven routes: the defaults total eight admitted operations
 per Services/app process across the three separate pools (four reads, two
 registrations and two mutations). This is not a global SQL/auth or whole-request
-bound. `/process` admission/recovery and terminal SQL remain D5-D6 work; broader acceptance and
-durable continuation remain open.
+bound. The combined processing gate below closes D5; ordinary terminal/count
+SQL remains D6. Broader acceptance and durable continuation remain open.
 
 ### Batch process admission execution budget
 
@@ -682,12 +682,16 @@ erasure/TTL, success/404/429 and advisory scoring contracts remain.
 
 This pool is separate from the eight default management slots, not a global
 SQL/auth, whole-request, driver/drain, provider or memory budget. Generation and
-row locks can serialize operations across pools/processes. Post-intake
-terminal/count SQL remains D6; not all process SQL has moved. Durable
+row locks can serialize operations across pools/processes. Ordinary failure
+writes (including known recovery refusals before intake), post-intake completion
+and final counts remain D6; not all process SQL has moved. Durable
 continuation remains T4. The
 [A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) and
 [B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5b) own validation/status;
-D5/Q and broader gates remain open. No schema or scorer change is introduced.
+the [Q evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) closes combined
+admission/recovery acceptance and D5 after shared/default capacity and both DBs'
+two-process HTTP/restart, actual Chrome, full regression and source self-review.
+D6/Q and broader gates remain open. No schema or scorer change is introduced.
 
 ### Dual scoping: all scopes counted, any denial denies
 

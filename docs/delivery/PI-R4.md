@@ -746,7 +746,7 @@ broader parents remain open. No independent-review or quality claim is made.
 
 **<a id="r4-s2-t3c3d5"></a>R4-S2-T3C3D5 - Bound batch admission and recovery SQL**
 
-Status: in progress (2026-11-11). Prerequisite: D4, published at `8a36c08`.
+Status: done (2026-11-12; started 2026-11-11). Prerequisite: D4, published at `8a36c08`.
 Bound limiter/ownership/claim/input/report
 recovery before awaited intake, keeping lease/generation checks and complete
 transactions on their owners. Split bounded operations before code if needed.
@@ -754,9 +754,11 @@ Require actual PG/two-process races, late claim/recovery uncertainty without
 automatic provider continuation, HTTP/restart/Chrome, red/focused/full and reviews.
 
 Split before implementation: A admission/claims, B saved-input/report recovery,
-then Q combined acceptance. These have distinct late-result boundaries. A-B are
-complete; Q and D5 remain open. Only B closes this session. Post-intake
-terminal/count SQL stays D6; durable continuation stays T4.
+then Q combined acceptance. A-B and Q are complete. The
+[combined Q evidence](EVIDENCE-R4.md#r4-s2-t3c3d5q) owns D5 closure, current SQL
+inventory, shared/default aggregate budgets, source review and fresh combined
+validation. Ordinary terminal/count SQL, including a known recovery-refusal
+failure write before intake, remains D6; durable continuation remains T4.
 
 **<a id="r4-s2-t3c3d5a"></a>R4-S2-T3C3D5A - Bound batch process admission and claims**
 
@@ -789,15 +791,21 @@ D5Q in a separate session. D5/Q, D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d5q"></a>R4-S2-T3C3D5Q - Review combined admission and recovery**
 
-Status: pending. Prerequisites: A-B and any children. Re-inventory pre-intake
-SQL/budgets and run combined SQLite/actual PG, two-process/two-tenant HTTP/restart,
-Chrome, full regression and both reviews. Only then close D5; D6/Q and broader
-parents remain open.
+Status: done (2026-11-12). Prerequisites: A-B, published at `160a991`.
+[Q contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d5q) owns retained acceptance,
+combined A/B source review and SQL inventory, shared 2/20s budget and independent
+4/2/2 management plus 2-slot intake budgets. New default-capacity coverage,
+fresh SQLite/actual PG, both DBs' two-process/two-tenant HTTP/restart, composed
+actual Chrome, UI/static and full regression pass. Only stale driver comments
+were corrected; no runtime behavior change was needed. Completion and distinct
+final staged self-review are recorded; scoped publication follows. Q closes D5
+only. Exact next: D6 in a separate session; D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d6"></a>R4-S2-T3C3D6 - Bound batch terminal SQL**
 
-Status: pending. Prerequisite: D5. Bound post-intake failure/completion/count SQL
-and any remaining process boundaries; preserve one acknowledged terminal outcome,
+Status: pending. Prerequisite: D5. Bound ordinary failure/completion/count SQL
+(including known recovery-refusal failure writes before intake) and any remaining
+process boundaries; preserve one acknowledged terminal outcome,
 leases, erasure, retry and saved checkpoints. Require actual PG/two-process
 contention, late terminal uncertainty without replay, HTTP/restart/Chrome,
 red/focused/full and both reviews. Durable continuation remains T4.

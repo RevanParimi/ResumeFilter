@@ -218,10 +218,11 @@
   // POST .../process does at most `screening_max_items_per_call` items, each a
   // full nine-node graph run, so the client loops. Sequential by construction:
   // the server's conditional claim stops two callers double-billing the SAME
-  // item, and nothing at all stops a client fanning out across DIFFERENT ones.
+  // item. Server rate limits and per-call caps bound each request; SQL worker
+  // admission does not bound concurrent provider work across different items.
   //
-  // Any error STOPS the loop. There is still no rate limiting server-side
-  // (S8.3), so a retrying driver is caught nowhere.
+  // Any error STOPS the loop. Saved-state reads and separate human intent
+  // control recovery; an uncertain request can already have saved results.
   // `_driving` is the loop's control flag and `state.driving` is what renders.
   // They cannot be the same field: setState is asynchronous, so a driver that
   // consulted state would read the PREVIOUS value on the tick it starts and
@@ -262,7 +263,7 @@
       },
       (err) => {
         // A 401 has already sent the user to login; anything else stops the
-        // loop and says why. Never retry (there is no rate limiter, S8.3).
+        // loop and says why. Never replay an uncertain request automatically.
         if (this._gone) return;
         if (err && err.kind === "session_lost") { this._driving = false; return; }
         this._halt({ driveError: err });

@@ -12365,3 +12365,284 @@ exclusion checks pass. Staged diff whitespace check passes. This final review
 adds only review prose, restaged and checked before publication; no code changes
 or test reruns are needed for it. Owned PG is stopped, demo untouched. Authorized
 scoped commit/push and remote verification follow; stop with D5Q next.
+
+### <a id="r4-s2-t3c3d5q"></a>R4-S2-T3C3D5Q - Review combined admission and recovery
+
+Status: done (2026-11-12). Prerequisites: A `94b9ae5`, B `160a991`.
+Only Q is this session's task. Q closes D5 only when its combined gates pass;
+D6/Q, C3D and broader parents remain open. No durable continuation (T4).
+
+**Acceptance contract.**
+
+Review actual POST `/screening/batches/{id}/process` composition: limiter,
+current ownership, first/subsequent one-item claims and complete saved-input/
+report recovery must use the Services-owned admission pool. Inventory direct
+and indirect pre-intake SQL, complete transaction/session ownership, current
+lease/generation/TTL, tenant/domain/provenance and report erasure boundaries.
+Record ordinary fail/complete/count SQL explicitly as D6, including a known
+recovery validation refusal's failure write before intake.
+
+Verify the shared default **2 slots / finite 20s caller wait** covers claims
+and recovery together, with no second recovery budget. Management read/register/
+mutation pools remain **4/2/2** and candidate ingestion remains a separate
+**2-slot** pool. These are per-process admission/wait limits, not global SQL,
+auth, whole-request, driver/drain, provider or memory deadlines. SQL locks still
+serialize app processes; rate allowance/claim/recovery commits are separate.
+
+Combine claim and recovery saturation/uncertainty on one app, with two tenants,
+retained capacity after timeout/cancel and no automatic intake, provider replay,
+another claim or competing failure write. Current owned snapshots and exact
+lease/generation checks must refuse stale capabilities; preserve checkpoint
+identity/body/facts, TTL/erasure, advisory human review, valid inputs, deterministic
+fallbacks and domain independence. Existing 404/429, auth/CSRF and success DTOs
+remain. UI stops, preserves work, reads saved state and requires separate human
+intent after any live lease expires; refresh/reload cannot start assessment.
+
+**Validation and exclusions.**
+
+- Extend existing API tests with default shared-pool claim/recovery admission
+  and unaffected management/intake capacity; reuse isolated stores/fake providers.
+- Compose existing admission and recovery HTTP/restart and actual Chrome
+  journeys in one app run. Use migrated scratch SQL, independent app processes
+  and two tenants. Test uncertainty/late commit/rollback plus manual recovery.
+- Fresh SQLite/actual disposable PG focused suites, existing real competing
+  connection/erasure/TTL/checkpoint regressions, combined HTTP on both DBs,
+  persistence HTTP, Chrome, full pytest, UI contracts/bindings/JS syntax.
+- Combined source/diff self-review; full checks on the final reviewed code;
+  completion/evidence/handoff; distinct final staged self-review; scoped
+  commit/push and remote verification. No independent review or live-provider
+  quality claim. No production change/red-green unless a concrete defect is found.
+- No schema/migration, new pool, scoring or D6/T4 implementation. Working DB,
+  unrelated work and demo remain untouched. Missing evidence means awaiting
+  validation, not done. Only open records remain in tasks/ after consolidation.
+
+**Inventory and evidence.**
+
+Ignored local runners reuse B under `.pytest_cache/*r4_s2_t3c3d5q*`; these are
+local conveniences, not portable setup guarantees. No working `.env` or live
+provider credentials in scratch validation.
+Unless stated otherwise, tagged commands below use `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d5q.py <tag> <Python args>`; tags identify captured
+logs and are not pytest arguments. Fixtures explicitly disable dotenv and
+subprocess apps use sanitized environment plus scratch working directories.
+
+**Combined pre-intake SQL inventory (2026-11-12).** Reviewed published A/B
+baseline `160a991` and current tests/harness diff; no runtime change is needed.
+Entry points: `src/app/api/screening.py`, `src/app/screening/service.py`,
+`src/app/screening/store.py`, `src/app/ratelimit/service.py`,
+`src/app/ratelimit/store.py`, `src/app/core/blocking.py`,
+`src/app/services/__init__.py`, `src/app/screening/ingest.py`,
+`src/app/metrics/registry.py` and `frontend/screening.js`.
+
+| Step/call path | SQL and owning boundary | Budget and retained behavior |
+|---|---|---|
+| API `/process` -> `ScreeningService._admit` -> limiter `enforce/check` -> `RateLimitStore.hit` | Complete counter increment/insert, old-window cleanup, race rollback/retry and commit remain inside the worker-owned store Session. `rules_for` and metrics increments are in-memory, not hidden SQL. | Shared admission 2/20s; once per call before scope/claims, including guessed IDs. Rate consumption and claim are separate commits; late allowance is not refunded. |
+| `_admit` -> `batch_row` -> first `_claim` / later `_claim` | Owning reads/transactions stay on the shared worker. Claim locks generation and current parent, persists blocked-input refusal, chooses and conditionally claims one item, commits, then materializes immutable claimed data under current tenant/status/exact-lease/unblocked-generation checks. | Same 2/20s pool for first and later claims. No open Session crosses threads. One item is claimed when its work starts. Current materialization is a snapshot, not a delivery lock. |
+| `process` -> `recover_report` | Whole generation/parent/subject/item/private-input locking, report/input reads, lease/TTL and identity/domain/advisory/facts validation, signal materialization, conditional terminal update, private-reference deletion and commit/rollback stay on the worker. No-checkpoint/invalid/refused branches close that Session too. | Same 2/20s pool, not an additional two recovery slots. Existing report completes without ingestion/evaluation; late None/refusal/commit/error cannot resume an abandoned caller. |
+| Awaited intake -> `ingest_resume` -> candidate ingest/fingerprint/subject/report operations | Existing separate candidate-ingest worker owns complete SQL operations, including generation/retain/bind callbacks in the actual ingest/report transaction. Async extraction and graph/provider work remain on the caller. | Separate default 2-slot intake pool; not counted as two more D5 slots. No lock spans later provider work/delivery; final generation/subject/erasure guards remain snapshots. |
+| Ordinary failure writes, post-intake completion and final batch counts | `store.fail`, `store.complete`, `store.counts` still run synchronously in process. A known recovery validation refusal can enter `fail` before intake; a known recovery result can also reach final counts without intake. Recovery's own checkpoint terminal transaction above is already bounded. | Explicit D6 terminal/count residual; Q does not claim every pre-intake or process SQL operation is bounded or implement durable continuation T4. |
+
+Management read/register/mutation admission remains **4/2/2** (eight slots),
+independent from the two shared D5 slots: **ten** default batch-operation slots
+per app, plus the separate two-slot intake pool. Auth, report/outcome/evaluation
+and other service budgets remain outside this batch subtotal. SQL locks can
+still serialize work across pools/processes. Caller waits do not terminate
+accepted SQL; timeout/cancel retains its slot, and shutdown drains before SQL
+disposal. Direct service callers without executors keep their own scheduling.
+
+**New combined acceptance coverage.** Extended the existing management-default
+test with a `with-processing` case, retaining the original management-only
+case. One claim and one saved-report recovery occupy the two default slots;
+all eight management slots are occupied too. Another process request refuses
+generically for owned/foreign/missing IDs; health/admin remain responsive.
+Management reads/register/retry/delete and standalone non-evaluating intake
+complete while the two processing slots remain held. Release produces exactly
+one new assessment and the original checkpoint report, with foreign 404s.
+These admission holds occur before SQL locks, deliberately separating capacity
+independence from SQL contention proved by the existing real-lock journeys.
+
+`combined -m pytest -q --tb=short tests/test_screening_batches_api.py
+-k batch_management_default`: **2 passed / 2 PG environment skips / 212
+deselected / 1 warning**, 7.70s. Fresh combined A/B/default selection:
+`focused -m pytest -q --tb=short tests/test_screening_batches_api.py
+-k "batch_admission or batch_recovery or batch_management_default"`:
+**33 passed / 33 PG environment skips / 150 deselected / 1 warning**, 73.14s.
+This is added integration acceptance, not a product-defect red/green claim.
+
+**Implementation/source self-review (2026-11-12).** Review also covered the
+actual combined A/B runtime diff
+`git diff 8a36c08..160a991` for API, config, screening service/store,
+Services lifecycle and frontend, rather than relying on child status alone.
+
+Re-inventoried API ->
+service -> limiter/store and intake callbacks, the shared executor's retained
+future/cancel/drain behavior, Services configuration/lifecycle and UI driver
+error/refresh/reload behavior. Reviewed the A/B composition against current
+store code and the new default-capacity and composed HTTP/Chrome harness diff.
+Authentication/CSRF remain at their existing boundary. Pending/unavailable
+re-raise before failure handling; cancellation propagates. Post-commit claim
+materialization and recovery's current subject/lease checks remain intact.
+No additional SQL escape or blocking runtime defect was found in D5's admitted
+operations. Inventory clarification: known invalid recovery can reach synchronous
+`fail` before intake, and known recovery can reach final synchronous counts.
+These ordinary terminal/count operations were deferred to D6; the D6 card now
+names the recovery-refusal path explicitly. They are not covered by the D5 pool
+or claimed as bounded here. Advisory/domain/fallback and success
+contracts are unchanged. Shared pool reuse is simpler than another executor.
+
+Low-severity maintenance finding: `frontend/screening.js` driver comments still
+claimed there was no server rate limiter. A maintainer could infer that only
+client scheduling limits requests. Corrected those comments to match actual
+rate/per-call limits, SQL-admission scope and uncertain-write recovery; runtime
+logic and UI copy are unchanged. Existing UI/static/browser gates cover
+compatibility; no behavior-mirroring regression was added for comments.
+No blocking findings remain in this same-agent self-review. All 616 code/config
+hashes were captured after this final source/comment state. Actual PG, composed
+HTTP/Chrome/UI and full regression results follow; no independent-review or
+live-quality claim.
+
+**Fresh UI/static checks.** Sanitized project-venv runner:
+`ui -m pytest -q --tb=short tests/test_ui_handlers.py tests/test_ui_mount.py`:
+**20 passed / 1 warning**, 43.20s. `node --test scripts/test_ui_screening.js`:
+**138 passed**, no failures/skips. `node scripts/check_ui_bindings.js`:
+**626 distinct bindings / 19 states**, pass. `node --check` on each of
+`frontend/api.js`, `frontend/support.js`, `frontend/screening.js` passes;
+`git diff --check` passes. Reviewed-state check matches all **616 code/config
+files**; baseline preservation confirms **729 unrelated tracked files**,
+including the working DB. No demo start/restart.
+
+Actual Chrome/CDP `processing-browser
+scripts/check_ui_screening_extraction_browser.py --batch-processing`:
+**74/74 OK**. This composes existing A and B journeys in one app/browser,
+including manual recovery, no assessment replay, reload and no console exceptions.
+Controlled HTTP/Chrome uncertainty uses capacity 1 / 0.5s wait; the default
+two-slot claim/recovery composition is proved separately by the API test above.
+The browser uses existing CDN internet; fake providers prove mechanics, not
+live-provider compatibility or quality. Fresh final-state browser run after
+the comment correction, `processing-browser-final` with the same command:
+**74/74 OK**, including both reload boundaries and no console exceptions.
+
+`processing-http scripts/smoke_r4_s1_t3d.py --batch-processing`:
+**95/95 OK** on migrated scratch SQLite. Existing A limiter/ownership/claim
+and B none/input/report recovery commit/rollback controls run in the same app,
+with an independent second app process and two tenants. Late operations retain
+capacity and never continue providers; another process contends on actual SQL,
+GET-only recovery plus separate intent respects leases/checkpoints, and exact
+detail/queue/summary snapshots for both A and B survive graceful restart.
+Cookie/CSRF, 404/503, cursor/count, advisory and disposal compatibility pass.
+Rate ordering/429 behavior belongs to the selected rate-spend regressions.
+This is real HTTP/subprocess evidence with fake external providers.
+
+**Actual PostgreSQL gate.** Owned runner:
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d5q.py postgres
+.pytest_cache/run_r4_s2_t3c3d5q_postgres.py`. Fresh temporary PostgreSQL **18.6**,
+random local port, `Asia/Calcutta`, `read committed`, disposable test DB/schemas;
+no working `.env`, live provider keys or emitted URL/password. Its project-venv
+pytest command is `-m pytest -q --tb=short` with these 25 modules:
+
+```text
+tests/test_screening_batches_api.py tests/test_screening_service.py
+tests/test_screening_store.py tests/test_screening_schema.py
+tests/test_screening_scope.py tests/test_screening_models.py
+tests/test_screening_projection.py tests/test_screening_durable_input.py
+tests/test_screening_report_input.py tests/test_screening_refusal_retention.py
+tests/test_screening_unresolved_input.py tests/test_screening_erasure_concurrency.py
+tests/test_config_screening.py tests/test_service_lifecycle.py tests/test_config.py
+tests/test_org_scope_guard.py tests/test_api_route_extraction.py
+tests/test_route_table_guard.py tests/test_openapi_contract.py tests/test_error_logging.py
+tests/test_migrations.py tests/test_ratelimit_spend.py tests/test_ratelimit_store.py
+tests/test_ratelimit_service.py tests/test_config_ratelimit.py
+```
+
+It then runs `scripts/smoke_r4_s1_t3d.py --postgres --batch-processing` and
+`--postgres --persistence`, and stops its owned instance in `finally`.
+Result: **901 passed / 10 layer-specific skips / 18 warnings**, exit **0**,
+1154.13s pytest time. These include SQLite and actual PG variants and API/config
+tests, not 901 exclusively PG cases. Both default-pool variants and all A/B
+admission/recovery cases execute on actual PG; real competing connection locks,
+erasure/retention/checkpoint, rate-ordering/spend, lifecycle and migration checks
+pass. No application schema/migration change is introduced.
+
+Actual PG combined processing HTTP/restart: **95/95 OK**, exit **0** (119.83s).
+Actual PG persistence HTTP/restart: **71/71 OK**, exit **0** (43.68s).
+The corresponding fresh SQLite persistence run,
+`persistence-http scripts/smoke_r4_s1_t3d.py --persistence`, also passes
+**71/71 OK**, exit **0** (50.39s wrapper time). This covers interrupted input/
+report commits, lease expiry, exact original checkpoint facts/report reuse,
+two app processes, tenant isolation and graceful restart with fake providers.
+Owned runner stop exit **0** (22.27s); a separate `pg_ctl status` check returns
+**3**, confirming the owned instance is stopped.
+
+**Full regression and completion (2026-11-12).**
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3d5q.py full` executes
+the required `.resume/Scripts/python.exe -m pytest -q --tb=short` on the final
+reviewed state: **4405 passed / 1170 skipped / 127 warnings**, exit **0**,
+1938.71s pytest time (32m18s). Optional/environment skips do not prove omitted
+behavior; the actual PG and Chrome evidence above owns required cases.
+All 616 reviewed code/config hashes still match after the final gates.
+
+Q acceptance is complete: combined A/B source review and SQL/budget inventory,
+default claim/recovery saturation with independent management/intake, current
+scope/lease/generation/TTL and checkpoint/erasure, no late continuation or
+competing failure write, migrated two-process/two-tenant HTTP/restart on both
+DBs, composed actual Chrome/manual recovery/reload, UI/static and fresh full
+regression. No blocking source/implementation self-review findings remain.
+No runtime behavior, pool, schema or scoring change was needed; stale driver
+comments were corrected. No independent-review or empirical quality claim.
+
+**R4-S2-T3C3D5Q and its D5 parent close.** Exact next:
+**R4-S2-T3C3D6 - Bound batch terminal SQL**, in a separate session. Ordinary
+failure writes (including known recovery refusal before intake), post-intake
+completion and final counts remain synchronous D6 work. Q does not claim all
+pre-intake/process SQL, auth, whole requests, drivers/drain, providers or memory
+are globally bounded. Durable continuation remains T4; D6/Q, C3D and broader
+parents remain open. Current guards/materialization are snapshots, not delivery
+locks; separate commits and possible late SQL remain documented limitations.
+
+Working DB/unrelated files retain baseline bytes; demo untouched and owned PG
+confirmed stopped. Logs, stores, credentials and runtime metadata remain ignored
+local artifacts. Completion/handoff and PI status are recorded before the
+distinct final staged self-review, authorized scoped commit/push and remote
+verification; then stop without starting D6.
+
+**Distinct final staged self-review (2026-11-12, after completion).** Reviewed
+Q's exact staged 10-file diff against published A/B baseline `160a991`, after
+its completion record and required validation, separately from implementation/
+combined-source review. Scope: `frontend/screening.js`,
+`tests/test_screening_batches_api.py`, `scripts/smoke_r4_s1_t3d.py`,
+`scripts/check_ui_screening_extraction_browser.py`, `FEATURE_STATUS.md`,
+`OPERATING.md`, `docs/PROGRESS.md`, `docs/ROADMAP.md`, `docs/delivery/PI-R4.md`
+and this evidence. Same-agent self-review, not independent review.
+
+Specification review mapped shared claim/recovery admission, all ten default
+batch slots, separate intake, preserved current scope/checkpoints/leases and
+safe uncertainty/manual recovery to the new API assertions, fresh A/B selections,
+actual PG competing connections, both DBs' composed two-process HTTP/restart,
+actual Chrome and full regression. Capacity-1/0.5s uncertainty harness settings
+are distinguished from the default 2/20s composition test. Fake mechanics,
+actual browser execution, environment skips and empirical quality are labeled
+accurately. The consolidated evidence retains the contract and current source/
+SQL inventory; Q closes D5 only and D6 is the exact next separate-session task.
+
+Correctness/maintenance review followed the actual composed harness mode and
+all acceptance assertions, checked cleanup/session ownership and verified the
+existing management-only case survives. Two processing operations occupy the
+shared pool while management and intake complete; releasing them yields one
+assessment and the original saved report. Existing fake providers, isolated
+stores and real SQL interleavings are reused. No runtime/schema/scoring change
+was introduced. The stale limiter comments were corrected, and ordinary known
+recovery-refusal failure writes plus final counts are explicitly inventoried as
+synchronous D6 work, including before intake. This review does not imply every
+pre-intake/process SQL operation is bounded or begin D6 implementation.
+
+No blocking findings remain. Review clarified the command-prefix/log-tag prose;
+only documentation changed after the final checks. All **616** code/config
+hashes match the reviewed/tested state; all **4** staged code files match the
+validated bytes (Git newline normalization checked). All **724** unrelated
+tracked files, including the working DB, retain baseline bytes. All **6** added
+local Markdown targets/anchors resolve; added-text credential-marker and staged
+artifact/data exclusions pass, as does staged whitespace checking. This final
+review/prefix prose is restaged and rechecked before publication; no code/test
+rerun is needed for documentation alone. Owned PG is confirmed stopped, demo
+untouched. Authorized scoped commit/push and remote verification follow; stop
+with D6 next in a separate session.

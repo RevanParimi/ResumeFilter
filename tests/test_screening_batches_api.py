@@ -479,8 +479,9 @@ async def test_batch_admission_retains_slots_without_late_provider_continuation(
                 event.remove(factory, name, listener)
 
 
-async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch):
-    """One app, all eight default slots, then independent saved-state recovery."""
+@pytest.mark.parametrize('processing', [False, True], ids=['management', 'with-processing'])
+async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch, processing):
+    """One app, default management slots plus shared claim/recovery admission."""
     from threading import Condition, Event, current_thread, get_ident
     from sqlalchemy import event
     engine, factory = database
@@ -489,13 +490,30 @@ async def test_batch_management_default_pools_remain_independent(database, setti
         texts=[genuine_resume], created_by_org_user_id=None).id
     capacities = {'batch-read': 4, 'batch-registration': 2, 'batch-mutation': 2}
     assert [getattr(services, name)._capacity for name in ('batch_reads', 'batch_registrations', 'batch_mutations')] == [4, 2, 2]
+    claim_bid = recovery_bid = report = None
+    if processing:
+        from tests.test_screening_durable_input import ingest_bound
+        from tests.test_screening_report_input import save_bound
+        from tests.test_report_store import _report
+        def register(name):
+            return services.screening.register(org, name=name, domain='genai',
+                texts=[genuine_resume], created_by_org_user_id=None).id
+        claim_bid, recovery_bid = register('Combined claim'), register('Combined recovery')
+        item = services.screening._claim(org, recovery_bid)[0]
+        ingested = ingest_bound(factory, org, item)
+        report = _report(candidate_id=ingested.candidate_id)
+        save_bound(factory, org, item, report)
+        with factory() as session:
+            row = session.get(BatchItemRow, item.id)
+            row.status, row.claimed_at = 'pending', None
+            session.commit()
+        capacities['batch-admission'] = 2
+        assert services.batch_admissions._capacity == 2
+        assert services.settings.batch_admission_wait_seconds == 20
     release = {name: Event() for name in capacities}
     entered = {name: 0 for name in capacities}
     seen, condition, pending, evaluations = set(), Condition(), [], []
-    def sql(conn, cursor, statement, parameters, context, many):
-        plane = next((name for name in capacities if current_thread().name.startswith(name)), None)
-        if plane is None:
-            return
+    def hold(plane):
         identity = (plane, get_ident())
         with condition:
             if identity in seen:
@@ -504,6 +522,22 @@ async def test_batch_management_default_pools_remain_independent(database, setti
             entered[plane] += 1
             condition.notify_all()
         assert release[plane].wait(15), 'combined admission hold was not released'
+    def sql(conn, cursor, statement, parameters, context, many):
+        plane = next((name for name in capacities if name != 'batch-admission'
+            and current_thread().name.startswith(name)), None)
+        if plane is not None:
+            hold(plane)
+    claim, recover = services.screening._store.claim, services.screening._store.recover_report
+    def claiming(owner, bid, **kwargs):
+        if processing and bid == claim_bid:
+            assert current_thread().name.startswith('batch-admission')
+            hold('batch-admission')
+        return claim(owner, bid, **kwargs)
+    def recovering(owner, item, **kwargs):
+        if processing:
+            assert current_thread().name.startswith('batch-admission')
+            hold('batch-admission')
+        return recover(owner, item, **kwargs)
     def wait_for(plane, count):
         with condition:
             return condition.wait_for(lambda: entered[plane] >= count, timeout=10)
@@ -519,6 +553,8 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                 evaluations.append(True)
                 return await assess(*args, **kwargs)
             monkeypatch.setattr(app.state.engine, 'evaluate', evaluate)
+            monkeypatch.setattr(services.screening._store, 'claim', claiming)
+            monkeypatch.setattr(services.screening._store, 'recover_report', recovering)
             for target, name, listener in [(engine, 'before_cursor_execute', sql),
                 (factory, 'after_begin', begin), (factory, 'after_transaction_end', end)]:
                 event.listen(target, name, listener)
@@ -531,6 +567,11 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                     pending.append(task)
                     groups[plane].append(task)
                     assert await asyncio.to_thread(wait_for, plane, len(groups[plane]))
+                if processing:
+                    # Pause before SQL locks: this isolates admission independence
+                    # from database contention, covered by the SQL race journeys.
+                    await accept('batch-admission', 'POST', '/screening/batches/' + recovery_bid + '/process')
+                    await accept('batch-admission', 'POST', '/screening/batches/' + claim_bid + '/process')
                 for _, url, _ in BATCH_READS:
                     await accept('batch-read', 'GET', url.format(bid=bid))
                 payload = {'name': 'Combined registered', 'items': [{'resume_text': genuine_resume}]}
@@ -539,6 +580,11 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                 await accept('batch-mutation', 'POST', path + '/retry')
                 await accept('batch-mutation', 'DELETE', '/screening/batches/' + deleted)
                 assert entered == capacities
+                if processing:
+                    for target in (claim_bid, recovery_bid, kept, 'missing'):
+                        response = await http.post('/screening/batches/' + target + '/process', headers=foreign)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_capacity_exhausted'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
                 for method, url, kwargs, detail in [
                     ('GET', path, {}, 'batch_read_capacity_exhausted'),
                     ('POST', '/screening/batches', {'json': payload}, 'batch_registration_capacity_exhausted'),
@@ -570,6 +616,23 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                 assert (await http.get('/screening/batches/' + deleted, headers=headers)).status_code == 404
                 assert (await http.get('/screening/batches/' + kept, headers=foreign)).json()['counts']['pending'] == 2
                 assert not evaluations
+                if processing:
+                    assert len(services.batch_admissions._active) == 2
+                    assert services.candidate_ingests._capacity == 2
+                    ingested = await http.post('/screening/candidates', headers=headers,
+                        json={'resume_text': genuine_resume, 'domain': 'genai', 'evaluate': False})
+                    assert ingested.status_code == 200 and not evaluations
+                    assert (await http.get('/screening/batches/' + recovery_bid, headers=headers)).json()['counts']['processing'] == 1
+                    assert (await http.get('/screening/batches/' + claim_bid, headers=headers)).json()['counts']['pending'] == 1
+                    release['batch-admission'].set()
+                    recovered, claimed = await asyncio.gather(*groups['batch-admission'])
+                    assert recovered.status_code == claimed.status_code == 200
+                    assert recovered.json()['processed'] == claimed.json()['processed'] == 1
+                    assert len(evaluations) == 1, 'saved recovery must not assess again'
+                    row = (await http.get('/screening/batches/' + recovery_bid + '/queue', headers=headers)).json()['rows'][0]
+                    assert row['report_id'] == report.id and row['status'] == 'done'
+                    for target in (claim_bid, recovery_bid):
+                        assert (await http.get('/screening/batches/' + target, headers=foreign)).status_code == 404
     finally:
         for flag in release.values():
             flag.set()

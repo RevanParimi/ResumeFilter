@@ -15,6 +15,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --batch-management composes read/registration/mutation controls in one app.
 --batch-admission-workers verifies late claims, manual recovery and reload.
 --batch-recovery-workers verifies late input/report recovery and manual continuation.
+--batch-processing composes claim and recovery uncertainty in one browser/app.
 """
 
 import asyncio
@@ -493,7 +494,7 @@ async def main():
                 args = ['smoke_r4_s1_t3d:create_batch_registration_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-mutation-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_mutation_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if '--batch-admission-workers' in sys.argv or '--batch-recovery-workers' in sys.argv:
+            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing')):
                 args = ['smoke_r4_s1_t3d:create_batch_admission_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-management' in sys.argv:
                 batch_factories = {'smoke_r3_s1_t2:create_smoke_app',
@@ -530,7 +531,7 @@ async def main():
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_MUTATION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
-            if '--batch-admission-workers' in sys.argv or '--batch-recovery-workers' in sys.argv:
+            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing')):
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_ADMISSION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -885,9 +886,9 @@ window.fetch = (url, init) => {
                 await check_batch_registration_workers(tab, scratch, api, files)
             if '--batch-mutation-workers' in sys.argv or '--batch-management' in sys.argv:
                 await check_batch_mutation_workers(tab, scratch, api)
-            if '--batch-admission-workers' in sys.argv:
+            if '--batch-admission-workers' in sys.argv or '--batch-processing' in sys.argv:
                 await check_batch_admission_workers(tab, scratch, api)
-            if '--batch-recovery-workers' in sys.argv:
+            if '--batch-recovery-workers' in sys.argv or '--batch-processing' in sys.argv:
                 await check_batch_recovery_workers(tab, scratch, api)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):

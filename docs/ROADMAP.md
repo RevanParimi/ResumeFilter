@@ -6,6 +6,18 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-12 - R4-S2-T3C3D5Q complete; D5 admission/recovery gate closed.**
+  Reviewed the combined A/B runtime diff and current SQL/session/budget inventory.
+  New coverage occupies the two shared claim/recovery slots alongside all eight
+  management slots; intake stays independent. Composed HTTP/Chrome proves manual
+  recovery without provider replay. Only stale rate-limit comments changed.
+  The [Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) owns full/actual PG,
+  both DBs' two-process HTTP/restart, actual Chrome/UI/static and both reviews.
+  Ordinary terminal/count SQL includes known recovery-refusal writes before
+  intake and remains D6. Working DB/unrelated files and demo are untouched;
+  owned PG is stopped. Final staged self-review is recorded; publication follows.
+  Next: D6 in a separate session; D6/Q, C3D and broader parents remain open.
+
 - **Session 2026-11-12 - R4-S2-T3C3D5B complete; bounded saved-state recovery.**
   Complete pre-intake recovery uses the existing admission pool, including
   checkpoint validation, materialization and commit/rollback. Late work never

@@ -14,6 +14,7 @@ B2b2b adds first-report reuse without provider replay, including after restart.
 --batch-management composes A/B/C controls and cross-pool/erasure acceptance.
 --batch-admission-workers verifies process admission/claims without late continuation.
 --batch-recovery-workers verifies held input/report recovery without late continuation.
+--batch-processing composes both admission and recovery journeys in one app.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -1194,7 +1195,8 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
-    batch_recovery = '--batch-recovery-workers' in sys.argv
+    batch_processing = '--batch-processing' in sys.argv
+    batch_recovery = '--batch-recovery-workers' in sys.argv or batch_processing
     batch_admissions = '--batch-admission-workers' in sys.argv or batch_recovery
     batch_management = '--batch-management' in sys.argv
     batch_mutations = batch_management or '--batch-mutation-workers' in sys.argv
@@ -1209,7 +1211,8 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes or ingest_races or batch_admissions
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T3C3D5B batch recovery / two processes / restart" if batch_recovery
+    checks = Smoke("R4-S2-T3C3D5Q combined admission/recovery / two processes / restart" if batch_processing
+                   else "R4-S2-T3C3D5B batch recovery / two processes / restart" if batch_recovery
                    else "R4-S2-T3C3D5A batch admission / two processes / restart" if batch_admissions
                    else "R4-S2-T3C3D4Q combined batch management / HTTP / restart" if batch_management
                    else "R4-S2-T3B bounded PDF execution / HTTP / restart" if pdf_execution
@@ -1351,7 +1354,12 @@ def run(scratch, url, pg_options):
             checks.check("processing respects configured item bound", first["processed"] == cap and first["remaining"] == 1)
             require(actor.post(path + "/process"))
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
-            admissions = (check_batch_recovery if batch_recovery else check_batch_admission)(checks, scratch, control, actor, other, server) if batch_admissions else []
+            admissions = []
+            if batch_admissions:
+                if not batch_recovery or batch_processing:
+                    admissions += check_batch_admission(checks, scratch, control, actor, other, server)
+                if batch_recovery:
+                    admissions += check_batch_recovery(checks, scratch, control, actor, other, server)
             neighbours = check_batch_management_isolation(checks, scratch, control, actor, other, path) if batch_management else []
             registrations = check_batch_registration(checks, scratch, control, actor, other) if batch_registrations else []
             mutations = check_batch_mutations(checks, scratch, control, actor, other) if batch_mutations else []

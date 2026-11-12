@@ -265,7 +265,7 @@ saved reference. Tenant projection, private-note filtering, generic 404,
 empty candidate-report lists and advisory/scorer semantics remain. The
 [report read budget](OPERATING.md#report-read-execution-budget) states defaults
 and snapshot/driver/drain limits. Standalone publication has its own budget
-below; batch processing SQL remains D5-D6/Q. C3D and broader parents stay open.
+below; remaining batch processing SQL and its gate are D6/Q. C3D and broader parents stay open.
 
 [R4-S2-T3C3D2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) bounds both human-outcome
 POSTs in a separate pool covering lookup, shared validation, SQL append and the
@@ -286,7 +286,7 @@ requires deliberate fresh-evaluation intent before another POST; late saves
 remain possible and fresh assessments may create another report. Operator scope,
 erasure snapshots, advisory/domain/fallback and existing success DTOs remain.
 The [publication budget](OPERATING.md#standalone-evaluation-publication-budget)
-owns defaults/limits; batch processing SQL and broader acceptance remain D5-D6/Q work.
+owns defaults/limits; remaining batch processing SQL/acceptance is D6/Q work.
 
 [R4-S2-T3C3D4A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) bounds complete batch
 detail/list/queue/summary reads on a separate owning-session pool. Final batch
@@ -296,7 +296,7 @@ selected reference/draft without starting screening. Account/refresh/page guards
 reject late callbacks and paging waits for the current base read. The
 [batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
 and limits. Registration and mutations below have separate budgets; processing
-and broader acceptance remain D5-D6/Q work.
+and broader acceptance remain D6/Q work.
 
 [R4-S2-T3C3D4B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) bounds complete
 batch registration separately from PDF decoding and batch views. Uncertain
@@ -320,7 +320,7 @@ management acceptance and closes D4. All seven management routes retain separate
 read/registration/mutation admission, owning sessions, scoped late results and
 human saved-state recovery. Combined capacity, pagination/retention/erasure,
 two-tenant restart and actual Chrome journeys are covered without a production
-or scoring change. Processing SQL and broader gates remain D5-D6/Q, C3D and its
+or scoring change. Remaining processing SQL and broader gates are D6/Q, C3D and its
 parents; per-process budgets do not bound global SQL/auth or complete requests.
 
 [R4-S2-T3C3D5A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) bounds batch process
@@ -336,5 +336,12 @@ saved-input/report recovery on the same pool, including checkpoint validation,
 signal materialization and commit/rollback. Late results never continue intake
 or race a failure write; an existing report completes without reevaluation.
 UI guidance covers claims and recovered results. Validation status belongs to
-the evidence; terminal/count SQL remains D6, durable continuation T4, with D5/Q
-and broader parents still open.
+the evidence; ordinary terminal/count SQL remains D6, durable continuation T4.
+[R4-S2-T3C3D5Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) closes combined
+admission/recovery acceptance and D5 after source/SQL/budget review and fresh
+SQLite/actual PG, default shared-capacity, two-process HTTP/restart, composed
+Chrome and full regression. The two processing slots share claims and recovery;
+management and intake admission remain separate. Only stale driver comments
+changed. Known recovery-refusal failure writes before intake and final counts
+remain ordinary terminal/count work in D6; not every process SQL path is bounded.
+D6/Q, C3D and broader parents remain open.
