@@ -26,6 +26,250 @@ BATCH_READS = [
 BATCH_MUTATIONS = [('retry', 'post', '/retry'), ('delete', 'delete', '')]
 
 
+def _batch_recovery_setup(settings, factory, resume, saved):
+    from sqlalchemy import select
+    from tests.test_screening_durable_input import ingest_bound
+    from tests.test_screening_report_input import save_bound
+    from tests.test_report_store import _report
+    setup = _batch_read_setup(settings, factory, resume)
+    services, org, _, bid, _, _, _ = setup
+    item = services.screening._claim(org, bid)[0]
+    report = None
+    if saved != 'none':
+        ingested = ingest_bound(factory, org, item)
+        if saved == 'report':
+            report = _report(candidate_id=ingested.candidate_id)
+            save_bound(factory, org, item, report)
+    with factory() as session:
+        # Simulate the next deliberate request after an interrupted lease.
+        row = session.get(BatchItemRow, item.id)
+        row.status, row.claimed_at = 'pending', None
+        # Keep one item so provider counts identify recovery versus evaluation.
+        for other in session.scalars(select(BatchItemRow).where(
+                BatchItemRow.batch_id == bid, BatchItemRow.id != item.id)):
+            session.delete(other)
+        session.commit()
+    return setup, item.id, report
+
+
+@pytest.mark.parametrize('saved,needle', [('none', 'screening_erasure_state'),
+    ('input', 'from screening_item_inputs'), ('report', 'from reports')])
+async def test_batch_recovery_sql_keeps_unrelated_requests_responsive(database, settings, genuine_resume, monkeypatch, saved, needle):
+    from threading import Event, local
+    from sqlalchemy import event
+    engine, factory = database
+    setup, _, _ = _batch_recovery_setup(settings, factory, genuine_resume, saved)
+    services, _, key, bid, _, _, _ = setup
+    entered, release, finished, state = Event(), Event(), Event(), local()
+    recover = services.screening._store.recover_report
+    def recovery(*args, **kwargs):
+        state.recovering = True
+        try:
+            return recover(*args, **kwargs)
+        finally:
+            state.recovering = False
+    def sql(conn, cursor, statement, parameters, context, many):
+        if getattr(state, 'recovering', False) and needle in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    monkeypatch.setattr(services.screening._store, 'recover_report', recovery)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post('/screening/batches/' + bid + '/process', headers={'X-Org-Key': key}))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'batch recovery SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('saved', ['none', 'input', 'report'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'rollback'])
+async def test_batch_recovery_owns_transactions_without_late_continuation(database, settings, genuine_resume, monkeypatch, saved, ending):
+    from datetime import timedelta
+    from threading import Event, get_ident, current_thread
+    from sqlalchemy import event, select
+    import app.screening.store as store_module
+    from app.reports.models import ReportRow
+    from app.screening.models import ScreeningInputRow
+    engine, factory = database
+    settings.batch_admission_max_concurrent_requests = 1
+    settings.batch_admission_wait_seconds = .15 if ending in ('timeout', 'rollback') else 20
+    setup, iid, report = _batch_recovery_setup(settings, factory, genuine_resume, saved)
+    services, _, key, bid, _, other_key, kept = setup
+    entered, release = Event(), Event()
+    caller, owners, materialized, evaluations, failures = get_ident(), set(), [], [], []
+    locked, signals, fail = services.screening._store._lock_terminal_lease, store_module.signals_from_report, services.screening._store.fail
+    def hold(*args, **kwargs):
+        result = locked(*args, **kwargs)
+        if current_thread().name.startswith('batch-admission') and not entered.is_set():
+            owners.add(get_ident())
+            entered.set()
+            assert release.wait(10)
+            if ending == 'rollback':
+                raise RuntimeError('synthetic-private-recovery-rollback')
+        return result
+    def materialize(*args, **kwargs):
+        materialized.append(get_ident())
+        return signals(*args, **kwargs)
+    def failed(*args, **kwargs):
+        failures.append(True)
+        return fail(*args, **kwargs)
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('recovery_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('recovery_owner', get_ident()) == get_ident()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            assess = app.state.engine.evaluate
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                evaluations.append(True)
+                return await assess(**kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', evaluate)
+            monkeypatch.setattr(services.screening._store, '_lock_terminal_lease', hold)
+            monkeypatch.setattr(services.screening._store, 'fail', failed)
+            monkeypatch.setattr(store_module, 'signals_from_report', materialize)
+            for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+                event.listen(factory, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path, headers = '/screening/batches/' + bid, {'X-Org-Key': key}
+                pending = asyncio.create_task(http.post(path + '/process', headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert (await http.get(path, headers=headers)).json()['counts']['processing'] == 1
+                    refused = await http.post('/screening/batches/' + kept + '/process', headers={'X-Org-Key': other_key})
+                    assert refused.status_code == 503 and refused.json() == {'detail': 'batch_admission_capacity_exhausted'}
+                    if ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    elif ending != 'release':
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    assert not evaluations and not failures
+                    assert len(services.batch_admissions._active) == 1
+                finally:
+                    release.set()
+                if ending == 'release':
+                    response = await pending
+                    assert response.status_code == 200 and response.json()['processed'] == 1
+                for _ in range(200):
+                    if not services.batch_admissions._active:
+                        break
+                    await asyncio.sleep(.01)
+                assert not services.batch_admissions._active and owners and caller not in owners
+                assert not failures
+                assert len(evaluations) == int(ending == 'release' and saved != 'report')
+                with factory() as session:
+                    row = session.get(BatchItemRow, iid)
+                    settled = ending == 'release' or (saved == 'report' and ending != 'rollback')
+                    assert row.status == ('done' if settled else 'processing') and row.error is None
+                    if report:
+                        assert list(session.scalars(select(ReportRow.id))) == [report.id]
+                        assert session.get(ReportRow, report.id).body == report.model_dump(mode='json')
+                        assert (session.get(ScreeningInputRow, iid) is None) == settled
+                clock = services.screening._now()
+                monkeypatch.setattr(services.screening, '_now', lambda: clock + timedelta(seconds=settings.screening_claim_timeout_seconds + 1))
+                # Saved-state reads do not assess. Only a distinct request may proceed.
+                assert (await http.get(path, headers=headers)).status_code == 200
+                assert (await http.get(path, headers={'X-Org-Key': other_key})).status_code == 404
+                response = await http.post(path + '/process', headers=headers)
+                assert response.status_code == 200 and response.json()['processed'] == int(not settled)
+                assert len(evaluations) == int(saved != 'report') and not failures
+                assert (await http.get('/screening/batches/' + kept, headers={'X-Org-Key': other_key})).json()['counts']['pending'] == 2
+                if saved == 'report':
+                    assert materialized and caller not in materialized
+                await services.batch_admissions.aclose()
+                response = await http.post(path + '/process', headers=headers)
+                assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_executor_closed'}
+    finally:
+        release.set()
+        for name, listener in [('after_begin', begin), ('after_transaction_end', end)]:
+            if event.contains(factory, name, listener):
+                event.remove(factory, name, listener)
+        await services.aclose()
+
+
+async def test_batch_recovery_keeps_prior_acknowledged_results_on_timeout(database, settings, genuine_resume, monkeypatch):
+    from threading import Event
+    from sqlalchemy import select
+    from tests.test_screening_durable_input import ingest_bound
+    from tests.test_screening_report_input import save_bound
+    from tests.test_report_store import _report
+    from app.reports.models import ReportRow
+    _, factory = database
+    settings.batch_admission_wait_seconds = .15
+    setup, first, report = _batch_recovery_setup(settings, factory, genuine_resume, 'report')
+    services, org, key, bid, _, _, _ = setup
+    store = services.screening._store
+    # Stage a second independent report checkpoint, preserving queue order.
+    with factory() as session:
+        session.get(BatchItemRow, first).status = 'done'
+        session.commit()
+    store.add_items(org, bid, texts=[genuine_resume + '\nSecond recovery checkpoint'])
+    second = services.screening._claim(org, bid)[0]
+    ingested = ingest_bound(factory, org, second)
+    other_report = _report(candidate_id=ingested.candidate_id)
+    save_bound(factory, org, second, other_report)
+    with factory() as session:
+        for iid in (first, second.id):
+            row = session.get(BatchItemRow, iid)
+            row.status, row.claimed_at = 'pending', None
+        session.commit()
+    entered, release = Event(), Event()
+    locked = store._lock_terminal_lease
+    def hold(session, iid, *args):
+        result = locked(session, iid, *args)
+        if iid == second.id:
+            entered.set()
+            assert release.wait(10)
+        return result
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            async def unexpected(**kwargs):
+                pytest.fail('a saved checkpoint must not be assessed again')
+            monkeypatch.setattr(app.state.engine, 'evaluate', unexpected)
+            monkeypatch.setattr(store, '_lock_terminal_lease', hold)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path, headers = '/screening/batches/' + bid, {'X-Org-Key': key}
+                pending = asyncio.create_task(http.post(path + '/process', headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get(path, headers=headers)).json()['counts']['done'] == 1
+                    response = await asyncio.wait_for(pending, 2)
+                    assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_pending'}
+                finally:
+                    release.set()
+                for _ in range(200):
+                    if not services.batch_admissions._active:
+                        break
+                    await asyncio.sleep(.01)
+                assert (await http.get(path, headers=headers)).json()['counts'] == {
+                    'pending': 0, 'processing': 0, 'done': 2, 'failed': 0}
+                assert (await http.post(path + '/process', headers=headers)).json()['processed'] == 0
+                with factory() as session:
+                    assert set(session.scalars(select(ReportRow.id))) == {report.id, other_report.id}
+    finally:
+        release.set()
+        await services.aclose()
+
+
 def _batch_mutation_setup(settings, factory, resume):
     from datetime import datetime, timezone
     from sqlalchemy import select

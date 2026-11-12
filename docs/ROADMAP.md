@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-12 - R4-S2-T3C3D5B complete; bounded saved-state recovery.**
+  Complete pre-intake recovery uses the existing admission pool, including
+  checkpoint validation, materialization and commit/rollback. Late work never
+  resumes intake or races a failure write; saved reports avoid reevaluation.
+  UI guidance covers both claims and recovered results. The
+  [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d5b) owns red/green, full/actual
+  PG, two-process HTTP/restart, actual Chrome/UI/static checks and reviews.
+  Working DB/unrelated files and demo are untouched; owned PG is stopped.
+  Distinct final staged self-review is recorded; scoped publication follows.
+  Next: D5Q in a separate session. D5/Q, D6/Q and broader parents remain open.
+
 - **Session 2026-11-11 - R4-S2-T3C3D5A complete; bounded process admission/claims.**
   Split D5 before implementation; only A closes. Limiter/ownership/first claim
   and later one-item claims use a separate owning-session pool. Current locked

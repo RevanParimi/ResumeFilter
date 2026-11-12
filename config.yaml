@@ -307,8 +307,8 @@ batch_registration_max_concurrent_requests: 2 # complete validation, creation an
 batch_registration_wait_seconds: 20.0       # pending batch ID supports GET-only recovery
 batch_mutation_max_concurrent_requests: 2   # complete scoped retry/delete transactions
 batch_mutation_wait_seconds: 20.0           # uncertain changes require human saved-state recovery
-batch_admission_max_concurrent_requests: 2 # process limiter/ownership and complete one-item claims
-batch_admission_wait_seconds: 20.0          # late claims never continue provider work automatically
+batch_admission_max_concurrent_requests: 2 # process limiter/ownership, one-item claims and saved-state recovery
+batch_admission_wait_seconds: 20.0          # late claims/recovery never continue provider work automatically
 # Echoes the sign-in code in the 202 body so local UI work does not mean
 # reading digits out of a capture file. Double-guarded: needs env=local too,
 # and prod REFUSES TO BOOT with it on.

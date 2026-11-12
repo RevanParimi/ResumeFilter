@@ -754,8 +754,8 @@ Require actual PG/two-process races, late claim/recovery uncertainty without
 automatic provider continuation, HTTP/restart/Chrome, red/focused/full and reviews.
 
 Split before implementation: A admission/claims, B saved-input/report recovery,
-then Q combined acceptance. These have distinct late-result boundaries. A is
-complete; B/Q and D5 remain open. Only A closes this session. Post-intake
+then Q combined acceptance. These have distinct late-result boundaries. A-B are
+complete; Q and D5 remain open. Only B closes this session. Post-intake
 terminal/count SQL stays D6; durable continuation stays T4.
 
 **<a id="r4-s2-t3c3d5a"></a>R4-S2-T3C3D5A - Bound batch process admission and claims**
@@ -775,12 +775,17 @@ parents remain open; recovery/terminal SQL and durable continuation are not clos
 
 **<a id="r4-s2-t3c3d5b"></a>R4-S2-T3C3D5B - Bound saved batch input and report recovery**
 
-Status: pending. Prerequisite: A. Bound the complete pre-intake recovery
-transaction and its validation/materialization; preserve checkpoints, current
-lease/generation, input TTL, tenant/domain/provenance and no provider replay.
-Late recovery must stop the caller without a competing failure write or automatic
-continuation. Require actual PG/two-process contention/erasure, HTTP/restart/
-Chrome, red/focused/full and both reviews. Define its detailed contract first.
+Status: done (2026-11-12). Prerequisite: A, published at `94b9ae5`.
+[B contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d5b) owns acceptance, red/green,
+full/actual PG, migrated two-process HTTP/restart, actual Chrome/UI/static
+checks and reviews. Complete saved-input/report recovery, validation and signal
+materialization use the existing owning-session admission pool. Late results
+never continue intake or race a failure write; original checkpoints complete
+without reevaluation. Lease/generation/TTL, tenant/domain/provenance and erasure
+remain covered. UI guidance covers claims and recovered results. No schema,
+new pool or scorer change. Completion and distinct final staged self-review
+are recorded there; scoped publication follows. Only B closes. Exact next:
+D5Q in a separate session. D5/Q, D6/Q, C3D and broader parents remain open.
 
 **<a id="r4-s2-t3c3d5q"></a>R4-S2-T3C3D5Q - Review combined admission and recovery**
 

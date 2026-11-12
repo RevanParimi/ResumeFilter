@@ -330,6 +330,11 @@ checks refuse stale input materialization. Late claims never continue assessment
 UI recovery reads saved state and requires separate human Start after lease expiry,
 with earlier results explicitly acknowledged. The
 [admission budget](OPERATING.md#batch-process-admission-execution-budget) owns
-defaults and limits. Validation status belongs to the evidence; saved-input/report
-recovery remains D5B, terminal/count SQL D6, durable continuation T4, with D5/Q
+defaults and limits.
+[R4-S2-T3C3D5B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5b) bounds complete
+saved-input/report recovery on the same pool, including checkpoint validation,
+signal materialization and commit/rollback. Late results never continue intake
+or race a failure write; an existing report completes without reevaluation.
+UI guidance covers claims and recovered results. Validation status belongs to
+the evidence; terminal/count SQL remains D6, durable continuation T4, with D5/Q
 and broader parents still open.

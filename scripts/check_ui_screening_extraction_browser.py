@@ -14,6 +14,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --candidate-report-workers verifies report/checkpoint uncertainty and saved-report recovery.
 --batch-management composes read/registration/mutation controls in one app.
 --batch-admission-workers verifies late claims, manual recovery and reload.
+--batch-recovery-workers verifies late input/report recovery and manual continuation.
 """
 
 import asyncio
@@ -26,6 +27,77 @@ import sys
 import tempfile
 
 import check_ui_screening_browser as browser
+
+
+async def check_batch_recovery_workers(tab, scratch, api):
+    from smoke_r4_s1_t3d import seed_batch_recovery
+    def count(kind):
+        path = scratch / ('admission-' + kind + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    for saved in ('none', 'input', 'report'):
+        for ending in ('commit', 'rollback'):
+            name = 'Browser recovery ' + saved + ' ' + ending
+            created = seed_batch_recovery(api, scratch, saved, name)
+            path = '/screening/batches/' + created['id']
+            seeded = json.loads((scratch / 'recovery-seeded.json').read_text()) if saved == 'report' else None
+            assert await tab.js("window.__click('button', 'Batches')")
+            row = "Array.from(document.querySelectorAll('[role=button]')).find(r => r.innerText.includes(" + json.dumps(name) + "))"
+            assert await tab.wait(row, 20)
+            assert await tab.js(row + '.click(); true')
+            assert await tab.wait("window.__has('Start screening') && window.__has(" + json.dumps(name) + ")", 20)
+            entered, completed, operations, evaluations = [count(kind) for kind in ('entered', 'completed', 'operations', 'evaluations')]
+            for marker in ('admission-release', 'admission-owner'):
+                (scratch / marker).unlink(missing_ok=True)
+            (scratch / 'admission-mode').write_text('recovery:' + ending)
+            try:
+                assert await tab.js("window.__click('button', 'Start screening')")
+                async with asyncio.timeout(10):
+                    while count('entered') == entered:
+                        await asyncio.sleep(.01)
+                browser.S.check(saved + '/' + ending + ': pending real recovery stops with saved-result guidance',
+                    await tab.wait("window.__has('Screening may still be saving a claim or recovered result') && window.__has('claim to expire')", 20)
+                    and not await tab.js("document.body.innerText.includes('batch_admission_')")
+                    and count('evaluations') == evaluations)
+                refused = api.post(path + '/process')
+                browser.S.check(saved + '/' + ending + ': occupied recovery retains its slot',
+                    refused.status_code == 503 and refused.json() == {'detail': 'batch_admission_capacity_exhausted'})
+                assert await tab.js("window.__click('button', 'Refresh')")
+                browser.S.check(saved + '/' + ending + ': early refresh reads saved state without replay',
+                    await tab.wait('window.__has(' + json.dumps(name) + ')', 20)
+                    and api.get(path).json()['counts']['processing'] == 1
+                    and count('operations') == operations + 2 and count('evaluations') == evaluations)
+            finally:
+                (scratch / 'admission-release').touch()
+            async with asyncio.timeout(10):
+                while count('completed') == completed:
+                    await asyncio.sleep(.01)
+            (scratch / 'admission-mode').unlink(missing_ok=True)
+            settled = saved == 'report' and ending == 'commit'
+            browser.S.check(saved + '/' + ending + ': late recovery settles only the checkpoint or leaves the lease',
+                api.get(path).json()['counts'] == {'pending': 0, 'processing': int(not settled), 'done': int(settled), 'failed': 0}
+                and count('operations') == operations + 2 and count('evaluations') == evaluations)
+            (scratch / 'admission-advance').write_text('2')
+            assert await tab.js("window.__click('button', 'Refresh')")
+            if not settled:
+                assert await tab.wait("window.__has('Start screening') && !Array.from(document.querySelectorAll('button')).find(b => b.innerText === 'Start screening').disabled", 20)
+            browser.S.check(saved + '/' + ending + ': refresh after expiry still never assesses',
+                api.get(path).json()['counts']['pending'] == int(not settled) and count('evaluations') == evaluations)
+            if not settled:
+                assert await tab.js("window.__click('button', 'Start screening')")
+            browser.S.check(saved + '/' + ending + ': separate human intent preserves original report and avoids provider replay',
+                await tab.wait("window.__has('All screened') && window.__has('Nothing left to screen')", 30)
+                and count('evaluations') == evaluations + int(saved != 'report')
+                and (seeded is None or api.get(path + '/queue').json()['rows'][0]['report_id'] == seeded['report_id']))
+            (scratch / 'admission-advance').unlink(missing_ok=True)
+    evaluations = count('evaluations')
+    await tab.js('window.__recoveryReload = true')
+    await tab.send('Page.reload')
+    assert await tab.wait("!window.__recoveryReload && document.body.innerText.includes('Sign out')", 40)
+    await tab.js(browser.HELPERS)
+    assert await tab.js("window.__click('button', 'Screening queue')")
+    browser.S.check('saved-report recovery survives document reload without processing',
+        await tab.wait('window.__has(' + json.dumps(name) + ") && window.__has('All screened')", 30)
+        and count('evaluations') == evaluations)
 
 
 async def check_batch_admission_workers(tab, scratch, api):
@@ -53,7 +125,7 @@ async def check_batch_admission_workers(tab, scratch, api):
                 while count('entered') == entered:
                     await asyncio.sleep(.01)
             browser.S.check(ending + ': pending real claim stops the driver with human recovery guidance',
-                await tab.wait("window.__has('Screening admission may still be saving a claim') && window.__has('claim to expire')", 20)
+                await tab.wait("window.__has('Screening may still be saving a claim or recovered result') && window.__has('claim to expire')", 20)
                 and not await tab.js("document.body.innerText.includes('batch_admission_')")
                 and count('evaluations') == evaluations)
             refused = api.post(path + '/process')
@@ -421,7 +493,7 @@ async def main():
                 args = ['smoke_r4_s1_t3d:create_batch_registration_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-mutation-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_mutation_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if '--batch-admission-workers' in sys.argv:
+            if '--batch-admission-workers' in sys.argv or '--batch-recovery-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_admission_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-management' in sys.argv:
                 batch_factories = {'smoke_r3_s1_t2:create_smoke_app',
@@ -458,7 +530,7 @@ async def main():
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_MUTATION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
-            if '--batch-admission-workers' in sys.argv:
+            if '--batch-admission-workers' in sys.argv or '--batch-recovery-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_ADMISSION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -815,6 +887,8 @@ window.fetch = (url, init) => {
                 await check_batch_mutation_workers(tab, scratch, api)
             if '--batch-admission-workers' in sys.argv:
                 await check_batch_admission_workers(tab, scratch, api)
+            if '--batch-recovery-workers' in sys.argv:
+                await check_batch_recovery_workers(tab, scratch, api)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)

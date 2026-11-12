@@ -42,7 +42,10 @@ for (const detail of ['batch_admission_pending', 'batch_admission_capacity_exhau
     assert.match(message, /refresh saved state/);
     assert.match(message, /Earlier results may already be saved/);
     assert.doesNotMatch(message, /batch_admission_/);
-    if (detail === 'batch_admission_pending') assert.match(message, /claim to expire/);
+    if (detail === 'batch_admission_pending') {
+      assert.match(message, /claim to expire/);
+      assert.match(message, /recovered result/);
+    }
     await c.refresh();
     await settle();
     assert.equal(posts, 1);

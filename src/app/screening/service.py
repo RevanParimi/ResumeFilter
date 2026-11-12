@@ -38,7 +38,7 @@ log = get_logger("screening.service")
 
 
 class BatchAdmissionPending(ExecutionPending):
-    """Admission may still consume allowance or commit a claim; never continue it."""
+    """Admission/recovery may still commit; never continue an uncertain step."""
 
 
 class ScreeningService:
@@ -224,22 +224,22 @@ class ScreeningService:
         Claim only when work starts. Cancellation propagates with at most this
         call's active lease outstanding; its existing timeout allows recovery.
         """
-        async def admission(operation):
+        async def admission(operation, *args, **kwargs):
             if admission_executor is None:
-                return operation(org_id, batch_id)
+                return operation(*args, **kwargs)
             try:
-                return await admission_executor.run(operation, org_id, batch_id)
+                return await admission_executor.run(operation, *args, **kwargs)
             except ExecutionPending:
                 raise BatchAdmissionPending() from None
 
-        claimed = await admission(self._admit)
+        claimed = await admission(self._admit, org_id, batch_id)
         if claimed is None:
             return None
 
         processed = failed = 0
         for index in range(self._settings.screening_max_items_per_call):
             if index:
-                claimed = await admission(self._claim)
+                claimed = await admission(self._claim, org_id, batch_id)
             if not claimed:
                 break
             item = claimed[0]
@@ -256,7 +256,9 @@ class ScreeningService:
                     raise IngestRefused("fresh_upload_required")
 
             try:
-                recovered = self._store.recover_report(org_id, item,
+                # Keep locks, saved-state validation and materialization on the
+                # operation's owner. A late None must never resume intake.
+                recovered = await admission(self._store.recover_report, org_id, item,
                     input_ttl_days=self._settings.ret_batch_item_days, now=self._now)
                 if recovered is CompletionOutcome.DONE:
                     processed += 1
@@ -273,7 +275,7 @@ class ScreeningService:
                     executor=executor,
                 )
             except (ExecutionPending, ExecutionUnavailable):
-                # No failure write may contend with an uncertain ingest still
+                # No failure write may contend with uncertain recovery/ingest still
                 # holding SQL. Keep its lease/checkpoint for deliberate recovery
                 # after expiry; stop this call without replay or partial success.
                 raise

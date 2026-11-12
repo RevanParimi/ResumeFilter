@@ -202,9 +202,9 @@
   // ── the process driver ────────────────────────────────────────────────────
   screeningErrorCopy = (err) => {
     if (err && err.detail === 'batch_admission_pending')
-      return 'Screening admission may still be saving a claim. Earlier results may already be saved. Wait, then refresh saved state. Assessment will not continue automatically. If the item is still in progress, wait for its claim to expire before choosing Start screening.';
+      return 'Screening may still be saving a claim or recovered result. Earlier results may already be saved. Wait, then refresh saved state. Assessment will not continue automatically. If the item is still in progress, wait for its claim to expire before choosing Start screening.';
     if (err && ['batch_admission_capacity_exhausted', 'batch_admission_executor_closed'].includes(err.detail))
-      return 'Screening admission is temporarily unavailable. No new claim was accepted at this step. Earlier results may already be saved. Wait, refresh saved state, then choose Start screening when ready.';
+      return 'Screening is temporarily unavailable. No new work was accepted at this step. Earlier results may already be saved, and a claim may already exist. Wait, refresh saved state, then choose Start screening when ready.';
     if (err && ['batch_read_pending', 'batch_read_capacity_exhausted', 'batch_read_executor_closed'].includes(err.detail))
       return 'Saved batch views are temporarily unavailable. Wait a moment, then refresh. Refreshing reads saved state and does not start screening.';
     const recovery = ' Wait and refresh the batch. When the row says not screened yet, choose Start screening. Earlier results may already be saved.';

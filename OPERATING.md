@@ -649,8 +649,10 @@ process; `batch_admission_wait_seconds` defaults to finite positive **20 seconds
 Configure YAML or `DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS` /
 `DEE_BATCH_ADMISSION_WAIT_SECONDS`, then restart. POST batch `/process` runs
 limiter enforcement, initial ownership and first claim in one complete worker
-operation; subsequent one-item claims use the same pool. Each Session, commit
-and input materialization stays with its worker. Rate enforcement still happens
+operation; subsequent one-item claims and each complete saved-input/report
+recovery use the same pool. Recovery includes checkpoint validation, signal
+materialization and commit/rollback. Each Session, commit and input
+materialization stays with its worker. Rate enforcement still happens
 once per process call before ownership/claims, including guessed IDs. Rate
 allowance and claim are separate commits; uncertainty can consume allowance.
 Providers/graph stay on the async caller, and direct synchronous service callers
@@ -660,10 +662,13 @@ Full/closed admission returns **503** `batch_admission_capacity_exhausted` /
 `batch_admission_executor_closed` before accepting that step; wait expiry returns
 **503** `batch_admission_pending`. All carry `Retry-After: 1`. A refusal can
 follow earlier saved results in a multi-item call. There is no partial success,
-automatic replay or provider continuation after pending/cancelled admission.
+automatic replay or provider continuation after pending/cancelled admission or
+recovery.
 The accepted operation retains its slot through actual completion/rollback and
 shutdown drains it before SQL disposal. Late SQL may consume rate allowance or
-leave a processing lease; the caller does not race it with a failure/cleanup write.
+leave a processing lease, or commit an existing report checkpoint. The caller
+does not race it with a failure/cleanup write. A late no-checkpoint result never
+resumes intake; a valid saved report is completed without another evaluation.
 
 Wait and refresh saved state. A read cannot prove the earlier operation ended.
 If the item remains in progress, wait for its lease to expire before choosing
@@ -677,11 +682,12 @@ erasure/TTL, success/404/429 and advisory scoring contracts remain.
 
 This pool is separate from the eight default management slots, not a global
 SQL/auth, whole-request, driver/drain, provider or memory budget. Generation and
-row locks can serialize operations across pools/processes. Saved-input/report
-recovery remains D5B and post-intake terminal/count SQL remains D6; not all
-process SQL has moved. Durable continuation remains T4. The
-[A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) owns validation/status;
-D5/B/Q and broader gates remain open. No schema or scorer change is introduced.
+row locks can serialize operations across pools/processes. Post-intake
+terminal/count SQL remains D6; not all process SQL has moved. Durable
+continuation remains T4. The
+[A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) and
+[B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5b) own validation/status;
+D5/Q and broader gates remain open. No schema or scorer change is introduced.
 
 ### Dual scoping: all scopes counted, any denial denies
 
