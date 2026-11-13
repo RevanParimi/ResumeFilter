@@ -607,7 +607,7 @@ scoped publication follows the recorded final review.
 
 ###### <a id="r4-s2-t3c3d"></a>R4-S2-T3C3D - Bound evaluation, reporting and screening SQL
 
-Status: in progress (2026-11-02). Prerequisite: C3C, published at `392793f`.
+Status: done (2026-11-13; started 2026-11-02). Prerequisite: C3C, published at `392793f`.
 Original contract: measure `reports`, `screening` and
 graph/service SQL around async provider calls; define bounded operation children
 before implementation. Preserve report publication/delivery/consent guards,
@@ -624,6 +624,12 @@ Batch handlers call synchronous register/read/retry/delete operations, while
 `ScreeningService.process` still performs limiter/ownership/claim/recovery SQL
 before awaiting the already-bounded intake and failure/terminal/count SQL after.
 Keep complete transactions, scope/redaction and callback/session ownership.
+
+D1-D6 and their combined Q are complete. The
+[combined evidence](EVIDENCE-R4.md#r4-s2-t3c3dq) owns the current SQL inventory,
+aggregate budget, acceptance results and review record. Only C3D closes; exact
+next is C3E in a separate session, measuring/splitting its owning operations
+before implementation. C3E-F/Q and broader parents remain open.
 
 **<a id="r4-s2-t3c3d1"></a>R4-S2-T3C3D1 - Bound report and outcome-history reads**
 
@@ -816,10 +822,14 @@ session, after final staged review and scoped publication.
 
 **<a id="r4-s2-t3c3dq"></a>R4-S2-T3C3DQ - Review combined evaluation/reporting/screening acceptance**
 
-Status: pending. Prerequisites: D1-D6 and any children. Re-inventory uncovered
-SQL and aggregate budgets; run combined full/SQLite/actual PG, two-actor and
-two-process migrated HTTP/restart, affected Chrome and both reviews. Only then
-close C3D; C3E-F/Q and broader parents remain open. No live quality claim.
+Status: done (2026-11-13). Prerequisites: D1-D6 and all children,
+published through `49021ff`. [Combined contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3dq)
+owns retained acceptance, combined source/SQL/budget review, new all-seven-pool
+coverage and the stale UI-driver finding/fix. Fresh full/SQLite/actual PG,
+two-actor and two-process migrated HTTP/restart, affected Chrome/UI/static pass.
+The evidence owns completion and review/publication records. Q closes C3D only;
+exact next is C3E in a separate session. C3E-F/Q and broader parents remain open.
+No production Python/schema/scorer or live-provider quality change is claimed.
 
 ###### <a id="r4-s2-t3c3e"></a>R4-S2-T3C3E - Bound candidate rights, verification and interview SQL
 

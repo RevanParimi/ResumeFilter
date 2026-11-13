@@ -492,7 +492,7 @@ These are per-process/operation budgets, not global SQL, whole-request, driver o
 drain deadlines. Direct synchronous callers own scheduling. Report ownership and
 delivery remain snapshots; there is no new transaction/authorization policy,
 schema or working-store migration. Standalone evaluation publication has the
-separate budget below; batch SQL remains D4-D6 work.
+separate budget below; batch SQL has its own budgets below.
 
 ### Standalone evaluation publication budget
 
@@ -525,7 +525,7 @@ reference arrives, the client cannot recover an unknown ID; existing uncertainty
 guidance still applies. This adds no candidate/fingerprint, schema, idempotency
 key or scoring change. Drafts and the pending guard are page memory; opening
 the saved report puts its reference in the URL for later GET/reload. Reloading
-does not prove old work ended. Batch publication remains separate D4-D6 work.
+does not prove old work ended. Batch processing has separate budgets below.
 
 ### Batch view read execution budget
 
@@ -554,8 +554,8 @@ later erasure or updates. Pagination, retention, private projections and advisor
 semantics remain. Manual UI recovery preserves selection/reference and drafts,
 only GETs saved state and never starts screening. Initial detail/list/discovery
 failures retain visible recovery; old account/refresh/page replies cannot replace
-new state. Paging waits for a pending base refresh. Registration and mutations
-have separate budgets below; remaining processing SQL is D6 work.
+new state. Paging waits for a pending base refresh. Registration, mutations and
+processing have separate budgets below.
 
 ### Batch registration execution budget
 
@@ -592,8 +592,8 @@ drafts prevent late initial success from starting screening. Only confirmed
 initial success on the same account, screen and draft can start it. References
 and files are not persisted in browser storage; reload discovers saved batches
 without starting work. Final detail/scope checks are snapshots, not locks over
-later deletion or delivery. Combined management acceptance is linked below;
-remaining processing D6/Q work stays open.
+later deletion or delivery. Combined management and processing acceptance are
+linked below.
 
 ### Batch retry and deletion execution budget
 
@@ -694,7 +694,31 @@ the [Q evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) closes combined
 admission/recovery acceptance and D5 after shared/default capacity and both DBs'
 two-process HTTP/restart, actual Chrome, full regression and source self-review.
 [D6 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d6) owns terminal/count
-validation. C3DQ and broader gates remain open. No schema or scorer change is introduced.
+validation. Combined C3D acceptance is recorded below; C3E-F/Q and broader gates
+remain open. No schema or scorer change is introduced.
+
+### Combined evaluation, reporting and screening admission
+
+The D1-D6 pools default to **16 slots** per Services/app process: report reads
+2, outcome writes 2, evaluation publication 2, batch reads 4, registration 2,
+mutation 2 and process SQL 2. Every pool has its own finite **20-second** caller
+wait per operation. Candidate intake adds **2 separate slots**; auth, candidate
+record, PDF and other handler budgets are outside this subtotal. These limits
+bound admitted operations, not global database connections, memory, a whole
+request or driver/drain time. Database locks and connection-pool waits can still
+couple otherwise independent pools.
+
+Evaluation publication admission follows the async graph, so a refused save can
+already have incurred provider work. Late SQL never resumes the abandoned
+request. Saved-state reads remain snapshots and separate human recovery can
+append another judgment or restart an expired claim. The
+[combined evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3dq) owns review/status;
+direct low-level callers still supply an executor or own scheduling.
+
+Each explicit Start begins a separate screening run in the UI. Older process
+replies cannot change its counts, send another process request or stop it after
+Stop/Start or an account/batch change. This does not cancel accepted server work;
+use saved-state reads and deliberate recovery when a result is uncertain.
 
 ### Dual scoping: all scopes counted, any denial denies
 

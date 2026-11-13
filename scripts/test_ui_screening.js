@@ -598,6 +598,37 @@ test("process failure stops without replay and allows an explicit restart", asyn
   assert.equal(count, 2); assert.equal(c.state.driveError, null);
 });
 
+for (const transition of ['restart', 'switch', 'account']) for (const ending of ['more', 'done', 'pending', 'session_lost']) {
+  test('new screening run ignores older ' + transition + '/' + ending + ' reply', async () => {
+    const { c, window } = setup();
+    const pending = [];
+    window.VeritasAPI.post = path => new Promise((resolve, reject) => pending.push({ path, resolve, reject }));
+    c.state.selectedBatch = 'owned'; c.startProcessing();
+    if (transition === 'restart') c.stopProcessing();
+    if (transition === 'switch') c.selectBatch('second')();
+    if (transition === 'account') {
+      c.handleSessionLost();
+      c.setState({ me: { kind: 'org' }, screen: 'queue', selectedBatch: 'owned' });
+    }
+    await settle();
+    c.startProcessing();
+    assert.equal(pending.length, 2);
+    const snapshot = JSON.stringify(c.state);
+    if (ending === 'more' || ending === 'done')
+      pending[0].resolve({ processed: 7, failed: 2, remaining: ending === 'more' ? 1 : 0 });
+    else pending[0].reject({ status: ending === 'pending' ? 503 : 401,
+      kind: ending === 'pending' ? 'http' : 'session_lost', detail: 'batch_admission_pending' });
+    await settle();
+    assert.equal(pending.length, 2, 'an older run must not send another process POST');
+    assert.equal(c._driving, true, 'an older reply must not stop the new run');
+    assert.equal(JSON.stringify(c.state), snapshot, 'old counts/errors cannot overwrite a new run');
+    pending[1].resolve({ processed: 1, failed: 0, remaining: 0 }); await settle();
+    assert.equal(c.state.driveDone, 1);
+    assert.equal(c.state.driving, false);
+    assert.equal(pending.length, 2);
+  });
+}
+
 for (const action of ["stop", "switch", "session", "unmount"]) {
   test(`late successful process result is ignored after ${action}`, async () => {
     const { c, window } = setup();

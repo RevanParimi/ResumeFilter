@@ -31,6 +31,51 @@ import tempfile
 import check_ui_screening_browser as browser
 
 
+async def check_screening_driver_runs(tab, scratch, api):
+    """Hold delivery after actual HTTP commits; keep a restarted UI run current."""
+    from check_ui_screening_contract import _resume
+    for ending in ('success', 'pending'):
+        name = 'Browser separate screening run ' + ending
+        created = api.post('/screening/batches', json={'name': name,
+            'items': [{'resume_text': _resume('Synthetic separate run', 'separate-run@example.in')}]}).json()
+        path = '/screening/batches/' + created['id']
+        assert await tab.js("window.__click('button', 'Batches')")
+        row = "Array.from(document.querySelectorAll('[role=button]')).find(r => r.innerText.includes(" + json.dumps(name) + "))"
+        assert await tab.wait(row, 20)
+        assert await tab.js(row + '.click(); true')
+        assert await tab.wait("window.__has('Start screening') && window.__has(" + json.dumps(name) + ")", 20)
+        await tab.js("""window.__driverNativePost=window.VeritasAPI.post;
+window.__driverPosts=0; window.__driverAcks=[];
+window.VeritasAPI.post=(p,b,o)=>{
+ if(p!==""" + json.dumps(path + '/process') + """) return window.__driverNativePost(p,b,o);
+ window.__driverPosts++;
+ return window.__driverNativePost(p,b,o).then(value=>new Promise((resolve,reject)=>window.__driverAcks.push({value,resolve,reject})));
+};""")
+        try:
+            assert await tab.js("window.__click('button', 'Start screening')")
+            assert await tab.wait('window.__driverAcks.length === 1', 30)
+            browser.S.check(ending + ': first actual HTTP settles before its acknowledgement is delivered',
+                api.get(path).json()['counts']['done'] == 1)
+            assert await tab.js("window.__click('button', 'Stop screening')")
+            assert await tab.js("window.__click('button', 'Start screening')")
+            assert await tab.wait('window.__driverAcks.length === 2', 20)
+            if ending == 'success':
+                await tab.js('window.__driverAcks[0].resolve(window.__driverAcks[0].value)')
+            else:
+                # Inject only the late delivery error, after the real SQL commit.
+                await tab.js("window.__driverAcks[0].reject({status:503,kind:'http',detail:'batch_admission_pending'})")
+            browser.S.check(ending + ': older reply cannot halt/recount/replay the new browser run',
+                await tab.wait("window.__has('Stop screening') && window.__has('0 done, 0 failed') && !window.__has('may still be saving progress')", 10)
+                and await tab.js('window.__driverPosts') == 2)
+            await tab.js('window.__driverAcks[1].resolve(window.__driverAcks[1].value)')
+            browser.S.check(ending + ': current acknowledgement finishes its own run with exact saved state',
+                await tab.wait("window.__has('All screened') && window.__has('Nothing left to screen')", 20)
+                and await tab.js('window.__driverPosts') == 2
+                and api.get(path).json()['counts'] == {'pending': 0, 'processing': 0, 'done': 1, 'failed': 0})
+        finally:
+            await tab.js('window.VeritasAPI.post=window.__driverNativePost; window.__driverAcks.forEach(ack=>ack.resolve(ack.value))')
+
+
 async def check_batch_terminal_workers(tab, scratch, api):
     from check_ui_screening_contract import _resume
     def count(kind):
@@ -965,6 +1010,8 @@ window.fetch = (url, init) => {
                 await check_batch_admission_workers(tab, scratch, api)
             if '--batch-recovery-workers' in sys.argv or '--batch-processing' in sys.argv:
                 await check_batch_recovery_workers(tab, scratch, api)
+            if '--batch-processing' in sys.argv:
+                await check_screening_driver_runs(tab, scratch, api)
             if '--batch-terminal-workers' in sys.argv:
                 await check_batch_terminal_workers(tab, scratch, api)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):

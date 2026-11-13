@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-11-12. This is the common feature summary. For the exact next
+Updated: 2026-11-13. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -185,7 +185,7 @@ reads and revocation with separate owning-session admission and safe uncertain
 responses. Revocations have one SQL winner and atomic audit. UI reports
 unconfirmed logout, protects sign-in overlap and requires saved-device refresh
 before another uncertain revoke. See the [session budget](OPERATING.md#session-management-execution-budget).
-C3D-F/Q and broader parent acceptance remain open.
+C3E-F/Q and broader parent acceptance remain open.
 [R4-S2-T3C3C1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c1) bounds the operator
 candidate detail/resume/report reads and access-key issuance in a separate pool.
 Pending/refused work returns no partial data or undisclosed replacement key;
@@ -193,8 +193,8 @@ loaded results recheck observed candidate erasure. Key issuance/rotation locks
 the candidate and preserves its profile clock. A late rotation can invalidate
 the old key; recovery is deliberate fresh issuance. The
 [record budget](OPERATING.md#operator-candidate-record-execution-budget) states
-API-only scope and limits. C3D-F/Q and all broader parents remain
-open; other handler/graph/store SQL stays synchronous. Exact task status and next
+API-only scope and limits. C3E-F/Q and all broader parents remain
+open; remaining handler SQL belongs to those tasks. Exact task status and next
 action are owned by the PI/handoff.
 
 [R4-S2-T3C3C2A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3c2a) moves the initial
@@ -253,7 +253,7 @@ all seven HTTP/restart modes and two-process races on each DB, affected Chrome
 and separate self-reviews. The original PG hook-wait timeout and unchanged
 six-case rerun are retained in the evidence. No production/test change was
 needed; separate record/intake pools, late commits, manual recovery and the
-documented budgets/limits remain. C3D-F/Q and broader parents remain open.
+documented budgets/limits remain. C3E-F/Q and broader parents remain open.
 
 [R4-S2-T3C3D1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d1) bounds the five
 operator/employer report and outcome-history GET operations in a separate pool.
@@ -264,8 +264,8 @@ publishing loaded notes. Read failures offer reload guidance while keeping the
 saved reference. Tenant projection, private-note filtering, generic 404,
 empty candidate-report lists and advisory/scorer semantics remain. The
 [report read budget](OPERATING.md#report-read-execution-budget) states defaults
-and snapshot/driver/drain limits. Standalone publication has its own budget
-below; remaining batch processing SQL and its gate are D6/Q. C3D and broader parents stay open.
+and snapshot/driver/drain limits. Standalone publication and complete batch
+processing SQL have separate budgets below; combined acceptance is recorded at C3DQ.
 
 [R4-S2-T3C3D2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d2) bounds both human-outcome
 POSTs in a separate pool covering lookup, shared validation, SQL append and the
@@ -286,7 +286,7 @@ requires deliberate fresh-evaluation intent before another POST; late saves
 remain possible and fresh assessments may create another report. Operator scope,
 erasure snapshots, advisory/domain/fallback and existing success DTOs remain.
 The [publication budget](OPERATING.md#standalone-evaluation-publication-budget)
-owns defaults/limits; remaining batch processing SQL/acceptance is D6/Q work.
+owns defaults/limits; combined acceptance is recorded at C3DQ below.
 
 [R4-S2-T3C3D4A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4a) bounds complete batch
 detail/list/queue/summary reads on a separate owning-session pool. Final batch
@@ -295,8 +295,7 @@ remain snapshots. Human refusal guidance and visible GET recovery preserve the
 selected reference/draft without starting screening. Account/refresh/page guards
 reject late callbacks and paging waits for the current base read. The
 [batch read budget](OPERATING.md#batch-view-read-execution-budget) owns defaults
-and limits. Registration and mutations below have separate budgets; processing
-and broader acceptance remain D6/Q work.
+and limits. Registration, mutations and processing below have separate budgets.
 
 [R4-S2-T3C3D4B](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4b) bounds complete
 batch registration separately from PDF decoding and batch views. Uncertain
@@ -320,8 +319,8 @@ management acceptance and closes D4. All seven management routes retain separate
 read/registration/mutation admission, owning sessions, scoped late results and
 human saved-state recovery. Combined capacity, pagination/retention/erasure,
 two-tenant restart and actual Chrome journeys are covered without a production
-or scoring change. Remaining processing SQL and broader gates are D6/Q, C3D and its
-parents; per-process budgets do not bound global SQL/auth or complete requests.
+or scoring change. Processing uses a separate pool below; per-process budgets
+do not bound global SQL/auth or complete requests.
 
 [R4-S2-T3C3D5A](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) bounds batch process
 limiter/initial ownership/first claim and later one-item claims on a separate
@@ -348,5 +347,14 @@ counts to that same pool. Late settlement never continues processing; saved
 reports survive terminal rollback without reevaluation. UI uncertainty guidance
 covers progress and final counts, with saved-state reads and separate human
 recovery. All direct process-store SQL is admitted; indirect graph work and
-global request deadlines are outside this claim. C3DQ, C3D and broader parents
-remain open.
+global request deadlines are outside this claim.
+
+[R4-S2-T3C3DQ](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3dq) reviews the combined
+evaluation/reporting/screening boundaries and occupies all seven default pools
+in one app. The [combined budget](OPERATING.md#combined-evaluation-reporting-and-screening-admission)
+owns the 16-slot subtotal, separate intake admission and limits. Screening now
+guards each explicit Start with its own run/account/batch identity: an older
+process reply cannot recount, replay or stop a newer run after Stop/Start or an
+account/batch change. Accepted server SQL can still settle. Fresh combined full,
+actual PG, both DBs' HTTP/restart and affected Chrome acceptance close C3DQ/C3D.
+The evidence owns reviews and limits; C3E-F/Q and broader parents remain open.

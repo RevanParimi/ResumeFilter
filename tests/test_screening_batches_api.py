@@ -656,9 +656,10 @@ async def test_batch_admission_retains_slots_without_late_provider_continuation(
                 event.remove(factory, name, listener)
 
 
-@pytest.mark.parametrize('processing', [False, True], ids=['management', 'with-processing'])
-async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch, processing):
-    """One app, default management slots plus shared claim/recovery admission."""
+@pytest.mark.parametrize('mode', ['management', 'processing', 'reporting'],
+    ids=['management', 'with-processing', 'all-seven-pools'])
+async def test_batch_management_default_pools_remain_independent(database, settings, genuine_resume, monkeypatch, mode):
+    """Default management/process slots, optionally all reporting pools too."""
     from threading import Condition, Event, current_thread, get_ident
     from sqlalchemy import event
     engine, factory = database
@@ -666,6 +667,8 @@ async def test_batch_management_default_pools_remain_independent(database, setti
     deleted = services.screening.register(org, name='Separate deletion', domain='genai',
         texts=[genuine_resume], created_by_org_user_id=None).id
     capacities = {'batch-read': 4, 'batch-registration': 2, 'batch-mutation': 2}
+    processing, reporting = mode != 'management', mode == 'reporting'
+    publication_evaluations = 3 if reporting else 0
     assert [getattr(services, name)._capacity for name in ('batch_reads', 'batch_registrations', 'batch_mutations')] == [4, 2, 2]
     claim_bid = recovery_bid = report = None
     if processing:
@@ -687,6 +690,13 @@ async def test_batch_management_default_pools_remain_independent(database, setti
         capacities['batch-admission'] = 2
         assert services.batch_admissions._capacity == 2
         assert services.settings.batch_admission_wait_seconds == 20
+    if reporting:
+        for name, pool in [('report-record', services.report_records),
+                           ('outcome-record', services.outcome_records),
+                           ('evaluation-record', services.evaluation_records)]:
+            capacities[name] = 2
+            assert pool._capacity == 2 and pool._wait_seconds == 20
+        assert sum(capacities.values()) == 16
     release = {name: Event() for name in capacities}
     entered = {name: 0 for name in capacities}
     seen, condition, pending, evaluations = set(), Condition(), [], []
@@ -756,6 +766,15 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                     await accept('batch-registration', 'POST', '/screening/batches', json=payload)
                 await accept('batch-mutation', 'POST', path + '/retry')
                 await accept('batch-mutation', 'DELETE', '/screening/batches/' + deleted)
+                if reporting:
+                    for _ in range(2):
+                        await accept('report-record', 'GET', '/report/' + report.id)
+                        await accept('evaluation-record', 'POST', '/evaluate',
+                            json={'resume_text': genuine_resume})
+                    await accept('outcome-record', 'POST', '/report/' + report.id + '/outcome',
+                        json={'outcome': 'inconclusive', 'notes': 'Private operator review'})
+                    await accept('outcome-record', 'POST', '/screening/reports/' + report.id + '/outcome',
+                        json={'outcome': 'verified_genuine', 'notes': 'Owned employer review'})
                 assert entered == capacities
                 if processing:
                     for target in (claim_bid, recovery_bid, kept, 'missing'):
@@ -770,6 +789,18 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                     response = await http.request(method, url, headers=foreign, **kwargs)
                     assert response.status_code == 503 and response.json() == {'detail': detail}
                     assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                if reporting:
+                    for method, url, body, detail in [
+                        ('GET', '/report/' + report.id, None, 'report_record_capacity_exhausted'),
+                        ('POST', '/screening/reports/' + report.id + '/outcome',
+                            {'outcome': 'inconclusive'}, 'outcome_record_capacity_exhausted'),
+                        ('POST', '/evaluate', {'resume_text': genuine_resume}, 'evaluation_record_capacity_exhausted')]:
+                        response = await http.request(method, url, headers=headers, json=body)
+                        assert response.status_code == 503 and response.json() == {'detail': detail}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    # Publication admission follows the async graph. A refused
+                    # publication can still have incurred provider work once.
+                    assert len(evaluations) == publication_evaluations
                 assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
                 release['batch-read'].set()
                 assert all(response.status_code == 200 for response in await asyncio.gather(*groups['batch-read']))
@@ -792,20 +823,41 @@ async def test_batch_management_default_pools_remain_independent(database, setti
                     'pending': 1, 'processing': 1, 'done': 1, 'failed': 1}
                 assert (await http.get('/screening/batches/' + deleted, headers=headers)).status_code == 404
                 assert (await http.get('/screening/batches/' + kept, headers=foreign)).json()['counts']['pending'] == 2
-                assert not evaluations
+                assert len(evaluations) == publication_evaluations
                 if processing:
                     assert len(services.batch_admissions._active) == 2
                     assert services.candidate_ingests._capacity == 2
                     ingested = await http.post('/screening/candidates', headers=headers,
                         json={'resume_text': genuine_resume, 'domain': 'genai', 'evaluate': False})
-                    assert ingested.status_code == 200 and not evaluations
+                    assert ingested.status_code == 200 and len(evaluations) == publication_evaluations
                     assert (await http.get('/screening/batches/' + recovery_bid, headers=headers)).json()['counts']['processing'] == 1
                     assert (await http.get('/screening/batches/' + claim_bid, headers=headers)).json()['counts']['pending'] == 1
+                    if reporting:
+                        # Reading a report recovers independently of held writes
+                        # and batch processing; it does not run another graph.
+                        release['report-record'].set()
+                        assert all(response.status_code == 200 and response.json()['id'] == report.id
+                            for response in await asyncio.gather(*groups['report-record']))
+                        assert len(services.outcome_records._active) == len(services.evaluation_records._active) == 2
+                        release['outcome-record'].set()
+                        assert all(response.status_code == 200 for response in await asyncio.gather(*groups['outcome-record']))
+                        admin_history = (await http.get('/report/' + report.id + '/outcomes')).json()['outcomes']
+                        org_history = (await http.get('/screening/reports/' + report.id + '/outcomes', headers=headers)).json()['outcomes']
+                        assert len(admin_history) == 2
+                        assert [row['notes'] for row in org_history] == ['Owned employer review']
+                        release['evaluation-record'].set()
+                        published = await asyncio.gather(*groups['evaluation-record'])
+                        assert len({response.json()['id'] for response in published}) == 2
+                        for response in published:
+                            assert response.status_code == 200
+                            assert (await http.get('/report/' + response.json()['id'])).json() == response.json()
+                            assert (await http.get('/screening/reports/' + response.json()['id'], headers=foreign)).status_code == 404
+                        assert len(evaluations) == publication_evaluations
                     release['batch-admission'].set()
                     recovered, claimed = await asyncio.gather(*groups['batch-admission'])
                     assert recovered.status_code == claimed.status_code == 200
                     assert recovered.json()['processed'] == claimed.json()['processed'] == 1
-                    assert len(evaluations) == 1, 'saved recovery must not assess again'
+                    assert len(evaluations) == publication_evaluations + 1, 'saved recovery must not assess again'
                     row = (await http.get('/screening/batches/' + recovery_bid + '/queue', headers=headers)).json()['rows'][0]
                     assert row['report_id'] == report.id and row['status'] == 'done'
                     for target in (claim_bid, recovery_bid):

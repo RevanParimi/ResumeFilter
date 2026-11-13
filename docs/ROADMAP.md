@@ -6,6 +6,19 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-13 - R4-S2-T3C3DQ complete; combined C3D gate closed.**
+  Re-inventoried report/outcome/publication and batch SQL, including indirect
+  graph/intake calls and the seven-pool budget. New aggregate coverage occupies
+  all 16 default slots; intake remains separate. Fixed stale process replies
+  altering a newer UI run after Stop/Start or account/batch changes. The
+  [combined evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3dq) owns red/green,
+  full-suite attempts, actual PG, both DBs' HTTP/restart, Chrome/UI/static and
+  reviews. Final full/actual PG, both DBs' HTTP/restart and affected Chrome pass;
+  the earlier timing failure and unchanged recheck remain recorded. Completion
+  and distinct final staged self-review are recorded; scoped publication follows.
+  Working DB/demo stay preserved; owned PG is stopped. Next: R4-S2-T3C3E; measure/split
+  its owning operations first. C3E-F/Q and broader parents remain open.
+
 - **Session 2026-11-13 - R4-S2-T3C3D6 complete; bounded terminal/count SQL.**
   Both ordinary failure paths, completion and final counts use the existing
   process pool. Late settlement stops processing without replay; saved reports

@@ -12926,3 +12926,344 @@ is restaged and rechecked before publication; no runtime rerun is required for
 documentation alone. Standing-authorized scoped commit/push to the configured
 tracking branch and remote verification follow. Final response reports the
 verified commit; stop without starting C3DQ.
+
+### <a id="r4-s2-t3c3dq"></a>R4-S2-T3C3DQ - Combined evaluation/reporting/screening acceptance
+
+**Status: done (2026-11-13).** Baseline `49021ff`; D1-D6 and all
+management/admission/recovery children are published. This session covers C3DQ
+only. [PI status](PI-R4.md#r4-s2-t3c3dq). No next backlog task is started.
+
+**Pre-validation contract.** Review the combined D1-D6 implementation and actual
+callers, not the historical whole-project audit. Inventory every relevant
+report/outcome/evaluation and batch route and indirect graph/intake operation;
+check owning sessions, async provider boundaries, tenant/author/user scope,
+consent/erasure, lease/generation/TTL and acknowledged outcomes. Preserve current
+DTO/OpenAPI, advisory/domain/fallback behavior, deterministic recovery and
+snapshot/commit limits. Fix only acceptance-blocking findings; if none exists,
+do not invent a new runtime abstraction or change policy.
+
+The seven scoped pools default to report read **2**, outcome write **2**,
+evaluation publication **2**, batch read **4**, registration **2**, mutation
+**2**, process SQL **2**: **16 slots** with finite **20s** caller waits per
+operation. Existing candidate intake has **2 separate slots**; auth/candidate
+record/PDF and other handler budgets are outside that subtotal. Admission is
+per Services/process, without a global DB/whole-request/driver/drain guarantee.
+An admitted SQL transaction can settle after timeout/cancel; no replay or late
+provider continuation follows. Fresh GET/history/Refresh reads snapshots; a
+separate human decision can append, Retry or Start after lease expiry.
+
+Extend the existing aggregate API regression to occupy all seven default pools
+in one app. Check safe refusal in each pool, independent staged release, private
+outcome projection, exact published report reads, independent intake and saved
+report recovery without reevaluation. Admission/connection independence is
+distinct from real driver contention: retain existing actual SQL/lock/rollback/
+erasure cases on SQLite and disposable PostgreSQL. No fabricated red test is
+required for an acceptance review with no runtime defect; record any finding's
+behavioral reproduction before fixing it.
+
+Fresh validation must include focused SQLite, the combined affected PG-enabled
+selection, full pytest, all three report/outcome/publication HTTP worker modes,
+composed management, processing and terminal modes plus two-process persistence
+on each DB, and actual affected evaluation/outcome and batch Chrome. Use existing
+scripts, fake/capture providers and migrated isolated stores; no new schema
+requires a new migration. Run UI contracts/bindings/syntax and relevant compile/
+diff checks. Run heavy suites/journeys sequentially. Record actual failures,
+skips and warnings honestly, without assuming a timing failure's cause.
+
+Record implementation/combined source self-review, completion and a distinct
+final staged self-review, then scoped commit/push and verified tracking SHA.
+Preserve the working DB/unrelated files and demo, confirm owned PG stops, and
+exclude credentials/runtime artifacts. Only successful combined evidence closes
+C3D; C3E-F/Q and broader parents remain open. Exact next after closure is
+**R4-S2-T3C3E**, in a separate session; measure/split its owning operations before
+implementation. Fakes establish mechanics, not live-provider quality.
+
+**Combined source/SQL inventory (2026-11-13).** Reviewed the cumulative
+`392793f..49021ff` diff for reports/screening API, scoped access, screening
+service/store, Services and configuration, plus current graph nodes, intake,
+shared executor, UI/API error normalization and callback lifecycle. The graph
+and intake have no cumulative source change in D1-D6; their current indirect
+calls were still inspected rather than assumed safe from that fact.
+
+| API/operation | Complete admitted boundary |
+|---|---|
+| Five operator/employer report/history GETs | Detached report/list/note materialization; scoped projection/private-note filtering and final observed existence/ownership guards. These guards are snapshots, not delivery locks. |
+| Both human-outcome POSTs | Report/ownership lookup, shared claim/note/author validation, append and existing minimal optional observer. Observer failure can follow SQL commit; no atomicity/idempotency claim. |
+| Operator standalone evaluation | Async graph finishes first; one publication operation owns report save and final existence check. Pending supplies the report reference for GET, without another graph run. |
+| Four batch view GETs | Full service/store read and DTO materialization, current scope guards, original pagination/order/count and private-note contracts. |
+| Batch registration | Caller-owned bounded PDF/text decoding first; one complete registration and scoped detail operation with generated recovery reference. |
+| Batch Retry/Delete | Whole owning conditional transaction, generation/parent locks and current-scope write. Mutation recovery is a saved-state read before a separate human intent. |
+| Batch process | Shared limiter/ownership/first claim, later one-item claims, complete saved-input/report recovery, both failure paths, completion and every final count. Pending/unavailable/cancel cannot enter a competing failure write or resume providers. |
+| Standalone/batch intake | Separate existing ingest pool owns ingest/callback transaction, fingerprints/comparison, subject guards, report/checkpoint save and final guard. Async extraction/evaluation remain outside SQL sessions. Direct low-level callers still own scheduling. |
+
+Graph nodes use pure in-memory calibration/signal/report transformations,
+awaited LLM/GitHub calls and the existing PDF executor. Production flywheel is
+NullFlywheel (no I/O/retention); InMemoryFlywheel is explicit test-only metadata.
+No graph SQL worker is invented. All seven lazy pools reject after service
+closure and join accepted futures before SQL disposal; timeout/cancel retains
+admission through actual settlement. Auth/session/CSRF remains its own caller
+boundary/budget. The Operating guide owns the combined 16-slot subtotal and
+separate 2-slot intake, not a global connection/provider/request deadline.
+
+**New combined coverage.** Extended the existing default-capacity API test with
+an `all-seven-pools` case, preserving both older management/processing cases.
+Real requests occupy all **16** scoped slots in one app with worker-owned SQL
+sessions; claim/recovery gates pause before their SQL to isolate admission from
+database coupling. Each pool refuses safely when full; staged release preserves
+other occupied pools. Normal intake remains independent. Private operator notes
+stay out of employer history; distinct evaluation references read back exactly;
+saved report recovery does not assess again. A full publication pool still
+allows the preceding async graph to run once per attempt, explicitly asserted.
+Controlled admission holds do not substitute for the separate real lock tests.
+
+Sanitized runner `.pytest_cache/run_r4_s2_t3c3dq.py` records local ignored logs;
+`aggregate -m pytest -q --tb=short tests/test_screening_batches_api.py -k
+all-seven-pools`: **1 passed / 1 PG environment skip / 272 deselected / 1 warning**.
+The final focused/full/PG selections recheck the clarified mode parameter.
+
+**Implementation/combined diff self-review.** Specification and correctness
+review traced the inventory above, actual scoped store/dependency callers,
+owning sessions/rollback/clock checks, reference/privacy/erasure, current lease
+and acknowledged outcomes, safe caller uncertainty and drain. Pool totals and
+indirect graph/intake boundaries match the contract. API schemas, scoring,
+models/migrations and server runtime behavior need no change.
+
+One **medium, acceptance-blocking** UI finding: `frontend/screening.js::_tick`
+used only driving/batch flags for successes and no current-run guard for errors.
+After Stop and another Start, an older same-batch success could count/replay
+another process POST or halt the newer run; a late error/401 could halt a newer
+batch/account's driver. Added 12 behavior cases across restart, batch switch and
+account replacement, with more/done/pending/401 replies. Before the fix,
+`node --test --test-name-pattern="new screening run" scripts/test_ui_screening.js`
+has **10 failed / 2 passed** (`driver-red`). The two passing cases retain prior
+batch-switch success protection; the ten failures reproduce the missing guard.
+
+The fix adds one opaque token per explicit Start, captures current account/batch,
+checks all three on both callbacks and recursion, and invalidates the token on
+halt. An old reply cannot continue, recount or stop another run. Accepted server
+SQL is not cancelled or replayed. Full offline `node --test
+scripts/test_ui_screening.js`: **150 passed**, no failures (`driver-green`).
+The existing processing Chrome script now additionally holds delivery after real
+HTTP commits, restarts the UI run, releases the old success or an injected late
+pending error, and checks the current run's exact saved result. This distinguishes
+real SQL-worker timeouts in the existing journey from late transport delivery
+simulation. Final browser and long-validation results are recorded below.
+
+One discarded cosmetic edit changed an existing route description and therefore
+the frozen OpenAPI digest. `contracts` selection initially has **1 failed /
+6 passed / 32 deselected / 1 warning**. Restored the existing description instead
+of weakening/updating the fixture. `contracts-final -m pytest -q --tb=short
+tests/test_openapi_contract.py tests/test_api_route_extraction.py -k
+'contract or full_openapi'`: **7 passed / 32 deselected / 1 warning**. There is
+no production Python diff. A local PG-helper parser also needed UTF-8-BOM-aware
+reading before preparing its 32-module selection; that setup error is not test
+evidence. No remaining blocking source finding; runtime gates must still pass.
+This is same-agent self-review, not independent review.
+
+**Fresh combined gates.** Final code/config snapshot contains
+**616 hashes** (`.pytest_cache/review_state_r4_s2_t3c3dq.py save`); checks match
+after the driver fix and aggregate-mode clarification. Baseline contains 734
+tracked files; working DB and unrelated files are preserved. The sequential
+`.pytest_cache/gates_r4_s2_t3c3dq.py` uses the sanitized runner above, stops on
+first failure, and captures each job under `r4-s2-t3c3dq-<tag>.txt`. It does not
+run full/PG/browser/HTTP heavy workloads concurrently.
+
+- `focused -m pytest -q --tb=short tests/test_api.py
+  tests/test_screening_batches_api.py -k 'default_pools or real_lock or terminal_sql'`:
+  **68 passed / 68 PG environment skips / 363 deselected / 1 warning**, 169.81s.
+  This includes all three aggregate modes, the new combined case, real SQLite
+  locks, report/outcome/publication and terminal release/rollback/erasure paths.
+- Initial direct `driver-browser scripts/check_ui_screening_extraction_browser.py
+  --batch-processing`: **80/80 OK**, exit 0 (63.86s wrapper), including six new
+  actual-browser checks of delayed delivery after native HTTP commits. The final
+  all-mode gate rechecks the same reviewed bytes.
+- Static checks currently pass: **626 bindings / 19 states**, `node --check`
+  for API/support/evaluation-report/screening assets, project-Python compilation
+  of the changed API-test/browser modules, and `git diff --check`.
+
+Fresh SQLite report-mode HTTP/graceful restart results (sanitized runner tags
+`<mode>-http`, `scripts/smoke_r4_s1_t3c.py --<mode>`):
+`report-read-workers` **54/54**, `outcome-write-workers` **67/67**,
+`evaluation-publication-workers` **36/36**, all exit 0. Each uses migrated
+scratch storage, fake providers and two actors; holds and saved-state recovery
+remain distinct from the real competing-driver tests in focused/PG selections.
+Fresh batch HTTP/graceful restart via `scripts/smoke_r4_s1_t3d.py`:
+`--batch-management` **121/121**, `--batch-processing` **95/95**, both exit 0.
+These compose the management and admission/recovery scenarios across independent
+app processes/tenants, with controlled locks, manual recovery and restart.
+
+Fresh SQLite `--batch-terminal-workers` and `--persistence` HTTP/graceful restart
+also pass **71/71** each (exit 0). All seven required SQLite modes are green.
+
+Fresh final-mode Chrome/CDP via the same sanitized runner, `<mode>-browser`:
+
+| Script | Mode | Result |
+|---|---|---|
+| `scripts/check_ui_evaluate_browser.py` | `--outcome-write-workers` | **60/60** |
+| Same | `--evaluation-publication-workers` | **62/62** |
+| `scripts/check_ui_screening_extraction_browser.py` | `--batch-management` | **74/74** |
+| Same | `--batch-processing` | **80/80** |
+| Same | `--batch-terminal-workers` | **58/58** |
+
+All exit 0 with no console exceptions. These execute the actual rendered app,
+normal operator/employer/candidate flows, report/outcome/publication uncertainty,
+batch reference/read/mutation/claim/recovery/terminal controls, saved-state reload
+and separate human continuation. The processing journey's six new checks release
+old success or injected late-error delivery after native HTTP SQL has committed;
+real worker holds elsewhere in these journeys remain a distinct form of evidence.
+Chrome still uses existing CDN internet. TestClient, bindings and offline Node
+are not substituted for these browser results.
+
+Python UI `ui -m pytest -q --tb=short tests/test_ui_handlers.py
+tests/test_ui_mount.py`: **20 passed / 1 warning**, 13.82s, exit 0. Offline
+screening Node remains **150 passed**. All five final Chrome modes use the saved
+reviewed bytes; no code changes were made during the gate run.
+
+**Initial full failure and unchanged recheck.** `full -m pytest -q --tb=short`
+finished **4433 passed / 1 failed / 1199 skipped / 127 warnings**, 2726.31s
+(45:26), exit 1. The gate helper stopped before PostgreSQL as designed. The
+failure is
+`test_candidates_api.py::test_candidate_report_sql_leaves_unrelated_requests_responsive[sqlite-admin-post]`:
+the existing **<1s** health/admin assertion measured **1.3707852s**. Both responses
+are 200 and the held subject/report SQL had not finished. The health access log
+records 1352.2ms and admin 14.2ms. Its existing off-loop/held-work assertion
+passes; the failure is specifically elapsed time. The health handler was
+inspected: in-memory settings/type checks and sorted domain registry, no SQL or
+provider call. No other owned smoke/browser Python processes were active.
+
+`candidate-recheck -m pytest -q --tb=short
+tests/test_candidates_api.py::test_candidate_report_sql_leaves_unrelated_requests_responsive[sqlite-admin-post]`
+passes unchanged: **1 passed / 1 warning**, 40.24s, exit 0. The cause of the
+isolated latency spike is unproven; do not label it a proven scheduler/load issue
+or a fixed production defect. No candidate code/test or threshold changed.
+All **616** code/config hashes still match. The failed run stays failed and
+cannot close the gate. `.pytest_cache/remaining_gates_r4_s2_t3c3dq.py` then ran
+the owned PG selection/seven HTTP modes and then fresh `full-final`, sequentially
+with PG confirmed stopped before the full rerun. Both results are recorded below.
+
+**Fresh PG-enabled focused result.** Owned
+`.pytest_cache/run_r4_s2_t3c3dq_postgres.py` completes its combined **32-module**
+selection: **1259 passed / 10 skipped / 19 warnings**, 1823.57s (30:23), exit 0.
+This selection is the deduplicated D3 report/outcome/publication and D6 batch/
+rate/lifecycle/contract/migration selections. The actual pytest command below
+ran with the owned disposable `DEE_TEST_DB_URL` and sanitized configuration:
+
+```powershell
+.resume/Scripts/python.exe -m pytest -q --tb=short `
+  tests/test_api.py tests/test_report_store.py tests/test_report_outcomes.py `
+  tests/test_screening_scope.py tests/test_screening_outcome_api.py `
+  tests/test_report_erasure_concurrency.py tests/test_report_response_erasure.py `
+  tests/test_service_lifecycle.py tests/test_config.py tests/test_org_scope_guard.py `
+  tests/test_api_route_extraction.py tests/test_route_table_guard.py `
+  tests/test_openapi_contract.py tests/test_error_logging.py `
+  tests/test_flywheel_retention.py tests/test_migrations.py `
+  tests/test_screening_batches_api.py tests/test_screening_service.py `
+  tests/test_screening_store.py tests/test_screening_schema.py `
+  tests/test_screening_models.py tests/test_screening_projection.py `
+  tests/test_screening_durable_input.py tests/test_screening_report_input.py `
+  tests/test_screening_refusal_retention.py tests/test_screening_unresolved_input.py `
+  tests/test_screening_erasure_concurrency.py tests/test_config_screening.py `
+  tests/test_ratelimit_spend.py tests/test_ratelimit_store.py `
+  tests/test_ratelimit_service.py tests/test_config_ratelimit.py
+```
+
+It includes SQLite and actual PostgreSQL variants; it is not 1259
+exclusively PG cases. Both variants of the new all-seven-pool case and existing
+scope/claim/checkpoint/erasure/expiry/rollback tests execute. Skips do not supply
+evidence for omitted cases. The server reports PostgreSQL **18.6**, timezone
+**Asia/Calcutta**, isolation **read committed**; the test-only 25s statement
+timeout is not a production driver/drain promise. The seven PG HTTP modes,
+verified shutdown and fresh full-final results follow.
+
+**Fresh PG HTTP/restart and verified shutdown.** All seven modes exit 0 on
+migrated disposable PostgreSQL, using the same commands as their SQLite modes
+with `--postgres` and the owned test URL:
+
+| Mode | SQLite | PostgreSQL |
+|---|---|---|
+| Report/history reads | **54/54** | **54/54** |
+| Human-outcome writes | **67/67** | **67/67** |
+| Evaluation publication | **36/36** | **36/36** |
+| Batch management | **121/121** | **121/121** |
+| Composed batch processing | **95/95** | **95/95** |
+| Terminal SQL | **71/71** | **71/71** |
+| Persistence | **71/71** | **71/71** |
+
+These retain two actors, independent app processes for batch workflows, actual
+driver contention/rollback, saved reports/checkpoints, explicit recovery,
+private projections and exact state across graceful app restart. Controlled
+holds are not mislabeled as competing database locks; their respective worker/
+driver assertions remain in the existing test/journey owners.
+
+The PG runner exits **0** (2414.11s wrapper). Owned server stop exit **0**
+(1.79s); the remaining-gates helper independently runs `pg_ctl status` and gets
+**3** before starting `full-final`. Runtime record is local
+`.pytest_cache/r4-s2-t3c3dq-pg-runtime.json`; no URL/credential/runtime data is
+published. `full-final` ran alone after the PostgreSQL process stopped. The
+initial failed full and unchanged candidate recheck remain separate evidence,
+not relabeled green.
+
+**Final full regression.** Sanitized runner
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3dq.py full-final
+-m pytest -q --tb=short` finishes **4434 passed / 1199 skipped / 127 warnings**,
+1913.11s (31:53), exit **0** (1924.26s wrapper). The remaining-gates helper exits
+**0** with both jobs complete. Candidate code, its <1s assertion and all other
+reviewed code/config remain unchanged; the earlier timing spike's cause is still
+unproven. Skips do not validate omitted cases. All required runtime gates now
+pass on the reviewed state, without source or threshold changes during them.
+
+**Completion record (before distinct final staged review).** C3DQ meets its
+retained acceptance: combined D1-D6 SQL/indirect-call inventory and budget review;
+all 16 default slots with independent release/refusal and private projections;
+checkpoint recovery without reassessment; the reproduced stale-driver fix;
+frozen API contracts; fresh full/focused/actual PG, both DBs' migrated two-actor/
+two-process HTTP/restart, actual Chrome, offline UI and static checks above.
+There is no production Python, schema, migration, scoring or provider-policy
+change. No remaining acceptance-blocking source finding is known. This closes
+**C3DQ and C3D only**. C3E-F/Q and broader parents remain open. Exact next is
+**R4-S2-T3C3E** in a separate session, measuring/splitting its owning operations
+before implementation; it is not started here.
+
+Accepted SQL can still settle late; reads are snapshots, observer/SQL commits
+are not atomic, refused publication can follow provider work, and these budgets
+do not bound global connections/memory/whole requests/drivers/drain. Recovery is
+deliberate human intent. Fakes/synthetic data prove mechanics, not live-provider
+quality or empirical scoring accuracy. The initial latency failure remains a
+recorded uncertainty. Working DB/unrelated files and demo are preserved; the
+owned PostgreSQL instance is stopped. Distinct final staged self-review and
+scoped publication/remote verification follow this completion record.
+
+**Distinct final staged self-review (2026-11-13, after completion).** Reviewed
+the exact ten-file index against `49021ff`: `frontend/screening.js`, existing
+Node/browser/API regression modules, FEATURE_STATUS/OPERATING, handoff/roadmap,
+PI status and this append-only evidence section. This pass is separate from the
+implementation review above and is same-agent self-review, not independent.
+
+Specification: every retained acceptance criterion has the evidence above;
+only C3DQ/C3D close, and C3E-F/Q remain open. The seven-pool subtotal excludes
+intake/auth/other budgets and does not promise a whole-request/driver deadline.
+The original failed full remains failed; its unchanged recheck and successful
+final full are separate. Corrected one prose reference that could imply a known
+load cause; that cause is unproven. No new runtime change was needed.
+
+Correctness/maintenance: traced both `_drive` entry paths, both `_tick` calls,
+success/error/401 and recursive continuation, Stop, batch changes, account loss,
+registration completion and unmount. Fresh identity prevents old callbacks from
+mutating or continuing a newer run; existing API cookie guards handle late 401
+across sign-in. Direct lifecycle stops still fence callbacks, and a new run
+always gets a new token. Server settlement/recovery and human intent remain
+separate. Reviewed new default-pool requests, private projections, exact saved
+reports, no-assessment recovery, staged release and finally cleanup; old modes
+and parameter IDs remain. Browser delivery injection occurs after native HTTP
+and its restore/release cleanup is explicit. No remaining blocking finding.
+
+Pre-publication checks: all **616** reviewed code/config hashes match; the
+publication checker verifies **10 scoped files / 4 matching code files / 8 added
+local Markdown links**, index/working code agreement, credential markers and
+artifact exclusion. Preservation checks cover **724 unrelated tracked files**,
+including the unchanged working DB. PI/evidence anchors and current statuses
+are checked with the final record. Only documentation changed after runtime
+gates; restage/recheck that record without another application rerun. Commit/
+push to the configured `origin/main` and remote SHA verification follow under
+standing authorization; the final response reports the verified commit. Stop
+without starting C3E.

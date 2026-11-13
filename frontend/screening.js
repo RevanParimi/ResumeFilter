@@ -227,11 +227,14 @@
   // They cannot be the same field: setState is asynchronous, so a driver that
   // consulted state would read the PREVIOUS value on the tick it starts and
   // stop before its first call.
+  _driveToken = null;
   _drive = (batchId) => {
+    const token = this._driveToken = {};
+    const me = this.state.me;
     this._driving = true;
     this._driveBatch = batchId;
     this.setState({ driving: true, driveError: null, driveDone: 0, driveFailed: 0 });
-    this._tick(batchId);
+    this._tick(batchId, token, me);
   };
   startProcessing = () => {
     if (this._driving || !this.state.selectedBatch || this.batchChangeBlocked(this.state.selectedBatch)) return;
@@ -240,17 +243,20 @@
 
   _halt = (extra) => {
     this._driving = false;
+    this._driveToken = null;
     this.setState(Object.assign({ driving: false }, extra || {}));
   };
   stopProcessing = () => this._halt();
 
-  _tick = (batchId) => {
-    // Stopped, unmounted, or the user moved to another batch — all three mean
-    // "do not start another call".
-    if (!this._driving || this._gone || this._driveBatch !== batchId) return;
+  _tick = (batchId, token, me) => {
+    // A new Start is a separate run, including on the same batch/account.
+    // Replies from an older run cannot continue or halt this one's loop.
+    const current = () => !this._gone && this._driving && this._driveBatch === batchId
+      && this._driveToken === token && this.state.me === me;
+    if (!current()) return;
     API.post("/screening/batches/" + batchId + "/process").then(
       (res) => {
-        if (this._gone || !this._driving || this._driveBatch !== batchId) return;
+        if (!current()) return;
         this.setState((s) => ({
           driveDone: s.driveDone + (res.processed || 0),
           driveFailed: s.driveFailed + (res.failed || 0)
@@ -259,13 +265,13 @@
         // rather than polling a queue nothing else is working on.
         this.refreshBatch(batchId);
         if (!res.remaining) { this._halt(); return; }
-        this._tick(batchId);
+        this._tick(batchId, token, me);
       },
       (err) => {
         // A 401 has already sent the user to login; anything else stops the
         // loop and says why. Never replay an uncertain request automatically.
-        if (this._gone) return;
-        if (err && err.kind === "session_lost") { this._driving = false; return; }
+        if (!current()) return;
+        if (err && err.kind === "session_lost") { this._halt(); return; }
         this._halt({ driveError: err });
       }
     );
