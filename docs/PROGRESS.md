@@ -1,39 +1,53 @@
 # Current handoff
 
-Updated: 2026-11-12. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-13. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3D5Q complete; D5 closed.** Published A/B baseline is `160a991`.
-The [PI status](delivery/PI-R4.md#r4-s2-t3c3d5q) and
-[Q evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) own combined acceptance,
-source/SQL inventory, aggregate budget, checks and both self-reviews.
+**R4-S2-T3C3D6 complete; terminal/count SQL is bounded.** Baseline `193f8a1`.
+[D6 contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d6) owns acceptance,
+red/green, implementation review, failed checks and their resolution, final
+validation, completion and distinct final staged self-review.
 
-The shared two-slot/20s pool covers limiter/ownership/claims and complete saved
-input/report recovery. New combined coverage occupies both claim/recovery slots
-plus all eight management slots; management and standalone intake remain
-independent. Composed A/B HTTP/Chrome journeys prove saved-state/manual recovery
-without late provider continuation. Only stale rate-limit comments changed;
-no runtime behavior change was needed. Ordinary failure writes (including known
-recovery refusal before intake), post-intake completion and final counts remain
-synchronous D6 work. D5 closure does not mean every process SQL path is bounded.
+Both ordinary failure paths, completion and final counts use the existing
+two-slot/20s process pool. Accepted work retains admission through settlement;
+late SQL never resumes providers, races a failure write or claims another item.
+Saved checkpoints/reports support deliberate recovery after lease expiry. Only
+acknowledged outcomes count. UI pending guidance covers progress/final counts;
+Refresh/reload read saved state and separate human intent starts recovery.
+Tenant/CSRF, lease/generation/erasure, private-input, retry/TTL, advisory and
+deterministic fallback behavior remain. No new pool, schema or scorer.
 
-Fresh SQLite selection: **33 passed / 33 PG environment skips**. PG-enabled
-25-module selection: **901 passed / 10 skips / 18 warnings**. Combined
-HTTP/restart **95/95** and persistence **71/71** on each DB; final actual Chrome
-**74/74**, Python UI **20**, offline UI **138**, static checks pass. Full pytest:
-**4405 passed, 1170 skipped, 127 warnings**. All 616 code/config hashes match.
-Owned PG is confirmed stopped; working DB/unrelated files and demo are untouched.
-Evidence owns completion and the distinct final staged self-review. Scoped
-publication follows; final response reports the verified remote commit.
+Final full pytest: **4433 passed, 1198 skipped, 127 warnings**. Fresh affected
+PG-enabled module: **272 passed**; unchanged modules passed in the initial PG
+selection. Both DBs' terminal/processing/persistence HTTP and graceful restart:
+**71/71, 95/95, 71/71**. Actual Chrome **58/58 terminal / 74/74 processing**;
+Python UI **20**, offline UI **138**, bindings **626/19**, JS syntax and four
+changed-module compilations pass. The evidence preserves the initial full
+latency failure, unchanged candidate recheck, PG recovery-wait test correction
+and final checks. All **616** final code/config hashes match. Both owned PG
+instances are confirmed stopped; working DB/unrelated files and demo untouched.
 
-**Exact next: R4-S2-T3C3D6 - Bound batch terminal SQL**, in a separate session.
-Stop after Q publication; do not start D6 here. D6/Q, C3D and broader parents
-remain open. Durable continuation remains T4.
+**Exact next: R4-S2-T3C3DQ - Review combined evaluation/reporting/screening
+acceptance**, in a separate session. Stop after D6 final staged self-review,
+scoped commit/push and verified remote publication. C3D and broader parents
+remain open; durable continuation is T4. Per-process budgets do not bound
+global SQL/request/driver/drain waits, and commits/snapshots remain separate.
 Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
 ## Reusable validation setup
 
+- D6 sanitized runner: `.pytest_cache/run_r4_s2_t3c3d6.py <tag> <Python args>`;
+  omitted args run full pytest. Final full log tag: `full-final`.
+  Hash/preservation: `.pytest_cache/review_state_r4_s2_t3c3d6.py check` / `preserve`.
+  Owned PG helpers: `run_r4_s2_t3c3d6_postgres.py` and
+  `run_r4_s2_t3c3d6_retry_postgres.py` under `.pytest_cache/`; runtime records
+  `r4-s2-t3c3d6-pg-runtime.json` / `r4-s2-t3c3d6-retry-pg-runtime.json` (stopped).
+  `.pytest_cache/check_d6_pg_stopped.py` verifies both independently. D6 evidence
+  above owns exact selections, failed attempts/corrections and final results.
+  Terminal HTTP/Chrome: existing scripts below with `--batch-terminal-workers`;
+  combined admission/recovery uses `--batch-processing`. The handoff's broader
+  reusable journeys remain useful for C3DQ; do not start that task here.
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers/isolated stores, sanitize inherited DEE
   configuration/keys and avoid the working `.env`.

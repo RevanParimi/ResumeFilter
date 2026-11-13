@@ -16,6 +16,7 @@ Requires Chrome and the existing CDN runtime internet; no live provider calls.
 --batch-admission-workers verifies late claims, manual recovery and reload.
 --batch-recovery-workers verifies late input/report recovery and manual continuation.
 --batch-processing composes claim and recovery uncertainty in one browser/app.
+--batch-terminal-workers verifies actual completion/failure/count uncertainty.
 """
 
 import asyncio
@@ -28,6 +29,80 @@ import sys
 import tempfile
 
 import check_ui_screening_browser as browser
+
+
+async def check_batch_terminal_workers(tab, scratch, api):
+    from check_ui_screening_contract import _resume
+    def count(kind):
+        path = scratch / ('admission-' + kind + '.jsonl')
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    for phase in ('complete', 'fail', 'counts'):
+        for ending in ('commit', 'rollback'):
+            mode, name = phase + ':' + ending, 'Browser terminal ' + phase + ' ' + ending
+            created = api.post('/screening/batches', json={'name': name,
+                'items': [{'resume_text': _resume('Synthetic ' + name, 'terminal-browser@example.in')}]}).json()
+            path = '/screening/batches/' + created['id']
+            assert await tab.js("window.__click('button', 'Batches')")
+            row = "Array.from(document.querySelectorAll('[role=button]')).find(r => r.innerText.includes(" + json.dumps(name) + "))"
+            assert await tab.wait(row, 20)
+            assert await tab.js(row + '.click(); true')
+            assert await tab.wait("window.__has('Start screening') && window.__has(" + json.dumps(name) + ")", 20)
+            entered, completed, evaluations = [count(k) for k in ('entered', 'completed', 'evaluations')]
+            for marker in ('admission-release', 'admission-owner'):
+                (scratch / marker).unlink(missing_ok=True)
+            (scratch / 'admission-mode').write_text(mode)
+            try:
+                assert await tab.js("window.__click('button', 'Start screening')")
+                async with asyncio.timeout(10):
+                    while count('entered') == entered:
+                        await asyncio.sleep(.01)
+                browser.S.check(mode + ': uncertain terminal/count SQL stops the real driver with recovery guidance',
+                    await tab.wait("window.__has('Screening may still be saving progress or reading final counts') && window.__has('claim to expire')", 20)
+                    and not await tab.js("document.body.innerText.includes('batch_admission_')")
+                    and count('evaluations') == evaluations + 1)
+                refused = api.post(path + '/process')
+                browser.S.check(mode + ': accepted SQL retains shared capacity',
+                    refused.status_code == 503 and refused.json() == {'detail': 'batch_admission_capacity_exhausted'})
+                operations = count('operations')
+                assert await tab.js("window.__click('button', 'Refresh')")
+                browser.S.check(mode + ': early Refresh reads only saved progress',
+                    await tab.wait('window.__has(' + json.dumps(name) + ')', 20)
+                    and count('operations') == operations and count('evaluations') == evaluations + 1)
+            finally:
+                (scratch / 'admission-release').touch()
+            async with asyncio.timeout(10):
+                while count('completed') == completed:
+                    await asyncio.sleep(.01)
+            (scratch / 'admission-mode').unlink(missing_ok=True)
+            settled = ending == 'commit' or phase == 'counts'
+            browser.S.check(mode + ': late settlement never resumes another operation or assessment',
+                api.get(path).json()['counts'] == {'pending': 0, 'processing': int(not settled),
+                    'done': int(settled and phase != 'fail'), 'failed': int(settled and phase == 'fail')}
+                and count('operations') == operations and count('evaluations') == evaluations + 1)
+            checkpoint = None if phase == 'fail' else json.loads((scratch / 'admission-checkpoints.jsonl').read_text().splitlines()[-1])
+            (scratch / 'admission-advance').write_text('1')
+            assert await tab.js("window.__click('button', 'Refresh')")
+            if phase == 'fail' and settled:
+                assert await tab.wait("Array.from(document.querySelectorAll('button')).some(b => b.innerText === 'Retry failed items' && !b.disabled)", 20)
+                assert await tab.js("window.__click('button', 'Retry failed items')")
+            if not settled or phase == 'fail':
+                assert await tab.wait("Array.from(document.querySelectorAll('button')).some(b => b.innerText === 'Start screening' && !b.disabled)", 20)
+                browser.S.check(mode + ': refresh/Retry never starts an assessment', count('evaluations') == evaluations + 1)
+                assert await tab.js("window.__click('button', 'Start screening')")
+            browser.S.check(mode + ': separate intent preserves original report without replaying completed assessment',
+                await tab.wait("window.__has('All screened') && window.__has('Nothing left to screen')", 30)
+                and count('evaluations') == evaluations + 1 + int(phase == 'fail')
+                and (checkpoint is None or api.get(path + '/queue').json()['rows'][0]['report_id'] == checkpoint['report_id']))
+            (scratch / 'admission-advance').unlink(missing_ok=True)
+    evaluations = count('evaluations')
+    await tab.js('window.__terminalReload = true')
+    await tab.send('Page.reload')
+    assert await tab.wait("!window.__terminalReload && document.body.innerText.includes('Sign out')", 40)
+    await tab.js(browser.HELPERS)
+    assert await tab.js("window.__click('button', 'Screening queue')")
+    browser.S.check('terminal/count recovery survives actual reload without assessment',
+        await tab.wait('window.__has(' + json.dumps(name) + ") && window.__has('All screened')", 30)
+        and count('evaluations') == evaluations)
 
 
 async def check_batch_recovery_workers(tab, scratch, api):
@@ -56,7 +131,7 @@ async def check_batch_recovery_workers(tab, scratch, api):
                     while count('entered') == entered:
                         await asyncio.sleep(.01)
                 browser.S.check(saved + '/' + ending + ': pending real recovery stops with saved-result guidance',
-                    await tab.wait("window.__has('Screening may still be saving a claim or recovered result') && window.__has('claim to expire')", 20)
+                    await tab.wait("window.__has('Screening may still be saving progress or reading final counts') && window.__has('claim to expire')", 20)
                     and not await tab.js("document.body.innerText.includes('batch_admission_')")
                     and count('evaluations') == evaluations)
                 refused = api.post(path + '/process')
@@ -126,7 +201,7 @@ async def check_batch_admission_workers(tab, scratch, api):
                 while count('entered') == entered:
                     await asyncio.sleep(.01)
             browser.S.check(ending + ': pending real claim stops the driver with human recovery guidance',
-                await tab.wait("window.__has('Screening may still be saving a claim or recovered result') && window.__has('claim to expire')", 20)
+                await tab.wait("window.__has('Screening may still be saving progress or reading final counts') && window.__has('claim to expire')", 20)
                 and not await tab.js("document.body.innerText.includes('batch_admission_')")
                 and count('evaluations') == evaluations)
             refused = api.post(path + '/process')
@@ -494,7 +569,7 @@ async def main():
                 args = ['smoke_r4_s1_t3d:create_batch_registration_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-mutation-workers' in sys.argv:
                 args = ['smoke_r4_s1_t3d:create_batch_mutation_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
-            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing')):
+            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing', '--batch-terminal-workers')):
                 args = ['smoke_r4_s1_t3d:create_batch_admission_browser_app' if arg == 'smoke_r3_s1_t2:create_smoke_app' else arg for arg in args]
             if '--batch-management' in sys.argv:
                 batch_factories = {'smoke_r3_s1_t2:create_smoke_app',
@@ -531,7 +606,7 @@ async def main():
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_MUTATION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_MUTATION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
-            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing')):
+            if any(flag in sys.argv for flag in ('--batch-admission-workers', '--batch-recovery-workers', '--batch-processing', '--batch-terminal-workers')):
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_BATCH_ADMISSION_MAX_CONCURRENT_REQUESTS='1', DEE_BATCH_ADMISSION_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
@@ -890,6 +965,8 @@ window.fetch = (url, init) => {
                 await check_batch_admission_workers(tab, scratch, api)
             if '--batch-recovery-workers' in sys.argv or '--batch-processing' in sys.argv:
                 await check_batch_recovery_workers(tab, scratch, api)
+            if '--batch-terminal-workers' in sys.argv:
+                await check_batch_terminal_workers(tab, scratch, api)
             if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
                 for name in ('ingest-entered', 'ingest-release', 'ingest-completed'):
                     (scratch / name).unlink(missing_ok=True)

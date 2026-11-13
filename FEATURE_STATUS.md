@@ -335,13 +335,18 @@ defaults and limits.
 saved-input/report recovery on the same pool, including checkpoint validation,
 signal materialization and commit/rollback. Late results never continue intake
 or race a failure write; an existing report completes without reevaluation.
-UI guidance covers claims and recovered results. Validation status belongs to
-the evidence; ordinary terminal/count SQL remains D6, durable continuation T4.
+Validation status belongs to the evidence; durable continuation remains T4.
 [R4-S2-T3C3D5Q](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) closes combined
 admission/recovery acceptance and D5 after source/SQL/budget review and fresh
 SQLite/actual PG, default shared-capacity, two-process HTTP/restart, composed
 Chrome and full regression. The two processing slots share claims and recovery;
 management and intake admission remain separate. Only stale driver comments
-changed. Known recovery-refusal failure writes before intake and final counts
-remain ordinary terminal/count work in D6; not every process SQL path is bounded.
-D6/Q, C3D and broader parents remain open.
+changed.
+[R4-S2-T3C3D6](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d6) adds ordinary failure
+writes (including known recovery refusal before intake), completion and final
+counts to that same pool. Late settlement never continues processing; saved
+reports survive terminal rollback without reevaluation. UI uncertainty guidance
+covers progress and final counts, with saved-state reads and separate human
+recovery. All direct process-store SQL is admitted; indirect graph work and
+global request deadlines are outside this claim. C3DQ, C3D and broader parents
+remain open.

@@ -26,6 +26,180 @@ BATCH_READS = [
 BATCH_MUTATIONS = [('retry', 'post', '/retry'), ('delete', 'delete', '')]
 
 
+@pytest.mark.parametrize('phase', ['complete', 'recovery-refusal', 'ingest-refusal',
+    'internal-failure', 'counts', 'counts-recovered', 'counts-empty'])
+@pytest.mark.parametrize('ending', ['release', 'timeout', 'cancel', 'rollback'])
+async def test_batch_terminal_sql_owns_settlement_without_replay(database, settings, genuine_resume, monkeypatch, phase, ending):
+    from datetime import timedelta
+    from threading import Event, get_ident, local
+    from sqlalchemy import event, select
+    import app.screening.service as service_module
+    from app.screening.ingest import IngestRefused
+    from app.reports.models import ReportRow
+    from app.screening.models import ScreeningInputRow
+    engine, factory = database
+    settings.screening_max_items_per_call = 1
+    settings.batch_admission_max_concurrent_requests = 1
+    settings.batch_admission_wait_seconds = .15 if ending in ('timeout', 'rollback') else 20
+    saved = 'report' if phase == 'counts-recovered' else 'none'
+    setup, iid, report = _batch_recovery_setup(settings, factory, genuine_resume, saved)
+    services, org, key, bid, _, other_key, kept = setup
+    store = services.screening._store
+    if phase == 'counts-empty':
+        with factory() as session:
+            session.delete(session.get(BatchItemRow, iid))
+            session.commit()
+    else:
+        store.add_items(org, bid, texts=[genuine_resume + '\nNext deliberate item'])
+    target = 'counts' if phase.startswith('counts') else 'complete' if phase == 'complete' else 'fail'
+    entered, release, finished, state = Event(), Event(), Event(), local()
+    caller, owners, evaluations, operations = get_ident(), set(), [], []
+    def wrap(name):
+        original = getattr(store, name)
+        def owned(*args, **kwargs):
+            # Management GETs use a separate pool and must remain available.
+            state.operation = name
+            try:
+                return original(*args, **kwargs)
+            finally:
+                state.operation = None
+        return owned
+    for name in ('complete', 'fail', 'counts'):
+        monkeypatch.setattr(store, name, wrap(name))
+    def hold():
+        if getattr(state, 'operation', None) != target or entered.is_set():
+            return
+        owners.add(get_ident())
+        entered.set()
+        release.wait(3 if ending == 'release' else 10)
+        finished.set()
+        if ending == 'rollback':
+            raise RuntimeError('synthetic-private-terminal-rollback')
+    def commit(session):
+        if target != 'counts':
+            hold()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if target == 'counts' and 'group by' in statement.lower():
+            hold()
+    def begin(session, transaction, connection):
+        assert session.info.setdefault('terminal_owner', get_ident()) == get_ident()
+    def end(session, transaction):
+        assert session.info.get('terminal_owner', get_ident()) == get_ident()
+    recover, ingest = store.recover_report, service_module.ingest_resume
+    def recovery(*args, **kwargs):
+        if phase == 'recovery-refusal' and not entered.is_set():
+            raise IngestRefused('input_unavailable')
+        return recover(*args, **kwargs)
+    async def intake(*args, **kwargs):
+        if phase == 'ingest-refusal' and not entered.is_set():
+            raise IngestRefused('input_unavailable')
+        return await ingest(*args, **kwargs)
+    monkeypatch.setattr(store, 'recover_report', recovery)
+    monkeypatch.setattr(service_module, 'ingest_resume', intake)
+    app = create_app(services)
+    listeners = [(factory, 'before_commit', commit), (factory, 'after_begin', begin),
+        (factory, 'after_transaction_end', end), (engine, 'after_cursor_execute', sql)]
+    try:
+        async with app.router.lifespan_context(app):
+            assess, run = app.state.engine.evaluate, services.batch_admissions.run
+            async def evaluate(**kwargs):
+                assert get_ident() == caller
+                evaluations.append(True)
+                if phase == 'internal-failure' and not entered.is_set():
+                    raise RuntimeError('synthetic provider failure')
+                return await assess(**kwargs)
+            async def tracked(operation, *args, **kwargs):
+                operations.append(operation.__name__)
+                return await run(operation, *args, **kwargs)
+            monkeypatch.setattr(app.state.engine, 'evaluate', evaluate)
+            monkeypatch.setattr(services.batch_admissions, 'run', tracked)
+            for obj, name, listener in listeners:
+                event.listen(obj, name, listener)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                path, headers = '/screening/batches/' + bid, {'X-Org-Key': key}
+                pending = asyncio.create_task(http.post(path + '/process', headers=headers))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'terminal SQL blocked unrelated requests'
+                    assert (await http.get(path, headers=headers)).status_code == 200
+                    assert (await http.get(path, headers={'X-Org-Key': other_key})).status_code == 404
+                    refused = await http.post('/screening/batches/' + kept + '/process', headers={'X-Org-Key': other_key})
+                    assert refused.status_code == 503 and refused.json() == {'detail': 'batch_admission_capacity_exhausted'}
+                    if ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    elif ending != 'release':
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'batch_admission_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                    before = list(operations), len(evaluations)
+                    assert len(services.batch_admissions._active) == 1
+                finally:
+                    release.set()
+                if ending == 'release':
+                    response = await pending
+                    assert response.status_code == 200
+                    assert response.json()['processed'] == int(target != 'fail' and phase != 'counts-empty')
+                    assert response.json()['failed'] == int(target == 'fail')
+                for _ in range(200):
+                    if not services.batch_admissions._active:
+                        break
+                    await asyncio.sleep(.01)
+                assert not services.batch_admissions._active and owners and caller not in owners
+                if ending != 'release':
+                    assert (operations, len(evaluations)) == before, 'late settlement continued this process call'
+                with factory() as session:
+                    row = session.get(BatchItemRow, iid)
+                    if phase == 'counts-empty':
+                        assert row is None
+                    else:
+                        expected = 'processing' if ending == 'rollback' and target != 'counts' else 'failed' if target == 'fail' else 'done'
+                        assert row.status == expected
+                        assert row.error == (('internal_error' if phase == 'internal-failure' else 'input_unavailable')
+                            if expected == 'failed' else None)
+                        if target == 'fail':
+                            assert (session.get(ScreeningInputRow, iid) is not None) == (phase == 'internal-failure')
+                            assert bool(row.raw_text) == (phase != 'internal-failure')
+                        if phase == 'complete':
+                            # Real report binding survives terminal rollback and is reused.
+                            checkpoint = session.get(ScreeningInputRow, iid)
+                            report_id = row.report_id if expected == 'done' else checkpoint.report_id
+                            report = session.get(ReportRow, report_id)
+                            assert report is not None
+                            original_id, original_body = report.id, report.body
+                            assert (checkpoint is None) == (expected == 'done')
+                        elif saved == 'report':
+                            assert row.report_id == report.id
+                    assert len(list(session.scalars(select(BatchItemRow).where(
+                        BatchItemRow.batch_id == kept, BatchItemRow.status == 'pending')))) == 2
+                if phase != 'counts-empty':
+                    # The short wait belongs to the controlled held operation.
+                    # Deliberate recovery uses the normal per-operation budget.
+                    services.batch_admissions._wait_seconds = 20
+                    now = services.screening._now()
+                    monkeypatch.setattr(services.screening, '_now', lambda: now + timedelta(seconds=settings.screening_claim_timeout_seconds + 1))
+                    # GET/reload never starts providers. Failed work also requires explicit Retry.
+                    assert (await http.get(path, headers=headers)).status_code == 200
+                    assert len(evaluations) == before[1]
+                    if target == 'fail' and ending != 'rollback':
+                        assert (await http.post(path + '/retry', headers=headers)).json()['requeued'] == 1
+                    assert (await http.post(path + '/process', headers=headers)).status_code == 200
+                    if phase == 'complete' and ending == 'rollback':
+                        assert len(evaluations) == before[1]
+                        with factory() as session:
+                            assert session.get(BatchItemRow, iid).report_id == original_id
+                            assert session.get(ReportRow, original_id).body == original_body
+                            assert list(session.scalars(select(ReportRow.id))) == [original_id]
+    finally:
+        release.set()
+        for obj, name, listener in listeners:
+            if event.contains(obj, name, listener):
+                event.remove(obj, name, listener)
+        await services.aclose()
+
+
 def _batch_recovery_setup(settings, factory, resume, saved):
     from sqlalchemy import select
     from tests.test_screening_durable_input import ingest_bound
@@ -185,6 +359,9 @@ async def test_batch_recovery_owns_transactions_without_late_continuation(databa
                         assert (session.get(ScreeningInputRow, iid) is None) == settled
                 clock = services.screening._now()
                 monkeypatch.setattr(services.screening, '_now', lambda: clock + timedelta(seconds=settings.screening_claim_timeout_seconds + 1))
+                # The uncertainty assertion above uses a short controlled wait;
+                # unrelated PG terminal/count latency must not time out recovery.
+                services.batch_admissions._wait_seconds = 20
                 # Saved-state reads do not assess. Only a distinct request may proceed.
                 assert (await http.get(path, headers=headers)).status_code == 200
                 assert (await http.get(path, headers={'X-Org-Key': other_key})).status_code == 404

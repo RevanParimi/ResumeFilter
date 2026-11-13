@@ -38,7 +38,7 @@ log = get_logger("screening.service")
 
 
 class BatchAdmissionPending(ExecutionPending):
-    """Admission/recovery may still commit; never continue an uncertain step."""
+    """Process SQL may still settle; never continue an uncertain step."""
 
 
 class ScreeningService:
@@ -280,7 +280,7 @@ class ScreeningService:
                 # after expiry; stop this call without replay or partial success.
                 raise
             except IngestRefused as exc:
-                if not self._store.fail(item.id, lease=item.claimed_at,
+                if not await admission(self._store.fail, item.id, lease=item.claimed_at,
                                         error=exc.reason, at=self._now(), now=self._now):
                     break
                 failed += 1
@@ -290,14 +290,14 @@ class ScreeningService:
                 # is a closed vocabulary, and an exception message can quote the
                 # input that caused it.
                 log.error("batch_item_failed", item_id=item.id, error=repr(exc))
-                if not self._store.fail(item.id, lease=item.claimed_at,
+                if not await admission(self._store.fail, item.id, lease=item.claimed_at,
                                         error="internal_error", at=self._now(), now=self._now):
                     break
                 failed += 1
                 continue
 
             report = result.report
-            completed = self._store.complete(
+            completed = await admission(self._store.complete,
                 item.id,
                 lease=item.claimed_at,
                 candidate_id=result.candidate_id,
@@ -326,7 +326,7 @@ class ScreeningService:
                 # transitions count; another worker's state is not our failure.
                 break  # Do not immediately reclaim/rebill this same item.
 
-        counts = self._store.counts(org_id, batch_id, now=self._now())
+        counts = await admission(self._store.counts, org_id, batch_id, now=self._now())
         if counts is None:
             # The org deleted the batch while this call was evaluating. The
             # candidates and reports this call ingested are real and stay; the

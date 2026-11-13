@@ -44,7 +44,7 @@ for (const detail of ['batch_admission_pending', 'batch_admission_capacity_exhau
     assert.doesNotMatch(message, /batch_admission_/);
     if (detail === 'batch_admission_pending') {
       assert.match(message, /claim to expire/);
-      assert.match(message, /recovered result/);
+      assert.match(message, /saving progress or reading final counts/);
     }
     await c.refresh();
     await settle();

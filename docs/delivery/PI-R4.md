@@ -803,12 +803,16 @@ only. Exact next: D6 in a separate session; D6/Q, C3D and broader parents remain
 
 **<a id="r4-s2-t3c3d6"></a>R4-S2-T3C3D6 - Bound batch terminal SQL**
 
-Status: pending. Prerequisite: D5. Bound ordinary failure/completion/count SQL
-(including known recovery-refusal failure writes before intake) and any remaining
-process boundaries; preserve one acknowledged terminal outcome,
-leases, erasure, retry and saved checkpoints. Require actual PG/two-process
-contention, late terminal uncertainty without replay, HTTP/restart/Chrome,
-red/focused/full and both reviews. Durable continuation remains T4.
+Status: done (2026-11-13). Prerequisite: D5, published at `193f8a1`.
+[D6 contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3d6) owns implementation,
+red/green, failed attempts and corrected recovery probes, final full/actual PG,
+two-process HTTP/restart, actual Chrome/UI/static and both self-reviews.
+Ordinary failures (including known recovery refusal before intake), completion
+and final counts now use the existing process pool. Late settlement preserves
+leases/checkpoints without provider replay or another claim; only acknowledged
+outcomes count. No new pool/schema/scorer or durable continuation. Only D6
+closes; C3DQ and broader parents remain open. Exact next: C3DQ in a separate
+session, after final staged review and scoped publication.
 
 **<a id="r4-s2-t3c3dq"></a>R4-S2-T3C3DQ - Review combined evaluation/reporting/screening acceptance**
 

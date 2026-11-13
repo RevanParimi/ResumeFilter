@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-13 - R4-S2-T3C3D6 complete; bounded terminal/count SQL.**
+  Both ordinary failure paths, completion and final counts use the existing
+  process pool. Late settlement stops processing without replay; saved reports
+  survive rollback for deliberate recovery. UI guidance covers progress/counts.
+  The [D6 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3d6) owns red/green,
+  initial failed checks and corrections, final full/actual PG, two-process
+  HTTP/restart, actual Chrome/UI/static, preservation and both self-reviews.
+  No pool/schema/scorer change; working DB and demo untouched, owned PG stopped.
+  Scoped publication follows final staged review. Next: R4-S2-T3C3DQ in a
+  separate session; C3D and broader parents remain open.
+
 - **Session 2026-11-12 - R4-S2-T3C3D5Q complete; D5 admission/recovery gate closed.**
   Reviewed the combined A/B runtime diff and current SQL/session/budget inventory.
   New coverage occupies the two shared claim/recovery slots alongside all eight

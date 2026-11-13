@@ -12646,3 +12646,283 @@ review/prefix prose is restaged and rechecked before publication; no code/test
 rerun is needed for documentation alone. Owned PG is confirmed stopped, demo
 untouched. Authorized scoped commit/push and remote verification follow; stop
 with D6 next in a separate session.
+
+### <a id="r4-s2-t3c3d6"></a>R4-S2-T3C3D6 - Bound batch terminal SQL
+
+Status: done (2026-11-13). Prerequisite: D5 at `193f8a1`.
+Only D6 is this session's task; C3DQ and all broader parents remain open.
+
+#### Acceptance contract
+
+POST `/screening/batches/{id}/process` currently executes ordinary failure,
+post-intake completion and final counts on the event loop. A delayed SQL
+operation blocks unrelated requests. Move complete owning operations onto the
+existing Services-owned two-slot/20s batch process pool, shared with admission,
+claims and saved-input/report recovery. No additional pool or schema change.
+Include known recovery refusal before intake, ingest refusal, unexpected item
+failure, successful/erasure completion, empty/recovered batches and final counts.
+Keep Sessions/transactions/rollback and materialization on their worker; async
+providers remain on the caller.
+
+Timeout/cancellation retains capacity until actual settlement. Stop without
+automatic replay, another claim, a competing failure write, or partial success.
+Late terminal commits remain observable through scoped saved-state reads; late
+rollback preserves the lease and saved checkpoints for deliberate recovery.
+Only acknowledged terminal outcomes affect success counters. Preserve current
+lease expiry, tenant isolation, generation/erasure, retry, TTL, advisory and
+deterministic fallback contracts and existing 404/429/success DTOs.
+
+UI pending guidance must cover terminal/count uncertainty, preserve selected
+work and stop the driver. Refresh/reload only read saved state; distinct human
+intent starts recovery after any live lease expires. A refusal at a later step
+does not imply earlier provider or persistence work did not happen.
+
+#### Required validation
+
+- Behavioral red/green in the existing batch API module: real held SQL,
+  responsiveness, worker/session ownership, release/timeout/cancel/rollback,
+  retained shared capacity and settled/checkpoint/manual recovery outcomes.
+- Extend existing controlled HTTP and Chrome harnesses; migrated scratch stores,
+  two tenants/app processes, actual SQL contention and restart snapshots. Exercise
+  successful completion, failure and final counts without provider replay.
+- Fresh SQLite and actual disposable PostgreSQL focused checks, existing
+  competing-lease/erasure/expiry/checkpoint regressions and migration checks;
+  relevant API/UI contracts, bindings, JS syntax, full pytest and diff checks.
+- Implementation diff self-review; completion/evidence/handoff; distinct final
+  staged self-review; scoped commit/push and remote verification.
+
+No independent review, live provider/quality, global SQL/request/driver/drain
+deadline, durable continuation T4, deployment or working-data change is claimed.
+Preserve the working DB/unrelated files and leave the demo untouched. Missing
+required evidence means awaiting validation.
+
+#### Evidence
+
+Local sanitized runners under
+`.pytest_cache/*r4_s2_t3c3d6*` reuse Q's disposable setup; no working `.env` or
+live keys. Baseline hashes captured for all 734 tracked files before edits.
+
+**Implementation and red/green.** Four direct process call sites now await
+complete store operations through the existing shared admission helper: both
+ordinary failure paths, completion and final counts. No store/schema/budget
+change. UI pending copy covers progress and final counts. The existing HTTP/
+Chrome harnesses now support `--batch-terminal-workers` with commit/rollback
+controls for complete/fail/counts. A controlled second-process no-op writer
+really contends on the terminal row and rolls back; ordinary fresh PG claims
+need not lock a live item. Counts use an independent peer read instead.
+
+Commands below use `.resume/Scripts/python.exe
+.pytest_cache/run_r4_s2_t3c3d6.py <tag> <Python args>` unless noted. Sanitized
+environment, isolated stores and fake external providers throughout.
+
+- `red -m pytest -q --tb=short tests/test_screening_batches_api.py
+  -k "terminal_sql and release and complete"` before runtime edits:
+  **1 failed / 1 PG environment skip / 270 deselected / 1 warning** (15.58s).
+  Failure: `terminal SQL blocked unrelated requests` after the real completion
+  transaction hold elapsed before health/admin could respond.
+- Initial `focused -m pytest -q --tb=short tests/test_screening_batches_api.py
+  -k terminal_sql`: **28 passed / 28 PG environment skips / 216 deselected /
+  1 warning**, 61.57s. Includes seven phases across release/timeout/cancel/late
+  rollback; no late continuation, retained capacity and manual report recovery.
+  Subsequent review strengthened persisted error/input/report assertions;
+  fresh final-state checks remain required below.
+- Initial `terminal-http scripts/smoke_r4_s1_t3d.py --batch-terminal-workers`:
+  **71/71 OK**, exit 0 (97.22s wrapper). Actual Chrome
+  `terminal-browser scripts/check_ui_screening_extraction_browser.py
+  --batch-terminal-workers`: **58/58 OK**, exit 0 (45.13s wrapper).
+- Node offline UI **138 passed**; bindings **626 / 19 states**; JS syntax for
+  `frontend/api.js`, `support.js`, `screening.js` passes.
+
+**Implementation diff self-review (2026-11-13).** Reviewed baseline `193f8a1`
+plus current runtime/UI/API-test/harness diff and callers in API screening,
+store complete/fail/counts, recovery and intake, shared executor and Services
+lifecycle/config. Specification maps both failure handlers and every loop exit
+to admitted owning operations. Re-raised pending/unavailable/cancellation cannot
+enter a second failure write; failure handler writes and completion/counts lie
+outside the guarded ingest try, so terminal uncertainty stops the call. Existing
+conditional lease/expiry/erasure writes, acknowledged counters, private report
+references and scoped counts remain intact. Pure report signal DTO construction
+does not hide SQL or move live Sessions. The clock callback still checks expiry
+on the worker after locks and writes; count timestamps remain snapshots.
+
+Correctness/maintenance review confirms no new pool/setting/schema/scorer,
+separate management/intake budgets, complete worker transactions and shutdown
+drain. Harness ownership/cleanup and both DBs' different locking semantics were
+checked. Review corrected an initial harness settlement threshold and added an
+explicit controlled peer writer so PG contention is real rather than inferred
+from ordinary fresh claims. Persisted failure vocabulary/private-input retention
+and exact report reuse assertions were strengthened. No blocking findings
+remain; final hashes/checks follow. Same-agent self-review, no independent or
+live-provider/quality claim.
+
+**Fresh final reviewed-state journeys.** All 616 code/config hashes were saved
+after implementation self-review and the strengthened assertions. Required long
+checks run against those bytes; no code edits since. `ui -m pytest -q
+--tb=short tests/test_ui_handlers.py tests/test_ui_mount.py`: **20 passed /
+1 warning**, 26.84s. Final actual Chrome/CDP `terminal-browser-final
+scripts/check_ui_screening_extraction_browser.py --batch-terminal-workers`:
+**58/58 OK**, exit 0 (56.97s wrapper); `processing-browser` with
+`--batch-processing`: **74/74 OK**, exit 0 (64.54s). These execute the actual UI,
+human Refresh/Retry/Start and reload with no console exceptions; existing CDN
+internet is still required. Fakes prove mechanics, not live-provider quality.
+
+`terminal-http-final scripts/smoke_r4_s1_t3d.py --batch-terminal-workers`:
+**71/71 OK**, exit 0 (191.36s wrapper); `processing-http` with
+`--batch-processing`: **95/95 OK**, exit 0 (253.69s). Migrated scratch SQLite,
+two independent app processes/two tenants, controlled real terminal lock waits
+and independent counts, late commit/rollback, explicit recovery without replay,
+cookie/CSRF, scoped snapshots and graceful restart. Current code hashes match;
+725 unrelated tracked files including the working DB retain baseline bytes.
+At this checkpoint PG, persistence HTTP and full pytest were still running;
+their final results are recorded below. The demo was not started or restarted.
+
+**Process SQL inventory.** Existing limiter/ownership/claims and complete
+saved-input/report recovery remain on the shared **2 slots / finite 20s per
+operation caller wait** pool. D6 adds the following complete owning boundaries:
+
+| Call path | Worker ownership and acknowledgement |
+|---|---|
+| Known recovery/ingest refusal -> `fail` | New Session, current exact lease lock and clock checks, conditional failure/scrub and private-input deletion where required, commit/rollback, boolean acknowledgement. A known refusal's Session has already closed before this separate failure transaction. |
+| Unexpected item exception -> `fail` | Same whole failure operation; persisted error remains generic. A timeout/unavailable/cancel from intake/recovery is re-raised before this handler and never races its SQL. |
+| Ingest result -> `complete` | Entire lease lock, conditional success, private-input deletion, FK-error rollback/classification and reacquired-lease erasure cleanup, clock checks and commit/rollback. DONE/FAILED/REFUSED acknowledgement still drives counters. Signal DTO construction before submission is pure Python, without a live ORM object/Session. |
+| Every non-error loop exit -> `counts` | Scoped parent read, grouped effective-status SQL and count DTO materialization/Session close, including no claims, no input, recovered report, terminal refusal and ordinary completion/failure. None preserves deleted-batch 404. Counts are a snapshot, never a rewrite or replay. |
+
+In API composition, no direct process-store SQL remains on the async caller.
+Direct low-level process callers still supply the executor or own scheduling.
+Awaited ingestion continues to own its separate SQL pool and callbacks; providers remain async.
+Management remains **4/2/2** (eight slots), process SQL **2** (ten batch slots
+total), plus separate **2-slot** intake; auth/report/evaluation/other budgets
+are outside that subtotal. These are per-process admission/wait limits, not
+global SQL, request/provider/memory or driver/drain deadlines. Transactions and
+rate/claim/intake/report/terminal commits remain separate; late SQL can settle
+after a caller stops waiting. Present scope guards/counts remain snapshots.
+
+**Initial validation failures (resolved below).** Initial full and PG selections overlap in time with
+the final journey runners. Their in-progress output reports one failure each:
+full `test_candidates_api.py::test_candidate_fingerprint_real_lock_retains_capacity_and_erasure[sqlite-candidate]`
+and PG `test_batch_recovery_owns_transactions_without_late_continuation[postgresql-rollback-none]`.
+All new terminal cases precede the PG failure and have passed. Exact traces,
+resolution/rechecks and complete counts must be recorded before closure; timing
+or environment causation is not yet proved. Do not treat this as green validation.
+
+**PG finding and test correction.** Initial 25-module PG-enabled selection
+finished **956 passed / 1 failed / 10 skips / 18 warnings**, 1748.55s, exit 1.
+All 56 new terminal variants passed. The failure trace is the later deliberate
+manual POST returning safe `batch_admission_pending`, after the original held
+rollback had drained; it still used the test's **150 ms** caller wait. Ingestion
+and assessment completed, but an admitted terminal/count step exceeded that
+artificial deadline. This is a test assumption invalidated by D6's additional
+admitted steps, not evidence of replay or a broken production deadline.
+
+Low-severity validation finding: the existing recovery test and new terminal
+test reused their shortened uncertainty budget for an ordinary manual recovery.
+Restore the normal **20s** executor wait only after settlement/retained-capacity/
+no-continuation assertions, before separate manual intent. All original short
+wait/cancel/rollback assertions remain. Reviewed these six test-only lines and
+captured updated 616-file hashes; runtime/UI/harness bytes remain unchanged.
+Fresh actual PG reruns the entire affected batch API module and all three HTTP
+modes using an independently owned instance via
+`postgres-retry .pytest_cache/run_r4_s2_t3c3d6_retry_postgres.py
+tests/test_screening_batches_api.py`. Initial PG stops in its finally block;
+fresh results and a successful final full run remain required.
+
+Fresh affected-module actual PG result: **272 passed / 1 warning**, 555.06s,
+exit 0. Includes SQLite and actual PG variants (not 272 exclusively PG cases).
+The corrected recovery case and all new terminal release/timeout/cancel/rollback
+cases pass on both DBs; all unaffected modules passed in the initial selection.
+Fresh PG terminal/processing/persistence HTTP and shutdown results follow below.
+
+**Initial full result and isolated recheck.** `full` ran required `-m pytest
+-q --tb=short`: **4432 passed / 1 failed / 1198 skipped / 127 warnings**,
+2711.75s, exit 1. The unrelated candidate fingerprint case failed its existing
+**<1 second** health/admin timing assertion: measured **1.3427s**, with health
+logging 1322.6ms and both responses 200 while the fingerprint SQL was held.
+This overlapped the heavy PG/journey validation. `candidate-recheck -m pytest
+-q --tb=short tests/test_candidates_api.py::test_candidate_fingerprint_real_lock_retains_capacity_and_erasure[sqlite-candidate]`
+passed unchanged: **1 passed / 1 warning**, 4.60s, exit 0. Load-related scheduler/
+I/O contention is an inference supported by this recheck, not proof of a global
+latency guarantee. No candidate source/test change or threshold relaxation.
+Final full validation will run after other heavy runners and owned PG stop.
+
+**Fresh actual PG HTTP and cleanup.** Retry runner completes exit **0**
+(946.77s wrapper). `scripts/smoke_r4_s1_t3d.py --postgres` on migrated disposable
+PG with `--batch-terminal-workers`: **71/71 OK**, exit 0 (132.22s);
+`--batch-processing`: **95/95 OK**, exit 0 (169.05s); `--persistence`:
+**71/71 OK**, exit 0 (41.13s). Two independent app processes/two tenants,
+controlled actual PG competing terminal writes, independent counts, retained
+lease/checkpoints, no late replay, manual recovery and exact restart snapshots.
+All three modes use fake external providers; no live quality claim.
+
+Initial/retry PG stop exits **0** (46.28s / 7.22s). Separate project-venv
+`.pytest_cache/check_d6_pg_stopped.py` runs each owned `pg_ctl status`:
+both return **3**, confirming stopped. Neither instance is the working DB.
+All **616** final reviewed code/config hashes match, including the test wait
+correction. No other validation job is active when `full-final` starts; it runs
+the required `-m pytest -q --tb=short` on this final state.
+
+**Final full regression and completion (2026-11-13).** `full-final` completes
+the required project-venv `-m pytest -q --tb=short`: **4433 passed / 1198 skipped /
+127 warnings**, 1982.52s (33:02), exit 0. The existing candidate latency case
+passes in this run; its earlier failure and unchanged isolated recheck remain
+recorded above. All **616** final code/config hashes match the reviewed snapshot,
+including the corrected manual-recovery test waits. Required terminal tests,
+affected PostgreSQL module, both DBs' two-process terminal/processing/persistence
+HTTP and restart, actual terminal/processing Chrome and UI/static checks are
+complete. Initial failed runs remain failures; targeted final-state rechecks and
+full regression provide their resolution.
+
+Final static recheck: bindings **626 / 19 states**, JS syntax for
+`frontend/api.js`, `frontend/support.js`, `frontend/screening.js`, project-venv
+compilation of all **4 changed Python modules**, and `git diff --check` pass.
+Both owned PG instances again return stop exit **0** / independent status **3**.
+Working DB and unrelated tracked files retain baseline bytes; the demo is
+untouched. No schema change requires a new migration; existing migration and
+populated-store regressions remain included in the recorded gates.
+
+D6 alone closes. The existing two-slot/20s process pool now covers all direct
+process-store operations; late settlement does not replay providers or claim
+another item. Lease/checkpoint, scope, erasure, acknowledged counters, advisory
+and deterministic fallback behavior remain. Driver/drain waits, cross-store
+commits and final snapshots retain their documented limits. Durable continuation
+is T4; C3DQ, C3D and all broader parents remain open. Exact next:
+**R4-S2-T3C3DQ - Review combined evaluation/reporting/screening acceptance**, in
+a separate session. Distinct final staged self-review and scoped publication
+follow this completion record; stop after remote verification.
+
+**Distinct final staged self-review (2026-11-13).** Performed after the final
+full result and completion record, separately from implementation review.
+Reviewed the exact **12-file** staged diff against `193f8a1`: one runtime module,
+the screening UI message, three HTTP/browser/Node harnesses, the existing batch
+API test module and six documentation records. Completed active evidence was
+folded into this anchor; no duplicate task record remains. Only D6 closes and
+the exact next pointer is C3DQ; no subsequent task was started.
+
+Specification review maps both failure handlers, complete and all count exits
+to admitted whole owning operations; route auth/CSRF, scoped lookup, current
+lease/generation/erasure, saved checkpoint/report reuse and acknowledged counters
+retain their contracts. Pending/unavailable/cancel propagates without another
+failure write, claim or provider continuation. API composition supplies the
+shared existing executor; direct low-level callers still own scheduling. This
+last distinction was clarified in the inventory prose during final review.
+
+Correctness/maintainability review traced the actual service/store/API callers,
+transaction/rollback/clock ownership, async providers, separate process/intake/
+management budgets and drain-before-disposal. It checked late commit versus
+rollback history, two-process real write contention, independent count reads,
+human Refresh/Retry/Start and stale UI behavior, persisted private-error/input
+assertions and exact saved report reuse. The manual-recovery test wait changes
+occur after the short-wait/retained-capacity assertions; they preserve the
+original reproductions. Initial failures and final rechecks retain their
+different scopes. No acceptance-blocking finding remains. Both reviews are
+same-agent self-reviews; no independent review is claimed.
+
+The staged **6 code/test/harness files** match the final validated bytes, with
+Git newline normalization checked; all **616** code/config hashes match.
+All **722** unrelated tracked files, including the working DB, retain baseline
+bytes. Staged whitespace, index/worktree agreement, **5** added local Markdown
+links/anchors and credential-marker/artifact exclusions pass. Both owned PG
+instances remain confirmed stopped and the demo is untouched. This final prose
+is restaged and rechecked before publication; no runtime rerun is required for
+documentation alone. Standing-authorized scoped commit/push to the configured
+tracking branch and remote verification follow. Final response reports the
+verified commit; stop without starting C3DQ.

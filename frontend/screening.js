@@ -202,7 +202,7 @@
   // ── the process driver ────────────────────────────────────────────────────
   screeningErrorCopy = (err) => {
     if (err && err.detail === 'batch_admission_pending')
-      return 'Screening may still be saving a claim or recovered result. Earlier results may already be saved. Wait, then refresh saved state. Assessment will not continue automatically. If the item is still in progress, wait for its claim to expire before choosing Start screening.';
+      return 'Screening may still be saving progress or reading final counts. Earlier results may already be saved. Wait, then refresh saved state. Assessment will not continue automatically. If the item is still in progress, wait for its claim to expire before choosing Start screening.';
     if (err && ['batch_admission_capacity_exhausted', 'batch_admission_executor_closed'].includes(err.detail))
       return 'Screening is temporarily unavailable. No new work was accepted at this step. Earlier results may already be saved, and a claim may already exist. Wait, refresh saved state, then choose Start screening when ready.';
     if (err && ['batch_read_pending', 'batch_read_capacity_exhausted', 'batch_read_executor_closed'].includes(err.detail))

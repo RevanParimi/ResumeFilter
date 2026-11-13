@@ -15,6 +15,7 @@ B2b2b adds first-report reuse without provider replay, including after restart.
 --batch-admission-workers verifies process admission/claims without late continuation.
 --batch-recovery-workers verifies held input/report recovery without late continuation.
 --batch-processing composes both admission and recovery journeys in one app.
+--batch-terminal-workers verifies failure/completion/count uncertainty and recovery.
 --postgres uses an explicitly disposable DEE_TEST_DB_URL and an owned schema.
 """
 
@@ -71,9 +72,26 @@ def create_batch_admission_smoke_app(*, base_factory=None):
                 def owned():
                     assert get_ident() != caller
                     state.active, state.held, state.claiming, state.mode = True, False, False, None
+                    state.action = operation.__name__
                     state.recovering = operation.__name__ == 'recover_report'
-                    record('operations', subject_id=getattr(args[1], 'id', args[1]), action=operation.__name__)
+                    subject = args[1] if len(args) > 1 else args[0]
+                    record('operations', subject_id=getattr(subject, 'id', subject), action=operation.__name__)
                     try:
+                        mode_file, owner = scratch / 'admission-mode', scratch / 'admission-owner'
+                        if (state.action == '_admit' and mode_file.exists() and owner.exists()
+                                and owner.read_text() != str(os.getpid())
+                                and mode_file.read_text().split(':')[0] in ('complete', 'fail')):
+                            # Controlled competing terminal writer, using a real
+                            # second process/connection and rollback on both DBs.
+                            # Ordinary fresh claims need not lock a live PG item.
+                            from sqlalchemy import update
+                            from app.screening.models import BatchItemRow
+                            record('contenders', stage='waiting')
+                            with services.session_factory() as session:
+                                session.execute(update(BatchItemRow).where(
+                                    BatchItemRow.batch_id == args[1]).values(claimed_at=BatchItemRow.claimed_at))
+                                session.rollback()
+                            record('contenders', stage='settled')
                         return operation(*args, **kwargs)
                     finally:
                         if state.held:
@@ -86,6 +104,9 @@ def create_batch_admission_smoke_app(*, base_factory=None):
                 if (scratch / 'recovery-seed-input').exists():
                     raise RuntimeError('synthetic-interrupted-input')
                 record('evaluations')
+                mode_file = scratch / 'admission-mode'
+                if mode_file.exists() and mode_file.read_text().startswith('fail:'):
+                    raise RuntimeError('synthetic-terminal-provider-failure')
                 return await assess(**kwargs)
             def checkpoint(item_id, **kwargs):
                 if (scratch / 'recovery-seed-report').exists():
@@ -93,7 +114,9 @@ def create_batch_admission_smoke_app(*, base_factory=None):
                     (scratch / 'recovery-seeded.json').write_text(json.dumps({
                         key: kwargs[key] for key in ('candidate_id', 'resume_id', 'report_id')}))
                     return CompletionOutcome.REFUSED
+                record('checkpoints', **{key: kwargs[key] for key in ('candidate_id', 'resume_id', 'report_id')})
                 return complete(item_id, **kwargs)
+            checkpoint.__name__ = 'complete'
             def clock():
                 advance = scratch / 'admission-advance'
                 steps = int(advance.read_text() or '1') if advance.exists() else 0
@@ -123,6 +146,10 @@ def create_batch_admission_smoke_app(*, base_factory=None):
                 if not getattr(state, 'active', False):
                     return
                 statement = statement.lower()
+                if state.action == 'counts' and 'group by' in statement:
+                    gate('counts')
+                    if state.mode == 'counts:rollback':
+                        raise RuntimeError('synthetic-private-counts-rollback')
                 if state.recovering and 'from screening_item_inputs' in statement:
                     gate('recovery')
                     if state.mode == 'recovery:rollback':
@@ -138,6 +165,10 @@ def create_batch_admission_smoke_app(*, base_factory=None):
             def end(session, transaction):
                 assert session.info.get('admission_owner', get_ident()) == get_ident()
             def commit(session):
+                if getattr(state, 'active', False) and state.action in ('complete', 'fail'):
+                    gate(state.action)
+                    if state.mode == state.action + ':rollback':
+                        raise RuntimeError('synthetic-private-terminal-rollback')
                 if getattr(state, 'active', False) and state.claiming:
                     gate('claim')
                     if state.mode == 'claim:rollback':
@@ -180,6 +211,86 @@ def seed_batch_recovery(actor, scratch, saved, name):
             assert actor.post(path + '/retry').json()['requeued'] == 1
     (scratch / 'admission-advance').write_text('1')
     return created
+
+
+def check_batch_terminal(checks, scratch, control, actor, other, server):
+    def count(kind):
+        file = scratch / ('admission-' + kind + '.jsonl')
+        return len(file.read_text().splitlines()) if file.exists() else 0
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    snapshots = []
+    for phase in ('complete', 'fail', 'counts'):
+        for ending in ('commit', 'rollback'):
+            mode = phase + ':' + ending
+            created = require(actor.post('/screening/batches', json={'name': 'Terminal ' + mode,
+                'items': [{'resume_text': contract._resume('Synthetic Terminal ' + mode, 'terminal@example.in')}]}))
+            path = '/screening/batches/' + created['id']
+            entered, completed, finished, evaluations = [count(k) for k in ('entered', 'completed', 'finished', 'evaluations')]
+            for marker in ('admission-release', 'admission-owner'):
+                (scratch / marker).unlink(missing_ok=True)
+            (scratch / 'admission-mode').write_text(mode)
+            with socket.socket() as sock:
+                sock.bind(('127.0.0.1', 0)); second_port = sock.getsockname()[1]
+            with server(second_port, scratch / 'terminal-second-stop') as second_base:
+                with client(second_base, cookies=actor.cookies, headers={'X-CSRF-Token': actor.headers['X-CSRF-Token']}) as peer:
+                    try:
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            pending = pool.submit(actor.post, path + '/process')
+                            try:
+                                deadline = time.monotonic() + 10
+                                while count('entered') == entered:
+                                    assert time.monotonic() < deadline
+                                    time.sleep(.01)
+                                checks.check(mode + ': held terminal SQL leaves health/admin/scoped GET responsive',
+                                    control.get('/healthz').status_code == control.get('/admin/users').status_code == actor.get(path).status_code == 200
+                                    and other.get(path).status_code == 404)
+                                checks.check(mode + ': shared process slot remains occupied',
+                                    require(other.post(path + '/process'), 503) == {'detail': 'batch_admission_capacity_exhausted'})
+                                response = pending.result(timeout=5)
+                                checks.check(mode + ': uncertainty returns no partial success or cookies',
+                                    require(response, 503) == {'detail': 'batch_admission_pending'}
+                                    and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                                peer_response = peer.post(path + '/process')
+                                checks.check(mode + ': second app contends on real terminal locks or independently reads committed counts',
+                                    (require(peer_response)['processed'] == 0 if phase == 'counts' else
+                                     require(peer_response, 503) == {'detail': 'batch_admission_pending'})
+                                    and count('evaluations') == evaluations + 1)
+                                operations = count('operations')
+                            finally:
+                                (scratch / 'admission-release').touch()
+                    finally:
+                        (scratch / 'admission-release').touch()
+            deadline = time.monotonic() + 10
+            while count('completed') == completed or count('finished') < finished + (6 if phase == 'counts' else 4):
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            (scratch / 'admission-mode').unlink(missing_ok=True)
+            settled = ending == 'commit' or phase == 'counts'
+            counts = require(actor.get(path))['counts']
+            checks.check(mode + ': late commit/rollback settles once without provider or process continuation',
+                counts == {'pending': 0, 'processing': int(not settled),
+                    'done': int(settled and phase != 'fail'), 'failed': int(settled and phase == 'fail')}
+                and count('evaluations') == evaluations + 1 and count('operations') == operations)
+            original = None
+            if phase != 'fail':
+                original = json.loads((scratch / 'admission-checkpoints.jsonl').read_text().splitlines()[-1])
+            (scratch / 'admission-advance').write_text('1')
+            checks.check(mode + ': saved-state read never replays assessment',
+                require(actor.get(path))['counts']['pending'] == int(not settled) and count('evaluations') == evaluations + 1)
+            if phase == 'fail' and settled:
+                checks.check(mode + ': failure requires explicit Retry before another Start',
+                    require(actor.post(path + '/retry'))['requeued'] == 1)
+            result = require(actor.post(path + '/process'))
+            row = require(actor.get(path + '/queue'))['rows'][0]
+            checks.check(mode + ': deliberate recovery reuses original checkpoint and exact saved report',
+                result['processed'] == int(not settled or phase == 'fail') and result['remaining'] == 0
+                and count('evaluations') == evaluations + 1 + int(phase == 'fail')
+                and (original is None or row['report_id'] == original['report_id']))
+            snapshots.append((path, {suffix: require(actor.get(path + suffix)) for suffix in ('', '/queue', '/summary')}))
+            (scratch / 'admission-advance').unlink(missing_ok=True)
+    return snapshots
 
 
 def check_batch_recovery(checks, scratch, control, actor, other, server):
@@ -1195,9 +1306,10 @@ def check_pdf_execution(checks, scratch, base, control, actor):
 
 
 def run(scratch, url, pg_options):
+    batch_terminal = '--batch-terminal-workers' in sys.argv
     batch_processing = '--batch-processing' in sys.argv
     batch_recovery = '--batch-recovery-workers' in sys.argv or batch_processing
-    batch_admissions = '--batch-admission-workers' in sys.argv or batch_recovery
+    batch_admissions = '--batch-admission-workers' in sys.argv or batch_recovery or batch_terminal
     batch_management = '--batch-management' in sys.argv
     batch_mutations = batch_management or '--batch-mutation-workers' in sys.argv
     batch_registrations = batch_management or '--batch-registration-workers' in sys.argv
@@ -1211,7 +1323,8 @@ def run(scratch, url, pg_options):
     leases = "--leases" in sys.argv or terminal_outcomes or ingest_races or batch_admissions
     cap = 2 if leases else 1
     print(f"Synthetic screening HTTP evidence: {scratch}", flush=True)
-    checks = Smoke("R4-S2-T3C3D5Q combined admission/recovery / two processes / restart" if batch_processing
+    checks = Smoke("R4-S2-T3C3D6 terminal SQL / two processes / restart" if batch_terminal
+                   else "R4-S2-T3C3D5Q combined admission/recovery / two processes / restart" if batch_processing
                    else "R4-S2-T3C3D5B batch recovery / two processes / restart" if batch_recovery
                    else "R4-S2-T3C3D5A batch admission / two processes / restart" if batch_admissions
                    else "R4-S2-T3C3D4Q combined batch management / HTTP / restart" if batch_management
@@ -1356,7 +1469,9 @@ def run(scratch, url, pg_options):
             checks.check("successful items are not replayed by retry", require(actor.post(path + "/retry")) == {"batch_id": bid, "requeued": 0, "skipped": 0})
             admissions = []
             if batch_admissions:
-                if not batch_recovery or batch_processing:
+                if batch_terminal:
+                    admissions += check_batch_terminal(checks, scratch, control, actor, other, server)
+                if (not batch_recovery and not batch_terminal) or batch_processing:
                     admissions += check_batch_admission(checks, scratch, control, actor, other, server)
                 if batch_recovery:
                     admissions += check_batch_recovery(checks, scratch, control, actor, other, server)
