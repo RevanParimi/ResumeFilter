@@ -799,6 +799,7 @@
             <h1 style="{{ h1 }}">Everything Veritas holds about you</h1>
             <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Gated by your identity alone — never by a consent object. You can read it, correct it, or delete all of it today.</p>
 
+            <button onClick="{{ loadPortal }}" disabled="{{ portalLoading }}" style="{{ smallGhost }}">Reload your data</button>
             <sc-if value="{{ portalError }}" hint-placeholder-val="{{ false }}">
               <div style="{{ authErrorBox }}">{{ portalErrorText }}</div>
             </sc-if>
@@ -888,6 +889,9 @@
 
           <sc-if value="{{ isAccessLog }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Who accessed your data</h1>
+            <button onClick="{{ loadAccessLog }}" disabled="{{ accessLogLoading }}" style="{{ smallGhost }}">Reload access log</button>
+            <sc-if value="{{ accessLogLoading }}"><p role="status" style="{{ pageSub }}">Loading access log...</p></sc-if>
+            <sc-if value="{{ accessLogError }}"><p role="alert" style="{{ authErrorBox }}">{{ accessLogErrorText }}</p></sc-if>
             <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Every attempt is logged — the ones that were allowed and the ones that were refused, newest first. Platform-internal actions appear here too, not only disclosures to an organisation.</p>
             <sc-if value="{{ accessLogEmpty }}" hint-placeholder-val="{{ false }}">
               <div style="{{ authErrorBox }}">Nothing has accessed your data yet. That is a real answer, not an empty screen.</div>
@@ -906,6 +910,9 @@
 
           <sc-if value="{{ isConsents }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Consents</h1>
+            <button onClick="{{ loadConsents }}" disabled="{{ consentsLoading }}" style="{{ smallGhost }}">Reload consents</button>
+            <sc-if value="{{ consentsLoading }}"><p role="status" style="{{ pageSub }}">Loading consents...</p></sc-if>
+            <sc-if value="{{ consentsError }}"><p role="alert" style="{{ authErrorBox }}">{{ consentsErrorText }}</p></sc-if>
             <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Purpose-scoped, expiring and revocable. Revoking takes effect at the next read — not eventually.</p>
             <sc-if value="{{ consentsEmpty }}" hint-placeholder-val="{{ false }}">
               <div style="{{ authErrorBox }}">You have not granted any organisation access to anything.</div>
@@ -1682,6 +1689,8 @@ const CSRF_COPY = "Your sign-in moved on while this page was open. Sign in again
 
 function errorCopy(err) {
   if (!err) return "";
+  if (["portal_read_capacity_exhausted", "portal_read_executor_closed", "portal_read_pending"].includes(err.detail))
+    return "Your saved data is temporarily unavailable. Wait a moment, then reload this view.";
   if (AUTH_RESOLUTION_ERRORS.includes(err.detail)) return "Sign-in checks are temporarily unavailable. Wait a moment, then refresh.";
   if (["report_record_capacity_exhausted", "report_record_executor_closed", "report_record_pending"].includes(err.detail))
     return "Saved reports are temporarily unavailable. Wait a moment, then reload the report.";
@@ -1868,6 +1877,7 @@ class Component extends window.VeritasEmployerRoles(
   }
 
   handleSessionLost = () => {
+    this._portalReadRequests = {};
     this._batchChangeRequests.clear();
     this._uploadRequest = this._uploadCheckRequest = null;
     this._batchListRequest = this._batchReadRequest = this._batchPageRequest = null;
@@ -1921,9 +1931,9 @@ class Component extends window.VeritasEmployerRoles(
   // Fetch exactly what a screen renders, when it is opened. No global
   // prefetch: an org session hitting /portal/me would 401 and log the user out.
   loadForScreen = (screen) => {
-    if (screen === "portal") { this.load("portal", () => API.get("/portal/me")); this.loadContacts(); }
-    else if (screen === "accesslog") this.load("accessLog", () => API.get("/portal/access-log"));
-    else if (screen === "consents") this.load("consentList", () => API.get("/portal/consents"));
+    if (screen === "portal") { this.loadPortal(); this.loadContacts(); }
+    else if (screen === "accesslog") this.loadAccessLog();
+    else if (screen === "consents") this.loadConsents();
     else if (screen === "devices") this.loadSessions();
     else if (screen === "roles") this.loadJobs();
     else if (screen === "comp") this.loadComp();

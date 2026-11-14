@@ -6,6 +6,36 @@ const { component, settle } = require("./test_ui_evaluate");
 const pending = { id: "contact_server_id", method: "otp_email", status: "pending" };
 const verified = { ...pending, status: "verified" };
 
+for (const [screen, key, path] of [['portal', 'portal', '/portal/me'],
+    ['accesslog', 'accessLog', '/portal/access-log'], ['consents', 'consentList', '/portal/consents']]) {
+  for (const transition of ['refresh', 'account']) for (const ending of ['success', 'pending']) {
+    test('portal view ignores older ' + screen + '/' + transition + '/' + ending + ' reply', async () => {
+      const { c, window } = component('candidate');
+      const reads = [];
+      window.VeritasAPI.get = p => p === path ? new Promise((resolve, reject) => reads.push({ resolve, reject }))
+        : Promise.resolve({ verifications: [], assurance: { level: 0 }, claims: {} });
+      c.state.screen = screen;
+      c.loadForScreen(screen); await settle();
+      if (transition === 'account') {
+        c.handleSessionLost();
+        c.setState({ me: { kind: 'candidate', candidate_id: 'new-account' }, screen });
+      }
+      c.loadForScreen(screen); await settle();
+      assert.equal(reads.length, 2);
+      const snapshot = JSON.stringify(c.state[key]);
+      if (ending === 'success') reads[0].resolve({ private: 'older-account-snapshot' });
+      else reads[0].reject({ status: 503, kind: 'http', detail: 'portal_read_pending' });
+      await settle();
+      assert.equal(JSON.stringify(c.state[key]), snapshot, 'older portal reply cannot replace the current view');
+      reads[1].resolve(key === 'portal' ? { reports: [], resumes: [], consents: [], interviews: [] } : []);
+      await settle();
+      assert.equal(c.state[key].loading, false);
+      assert.equal(c.state[key].error, null);
+      assert.equal(reads.length, 2);
+    });
+  }
+}
+
 function fixture(post) {
   const fixture = component("candidate", post || (async p => p.endsWith("confirm") ? verified : { verification: pending }));
   const { c, window, calls } = fixture;
@@ -14,6 +44,41 @@ function fixture(post) {
   window.VeritasAPI.get = async p => { calls.push(["GET", p]); if (p === "/auth/sessions") return []; return p === "/portal/verifications"
     ? { verifications: [pending], assurance: { level: 0 } } : { reports: [], resumes: [], consents: [], interviews: [] }; };
   return fixture;
+}
+
+test('candidate sign-in starts portal reads after the new account state is applied', async () => {
+  const { c, window } = component('candidate', async () => ({ principal: 'candidate' }));
+  c.state.me = null; c.state.screen = 'verify';
+  const update = c.setState.bind(c), reads = [];
+  c.setState = (patch, callback) => queueMicrotask(() => update(patch, callback));
+  window.VeritasAPI.get = async path => { reads.push(path); return path === '/portal/me'
+    ? { reports: [], resumes: [], consents: [], interviews: [] }
+    : { verifications: [], assurance: { level: 0 } }; };
+  c.submitCode('123456'); await settle(); await settle();
+  assert.equal(c.state.me.kind, 'candidate');
+  assert(reads.includes('/portal/me'), 'the candidate landing view must load after sign-in');
+});
+
+for (const [key, method, binding] of [['portal', 'loadPortal', 'portalErrorText'],
+    ['accessLog', 'loadAccessLog', 'accessLogErrorText'], ['consentList', 'loadConsents', 'consentsErrorText']]) {
+  for (const detail of ['portal_read_pending', 'portal_read_capacity_exhausted', 'portal_read_executor_closed', 'internal_error']) {
+    test('portal read gives explicit GET-only recovery for ' + key + '/' + detail, async () => {
+      const { c, window, calls } = component('candidate');
+      let reads = 0;
+      window.VeritasAPI.get = async () => { reads++; throw { status: detail === 'internal_error' ? 500 : 503, kind: 'http', detail }; };
+      await c[method](); await settle();
+      assert.equal(c.state[key].loading, false);
+      assert.equal(c.state[key].data, null);
+      assert(c.renderVals()[binding].includes('reload this view'));
+      assert(!c.renderVals()[binding].includes('portal_read'));
+      assert.equal(reads, 1); assert.equal(calls.length, 0);
+      window.VeritasAPI.get = async () => { reads++; return key === 'portal'
+        ? { reports: [], resumes: [], consents: [], interviews: [] } : []; };
+      await c[method](); await settle();
+      assert.equal(reads, 2); assert.equal(c.state[key].error, null);
+      assert.equal(calls.length, 0);
+    });
+  }
 }
 
 test("contact start sends one candidate request and success uses actual server ID", async () => {

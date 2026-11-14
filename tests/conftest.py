@@ -447,6 +447,8 @@ def services(settings, fake_github, flywheel) -> Services:
         bundle._batch_mutations.close()
     if bundle._batch_admissions is not None:
         bundle._batch_admissions.close()
+    if bundle._portal_reads is not None:
+        bundle._portal_reads.close()
 
 
 @pytest.fixture

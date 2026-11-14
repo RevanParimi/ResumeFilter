@@ -316,46 +316,55 @@ def check_outcome_writes(checks, scratch, control, org_a, org_b, report_id):
         ((control, f'/report/{report_id}/outcomes'), (org_a, f'/screening/reports/{report_id}/outcomes'))]
 
 
-def create_report_read_smoke_app():
-    """Exercise real report workers with bounded synthetic SQL holds."""
+def create_portal_read_smoke_app(*, base_factory=None):
+    return create_report_read_smoke_app(portal_reads=True, base_factory=base_factory)
+
+
+def create_report_read_smoke_app(*, portal_reads=False, base_factory=None):
+    """Exercise complete owning report/portal reads with controlled SQL holds."""
     from sqlalchemy import event
     from smoke_r4_s1_t1a import create_smoke_app
-    app = create_smoke_app()
+    app = (base_factory or create_smoke_app)()
     original = app.router.lifespan_context
     scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
+    prefix = 'portal-read' if portal_reads else 'report-read'
+    needles = ('FROM RESUMES', 'FROM AUDIT_LOG', 'FROM CONSENT_GRANTS') if portal_reads else ('FROM REPORTS',)
+    owner_key = prefix.replace('-', '_') + '_owner'
     state = local()
     @asynccontextmanager
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            pool, caller = services.report_records, get_ident()
+            pool, caller = (services.portal_reads if portal_reads else services.report_records), get_ident()
             run = pool.run
             async def tracked(operation, *args, **kwargs):
                 def owned():
-                    assert get_ident() != caller, 'report SQL ran on its caller'
+                    assert get_ident() != caller, prefix + ' SQL ran on its caller'
                     state.active, state.held = True, False
-                    with (scratch / 'report-read-operations.jsonl').open('a') as log:
+                    with (scratch / f'{prefix}-operations.jsonl').open('a') as log:
                         log.write(json.dumps({'operation': operation.__name__, 'thread': get_ident()}) + '\n')
                     try:
                         return operation(*args, **kwargs)
                     finally:
                         state.active = False
                         if state.held:
-                            (scratch / 'report-read-completed').touch()
+                            (scratch / f'{prefix}-completed').touch()
                 return await run(owned)
             pool.run = tracked
             def sql(conn, cursor, statement, parameters, context, many):
-                if (scratch / 'report-read-mode').exists() and getattr(state, 'active', False) and not state.held and 'FROM REPORTS' in statement.upper():
+                if (scratch / f'{prefix}-mode').exists() and getattr(state, 'active', False) and not state.held and any(needle in statement.upper() for needle in needles):
+                    if portal_reads and (scratch / f'{prefix}-mode').read_text() == 'failure':
+                        raise RuntimeError('synthetic-private-portal-smoke-error')
                     state.held = True
-                    (scratch / 'report-read-entered').touch()
+                    (scratch / f'{prefix}-entered').touch()
                     deadline = time.monotonic() + 20
-                    while not (scratch / 'report-read-release').exists():
-                        assert time.monotonic() < deadline, 'synthetic report SQL hold timed out'
+                    while not (scratch / f'{prefix}-release').exists():
+                        assert time.monotonic() < deadline, 'synthetic read SQL hold timed out'
                         time.sleep(.01)
             def begin(session, transaction, connection):
-                assert session.info.setdefault('report_read_owner', get_ident()) == get_ident()
+                assert session.info.setdefault(owner_key, get_ident()) == get_ident()
             def end(session, transaction):
-                assert session.info.get('report_read_owner', get_ident()) == get_ident()
+                assert session.info.get(owner_key, get_ident()) == get_ident()
             listeners = [(services.session_factory.kw['bind'], 'before_cursor_execute', sql),
                 (services.session_factory, 'after_begin', begin),
                 (services.session_factory, 'after_transaction_end', end)]
@@ -364,13 +373,94 @@ def create_report_read_smoke_app():
             try:
                 yield
             finally:
-                (scratch / 'report-read-release').touch()
+                (scratch / f'{prefix}-release').touch()
                 await pool.aclose()
                 pool.run = run
                 for target, name, listener in listeners:
                     event.remove(target, name, listener)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_portal_reads(checks, scratch, base, control, cid, other_id, key):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def wait_file(name):
+        deadline = time.monotonic() + 10
+        while not (scratch / ('portal-read-' + name)).exists():
+            assert time.monotonic() < deadline, name
+            time.sleep(.01)
+    def prepare():
+        for name in ('entered', 'release', 'completed'):
+            (scratch / ('portal-read-' + name)).unlink(missing_ok=True)
+        (scratch / 'portal-read-mode').touch()
+    def finish():
+        (scratch / 'portal-read-release').touch()
+        wait_file('completed')
+        (scratch / 'portal-read-mode').unlink(missing_ok=True)
+    other_key = require(control.post(f'/candidates/{other_id}/auth-key'))['access_key']
+    saved = []
+    paths = ('/portal/me', '/portal/access-log', '/portal/consents')
+    operations = scratch / 'portal-read-operations.jsonl'
+    with client(base, headers={'X-Candidate-Key': key}) as a, client(base, headers={'X-Candidate-Key': other_key}) as b:
+        for http in (a, b):
+            require(http.post('/portal/consents', json={'purpose': 'ledger_read'}))
+        for path in paths:
+            expected, other = require(a.get(path)), require(b.get(path))
+            before = len(operations.read_text().splitlines())
+            prepare()
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(a.get, path)
+                    try:
+                        wait_file('entered')
+                        checks.check(path + ': held real SQL leaves unrelated HTTP responsive',
+                            control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                            and not (scratch / 'portal-read-completed').exists())
+                        for peer in paths:
+                            busy = b.get(peer)
+                            checks.check(peer + ': both candidates share read admission',
+                                require(busy, 503) == {'detail': 'portal_read_capacity_exhausted'}
+                                and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                        checks.check('operator candidate reads have separate admission',
+                            require(control.get(f'/candidates/{other_id}'))['id'] == other_id)
+                        response = pending.result(timeout=5)
+                        checks.check(path + ': pending returns no partial data or cookies and retains capacity',
+                            require(response, 503) == {'detail': 'portal_read_pending'}
+                            and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers
+                            and require(a.get(path), 503) == {'detail': 'portal_read_capacity_exhausted'})
+                    finally:
+                        (scratch / 'portal-read-release').touch()
+            finally:
+                finish()
+            checks.check(path + ': late read executes once without automatic replay',
+                len(operations.read_text().splitlines()) == before + 1)
+            checks.check(path + ': deliberate GET recovers exact candidate-scoped views',
+                require(a.get(path)) == expected and require(b.get(path)) == other)
+            saved.extend([(key, path, expected), (other_key, path, other)])
+        checks.check('candidate ID query cannot select another subject',
+            require(b.get('/portal/me?candidate_id=' + cid))['candidate_id'] == other_id)
+        ephemeral = require(control.post('/candidates', json={'evaluate': False,
+            'resume_text': 'Synthetic Portal Erasure\nEmail: portal-erasure@example.in\nSkills: Python'}))['candidate_id']
+        erase_key = require(control.post(f'/candidates/{ephemeral}/auth-key'))['access_key']
+        with client(base, headers={'X-Candidate-Key': erase_key}) as erased:
+            prepare()
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(erased.get, '/portal/me')
+                    try:
+                        wait_file('entered')
+                        require(control.delete('/candidates/' + ephemeral))
+                        checks.check('erasure commits while the admitted SQL read is paused',
+                            require(pending.result(timeout=5), 503) == {'detail': 'portal_read_pending'})
+                    finally:
+                        (scratch / 'portal-read-release').touch()
+            finally:
+                finish()
+            checks.check('late erased read cannot restore authentication or affect another candidate',
+                erased.get('/portal/me').status_code == 401 and require(b.get('/portal/me'))['candidate_id'] == other_id)
+    return saved
 
 
 def check_report_reads(checks, scratch, control, org_a, org_b, report_id, candidate_id):
@@ -1039,6 +1129,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--portal-read-workers', 'create_portal_read_smoke_app'),
         ('--evaluation-publication-workers', 'create_evaluation_publication_smoke_app'),
         ('--outcome-write-workers', 'create_outcome_write_smoke_app'),
         ('--report-read-workers', 'create_report_read_smoke_app'),
@@ -1074,6 +1165,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--report-read-workers' in sys.argv:
         env.update(DEE_REPORT_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_REPORT_RECORD_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--portal-read-workers' in sys.argv:
+        env.update(DEE_PORTAL_READ_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_READ_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--outcome-write-workers' in sys.argv:
         env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
@@ -1160,6 +1254,7 @@ def run(scratch, url, pg_options):
             key = require(operator.post(path + "/auth-key"))["access_key"]
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
+            portal_reads = check_portal_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-read-workers' in sys.argv else []
             if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
                     source_reads='--source-read-workers' in sys.argv)
@@ -1184,6 +1279,10 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
+            if portal_reads:
+                for candidate_key, url, body in portal_reads:
+                    with client(base, headers={'X-Candidate-Key': candidate_key}) as candidate:
+                        checks.check('exact candidate portal view survives migrated graceful restart', require(candidate.get(url)) == body)
             if publications:
                 checks.check('exact standalone reports survive migrated graceful restart',
                     all(require(control.get(f'/report/{rid}')) == saved for rid, saved in publications))

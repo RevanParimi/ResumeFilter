@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-14 - R4-S2-T3C3E1 complete; bounded portal view reads.**
+  Measured/split C3E into E1-E8/Q before implementation; only E1 runs here.
+  Three self-access GETs own complete SQL/DTO and existing erasure guards on a
+  separate pool. Added safe read recovery, stale account/refresh protection and
+  private-error-safe correlated 500s. The
+  [E1 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns reproducers, corrections,
+  reviews and actual checks. Final focused/PG/full, both DBs' HTTP/restart and
+  actual Chrome pass. Completion and distinct final staged self-review are
+  recorded; scoped publication follows. C3E remains open; next is E2.
+  Working DB/demo stay preserved and owned PG is confirmed stopped.
+
 - **Session 2026-11-13 - R4-S2-T3C3DQ complete; combined C3D gate closed.**
   Re-inventoried report/outcome/publication and batch SQL, including indirect
   graph/intake calls and the seven-pool budget. New aggregate coverage occupies

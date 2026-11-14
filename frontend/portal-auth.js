@@ -9,6 +9,19 @@
     otpBoxes, PLANE_HINT, tabBtn, modeBtn, ERROR_BOX, NOTICE_BOX, fieldValue,
     fmtDate, fmtDateTime, stateChip, SMALL_GHOST, SMALL_MUTED, relTime
   }) => class extends Base {
+  _portalReadRequests = {};
+  _portalRead = (key, path) => {
+    const me = this.state.me;
+    if (this._gone || !me || me.kind !== 'candidate') return Promise.resolve(null);
+    const token = this._portalReadRequests[key] = {};
+    return this.load(key, () => API.get(path),
+      () => !this._gone && this.state.me === me && this._portalReadRequests[key] === token);
+  };
+  loadPortal = () => this._portalRead('portal', '/portal/me');
+  loadAccessLog = () => this._portalRead('accessLog', '/portal/access-log');
+  loadConsents = () => this._portalRead('consentList', '/portal/consents');
+  portalReadErrorCopy = (err) => err && err.detail === 'internal_error'
+    ? 'The request could not be confirmed. Wait a moment, then reload this view.' : errorCopy(err);
   // ── auth ──────────────────────────────────────────────────────────────────
   setEmailInput = (e) => this.setState({ emailInput: e.target.value, authError: null });
   authErrorCopy = (err) => {
@@ -113,8 +126,7 @@
           authBusy: false, authError: null, authNotice: null,
           me: { kind: res.principal, organization_id: res.organization_id },
           plane: uiPlane, screen, otp: ["", "", "", "", "", ""]
-        });
-        this.loadForScreen(screen);
+        }, () => this.loadForScreen(screen));
         window.scrollTo(0, 0);
       },
       (err) => this.setState({ authBusy: false, authError: err, otp: ["", "", "", "", "", ""] })
@@ -235,7 +247,7 @@
       this.setState({ contactId: confirm ? null : verification.id,
         contactNotice: confirm ? "Contact verified. This proves contact control, not employment." : "Code sent. Enter the code delivered to your contact." });
       this.loadContacts();
-      if (confirm) this.load("portal", () => API.get("/portal/me"), () => !this._gone && this.state.me === me);
+      if (confirm) this.loadPortal();
     } catch (err) {
       if (!current() || err.kind === "session_lost") return;
       this.setState({ contactError: err, ...(confirm && (err.status === 404
@@ -248,7 +260,7 @@
   revokeConsent = (id) => () => {
     this.setState({ busyId: id });
     API.post("/portal/consents/" + id + "/revoke").then(
-      () => { this.setState({ busyId: null }); this.load("consentList", () => API.get("/portal/consents")); },
+      () => { this.setState({ busyId: null }); this.loadConsents(); },
       (err) => this.setState({ busyId: null, consentList: { loading: false, data: this.state.consentList.data, error: err } })
     );
   };
@@ -449,7 +461,10 @@
       accountInitial: me.kind === "candidate" ? (name ? name[0] : "C") : me.kind === "admin" ? "O" : "S",
       portalLoading: st.portal.loading,
       portalError: !!st.portal.error,
-      portalErrorText: errorCopy(st.portal.error),
+      portalErrorText: this.portalReadErrorCopy(st.portal.error),
+      loadPortal: this.loadPortal,
+      loadAccessLog: this.loadAccessLog,
+      loadConsents: this.loadConsents,
       contactDestination: st.contactDestination, contactCode: st.contactCode,
       contactDestinationLabel: st.contactMethod === "otp_phone" ? "Phone contact on record" : "Email contact on record",
       contactBusy: st.contactBusy, contactStartLabel: st.contactBusy ? "Working…" : "Send contact code",
@@ -476,10 +491,14 @@
 
       accessLog,
       accessLogLoading: st.accessLog.loading,
+      accessLogError: !!st.accessLog.error,
+      accessLogErrorText: this.portalReadErrorCopy(st.accessLog.error),
       accessLogEmpty: !!accessRows && accessRows.length === 0,
 
       consents,
       consentsLoading: st.consentList.loading,
+      consentsError: !!st.consentList.error,
+      consentsErrorText: this.portalReadErrorCopy(st.consentList.error),
       consentsEmpty: !!consentRows && consentRows.length === 0,
 
       sessions,

@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-11-13. This is the common feature summary. For the exact next
+Updated: 2026-11-14. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -358,3 +358,12 @@ process reply cannot recount, replay or stop a newer run after Stop/Start or an
 account/batch change. Accepted server SQL can still settle. Fresh combined full,
 actual PG, both DBs' HTTP/restart and affected Chrome acceptance close C3DQ/C3D.
 The evidence owns reviews and limits; C3E-F/Q and broader parents remain open.
+
+[R4-S2-T3C3E1](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) bounds complete
+candidate self-access, access-log and consent-view reads, including MyData's
+indirect SQL and existing final erasure snapshots. A separate
+[portal read budget](OPERATING.md#candidate-portal-view-read-budget) owns admission,
+late-result and drain limits. Safe refusal/pending/failure has explicit GET-only
+reload; account/refresh guards reject stale replies. Unexpected read failures
+keep the correlated generic 500 while omitting private exception text from logs.
+E1 bounded acceptance is complete; E2-E8/Q, C3E and broader parents remain open.

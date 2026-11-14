@@ -720,6 +720,36 @@ replies cannot change its counts, send another process request or stop it after
 Stop/Start or an account/batch change. This does not cancel accepted server work;
 use saved-state reads and deliberate recovery when a result is uncertain.
 
+### Candidate portal view read budget
+
+GET `/portal/me`, `/portal/access-log` and `/portal/consents` share separate
+`portal_read_max_concurrent_requests` admission, default **2 slots** per Services/
+app process. `portal_read_wait_seconds` defaults to finite positive **20 seconds**.
+The complete service read owns SQL sessions, detached view values and existing
+final existence checks. MyData's source/ledger/report/verification/interview/
+session/rights composition stays on that owner. First-party access uses the
+candidate identity; it does not require an organization consent grant.
+
+Full/closed admission returns 503 `portal_read_capacity_exhausted` or
+`portal_read_executor_closed`; an admitted read that outlasts its caller wait
+budget returns 503 `portal_read_pending`. These responses carry Retry-After
+without partial data/cookies. Timeout/cancellation retains the slot until actual
+completion; late failures are consumed and never replay themselves. Unexpected immediate
+read failures keep the generic correlated 500 and log only exception type/request
+ID. The UI shows readable recovery, keeps errors separate from empty results and
+offers explicit reload on all three views. Account/refresh/unmount guards reject
+stale replies. Reload is GET-only and starts no assessment or consent change.
+
+These reads compose snapshots across existing transactions, not an atomic
+multi-store snapshot or a lock across delivery. The pool drains before SQL
+disposal. It adds two slots outside the D1-D6 subtotal above, with separate intake/
+auth/other budgets; database locks can still couple them. It does not bound row
+counts, memory, whole requests, JSON rendering or SQL-driver/drain time. Direct
+synchronous callers still own scheduling. The
+[E1 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns validation/status;
+remaining direct consent/rights/erasure/verification/interview operations are
+E2-E8/Q. No schema or scorer change is introduced.
+
 ### Dual scoping: all scopes counted, any denial denies
 
 Per-email alone lets an attacker spray one guess across ten thousand addresses.

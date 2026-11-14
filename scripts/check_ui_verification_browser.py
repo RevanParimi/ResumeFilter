@@ -23,6 +23,113 @@ from smoke_r3_s1_t2 import contact_marker, latest_code
 from app.verification.models import VerificationChallengeRow, VerificationRow
 
 
+def create_portal_read_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    from smoke_r4_s1_t3c import create_portal_read_smoke_app
+    return create_portal_read_smoke_app(base_factory=create_smoke_app)
+
+
+async def check_portal_read_workers(tab, scratch, checks, admin, mailbox, email, other_email):
+    copy = 'Your saved data is temporarily unavailable'
+    async def wait_marker(name):
+        async with asyncio.timeout(15):
+            while not (scratch / ('portal-read-' + name)).exists():
+                await asyncio.sleep(.01)
+    def operation_count():
+        path = scratch / 'portal-read-operations.jsonl'
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    for nav, reload_label in [('Overview', 'Reload your data'),
+            ('Who accessed it', 'Reload access log'), ('Consents', 'Reload consents')]:
+        for name in ('entered', 'release', 'completed'):
+            (scratch / ('portal-read-' + name)).unlink(missing_ok=True)
+        before = operation_count()
+        (scratch / 'portal-read-mode').touch()
+        try:
+            assert await tab.js('window.__click("button",' + json.dumps(nav) + ')'), 'missing navigation: ' + nav
+            await wait_marker('entered')
+            checks.check(nav + ': actual held SQL produces visible pending/reload guidance',
+                await tab.wait('window.__has(' + json.dumps(copy) + ')', 15)
+                and not await tab.js("window.__has('portal_read_pending')"))
+            refused = await tab.js("window.VeritasAPI.get('/portal/consents').then(()=>null,e=>e.detail)")
+            checks.check(nav + ': pending view retains the shared slot without automatic replay',
+                refused == 'portal_read_capacity_exhausted' and operation_count() == before + 1)
+        finally:
+            (scratch / 'portal-read-release').touch()
+            if (scratch / 'portal-read-entered').exists():
+                await wait_marker('completed')
+            (scratch / 'portal-read-mode').unlink(missing_ok=True)
+        assert await tab.js('window.__click("button",' + json.dumps(reload_label) + ')')
+        checks.check(nav + ': explicit reload reads saved data and clears the error',
+            await tab.wait('!window.__has(' + json.dumps(copy) + ') && Array.from(document.querySelectorAll("button")).some(b=>b.textContent.trim()==='
+                + json.dumps(reload_label) + ' && !b.disabled)', 15)
+            and operation_count() == before + 2)
+
+    (scratch / 'portal-read-mode').write_text('failure')
+    try:
+        assert await tab.js("window.__click('button','Reload consents')")
+        checks.check('actual worker failure has readable correlated-500 guidance without internal details',
+            await tab.wait("window.__has('The request could not be confirmed')", 15)
+            and not await tab.js("window.__has('internal_error') || window.__has('synthetic-private')"))
+    finally:
+        (scratch / 'portal-read-mode').unlink(missing_ok=True)
+    assert await tab.js("window.__click('button','Reload consents')")
+    checks.check('explicit read recovers from a failed worker',
+        await tab.wait("!window.__has('The request could not be confirmed') && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Reload consents' && !b.disabled)", 15))
+
+    # Native HTTP supplies the older account's report reference; hold only its
+    # delivery to UI, then switch accounts through actual cookie/CSRF login.
+    response = admin.post('/candidates', json={'evaluate': True, 'resume_text':
+        f'Synthetic Contact Browser\nEmail: {email}\nPhone: +919876543210\nSkills: Python SQL'})
+    assert response.status_code == 200
+    assert await tab.js("window.__click('button','Overview')")
+    count_js = "(() => { const el=Array.from(document.querySelectorAll('div')).find(e=>e.children.length===2 && e.lastElementChild.textContent.trim()==='report references'); return el?.firstElementChild.textContent.trim(); })()"
+    assert await tab.wait(count_js + " === '1'", 20)
+    await tab.js("""window.__portalNativeGet=window.VeritasAPI.get; window.__portalHoldUsed=false;
+window.VeritasAPI.get=(path,opts)=>{
+ if(path!=='/portal/me' || window.__portalHoldUsed) return window.__portalNativeGet(path,opts);
+ window.__portalHoldUsed=true;
+ return window.__portalNativeGet(path,opts).then(value=>new Promise(resolve=>{window.__releasePortal=()=>resolve(value);}));
+};""")
+    codes = []
+    async def sign_in(address):
+        assert await tab.js("window.__click('button','Sign out')")
+        assert await tab.wait("document.querySelector('input[type=email]') && window.__has('Signed out.')", 20)
+        await tab.js("window.__click('button','Candidate'); window.__click('button','Sign in')")
+        await tab.js("window.__type('input[type=email]'," + json.dumps(address) + ')')
+        assert await tab.js("window.__click('button','Send code')")
+        assert await tab.wait("document.querySelectorAll('input[inputmode]').length===6", 20)
+        code = browser._code_for(mailbox, address)
+        codes.append(code)
+        await tab.js("window.__type('input[inputmode]'," + json.dumps(code) + ')')
+        assert await tab.js("window.__click('button','Verify and continue')")
+        assert await tab.wait("window.__has('Reload your data') && document.querySelector('#contact-destination')", 25)
+        assert await tab.wait("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Reload your data' && !b.disabled) && !window.__has("
+            + json.dumps(copy) + ')', 25)
+    try:
+        assert await tab.js("window.__click('button','Reload your data')")
+        assert await tab.wait("typeof window.__releasePortal === 'function'", 20)
+        await sign_in(other_email)
+        assert await tab.wait(count_js + " === '0'", 20)
+        await tab.js('window.__releasePortal()')
+        checks.check('older native portal reply cannot restore another account report in the current rendered view',
+            await tab.wait(count_js + " === '0'", 10)
+            and (await tab.js("window.VeritasAPI.get('/portal/me')"))['candidate_id'] != response.json()['candidate_id'])
+    finally:
+        await tab.js('window.VeritasAPI.get=window.__portalNativeGet; window.__releasePortal?.()')
+    await sign_in(email)
+    assert await tab.wait(count_js + " === '1'", 20)
+    origin = await tab.js('performance.timeOrigin')
+    await tab.send('Page.reload')
+    assert await tab.wait(f"performance.timeOrigin !== {origin} && document.readyState==='complete' && document.querySelector('#contact-destination')", 60)
+    await tab.js(browser.HELPERS)
+    checks.check('candidate portal saved report and account survive actual page reload', await tab.wait(count_js + " === '1'", 20))
+    logged = (scratch / 'server.log').read_text(encoding='utf-8')
+    checks.check('portal account-change logs omit mailbox and delivered login codes',
+        other_email not in logged and all(code not in logged for code in codes)
+        and 'synthetic-private-portal-smoke-error' not in logged)
+    return codes
+
+
 async def main():
     scratch = Path(tempfile.mkdtemp(prefix="r3-s1-t2-browser-"))
     print(f"Synthetic contact browser evidence: {scratch}", flush=True)
@@ -38,7 +145,8 @@ async def main():
 
     def launch(args, **kwargs):
         if "app.main:app" in args:
-            args = ["smoke_r3_s1_t2:create_smoke_app" if a == "app.main:app" else a for a in args] + ["--factory"]
+            factory = 'check_ui_verification_browser:create_portal_read_browser_app' if '--portal-read-workers' in sys.argv else 'smoke_r3_s1_t2:create_smoke_app'
+            args = [factory if a == "app.main:app" else a for a in args] + ["--factory"]
             inherited = kwargs["env"]
             env = {k: v for k, v in inherited.items() if not k.startswith("DEE_")}
             env.update({k: v for k, v in inherited.items() if k in {
@@ -57,6 +165,10 @@ async def main():
                 env.update(VERITAS_CONTACT_CODE_SMOKE='true', VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_CONTACT_CODE_MAX_CONCURRENT_REQUESTS='1', DEE_CONTACT_CODE_WAIT_SECONDS='.5',
                     DEE_DB_MIGRATE_ON_BOOT='true')
+            if '--portal-read-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_PORTAL_READ_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_READ_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', DEE_DB_MIGRATE_ON_BOOT='true')
             state["db"] = env["DEE_CANDIDATES_DB_URL"]
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
         if os.name == "nt": kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -248,6 +360,8 @@ window.fetch=async (url,init)=>{
                 checks.check('late contact completion survives actual browser reload',
                     await tab.wait(f"document.querySelector('[data-contact-record=\"{late_id}\"]')", 20)
                     and await assurance_status('held'))
+            if '--portal-read-workers' in sys.argv:
+                codes.extend(await check_portal_read_workers(tab, scratch, checks, admin, mailbox, email, 'verify-other@example.com'))
             await type_dest(); await send(); assert await tab.wait("document.querySelector('#contact-code')", 15)
             ending_code = latest_code(mailbox, email); codes.append(ending_code)
             await tab.js("window.VeritasAPI.post('/auth/logout')")

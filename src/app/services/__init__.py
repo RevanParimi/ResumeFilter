@@ -116,6 +116,16 @@ class Services:
     _batch_registrations: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _batch_mutations: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
     _batch_admissions: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+    _portal_reads: Optional[BoundedExecutor] = field(default=None, init=False, repr=False, compare=False)
+
+    @property
+    def portal_reads(self) -> BoundedExecutor:
+        if self._close_task is not None:
+            raise ExecutionUnavailable('portal_read_executor_closed')
+        if self._portal_reads is None:
+            self._portal_reads = BoundedExecutor(self.settings.portal_read_max_concurrent_requests,
+                self.settings.portal_read_wait_seconds, name='portal_read')
+        return self._portal_reads
 
     @property
     def batch_admissions(self) -> BoundedExecutor:
@@ -271,7 +281,7 @@ class Services:
              self._auth_sessions, self._candidate_records, self._candidate_ingests,
              self._report_records, self._outcome_records, self._evaluation_records,
              self._batch_reads, self._batch_registrations, self._batch_mutations,
-             self._batch_admissions) if executor is not None))
+             self._batch_admissions, self._portal_reads) if executor is not None))
         if self._pdf is not None:
             await self._pdf.aclose()
         try:

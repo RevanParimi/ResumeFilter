@@ -9,11 +9,14 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import structlog
 
 from app.api.candidates import ErasureResponse
 from app.api.dependencies import _rate_limited, _services, require_api_key, require_candidate
 from app.api.ledger import ConsentRevokedResponse
+from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.ledger.schema import ConsentGrant, ConsentPurpose
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.portal.service import PortalSubjectErasedError
@@ -28,6 +31,26 @@ from app.screening.pagination import clamp_limit
 
 candidate_router = APIRouter()
 router = APIRouter(dependencies=[Depends(require_api_key)])
+log = structlog.get_logger(__name__)
+
+
+async def _portal_read(request: Request, operation, *args):
+    try:
+        return await _services(request).portal_reads.run(operation, *args)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503, detail='portal_read_pending',
+                            headers={'Retry-After': '1'}) from None
+    except (PortalSubjectErasedError, SourceSubjectErasedError):
+        raise
+    except Exception as exc:
+        # Preserve the generic correlated 500 while keeping worker/SQL details
+        # out of the application's traceback logger.
+        rid = getattr(request.state, 'request_id', '')
+        log.error('portal_read_failed', request_id=rid, error_type=type(exc).__name__)
+        return JSONResponse(status_code=500, content={'detail': 'internal_error', 'request_id': rid},
+                            headers={'X-Request-ID': rid} if rid else None)
 
 
 # ── Candidate DPDP portal (S6.4) ─────────────────────────────────────────────
@@ -39,7 +62,7 @@ router = APIRouter(dependencies=[Depends(require_api_key)])
 @candidate_router.get("/portal/me", response_model=MyData)
 async def portal_me(request: Request, candidate_id: str = Depends(require_candidate)) -> MyData:
     try:
-        return _services(request).portal.my_data(candidate_id)
+        return await _portal_read(request, _services(request).portal.my_data, candidate_id)
     except (PortalSubjectErasedError, SourceSubjectErasedError):
         raise HTTPException(status_code=404, detail="candidate not found") from None
 
@@ -49,7 +72,7 @@ async def portal_access_log(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> list[AccessLogEntry]:
     try:
-        return _services(request).portal.access_log(candidate_id)
+        return await _portal_read(request, _services(request).portal.access_log, candidate_id)
     except PortalSubjectErasedError:
         raise HTTPException(status_code=404, detail="candidate not found") from None
 
@@ -59,7 +82,7 @@ async def portal_list_consents(
     request: Request, candidate_id: str = Depends(require_candidate)
 ) -> list[ConsentView]:
     try:
-        return _services(request).portal.consents(candidate_id)
+        return await _portal_read(request, _services(request).portal.consents, candidate_id)
     except PortalSubjectErasedError:
         raise HTTPException(status_code=404, detail="candidate not found") from None
 

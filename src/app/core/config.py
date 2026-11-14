@@ -524,6 +524,8 @@ class Settings(BaseSettings):
     auth_session_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     candidate_record_max_concurrent_requests: int = Field(default=2, ge=1)
     candidate_record_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
+    portal_read_max_concurrent_requests: int = Field(default=2, ge=1)
+    portal_read_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     candidate_ingest_max_concurrent_requests: int = Field(default=2, ge=1)
     candidate_ingest_wait_seconds: float = Field(default=20.0, gt=0, allow_inf_nan=False)
     report_record_max_concurrent_requests: int = Field(default=2, ge=1)

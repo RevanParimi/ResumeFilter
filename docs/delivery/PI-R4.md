@@ -833,12 +833,92 @@ No production Python/schema/scorer or live-provider quality change is claimed.
 
 ###### <a id="r4-s2-t3c3e"></a>R4-S2-T3C3E - Bound candidate rights, verification and interview SQL
 
-Status: pending. Prerequisite: C3D. Measure remaining `portal`, `verification`
+Status: in progress (2026-11-14). Prerequisite: C3D, published at `0402fa8`.
+Measure remaining `portal`, `verification`
 and `interviews` SQL, plus admin candidate/resume erasure adapters; split into
 owning-operation children first. Preserve
 consent/access/erasure, challenge ordering/rollback, ownership and advisory
 content-only scoring. Exercise actual lock/erasure interleavings, safe uncertain
 writes, migrated HTTP/restart and relevant candidate/verification/interview Chrome.
+
+Measured/split before implementation at `0402fa8`: 26 route operations across
+portal/rights (11), verification (7), interviews (6) and two admin erasure
+adapters. Contact verification start already uses the contact-code owner; the
+remaining 25 operations are assigned below. Portal MyData composes synchronous
+candidate/source/ledger/report/verification/interview/auth/rights reads and final
+existence checks. Document parsing and interview speech/LLM stay awaited outside
+owning SQL operations. Keep existing commit/rollback and scope boundaries; split
+any larger write child further before implementing it. Only E1 runs this session.
+E1 is complete; its linked evidence owns validation and reviews. E2-E8/Q remain
+open, so C3E and broader parents stay in progress.
+
+**<a id="r4-s2-t3c3e1"></a>R4-S2-T3C3E1 - Bound candidate portal view reads**
+
+Status: done (2026-11-14). Prerequisite: C3D, published at `0402fa8`.
+[Contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3e1) owns the three portal GETs,
+composed SQL/DTO and final erasure guards, separate 2-slot/20s read budget,
+safe refusal/pending, private-error-safe correlated 500 and deliberate GET
+recovery. Red/green, owning-session/late/cancel/drain, actual SQLite/PG lock/
+erasure, full pytest, both DBs' migrated HTTP/restart and actual candidate Chrome/
+UI pass. The evidence owns completion and review/publication records. Only E1
+closes; exact next is E2 in a separate session. No schema or scorer change.
+
+**<a id="r4-s2-t3c3e2"></a>R4-S2-T3C3E2 - Bound candidate consent writes**
+
+Status: pending. Prerequisite: E1. Own both grant/revoke operations, including
+scope/validation/audit and commit/rollback. Preserve consent clock and revocation;
+prove real locks, late write uncertainty, human saved-state recovery and UI.
+
+**<a id="r4-s2-t3c3e3"></a>R4-S2-T3C3E3 - Bound reviewed rights operations**
+
+Status: pending. Prerequisite: E2. Own correction/grievance submissions, candidate
+and operator request lists, and operator resolution (five routes), including
+limiter, actor, optional identity application and audit. Preserve human review,
+single resolution and generic ownership refusal; prove locks/erasure/late recovery.
+
+**<a id="r4-s2-t3c3e4"></a>R4-S2-T3C3E4 - Bound candidate and resume erasure**
+
+Status: pending. Prerequisite: E3. Own shared candidate erasure through portal
+and admin adapters plus admin resume deletion (three routes). Preserve candidate/
+challenge cascade, cross-store cleanup, report counts and generic resume scope;
+prove concurrent writes, late erasure and key/session invalidation on both DBs.
+
+**<a id="r4-s2-t3c3e5"></a>R4-S2-T3C3E5 - Bound verification view reads**
+
+Status: pending. Prerequisite: E4. Own candidate verification/assurance/claims
+composition and both employer assurance/claims GETs (three routes). Preserve
+current consent, audit, private projection and final erasure/scope guards;
+prove controlled SQL/PG, refusal/reload and candidate/employer browser journeys.
+
+**<a id="r4-s2-t3c3e6"></a>R4-S2-T3C3E6 - Bound remaining verification writes**
+
+Status: pending. Prerequisite: E5. Own confirmation, manual review and document
+SQL before/after existing awaited PDF parsing (three routes). Keep contact start
+on its existing owner; preserve challenge ordering/attempt rollback, current
+consent/erasure and document non-retention. Split further before code if needed;
+prove actual interleavings, safe uncertainty and browser/manual recovery.
+
+**<a id="r4-s2-t3c3e7"></a>R4-S2-T3C3E7 - Bound interview view reads**
+
+Status: pending. Prerequisite: E6. Own candidate list/detail/question DTO and
+employer assessment GETs (three routes). Preserve current ownership/consent,
+transcript redaction, expiration and version semantics; prove SQL/PG, erasure,
+safe read recovery and candidate/employer Chrome.
+
+**<a id="r4-s2-t3c3e8"></a>R4-S2-T3C3E8 - Bound interview lifecycle SQL**
+
+Status: pending. Prerequisite: E7. Own start/answer/finish SQL (three routes),
+including audio limiter, before/after awaited speech/LLM and atomic turn/assessment/
+audit commit. Keep providers outside SQL sessions and content-only advisory
+scoring/fallback. Split before code if needed; prove competing lifecycle/erasure,
+late result uncertainty and text/audio saved-state/manual recovery.
+
+**<a id="r4-s2-t3c3eq"></a>R4-S2-T3C3EQ - Review combined candidate/verification/interview acceptance**
+
+Status: pending. Prerequisites: E1-E8 and any children. Re-inventory all direct
+and indirect operations and aggregate budgets. Fresh full/SQLite/actual PG,
+migrated two-actor HTTP/restart, affected candidate/verification/interview Chrome
+and both reviews must pass before closing C3E; C3F/Q and broader parents stay open.
 
 ###### <a id="r4-s2-t3c3f"></a>R4-S2-T3C3F - Bound employer and operator SQL
 
