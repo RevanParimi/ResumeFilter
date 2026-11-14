@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-15 - R4-S2-T3C3E2 complete; bounded consent writes.**
+  Started 14 November. Both candidate consent POSTs now own complete SQL/
+  validation/audit in a separate pool; concurrent revoke preserves the first
+  clock and one audit. UI blocks duplicate/stale-account callbacks and requires
+  saved-state recovery with persistent snapshot uncertainty. The
+  [E2 evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns red/green, full/actual
+  PG, both DBs' HTTP/restart, Chrome/UI/static, timing failures and unchanged
+  rechecks, completion and reviews. Only E2 closes; E3 is next in a separate
+  chat. Working DB/demo remain preserved and owned PG is confirmed stopped.
+
 - **Session 2026-11-14 - R4-S2-T3C3E1 complete; bounded portal view reads.**
   Measured/split C3E into E1-E8/Q before implementation; only E1 runs here.
   Three self-access GETs own complete SQL/DTO and existing erasure guards on a

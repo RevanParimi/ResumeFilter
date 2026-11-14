@@ -53,6 +53,23 @@ async def _portal_read(request: Request, operation, *args):
                             headers={'X-Request-ID': rid} if rid else None)
 
 
+async def _portal_write(request: Request, operation, *args, **kwargs):
+    try:
+        return await _services(request).portal_writes.run(operation, *args, **kwargs)
+    except ExecutionUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
+    except ExecutionPending:
+        raise HTTPException(status_code=503, detail='portal_write_pending',
+                            headers={'Retry-After': '1'}) from None
+    except LookupError:
+        raise
+    except Exception as exc:
+        rid = getattr(request.state, 'request_id', '')
+        log.error('portal_write_failed', request_id=rid, error_type=type(exc).__name__)
+        return JSONResponse(status_code=500, content={'detail': 'internal_error', 'request_id': rid},
+                            headers={'X-Request-ID': rid} if rid else None)
+
+
 # ── Candidate DPDP portal (S6.4) ─────────────────────────────────────────────
 # Candidate plane (X-Candidate-Key). First-party access / transparency / consent
 # control / erasure over the candidate's own data. No new ConsentPurpose — auth
@@ -100,7 +117,7 @@ async def portal_grant_consent(
     candidate_id: str = Depends(require_candidate),
 ) -> ConsentGrant:
     try:
-        return _services(request).portal.grant(
+        return await _portal_write(request, _services(request).portal.grant,
             candidate_id, purpose=req.purpose, org_id=req.org_id, expires_at=req.expires_at
         )
     except LookupError as exc:  # unknown org_id
@@ -112,9 +129,11 @@ async def portal_revoke_consent(
     consent_id: str, request: Request, candidate_id: str = Depends(require_candidate)
 ) -> ConsentRevokedResponse:
     try:
-        revoked = _services(request).portal.revoke(candidate_id, consent_id)
+        revoked = await _portal_write(request, _services(request).portal.revoke, candidate_id, consent_id)
     except LookupError as exc:  # unknown OR not owned — same 404 (no probing)
         raise HTTPException(status_code=404, detail="consent grant not found") from exc
+    if isinstance(revoked, JSONResponse):
+        return revoked
     return {"consent_id": consent_id, "revoked": revoked}
 
 

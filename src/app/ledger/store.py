@@ -28,7 +28,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -403,18 +403,24 @@ class LedgerStore:
         """True only when this call newly revoked the grant."""
         moment = consent_logic.as_utc(now) if now else _utcnow()
         with self._session_factory() as session:
-            row = session.get(ConsentGrantRow, consent_id)
-            if row is None or row.revoked_at is not None:
+            # Competing callers must preserve the first revocation clock and
+            # append exactly one audit entry, including across app workers.
+            candidate_id = session.execute(
+                update(ConsentGrantRow)
+                .where(ConsentGrantRow.id == consent_id, ConsentGrantRow.revoked_at.is_(None))
+                .values(revoked_at=moment)
+                .returning(ConsentGrantRow.candidate_id)
+            ).scalar_one_or_none()
+            if candidate_id is None:
                 return False
-            row.revoked_at = moment
             self._audit(
                 session,
                 actor_type="candidate",
-                actor_id=row.candidate_id,
+                actor_id=candidate_id,
                 action="consent.revoke",
                 entity_type="consent_grant",
-                entity_id=row.id,
-                candidate_id=row.candidate_id,
+                entity_id=consent_id,
+                candidate_id=candidate_id,
             )
             session.commit()
             return True

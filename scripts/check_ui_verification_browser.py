@@ -29,6 +29,132 @@ def create_portal_read_browser_app():
     return create_portal_read_smoke_app(base_factory=create_smoke_app)
 
 
+def create_portal_write_browser_app():
+    from smoke_r3_s1_t2 import create_smoke_app
+    from smoke_r4_s1_t3c import create_portal_write_smoke_app
+    return create_portal_write_smoke_app(base_factory=create_smoke_app)
+
+
+async def candidate_sign_in(tab, mailbox, address):
+    assert await tab.js("window.__click('button','Sign out')")
+    assert await tab.wait("document.querySelector('input[type=email]') && window.__has('Signed out.')", 20)
+    await tab.js("window.__click('button','Candidate'); window.__click('button','Sign in')")
+    await tab.js("window.__type('input[type=email]'," + json.dumps(address) + ')')
+    assert await tab.js("window.__click('button','Send code')")
+    assert await tab.wait("document.querySelectorAll('input[inputmode]').length===6", 20)
+    code = browser._code_for(mailbox, address)
+    await tab.js("window.__type('input[inputmode]'," + json.dumps(code) + ')')
+    assert await tab.js("window.__click('button','Verify and continue')")
+    assert await tab.wait("document.querySelector('#contact-destination') && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Reload your data' && !b.disabled)", 25)
+    return code
+
+
+async def check_portal_write_workers(tab, scratch, checks, admin, mailbox, email, other_email, cid):
+    codes = []
+    async def revoke():
+        assert await tab.js("(() => { const b=Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='Revoke' && !b.disabled); if(!b)return false; b.click(); return true; })()")
+    def grant():
+        reply = admin.post(f'/ledger/candidates/{cid}/consent', json={'purpose': 'ledger_read'})
+        assert reply.status_code == 200, reply.status_code
+        return reply.json()['id']
+    async def wait_marker(name):
+        async with asyncio.timeout(15):
+            while not (scratch / ('portal-write-' + name)).exists():
+                await asyncio.sleep(.01)
+    def count():
+        path = scratch / 'portal-write-operations.jsonl'
+        return len(path.read_text().splitlines()) if path.exists() else 0
+    grant()
+    assert await tab.js("window.__click('button','Consents')")
+    assert await tab.wait("window.__has('Revoke') && !window.__has('Loading consents')", 15)
+    for name in ('entered', 'release', 'completed'):
+        (scratch / ('portal-write-' + name)).unlink(missing_ok=True)
+    before = count()
+    (scratch / 'portal-write-mode').touch()
+    try:
+        await revoke()
+        await wait_marker('entered')
+        checks.check('held revoke gives explicit uncertainty and saved-state recovery',
+            await tab.wait("window.__has('Revocation could not be confirmed') && window.__has('An earlier revocation may still finish')", 15))
+        await tab.js("window.__click('button','Revoke')")
+        checks.check('uncertain revoke requires a read before human retry', count() == before + 1)
+        assert await tab.js("window.__click('button','Reload consents')")
+        checks.check('snapshot while SQL is held remains active and warns of later settlement',
+            await tab.wait("window.__has('Active') && window.__has('An earlier revocation may still finish') && !window.__has('Loading consents')", 15))
+        await revoke()
+        checks.check('human retry during held work is refused safely',
+            await tab.wait("window.__has('Consent changes are temporarily unavailable')", 15) and count() == before + 1)
+    finally:
+        (scratch / 'portal-write-release').touch()
+        if (scratch / 'portal-write-entered').exists():
+            await wait_marker('completed')
+        (scratch / 'portal-write-mode').unlink(missing_ok=True)
+    assert await tab.js("window.__click('button','Reload consents')")
+    checks.check('explicit GET recovers the late revoke without replay',
+        await tab.wait("window.__has('Revoked') && !window.__has('Active') && !window.__has('Loading consents')", 15)
+        and count() == before + 1)
+
+    grant()
+    assert await tab.js("window.__click('button','Reload consents')")
+    assert await tab.wait("window.__has('Active') && !window.__has('Loading consents')", 15)
+    (scratch / 'portal-write-mode').write_text('failure')
+    try:
+        await revoke()
+        checks.check('actual failed worker preserves rows and gives safe manual recovery',
+            await tab.wait("window.__has('Revocation could not be confirmed') && window.__has('Active')", 15)
+            and not await tab.js("window.__has('internal_error') || window.__has('synthetic-private')"))
+    finally:
+        (scratch / 'portal-write-mode').unlink(missing_ok=True)
+    assert await tab.js("window.__click('button','Reload consents')")
+    assert await tab.wait("!window.__has('Loading consents') && window.__has('Active')", 15)
+
+    # Delay native HTTP acknowledgement across real logout/login. Both old
+    # success and old failure callbacks must leave the new account untouched.
+    for ending in ('success', 'failure'):
+        await tab.js("""window.__consentNativePost=window.VeritasAPI.post;
+window.__consentNativeGet=window.VeritasAPI.get; window.__consentReads=0;
+window.VeritasAPI.get=(path,...args)=>{if(path==='/portal/consents')window.__consentReads++;return window.__consentNativeGet(path,...args);};
+window.VeritasAPI.post=(path,...args)=>{
+ const result=window.__consentNativePost(path,...args);
+ if(!path.endsWith('/revoke')) return result;
+ return result.then(value=>new Promise(resolve=>{window.__releaseConsent=()=>resolve(value);}),
+ error=>new Promise((resolve,reject)=>{window.__releaseConsent=()=>reject(error);}));
+};""")
+        if ending == 'failure':
+            (scratch / 'portal-write-mode').write_text('failure')
+        try:
+            await revoke()
+            assert await tab.wait("typeof window.__releaseConsent==='function'", 15)
+            (scratch / 'portal-write-mode').unlink(missing_ok=True)
+            codes.append(await candidate_sign_in(tab, mailbox, other_email))
+            assert await tab.js("window.__click('button','Consents')")
+            assert await tab.wait("window.__has('You have not granted') && !window.__has('Loading consents')", 15)
+            old_reads = await tab.js('window.__consentReads')
+            await tab.js('window.__releaseConsent()')
+            checks.check('old native ' + ending + ' callback cannot refill or reload the new account',
+                await tab.wait("window.__has('You have not granted') && !window.__has('Revocation could not be confirmed')", 10)
+                and await tab.js('window.__consentReads') == old_reads)
+        finally:
+            (scratch / 'portal-write-mode').unlink(missing_ok=True)
+            await tab.js('window.VeritasAPI.post=window.__consentNativePost; window.VeritasAPI.get=window.__consentNativeGet; window.__releaseConsent?.(); delete window.__releaseConsent;')
+        codes.append(await candidate_sign_in(tab, mailbox, email))
+        grant()
+        assert await tab.js("window.__click('button','Consents')")
+        assert await tab.wait("window.__has('Active') && !window.__has('Loading consents')", 15)
+    before = await tab.js('performance.timeOrigin')
+    await tab.send('Page.reload')
+    assert await tab.wait(f"performance.timeOrigin !== {before} && document.querySelector('#contact-destination')", 60)
+    await tab.js(browser.HELPERS)
+    assert await tab.js("window.__click('button','Consents')")
+    checks.check('saved consent state survives actual page reload',
+        await tab.wait("window.__has('Active') && window.__has('Revoked') && !window.__has('Loading consents')", 15))
+    assert await tab.js("window.__click('button','Overview')")
+    assert await tab.wait("document.querySelector('#contact-destination')", 15)
+    checks.check('worker logs omit private exception details',
+        'synthetic-private-portal-smoke-error' not in (scratch / 'server.log').read_text(encoding='utf-8'))
+    return codes
+
+
 async def check_portal_read_workers(tab, scratch, checks, admin, mailbox, email, other_email):
     copy = 'Your saved data is temporarily unavailable'
     async def wait_marker(name):
@@ -92,17 +218,7 @@ window.VeritasAPI.get=(path,opts)=>{
 };""")
     codes = []
     async def sign_in(address):
-        assert await tab.js("window.__click('button','Sign out')")
-        assert await tab.wait("document.querySelector('input[type=email]') && window.__has('Signed out.')", 20)
-        await tab.js("window.__click('button','Candidate'); window.__click('button','Sign in')")
-        await tab.js("window.__type('input[type=email]'," + json.dumps(address) + ')')
-        assert await tab.js("window.__click('button','Send code')")
-        assert await tab.wait("document.querySelectorAll('input[inputmode]').length===6", 20)
-        code = browser._code_for(mailbox, address)
-        codes.append(code)
-        await tab.js("window.__type('input[inputmode]'," + json.dumps(code) + ')')
-        assert await tab.js("window.__click('button','Verify and continue')")
-        assert await tab.wait("window.__has('Reload your data') && document.querySelector('#contact-destination')", 25)
+        codes.append(await candidate_sign_in(tab, mailbox, address))
         assert await tab.wait("Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Reload your data' && !b.disabled) && !window.__has("
             + json.dumps(copy) + ')', 25)
     try:
@@ -145,7 +261,8 @@ async def main():
 
     def launch(args, **kwargs):
         if "app.main:app" in args:
-            factory = 'check_ui_verification_browser:create_portal_read_browser_app' if '--portal-read-workers' in sys.argv else 'smoke_r3_s1_t2:create_smoke_app'
+            factory = ('check_ui_verification_browser:create_portal_write_browser_app' if '--portal-write-workers' in sys.argv
+                else 'check_ui_verification_browser:create_portal_read_browser_app' if '--portal-read-workers' in sys.argv else 'smoke_r3_s1_t2:create_smoke_app')
             args = [factory if a == "app.main:app" else a for a in args] + ["--factory"]
             inherited = kwargs["env"]
             env = {k: v for k, v in inherited.items() if not k.startswith("DEE_")}
@@ -168,6 +285,10 @@ async def main():
             if '--portal-read-workers' in sys.argv:
                 env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
                     DEE_PORTAL_READ_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_READ_WAIT_SECONDS='.5',
+                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', DEE_DB_MIGRATE_ON_BOOT='true')
+            if '--portal-write-workers' in sys.argv:
+                env.update(VERITAS_SQL_SMOKE_EVENTS=str(scratch / 'lifecycle.jsonl'),
+                    DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.5',
                     DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600', DEE_DB_MIGRATE_ON_BOOT='true')
             state["db"] = env["DEE_CANDIDATES_DB_URL"]
             kwargs.update(env=env, cwd=scratch, stdout=log, stderr=subprocess.STDOUT)
@@ -362,6 +483,8 @@ window.fetch=async (url,init)=>{
                     and await assurance_status('held'))
             if '--portal-read-workers' in sys.argv:
                 codes.extend(await check_portal_read_workers(tab, scratch, checks, admin, mailbox, email, 'verify-other@example.com'))
+            if '--portal-write-workers' in sys.argv:
+                codes.extend(await check_portal_write_workers(tab, scratch, checks, admin, mailbox, email, 'verify-other@example.com', cid))
             await type_dest(); await send(); assert await tab.wait("document.querySelector('#contact-code')", 15)
             ending_code = latest_code(mailbox, email); codes.append(ending_code)
             await tab.js("window.VeritasAPI.post('/auth/logout')")

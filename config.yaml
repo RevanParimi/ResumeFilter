@@ -295,6 +295,8 @@ candidate_record_max_concurrent_requests: 2  # operator reads/key rotation; sepa
 candidate_record_wait_seconds: 20.0          # late key rotation may invalidate the old key
 portal_read_max_concurrent_requests: 2       # complete candidate self-access views; separate admission
 portal_read_wait_seconds: 20.0               # caller wait; late reads retain their slot
+portal_write_max_concurrent_requests: 2      # complete candidate consent writes; separate from reads
+portal_write_wait_seconds: 20.0              # late writes may commit; recover through saved-state GET
 candidate_ingest_max_concurrent_requests: 2  # shared single/batch candidate/resume persistence
 candidate_ingest_wait_seconds: 20.0          # pending writes may commit; never replay automatically
 report_record_max_concurrent_requests: 2    # complete operator/employer report/history reads

@@ -1,6 +1,6 @@
 # Veritas feature status
 
-Updated: 2026-11-14. This is the common feature summary. For the exact next
+Updated: 2026-11-15. This is the common feature summary. For the exact next
 development task read [PROGRESS.md](docs/PROGRESS.md); for acceptance and evidence
 follow the linked task records. Existing features can still have open remediation.
 
@@ -366,4 +366,14 @@ indirect SQL and existing final erasure snapshots. A separate
 late-result and drain limits. Safe refusal/pending/failure has explicit GET-only
 reload; account/refresh guards reject stale replies. Unexpected read failures
 keep the correlated generic 500 while omitting private exception text from logs.
-E1 bounded acceptance is complete; E2-E8/Q, C3E and broader parents remain open.
+E1 bounded acceptance is complete; consent writes are covered below. E3-E8/Q,
+C3E and broader parents remain open.
+
+[R4-S2-T3C3E2](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) bounds complete
+candidate consent grant/revoke SQL, validation and audit with a separate
+[write budget](OPERATING.md#candidate-consent-write-budget). Safe uncertainty
+requires saved-state GET before a human retry; duplicate/stale-account UI
+callbacks cannot replay a change. Competing revocations retain the first clock
+and one audit entry. Full/actual PG, both DBs' HTTP/restart and Chrome acceptance
+close E2 only; its evidence retains initial timing failures and unchanged green
+rechecks. No schema/scorer change or global SQL/deadline guarantee is introduced.

@@ -91,6 +91,14 @@ for why.
 | **Identity verification** (S7.1) | `POST /portal/verifications` / `POST /portal/verifications/{id}/confirm` / `GET /portal/verifications` | candidate-initiated self-verification; see "Identity verification" below |
 | **Employment evidence** (S7.2) | `POST /portal/documents` | first-party submission of an experience letter or payslip; the document is parsed and discarded, never stored. See "Employment-claim documents" below |
 
+Consent grant/revoke use a separate bounded write owner; a pending write or
+failed reply may still have committed. The revoke screen preserves uncertain
+state, requires **Reload consents** before a deliberate retry and rejects stale
+account callbacks. A reload is a snapshot while earlier work can still finish.
+The [operating contract](OPERATING.md#candidate-consent-write-budget) owns limits
+and recovery; [E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns status
+and validation. Competing revocations retain the first clock and one audit entry.
+
 ### Why no new `ConsentPurpose`
 
 The existing `ConsentPurpose` members (`ledger_write`, `ledger_read`) govern

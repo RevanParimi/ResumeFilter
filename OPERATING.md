@@ -747,8 +747,46 @@ auth/other budgets; database locks can still couple them. It does not bound row
 counts, memory, whole requests, JSON rendering or SQL-driver/drain time. Direct
 synchronous callers still own scheduling. The
 [E1 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns validation/status;
-remaining direct consent/rights/erasure/verification/interview operations are
-E2-E8/Q. No schema or scorer change is introduced.
+remaining direct rights/erasure/verification/interview operations are
+E3-E8/Q. Consent writes have the separate budget below. No schema or scorer
+change is introduced.
+
+### Candidate consent write budget
+
+POST `/portal/consents` and `/portal/consents/{id}/revoke` share
+`portal_write_max_concurrent_requests`, default **2 slots** per Services/app
+process, separate from portal reads. `portal_write_wait_seconds` defaults to
+finite positive **20 seconds**. The complete service operation owns candidate/
+organization validation, grant ownership, SQL sessions, audit and commit/rollback.
+Competing revocations preserve the first revocation time and write one audit
+entry through a conditional update. Existing candidate authentication/CSRF and
+purpose/expiry semantics remain.
+
+Full/closed admission returns 503 `portal_write_capacity_exhausted` or
+`portal_write_executor_closed` before the operation executes. An accepted write
+that outlasts the caller wait returns 503 `portal_write_pending`. These responses
+carry Retry-After without partial IDs/cookies. Timeout/cancellation keeps the
+slot until actual settlement. A late commit or failure is possible; a generic
+correlated 500 also does not prove rollback. Immediate unexpected errors log
+only exception type/request ID; late exceptions are consumed. No automatic POST
+retry occurs.
+
+The consent screen supports revoke; grant remains API-only. It blocks duplicate
+actions and old-account/unmount callbacks, retains rows on write failure and
+requires successful **Reload consents** before a separate human retry. A failed
+GET keeps actions disabled. A GET is a snapshot while earlier SQL may still
+finish, so its uncertainty notice persists even after a later refusal or
+acknowledgement. A fresh page/account starts from server state. Confirmed
+revocation applies at the next authorization read; a lost reply requires saved
+state recovery.
+
+The pool drains before SQL disposal. It adds two write slots to the two portal
+read slots, outside earlier report/batch/intake/auth budgets. Locks can couple
+these budgets; this is not a global connection/SQL cap, row/memory bound or a
+whole-request, driver or drain deadline. Direct synchronous callers own their
+scheduling. No schema or scoring change. The
+[E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns validation/status;
+other E children and combined acceptance remain separate tasks.
 
 ### Dual scoping: all scopes counted, any denial denies
 

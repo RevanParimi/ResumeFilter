@@ -13578,3 +13578,323 @@ record is restaged/rechecked without repeating unchanged runtime gates.
 Standing-authorized scoped commit/push to configured `origin/main` and remote
 SHA verification follow; the final response reports the verified commit. Stop
 without starting E2.
+
+### <a id="r4-s2-t3c3e2"></a>R4-S2-T3C3E2 - Bound candidate consent writes
+
+**Retained pre-code contract (2026-11-14).** Baseline `99cd6e5`; E1 is published.
+Only E2 runs this session. Both candidate POSTs previously executed complete
+PortalService/ledger SQL synchronously on the event loop. Grant validates the
+candidate/org and writes grant/audit in one transaction; revoke checks ownership
+then commits revocation/audit. Preserve those clock/transaction boundaries,
+DTOs, candidate principal/CSRF and generic ownership refusal.
+
+Admit both complete operations to a separate lazy `portal_writes`
+BoundedExecutor: default 2 slots, finite positive 20s caller wait, positive
+capacity, YAML/env configuration, Services/fixture shutdown drain. No live
+Session crosses threads. Capacity/closed returns safe 503/Retry-After; accepted
+timeout/cancel retains admission through settlement. Pending/unexpected failure
+discloses uncertainty without IDs/cookies/private errors or automatic POST
+replay. Reads keep their independent E1 pool. No schema/scorer, rights/erasure,
+verification/interview or operator-route scheduling change. Preserve consent
+clock and revocation behavior while introducing concurrency.
+
+The current consent UI supports revoke, not grant. Guard duplicate revoke and
+old-account/unmount callbacks; preserve rows on write failure and require an
+explicit successful saved-state GET before a separate human retry. A read
+during accepted work is only a snapshot: warn that settlement can occur later.
+Reload must not clear the retry gate on failure. No automatic POST recovery or
+new grant screen. The implementation review below refines warning persistence.
+
+Acceptance: red behavioral SQL/UI regressions; owning-session/thread scope,
+shared default capacity, independent auth/portal reads, two candidates,
+validation/audit/rollback/expiry/clock, pending/cancel/late failure/closed/drain,
+late committed grant/revoke via GET. Actual SQLite/PG
+locks/erasure are separate from controlled holds. Required final checks:
+focused API/service/ledger/erasure/config/lifecycle/frozen contracts, full pytest,
+actual disposable PG, migrated scratch HTTP/restart on both DBs, actual Chrome
+revoke/error/reload/account journey, offline UI, bindings/syntax/import/diff.
+Extend existing harnesses with fake providers/isolated stores, preserving
+working DB/demo/unrelated files. Implementation self-review and distinct final
+staged self-review precede scoped commit/push and remote SHA verification.
+Only E2 can close; E3-E8/Q, C3E and broader parents remain open. Missing required
+evidence means awaiting validation. Exact next: E3, in a separate session.
+
+**Observed regressions and changes.** The sanitized ignored runner
+`.pytest_cache/run_r4_s2_t3c3e2.py <tag> <Python args>` clears inherited DEE keys/
+configuration and uses fake providers/isolated stores, with nonexistent config,
+null email and no working `.env`. `baseline` records 734 tracked hashes before
+runtime edits (the E2 PI contract was already written). Its local logs use
+`r4-s2-t3c3e2-<tag>.txt`.
+
+`red -m pytest -q --tb=short tests/test_portal_api.py -k write_sql_leaves`:
+**2 failed / 2 PG skips / 62 deselected / 1 warning**, 42.00s (54.99s wrapper).
+Both actual SQL holds block unrelated requests until they finish. The new owner
+runs the entire service call, its scope/validation and SQL/audit/commit/rollback.
+Admission/pending map to safe 503/Retry-After with retained slots; unexpected
+exceptions return the existing correlated generic 500 and log only type/request
+ID. Known LookupError policy remains; BaseException cancellation propagates.
+
+`node --test --test-name-pattern='consent revoke'
+scripts/test_ui_verification.js` initially fails duplicate submission and both
+old-account success/pending callbacks. UI now has a synchronous action token,
+account/unmount guards, a saved-state read gate and disabled actions. A failed
+GET does not re-enable revoke. Successful acknowledged writes retain the existing
+GET refresh; failures never automatically GET or POST. A prior unsettled-write
+warning persists across fresh snapshots and later refusals/acknowledgements.
+Session loss clears consent identity/error/busy state. Read errors retain E1
+copy; write errors explain unconfirmed revocation without raw internal details.
+
+The added competing-connection reproducer finds a **medium correctness issue**
+at `ledger/store.py:revoke_consent`: read-then-update allows both competing
+revocations to return true, overwrite the first clock and append duplicate audit
+rows. Initial `race-red` also had an invalid teardown call; removed that harness
+error before claiming a clean result. `race-red-clean -m pytest -q --tb=short
+tests/test_portal_api.py -k competing_consent`: **1 failed / 1 PG skip /
+90 deselected / 1 warning**, 7.18s; actual result `[True, True]` violates
+`[False, True]`. A conditional UPDATE/RETURNING now lets one caller set the clock
+and audit within its original transaction. Unknown/already-revoked returns false;
+portal ownership still precedes mutation. No row/schema changes.
+
+`green` runs the API/config/lifecycle selection `-k 'write_sql_leaves or
+portal_write'`: **10 passed / 2 PG skips / 201 deselected / 1 warning**, 10.00s.
+Expanded `focused-write -m pytest -q --tb=short tests/test_portal_api.py
+tests/test_ledger_store.py`: **73 passed / 48 PG skips / 1 warning**, 96.14s.
+Added post-commit-failure cases afterwards; these belong to final gates below.
+Latest offline `node --test scripts/test_ui_verification.js`: **141 passed**,
+including new uncertainty/unmount/settlement-warning cases. Bindings **638 /
+19 states** and API/support/portal-auth syntax pass. These are not browser proof.
+
+**Initial real journeys.** Existing `scripts/smoke_r4_s1_t3c.py
+--portal-write-workers` passes **34/34**, exit 0 (31.65s wrapper), on migrated
+scratch SQLite: both held SQL writes, shared refusal/pending, auth/independent
+reads, one late commit via explicit GET, candidate isolation, safe missing/foreign
+revoke, validation and exact consent state after graceful restart. The shared
+hold factory retains report/portal-read modes; final compatibility checks follow.
+
+Existing `scripts/check_ui_verification_browser.py --portal-write-workers`
+first passes held-write recovery then uses the generic substring selector
+`Revoke`, which matches a disabled `Revoked` row. Server logs show no POST for
+that attempted failure action; later native-delivery wait also fails. This is
+harness failure, not a product browser pass. Replaced new actionable clicks with
+exact enabled-button selection. `write-browser-corrected` passes **29/29**, exit
+0 (37.17s wrapper): actual held SQL/pending/refusal/snapshot/reload, actual worker
+500 with preserved rows, native success and failure delivery across real
+two-account logout/login, page reload, console/log checks. Its shared one-check
+startup summary is not another 29-case suite. Uses existing CDN internet and
+capture/fake providers; no live-provider claim. Read-mode compatibility follows.
+
+**Implementation diff self-review (before final gates).** Reviewed the runtime,
+regression and journey diff against `99cd6e5` and the retained contract. Both
+POSTs keep principal/CSRF before complete owning admission; grant validation,
+revoke ownership, clock normalization and commit/audit rollback stay inside the
+worker. Conditional revocation preserves the first clock and single audit.
+Traced shared default capacity, independent read/auth owners, cancellation/late
+settlement, lazy shutdown closure/drain, generic correlated failures and private
+error omission. Direct synchronous callers keep their own scheduling; the
+operator route benefits only from the same store correctness fix.
+
+UI review covered duplicate clicks, disabled rows/reloads, account/unmount/session
+loss, successful versus failed GET retry gates and persistent snapshot uncertainty.
+Found and fixed a warning-loss issue: a later capacity refusal or acknowledged
+different write could hide an earlier still-running revocation. The added Node
+case preserves that warning. Checked known 4xx versus uncertain 5xx/network/
+timeout copy and retained rows. HTTP/Chrome harnesses share existing lifecycle
+setup; controlled holds are not driver contention or browser substitutes.
+Post-commit-failure tests extend the original uncertainty contract to prove a
+generic 500 is not rollback. The competing-writer fix necessarily also improves
+the existing direct/operator revocation store caller; its scheduling is unchanged.
+No remaining blocking implementation finding is known. This is same-agent
+self-review, not independent review or the later final staged review.
+
+**Final-gate setup.** Read-mode actual Chrome compatibility
+`read-browser-compat scripts/check_ui_verification_browser.py
+--portal-read-workers`: **33/33**, exit 0 (30.75s wrapper), including the shared
+sign-in helper and E1 failure/reload/account guards. New write-mode Chrome and
+offline UI use the same runtime implementation. Python compilation of changed
+runtime/API/store/harness/test modules passes. Reviewed-state helper
+`.pytest_cache/review_state_r4_s2_t3c3e2.py save` captures **616 code/config
+hashes** before sequential final gates; no runtime changes are planned.
+
+`.pytest_cache/gates_r4_s2_t3c3e2.py` runs the following 24 modules plus
+`tests/test_ui_handlers.py tests/test_ui_mount.py`, three SQLite HTTP modes,
+an owned disposable PG selection and the same three HTTP modes, confirms owned
+PG shutdown independently, then runs full pytest alone. It stops on failure.
+Commands use `.resume/Scripts/python.exe -m pytest -q --tb=short` through the
+sanitized runner. PG-enabled selection omits the two UI modules:
+
+```powershell
+.resume/Scripts/python.exe -m pytest -q --tb=short `
+  tests/test_portal_api.py tests/test_portal_service.py `
+  tests/test_portal_identity.py tests/test_portal_sessions.py `
+  tests/test_portal_retention.py tests/test_portal_schema.py `
+  tests/test_rights_api.py tests/test_rights_admin_api.py `
+  tests/test_rights_service.py tests/test_rights_store.py tests/test_rights_schema.py `
+  tests/test_service_lifecycle.py tests/test_config.py `
+  tests/test_api_route_extraction.py tests/test_route_table_guard.py `
+  tests/test_openapi_contract.py tests/test_error_logging.py tests/test_migrations.py `
+  tests/test_ledger_store.py tests/test_ledger_api.py tests/test_ledger_consent.py `
+  tests/test_ledger_consents_for_candidate.py tests/test_features_current_consent.py `
+  tests/test_verification_consent.py
+```
+
+Acceptance maps to the extended existing `test_portal_api.py` behavioral cases:
+
+| Boundary | Evidence assertion |
+|---|---|
+| Event-loop scheduling | Both actual write SQL holds leave unrelated HTTP responsive |
+| Ownership/admission | Whole service operation and its SQL transactions stay on one worker; default grant/revoke share two slots; auth/portal reads remain independent |
+| Settlement | Timeout/cancel retains admission; late operation runs once; explicit GET recovers the committed write; failure before commit rolls back grant/revoke and audit |
+| Failed acknowledgement | Error after original commit returns correlated generic 500 while GET recovers persisted state; no private error/log/cookie/partial ID |
+| Concurrency/clock | Competing connections yield one true/one false revocation, the winner's exact UTC clock and one audit |
+| Driver locks/erasure | SQLite IMMEDIATE and actual observed PostgreSQL competing locks produce pending; rollback permits late commit; erasure prevents candidate/grant/audit resurrection |
+| Candidate/UI recovery | Foreign/missing scope refuses; old-account/unmount callbacks and duplicates are fenced; successful GET gates a separate human action; snapshot warning persists |
+
+Existing portal/service/ledger suites cover purpose/organization validation,
+expiry/UTC normalization, first-party audit actor, generic ownership refusal and
+revocation consent enforcement. Config/lifecycle/frozen contracts cover positive/
+finite defaults, safe closed admission, accepted-work drain before SQL disposal
+and unchanged route/DTO schema. Actual HTTP/Chrome assertions above remain
+distinct from TestClient/source/Node evidence. Final results follow.
+
+**Final focused result.** The 24-module selection plus both UI modules above
+passes **499 / 143 environment skips / 16 warnings**, 317.19s (324.87s wrapper),
+exit 0. New post-commit-failure cases execute. Frozen route/OpenAPI contracts
+pass without fixture/schema changes. Skips do not establish omitted behavior;
+actual PG is a separate gate below. Report, portal-read and portal-write HTTP
+compatibility and owned PG follow, then full pytest after confirmed shutdown.
+
+**Actual database selection.** The 24-module PG-enabled command above passes
+**570 / 52 optional/environment skips / 16 warnings**, 752.99s (763.40s wrapper),
+exit 0. This includes SQLite and actual PG variants, not 570 exclusively PG
+cases. All new consent PG variants execute, including owning sessions, late/
+rollback/post-commit failure, default admission, competing revocations and
+observed driver locks/erasure. Existing optional export skips remain unvalidated.
+Server: **PostgreSQL 18.6**, **Asia/Calcutta**, **read committed**; test-only 25s
+statement timeout is not a production driver/drain guarantee. Controlled holds
+remain separate from actual competing-connection lock/PID assertions. Stores
+are isolated; no working DB migration. PG HTTP/restart and full results follow.
+
+**Final migrated process journeys and shutdown.** The existing
+`scripts/smoke_r4_s1_t3c.py` with each mode below exits 0. Add `--postgres` only
+with the owned disposable URL; configuration/providers remain sanitized and
+synthetic. Exact saved consent/read projections survive graceful restart:
+
+| Mode | SQLite | PostgreSQL |
+|---|---|---|
+| `--portal-write-workers` | **34/34** | **34/34** |
+| `--portal-read-workers` compatibility | **54/54** | **54/54** |
+| `--report-read-workers` compatibility | **54/54** | **54/54** |
+
+SQLite final wrappers: write 32.83s, portal-read 39.69s, report-read 32.56s.
+PG wrappers: write 45.02s, portal-read 43.42s, report-read 31.70s. These shared
+factory checks prove process composition/recovery, separately from real driver
+contention in the database selection. PG gate wrapper exits 0, 935.28s; owned
+`pg_ctl stop` exits **0**, 30.10s, and an independent status check returns **3**
+before full pytest begins. Local metadata is
+`.pytest_cache/r4-s2-t3c3e2-pg-runtime.json`; no URL/credentials are recorded here.
+Full runs alone after confirmed shutdown. Working store/demo remain preserved.
+
+**First full attempt and unchanged failure recheck.** Sanitized `full -m pytest
+-q --tb=short` completes with **2 failed / 4498 passed / 1249 skipped /
+127 warnings**, 2311.64s (38:31; 2324.98s wrapper), exit 1. The sequential helper
+therefore stops at full; all earlier required gates above completed successfully.
+Failures are retained, not counted as a full pass:
+
+- `test_candidates_api.py::test_candidate_report_sql_leaves_unrelated_requests_responsive[sqlite-org-post]`:
+  its held SQL still leaves the event loop responsive and POST succeeds, but
+  the unrelated GET pair takes **1.2973s**, exceeding its existing strict 1s
+  assertion. Logs show health 1279.3ms/admin 13.9ms, with the hold not finished.
+- `test_screening_batches_api.py::test_batch_terminal_sql_owns_settlement_without_replay[sqlite-timeout-ingest-refusal]`:
+  its existing **0.15s** admission wait expires in an earlier operation
+  (`batch_admission_pending`, 256.0ms HTTP), so the intended terminal hold is
+  never reached within its 8s fixture wait. This is an earlier-boundary timing
+  failure, not observed terminal replay or state corruption.
+
+A diagnostic `collect-diagnostic -m pytest --collect-only -q` identifies the
+first failure's collected position while full continues: **5749 collected**,
+exit 0; collection is not test evidence. No runtime/test thresholds were changed.
+The two exact node IDs above run alone through `full-failures-recheck -m pytest
+-q --tb=short`: **2 passed / 1 warning**, 6.41s (14.02s wrapper), exit 0.
+All **616** reviewed code/config hashes still match. These unchanged successes
+support timing sensitivity but do not replace a successful full regression.
+A fresh unchanged `full-confirmed -m pytest -q --tb=short` is now running alone,
+with owned PG still stopped. Its result determines the full gate; do not restart
+the completed focused/database/browser/HTTP checks merely for this rerun.
+
+**Final full regression (completion 2026-11-15).** Sanitized
+`.resume/Scripts/python.exe .pytest_cache/run_r4_s2_t3c3e2.py full-confirmed
+-m pytest -q --tb=short`: **4500 passed / 1249 skipped / 127 warnings**,
+1772.58s (29:32; 1784.53s wrapper), exit **0**. Both earlier failures pass inside
+this full run with their original assertions/settings. No runtime/test change
+was made between attempts. The first failed full and exact unchanged recheck
+remain recorded above; green reruns do not erase timing sensitivity. Optional/
+environment skips do not establish omitted behavior; no CI/live-provider or
+assessment-quality result is inferred.
+
+**Completion record (before distinct final staged self-review).** E2 meets the
+retained contract: both consent POSTs admit complete owning operations with
+validation, candidate scope, audit and commit/rollback; shared default write
+admission stays independent of portal reads/auth; safe refusal/pending/cancel/
+failure retains accepted work without automatic replay or private exception
+content. Actual SQLite/PG contention, erasure, rollback, late commit and failed
+acknowledgement are covered. Competing revocations preserve the first UTC clock
+and one audit entry. UI blocks duplicate and stale-account/unmount actions,
+retains failed-write rows, requires successful saved-state GET before a human
+retry and preserves earlier uncertainty across snapshots/later outcomes.
+
+SQL/UI red regressions and review findings are resolved. Final focused/config/
+lifecycle/frozen contracts, actual PG, both DBs' migrated HTTP/restart, affected
+Chrome, offline Node, bindings/syntax/compile and full regression pass as recorded.
+Only **R4-S2-T3C3E2** closes. Exact next is **R4-S2-T3C3E3 - Bound reviewed rights
+operations**, in a separate chat. E3-E8/Q, C3E and broader parents remain open.
+No schema/migration, scorer, provider or human-review policy change. The shared
+revocation store fix also preserves the contract for direct/operator callers;
+their scheduling is unchanged and remains outside this child.
+
+Accepted SQL may settle after a timeout/cancel/500; GET recovery is a snapshot,
+not a lock or proof of settlement. Deliberate duplicate grant POSTs can create
+additional grants. Per-process admission is not a global SQL/connection, row/
+memory, whole-request or driver/drain bound. Snapshot uncertainty persists until
+page/account replacement, conservatively including settled older writes. Other
+rights/erasure/verification/interview callbacks and global diagnostics remain
+their named tasks. Fakes prove mechanics, not vendor delivery or measured quality.
+Owned PG is stopped; working DB/demo/unrelated files remain preserved. Distinct
+final staged self-review and scoped publication/remote verification follow.
+
+**Distinct final staged self-review (2026-11-15, after completion).** Reviewed
+the exact **21-file** index against `99cd6e5`, initially tree
+`74f6529dce8ec3e91dba3246d05f55fa325484f9`: portal API, ledger revocation,
+Services/config, portal/auth UI/template, existing API/config/lifecycle/fixture
+and offline UI tests, shared HTTP/Chrome harnesses and seven operating/feature/
+handoff/roadmap/PI/evidence records. This pass follows completion and is separate
+from implementation review. It is same-agent self-review, not independent review.
+
+Specification: both complete consent operations and the original principal/CSRF/
+ownership/clock/audit boundaries match retained acceptance. Reviewed conditional
+revocation, its shared direct/operator store effect, generic failure correlation
+and private-error omission, refusal/pending/cancel/late settlement, separate
+default read/write admission and drain before SQL disposal. No schema, scorer,
+provider, data cleanup or other E-child implementation is included. Only E2 is
+done; E3-E8/Q, C3E and broader parents remain open with exact next E3.
+
+Correctness/maintenance: rechecked the actual staged callbacks, disabled actions,
+successful/failed GET retry gate, duplicate/account/unmount/session-loss guards,
+and retained uncertainty after later snapshots/refusals/acknowledgements. Traced
+the original SQL/UI red cases through their fixes and the post-commit failure
+case through safe 500 plus persisted-state recovery. Competing SQL and erasure
+assertions remain distinct from hold factories. Checked cleanup on failed
+assertions, shared report/read compatibility, exact enabled Chrome selectors,
+real two-account native delivery and page reload. Initial harness errors and
+both full timing failures remain explicit; no thresholds were weakened and the
+unchanged exact cases/full rerun pass. Snapshot and process/driver limits stay
+documented. No remaining acceptance-blocking finding is known.
+
+Pre-publication checks pass: **616 matching tested code/config hashes**,
+**21 scoped staged files / 14 matching code/config files / 9 added local Markdown
+links**, unique anchors/statuses, append-only evidence, index/worktree agreement
+and artifact/token exclusion. **713 unrelated tracked files**, including the
+working DB, remain byte-for-byte preserved; the demo was not restarted. Owned
+PG is confirmed stopped. This review record is restaged/rechecked; runtime is
+unchanged, so no unchanged runtime gate is repeated. Standing-authorized commit/
+push to configured `origin/main` and verified remote SHA follow; the final
+response reports publication. Stop without starting E3.

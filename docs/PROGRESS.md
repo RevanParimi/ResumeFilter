@@ -1,51 +1,55 @@
 # Current handoff
 
-Updated: 2026-11-14. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-15. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3E1 done; only this child closes.** Baseline `0402fa8`.
-[Contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns the pre-code C3E
-split, acceptance, reproducers/corrections, reviews and exact checks. The three
-portal GETs now own complete composed SQL/DTO/final erasure checks in a separate
-2-slot/20s pool. Stale read replies cannot overwrite newer account/refresh state;
-safe pending/failure offers explicit GET reload. Unexpected read failures retain
-correlated generic 500s while omitting private exception content from logs.
+**R4-S2-T3C3E2 done; only this child closes.** Baseline `99cd6e5`.
+[Contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns acceptance,
+reproducers/corrections, reviews and exact checks. Both consent POSTs own
+complete SQL/validation/audit in a separate 2-slot/20s pool. Conditional revoke
+preserves the first clock and single audit. UI rejects duplicate/old-account
+callbacks and requires a successful saved-state GET before human retry;
+uncertainty survives snapshots and later refusals/acknowledgements.
 
-Final full: **4470 passed / 1227 skipped / 127 warnings**. Focused **363 passed /
-28 PG skips**; PG-enabled 18 modules **371 passed**. Portal and report-compat HTTP/
-restart each **54/54 on both DBs**; actual Chrome **33/33**, offline Node **130**,
-bindings **635/19** pass. All **616** code/config hashes match. Owned PG stop **0**,
-independent status **3**; working DB/unrelated files and demo are preserved.
+Final full **4500 passed / 1249 skipped / 127 warnings**. Focused **499 passed /
+143 skips / 16 warnings**; PG-enabled 24 modules
+**570 passed / 52 skips / 16 warnings**. HTTP/restart on both DBs: consent **34/34**,
+portal/report compatibility **54/54** each. Actual Chrome consent **29/29**,
+portal compatibility **33/33**, offline Node **141**, bindings **638/19** pass.
+All **616** reviewed code/config hashes match. Owned PG stop **0**, independent
+status **3**. First full's two timing failures pass both exact and full unchanged
+rechecks; evidence retains the failures and limits. Working DB/demo are preserved.
 
-**Exact next: R4-S2-T3C3E2 - Bound candidate consent writes**, in a separate
-session. E2-E8/Q, C3E and broader parents stay open; read guards do not close
-write callback/uncertainty work. Completion and distinct final staged self-review
-are recorded; scoped commit/push and remote verification follow, then stop.
-No schema, scorer or provider-policy change. Snapshots and per-process budgets retain their
-documented global/driver/drain limits.
+**Exact next: R4-S2-T3C3E3 - Bound reviewed rights operations**, in a separate
+chat. E3-E8/Q, C3E and broader parents stay open. Completion and distinct final
+staged self-review are recorded; scoped commit/push and remote verification
+follow, then stop. No schema, scorer or provider-policy change. Snapshots and
+per-process budgets retain their documented global/driver/drain limits.
 
 ### Last completed
 
-**C3DQ/C3D closed**, published at `0402fa8`, remote verified. Its
-[combined evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3dq) owns exact prior results,
-initial timing failure/unchanged reruns, scoped 16-slot subtotal and limitations.
+**C3E1 closed**, published at `99cd6e5`, remote verified. Its
+[evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns the portal read contract,
+exact prior results, corrections, reviews and limitations.
 Use per-command `-c credential.username=RevanParimi` for GCM account selection.
 
 ## Reusable validation setup
 
-- Completed C3E1 gates: `.pytest_cache/gates_r4_s2_t3c3e1.py`; do not restart.
-  Sanitized runner: `.pytest_cache/run_r4_s2_t3c3e1.py <tag> <Python args>`;
+- C3E2 gates are complete. The sequential helper stopped at its first full's
+  two timing failures; exact cases and fresh full `full-confirmed` pass unchanged.
+  Do not restart `.pytest_cache/gates_r4_s2_t3c3e2.py` or completed checks.
+  Sanitized runner: `.pytest_cache/run_r4_s2_t3c3e2.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
-  `run_r4_s2_t3c3e1_postgres.py` / `r4-s2-t3c3e1-pg-runtime.json`
+  `run_r4_s2_t3c3e2_postgres.py` / `r4-s2-t3c3e2-pg-runtime.json`
   under `.pytest_cache/`. Reviewed-state/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3e1.py check` / `preserve`.
+  `.pytest_cache/review_state_r4_s2_t3c3e2.py check` / `preserve`.
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
   --tb=short`. Use fake providers/isolated stores, sanitize inherited DEE
   configuration/keys and avoid the working `.env`.
 - Portable PG distribution metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
   Local ignored helpers are not portable setup guarantees. Add `--postgres` only
-  with an explicitly disposable `DEE_TEST_DB_URL`; owned C3E1 PG is stopped.
+  with an explicitly disposable `DEE_TEST_DB_URL`; owned C3E2 PG is stopped.
 - The combined evidence owns exact HTTP/Chrome modes and commands. Extend the
   existing isolated worker, two-process and browser harnesses instead of copying
   them. Prior D5/D6 setup and results remain in their linked evidence records.

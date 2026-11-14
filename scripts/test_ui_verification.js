@@ -6,6 +6,77 @@ const { component, settle } = require("./test_ui_evaluate");
 const pending = { id: "contact_server_id", method: "otp_email", status: "pending" };
 const verified = { ...pending, status: "verified" };
 
+test('consent revoke admits one action until its acknowledgement', async () => {
+  let finish;
+  const { c, calls } = component('candidate', () => new Promise(resolve => { finish = resolve; }));
+  c.revokeConsent('owned')(); c.revokeConsent('owned')(); c.revokeConsent('other')();
+  assert.equal(calls.length, 1);
+  finish({ revoked: true }); await settle();
+});
+
+for (const ending of ['success', 'pending']) {
+  test('consent revoke ignores an old account ' + ending + ' callback', async () => {
+    let finish, fail;
+    const { c, window } = component('candidate', () => new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+    let reads = 0;
+    window.VeritasAPI.get = async () => { reads++; return []; };
+    c.revokeConsent('old-private-grant')();
+    c.handleSessionLost(); c.setState({ me: { kind: 'candidate', candidate_id: 'new-account' } });
+    const snapshot = JSON.stringify(c.state);
+    if (ending === 'success') finish({ revoked: true });
+    else fail({ status: 503, detail: 'portal_write_pending' });
+    await settle();
+    assert.equal(JSON.stringify(c.state), snapshot);
+    assert.equal(reads, 0);
+  });
+}
+
+for (const error of [{ status: 503, detail: 'portal_write_pending' },
+    { status: 503, detail: 'portal_write_capacity_exhausted' }, { status: 503, detail: 'portal_write_executor_closed' },
+    { status: 500, detail: 'internal_error' }, { kind: 'network' }, { kind: 'timeout' }]) {
+  test('consent uncertainty requires successful saved-state GET: ' + (error.detail || error.kind), async () => {
+    const { c, window, calls } = component('candidate', async () => { throw error; });
+    const row = { state: 'active', grant: { id: 'owned', purpose: 'ledger_read' } };
+    c.state.consentList = { loading: false, data: [row], error: null };
+    let reads = 0;
+    window.VeritasAPI.get = async () => { reads++; throw { status: 503, detail: 'portal_read_pending' }; };
+    await c.revokeConsent('owned')();
+    assert.equal(calls.length, 1); assert.equal(reads, 0);
+    assert.equal(c.state.consentList.data[0], row);
+    assert.match(c.renderVals().consentsErrorText, /Reload consents/);
+    await c.revokeConsent('owned')(); assert.equal(calls.length, 1);
+    await c.loadConsents(); await c.revokeConsent('owned')();
+    assert.equal(calls.length, 1); assert.equal(reads, 1);
+    window.VeritasAPI.get = async () => { reads++; return [row]; };
+    await c.loadConsents();
+    assert.equal(c.state.consentNeedsRefresh, false);
+    assert.equal(c.state.consentUncertain, !String(error.detail).includes('capacity') && !String(error.detail).includes('closed'));
+    await c.revokeConsent('owned')(); assert.equal(calls.length, 2);
+  });
+}
+
+test('unmounted consent callback cannot update state or start a saved-state GET', async () => {
+  let finish;
+  const { c, window } = component('candidate', () => new Promise(resolve => { finish = resolve; }));
+  let reads = 0; window.VeritasAPI.get = async () => { reads++; return []; };
+  c.revokeConsent('owned')(); c.componentWillUnmount();
+  const snapshot = JSON.stringify(c.state);
+  finish({ revoked: true }); await settle();
+  assert.equal(JSON.stringify(c.state), snapshot); assert.equal(reads, 0);
+});
+
+test('a later refusal or acknowledgement cannot hide an earlier unsettled consent write', async () => {
+  let error = { status: 503, detail: 'portal_write_pending' };
+  const { c, window } = component('candidate', async () => { if (error) throw error; return { revoked: true }; });
+  window.VeritasAPI.get = async () => [];
+  await c.revokeConsent('first')(); await c.loadConsents();
+  error = { status: 503, detail: 'portal_write_capacity_exhausted' };
+  await c.revokeConsent('second')(); await c.loadConsents();
+  assert.equal(c.state.consentUncertain, true);
+  error = null; await c.revokeConsent('second')(); await settle();
+  assert.equal(c.state.consentUncertain, true);
+});
+
 for (const [screen, key, path] of [['portal', 'portal', '/portal/me'],
     ['accesslog', 'accessLog', '/portal/access-log'], ['consents', 'consentList', '/portal/consents']]) {
   for (const transition of ['refresh', 'account']) for (const ending of ['success', 'pending']) {

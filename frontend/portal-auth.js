@@ -19,7 +19,18 @@
   };
   loadPortal = () => this._portalRead('portal', '/portal/me');
   loadAccessLog = () => this._portalRead('accessLog', '/portal/access-log');
-  loadConsents = () => this._portalRead('consentList', '/portal/consents');
+  loadConsents = () => {
+    if (this._gone || this.state.me?.kind !== 'candidate' || this._consentAction) return Promise.resolve(null);
+    const me = this.state.me;
+    this.setState({ consentNeedsRefresh: true, consentWriteError: false });
+    const pending = this._portalRead('consentList', '/portal/consents');
+    const token = this._portalReadRequests.consentList;
+    return pending.then(data => {
+      if (data && !this._gone && this.state.me === me && this._portalReadRequests.consentList === token)
+        this.setState({ consentNeedsRefresh: false });
+      return data;
+    });
+  };
   portalReadErrorCopy = (err) => err && err.detail === 'internal_error'
     ? 'The request could not be confirmed. Wait a moment, then reload this view.' : errorCopy(err);
   // ── auth ──────────────────────────────────────────────────────────────────
@@ -257,12 +268,39 @@
       if (current()) { this._contactAction = null; this.setState({ contactBusy: false }); }
     }
   };
-  revokeConsent = (id) => () => {
-    this.setState({ busyId: id });
-    API.post("/portal/consents/" + id + "/revoke").then(
-      () => { this.setState({ busyId: null }); this.loadConsents(); },
-      (err) => this.setState({ busyId: null, consentList: { loading: false, data: this.state.consentList.data, error: err } })
-    );
+  revokeConsent = (id) => async () => {
+    const me = this.state.me;
+    if (this._gone || !me || me.kind !== 'candidate' || this._consentAction
+        || this.state.consentNeedsRefresh || this.state.consentList.loading) return;
+    const token = this._consentAction = {};
+    this._portalReadRequests.consentList = null;
+    const current = () => !this._gone && this.state.me === me && this._consentAction === token;
+    this.setState({ busyId: id, consentNeedsRefresh: true });
+    let confirmed = false;
+    try {
+      await API.post('/portal/consents/' + encodeURIComponent(id) + '/revoke');
+      confirmed = true;
+    } catch (err) {
+      if (current()) this.setState({ consentWriteError: true,
+        consentUncertain: this.state.consentUncertain || (!['portal_write_capacity_exhausted', 'portal_write_executor_closed'].includes(err.detail)
+          && (err.status >= 500 || ['timeout', 'network'].includes(err.kind))),
+        consentList: { loading: false, data: this.state.consentList.data, error: err } });
+    } finally {
+      if (current()) {
+        this._consentAction = null;
+        this.setState({ busyId: null });
+        if (confirmed) this.loadConsents();
+      }
+    }
+  };
+
+  consentErrorCopy = (err) => {
+    if (!err) return '';
+    if (['portal_write_capacity_exhausted', 'portal_write_executor_closed'].includes(err.detail))
+      return 'Consent changes are temporarily unavailable. Wait a moment, then use Reload consents.';
+    if (err.detail === 'portal_write_pending' || err.status >= 500 || ['timeout', 'network'].includes(err.kind))
+      return 'Revocation could not be confirmed. Wait a moment, then use Reload consents before deciding whether to revoke again.';
+    return errorCopy(err);
   };
 
   loadSessions = () => {
@@ -431,9 +469,10 @@
         purpose: g.purpose + (g.expires_at ? " · expires " + fmtDate(g.expires_at) : ""),
         expiry: c.state === "active" ? "Active" : c.state === "revoked" ? "Revoked" : "Expired",
         active,
-        action: active && !busy(g.id) ? SMALL_GHOST : SMALL_MUTED,
+        disabled: !active || !!st.consentNeedsRefresh || st.consentList.loading || !!this._consentAction,
+        action: active && !busy(g.id) && !st.consentNeedsRefresh ? SMALL_GHOST : SMALL_MUTED,
         actionLabel: busy(g.id) ? "…" : active ? "Revoke" : "Revoked",
-        revoke: active ? this.revokeConsent(g.id) : this.noop
+        revoke: active && !st.consentNeedsRefresh && !st.consentList.loading && !this._consentAction ? this.revokeConsent(g.id) : this.noop
       };
     }) : [];
 
@@ -497,8 +536,11 @@
 
       consents,
       consentsLoading: st.consentList.loading,
+      consentsReloadDisabled: st.consentList.loading || !!this._consentAction,
+      consentUncertain: st.consentUncertain,
       consentsError: !!st.consentList.error,
-      consentsErrorText: this.portalReadErrorCopy(st.consentList.error),
+      consentsErrorText: st.consentWriteError ? this.consentErrorCopy(st.consentList.error)
+        : this.portalReadErrorCopy(st.consentList.error),
       consentsEmpty: !!consentRows && consentRows.length === 0,
 
       sessions,

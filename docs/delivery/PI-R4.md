@@ -848,9 +848,9 @@ remaining 25 operations are assigned below. Portal MyData composes synchronous
 candidate/source/ledger/report/verification/interview/auth/rights reads and final
 existence checks. Document parsing and interview speech/LLM stay awaited outside
 owning SQL operations. Keep existing commit/rollback and scope boundaries; split
-any larger write child further before implementing it. Only E1 runs this session.
-E1 is complete; its linked evidence owns validation and reviews. E2-E8/Q remain
-open, so C3E and broader parents stay in progress.
+any larger write child further before implementing it. E1-E2 are complete;
+linked child evidence owns validation and reviews. E3-E8/Q remain open, so C3E
+and broader parents stay in progress.
 
 **<a id="r4-s2-t3c3e1"></a>R4-S2-T3C3E1 - Bound candidate portal view reads**
 
@@ -865,9 +865,17 @@ closes; exact next is E2 in a separate session. No schema or scorer change.
 
 **<a id="r4-s2-t3c3e2"></a>R4-S2-T3C3E2 - Bound candidate consent writes**
 
-Status: pending. Prerequisite: E1. Own both grant/revoke operations, including
-scope/validation/audit and commit/rollback. Preserve consent clock and revocation;
-prove real locks, late write uncertainty, human saved-state recovery and UI.
+Status: done (2026-11-15; started 2026-11-14). Prerequisite: E1, published at `99cd6e5`.
+[Contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3e2) owns retained pre-code acceptance,
+red/green, complete grant/revoke owning operations, the separate 2-slot/20s
+write budget and safe uncertainty/recovery. Competing revocations preserve the
+first clock and single audit. UI rejects duplicate/old-account callbacks and
+requires successful saved-state GET before a human retry, retaining the warning
+that earlier work may still settle. Final focused/actual PG, both DBs' migrated
+HTTP/restart, Chrome/UI/static and full regression pass. The initial full's two
+timing failures and unchanged successful rechecks remain recorded. Evidence owns
+completion and separate reviews/publication. Only E2 closes; E3-E8/Q and broader
+parents remain open. No schema/scorer change; exact next is E3 in a separate chat.
 
 **<a id="r4-s2-t3c3e3"></a>R4-S2-T3C3E3 - Bound reviewed rights operations**
 

@@ -320,22 +320,27 @@ def create_portal_read_smoke_app(*, base_factory=None):
     return create_report_read_smoke_app(portal_reads=True, base_factory=base_factory)
 
 
-def create_report_read_smoke_app(*, portal_reads=False, base_factory=None):
-    """Exercise complete owning report/portal reads with controlled SQL holds."""
+def create_portal_write_smoke_app(*, base_factory=None):
+    return create_report_read_smoke_app(portal_writes=True, base_factory=base_factory)
+
+
+def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, base_factory=None):
+    """Exercise complete owning report/portal operations with controlled SQL holds."""
     from sqlalchemy import event
     from smoke_r4_s1_t1a import create_smoke_app
     app = (base_factory or create_smoke_app)()
     original = app.router.lifespan_context
     scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
-    prefix = 'portal-read' if portal_reads else 'report-read'
-    needles = ('FROM RESUMES', 'FROM AUDIT_LOG', 'FROM CONSENT_GRANTS') if portal_reads else ('FROM REPORTS',)
+    prefix = 'portal-write' if portal_writes else 'portal-read' if portal_reads else 'report-read'
+    needles = ('INSERT INTO CONSENT_GRANTS', 'UPDATE CONSENT_GRANTS') if portal_writes else (
+        ('FROM RESUMES', 'FROM AUDIT_LOG', 'FROM CONSENT_GRANTS') if portal_reads else ('FROM REPORTS',))
     owner_key = prefix.replace('-', '_') + '_owner'
     state = local()
     @asynccontextmanager
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            pool, caller = (services.portal_reads if portal_reads else services.report_records), get_ident()
+            pool, caller = (services.portal_writes if portal_writes else services.portal_reads if portal_reads else services.report_records), get_ident()
             run = pool.run
             async def tracked(operation, *args, **kwargs):
                 def owned():
@@ -353,7 +358,7 @@ def create_report_read_smoke_app(*, portal_reads=False, base_factory=None):
             pool.run = tracked
             def sql(conn, cursor, statement, parameters, context, many):
                 if (scratch / f'{prefix}-mode').exists() and getattr(state, 'active', False) and not state.held and any(needle in statement.upper() for needle in needles):
-                    if portal_reads and (scratch / f'{prefix}-mode').read_text() == 'failure':
+                    if (portal_reads or portal_writes) and (scratch / f'{prefix}-mode').read_text() == 'failure':
                         raise RuntimeError('synthetic-private-portal-smoke-error')
                     state.held = True
                     (scratch / f'{prefix}-entered').touch()
@@ -380,6 +385,67 @@ def create_report_read_smoke_app(*, portal_reads=False, base_factory=None):
                     event.remove(target, name, listener)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_portal_writes(checks, scratch, base, control, cid, other_id, key):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def wait_file(name):
+        deadline = time.monotonic() + 12
+        while not (scratch / ('portal-write-' + name)).exists():
+            assert time.monotonic() < deadline, name
+            time.sleep(.01)
+    other_key = require(control.post(f'/candidates/{other_id}/auth-key'))['access_key']
+    operations = scratch / 'portal-write-operations.jsonl'
+    with client(base, headers={'X-Candidate-Key': key}) as a, client(base, headers={'X-Candidate-Key': other_key}) as b:
+        for case in ('grant', 'revoke'):
+            rows = require(a.get('/portal/consents'))
+            body = {'purpose': 'ledger_read'} if case == 'grant' else None
+            path = '/portal/consents' if case == 'grant' else '/portal/consents/' + rows[-1]['grant']['id'] + '/revoke'
+            count = len(operations.read_text().splitlines()) if operations.exists() else 0
+            for name in ('entered', 'release', 'completed'):
+                (scratch / ('portal-write-' + name)).unlink(missing_ok=True)
+            (scratch / 'portal-write-mode').touch()
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(a.post, path, json=body)
+                    try:
+                        wait_file('entered')
+                        checks.check(case + ': real consent SQL leaves auth and independent reads responsive',
+                            control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                            and require(b.get('/portal/me'))['candidate_id'] == other_id)
+                        busy = b.post('/portal/consents', json={'purpose': 'ledger_write'})
+                        checks.check(case + ': candidates and both write operations share admission',
+                            require(busy, 503) == {'detail': 'portal_write_capacity_exhausted'}
+                            and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
+                        reply = pending.result(timeout=5)
+                        checks.check(case + ': uncertain write discloses no success and keeps its slot',
+                            require(reply, 503) == {'detail': 'portal_write_pending'}
+                            and reply.headers.get('retry-after') == '1' and 'set-cookie' not in reply.headers
+                            and require(a.post(path, json=body), 503) == {'detail': 'portal_write_capacity_exhausted'})
+                    finally:
+                        (scratch / 'portal-write-release').touch()
+            finally:
+                (scratch / 'portal-write-release').touch()
+                if (scratch / 'portal-write-entered').exists():
+                    wait_file('completed')
+                (scratch / 'portal-write-mode').unlink(missing_ok=True)
+            after = require(a.get('/portal/consents'))
+            checks.check(case + ': explicit GET recovers one late write without replay',
+                len(operations.read_text().splitlines()) == count + 1
+                and (len(after) == len(rows) + 1 if case == 'grant' else after[-1]['state'] == 'revoked'))
+        owned_id = after[-1]['grant']['id']
+        checks.check('foreign and absent revoke are indistinguishable',
+            require(b.post('/portal/consents/' + owned_id + '/revoke'), 404)
+            == require(b.post('/portal/consents/missing/revoke'), 404))
+        checks.check('repeated deliberate revoke preserves the first acknowledgement',
+            require(a.post('/portal/consents/' + owned_id + '/revoke'))['revoked'] is False)
+        require(a.post('/portal/consents', json={'purpose': 'invalid'}), 422)
+        require(a.post('/portal/consents', json={'purpose': 'ledger_read', 'org_id': 'missing'}), 404)
+        checks.check('invalid grant and foreign revoke leave other candidate unchanged', require(b.get('/portal/consents')) == [])
+        return [(candidate_key, '/portal/consents', require(http.get('/portal/consents')))
+            for http, candidate_key in ((a, key), (b, other_key))]
 
 
 def check_portal_reads(checks, scratch, base, control, cid, other_id, key):
@@ -1129,6 +1195,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--portal-write-workers', 'create_portal_write_smoke_app'),
         ('--portal-read-workers', 'create_portal_read_smoke_app'),
         ('--evaluation-publication-workers', 'create_evaluation_publication_smoke_app'),
         ('--outcome-write-workers', 'create_outcome_write_smoke_app'),
@@ -1168,6 +1235,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--portal-read-workers' in sys.argv:
         env.update(DEE_PORTAL_READ_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_READ_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--portal-write-workers' in sys.argv:
+        env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--outcome-write-workers' in sys.argv:
         env.update(DEE_OUTCOME_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_OUTCOME_RECORD_WAIT_SECONDS='.5',
@@ -1255,6 +1325,7 @@ def run(scratch, url, pg_options):
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
             portal_reads = check_portal_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-read-workers' in sys.argv else []
+            portal_writes = check_portal_writes(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-write-workers' in sys.argv else []
             if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
                     source_reads='--source-read-workers' in sys.argv)
@@ -1279,8 +1350,8 @@ def run(scratch, url, pg_options):
             saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
 
         with server():
-            if portal_reads:
-                for candidate_key, url, body in portal_reads:
+            if portal_reads or portal_writes:
+                for candidate_key, url, body in portal_reads + portal_writes:
                     with client(base, headers={'X-Candidate-Key': candidate_key}) as candidate:
                         checks.check('exact candidate portal view survives migrated graceful restart', require(candidate.get(url)) == body)
             if publications:
