@@ -99,6 +99,17 @@ The [operating contract](OPERATING.md#candidate-consent-write-budget) owns limit
 and recovery; [E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns status
 and validation. Competing revocations retain the first clock and one audit entry.
 
+The candidate's `GET /portal/requests` and operator-only global
+`GET /admin/requests` share the existing
+[portal read budget](OPERATING.md#candidate-portal-view-read-budget). Complete
+reads filter erased requests after materialization while retaining original order
+and limits; omitted rows are not refilled. A fresh GET is explicit recovery after
+pending/refused reads. Candidate missing/erased direct lists remain empty; new
+requests with erased credentials refuse. These snapshots do not lock later
+delivery or refresh decisions. The
+[E3A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns validation/status;
+submission and operator-decision scheduling remain separate children.
+
 ### Why no new `ConsentPurpose`
 
 The existing `ConsentPurpose` members (`ledger_write`, `ledger_read`) govern

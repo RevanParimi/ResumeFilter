@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-15 - R4-S2-T3C3E3A complete; reviewed rights reads.**
+  Candidate/operator request lists reuse the existing portal read owner for
+  complete SQL/DTO/final-erasure work. Fresh snapshots omit erased entries
+  without refilling limits; candidate/global scope and human review remain.
+  [A evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns red/green, full/actual
+  PG, both DBs' HTTP/restart, actual Chrome compatibility, static/preservation,
+  initial timing failures and unchanged rechecks, completion and reviews.
+  Only A closes; E3/B/C/Q and broader parents remain open. Working DB/demo are
+  preserved and owned PG is stopped. Exact next E3B, in a separate chat.
+
 - **Session 2026-11-15 - R4-S2-T3C3E2 complete; bounded consent writes.**
   Started 14 November. Both candidate consent POSTs now own complete SQL/
   validation/audit in a separate pool; concurrent revoke preserves the first

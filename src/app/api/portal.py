@@ -210,7 +210,7 @@ async def portal_list_requests(
 ) -> list[RequestView]:
     """The subject's own requests, both kinds. Cross-candidate isolation is
     structural: the id comes from the resolver, never from a query param."""
-    return _services(request).rights.for_candidate(candidate_id)
+    return await _portal_read(request, _services(request).rights.for_candidate, candidate_id)
 
 
 @candidate_router.delete("/portal/me", response_model=ErasureResponse)
@@ -266,7 +266,7 @@ async def list_data_principal_requests(
         bounded = clamp_limit(limit, services.settings)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return services.rights.list_by_status(status, bounded)
+    return await _portal_read(request, services.rights.list_by_status, status, bounded)
 
 
 @router.post("/admin/requests/{request_id}/resolve", response_model=RequestView)

@@ -722,13 +722,16 @@ use saved-state reads and deliberate recovery when a result is uncertain.
 
 ### Candidate portal view read budget
 
-GET `/portal/me`, `/portal/access-log` and `/portal/consents` share separate
+GET `/portal/me`, `/portal/access-log`, `/portal/consents`, `/portal/requests`
+and operator-only `/admin/requests` share separate
 `portal_read_max_concurrent_requests` admission, default **2 slots** per Services/
 app process. `portal_read_wait_seconds` defaults to finite positive **20 seconds**.
 The complete service read owns SQL sessions, detached view values and existing
 final existence checks. MyData's source/ledger/report/verification/interview/
 session/rights composition stays on that owner. First-party access uses the
 candidate identity; it does not require an organization consent grant.
+The operator request queue uses the existing platform operator gate and remains
+global across candidates; candidate request lists use only their resolved subject.
 
 Full/closed admission returns 503 `portal_read_capacity_exhausted` or
 `portal_read_executor_closed`; an admitted read that outlasts its caller wait
@@ -748,8 +751,26 @@ counts, memory, whole requests, JSON rendering or SQL-driver/drain time. Direct
 synchronous callers still own scheduling. The
 [E1 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns validation/status;
 remaining direct rights/erasure/verification/interview operations are
-E3-E8/Q. Consent writes have the separate budget below. No schema or scorer
+E3B/C/Q and E4-E8/Q. Consent writes have the separate budget below. No schema or scorer
 change is introduced.
+
+[Reviewed-rights read acceptance](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a)
+extends that same pool to both request lists without adding slots or configuration.
+The complete existing service/store operation owns initial SQL, detached request
+views and fresh existence checks after materialization. Current request IDs joined
+to current candidates are checked in chunks of at most 500 SQL binds. Erased
+entries are omitted; original candidate-newest/operator-oldest order and the
+operator's clamped limit remain, without refilling omitted rows. Missing/erased
+direct candidate lists retain empty-list semantics; newly authenticated erased
+credentials still refuse. The same store guard also protects MyData composition.
+
+These are per-chunk snapshots. Later erasure/delivery races remain possible,
+and a concurrently changed decision is not refreshed by an existence guard.
+Candidate request lists still have no row/memory cap. SQL bind chunking is not
+a total-work, JSON-rendering or global-SQL limit. Both direct lists use the same
+503/Retry-After, retained admission, generic correlated failure, cancellation and
+drain policy above. Their API clients recover with a deliberate fresh GET; no
+dedicated list screen or automatic write/review operation is introduced.
 
 ### Candidate consent write budget
 

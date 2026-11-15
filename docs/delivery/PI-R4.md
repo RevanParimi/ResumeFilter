@@ -879,10 +879,55 @@ parents remain open. No schema/scorer change; exact next is E3 in a separate cha
 
 **<a id="r4-s2-t3c3e3"></a>R4-S2-T3C3E3 - Bound reviewed rights operations**
 
-Status: pending. Prerequisite: E2. Own correction/grievance submissions, candidate
+Status: in progress (2026-11-15). Prerequisite: E2, published at `81ac1fe`.
+Original scope: own correction/grievance submissions, candidate
 and operator request lists, and operator resolution (five routes), including
 limiter, actor, optional identity application and audit. Preserve human review,
 single resolution and generic ownership refusal; prove locks/erasure/late recovery.
+
+Measured before code at `81ac1fe`: both GET handlers call synchronous rights
+store reads directly; their detached free-text views lack final erasure guards.
+The two submissions additionally charge SQL limiter state, validate/read identity,
+create a request and audit across existing transactions. Resolution conditionally
+closes a request, may apply identity, audits and rereads. These write/decision
+uncertainties need separate acceptance. Split before implementation; only A runs
+this session. A is complete; B/C/Q and E3 remain open for their own evidence.
+
+**<a id="r4-s2-t3c3e3a"></a>R4-S2-T3C3E3A - Bound reviewed-rights reads**
+
+Status: done (2026-11-15). [Retained contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3e3a)
+owns the pre-code split, red/green, full/actual PG, both DBs' HTTP/restart,
+Chrome compatibility, static/preservation and separate reviews. Both request
+lists own complete SQL/DTO/final-erasure work in existing `portal_reads`; all
+five views share its default 2-slot/20s budget. Fresh snapshots omit erased rows
+without refilling limits. Candidate/operator scope, order, schema and human
+review remain. Snapshot and process/driver/row limits stay explicit; no new
+pool/config/schema/scorer. Only A closes. Exact next: E3B, separate chat;
+B/C/Q, E3 and broader parents remain open.
+
+**<a id="r4-s2-t3c3e3b"></a>R4-S2-T3C3E3B - Bound reviewed-rights submissions**
+
+Status: pending. Prerequisite: A. Own correction/grievance submission including
+limiter charging, validation, current identity, create and audit; preserve review
+without applying corrections. Define bounded write/late-commit recovery contract
+before code; require SQL/PG, erasure/rollback, saved-state HTTP/restart and full
+regression plus reviews. Do not confuse a lost reply with rollback or replay.
+
+**<a id="r4-s2-t3c3e3c"></a>R4-S2-T3C3E3C - Bound reviewed-rights decisions**
+
+Status: pending. Prerequisite: B. Own operator resolution, conditional single
+decision, optional allowed identity application, audit and final saved view.
+Define complete operation/uncertainty contract before code; preserve actor,
+human review, immutable extraction/login policy, erasure and generic refusal.
+Require competing SQL/PG decisions, late recovery, migrated HTTP/restart, full
+regression and reviews. No automatic decision replay.
+
+**<a id="r4-s2-t3c3e3q"></a>R4-S2-T3C3E3Q - Review combined reviewed-rights acceptance**
+
+Status: pending. Prerequisites: A-C. Re-inventory the five routes/indirect reads
+and combined budgets; review read/submission/decision recovery and human-review
+policy together. Fresh full, actual PG, migrated HTTP/restart and relevant actual
+browser compatibility plus distinct final review are required before E3 closes.
 
 **<a id="r4-s2-t3c3e4"></a>R4-S2-T3C3E4 - Bound candidate and resume erasure**
 

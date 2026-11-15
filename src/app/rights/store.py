@@ -109,7 +109,24 @@ class RightsStore:
                 .scalars()
                 .all()
             )
-            return [_view(r) for r in rows]
+            views = [_view(r) for r in rows]
+        return self._retain_existing(views)
+
+    def _retain_existing(self, views: list[RequestView]) -> list[RequestView]:
+        """Fresh erasure snapshots after materialization, not delivery locks.
+
+        Candidate lists have no row limit. Chunk IDs to keep SQL bind counts
+        finite without changing their original order or the operator's limit.
+        """
+        existing = set()
+        ids = [view.id for view in views]
+        with self._session_factory() as session:
+            for start in range(0, len(ids), 500):
+                existing.update(session.scalars(
+                    select(DataPrincipalRequestRow.id).join(CandidateRow)
+                    .where(DataPrincipalRequestRow.id.in_(ids[start:start + 500]))
+                ))
+        return [view for view in views if view.id in existing]
 
     def get(self, request_id: str) -> Optional[tuple[RequestView, str]]:
         """The view AND its owner.
@@ -145,7 +162,8 @@ class RightsStore:
                 .scalars()
                 .all()
             )
-            return [_view(r) for r in rows]
+            views = [_view(r) for r in rows]
+        return self._retain_existing(views)
 
     def resolve(
         self,

@@ -468,7 +468,7 @@ async def test_portal_default_read_pool_shares_two_slots_and_keeps_auth_independ
                     assert await asyncio.to_thread(occupied)
                     assert len(services.portal_reads._active) == 2
                     peer = await http.get('/portal/requests', headers=headers['b'])
-                    assert peer.status_code == 200 and [row['id'] for row in peer.json()] == [request_b.id]
+                    assert peer.status_code == 503 and peer.json() == {'detail': 'portal_read_capacity_exhausted'}
                     assert (await http.get('/candidates/b')).status_code == 200
                     for _, path, _, _ in PORTAL_READS:
                         busy = await http.get(path, headers=headers['a'])
@@ -479,6 +479,8 @@ async def test_portal_default_read_pool_shares_two_slots_and_keeps_auth_independ
                 a, b = responses
                 assert a.status_code == b.status_code == 200
                 assert a.json() == expected_a and b.json() == expected_b
+                peer = await http.get('/portal/requests', headers=headers['b'])
+                assert peer.status_code == 200 and [row['id'] for row in peer.json()] == [request_b.id]
                 assert {r['report_id'] for r in a.json()['reports']} == {r.id for r in services.report_store.for_candidate('a')}
     finally:
         release.set()
