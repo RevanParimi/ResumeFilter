@@ -40,7 +40,6 @@ dependencies = [
 dev = [
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",
-    "respx>=0.21.0",          # httpx mocking for github/provenance tests
 ]
 
 [build-system]
