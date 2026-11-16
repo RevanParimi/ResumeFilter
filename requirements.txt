@@ -18,7 +18,7 @@
 #   1. relax the pin(s) you want to move, or all of them
 #   2. pip install -U -r requirements.txt
 #   3. pytest -q                     <- must be green
-#   4. run the smokes you touched    <- e.g. python scripts/smoke_s92.py
+#   4. run the CI smoke and the checks you touched <- python scripts/smoke_r2_s1_t2b.py
 #   5. re-pin to whatever step 2 resolved, in ONE commit that changes nothing
 #      else, so `git log` shows the upgrade as its own reviewable act
 # tests/test_requirements_pinned.py fails the build if a pin goes unbounded or

@@ -47,8 +47,7 @@ document said there was not — twice, in §8 and §9, which is why the smoke
 originally skipped it. `DELETE /ledger/orgs/{org_id}`
 (`src/app/api/routes.py:671`) calls `LedgerStore.delete_organization`, which does
 `session.delete(OrganizationRow)`: exactly the deletion the `SET NULL` contract
-is about, reachable today with an admin key. `smoke_s84a` now exercises it end
-to end. Without these the mistake would be silent until the first offboarding.
+is about, reachable today with an admin key. Without these the mistake would be silent until the first offboarding.
 
 ## 2. Why candidates stay global
 
@@ -371,7 +370,7 @@ self-service flow, and that is the part deferred ([historical design in Git](htt
 `test_screening_scope.py`, `test_screening_api.py`, `test_org_scope_guard.py`,
 `test_auth_org_name_taken.py` cover this at the unit/integration level.
 
-`scripts/smoke_s84a.py` proves it end to end over real HTTP, with two
+The S8.4 smoke proved it end to end over real HTTP, with two
 organisations racing over the same person: a taken organisation name refused
 before any code is sent; two orgs unable to read each other's reports, the
 refusal a byte-identical 404; the same person deduplicating to one candidate
@@ -395,8 +394,7 @@ in a unit test.
 `test_screening_models.py`, `test_screening_store.py`,
 `test_screening_service.py`, `test_screening_tenancy.py`,
 `test_screening_batches_api.py`, `test_screening_ingest.py`,
-`test_org_name_case_insensitive.py` and `test_openapi_contract.py`, plus
-`scripts/smoke_s84b.py` — 16/16 over real HTTP, key-less. The Phase B checks
+`test_org_name_case_insensitive.py` and `test_openapi_contract.py`. The Phase B checks
 worth naming here are the tenancy ones: **every** batch route answering 404 for
 another organisation byte-identically to a batch that never existed; a queue row
 proven to carry no farm-match identities **on a batch whose report genuinely has
@@ -416,7 +414,7 @@ metadata comparison never established that any index was *enforced*.
 refuses rather than picking a winner on a customer's behalf.
 
 **S8.5 adds the first scoped WRITE** (`tests/test_screening_outcome_api.py`,
-`test_report_outcomes.py`, `scripts/smoke_s85_outcome.py` — 21/21). The tenancy
+`test_report_outcomes.py`). The tenancy
 check worth naming: **404 on a WRITE, byte-identical to absence, on both
 verbs.** The instinct on a refused write is 403, and a 403 confirms the report
 exists to anyone who guesses an id — so the write is held to exactly the rule

@@ -159,7 +159,7 @@ def test_no_script_hand_rolls_the_shared_harness(path):
     """
     src = path.read_text(encoding="utf-8")
     # `os.environ.copy()` rather than a function NAME: a smoke composing its
-    # own posture on top of base_env (smoke_s86 needs prod values) is reuse,
+    # own posture on top of base_env (e.g. one that needs prod values) is reuse,
     # not duplication. What must not come back is a second place that decides
     # what a smoke environment starts as -- that is where the key pin went
     # missing five times.

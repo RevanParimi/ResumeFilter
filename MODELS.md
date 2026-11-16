@@ -46,13 +46,12 @@ verticals. Accented-English ASR is an easier, cheaper target than code-switch.
   no-speech/energy guard** — logged as a follow-up in `INTERVIEWS.md` §12.
   Transcription QUALITY on Indian-accented English remains **unverified**: there
   is no audio sample in the repo and TTS is deferred, so this check proves the
-  seam works, not that the model hears well. `scripts/smoke_s73.py` deliberately
-  pins `DEE_OPENROUTER_API_KEY=""` so the key-less path is what it actually tests.
+  seam works, not that the model hears well.
 
 - 2026-07-26: OpenRouter `/models` catalog pulled live (345 models; 24
   audio-capable). `deepseek/deepseek-v3.2` and `voxtral-small-24b-2507`
   round-trip pinged through the project key: both LIVE. Offline suite 442 green
-  after the tier swap. Full live pipeline smoke (`scripts/smoke_s24.py`) on the
+  after the tier swap. Full live pipeline smoke (S2.4) on the
   new reasoning model: **10/10 OK, exit 0** — claim extraction → plausibility
   (4 verdicts) → scoring (depth 0.759/0.779, band solid) → fabrication fusion
   all clean on deepseek-v3.2; genuine resume fused `low`; `/evaluate` intact.

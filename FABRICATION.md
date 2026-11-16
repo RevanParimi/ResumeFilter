@@ -381,9 +381,4 @@ tests/
 └── fixtures/  ai_generated · inconsistent · farm_a/farm_b (adversarial)
 ```
 
-All offline (NullLLM ⇒ deterministic floors). Each sprint's end-to-end
-smoke boots uvicorn on a scratch Alembic-migrated DB and passes key-less
-AND live: [scripts/smoke_s21.py](scripts/smoke_s21.py) ·
-[scripts/smoke_s22.py](scripts/smoke_s22.py) ·
-[scripts/smoke_s23.py](scripts/smoke_s23.py) ·
-[scripts/smoke_s24.py](scripts/smoke_s24.py).
+All offline (NullLLM ⇒ deterministic floors).

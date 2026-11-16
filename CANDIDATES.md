@@ -49,13 +49,6 @@ alembic/                   ★ S1.2 — schema migrations (one head for the shar
 └── versions/
     ├── 0001_candidate_store.py       candidates + resumes + extractions
     └── 0002_resume_fingerprints.py   S2.3 — resume_fingerprints (CASCADE FKs)
-
-scripts/
-├── smoke_s11.py           extractor end-to-end on fixture resumes
-├── smoke_s12.py           migrate scratch DB → ingest → dedup → delete
-├── smoke_s13.py           uvicorn: POST /candidates → auto depth-eval → DPDP deletes
-├── smoke_s14.py           normalization end-to-end on fixture resumes
-└── smoke_s23.py           farm detection over HTTP (see FABRICATION.md)
 ```
 
 ## End-to-end flow (S1.1 → S1.2)
@@ -416,8 +409,4 @@ tests/
 └── test_candidate_extractor_{heuristic,llm}.py   S1.1: both extractor paths
 ```
 
-All offline (in-memory SQLite, no network, no API key). End-to-end:
-`python scripts/smoke_s12.py` — migrates a scratch DB, ingests a fixture
-resume three ways (new / updated text / identical text), verifies match +
-versioning + dedup + latest_profile + delete, prints `SMOKE OK`. Green both
-with a live OpenRouter key (`[llm]`) and key-less (`[heuristic]`).
+All offline (in-memory SQLite, no network, no API key).

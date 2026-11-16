@@ -292,7 +292,7 @@ Keyset, opaque, and **carrying no authority**.
 * **Not a capability.** Ownership is enforced by each query's own `org_id`
   filter. A cursor minted by one organisation and replayed by another merely
   positions inside the *second* organisation's own list; it reaches none of the
-  first's rows (`smoke_s84b` check 11). Nothing here should ever grow an
+  first's rows. Nothing here should ever grow an
   ownership claim — that would make a client-supplied string load-bearing for
   tenancy, the opposite of Phase A's whole argument.
 
@@ -453,7 +453,6 @@ Two decisions that follow from that:
   allowlist is **empty**; re-proven non-vacuous against a planted unscoped read.
 * `tests/test_openapi_contract.py` — every route has an explicit unique
   `operation_id` and a typed success schema.
-* `scripts/smoke_s84b.py` — 16/16 over real HTTP, key-less.
 
 The outcome loop (§2.1):
 
@@ -469,9 +468,6 @@ The outcome loop (§2.1):
 * `tests/test_migrations.py` — `0020`'s backfill to `operator`, no
   server_default left behind, and `org_id` SET NULL proven by deleting a real
   organisation.
-* `scripts/smoke_s85_outcome.py` — 21/21 over real HTTP, key-less. The only
-  place a real `org_user` id is attributed, because every unit test uses
-  `X-Org-Key`, which has no human behind it.
 * `scripts/check_ui_screening_contract.py` / `_browser.py` — the screen's own
   claims: the maxlength it advertises is the cap the API enforces, and clicking
   a button really records a judgment.

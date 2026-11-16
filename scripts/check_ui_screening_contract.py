@@ -4,7 +4,7 @@
 verified by driving the real API over real HTTP in the browser's own posture:
 a cross-origin `Origin` header, a session COOKIE rather than `X-Org-Key`, and
 `X-CSRF-Token` on every unsafe method. That posture is the point --
-`smoke_s84b.py` deliberately uses a machine credential in a throwaway cookie
+The S8.4 smoke deliberately used a machine credential in a throwaway cookie
 jar, because a client holding BOTH a cookie and an org key is CSRF-checked and
 every POST answers 403 (S8.2: CSRF keys on how the principal was established,
 not on which header arrived). The UI is the other client, and nothing else

@@ -210,7 +210,7 @@ it goes wrong.
   deliverable, so a suite that survives mutating them is not testing them. The
   harness is committed, unlike S8.3's and S8.5's, because a count nobody can
   re-derive is a claim rather than evidence.
-- `scripts/smoke_s91.py` — 15/15, the refusals asserted on the serialized body
+- The S9.1 smoke — 15/15, the refusals asserted on the serialized body
   an operator actually receives, plus both CLI exit codes.
 
 ## 9. Deliberately not here

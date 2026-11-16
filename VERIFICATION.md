@@ -280,7 +280,7 @@ finding from `soft` to `hard` is precisely what this file's "taxonomies are code
 constants" stance exists to prevent.
 
 `verif_otp_debug_echo` is **double-guarded**: the code is echoed only when
-`env == "local"` *and* the knob is true. It exists so `scripts/smoke_s71.py`
+`env == "local"` *and* the knob is true. It exists so a local smoke
 can drive the two-step flow over plain HTTP; production cannot echo a code even
 if the knob is flipped by accident.
 

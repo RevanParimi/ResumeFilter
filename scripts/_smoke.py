@@ -13,7 +13,7 @@ invariant nothing can test. Here it lives once, and
 `tests/test_smoke_harness.py` tests it.
 
 HOW THE IMPORT WORKS, because it looks odd. Smokes run as plain files
-(`python scripts/smoke_s86.py`), so `sys.path[0]` is `scripts/` and this
+(`python scripts/smoke_r2_s1_t2b.py`), so `sys.path[0]` is `scripts/` and this
 module is `_smoke`. Tests run from the repo root, where the same file is
 `scripts._smoke`. Both work, and nothing here holds module-level mutable
 state -- the check list belongs to a `Smoke` INSTANCE -- so the two names

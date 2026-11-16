@@ -10,9 +10,7 @@ test at all. A table that runs all known shapes together is the guard against
 that pattern repeating a third time.
 
 Fixtures live in tests/fixtures/shapes/*.txt (ruling R6, same convention as
-tests/test_extractor_shape_corpus.py) rather than as inline strings, so a
-future fixture can also be picked up by scripts/smoke_s92.py without a second
-copy.
+tests/test_extractor_shape_corpus.py) rather than as inline strings.
 """
 
 from pathlib import Path

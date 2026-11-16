@@ -27,7 +27,7 @@ def _with_email(resume: str, email: str = "priya.nair@example.in") -> str:
     never match on them -- every upload would fork a new candidate and any
     dedup assertion built on the bare fixture would be inert. Splice a contact
     line in AFTER the header so heuristic name parsing (which reads line 0) is
-    unaffected, exactly as scripts/smoke_s84a.py does."""
+    unaffected, exactly as the S8.4 smoke did."""
     lines = resume.splitlines()
     return "\n".join([lines[0], f"Email: {email}"] + lines[1:])
 

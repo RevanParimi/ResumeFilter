@@ -5,11 +5,9 @@ extractor change that re-drops a shape fails here rather than in a smoke six
 months later.
 
 Fixtures live in tests/fixtures/shapes/*.txt (ruling R6) rather than as
-module-level string constants: scripts/smoke_s92.py (Task 14) uploads these
-same shapes over HTTP, and smokes run as `python scripts/smoke_s92.py` with
-sys.path[0] == scripts/, so it cannot import from tests/. Files are readable
-from both; pasting a second copy is the duplication scripts/_smoke.py exists
-to end.
+module-level string constants, so a smoke run as a plain file (with
+sys.path[0] == scripts/, unable to import from tests/) can read the same
+shapes without a second copy.
 """
 
 from pathlib import Path

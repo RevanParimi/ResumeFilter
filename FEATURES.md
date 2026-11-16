@@ -90,9 +90,6 @@ versions, so historical materializations stay reproducible.
 Fully offline. Contracts + registry validation + each seed feature (incl.
 `years_experience` non-overlap math and the ordinal maps) + catalog integrity
 (every feature in `core_v1`; `requires_consent` ↔ source) + `build_context`.
-Direct-module smoke `scripts/smoke_s41.py` (S3.1 style): ingest a fixture
-candidate → depth-eval → submit consented ledger rows → build context → compute
-`core_v1` → assert the vector is well-formed, plus a no-ledger candidate.
 
 ## S4.2 — Materialization
 
@@ -176,11 +173,7 @@ materialized wide view) without changing how S4.2 writes.
 Slicer (`profile_as_of`, point-in-time `build_context`), `has_any_active`,
 `materialization_consent` (allowed/withheld + audit), materializer masking,
 `FeatureStore` (upsert idempotency + cascade-on-erase), export (wide CSV shape +
-guarded parquet), migration drift guard extended to `ml_feature_vectors`. Smoke
-`scripts/smoke_s42.py`: two candidates (A consented with future-dated ledger
-rows; B no consent) → materialize/persist/export → prove the point-in-time cut
-(A's future rows invisible at `now`, visible later), consent masking (B nulled),
-wide CSV header, guarded parquet, and DPDP cascade on erase.
+guarded parquet), migration drift guard extended to `ml_feature_vectors`.
 
 ## S4.3 — Talent search / ranking
 
@@ -274,11 +267,7 @@ comparisons, dtype-invalid op), normalization per dtype + `lower_better` +
 range-less fallback, scoring math (renormalization, coverage, tie-break, and the
 consent-withheld-not-penalized invariant asserted directly), `latest_as_of`,
 `Services.features` wiring, and endpoint 200/400/401/422 + `advisory=True` + limit
-+ `as_of` selection + empty pool. Smoke `scripts/smoke_s43.py` (uvicorn + HTTP):
-three candidates (none consented) → materialize/persist → search proves a sensible
-ranking with contributions, a filter that narrows the pool, and that
-consent-withheld candidates are ranked with reduced `coverage` (reputation dropped)
-rather than pushed to the bottom.
++ `as_of` selection + empty pool.
 
 ## S4.4 — Training-set export (features ⋈ outcomes)
 
@@ -375,7 +364,4 @@ Pure `build_label` (no-leakage boundary, terminal-best + withdrawn-excluded,
 event_at/lag, hire-positive set, censoring, coding-best, consent-withheld),
 `audit_training_label`, `build_training_set` over a mix (labeled / censored /
 withheld) proving no ledger read when withheld + every join audited, and labeled
-export shape (CSV header + values, guarded parquet). Smoke `scripts/smoke_s44.py`:
-A consented+labeled (post-cut hired, point-in-time features), B consented+censored
-(pre-cut hired does NOT leak), C withheld (features + label null, `training.label`
-withheld audit).
+export shape (CSV header + values, guarded parquet).

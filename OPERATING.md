@@ -32,8 +32,8 @@ not the other has shipped as a real defect in S7.1, S7.2 and S7.3."*
 
 **Signup and login share the `login_request` budget**, deliberately. Both mint
 and send a code, so counting them separately would double the real bound on the
-only thing being defended. `scripts/smoke_s83a.py` asserts this explicitly —
-its first version assumed the opposite and was wrong.
+only thing being defended. The S8.3 smoke asserted this explicitly; its first
+version assumed the opposite and was wrong.
 
 **`screening_process` is the one that protects the bill.** `process` is capped
 at `screening_max_items_per_call` (5), which bounds one request and says
@@ -869,9 +869,8 @@ the second scope's window looking clean to whoever reads §3.
 `rule | scope | identity` — never the email, never the IP. An in-process
 limiter resets on every container start and is per-worker, so two uvicorn
 workers would silently double every limit. Both are failures of the exact
-surface a limiter exists for, and **both pass every unit test**;
-`smoke_s83a.py` check 6 restarts the server against the same database and is
-the check that tells them apart.
+surface a limiter exists for, and **both pass every unit test**; only a
+server restart against the same database tells them apart.
 
 ## 2. Fixed windows, stated honestly
 
@@ -1002,7 +1001,7 @@ exactly one door that evaluates an item, and this is not a second one.
 - Another organisation's batch answers **404, never 403**, and is
   indistinguishable from an unknown id: same status, same body. (`X-Request-ID`
   differs on every response by design and carries nothing about the batch.
-  Asserted by `smoke_s83a` check 10 and
+  Asserted by
   `tests/test_screening_batches_api.py::test_another_org_gets_404_never_403`.)
 - It is not itself rate-limited: it is one `UPDATE`, and the spend it unlocks
   is bounded by `screening_process` on the call that does the work.
@@ -1299,8 +1298,8 @@ security patches, so this is a ritual with a cadence, not a one-time act:
 pip install -U -r requirements.txt
 # 3. the suite must be green
 pytest -q
-# 4. plus the smokes covering whatever the upgrade touches
-python scripts/smoke_s92.py
+# 4. plus the smoke CI runs and the checks covering whatever the upgrade touches
+python scripts/smoke_r2_s1_t2b.py
 # 5. re-pin to exactly what step 2 resolved, in a commit that changes
 #    NOTHING else -- so `git log` shows the upgrade as its own reviewable act
 ```
