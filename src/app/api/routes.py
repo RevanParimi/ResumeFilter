@@ -4,7 +4,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 # Compatibility aliases retain callable identity for existing route guards.
 from app.api.auth import auth_router
-from app.api.curation import router as curation_router
 from app.api.operator import (
     metrics_router as operator_metrics_router, retention_router as operator_retention_router,
     router as operator_router,
@@ -46,7 +45,6 @@ candidate_router = APIRouter()
 # Preserve the complete admin-plane registration order.
 router.routes.extend(evaluation_router.routes)
 router.routes.extend(candidate_admin_router.routes)
-router.routes.extend(curation_router.routes)
 router.routes.extend(ledger_admin_router.routes)
 router.routes.extend(verification_admin_router.routes)
 router.routes.extend(feature_router.routes)

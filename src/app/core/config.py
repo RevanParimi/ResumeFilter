@@ -110,32 +110,6 @@ class Settings(BaseSettings):
     github_token: SecretStr = Field(default=SecretStr(""))
     github_api_base: str = "https://api.github.com"
 
-    # --- Profile sources (PI-6, S6.1): GitHub-as-signal ------------------------
-    # A candidate-supplied GitHub handle is fetched (public data only) and turned
-    # into an ADVISORY structured skill/activity signal. Limits bound rate-limit
-    # exposure; forks are not authored signal.
-    ps_github_repo_limit: int = Field(default=100, ge=1)
-    ps_github_language_repos: int = Field(default=30, ge=0)
-    ps_github_include_forks: bool = False
-
-    # --- Profile sources (PI-6, S6.2): LinkedIn export parsing ------------------
-    # The candidate uploads their own LinkedIn "Get a copy of your data" ZIP.
-    # Pure parse (no network, no LLM). Self-reported Skills.csv entries are
-    # low-confidence CLAIMS, bumped only when a position/headline corroborates.
-    max_linkedin_b64_chars: int = 8_000_000  # reject oversize uploads (≈6 MB zip)
-    ps_linkedin_skill_base_confidence: float = Field(default=0.4, ge=0.0, le=1.0)
-    ps_linkedin_skill_corroborated_confidence: float = Field(default=0.6, ge=0.0, le=1.0)
-    ps_linkedin_max_rows: int = Field(default=5_000, ge=1)  # per-CSV row cap
-
-    # --- Normalization curation loop (PI-6, S6.3) ------------------------------
-    # Human-in-the-loop taxonomy repair: unmapped skill terms surfaced by the
-    # profile-source adapters queue for admin review; a resolution feeds a
-    # deterministic normalize_skill overlay. No LLM. The queue is
-    # candidate-agnostic (taxonomy-gap metadata — no candidate_id, no consent).
-    cur_queue_default_limit: int = Field(default=200, ge=1)   # default + max rows returned
-    cur_min_term_len: int = Field(default=2, ge=1)            # skip single-char noise
-    cur_max_term_len: int = Field(default=64, ge=1)           # drop overlong junk
-
     # --- Candidate auth + DPDP portal (PI-6, S6.4) ----------------------------
     # First-party candidate auth (minted access key, mirrors ledger_api_key_bytes)
     # + retention POSTURE surfaced by the portal. These day-counts parametrize the
@@ -146,7 +120,6 @@ class Settings(BaseSettings):
     ret_interview_record_days: int = Field(default=1825, ge=1)  # 5y
     ret_coding_round_days: int = Field(default=1825, ge=1)      # 5y
     ret_observed_offer_days: int = Field(default=1825, ge=1)    # 5y
-    ret_profile_source_days: int = Field(default=1095, ge=1)    # 3y
     ret_audit_log_days: int = Field(default=2555, ge=1)         # 7y — longest
 
     # --- Identity verification (PI-7, S7.1) -----------------------------------
@@ -163,16 +136,6 @@ class Settings(BaseSettings):
     verif_outcome_ttl_days: int = Field(default=365, ge=1)
     verif_otp_debug_echo: bool = False
     ret_verification_days: int = Field(default=1095, ge=1)  # 3y, posture only
-
-    # --- Document forensics (PI-7, S7.2) --------------------------------------
-    # Deterministic and offline. The document itself is never stored; these
-    # bound what will be parsed before anything is decoded.
-    doc_max_b64_chars: int = Field(default=8_000_000, ge=1024)   # ~6MB decoded
-    doc_max_pages: int = Field(default=20, ge=1)
-    doc_metadata_skew_days: int = Field(default=1, ge=0)
-    # Higher than xf_overlap_months_min on purpose: a three-month overlap is a
-    # notice period, not a second job.
-    moonlight_min_overlap_months: int = Field(default=12, ge=1)
 
     # --- AI interviews (PI-7, S7.3) -------------------------------------------
     # Band cut-points are knobs (the ai_*/fr_*/rep_* precedent -- a band is a

@@ -181,18 +181,17 @@ async def test_injected_bundle_and_clients_are_borrowed(production):
     assert all(client.aclose.await_count == 0 for client in clients)
 
 
-@pytest.mark.parametrize("boundary", ["curation", "portal"])
+@pytest.mark.parametrize("boundary", ["candidates", "portal"])
 def test_failed_sync_composition_opens_no_http_transport(production, monkeypatch, boundary):
     import app.services as module
-    from app.curation.service import CurationService
     monkeypatch.setattr(module, "GitHubClient", GitHubClient)
     calls = []
     def transport(**kwargs):
         calls.append(kwargs); return SimpleNamespace()
     def fail(self): raise RuntimeError("synthetic startup refusal")
     monkeypatch.setattr(httpx, "AsyncClient", transport)
-    if boundary == "curation":
-        monkeypatch.setattr(CurationService, "refresh_overlay", fail)
+    if boundary == "candidates":
+        monkeypatch.setattr(module, "build_candidate_store", lambda *args, **kwargs: fail(None))
     else:
         import app.portal.service as portal
         monkeypatch.setattr(portal, "build_portal_service", lambda *args, **kwargs: fail(None))

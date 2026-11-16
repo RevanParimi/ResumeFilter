@@ -5,7 +5,6 @@ No external mail/provider calls, working storage or existing demo restart.
 """
 
 import asyncio
-import base64
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, asynccontextmanager
 import json
@@ -503,9 +502,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 94 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 87 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 94)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 87)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -692,23 +691,12 @@ def run(scratch, url, pg_options):
                     ("POST", "/portal/consents", {"purpose": "verification_read"}),
                     ("DELETE", "/portal/me", None))))
             sibling.headers["X-CSRF-Token"] = sibling_csrf
-            # T3I: first-party documents/manual review and redacted employer reads.
-            verification_paths = {kind: f"/verification/candidates/{subject}/{kind}" for kind in ("assurance", "claims")}
+            # T3I: manual review and redacted employer reads.
+            verification_paths = {kind: f"/verification/candidates/{subject}/{kind}" for kind in ("assurance",)}
             checks.check("employer verification reads require current consent", all(
                 org.get(path).status_code == 403 for path in verification_paths.values()))
-            document = {"doc_type": "experience_letter", "claim_ref": employer_candidate,
-                "content_b64": base64.b64encode(b"ACME TECHNOLOGIES PRIVATE LIMITED\nhr@acme.com\n"
-                    b"This is to certify that Synthetic Feature Subject was employed with Acme Technologies "
-                    b"as a Software Engineer from March 2021 to January 2024.\nHead of Human Resources\n").decode("ascii")}
-            checks.check("document cookie plus foreign key still requires CSRF",
-                sibling.post("/portal/documents", json=document, headers={"X-CSRF-Token": ""}).status_code == 403)
-            checks.check("malformed document refuses without saving a verification",
-                sibling.post("/portal/documents", json={**document, "content_b64": "!!!"}).status_code == 400
-                and require(sibling.get("/portal/verifications"))["verifications"] == [])
-            saved_document = require(sibling.post("/portal/documents", json=document))
-            checks.check("document belongs to cookie subject and cannot raise identity assurance",
-                saved_document["verification"]["candidate_id"] == subject
-                and saved_document["verification"]["subject"] == "employment_claim"
+            checks.check("verifications start empty for the cookie subject and the other subject",
+                require(sibling.get("/portal/verifications"))["verifications"] == []
                 and require(sibling.get("/portal/verifications"))["assurance"]["level"] == 0
                 and require(control.get("/portal/verifications", headers={"X-Candidate-Key": other_portal_key}))["verifications"] == [])
             review_path = f"/candidates/{subject}/verifications/manual-review"
@@ -717,9 +705,8 @@ def run(scratch, url, pg_options):
                 and operator.post(review_path, json={"outcome": "verified"}, headers={"X-CSRF-Token": ""}).status_code == 403)
             saved_review = require(operator.post(review_path, json={"outcome": "verified", "evidence_digest": "a" * 64, "note": "Private manual evidence"}))
             saved_verifications = require(sibling.get("/portal/verifications"))
-            checks.check("manual review lifts only identity ladder and retains document findings",
-                saved_review["assurance_level"] == saved_verifications["assurance"]["level"] == 3
-                and saved_verifications["claims"] == saved_document["claims"])
+            checks.check("manual review lifts the identity ladder",
+                saved_review["assurance_level"] == saved_verifications["assurance"]["level"] == 3)
             portal_grant = require(sibling.post("/portal/consents", json={"purpose": "verification_read", "org_id": org_id}))
             saved_assessments = {kind: require(org.get(path)) for kind, path in verification_paths.items()}
             checks.check("consented employer receives advisory summaries without private evidence", all(
@@ -755,7 +742,7 @@ def run(scratch, url, pg_options):
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
             checks.check("subject grants survive graceful restart exactly",
                 portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
-            checks.check("verification documents manual review and employer summaries survive graceful restart exactly",
+            checks.check("verification manual review and employer summaries survive graceful restart exactly",
                 require(sibling.get("/portal/verifications")) == saved_verifications
                 and all(require(org.get(path)) == saved_assessments[kind] for kind, path in verification_paths.items()))
             require(sibling.post(f"/portal/consents/{portal_grant['id']}/revoke"))
@@ -773,9 +760,9 @@ def run(scratch, url, pg_options):
                 revoked_card[section]["status"] == "consent_required" for section in ("records", "coding_rounds", "reputation"))
                 and org.post("/ledger/offers", json=offer_body).status_code == 403)
             access_log = require(sibling.get("/portal/access-log"))
-            checks.check("verification and claim audit retain allowed and denied employer access", all(
+            checks.check("verification audit retains allowed and denied employer access", all(
                 {row["allowed"] for row in access_log if row["action"] == action} == {True, False}
-                for action in ("verification.query", "claim.query")))
+                for action in ("verification.query",)))
             checks.check("subject sees allowed and denied audited ledger queries", all(
                 {row["allowed"] for row in access_log if row["action"] == action} == {True, False}
                 for action in ("record.query", "coding_round.query", "reputation.query")))

@@ -21,28 +21,6 @@ from app.schemas.claims import AnchorType, ExternalAnchor
 log = get_logger(__name__)
 
 
-class GitHubRepoRaw(BaseModel):
-    name: str
-    language: Optional[str] = None
-    languages: dict[str, int] = Field(default_factory=dict)
-    stargazers_count: int = 0
-    pushed_at: Optional[str] = None
-    fork: bool = False
-
-
-class GitHubUserRaw(BaseModel):
-    """Raw, source-shaped GitHub account data. ``available=False`` ⇒ the fetch
-    could not complete (404 / rate-limit / network) — never an exception."""
-
-    login: str
-    available: bool = True
-    public_repos: int = 0
-    followers: int = 0
-    account_created: Optional[str] = None
-    repos: list[GitHubRepoRaw] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-
-
 class GitHubRepoEvidence(BaseModel):
     """Visible repository metadata and unavailable fetch context, kept separate."""
 
@@ -70,7 +48,6 @@ def parse_github_url(url: str) -> Optional[ExternalAnchor]:
 
 class GitHubService(Protocol):
     async def gather_repo_evidence(self, owner: str, repo: str) -> GitHubRepoEvidence: ...
-    async def gather_user_signal(self, login: str) -> "GitHubUserRaw": ...
 
 
 class GitHubClient:
@@ -153,65 +130,6 @@ class GitHubClient:
         else:
             result.observations.append("Public commit sample is empty; this does not establish absence of work.")
         return result
-
-    async def gather_user_signal(self, login: str) -> GitHubUserRaw:
-        """A user's public repos aggregated into a raw signal DTO. Any fetch
-        failure yields available=False + a warning — never raises."""
-        try:
-            r = await self._get_client().get(f"/users/{login}")
-        except httpx.HTTPError as exc:
-            log.warning("github_user_fetch_error", login=login, error=str(exc))
-            return GitHubUserRaw(
-                login=login, available=False,
-                warnings=[f"GitHub user fetch failed for {login}: {exc}"],
-            )
-        if r.status_code == 404:
-            return GitHubUserRaw(
-                login=login, available=False,
-                warnings=[f"GitHub user {login} not found."],
-            )
-        if r.status_code >= 400:
-            return GitHubUserRaw(
-                login=login, available=False,
-                warnings=[f"GitHub returned {r.status_code} for user {login}."],
-            )
-        u = r.json()
-        repos_json = await self._safe_get_json(f"/users/{login}/repos?per_page=100&sort=pushed")
-        repos_json = repos_json if isinstance(repos_json, list) else []
-        repos_json = repos_json[: self.settings.ps_github_repo_limit]
-
-        repos: list[GitHubRepoRaw] = []
-        for i, rp in enumerate(repos_json):
-            is_fork = bool(rp.get("fork", False))
-            languages: dict[str, int] = {}
-            if i < self.settings.ps_github_language_repos and not is_fork:
-                langs = await self._safe_get_json(f"/repos/{login}/{rp.get('name')}/languages")
-                if isinstance(langs, dict):
-                    languages = {k: int(v) for k, v in langs.items()}
-            repos.append(GitHubRepoRaw(
-                name=rp.get("name", ""),
-                language=rp.get("language"),
-                languages=languages,
-                stargazers_count=int(rp.get("stargazers_count", 0) or 0),
-                pushed_at=rp.get("pushed_at"),
-                fork=is_fork,
-            ))
-        return GitHubUserRaw(
-            login=login, available=True,
-            public_repos=int(u.get("public_repos", 0) or 0),
-            followers=int(u.get("followers", 0) or 0),
-            account_created=u.get("created_at"),
-            repos=repos,
-        )
-
-    async def _safe_get_json(self, path: str):
-        try:
-            r = await self._get_client().get(path)
-            if r.status_code < 400:
-                return r.json()
-        except httpx.HTTPError as exc:
-            log.warning("github_subfetch_error", path=path, error=str(exc))
-        return None
 
     async def aclose(self) -> None:
         if self._closed:

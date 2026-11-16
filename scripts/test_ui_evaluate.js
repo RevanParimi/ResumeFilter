@@ -12,7 +12,6 @@ const start = html.indexOf(">", open) + 1;
 const logic = html.slice(start, html.indexOf("</script>", start));
 const operatorAccountsSource = fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8");
 const organizationAdminSource = fs.readFileSync(path.join(ROOT, "frontend/organization-admin.js"), "utf8");
-const curationSource = fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8");
 const evaluationReportSource = fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8");
 const screeningSource = fs.readFileSync(path.join(ROOT, "frontend/screening.js"), "utf8");
 const portalAuthSource = fs.readFileSync(path.join(ROOT, "frontend/portal-auth.js"), "utf8");
@@ -38,7 +37,6 @@ function component(kind = "org", post) {
   }
   new Function("window", operatorAccountsSource)(window);
   new Function("window", organizationAdminSource)(window);
-  new Function("window", curationSource)(window);
   new Function("window", evaluationReportSource)(window);
   new Function("window", screeningSource)(window);
   new Function("window", portalAuthSource)(window);
@@ -305,7 +303,7 @@ test("shared shell preserves every screen flag, plane, search and advisory place
     portal: ["isPortal", "Your data"], accesslog: ["isAccessLog", "Access log"], consents: ["isConsents", "Consents"],
     devices: ["isDevices", "Signed-in devices"], erasure: ["isErasure", "Delete everything"],
     adminorgs: ["isAdminOrgs", "Organisations"], adminusers: ["isAdminUsers", "Operator accounts"],
-    curation: ["isCuration", "Curation queue"], roles: ["isRoles", "Roles"], comp: ["isComp", "Comp intelligence"],
+    roles: ["isRoles", "Roles"], comp: ["isComp", "Comp intelligence"],
     evaluate: ["isEvaluate", "Instant check"], interview: ["isInterview", "Your interview"]
   };
   for (const kind of ["org", "candidate", "admin"]) {

@@ -45,7 +45,7 @@ from app.ledger.store import LedgerStore
 from app.metrics.registry import build_metrics
 from app.services import Services
 from app.services.flywheel import InMemoryFlywheel
-from app.services.github import GitHubRepoEvidence, GitHubRepoRaw, GitHubUserRaw
+from app.services.github import GitHubRepoEvidence
 from app.services.llm import LLMClient, NullLLM
 from app.reports.store import SqlReportStore
 from app.services.email import build_email
@@ -55,17 +55,14 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeGitHub:
-    """Canned GitHub provenance + user signals; no network."""
+    """Canned GitHub provenance; no network."""
 
     def __init__(
         self,
         evidence: dict[tuple[str, str], list[str] | GitHubRepoEvidence] | None = None,
-        user_signals: dict[str, GitHubUserRaw] | None = None,
     ) -> None:
         self._evidence = evidence or {}
-        self._user_signals = user_signals or {}
         self.calls: list[tuple[str, str]] = []
-        self.user_calls: list[str] = []
 
     async def gather_repo_evidence(self, owner: str, repo: str) -> GitHubRepoEvidence:
         self.calls.append((owner, repo))
@@ -74,18 +71,6 @@ class FakeGitHub:
             [f"Repo {owner}/{repo} exists: primary_language=Python, recent commits found."],
         )
         return result if isinstance(result, GitHubRepoEvidence) else GitHubRepoEvidence(observations=result)
-
-    async def gather_user_signal(self, login: str) -> GitHubUserRaw:
-        self.user_calls.append(login)
-        return self._user_signals.get(
-            login,
-            GitHubUserRaw(
-                login=login, available=True, public_repos=1, followers=0,
-                repos=[GitHubRepoRaw(name="demo", language="Python",
-                                     languages={"Python": 10000}, stargazers_count=3,
-                                     pushed_at="2025-01-01T00:00:00Z")],
-            ),
-        )
 
 
 class FakeLLM(LLMClient):
@@ -145,14 +130,6 @@ def settings(monkeypatch) -> Settings:
 @pytest.fixture
 def admin_headers() -> dict[str, str]:
     return dict(ADMIN_HEADERS)
-
-
-@pytest.fixture(autouse=True)
-def _reset_curation_overlay():
-    from app.candidates.normalize.skills import clear_curated_overlay
-    clear_curated_overlay()
-    yield
-    clear_curated_overlay()
 
 
 @pytest.fixture
@@ -238,8 +215,6 @@ def make_services(
     jobs=None,
     comp=None,
     dashboard=None,
-    profile_sources=None,
-    curation=None,
     portal=None,
     verification=None,
     speech=None,
@@ -273,20 +248,6 @@ def make_services(
     if dashboard is None:
         from app.dashboard.service import DashboardService
         dashboard = DashboardService(jobs, comp, ledger, settings=settings)
-    if curation is None:
-        from app.curation.service import CurationService
-        from app.curation.store import CurationStore
-        curation = CurationService(
-            store=CurationStore(candidates._session_factory), settings=settings
-        )
-    if profile_sources is None:
-        from app.profile_sources.service import ProfileSourceService
-        from app.profile_sources.store import ProfileSourceStore
-        profile_sources = ProfileSourceService(
-            github=github,
-            store=ProfileSourceStore(candidates._session_factory),
-            candidates=candidates, settings=settings, curation=curation,
-        )
     report_store = SqlReportStore(candidates._session_factory)
     # Match production: auth and verification share the explicitly selected
     # email capability, including its refusing default.
@@ -297,7 +258,7 @@ def make_services(
         from app.verification.delivery import EmailNotifier
         verification = VerificationService(
             VerificationStore(candidates._session_factory, ledger=ledger, settings=settings),
-            candidates, ledger, profile_sources=profile_sources, settings=settings,
+            candidates, ledger, settings=settings,
             notifier=EmailNotifier(email),
         )
     # Default to the REFUSING speech client: the suite proves the no-key path
@@ -333,7 +294,7 @@ def make_services(
     if portal is None:
         from app.portal.service import PortalService
         portal = PortalService(
-            candidates, ledger, report_store, profile_sources,
+            candidates, ledger, report_store,
             verification=verification, interview=interview, auth=auth,
             settings=settings,
         )
@@ -373,8 +334,6 @@ def make_services(
         jobs=jobs,
         comp=comp,
         dashboard=dashboard,
-        profile_sources=profile_sources,
-        curation=curation,
         portal=portal,
         verification=verification,
         interview=interview,

@@ -294,19 +294,8 @@ external delivery, live-data cleanup or demo restart is part of this change.
 
 `candidate_record_max_concurrent_requests` defaults to **2** per Services/app
 process. Its separate queue-free pool runs the complete operator candidate
-detail/resume-list/report-list/source-list GET operations and POST
-`/candidates/{id}/auth-key`. Source listing includes its complete service initial
-candidate check, filtered/history SELECT and final candidate-erasure snapshot.
-GitHub POST `/candidates/{id}/sources/github` uses the same pool for separately
-admitted candidate/handle resolution before its async provider and complete
-source-save/curation/final-guard work afterwards. Async GitHub fetch and the
-lightweight signal transform stay on the caller; provider wait holds no SQL slot.
-LinkedIn POST `/candidates/{id}/sources/linkedin` admits candidate lookup plus
-encoded-size/strict base64 checks/decode first, then admits the complete service
-candidate-check/ZIP/CSV parse/transform/save/curation/final-guard operation.
-Both use this same pool and own their SQL sessions. Candidate-before-transport
-404/422 precedence and the second pre-parse candidate snapshot remain intact.
-Workers own summary/payload/final existence checks and every SQL session; only
+detail/resume-list/report-list GET operations and POST
+`/candidates/{id}/auth-key`. Workers own summary/payload/final existence checks and every SQL session; only
 store/bound-reader/id arguments and detached results cross the boundary. Operator
 authentication and session-CSRF stay on the caller. Other intake, candidate-rights
 and handler/graph SQL is separate work; this pool does not cover all operations.
@@ -318,29 +307,6 @@ and `DEE_CANDIDATE_RECORD_WAIT_SECONDS`, then restart. Full/closed admission giv
 before the owning operation. Wait expiry gives **503** `candidate_record_pending`.
 Each includes `Retry-After: 1`, without partial records, a replacement key or
 cookies. Missing or observed-erased candidates give the existing generic 404.
-Unrelated source lookup failures remain server errors; they are not classified
-as candidate erasure. A source read may finish after its caller stops waiting;
-it writes nothing and does not trigger ingestion, a provider or replay. Deliberate
-fresh GET recovers current saved history. Source rows already loaded are snapshots,
-and the final candidate check does not lock later source deletion/HTTP delivery.
-
-GitHub pre-operation timeout/cancel does not later fetch or save. Post-operation
-timeout/cancel may leave a committed source and curation; source save, curation
-and final snapshot retain their existing separate transactions. Curation remains
-guarded and best-effort, so its failure can leave the source saved. Read known
-candidate source history after work settles before deciding whether to POST again.
-A deliberate fresh POST can repeat the provider and append another source; no
-new idempotency key or automatic replay is supplied. A later admission refusal
-can follow a completed provider call. Each owning operation has its own admission/
-wait budget; it is not a provider or whole-request deadline.
-
-LinkedIn transport timeout/cancel does not later parse/save. Once the complete
-service operation is admitted, a timeout during its candidate check or parsing
-can still be followed by source/curation commits. Read saved history before a
-deliberate fresh POST, which can append another export signal. Encoded input cap
-and per-CSV row cap remain unchanged; caller wait cannot kill a parsing thread
-or promise hard expanded-archive memory/CPU or shutdown limits. Bad/unrecognized
-archive fallbacks, raw-cell curation guards and advisory confidence are unchanged.
 
 Timeout/cancellation retains admission until actual completion. A late auth-key
 POST can rotate the credential and invalidate the old key without delivering its
@@ -1002,7 +968,6 @@ portal keeps promising a window that nothing enforces.
 | data class | knob (default) | table(s) | keyed on | mode |
 |---|---|---|---|---|
 | `resumes` | `ret_resume_days` (1095) | `resumes` | `created_at` | delete |
-| `profile_sources` | `ret_profile_source_days` (1095) | `profile_sources` | `created_at` | delete |
 | `verifications` | `ret_verification_days` (1095) | `verifications` | `created_at` | delete |
 | `interviews` | `ret_interview_session_days` (1095) | `interview_sessions` | `created_at` | delete |
 | `interview_records` | `ret_interview_record_days` (1825) | `interview_records` | `created_at` | delete |

@@ -335,7 +335,7 @@ class InterviewStore:
     def assessments_for_org(
         self, *, org_id: str, candidate_id: str, at: Optional[datetime] = None
     ) -> list[InterviewSummary]:
-        """Query-time DPDP gate, mirroring VerificationStore.claims_for_org: an
+        """Query-time DPDP gate, mirroring VerificationStore.assurance_for_org: an
         org sees interview assessments only under an active INTERVIEW_READ
         grant, and EVERY attempt -- allowed or denied -- is audited in the same
         transaction, because surveillance must itself be observable.

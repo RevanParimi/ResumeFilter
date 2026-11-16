@@ -49,13 +49,11 @@ def _cleanup_failed_build(close, resource: str) -> None:
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
     from app.auth.service import AuthService
     from app.comp.service import CompService
-    from app.curation.service import CurationService
     from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
     from app.interview.service import InterviewService
     from app.matching.store import JobStore
     from app.portal.service import PortalService
-    from app.profile_sources.service import ProfileSourceService
     from app.verification.service import VerificationService
 
 
@@ -73,8 +71,6 @@ class Services:
     jobs: JobStore
     comp: CompService
     dashboard: DashboardService
-    profile_sources: ProfileSourceService
-    curation: CurationService
     portal: PortalService
     verification: VerificationService
     interview: InterviewService
@@ -343,13 +339,11 @@ def build_default_services(
     # sidesteps the import cycle the top-level import would create.
     from app.auth.service import build_auth_service
     from app.comp.service import build_comp_service
-    from app.curation.service import build_curation_service
     from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
     from app.interview.service import build_interview_service
     from app.matching.store import build_job_store
     from app.portal.service import build_portal_service
-    from app.profile_sources.service import build_profile_source_service
     from app.verification.service import build_verification_service
 
     settings = settings or get_settings()
@@ -365,12 +359,7 @@ def build_default_services(
         # FIRST: every limiter built below takes it, so that a rate-limit decision
         # is countable from the moment the first one is made.
         metrics = build_metrics()
-        # Hoisted so the profile-source service shares the one GitHub client + the
-        # candidate store (handle derivation + existence checks) with the container.
         candidates = build_candidate_store(settings, session_factory=session_factory)
-        curation = build_curation_service(settings, session_factory=session_factory)
-        curation.purge_expired()  # physical cleanup; fail startup if maintenance fails
-        curation.refresh_overlay()  # load prior curation into the normalize_skill overlay
         # Providers allocate HTTP/SDK transports only on first use. Failed
         # synchronous composition therefore has no asynchronous transport to close.
         if github is None:
@@ -381,16 +370,10 @@ def build_default_services(
         features = build_feature_store(settings, session_factory=session_factory)
         jobs = build_job_store(settings, candidates=candidates, features=features, session_factory=session_factory)
         comp = build_comp_service(settings, ledger=ledger)
-        profile_sources = build_profile_source_service(
-            settings, github=github, candidates=candidates, curation=curation
-        )
-        # Built AFTER profile_sources (whose canonical employers corroborate a
-        # submitted document) and BEFORE the portal (whose my_data view reads
-        # identity assurance and claim evidence).
+        # Built BEFORE the portal (whose my_data view reads identity assurance).
         email = build_email(settings)
         verification = build_verification_service(
-            settings, candidates=candidates, ledger=ledger,
-            profile_sources=profile_sources, email=email,
+            settings, candidates=candidates, ledger=ledger, email=email,
         )
         # Built AFTER verification (whose assurance number is the proxy hook) and
         # BEFORE the portal (whose my_data view lists interview summaries).
@@ -431,11 +414,9 @@ def build_default_services(
             jobs=jobs,
             comp=comp,
             dashboard=build_dashboard_service(settings, jobs=jobs, comp=comp, ledger=ledger),
-            profile_sources=profile_sources,
-            curation=curation,
             portal=build_portal_service(
                 settings, candidates=candidates, ledger=ledger,
-                report_store=report_store, profile_sources=profile_sources,
+                report_store=report_store,
                 verification=verification, interview=interview, auth=auth,
             ),
             verification=verification,

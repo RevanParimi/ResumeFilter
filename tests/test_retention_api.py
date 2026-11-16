@@ -16,7 +16,7 @@ from app.main import create_app
 from app.retention.sweep import main
 
 ALL_CLASSES = {
-    "resumes", "profile_sources", "verifications", "interviews",
+    "resumes", "verifications", "interviews",
     "interview_records", "coding_rounds", "observed_offers", "audit_log",
     "batch_item_text", "rate_limit_counters", "login_state",
 }

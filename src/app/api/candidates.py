@@ -1,12 +1,10 @@
-"""Admin candidate intake, resume management and advisory profile sources.
+"""Admin candidate intake and resume management.
 
 Employer intake shares the DTOs and HTTP adapter; portal erasure shares its DTO.
 Authentication and CSRF remain in the central request dependencies.
 """
 from __future__ import annotations
 
-import base64
-import binascii
 from datetime import datetime
 from typing import Optional
 
@@ -19,8 +17,6 @@ from app.candidates.store import MatchedOn, ResumeSummary
 from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.core.resume import ResumeInputError, read_resume_input_async
 from app.domains.base import get_domain
-from app.profile_sources.schema import ProfileSourceSignal, ProfileSourceType
-from app.profile_sources.store import SourceSignalErasedError, SourceSubjectErasedError
 from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.schemas.report import Report
@@ -280,106 +276,3 @@ async def _candidate_record(request: Request, operation, *args):
         # old key without delivering the replacement. Never replay or echo it.
         raise HTTPException(status_code=503, detail='candidate_record_pending',
                             headers={'Retry-After': '1'}) from None
-
-
-class GitHubSourceRequest(BaseModel):
-    handle: Optional[str] = None
-
-
-class LinkedInSourceRequest(BaseModel):
-    export_b64: str
-
-
-class ProfileSourcesResponse(BaseModel):
-    candidate_id: str
-    sources: list[ProfileSourceSignal]
-
-
-@router.post(
-    "/candidates/{candidate_id}/sources/github", response_model=ProfileSourceSignal
-)
-async def ingest_github_source(
-    candidate_id: str, req: GitHubSourceRequest, request: Request
-) -> ProfileSourceSignal:
-    """Ingest a candidate's public GitHub handle as an advisory skill signal
-    (S6.1). A missing/unreachable handle returns 200 with method='unavailable';
-    a handle that can't be resolved at all is 400."""
-    services = _services(request)
-    try:
-        return await services.profile_sources.ingest_github(
-            candidate_id, handle=req.handle, executor=services.candidate_records,
-        )
-    except ExecutionUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
-    except ExecutionPending:
-        # Source/curation commits may survive. Read saved history before a
-        # deliberate fresh POST, which can append another provider result.
-        raise HTTPException(status_code=503, detail='candidate_record_pending',
-                            headers={'Retry-After': '1'}) from None
-    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from None
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@router.post(
-    "/candidates/{candidate_id}/sources/linkedin", response_model=ProfileSourceSignal
-)
-async def ingest_linkedin_source(
-    candidate_id: str, req: LinkedInSourceRequest, request: Request
-) -> ProfileSourceSignal:
-    """Ingest a candidate's uploaded LinkedIn data export (base64 ZIP) as an
-    advisory skill signal (S6.2). Malformed transport (bad base64 / oversize) is
-    422; a valid file with no recognizable LinkedIn CSVs returns 200 with
-    method='unavailable'."""
-    services = _services(request)
-    try:
-        executor = services.candidate_records
-        data = await executor.run(_linkedin_data, services.candidates, services.settings,
-                                  candidate_id, req.export_b64)
-        return await services.profile_sources.ingest_linkedin(candidate_id, data, executor=executor)
-    except ExecutionUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
-    except ExecutionPending:
-        # Accepted parsing/save/curation work may still commit. Read history
-        # after it settles before a deliberate POST that can append another source.
-        raise HTTPException(status_code=503, detail='candidate_record_pending',
-                            headers={'Retry-After': '1'}) from None
-    except (SourceSubjectErasedError, SourceSignalErasedError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from None
-
-
-def _linkedin_data(candidates, settings, candidate_id: str, export_b64: str) -> bytes:
-    # Preserve candidate-before-transport errors and keep base64 work off-loop.
-    if candidates.get_candidate(candidate_id) is None:
-        raise SourceSubjectErasedError()
-    if len(export_b64) > settings.max_linkedin_b64_chars:
-        raise HTTPException(
-            status_code=422,
-            detail=f"export_b64 exceeds max_linkedin_b64_chars={settings.max_linkedin_b64_chars}",
-        )
-    try:
-        return base64.b64decode(export_b64, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="invalid_base64") from exc
-
-
-@router.get(
-    "/candidates/{candidate_id}/sources", response_model=ProfileSourcesResponse
-)
-async def list_candidate_sources(
-    candidate_id: str, request: Request, source_type: Optional[ProfileSourceType] = None
-) -> ProfileSourcesResponse:
-    services = _services(request)
-    try:
-        sources = await services.candidate_records.run(
-            services.profile_sources.list_sources, candidate_id, source_type,
-        )
-    except SourceSubjectErasedError:
-        raise HTTPException(status_code=404, detail="candidate not found") from None
-    except ExecutionUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from None
-    except ExecutionPending:
-        raise HTTPException(status_code=503, detail='candidate_record_pending',
-                            headers={'Retry-After': '1'}) from None
-    return ProfileSourcesResponse(candidate_id=candidate_id, sources=sources)

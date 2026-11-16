@@ -243,8 +243,8 @@ verifying yourself afterwards cannot rewrite what a finished session was worth.
   indistinguishable 404.
 
 **The assessment is stored** — the one deliberate departure from the read-time
-roll-up rule. `IdentityAssurance` and `ClaimEvidence` depend on the clock and on
-rows that arrive later, so storing them would store a lie; an assessment is a
+roll-up rule. `IdentityAssurance` depends on the clock and on rows that arrive
+later, so storing it would store a lie; an assessment is a
 closed fact about a finished session, and recomputing it would re-hit a paid
 model and produce a different number on every read.
 

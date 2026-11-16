@@ -1,4 +1,4 @@
-"""Candidate verification/documents and consent-gated employer assurance.
+"""Candidate verification and consent-gated employer assurance.
 
 Operator manual review retains its separate shared admin/CSRF gate.
 Verification services own delivery, evidence policy and persistence.
@@ -14,15 +14,11 @@ from app.api.dependencies import _services, require_api_key, require_candidate, 
 from app.ledger.store import ConsentError
 from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.services.email import EmailSendFailed
-from app.verification.documents import DocumentParseError
 from app.verification.otp import DeliveryUnavailable
 from app.verification.schema import (
-    CLAIM_REF_MAX_CHARS, ClaimEvidence, DocumentFinding, DocumentType,
     IdentityAssurance, Verification, VerificationMethod, VerificationStatus,
 )
-from app.verification.service import (
-    DestinationError, DocumentTooLargeError, MethodNotPermittedError,
-)
+from app.verification.service import DestinationError, MethodNotPermittedError
 from app.verification.store import ChallengeError
 
 
@@ -40,14 +36,6 @@ class StartVerificationResponse(BaseModel):
 class VerificationListResponse(BaseModel):
     verifications: list[Verification] = Field(default_factory=list)
     assurance: IdentityAssurance
-    #: S7.2: a SECOND number beside assurance, never folded into it.
-    claims: ClaimEvidence
-
-
-class DocumentSubmitResponse(BaseModel):
-    verification: Verification
-    findings: list[DocumentFinding] = Field(default_factory=list)
-    claims: ClaimEvidence
 
 
 # ── Identity verification, candidate plane (S7.1) ───────────────────────────
@@ -150,10 +138,6 @@ async def list_verifications(
     return {
         "verifications": [v.model_dump(mode="json") for v in verifications],
         "assurance": assurance.model_dump(mode="json"),
-        # S7.2: a SECOND number beside the first, never folded into it.
-        "claims": services.verification.claims_for_candidate(
-            candidate_id
-        ).model_dump(mode="json"),
     }
 
 
@@ -173,77 +157,6 @@ async def org_candidate_assurance(
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return assurance.model_dump(mode="json")
-
-
-# ── Employment-claim documents, candidate plane (S7.2) ──────────────────────
-# First-party intake: the candidate submits their OWN letter or payslip. The
-# document is parsed in memory and discarded — only a sha256 digest and finding
-# CODES survive the request. Org-supplied documents ABOUT a candidate are
-# third-party data under DPDP and are deliberately out of scope.
-
-
-class SubmitDocumentRequest(BaseModel):
-    """`content_b64` is a base64 PDF or plain-text body. It is parsed in memory
-    and discarded -- only a sha256 digest and finding CODES are stored.
-    `claim_ref` is a free-text LABEL (employer + interval), never a selector:
-    the candidate is always resolved from the key."""
-
-    doc_type: DocumentType
-    content_b64: str
-    # Bounded to the column width: SQLite would happily store a whole document
-    # in an unbounded VARCHAR(128), and this table's design claim is that no
-    # column can hold one. The service enforces the same cap for non-HTTP
-    # callers.
-    claim_ref: str | None = Field(default=None, max_length=CLAIM_REF_MAX_CHARS)
-
-
-@candidate_router.post("/portal/documents", response_model=DocumentSubmitResponse)
-async def submit_document(
-    req: SubmitDocumentRequest,
-    request: Request,
-    candidate_id: str = Depends(require_candidate),
-) -> DocumentSubmitResponse:
-    services = _services(request)
-    try:
-        verification, findings, claims = await services.verification.asubmit_document(
-            candidate_id, req.doc_type, req.content_b64, claim_ref=req.claim_ref,
-            executor=services.pdf,
-        )
-    except DocumentTooLargeError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except DocumentParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except MethodNotPermittedError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except NotImplementedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {
-        "verification": verification.model_dump(mode="json"),
-        "findings": [f.model_dump(mode="json") for f in findings],
-        "claims": claims.model_dump(mode="json"),
-    }
-
-
-@org_router.get("/verification/candidates/{candidate_id}/claims", response_model=ClaimEvidence)
-async def org_candidate_claims(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> ClaimEvidence:
-    """Consent-gated employment-claim evidence. Every attempt — allowed or
-    denied — is audited by the store. Returns the advisory roll-up only: never
-    an evidence digest, never a claim_ref, never a document."""
-    try:
-        claims = _services(request).verification.claims_for_org(
-            org_id=org_id, candidate_id=candidate_id
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return claims.model_dump(mode="json")
 
 
 @router.post("/candidates/{candidate_id}/verifications/manual-review", response_model=Verification)

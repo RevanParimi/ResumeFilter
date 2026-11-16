@@ -38,19 +38,13 @@ Around that engine, the platform currently ships:
   match-ranking, advisory comp intelligence (static bands blended with
   consent-gated ledger-observed offers), and a read-only employer dashboard →
   [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md)
-- **Candidate side & intake** (PI-6, done) — GitHub and LinkedIn-export profile
-  sources as advisory skill signals, a human-in-the-loop skill-taxonomy curation
-  loop, and a candidate auth plane + DPDP portal (access, transparency, consent
-  control, erasure) → [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
-  [CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md)
+- **Candidate side** (PI-6, done) — a candidate auth plane + DPDP portal
+  (access, transparency, consent control, erasure) → [PORTAL.md](PORTAL.md)
 - **Verification & assessment depth** (PI-7) — a verification spine with
   consent-first identity: an assurance ladder behind a method-adapter seam,
   storing outcomes only (never documents or biometrics). Ships self-attestation,
   contact-control OTP, and operator manual review; government-ID is a declared,
-  unimplemented adapter. On the same spine, **document forensics** for
-  experience letters and payslips with a separate employment-claim ladder (a
-  payslip can never lift identity assurance) →
-  [VERIFICATION.md](VERIFICATION.md)
+  unimplemented adapter → [VERIFICATION.md](VERIFICATION.md)
 - **AI interviews** (S7.3) — audio-first, advisory interviews that ask the depth
   report's *own* probes and score the answers deterministically (an optional LLM
   pass may only nudge, never grade). Audio is transcribed and discarded; the
@@ -63,8 +57,7 @@ Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 (pipeline internals) · [CANDIDATES.md](CANDIDATES.md) ·
 [FABRICATION.md](FABRICATION.md) · [LEDGER.md](LEDGER.md) ·
 [FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) ·
-[DASHBOARD.md](DASHBOARD.md) · [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
-[CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md) ·
+[DASHBOARD.md](DASHBOARD.md) · [PORTAL.md](PORTAL.md) ·
 [VERIFICATION.md](VERIFICATION.md) · [INTERVIEWS.md](INTERVIEWS.md) ·
 [MODELS.md](MODELS.md) (model choices) ·
 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
@@ -211,9 +204,8 @@ in the linked docs:
 | Evaluation ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/records` · `/coding-rounds` · `/offers`; `GET …/records` · `…/coding-rounds` · `…/reputation` (query-time consent, every access audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
 | Feature store | admin `X-API-Key` | `POST /features/materialize` — point-in-time feature vectors for matching | [FEATURES.md](FEATURES.md) |
 | Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) · `GET /dashboard/overview` · `GET /jobs/{id}/board` · `GET /candidates/{id}/card` | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md) |
-| Profile sources & curation | admin `X-API-Key` | `POST /candidates/{id}/sources/github` · `…/sources/linkedin` · `GET /candidates/{id}/sources`; `GET /curation/skills/unmapped` · `POST /curation/skills/resolve` | [PROFILE_SOURCES.md](PROFILE_SOURCES.md) · [CURATION.md](CURATION.md) |
 | Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
-| Verification: identity + employment claims | candidate `X-Candidate-Key` + org `X-Org-Key` + admin `X-API-Key` | `POST /portal/verifications` · `…/{id}/confirm` · `GET /portal/verifications` (assurance **and** claims); `POST /portal/documents` — first-party experience letter / payslip, parsed in memory and **never stored**; `GET /verification/candidates/{id}/assurance` · `…/claims` (consent-gated, every attempt audited allowed *and* denied); `POST /candidates/{id}/verifications/manual-review` | [VERIFICATION.md](VERIFICATION.md) |
+| Verification: identity | candidate `X-Candidate-Key` + org `X-Org-Key` + admin `X-API-Key` | `POST /portal/verifications` · `…/{id}/confirm` · `GET /portal/verifications` (assurance); `GET /verification/candidates/{id}/assurance` (consent-gated, every attempt audited allowed *and* denied); `POST /candidates/{id}/verifications/manual-review` | [VERIFICATION.md](VERIFICATION.md) |
 
 Every one of these is **advisory** and **consent-aware**: consent-gated writes,
 query-time consent enforcement on cross-company reads, de-identified comp
@@ -346,7 +338,7 @@ src/app/
   main.py                create_app(): middleware, error handler, lifespan
   api/routes.py          remaining product handlers and ordered API assembly
   api/screening.py       employer intake · scoped reports/outcomes · batches/queue
-  api/candidates.py      candidate intake/resumes · profile sources · shared ingest DTOs
+  api/candidates.py      candidate intake/resumes · shared ingest DTOs
   api/reports.py         evaluate · operator reports/outcomes · shared outcome DTOs
   api/auth.py            email-OTP authentication and session lifecycle
   api/dependencies.py    shared principal resolution, CSRF and request helpers
@@ -381,11 +373,6 @@ src/app/
     service.py           CompService (reads ledger-observed offers)
   dashboard/             PI-5 employer read-models → DASHBOARD.md
     schema.py, service.py  pure composition over jobs/comp/ledger (owns no tables)
-  profile_sources/       PI-6 GitHub + LinkedIn signals → PROFILE_SOURCES.md
-    github.py, linkedin.py  pure fetch/parse → to_signal transforms
-    models.py, store.py, service.py  append-only signal rows + ingestion
-  curation/              PI-6 skill-taxonomy curation loop → CURATION.md
-    store.py, service.py   unmapped-term queue + normalize_skill overlay
   portal/                PI-6 candidate DPDP portal → PORTAL.md
     schema.py, retention.py  read-shapes + pure retention posture
     service.py           PortalService (composition; owns no tables)
@@ -402,7 +389,7 @@ src/app/
     data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
   schemas/               claims.py, report.py, fabrication.py (Pydantic v2)
   services/              Services container (candidates · ledger · features · jobs
-                         · comp · dashboard · profile_sources · curation · portal
+                         · comp · dashboard · portal
                          · verification; injected, never global) + llm (OpenRouter) ·
                          github (evaluation-local provenance) · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)

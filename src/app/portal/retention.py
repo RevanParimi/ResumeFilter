@@ -22,7 +22,6 @@ from app.portal.schema import RetentionPolicy, RetentionWindow
 # data_class -> Settings attribute holding its TTL in days.
 RETENTION_KNOBS: dict[str, str] = {
     "resumes": "ret_resume_days",
-    "profile_sources": "ret_profile_source_days",
     "verifications": "ret_verification_days",
     "interviews": "ret_interview_session_days",
     "interview_records": "ret_interview_record_days",

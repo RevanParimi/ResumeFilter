@@ -30,13 +30,11 @@ from app.ledger.schema import ConsentPurpose
 from app.ledger.store import ConsentError, LedgerStore
 from app.verification import otp as otp_logic
 from app.verification.assurance import compute_assurance
-from app.verification.claims import compute_claim_evidence
 from app.verification.models import VerificationChallengeRow, VerificationRow
 from app.verification.methods import get_adapter
 from app.verification.schema import (
-    METHOD_LEVEL, METHOD_SUBJECT, AssuranceLevel, ClaimEvidence,
-    ConcurrentEmployment, IdentityAssurance, Verification, VerificationMethod,
-    VerificationStatus, VerificationSubject,
+    METHOD_LEVEL, METHOD_SUBJECT, AssuranceLevel, IdentityAssurance,
+    Verification, VerificationMethod, VerificationStatus, VerificationSubject,
 )
 
 
@@ -457,89 +455,3 @@ class VerificationStore:
             )
             session.commit()
             return assurance
-
-    # -- claim roll-up (S7.2) --------------------------------------------------
-
-    def claims_for_candidate(
-        self,
-        candidate_id: str,
-        *,
-        at: Optional[datetime] = None,
-        concurrent: Optional[ConcurrentEmployment] = None,
-    ) -> ClaimEvidence:
-        moment = as_utc(at) if at else _utcnow()
-        return compute_claim_evidence(
-            candidate_id, self.verifications_for_candidate(candidate_id),
-            at=moment, concurrent=concurrent,
-        )
-
-    def claims_for_org(
-        self,
-        *,
-        org_id: str,
-        candidate_id: str,
-        at: Optional[datetime] = None,
-        concurrent: Optional[ConcurrentEmployment] = None,
-    ) -> ClaimEvidence:
-        """Query-time DPDP gate, mirroring assurance_for_org exactly: an org
-        sees claim evidence only under an active VERIFICATION_READ grant, and
-        EVERY attempt -- allowed or denied -- is audited in the same
-        transaction.
-
-        S7.2 widens VERIFICATION_READ from "identity assurance" to
-        "verification disclosure" generally. That is acceptable only because
-        the purpose is days old with zero real grants; see LEDGER.md for the
-        dated redefinition. Returns the advisory roll-up only -- never the
-        evidence digests, never a document.
-        """
-        moment = as_utc(at) if at else _utcnow()
-        with self._session_factory() as session:
-            if session.get(OrganizationRow, org_id) is None:
-                raise LookupError(f"unknown organization: {org_id}")
-            if session.get(CandidateRow, candidate_id) is None:
-                raise LookupError(f"unknown candidate: {candidate_id}")
-            grants = self._ledger._grants_for(
-                session, candidate_id, ConsentPurpose.VERIFICATION_READ
-            )
-            decision = consent_logic.check_consent(
-                grants, org_id=org_id, purpose=ConsentPurpose.VERIFICATION_READ,
-                at=moment,
-            )
-            if not decision.allowed:
-                self._ledger._audit(
-                    session,
-                    actor_type="org",
-                    actor_id=org_id,
-                    action="claim.query",
-                    entity_type="candidate",
-                    entity_id=candidate_id,
-                    candidate_id=candidate_id,
-                    details={"allowed": False, "purpose": "verification_read"},
-                )
-                session.commit()
-                raise ConsentError(decision.reason)
-
-            rows = (
-                session.execute(
-                    select(VerificationRow)
-                    .where(VerificationRow.candidate_id == candidate_id)
-                    .order_by(VerificationRow.requested_at, VerificationRow.id)
-                ).scalars().all()
-            )
-            evidence = compute_claim_evidence(
-                candidate_id, [_verification(r) for r in rows], at=moment,
-                concurrent=concurrent,
-            )
-            self._ledger._audit(
-                session,
-                actor_type="org",
-                actor_id=org_id,
-                action="claim.query",
-                entity_type="candidate",
-                entity_id=candidate_id,
-                candidate_id=candidate_id,
-                details={"allowed": True, "consent_id": decision.grant_id,
-                         "strength": int(evidence.strength)},
-            )
-            session.commit()
-            return evidence

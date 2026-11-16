@@ -38,8 +38,7 @@ def create_smoke_app():
         async with original(app):
             svc = app.state.services
             stores = [svc.candidates, svc.ledger, svc.report_store, svc.features, svc.jobs,
-                svc.profile_sources._store, svc.curation._store, svc.auth._store,
-                svc.verification._store, svc.interview._store, svc.screening._store]
+                svc.auth._store, svc.verification._store, svc.interview._store, svc.screening._store]
             stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening"))
             engine = svc.session_factory.kw["bind"]
             event.listen(engine, "engine_disposed", lambda engine: record("disposed"))
@@ -140,7 +139,7 @@ def main(*, provider_checks=False, composition_checks=False):
                         and response.content==(ROOT/"frontend"/source.removeprefix("./")).read_bytes())
                 checks.check("production HTTP refuses anonymous access to protected planes",
                     all(public.get(path).status_code==401 for path in
-                        ("/portal/me", "/admin/users", "/ledger/orgs", "/curation/skills/unmapped")))
+                        ("/portal/me", "/admin/users", "/ledger/orgs")))
                 checks.check("production HTTP refuses private and retired UI assets",
                     all(public.get("/ui/"+name).status_code==404 for name in
                         (".env", "config.yaml", "src/app/main.py", "design-system.js")))

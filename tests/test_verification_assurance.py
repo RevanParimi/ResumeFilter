@@ -7,13 +7,8 @@ from app.verification.schema import (
     Verification,
     VerificationMethod,
     VerificationStatus,
-    ClaimStrength,
-    ConcurrentEmployment,
-    DocumentFinding,
-    DocumentType,
     VerificationSubject,
 )
-from app.verification.claims import compute_claim_evidence
 
 
 # Verification assurance
@@ -165,67 +160,9 @@ def test_a_verified_claim_never_lifts_identity_assurance():
     assert a.methods == []
 
 
-def test_an_identity_verification_never_lifts_claim_strength():
-    ev = compute_claim_evidence("c1", [_identity()], at=NOW)
-    assert ev.strength is ClaimStrength.NONE
-    assert ev.documents == []
-
-
-def test_the_two_ladders_coexist_on_one_candidate():
+def test_a_claim_row_beside_an_identity_row_keeps_the_identity_level():
     rows = [_identity(), _claim()]
     assert compute_assurance("c1", rows, at=NOW).level is AssuranceLevel.SELF_ATTESTED
-    assert compute_claim_evidence("c1", rows, at=NOW).strength is ClaimStrength.DOCUMENTED
-
-
-def test_strength_is_the_highest_held():
-    rows = [_claim(), _claim(VerificationMethod.PAYSLIP)]
-    ev = compute_claim_evidence("c1", rows, at=NOW)
-    assert ev.strength is ClaimStrength.DOCUMENTED
-    assert set(ev.documents) == {DocumentType.EXPERIENCE_LETTER, DocumentType.PAYSLIP}
-
-
-def test_a_failed_claim_contributes_nothing_but_keeps_its_findings():
-    """A bad submission leaves the candidate exactly where they were."""
-    failed = _claim(status=VerificationStatus.FAILED, details={
-        "findings": [{"id": "payslip_arithmetic_mismatch", "severity": "hard",
-                      "message": "gross minus deductions does not equal net"}]
-    })
-    ev = compute_claim_evidence("c1", [failed], at=NOW)
-    assert ev.strength is ClaimStrength.NONE
-    assert [f.id for f in ev.findings] == ["payslip_arithmetic_mismatch"]
-
-
-def test_an_expired_claim_stops_contributing():
-    stale = _claim(expires=NOW - timedelta(days=1))
-    assert compute_claim_evidence("c1", [stale], at=NOW).strength is ClaimStrength.NONE
-
-
-def test_findings_from_contributing_rows_are_surfaced():
-    row = _claim(details={"findings": [
-        {"id": "issuer_domain_unknown", "severity": "soft", "message": "no domain"}
-    ]})
-    ev = compute_claim_evidence("c1", [row], at=NOW)
-    assert [f.id for f in ev.findings] == ["issuer_domain_unknown"]
-    assert isinstance(ev.findings[0], DocumentFinding)
-
-
-def test_malformed_stored_findings_are_skipped_not_fatal():
-    """Old or hand-edited rows must not 500 a candidate's own portal."""
-    row = _claim(details={"findings": [{"nope": 1}, "not-a-dict"]})
-    assert compute_claim_evidence("c1", [row], at=NOW).findings == []
-
-
-def test_the_concurrent_advisory_is_passed_through_untouched():
-    ce = ConcurrentEmployment(periods=["2023-04..2024-02"], max_overlap_months=10,
-                              severity="soft")
-    ev = compute_claim_evidence("c1", [], at=NOW, concurrent=ce)
-    assert ev.concurrent_employment == ce
-    assert ev.strength is ClaimStrength.NONE   # an overlap is not evidence FOR a claim
-
-
-def test_empty_is_none_and_advisory():
-    ev = compute_claim_evidence("c1", [], at=NOW)
-    assert ev.strength is ClaimStrength.NONE and ev.advisory is True
 
 
 def test_a_rogue_identity_row_for_a_claim_method_contributes_nothing_not_a_crash():
@@ -244,13 +181,3 @@ def test_a_rogue_identity_row_for_a_claim_method_contributes_nothing_not_a_crash
     a = compute_assurance("c1", [rogue, _identity()], at=NOW)
     assert a.level is AssuranceLevel.SELF_ATTESTED     # the real row still counts
     assert a.methods == [VerificationMethod.SELF_ATTESTED]
-
-
-def test_an_epfo_row_could_not_reach_strength_four_without_the_spine_writing_one():
-    """Belt and braces on the inert adapter: if some future path DID write a
-    verified epfo row, the ladder would honour it -- which is exactly why the
-    spine's `implemented=False` gate, not this function, is the protection."""
-    row = _claim(VerificationMethod.EPFO_EMPLOYMENT)
-    assert compute_claim_evidence("c1", [row], at=NOW).strength is (
-        ClaimStrength.THIRD_PARTY_VERIFIED
-    )

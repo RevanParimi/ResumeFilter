@@ -6,7 +6,7 @@ import io
 from pathlib import Path
 import subprocess
 import sys
-from threading import Event, get_ident
+from threading import Event
 import time
 
 import pytest
@@ -18,7 +18,6 @@ from pypdf.generic import ArrayObject, DecodedStreamObject, EncodedStreamObject,
 from app.core.config import Settings
 from app.core.pdf import pdf_b64_to_document, pdf_b64_to_text
 from app.main import create_app
-from app.verification.documents import DocumentParseError, parse_document
 from tests.conftest import ADMIN_HEADERS
 from tests.test_resume_input_boundary import counts
 
@@ -74,12 +73,10 @@ async def test_pdf_capacity_is_shared_across_http_doors_without_partial_writes(s
             assert await asyncio.to_thread(entered.wait, 5)
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
                     headers={**ADMIN_HEADERS, 'X-Org-Key': org_key, 'X-Candidate-Key': candidate_key}) as http:
-                for path in ('/evaluate', '/candidates', '/screening/candidates', '/screening/batches', '/portal/documents'):
+                for path in ('/evaluate', '/candidates', '/screening/candidates', '/screening/batches'):
                     payload = {'resume_pdf_b64': resume_pdf()}
                     if path.endswith('/batches'):
                         payload = {'items': [{'resume_text': 'Already validated'}, payload]}
-                    elif path.endswith('/documents'):
-                        payload = {'doc_type': 'experience_letter', 'content_b64': resume_pdf()}
                     response = await http.post(path, json=payload)
                     assert response.status_code == 503, (path, response.text)
                     assert response.json() == {'detail': 'pdf_capacity_exhausted'}
@@ -200,33 +197,6 @@ async def test_async_pdf_stop_reaps_real_child_and_recovers_or_closes_admission(
         await executor.aclose()
         if not parsing.done():
             await asyncio.gather(parsing, return_exceptions=True)
-
-
-async def test_document_parse_runs_off_thread_and_erasure_during_parse_refuses_without_writes(services, monkeypatch):
-    from tests.test_verification_api import _candidate
-    from app.verification.schema import DocumentType
-    from app.verification.documents import ParsedDocument
-    cid, _ = _candidate(services)
-    entered, release = Event(), Event()
-    caller_thread = get_ident()
-    parser_threads = []
-    def parse(*args, **kwargs):
-        parser_threads.append(get_ident())
-        entered.set()
-        assert release.wait(10)
-        return ParsedDocument('Synthetic experience letter', 1, 'a' * 64)
-    monkeypatch.setattr('app.verification.service.parse_document', parse)
-    pending = asyncio.create_task(services.verification.asubmit_document(
-        cid, DocumentType.EXPERIENCE_LETTER, 'YQ==', executor=services.pdf))
-    try:
-        assert await asyncio.to_thread(entered.wait, 5)
-        services.candidates.delete_candidate(cid)
-    finally:
-        release.set()
-    with pytest.raises(LookupError):
-        await pending
-    assert parser_threads and parser_threads[0] != caller_thread
-    assert services.verification._store.verifications_for_candidate(cid) == []
 
 
 @pytest.mark.parametrize('kind,setting,value', [
@@ -351,14 +321,6 @@ def test_verification_page_cap_precedes_stream_decoding(services):
     pdf = adversarial_pdf('pages')
     with pytest.raises(ValueError, match='pdf_page_limit'):
         pdf_b64_to_document(pdf, max_pages=2, settings=services.settings)
-    with pytest.raises(DocumentParseError, match='could not be read as a PDF'):
-        parse_document(pdf, max_pages=2, settings=services.settings)
-
-
-def test_direct_verification_encoded_cap_precedes_decoding(services):
-    services.settings.doc_max_b64_chars = 8
-    with pytest.raises(DocumentParseError, match='encoded size limit'):
-        parse_document('!' * 9, max_pages=1, settings=services.settings)
 
 
 def test_verification_metadata_page_count_and_blank_pdf_remain(services):
@@ -368,12 +330,11 @@ def test_verification_metadata_page_count_and_blank_pdf_remain(services):
                          '/CreationDate': 'D:20260101000000Z', '/ModDate': 'D:20260102000000Z'})
     output = io.BytesIO()
     writer.write(output)
-    parsed = parse_document(base64.b64encode(output.getvalue()).decode(), max_pages=1,
-                            settings=services.settings)
-    assert parsed.text == '' and parsed.page_count == 1
-    assert parsed.metadata == {'producer': 'Synthetic Tool', 'creator': 'Synthetic Creator',
-                               'created': 'D:20260101000000Z', 'modified': 'D:20260102000000Z'}
-    assert len(parsed.digest) == 64
+    text, page_count, metadata = pdf_b64_to_document(base64.b64encode(output.getvalue()).decode(),
+                                                     max_pages=1, settings=services.settings)
+    assert text == '' and page_count == 1
+    assert metadata == {'producer': 'Synthetic Tool', 'creator': 'Synthetic Creator',
+                        'created': 'D:20260101000000Z', 'modified': 'D:20260102000000Z'}
 
 
 def test_output_limit_exact_and_over_include_metadata(services):
@@ -546,19 +507,3 @@ def test_resource_refusal_all_http_doors_without_writes_or_model_work(services, 
         response = http.post(path, json=payload)
     assert response.status_code == 422 and response.json() == {'detail': reason}
     assert counts(services) == before
-
-
-@pytest.mark.parametrize('kind', ['pages', 'expansion', 'array', 'form-cycle'])
-def test_verification_http_refusal_preserves_rows_and_safe_error(services, kind):
-    from tests.test_verification_api import _candidate
-    services.settings.pdf_max_pages = 2
-    services.settings.pdf_max_decoded_bytes = 1024
-    services.settings.pdf_max_work_units = 300
-    cid, key = _candidate(services)
-    before = services.verification._store.verifications_for_candidate(cid)
-    with TestClient(create_app(services), headers={**ADMIN_HEADERS, 'X-Candidate-Key': key}) as http:
-        response = http.post('/portal/documents', json={
-            'doc_type': 'experience_letter', 'content_b64': adversarial_pdf(kind)})
-    assert response.status_code == 400
-    assert response.json() == {'detail': 'document could not be read as a PDF'}
-    assert services.verification._store.verifications_for_candidate(cid) == before

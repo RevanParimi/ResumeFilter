@@ -51,9 +51,9 @@ class InterviewSessionRow(Base):
     # what the session was worth.
     assurance_level_at_start: Mapped[int] = mapped_column(Integer, default=0)
     planned_questions: Mapped[list] = mapped_column(JSON, default=list)
-    # Computed ONCE at completion and stored. Unlike IdentityAssurance and
-    # ClaimEvidence -- which depend on the clock and on rows that arrive later,
-    # so storing them would store a lie -- an assessment is a closed fact about
+    # Computed ONCE at completion and stored. Unlike IdentityAssurance -- which
+    # depends on the clock and on rows that arrive later, so storing it would
+    # store a lie -- an assessment is a closed fact about
     # a finished session, and recomputing it would re-hit a paid model.
     assessment: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     scorer_version: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)

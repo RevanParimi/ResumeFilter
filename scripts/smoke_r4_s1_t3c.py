@@ -20,7 +20,6 @@ from threading import get_ident, local
 
 from _smoke import Smoke, base_env, client, wait_healthy
 from smoke_r4_s1_t1a import serve
-from smoke_s62 import _export_b64
 from smoke_s82 import _code_for
 from smoke_r1_s1_t3a_v1 import database
 
@@ -840,22 +839,9 @@ def check_candidate_ingests(checks, scratch, control, operator, org_a, org_b, *,
     return saved
 
 
-def create_source_read_smoke_app():
-    return create_candidate_record_smoke_app(source_reads=True)
-
-
-def create_github_source_smoke_app():
-    return create_candidate_record_smoke_app(github_sources=True)
-
-
-def create_linkedin_source_smoke_app():
-    return create_candidate_record_smoke_app(linkedin_sources=True)
-
-
-def create_candidate_record_smoke_app(*, source_reads=False, github_sources=False, linkedin_sources=False):
+def create_candidate_record_smoke_app():
     from sqlalchemy import event
     from app.api import candidates as routes
-    from app.profile_sources import service as sources
     from smoke_r4_s1_t1a import create_smoke_app
     app = create_smoke_app()
     original = app.router.lifespan_context
@@ -865,56 +851,15 @@ def create_candidate_record_smoke_app(*, source_reads=False, github_sources=Fals
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            target = services.profile_sources if source_reads or github_sources else routes
-            names = ('_github_login', '_save_github_signal') if github_sources else ('list_sources',) if source_reads else ('_candidate_snapshot', '_candidate_key')
-            targets = [(routes, '_linkedin_data'), (services.profile_sources, '_ingest_linkedin')] if linkedin_sources else [(target, name) for name in names]
+            targets = [(routes, name) for name in ('_candidate_snapshot', '_candidate_key')]
             functions = [(owner, name, getattr(owner, name)) for owner, name in targets]
-            def mode():
-                path = scratch / 'record-mode'
-                return path.read_text() if path.exists() else None
             def hold():
                 state.held = True
                 (scratch / 'record-entered').touch()
                 deadline = time.monotonic() + 20
                 while not (scratch / 'record-release').exists():
-                    assert time.monotonic() < deadline, 'synthetic source work gate timed out'
+                    assert time.monotonic() < deadline, 'synthetic record work gate timed out'
                     time.sleep(.01)
-            decode, parse, transform = routes.base64.b64decode, sources.parse_linkedin_export, sources.linkedin_to_signal
-            def decoding(*args, **kwargs):
-                if mode() == 'decode' and getattr(state, 'active', False) and not state.held:
-                    hold()
-                return decode(*args, **kwargs)
-            def parsing(*args, **kwargs):
-                if mode() == 'parse' and getattr(state, 'active', False) and not state.held:
-                    hold()
-                return parse(*args, **kwargs)
-            def transforming(*args, **kwargs):
-                if mode() == 'transform' and getattr(state, 'active', False) and not state.held:
-                    hold()
-                return transform(*args, **kwargs)
-            if linkedin_sources:
-                routes.base64.b64decode = decoding
-                sources.parse_linkedin_export = parsing
-                sources.linkedin_to_signal = transforming
-            fetch, caller = services.github.gather_user_signal, get_ident()
-            async def provider(login):
-                from app.services.github import GitHubRepoRaw, GitHubUserRaw
-                assert get_ident() == caller, 'GitHub provider moved off its caller'
-                with (scratch / 'github-providers.jsonl').open('a') as log:
-                    log.write(json.dumps({'thread': get_ident()}) + '\n')
-                if (scratch / 'github-provider-mode').exists():
-                    (scratch / 'github-provider-entered').touch()
-                    deadline = time.monotonic() + 15
-                    while not (scratch / 'github-provider-release').exists():
-                        assert time.monotonic() < deadline
-                        await asyncio.sleep(.01)
-                raw = await fetch(login)
-                if login.startswith('worker-'):
-                    return GitHubUserRaw(login=login, available=True, repos=[GitHubRepoRaw(
-                        name='demo', language='SyntheticLang', languages={'SyntheticLang': 1000})])
-                return raw
-            if github_sources:
-                services.github.gather_user_signal = provider
             for binding_owner, name, function in functions:
                 def observed(*args, _function=function, _name=name, **kwargs):
                     state.active, state.held, state.history = True, False, False
@@ -931,34 +876,9 @@ def create_candidate_record_smoke_app(*, source_reads=False, github_sources=Fals
             def sql(conn, cursor, statement, parameters, context, many):
                 mode = scratch / 'record-mode'
                 if mode.exists() and getattr(state, 'active', False) and not state.held:
-                    query = statement.upper()
                     phase = mode.read_text()
-                    if linkedin_sources:
-                        candidate = 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' not in query
-                        hit = {
-                            'transport': candidate and state.operation == '_linkedin_data',
-                            'subject': candidate and state.operation == '_ingest_linkedin',
-                            'save': query.lstrip().startswith('INSERT INTO PROFILE_SOURCES'),
-                            'curation': query.lstrip().startswith('INSERT INTO CURATION_OBSERVATIONS'),
-                            'final': 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' in query,
-                        }.get(phase, False)
-                    elif github_sources:
-                        hit = {
-                            'initial': 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' not in query,
-                            'handle': 'FROM EXTRACTIONS' in query,
-                            'save': query.lstrip().startswith('INSERT INTO PROFILE_SOURCES'),
-                            'curation': query.lstrip().startswith('INSERT INTO CURATION_OBSERVATIONS'),
-                            'final': 'FROM CANDIDATES' in query and 'JOIN PROFILE_SOURCES' in query,
-                        }[phase]
-                    elif source_reads:
-                        history = 'FROM PROFILE_SOURCES' in query
-                        candidate = 'FROM CANDIDATES' in query
-                        hit = (phase == 'initial' and candidate or phase == 'history' and history
-                               or phase == 'final' and candidate and state.history)
-                        state.history = state.history or history
-                    else:
-                        hit = ('candidates' in statement if phase == 'read' else
-                               statement.lstrip().upper().startswith('UPDATE CANDIDATE_CREDENTIALS'))
+                    hit = ('candidates' in statement if phase == 'read' else
+                           statement.lstrip().upper().startswith('UPDATE CANDIDATE_CREDENTIALS'))
                     if hit:
                         hold()
             def owner(session, transaction, connection):
@@ -974,12 +894,6 @@ def create_candidate_record_smoke_app(*, source_reads=False, github_sources=Fals
             try:
                 yield
             finally:
-                if github_sources:
-                    services.github.gather_user_signal = fetch
-                if linkedin_sources:
-                    routes.base64.b64decode = decode
-                    sources.parse_linkedin_export = parse
-                    sources.linkedin_to_signal = transform
                 for binding_owner, name, function in functions:
                     setattr(binding_owner, name, function)
                 event.remove(engine, 'before_cursor_execute', sql)
@@ -989,14 +903,13 @@ def create_candidate_record_smoke_app(*, source_reads=False, github_sources=Fals
     return app
 
 
-def check_candidate_records(checks, scratch, base, control, operator, cid, other_id, key, *, source_reads=False):
+def check_candidate_records(checks, scratch, base, control, operator, cid, other_id, key):
     operations = scratch / 'record-operations.jsonl'
-    cases = [('/sources', 'GET', phase) for phase in ('initial', 'history', 'final')] if source_reads else [
-        (suffix, method, 'key' if method == 'POST' else 'read')
+    cases = [(suffix, method, 'key' if method == 'POST' else 'read')
         for suffix, method in [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]]
     for suffix, method, phase in cases:
         path = f'/candidates/{cid}' + suffix
-        expected = operator.get(path).json() if source_reads else None
+        expected = None
         before = len(operations.read_text().splitlines())
         for name in ('record-entered', 'record-completed', 'record-release'):
             (scratch / name).unlink(missing_ok=True)
@@ -1014,8 +927,6 @@ def check_candidate_records(checks, scratch, base, control, operator, cid, other
                 checks.check(f'{phase} {suffix or "detail"}: health and unrelated admitted SQL read stay responsive',
                     health.status_code == read.status_code == 200 and elapsed < 1, f'{elapsed:.4f}s')
                 busy_cases = [('', 'GET'), ('/resumes', 'GET'), ('/reports', 'GET'), ('/auth-key', 'POST')]
-                if source_reads:
-                    busy_cases.append(('/sources', 'GET'))
                 for busy_suffix, verb in busy_cases:
                     busy = control.request(verb, f'/candidates/{other_id}' + busy_suffix)
                     checks.check(f'{suffix or "detail"}: shared admission refuses {busy_suffix or "detail"}',
@@ -1044,146 +955,9 @@ def check_candidate_records(checks, scratch, base, control, operator, cid, other
             fresh = operator.get(path)
             checks.check(f'{phase} {suffix or "detail"}: explicit read recovers saved state', fresh.status_code == 200
                 and (expected is None or fresh.json() == expected))
-    if source_reads:
-        erased = operator.post('/candidates', json={'resume_text': RESUME.replace('candidate-router@example.in', 'source-erasure@example.in'), 'evaluate': False}).json()['candidate_id']
-        path = f'/candidates/{erased}'
-        assert operator.post(path + '/sources/github', json={'handle': 'octocat'}).status_code == 200
-        for name in ('record-entered', 'record-completed', 'record-release'):
-            (scratch / name).unlink(missing_ok=True)
-        (scratch / 'record-mode').write_text('final')
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pending = pool.submit(operator.get, path + '/sources')
-            try:
-                deadline = time.monotonic() + 8
-                while not (scratch / 'record-entered').exists():
-                    assert time.monotonic() < deadline
-                    time.sleep(.01)
-                assert control.delete(path).status_code == 200
-            finally:
-                (scratch / 'record-release').touch()
-            response = pending.result(timeout=8)
-            checks.check('competing erasure before the final source snapshot refuses loaded history',
-                response.status_code == 404 and response.json() == {'detail': 'candidate not found'}
-                and operator.get(f'/candidates/{other_id}/sources').status_code == 200)
-        (scratch / 'record-mode').unlink(missing_ok=True)
     rows = [json.loads(line) for line in (scratch / 'record-thread-ownership.jsonl').read_text().splitlines()]
     checks.check('candidate SQL sessions keep their owning thread through transactions', rows and all(row['owner'] == row['current'] for row in rows))
     return key
-
-
-def check_source_ingest(checks, scratch, control, operator, other_id, *, kind):
-    def subject(phase):
-        text = RESUME.replace('candidate-router@example.in', f'worker-{kind}-{phase}@example.in').replace(
-            'https://github.com/priya-nair/rag-support-bot', f'https://github.com/worker-{phase}')
-        response = operator.post('/candidates', json={'resume_text': text, 'evaluate': False})
-        assert response.status_code == 200
-        return response.json()['candidate_id']
-    operations = scratch / 'record-operations.jsonl'
-    providers = scratch / 'github-providers.jsonl'
-    if kind == 'linkedin':
-        import base64
-        import io
-        import zipfile
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, 'w') as archive:
-            archive.writestr('Skills.csv', 'Name\nPython\nSyntheticLang\n')
-        body = {'export_b64': base64.b64encode(buffer.getvalue()).decode()}
-    else:
-        body = {}
-    def provider_count():
-        return len(providers.read_text().splitlines()) if kind == 'github' else 0
-    phases = ('initial', 'handle', 'save', 'curation', 'final') if kind == 'github' else (
-        'transport', 'decode', 'subject', 'parse', 'transform', 'save', 'curation', 'final')
-    for phase in phases:
-        cid = subject(phase)
-        path = f'/candidates/{cid}/sources/{kind}'
-        before_ops = len(operations.read_text().splitlines())
-        before_fetch = provider_count()
-        for name in ('record-entered', 'record-completed', 'record-release'):
-            (scratch / name).unlink(missing_ok=True)
-        (scratch / 'record-mode').write_text(phase)
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pending = pool.submit(operator.post, path, json=body)
-            try:
-                deadline = time.monotonic() + 8
-                while not (scratch / 'record-entered').exists():
-                    assert time.monotonic() < deadline
-                    time.sleep(.01)
-                start = time.monotonic()
-                checks.check(phase + ': held source work leaves health and admitted reads responsive',
-                    control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
-                    and time.monotonic() - start < 1, f'{time.monotonic()-start:.4f}s')
-                for suffix, verb, probe_body in [('', 'GET', None), ('/sources', 'GET', None),
-                        ('/sources/github', 'POST', {'handle': 'worker-probe'}),
-                        ('/sources/linkedin', 'POST', {'export_b64': _export_b64()})]:
-                    busy = control.request(verb, f'/candidates/{other_id}' + suffix, json=probe_body)
-                    checks.check(phase + ': shared admission refuses ' + suffix,
-                        busy.status_code == 503 and busy.json() == {'detail': 'candidate_record_capacity_exhausted'}
-                        and busy.headers.get('retry-after') == '1' and 'set-cookie' not in busy.headers)
-                response = pending.result(timeout=8)
-                checks.check(phase + ': pending source work returns no partial signal or cookies',
-                    response.status_code == 503 and response.json() == {'detail': 'candidate_record_pending'}
-                    and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
-            finally:
-                (scratch / 'record-release').touch()
-                deadline = time.monotonic() + 8
-                while not (scratch / 'record-completed').exists():
-                    assert time.monotonic() < deadline
-                    time.sleep(.01)
-                (scratch / 'record-mode').unlink(missing_ok=True)
-        post = phase not in (('initial', 'handle') if kind == 'github' else ('transport', 'decode'))
-        saved = operator.get(f'/candidates/{cid}/sources').json()['sources']
-        checks.check(phase + ': late work has exact saved history without provider replay',
-            len(saved) == int(post) and provider_count() == before_fetch + int(post and kind == 'github')
-            and len(operations.read_text().splitlines()) == before_ops + (2 if post else 1))
-        fresh = operator.post(path, json=body)
-        history = operator.get(f'/candidates/{cid}/sources').json()['sources']
-        checks.check(phase + ': deliberate fresh POST appends one source', fresh.status_code == 200
-            and len(history) == int(post) + 1 and provider_count() == before_fetch + int(post and kind == 'github') + int(kind == 'github')
-            and (not saved or fresh.json()['id'] != saved[0]['id'])
-            and (kind != 'linkedin' or {skill['name'] for skill in fresh.json()['skills']} == {'Python', 'SyntheticLang'}))
-    if kind == 'github':
-        cid = subject('provider')
-        for name in ('github-provider-entered', 'github-provider-release'):
-            (scratch / name).unlink(missing_ok=True)
-        (scratch / 'github-provider-mode').touch()
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pending = pool.submit(operator.post, f'/candidates/{cid}/sources/{kind}', json=body)
-            try:
-                deadline = time.monotonic() + 8
-                while not (scratch / 'github-provider-entered').exists():
-                    assert time.monotonic() < deadline
-                    time.sleep(.01)
-                checks.check('awaited GitHub provider holds no SQL admission',
-                    control.get(f'/candidates/{other_id}').status_code == 200
-                    and operator.get(f'/candidates/{cid}/sources').json()['sources'] == [] and not pending.done())
-            finally:
-                (scratch / 'github-provider-release').touch()
-                (scratch / 'github-provider-mode').unlink(missing_ok=True)
-            checks.check('released caller-owned provider completes one GitHub source', pending.result(timeout=8).status_code == 200)
-    cid = subject('erasure')
-    for name in ('record-entered', 'record-completed', 'record-release'):
-        (scratch / name).unlink(missing_ok=True)
-    (scratch / 'record-mode').write_text('final')
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        pending = pool.submit(operator.post, f'/candidates/{cid}/sources/{kind}', json=body)
-        try:
-            deadline = time.monotonic() + 8
-            while not (scratch / 'record-entered').exists():
-                assert time.monotonic() < deadline
-                time.sleep(.01)
-            assert control.delete(f'/candidates/{cid}').status_code == 200
-        finally:
-            (scratch / 'record-release').touch()
-        response = pending.result(timeout=8)
-        checks.check('competing erasure refuses the source publication snapshot without recreating its subject',
-            response.status_code == 404 and response.json() == {'detail': 'candidate not found'}
-            and operator.get(f'/candidates/{cid}/sources').status_code == 404
-            and operator.get(f'/candidates/{other_id}/sources').status_code == 200)
-    (scratch / 'record-mode').unlink(missing_ok=True)
-    rows = [json.loads(line) for line in (scratch / 'record-thread-ownership.jsonl').read_text().splitlines()]
-    checks.check('Source SQL sessions keep ownership through save curations and guards',
-        rows and all(row['owner'] == row['current'] for row in rows))
 
 
 def main():
@@ -1193,7 +967,7 @@ def main():
 
 
 def run(scratch, url, pg_options):
-    checks = Smoke("R4-S1-T3C candidate/source HTTP and graceful restart")
+    checks = Smoke("R4-S1-T3C candidate HTTP and graceful restart")
     print(f"Synthetic candidate evidence: {scratch}", flush=True)
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
@@ -1203,9 +977,6 @@ def run(scratch, url, pg_options):
         ('--evaluation-publication-workers', 'create_evaluation_publication_smoke_app'),
         ('--outcome-write-workers', 'create_outcome_write_smoke_app'),
         ('--report-read-workers', 'create_report_read_smoke_app'),
-        ('--linkedin-source-workers', 'create_linkedin_source_smoke_app'),
-        ('--github-source-workers', 'create_github_source_smoke_app'),
-        ('--source-read-workers', 'create_source_read_smoke_app'),
         ('--candidate-report-workers', 'create_candidate_report_smoke_app'),
         ('--candidate-fingerprint-workers', 'create_candidate_fingerprint_smoke_app'),
         ('--candidate-ingest-workers', 'create_candidate_ingest_smoke_app'),
@@ -1227,8 +998,8 @@ def run(scratch, url, pg_options):
         "PYTHONPATH": os.pathsep.join(str(path) for path in (ROOT / "src", ROOT / "scripts", ROOT)),
         "NO_PROXY": "127.0.0.1,localhost",
     })
-    if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers', '--github-source-workers', '--linkedin-source-workers')):
-        env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='2' if '--source-read-workers' in sys.argv or '--github-source-workers' in sys.argv or '--linkedin-source-workers' in sys.argv else '.3',
+    if '--candidate-record-workers' in sys.argv:
+        env.update(DEE_CANDIDATE_RECORD_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_RECORD_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')):
         env.update(DEE_CANDIDATE_INGEST_MAX_CONCURRENT_REQUESTS='1', DEE_CANDIDATE_INGEST_WAIT_SECONDS='.3',
@@ -1314,27 +1085,13 @@ def run(scratch, url, pg_options):
             detail, resumes, reports = (require(operator.get(path + suffix)) for suffix in ("", "/resumes", "/reports"))
             checks.check("detail resume and report reads reflect one retained version", detail["resume_count"] == 1
                 and detail["latest_profile"] is not None and len(resumes["resumes"]) == 1 and [row["id"] for row in reports] == [rid])
-            invalid = require(operator.post(path + "/sources/github", json={"handle": "invalid handle!"}), 400)
-            github = require(operator.post(path + "/sources/github", json={"handle": "octocat"}))
-            checks.check("GitHub invalid handle refuses and fake public signal remains advisory", bool(invalid["detail"])
-                and github["method"] == "api" and any(skill["canonical"] == "python" for skill in github["skills"]))
-            linkedin = require(operator.post(path + "/sources/linkedin", json={"export_b64": _export_b64()}))
-            checks.check("LinkedIn export and filtered history persist", linkedin["method"] == "export"
-                and linkedin["activity"]["employers"] == ["Infosys", "TCS"]
-                and require(operator.get(path + "/sources", params={"source_type": "linkedin_export"}))["sources"] == [linkedin])
-            checks.check("invalid LinkedIn base64 preserves history", require(operator.post(path + "/sources/linkedin", json={"export_b64": "!!!"}), 422) == {"detail": "invalid_base64"}
-                and len(require(operator.get(path + "/sources"))["sources"]) == 2)
             key = require(operator.post(path + "/auth-key"))["access_key"]
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("issued candidate key resolves the retained subject", require(candidate.get("/portal/me"))["candidate_id"] == cid)
             portal_reads = check_portal_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-read-workers' in sys.argv else []
             portal_writes = check_portal_writes(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-write-workers' in sys.argv else []
-            if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
-                key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
-                    source_reads='--source-read-workers' in sys.argv)
-            if '--github-source-workers' in sys.argv or '--linkedin-source-workers' in sys.argv:
-                check_source_ingest(checks, scratch, control, operator, other['candidate_id'],
-                    kind='linkedin' if '--linkedin-source-workers' in sys.argv else 'github')
+            if '--candidate-record-workers' in sys.argv:
+                key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key)
             intake_saved = check_candidate_ingests(checks, scratch, control, operator, org_a, org_b,
                 fingerprint='--candidate-fingerprint-workers' in sys.argv,
                 report_sql='--candidate-report-workers' in sys.argv) if any(flag in sys.argv for flag in ('--candidate-ingest-workers', '--candidate-fingerprint-workers', '--candidate-report-workers')) else {}
@@ -1350,7 +1107,7 @@ def run(scratch, url, pg_options):
             farms = (owned["resume_farm"], owned["report"]["resume_farm"])
             checks.check("both employer farm fields redact counterparty identity", all(farm and farm["matches"] for farm in farms)
                 and all(match["candidate_id"] is None and match["resume_id"] is None for farm in farms for match in farm["matches"]))
-            saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports", "/sources")}
+            saved = {suffix: require(control.get(path + suffix)) for suffix in ("", "/resumes", "/reports")}
 
         with server():
             if portal_reads or portal_writes:
@@ -1369,15 +1126,13 @@ def run(scratch, url, pg_options):
             if intake_saved:
                 checks.check('uncertain intake and deliberate recovery survive restart',
                     all(require(control.get(url)) == data for url, data in intake_saved.items()))
-            checks.check("exact candidate resume report and source state survives restart", all(require(control.get(path + suffix)) == body for suffix, body in saved.items()))
+            checks.check("exact candidate resume and report state survives restart", all(require(control.get(path + suffix)) == body for suffix, body in saved.items()))
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("candidate credential survives restart", require(candidate.get("/portal/me"))["candidate_id"] == cid)
             deleted = require(control.delete(path))
             checks.check("operator erasure reports linked cleanup", deleted == {"candidate_id": cid, "deleted": True, "reports_deleted": 1})
-            checks.check("erased candidate reads and writes refuse", all(control.get(path + suffix).status_code == 404 for suffix in ("", "/resumes", "/reports", "/sources"))
+            checks.check("erased candidate reads and writes refuse", all(control.get(path + suffix).status_code == 404 for suffix in ("", "/resumes", "/reports"))
                 and control.post(path + "/auth-key").status_code == 404
-                and control.post(path + "/sources/github", json={"handle": "octocat"}).status_code == 404
-                and control.post(path + "/sources/linkedin", json={"export_b64": _export_b64()}).status_code == 404
                 and control.get(f"/report/{rid}").status_code == 404)
             with client(base, headers={"X-Candidate-Key": key}) as candidate:
                 checks.check("erasure invalidates candidate key", candidate.get("/portal/me").status_code == 401)

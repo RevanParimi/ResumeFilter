@@ -1,19 +1,53 @@
 """Seeded migration compatibility on disposable SQLite/PostgreSQL."""
 
 import hashlib
+import os
 from datetime import timedelta
+from pathlib import Path
+import uuid
 
 from alembic import command
+from alembic.config import Config
 import pytest
-from sqlalchemy import MetaData, Table, select, update, inspect
+from sqlalchemy import MetaData, Table, select, text, update, inspect
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.store import AuthStore
-from app.core.db import make_session_factory
+from app.core.db import make_engine, make_session_factory
 from tests.test_auth_service import NOW
-from tests.test_curation_storage_migration import migrated  # noqa: F401
 
+ROOT = Path(__file__).resolve().parents[1]
 PREVIOUS = '0028_owned_curation'
+
+
+@pytest.fixture(params=["sqlite", "postgresql"])
+def migrated(request, tmp_path):
+    bootstrap = None
+    if request.param == "postgresql":
+        raw = os.environ.get("DEE_TEST_DB_URL", "")
+        if not raw:
+            pytest.skip("Disposable PostgreSQL DEE_TEST_DB_URL not configured")
+        bootstrap = make_engine(raw)
+        schema = "login_binding_" + uuid.uuid4().hex
+        with bootstrap.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        url = make_url(raw).update_query_dict({"options": f"-csearch_path={schema}"}).render_as_string(hide_password=False)
+    else:
+        url = "sqlite:///" + (tmp_path / "login-binding.db").as_posix()
+    engine = make_engine(url)
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(ROOT / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+    try:
+        command.upgrade(cfg, "head")
+        yield engine, cfg
+    finally:
+        engine.dispose()
+        if bootstrap is not None:
+            with bootstrap.begin() as conn:
+                conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            bootstrap.dispose()
 
 
 def test_upgrade_preserves_rows_marks_legacy_proof_for_review_and_roundtrips(migrated):

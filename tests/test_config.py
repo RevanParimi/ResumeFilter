@@ -106,15 +106,6 @@ def test_request_body_budget_requires_positive_limit(limit):
         Settings(_env_file=None, max_request_body_bytes=limit)
 
 
-def test_linkedin_source_defaults():
-    from app.core.config import Settings
-    s = Settings(_env_file=None, openrouter_api_key="")
-    assert s.max_linkedin_b64_chars == 8_000_000
-    assert s.ps_linkedin_skill_base_confidence == 0.4
-    assert s.ps_linkedin_skill_corroborated_confidence == 0.6
-    assert s.ps_linkedin_max_rows == 5_000
-
-
 def test_s64_portal_config_defaults():
     s = Settings(_env_file=None, openrouter_api_key="")
     assert s.candidate_access_key_bytes == 32
@@ -122,5 +113,4 @@ def test_s64_portal_config_defaults():
     assert s.ret_interview_record_days == 1825
     assert s.ret_coding_round_days == 1825
     assert s.ret_observed_offer_days == 1825
-    assert s.ret_profile_source_days == 1095
     assert s.ret_audit_log_days == 2555

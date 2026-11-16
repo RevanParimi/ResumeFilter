@@ -7,13 +7,12 @@ import pytest
 
 from app.candidates.store import CandidateStore
 from tests.conftest import make_services
-from tests.test_profile_sources_store import _sig
 from tests.test_report_erasure_concurrency import database
 from tests.test_report_store import _report
 from tests.test_screening_batches_api import _client
 
 
-VIEWS = ("sources", "me", "access-log", "consents")
+VIEWS = ("me", "access-log", "consents")
 
 
 @pytest.fixture
@@ -25,25 +24,20 @@ def services(database, settings):
 def seed(services, email):
     cid = services.candidates.create_bare_candidate(email_hash=services.auth.hash_email(email))
     key = services.candidates.issue_access_key(cid)
-    services.profile_sources._store.save_signal(cid, _sig("private-" + cid))
     services.report_store.save(_report(candidate_id=cid))
     services.ledger.grant_consent(candidate_id=cid, purpose="ledger_read")
     return cid, {"X-Candidate-Key": key}
 
 
 def path(view, cid):
-    return f"/candidates/{cid}/sources" if view == "sources" else f"/portal/{view}"
+    return f"/portal/{view}"
 
 
 def boundary(services, view, stage):
-    if stage == "source":
-        return services.profile_sources, "list_sources"
     if stage == "early":
-        return ((services.profile_sources, "list_sources") if view == "sources"
-                else (services.portal, {"me": "my_data", "access-log": "access_log",
-                                        "consents": "consents"}[view]))
+        return (services.portal, {"me": "my_data", "access-log": "access_log",
+                                  "consents": "consents"}[view])
     return {
-        "sources": (services.profile_sources._store, "signals_for_candidate"),
         "me": (services.ledger, "consents_for_candidate"),
         "access-log": (services.ledger, "audit_for_candidate"),
         "consents": (services.ledger, "consents_for_candidate"),
@@ -52,8 +46,7 @@ def boundary(services, view, stage):
 
 @pytest.mark.parametrize("door", ["portal", "admin"])
 @pytest.mark.parametrize(("view", "stage"),
-                         [(view, stage) for view in VIEWS for stage in ("early", "loaded")]
-                         + [("me", "source")])
+                         [(view, stage) for view in VIEWS for stage in ("early", "loaded")])
 def test_erasure_during_aggregate_has_safe_http_refusal(services, monkeypatch, door, stage, view):
     cid, headers = seed(services, "erase@example.in")
     keeper, keep_headers = seed(services, "keep@example.in")
@@ -87,7 +80,6 @@ def test_erasure_during_aggregate_has_safe_http_refusal(services, monkeypatch, d
         assert reader.get(path(view, keeper), headers=keep_headers).status_code == 200
         assert reader.get("/portal/me", headers=headers).status_code == 401
     assert services.candidates.get_candidate(cid) is None
-    assert services.profile_sources._store.signals_for_candidate(cid) == []
     assert services.report_store.for_candidate(cid) == []
 
 

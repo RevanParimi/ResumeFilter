@@ -1,5 +1,5 @@
 """Candidate DPDP portal service (S6.4). Pure composition over CandidateStore +
-LedgerStore + ReportStore + ProfileSourceService. Owns no tables/state. Every
+LedgerStore + ReportStore. Owns no tables/state. Every
 method operates on ONE candidate_id (resolved from the caller's key upstream);
 self-access needs no org consent. Reports surface as refs (no internals)."""
 
@@ -35,7 +35,6 @@ class PortalService:
         candidates: CandidateStore,
         ledger: LedgerStore,
         report_store,
-        profile_sources,
         *,
         verification=None,
         interview=None,
@@ -45,7 +44,6 @@ class PortalService:
         self._candidates = candidates
         self._ledger = ledger
         self._report_store = report_store
-        self._profile_sources = profile_sources
         # Optional so the portal stays constructible without the S7.1 spine;
         # when absent, `identity` is simply omitted from MyData.
         self._verification = verification
@@ -65,7 +63,6 @@ class PortalService:
     def my_data(self, candidate_id: str) -> MyData:
         self._require_candidate(candidate_id)
         resumes = self._candidates.list_resumes(candidate_id)
-        sources = self._profile_sources.list_sources(candidate_id)
         records = self._ledger.records_for_candidate(candidate_id)
         coding = self._ledger.coding_rounds_for_candidate(candidate_id)
         reports = [
@@ -74,17 +71,11 @@ class PortalService:
         ]
         oldest = {
             "resumes": min((r.created_at for r in resumes), default=None),
-            "profile_sources": min((s.fetched_at for s in sources), default=None),
             "interview_records": min((r.created_at for r in records), default=None),
             "coding_rounds": min((c.created_at for c in coding), default=None),
         }
         identity = (
             self._verification.assurance_for_candidate(candidate_id)
-            if self._verification is not None
-            else None
-        )
-        claims = (
-            self._verification.claims_for_candidate(candidate_id)
             if self._verification is not None
             else None
         )
@@ -114,13 +105,11 @@ class PortalService:
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
             resumes=resumes,
-            sources=sources,
             interview_records=records,
             coding_rounds=coding,
             reports=reports,
             consents=self._ledger.consents_for_candidate(candidate_id),
             identity=identity,
-            claims=claims,
             interviews=interviews,
             sessions=sessions,
             grievance=build_grievance_contact(self._settings),
@@ -220,13 +209,12 @@ def build_portal_service(
     candidates: CandidateStore,
     ledger: LedgerStore,
     report_store,
-    profile_sources,
     verification=None,
     interview=None,
     auth=None,
 ) -> PortalService:
     return PortalService(
-        candidates, ledger, report_store, profile_sources,
+        candidates, ledger, report_store,
         verification=verification, interview=interview, auth=auth,
         settings=settings or get_settings(),
     )

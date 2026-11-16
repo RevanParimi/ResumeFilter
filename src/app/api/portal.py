@@ -20,7 +20,6 @@ from app.core.blocking import ExecutionPending, ExecutionUnavailable
 from app.ledger.schema import ConsentGrant, ConsentPurpose
 from app.portal.schema import AccessLogEntry, ConsentView, MyData
 from app.portal.service import PortalSubjectErasedError
-from app.profile_sources.store import SourceSubjectErasedError
 
 
 candidate_router = APIRouter()
@@ -35,7 +34,7 @@ async def _portal_read(request: Request, operation, *args):
     except ExecutionPending:
         raise HTTPException(status_code=503, detail='portal_read_pending',
                             headers={'Retry-After': '1'}) from None
-    except (PortalSubjectErasedError, SourceSubjectErasedError):
+    except PortalSubjectErasedError:
         raise
     except Exception as exc:
         # Preserve the generic correlated 500 while keeping worker/SQL details
@@ -73,7 +72,7 @@ async def _portal_write(request: Request, operation, *args, **kwargs):
 async def portal_me(request: Request, candidate_id: str = Depends(require_candidate)) -> MyData:
     try:
         return await _portal_read(request, _services(request).portal.my_data, candidate_id)
-    except (PortalSubjectErasedError, SourceSubjectErasedError):
+    except PortalSubjectErasedError:
         raise HTTPException(status_code=404, detail="candidate not found") from None
 
 

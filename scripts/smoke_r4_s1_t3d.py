@@ -1250,15 +1250,13 @@ def check_pdf_execution(checks, scratch, base, control, actor):
     accepted_path = None
     with client(base, headers={'X-Candidate-Key': key}) as portal:
         for path, caller in (('/evaluate', control), ('/candidates', control),
-                ('/screening/candidates', actor), ('/screening/batches', actor), ('/portal/documents', portal)):
+                ('/screening/candidates', actor), ('/screening/batches', actor)):
             (scratch / 'pdf-entered').unlink(missing_ok=True)
             (scratch / 'pdf-release').unlink(missing_ok=True)
             (scratch / 'pdf-mode').write_text('stall')
             payload = {'resume_pdf_b64': pdf}
             if path.endswith('/batches'):
                 payload = {'name': 'Bounded PDF intake', 'items': [payload, payload]}
-            elif path.endswith('/documents'):
-                payload = {'doc_type': 'experience_letter', 'content_b64': pdf}
             with ThreadPoolExecutor(max_workers=1) as pool:
                 pending = pool.submit(caller.post, path, json=payload)
                 try:

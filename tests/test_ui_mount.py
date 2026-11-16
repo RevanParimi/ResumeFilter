@@ -39,7 +39,6 @@ def test_entry_page_delivers_each_declared_local_script_without_authentication(s
     scripts = re.findall(r'<script\s+src="(\./[^"]+)"', page.text)
     assert "./operator-accounts.js" in scripts
     assert "./organization-admin.js" in scripts
-    assert "./curation.js" in scripts
     assert "./evaluation-report.js" in scripts
     assert "./screening.js" in scripts
     assert "./portal-auth.js" in scripts

@@ -1,4 +1,4 @@
-"""Operator accounts, retention, metrics and curation on migrated scratch SQL.
+"""Operator accounts, retention and metrics on migrated scratch SQL.
 
 SQLite by default; --postgres needs disposable DEE_TEST_DB_URL. Uses existing
 fake-model/captured-email composition. No working data or live providers.
@@ -17,9 +17,7 @@ import tempfile
 from sqlalchemy import create_engine, select, text, update
 
 from app.candidates.models import ResumeRow
-from app.curation.models import CurationAliasRow, CurationObservationRow
 from _smoke import Smoke, base_env, client, wait_healthy
-from smoke_curation_input import export
 from smoke_r1_s1_t3a_v1 import database
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,7 +106,7 @@ def main():
                 a, b, stranger = [actors.enter_context(client(base)) for _ in range(3)]
                 def public_ui():
                     page = stranger.get("/ui/")
-                    for name in ("operator-accounts.js", "organization-admin.js", "curation.js"):
+                    for name in ("operator-accounts.js", "organization-admin.js"):
                         module = stranger.get(f"/ui/{name}")
                         checks.check(f"anonymous UI delivers its declared extracted module {name}",
                             page.status_code == module.status_code == 200
@@ -181,83 +179,7 @@ def main():
                         and stranger.get("/screening/batches", headers={"X-Org-Key": rotated}).status_code == 200
                         and stranger.get("/screening/batches", headers={"X-Org-Key": org_b["api_key"]}).status_code == 200)
 
-                    def ingest(cid, *names):
-                        return require(admin.post(f"/candidates/{cid}/sources/linkedin", json=export(list(names))))
-
-                    def queue(actor=a):
-                        return require(actor.get("/curation/skills/unmapped"))["terms"]
-
-                    def decide(actor, snapshot, action="ignore", status=200, **vocabulary):
-                        return require(actor.post("/curation/skills/resolve", json={
-                            "norm_key": snapshot["norm_key"], "expected_revision": snapshot["review_revision"],
-                            "action": action, **vocabulary}), status)
-
-                    ingest(first, "Repeated review raw")
-                    old, = queue(a)
-                    checks.check("two operators read one stable exact revision", queue(b) == [old])
-                    for extra in ({}, {"expected_revision": None}):
-                        refused = a.post("/curation/skills/resolve", json={"norm_key": old["norm_key"], "action": "ignore", **extra})
-                        checks.check("missing/null HTTP revision refuses without mutation", refused.status_code == 422 and queue(a) == [old])
-                    csrf = a.headers.pop("X-CSRF-Token")
-                    try:
-                        checks.check("guarded write still requires session CSRF", decide(a, old, status=403)["detail"])
-                    finally:
-                        a.headers["X-CSRF-Token"] = csrf
-                    checks.check("CSRF refusal preserves exact snapshot", queue() == [old])
-                    decide(a, old)
-                    checks.check("ignored raw disappears on actual reload", queue(a) == queue(b) == [])
-                    ingest(first, "Repeated review raw")
-                    fresh, = queue()
-                    checks.check("new input under ignored key gets a new revision", fresh["review_revision"] != old["review_revision"])
-                    error = decide(b, old, "map", 409, alias="Stale approval", canonical="python", category="language")
-                    checks.check("stale second reviewer cannot approve fresh submission", error == {
-                        "detail": "review snapshot changed; refresh before deciding"} and queue() == [fresh])
-                    receipt = decide(b, fresh, "map", alias="Approved revision alias", canonical="python", category="language")
-                    checks.check("fresh approval has real operator identity and raw-free receipt",
-                        receipt["admin_user_id"] == operators[1]["id"] and set(receipt) == {
-                            "action", "alias", "canonical", "category", "decided_at", "admin_user_id"})
-                    checks.check("accepted raw disappears on actual reload", queue() == [])
-                    checks.check("duplicate review is explicit absence", decide(a, fresh, status=404) == {"detail": "term not found"})
-
-                    ingest(first, "Create review raw")
-                    created, = queue()
-                    decide(a, created, "create", alias="Approved revision tool", canonical="revision_tool", category="data")
-                    normalized = ingest(second, "Approved revision alias", "Approved revision tool", "Python")["skills"]
-                    checks.check("approved map/create refresh current process without changing static taxonomy",
-                        [s["canonical"] for s in normalized] == ["python", "revision_tool", "python"])
-                    ingest(first, "Conflict review raw")
-                    conflict, = queue()
-                    checks.check("alias conflict preserves raw and distinguishes stale revision",
-                        decide(a, conflict, "map", 409, alias="Approved revision alias", canonical="python", category="language")
-                        == {"detail": "approved alias already exists"} and queue() == [conflict])
-                    decide(a, conflict)
-
-                    ingest(first, "Erasure review raw"); ingest(second, "Erasure review raw")
-                    erased, = queue()
-                    require(admin.delete(f"/candidates/{first}"))
-                    survivor, = queue()
-                    checks.check("partial erasure changes revision and preserves surviving observation",
-                        survivor["occurrences"] == 1 and survivor["review_revision"] != erased["review_revision"]
-                        and decide(b, erased, status=409)["detail"] == "review snapshot changed; refresh before deciding"
-                        and queue() == [survivor])
-                    decide(b, survivor)
-                    ingest(second, "Expiry review raw")
-                    expired, = queue()
-                    with engine.begin() as conn:
-                        conn.execute(update(CurationObservationRow).values(
-                            created_at=datetime.now(timezone.utc)-timedelta(days=31)))
-                    checks.check("expired snapshot cannot authorize promotion",
-                        decide(a, expired, "map", 404, alias="Expired approval", canonical="python", category="language")
-                        == {"detail": "term not found"} and queue() == [])
-
-                    org = org_b
                     key = require(admin.post(f"/candidates/{second}/auth-key"))["access_key"]
-                    body = dict(norm_key=old["norm_key"], action="ignore", expected_revision=old["review_revision"])
-                    for label, headers in (("anonymous", {}), ("organization", {"X-Org-Key": org["api_key"]}),
-                                           ("candidate", {"X-Candidate-Key": key})):
-                        checks.check(label + " cannot read or decide shared curation", stranger.get(
-                            "/curation/skills/unmapped", headers=headers).status_code == 401 and stranger.post(
-                            "/curation/skills/resolve", json=body, headers=headers).status_code == 401)
                     for label, headers in (("anonymous", {}), ("organization", {"X-Org-Key": org_b["api_key"]}),
                                            ("candidate", {"X-Candidate-Key": key})):
                         checks.check(label + " cannot inspect/mutate operator surfaces",
@@ -273,8 +195,6 @@ def main():
                         import asyncio
                         from check_ui_operator_browser import run_browser
                         asyncio.run(run_browser(base, scratch, admin, checks, restart_app))
-                    ingest(second, "Restart review raw")
-                    restart, = queue()
 
                 env["DEE_RETENTION_SWEEP_ENABLED"] = "true"
                 with server() as (admin, restart_app):
@@ -289,37 +209,21 @@ def main():
                         checks.check("retention preserves the active candidate resume and clears the expired one",
                             not list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == retained)))
                             and bool(list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == second)))))
-                    checks.check("queue revision survives real app restart", queue(b) == [restart])
                     checks.check("combined restart preserves sessions/accounts/org settings and keys",
                         len(require(b.get("/admin/users"))) == 2
                         and next(o for o in require(b.get("/ledger/orgs")) if o["id"] == oid)["reliability_weight"] == 1.75
                         and stranger.get("/screening/batches", headers={"X-Org-Key": rotated}).status_code == 200)
 
-                    signal = require(admin.post(f"/candidates/{second}/sources/linkedin",
-                        json=export(["Approved revision alias", "Approved revision tool"])))
-                    checks.check("restart reloads persisted map/create overlay",
-                        [s["canonical"] for s in signal["skills"]] == ["python", "revision_tool"])
-                    decide(b, restart)
-                    checks.check("persisted decisions and final empty queue agree", queue(a) == []
-                        and decide(a, old, status=404) == {"detail": "term not found"})
-                    with engine.connect() as conn:
-                        aliases = conn.execute(select(CurationAliasRow.alias, CurationAliasRow.admin_user_id)).all()
-                        expected = {("Approved revision alias", operators[1]["id"]),
-                                    ("Approved revision tool", operators[0]["id"])}
-                        extras = {alias for alias, _ in aliases if alias not in {name for name, _ in expected}}
-                        checks.check("only explicit successful vocabulary persisted", expected <= set(aliases)
-                            and extras == ({"Combined approved alias", "Combined approved tool"} if "--browser" in sys.argv else set()))
-                        checks.check("no remaining raw observations", conn.execute(select(CurationObservationRow.id)).all() == [])
                     require(b.delete(f"/ledger/orgs/{oid}"))
                     checks.check("offboarding revokes only target org after integrated restart",
                         stranger.get("/screening/batches", headers={"X-Org-Key": rotated}).status_code == 401
                         and stranger.get("/screening/batches", headers={"X-Org-Key": org_b["api_key"]}).status_code == 200
                         and {o["id"] for o in require(b.get("/ledger/orgs"))} == {org_b["org"]["id"]})
                     require(b.delete(f"/admin/users/{operators[0]['id']}"))
-                    checks.check("revoked operator cannot reuse revision and other operator remains",
-                        all(a.get(p).status_code == 401 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics"))
+                    checks.check("revoked operator loses access and other operator remains",
+                        all(a.get(p).status_code == 401 for p in ("/ledger/orgs", "/admin/users", "/metrics"))
                         and a.post("/admin/retention/sweep", json={}).status_code == 401
-                        and all(b.get(p).status_code == 200 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics")))
+                        and all(b.get(p).status_code == 200 for p in ("/ledger/orgs", "/admin/users", "/metrics")))
             logged = (scratch / "server.log").read_text(encoding="utf-8")
             checks.check("HTTP logs omit captured codes and operator emails", all(value not in logged for value in [*emails, *codes]))
         finally:

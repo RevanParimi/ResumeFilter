@@ -1,7 +1,7 @@
 """Candidate DPDP portal contracts (S6.4). Read/consent shapes only — no scoring.
 
 These are the render-ready projections the PortalService assembles from the
-candidate + ledger + report + profile-source stores. A data principal accessing
+candidate + ledger + report stores. A data principal accessing
 their own data needs no consent object; auth == identity of the subject.
 """
 
@@ -18,8 +18,7 @@ from app.candidates.store import ResumeSummary
 from app.auth.schema import SessionView
 from app.interview.schema import InterviewSummary
 from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
-from app.profile_sources.schema import ProfileSourceSignal
-from app.verification.schema import ClaimEvidence, IdentityAssurance
+from app.verification.schema import IdentityAssurance
 
 
 class ConsentState(StrEnum):
@@ -108,15 +107,11 @@ class MyData(BaseModel):
     candidate_id: str
     profile: Optional[CandidateProfile] = None
     resumes: list[ResumeSummary] = Field(default_factory=list)
-    sources: list[ProfileSourceSignal] = Field(default_factory=list)
     interview_records: list[InterviewRecord] = Field(default_factory=list)
     coding_rounds: list[CodingRoundResult] = Field(default_factory=list)
     reports: list[ReportRef] = Field(default_factory=list)
     consents: list[ConsentGrant] = Field(default_factory=list)
     identity: Optional[IdentityAssurance] = None  # S7.1 advisory assurance
-    # S7.2 advisory employment-claim evidence. A SEPARATE field, never folded
-    # into `identity`: a payslip says a job was real, not who the person is.
-    claims: Optional[ClaimEvidence] = None
     # S7.3 AI interviews, as HEADERS. Transcripts are the candidate's to read at
     # GET /portal/interviews/{id}; bundling every word into the access view
     # would make the one view they check hardest to actually read.

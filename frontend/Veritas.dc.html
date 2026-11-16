@@ -7,7 +7,6 @@
 <script src="./api.js"></script>
 <script src="./operator-accounts.js"></script>
 <script src="./organization-admin.js"></script>
-<script src="./curation.js"></script>
 <script src="./evaluation-report.js"></script>
 <script src="./screening.js"></script>
 <script src="./portal-auth.js"></script>
@@ -210,7 +209,6 @@
             <button onClick="{{ goEvaluate }}" style="{{ navEvaluate }}" style-hover="background:var(--hover)">Instant check</button>
             <button onClick="{{ goAdminOrgs }}" style="{{ navAdminOrgs }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/building-2.svg) center/contain no-repeat;"></span><span>Organisations</span></button>
             <button onClick="{{ goAdminUsers }}" style="{{ navAdminUsers }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/shield.svg) center/contain no-repeat;"></span><span>Operator accounts</span></button>
-            <button onClick="{{ goCuration }}" style="{{ navCuration }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/tags.svg) center/contain no-repeat;"></span><span>Curation queue</span></button>
             <div style="{{ navGroup }}">Account</div>
             <button onClick="{{ goDevices }}" style="{{ navDevices }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat;"></span><span>Signed-in devices</span></button>
           </div>
@@ -1243,49 +1241,6 @@
             </sc-if>
           </sc-if>
 
-          <sc-if value="{{ isCuration }}" hint-placeholder-val="{{ false }}">
-            <h1 style="{{ h1 }}">Curation queue</h1>
-            <sc-if value="{{ curationDenied }}"><p role="alert">Only a signed-in operator can review the shared curation queue.</p></sc-if>
-            <sc-if value="{{ curationAllowed }}">
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">Review terms from saved sources. Unreviewed terms expire after 30 days or when their source is deleted. Supply the vocabulary alias you approve; approval is a human judgment.</p>
-            <button onClick="{{ reloadCuration }}" disabled="{{ curationBusy }}" style="{{ smallGhost }}">Refresh queue</button>
-            <sc-if value="{{ curationLoading }}"><p role="status">Loading review queue…</p></sc-if>
-            <sc-if value="{{ curationError }}"><p role="alert" style="{{ uploadErrorBox }}">{{ curationErrorText }}</p></sc-if>
-            <sc-if value="{{ curationNotice }}"><p role="status">{{ curationNotice }}</p></sc-if>
-            <sc-if value="{{ curationNeedsRefresh }}"><p role="status">Refresh queue to check the saved result before another decision. Your draft is read-only until refresh succeeds.</p></sc-if>
-            <sc-if value="{{ curationHasData }}"><p role="status">Loaded {{ curationLoaded }} terms. Counts show surviving source observations.</p></sc-if>
-            <sc-if value="{{ curationEmpty }}"><p>No terms awaiting review.</p></sc-if>
-            <div style="{{ listCard }}">
-              <sc-for list="{{ curation }}" as="t" hint-placeholder-count="4">
-                <div data-curation-key="{{ t.key }}" style="display:grid; grid-template-columns:minmax(0,1fr) 90px 190px; gap:14px; align-items:center; padding:11px 14px; border-bottom:1px solid var(--border);">
-                  <div>
-                    <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ t.term }}</div>
-                    <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ t.sources }}</div>
-                  </div>
-                  <span style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted);">{{ t.count }}×</span>
-                  <div style="display:flex; gap:6px; justify-content:flex-end;">
-                    <button onClick="{{ t.review }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Review</button>
-                    <button onClick="{{ t.ignore }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Ignore</button>
-                  </div>
-                </div>
-              </sc-for>
-            </div>
-            <sc-if value="{{ curationMore }}"><button onClick="{{ moreCuration }}" disabled="{{ curationControlsDisabled }}" style="{{ smallGhost }}">Load more terms</button></sc-if>
-            <sc-if value="{{ curationSelected }}">
-              <div style="{{ listCard }}">
-                <h2 style="{{ h2 }}">Review: {{ curationSelectedName }}</h2>
-                <label>Action <select aria-label="Curation action" value="{{ curationAction }}" onChange="{{ setCurationAction }}" disabled="{{ curationControlsDisabled }}" style="{{ field }}"><option value="map">Map to existing canonical</option><option value="create">Create canonical</option></select></label>
-                <label>Approved alias <input aria-label="Approved alias" value="{{ curationAlias }}" onInput="{{ setCurationAlias }}" disabled="{{ curationControlsDisabled }}" maxlength="128" style="{{ field }}" /></label>
-                <label>Canonical ID <input aria-label="Canonical ID" value="{{ curationCanonical }}" onInput="{{ setCurationCanonical }}" disabled="{{ curationControlsDisabled }}" maxlength="64" style="{{ field }}" /></label>
-                <label>Category <input aria-label="Category" value="{{ curationCategory }}" onInput="{{ setCurationCategory }}" disabled="{{ curationControlsDisabled }}" maxlength="32" style="{{ field }}" /></label>
-                <p style="font-size:12px;">Use the canonical's category when mapping. New IDs use snake_case. Categories: language, web, mobile, data, ml, cloud, devops, database, testing, analytics.</p>
-                <button onClick="{{ approveCuration }}" disabled="{{ curationControlsDisabled }}" style="{{ smallPrimary }}">Approve vocabulary</button>
-                <button onClick="{{ cancelCuration }}" disabled="{{ curationBusy }}" style="{{ smallGhost }}">Cancel review</button>
-              </div>
-            </sc-if>
-            </sc-if>
-          </sc-if>
-
           <sc-if value="{{ isInterview }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Your interview</h1>
             <p style="{{ pageSub }}">Answer by typing or voice. Describe your actions, reasoning and context in your own words. These advisory assessments require human review.</p>
@@ -1597,14 +1552,14 @@ const domBtn = (active) => ({
 const PLANE_HINT = {
   org: "For staffing agencies. Screening queues, batches and reports for the resumes your organisation uploaded.",
   candidate: "For candidates. Your own data, who accessed it, your consents and your right to erasure.",
-  operator: "For Veritas operators. Org lifecycle, curation queue and admin tooling. Accounts are created by an operator."
+  operator: "For Veritas operators. Org lifecycle and admin tooling. Accounts are created by an operator."
 };
 
 const TITLES = {
   queue: "Screening queue", report: "Candidate review context", summary: "Batch summary",
   upload: "Upload", batches: "Batches", portal: "Your data", accesslog: "Access log",
   consents: "Consents", devices: "Signed-in devices", erasure: "Delete everything",
-  adminorgs: "Organisations", adminusers: "Operator accounts", curation: "Curation queue",
+  adminorgs: "Organisations", adminusers: "Operator accounts",
   roles: "Roles", comp: "Comp intelligence", evaluate: "Instant check", interview: "Your interview"
 };
 
@@ -1756,12 +1711,9 @@ class Component extends window.VeritasEmployerRoles(
   window.VeritasPortalAuth(
     window.VeritasScreening(
       window.VeritasEvaluationReport(
-        window.VeritasCuration(
-          window.VeritasOrganizationAdmin(
-            window.VeritasOperatorAccounts(DCLogic, { API, EVAL_TIMEOUT_MS, errorCopy, fmtDate }),
-            { API, EVAL_TIMEOUT_MS, errorCopy, fmtDate, stateChip }
-          ),
-          { API, EVAL_TIMEOUT_MS, errorCopy, IDLE }
+        window.VeritasOrganizationAdmin(
+          window.VeritasOperatorAccounts(DCLogic, { API, EVAL_TIMEOUT_MS, errorCopy, fmtDate }),
+          { API, EVAL_TIMEOUT_MS, errorCopy, fmtDate, stateChip }
         ), {
           API, EVAL_TIMEOUT_MS, errorCopy, IDLE, navigator, setTimeout, clearTimeout,
           navBtn, TEXT_AREA, NOTICE_BOX, ERROR_BOX, RISK_BAND, BAND, SUB_BAND_LABEL,
@@ -1808,9 +1760,6 @@ class Component extends window.VeritasEmployerRoles(
     jobList: IDLE, board: IDLE, comp: IDLE,
     batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
     outcomes: IDLE,
-    curationList: IDLE, curationSelection: null, curationAction: "map",
-    curationAlias: "", curationCanonical: "", curationCategory: "",
-    curationBusy: false, curationError: null, curationNotice: "", curationNeedsRefresh: false,
     selectedJob: null, busyId: null, erasureConfirm: "", consentNeedsRefresh: false, consentUncertain: false, consentWriteError: false,
     // screening
     selectedBatch: null, moreBusy: null, deleteArmed: null,
@@ -1889,8 +1838,6 @@ class Component extends window.VeritasEmployerRoles(
     // Rule 3: never retry, never leave a half-populated screen behind.
     this._driving = false;
     this.clearInterview();
-    this._curationLoad = (this._curationLoad || 0) + 1;
-    this._curationReview = null;
     this._evaluating = null;
     this._viewReport = null;
     this._recording = null;
@@ -1916,9 +1863,6 @@ class Component extends window.VeritasEmployerRoles(
       orgKey: "", orgKeyOwner: "", orgKeyVisible: false,
       usersList: IDLE, usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0,
       usersBusy: false, usersError: null, usersNotice: "", usersConfirm: null,
-      curationList: IDLE, curationSelection: null, curationAlias: "",
-      curationCanonical: "", curationCategory: "", curationBusy: false,
-      curationError: null, curationNotice: "", curationNeedsRefresh: false, curationAction: "map",
       screen: "login", me: null, otp: ["", "", "", "", "", ""], authBusy: false,
       authError: null,
       authNotice: "Your session ended. Sign in again to continue.",
@@ -1942,7 +1886,6 @@ class Component extends window.VeritasEmployerRoles(
     else if (screen === "comp") this.loadComp();
     else if (screen === "queue" || screen === "summary") this.loadScreening();
     else if (screen === "batches") this.loadBatches();
-    else if (screen === "curation") this.reloadCuration();
     else if (screen === "adminorgs") this.loadOrgAdmin();
     else if (screen === "adminusers") this.loadUserAdmin();
     else if (screen === "interview") this.refreshInterviews();
@@ -1975,7 +1918,6 @@ class Component extends window.VeritasEmployerRoles(
     if (this._uploadCheckRequest) this._uploadCheckRequest.navigated = true;
     if (screen !== "interview") this.clearInterview();
     this._viewReport = null;
-    if (screen !== "curation") this.clearCuration();
     if (screen !== "adminusers") {
       const pendingUserChange = !!this._usersAction;
       this._usersLoad = null;
@@ -2010,7 +1952,6 @@ class Component extends window.VeritasEmployerRoles(
   goComp = this.nav("comp");
   goAdminOrgs = this.nav("adminorgs");
   goAdminUsers = this.nav("adminusers");
-  goCuration = this.nav("curation");
   // Goes through nav() like every other door onto the queue. It used to set
   // `screen` directly and skip loadForScreen, which is this repo's signature
   // defect in miniature: one rule, two entry points, and the second one lands
@@ -2051,8 +1992,6 @@ class Component extends window.VeritasEmployerRoles(
     this._orgLoad = null;
     this._usersAction = null;
     this._usersLoad = null;
-    this._curationLoad = null;
-    this._curationReview = null;
   }
 
   renderVals() {
@@ -2109,11 +2048,9 @@ class Component extends window.VeritasEmployerRoles(
       showAdvisory: RISK_SCREENS.indexOf(s) !== -1,
       isAdminOrgs: s === "adminorgs",
       isAdminUsers: s === "adminusers",
-      isCuration: s === "curation",
       navAdminOrgs: navBtn(s === "adminorgs"),
       navAdminUsers: navBtn(s === "adminusers"),
-      navCuration: navBtn(s === "curation"),
-      goAdminOrgs: this.goAdminOrgs, goAdminUsers: this.goAdminUsers, goCuration: this.goCuration,
+      goAdminOrgs: this.goAdminOrgs, goAdminUsers: this.goAdminUsers,
       smallGhost: SMALL_GHOST,
       isPortal: s === "portal",
       isAccessLog: s === "accesslog",
@@ -2128,7 +2065,7 @@ class Component extends window.VeritasEmployerRoles(
       dangerBtn: DANGER_BTN
     }, this.authValues(), this.evaluationValues(), this.screeningVals(),
       this.interviewValues(), this.operatorAccountValues(), this.organizationAdminValues(),
-      this.curationValues(), this.portalValues(), this.employerValues(), {
+      this.portalValues(), this.employerValues(), {
         showSearch: st.plane !== "candidate" && !["adminorgs", "adminusers"].includes(st.screen),
         // Keep the backend visible so this page's API target is explicit.
         apiBase: API.base()

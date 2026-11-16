@@ -173,22 +173,6 @@ comp_benchmark_tolerance: 0.10   # +/- band around p50 counted as "at market"
 # --- Employer dashboard (PI-5) - S5.3 read-only composition over jobs/comp/ledger --
 dash_board_top_n: 20             # max ranked candidates returned per GET /jobs/{id}/board
 
-# --- Profile sources (PI-6) - S6.1 GitHub-as-signal ----------------------------
-ps_github_repo_limit: 100        # max repos pulled for a user
-ps_github_language_repos: 30     # top-N recent repos that get a byte-accurate /languages fetch
-ps_github_include_forks: false   # forks excluded from the signal by default
-
-# --- Profile sources (PI-6) - S6.2 LinkedIn export parsing ---------------------
-max_linkedin_b64_chars: 8000000
-ps_linkedin_skill_base_confidence: 0.4
-ps_linkedin_skill_corroborated_confidence: 0.6
-ps_linkedin_max_rows: 5000
-
-# --- Normalization curation loop (PI-6) - S6.3 review queue + overlay ----------
-cur_queue_default_limit: 200     # default + max rows returned by the queue endpoint
-cur_min_term_len: 2              # skip single-char noise before queueing
-cur_max_term_len: 64             # drop overlong junk (also caps what we persist)
-
 # --- Identity verification (PI-7) - S7.1 spine + consent-first identity -------
 # Deterministic and offline: no vendor, no network, no LLM. Assurance is
 # ADVISORY - it never gates matching, ranking, or scoring.
@@ -201,15 +185,6 @@ contact_code_wait_seconds: 20.0         # caller wait only; refresh before any r
 verif_outcome_ttl_days: 365            # a verified outcome reads as expired after this
 verif_otp_debug_echo: false            # local-only echo of the code; see config.py note
 ret_verification_days: 1095            # retention window surfaced in the portal
-
-# --- Document forensics (PI-7) - S7.2 employment-claim evidence ----------------
-# Deterministic and offline: no LLM, no network, no vendor. The document is
-# NEVER stored - parsed in memory, sha256 kept, bytes discarded. Finding
-# severities are code constants, not knobs (see documents.py).
-doc_max_b64_chars: 8000000        # ~6MB decoded; refused before any decode
-doc_max_pages: 20                 # parse cap
-doc_metadata_skew_days: 1         # creation-vs-modification skew worth noting
-moonlight_min_overlap_months: 12  # higher than xf_overlap_months_min on purpose
 
 # --- AI interviews (PI-7) - S7.3 delivery + advisory scoring -------------------
 # The interview asks the depth report's OWN probes. Scoring is deterministic;

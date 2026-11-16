@@ -44,7 +44,6 @@ new Function("window", fs.readFileSync(API_JS, "utf8"))(fakeWindow);
 
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/operator-accounts.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/organization-admin.js"), "utf8"))(fakeWindow);
-new Function("window", fs.readFileSync(path.join(ROOT, "frontend/curation.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/evaluation-report.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/screening.js"), "utf8"))(fakeWindow);
 new Function("window", fs.readFileSync(path.join(ROOT, "frontend/portal-auth.js"), "utf8"))(fakeWindow);
@@ -235,12 +234,6 @@ const STATES = {
   "operator accounts": { screen: "adminusers", plane: "operator", me: { kind: "admin" },
     usersList: held([{ id: "synthetic_operator", label: "Synthetic Operator", created_at: "2026-10-13T10:00:00Z",
       disabled_at: null }]), usersConfirm: "synthetic_operator" },
-  "operator, curation loaded": {
-    screen: "curation", plane: "operator", me: { kind: "admin" },
-    curationList: held({ terms: [{ norm_key: "synthetic raw", display_name: "Synthetic raw",
-      source_types: ["github", "linkedin_export"], occurrences: 2,
-      review_revision: "a".repeat(64), status: "pending", first_seen: "2026-10-14T10:00:00Z", last_seen: "2026-10-14T10:00:00Z" }], next_cursor: null }),
-  },
 };
 
 STATES["candidate contact verification"] = {

@@ -141,33 +141,6 @@ def main(*, parser_limits=False):
                             checks.check(f"{label}: org report ownership preserved", own.status_code == 200 and foreign.status_code == 404)
             checks.check("other org cannot read batch", http.get(
                 f"/screening/batches/{batches[0]}", headers=headers[1]).status_code == 404)
-            if parser_limits:
-                # Candidate keys select the actor; no document row is written on
-                # page/expansion/work refusal. Other candidate's list stays empty.
-                candidate_ids = [require(http.post('/candidates', json={
-                    'resume_text': f'Synthetic PDF Actor {i}', 'evaluate': False}))['candidate_id']
-                    for i in range(2)]
-                candidate_headers = [{'X-Candidate-Key': require(http.post(
-                    f'/candidates/{cid}/auth-key'))['access_key']} for cid in candidate_ids]
-                def document_counts():
-                    with engine.connect() as conn:
-                        return tuple(conn.scalar(text(f'SELECT count(*) FROM {table}'))
-                            for table in ('verifications', 'verification_challenges', 'audit_log'))
-                for kind in ('pages', 'expansion', 'array', 'form-cycle'):
-                    before = document_counts()
-                    response = http.post('/portal/documents', headers=candidate_headers[0], json={
-                        'doc_type': 'experience_letter', 'content_b64': adversarial_pdf(kind)})
-                    checks.check(f'verification {kind}: safe refusal without rows',
-                        response.status_code == 400 and response.json() == {
-                            'detail': 'document could not be read as a PDF'} and document_counts() == before)
-                saved = require(http.post('/portal/documents', headers=candidate_headers[0], json={
-                    'doc_type': 'experience_letter', 'content_b64': resume_pdf('Python')}))
-                mine = require(http.get('/portal/verifications', headers=candidate_headers[0]))
-                foreign = require(http.get('/portal/verifications', headers=candidate_headers[1]))
-                checks.check('verification valid PDF: advisory claim evidence, identity untouched',
-                    saved['claims']['advisory'] and mine['assurance']['level'] == 0)
-                checks.check('verification actor isolation', len(mine['verifications']) == 1
-                    and foreign['verifications'] == [])
             snapshot = counts()
         with server() as http:
             checks.check("actual restart retains only valid intake rows", counts() == snapshot)
@@ -175,9 +148,6 @@ def main(*, parser_limits=False):
                 require(http.get(f'/report/{report["id"]}')) == report for report in reports))
             checks.check("actual restart reads completed batch", require(http.get(
                 f"/screening/batches/{batches[0]}", headers=headers[0]))["status"] == "complete")
-            if parser_limits:
-                checks.check('actual restart reads valid document only', len(require(http.get(
-                    '/portal/verifications', headers=candidate_headers[0]))['verifications']) == 1)
         if parser_limits:
             # A very short deadline exercises real app worker timeout refusal;
             # the separate controlled-child regression proves an entered stall.

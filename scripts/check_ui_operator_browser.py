@@ -1,4 +1,4 @@
-"""Combined Chrome org/account/guarded-curation journey for R3-S2-Q.
+"""Combined Chrome org/account journey for R3-S2-Q.
 
 Called by smoke_r3_s2_q.py --browser on its migrated scratch app. Uses captured
 sign-in and fake providers; Chrome/CDN internet is required. Never uses working
@@ -14,10 +14,8 @@ import urllib.request
 
 import websockets
 
-from _smoke import client
+from _smoke import client, free_port
 from check_ui_screening_browser import Tab, HELPERS, _chrome, _code_for
-from smoke_curation_activation import free_port
-from smoke_curation_input import export
 
 
 async def run_browser(base, scratch, admin, checks, restart_app):
@@ -73,15 +71,6 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                     await click(label)
                     assert await tab.wait(selector, 20), label
 
-                async def capture(raw):
-                    require(admin.post(f"/candidates/{cid}/sources/linkedin", json=export([raw])))
-                    await click("Refresh queue")
-                    assert await tab.wait("window.__has(" + json.dumps(raw) + ")", 20), raw
-
-                async def vocabulary(alias, canonical="python", category="language"):
-                    for label, value in (("Approved alias", alias), ("Canonical ID", canonical), ("Category", category)):
-                        await type_field(f'input[aria-label="{label}"]', value)
-
                 await click("Operator")
                 assert await tab.wait("window.__has('Operator sign in')", 15)
                 await type_field("input[type=email]", email_a)
@@ -125,36 +114,8 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                 verified = require(actor_b.post("/auth/admin/verify", json={"email": email_b, "code": code}))
                 actor_b.headers["X-CSRF-Token"] = verified["csrf_token"]
                 checks.check("browser-created account really signs in and reads all operator screens",
-                    all(actor_b.get(p).status_code == 200 for p in ("/ledger/orgs", "/admin/users", "/curation/skills/unmapped")))
-
-                await screen("Curation queue", "window.__has('No terms awaiting review.')")
-                await capture("Combined map raw")
-                await click("Review"); await vocabulary("Combined approved alias")
-                await click("Approve vocabulary")
-                checks.check("combined browser maps explicit vocabulary and reloads empty queue", await tab.wait("window.__has('Vocabulary approved.') && window.__has('No terms awaiting review.')", 20))
-                await capture("Combined create raw")
-                await click("Review"); await vocabulary("Combined approved tool", "combined_tool", "data")
-                await tab.js("(()=>{const s=document.querySelector('select[aria-label=\"Curation action\"]'); s.value='create'; s.dispatchEvent(new Event('change',{bubbles:true}));})()")
-                await click("Approve vocabulary")
-                assert await tab.wait("window.__has('Vocabulary approved.') && window.__has('No terms awaiting review.')", 20)
-                await capture("Combined ignored raw")
-                old, = require(actor_b.get("/curation/skills/unmapped"))["terms"]
-                await click("Ignore")
-                assert await tab.wait("window.__has('Term ignored.') && window.__has('No terms awaiting review.')", 20)
-                await capture("Combined ignored raw")
-                stale = actor_b.post("/curation/skills/resolve", json={"norm_key": old["norm_key"],
-                    "expected_revision": old["review_revision"], "action": "map", "alias": "Combined stale alias",
-                    "canonical": "python", "category": "language"})
-                checks.check("second browser-created reviewer cannot consume reappeared raw", stale.status_code == 409
-                    and require(actor_b.get("/curation/skills/unmapped"))["terms"][0]["review_revision"] != old["review_revision"])
-                await click("Review"); await vocabulary("Unsaved private vocabulary")
-                await screen("Operator accounts", "document.querySelector('#operator-email')")
+                    all(actor_b.get(p).status_code == 200 for p in ("/ledger/orgs", "/admin/users")))
                 await type_field("#operator-email", "unsaved-private@example.com")
-                await screen("Curation queue", "window.__has('Combined ignored raw')")
-                checks.check("account/curation navigation clears raw editor and unsaved account input",
-                    not await tab.js("document.querySelector('input[aria-label=\"Approved alias\"]')"))
-                await click("Ignore")
-                assert await tab.wait("window.__has('No terms awaiting review.')", 20)
 
                 restart_app()
                 origin = await tab.js("performance.timeOrigin")
@@ -168,19 +129,14 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                 await screen("Operator accounts", "document.querySelector('#operator-email') && !window.__has('Loading operator accounts')")
                 checks.check("restart preserves browser-created operator and clears unsaved input", await tab.js(
                     f"!!document.querySelector('[data-operator-record=\"{account_b['id']}\"]') && document.querySelector('#operator-email').value===''"))
-                await screen("Curation queue", "window.__has('No terms awaiting review.')")
-                signal = require(admin.post(f"/candidates/{cid}/sources/linkedin",
-                    json=export(["Combined approved alias", "Combined approved tool", "Python"])))
-                checks.check("combined restart reloads approved overlay with static precedence", [s["canonical"] for s in signal["skills"]] == ["python", "combined_tool", "python"])
                 shot = await tab.send("Page.captureScreenshot")
-                (scratch / "combined-curation.png").write_bytes(base64.b64decode(shot["data"]))
+                (scratch / "combined-accounts.png").write_bytes(base64.b64decode(shot["data"]))
 
-                await screen("Operator accounts", "document.querySelector('#operator-email') && !window.__has('Loading operator accounts')")
                 await tab.js(f"document.querySelector('[data-operator-record=\"{account_b['id']}\"] button').click()")
                 assert await tab.wait("window.__has('Confirm operator deletion')", 10)
                 await click("Confirm operator deletion")
-                checks.check("browser account deletion revokes all three operator surfaces", await tab.wait("window.__has('Operator account deleted.')", 15)
-                    and all(actor_b.get(p).status_code == 401 for p in ("/ledger/orgs", "/admin/users", "/curation/skills/unmapped")))
+                checks.check("browser account deletion revokes both operator surfaces", await tab.wait("window.__has('Operator account deleted.')", 15)
+                    and all(actor_b.get(p).status_code == 401 for p in ("/ledger/orgs", "/admin/users")))
                 await screen("Organisations", "document.querySelector('#org-name') && !window.__has('Loading organisations')")
                 await tab.js(f"document.querySelector('[data-org-record=\"{oid}\"] button').click()")
                 assert await tab.wait("document.querySelector('#org-weight')", 10)
@@ -189,13 +145,10 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                     checks.check("combined browser offboarding revokes target key and preserves other orgs", await tab.wait("window.__has('Organisation offboarded.')", 15)
                         and stranger.get("/screening/batches", headers={"X-Org-Key": rotated}).status_code == 401
                         and len(require(admin.get("/ledger/orgs"))) == 2)
-                await screen("Curation queue", "window.__has('No terms awaiting review.')")
-                await capture("Combined revoked raw")
-                await click("Review"); await vocabulary("Combined revoked draft")
                 require(admin.delete(f"/admin/users/{account_a['id']}"))
-                await click("Refresh queue")
-                checks.check("combined revocation clears raw queue/draft and returns to sign-in", await tab.wait("window.__has('Your session ended') && document.querySelector('input[type=email]')", 15)
-                    and not await tab.js("document.querySelector('[data-curation-key]') || document.querySelector('#operator-email') || document.querySelector('#org-key') || document.querySelector('input[aria-label=\"Approved alias\"]')"))
+                await click("Operator accounts")
+                checks.check("combined revocation clears operator screens and returns to sign-in", await tab.wait("window.__has('Your session ended') && document.querySelector('input[type=email]')", 15)
+                    and not await tab.js("document.querySelector('#operator-email') || document.querySelector('#org-key')"))
                 require(admin.delete(f"/candidates/{cid}"))
 
                 for plane in ("org", "candidate"):
@@ -210,9 +163,9 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                     assert await tab.wait(f"performance.timeOrigin !== {origin} && performance.getEntriesByType('resource').some(e=>new URL(e.name).pathname==='/auth/me')", 60)
                     await tab.js(HELPERS)
                     assert await tab.wait("window.__has('Screening queue')" if plane == "org" else "window.__has('Everything Veritas holds about you')", 20)
-                    statuses = await tab.js("Promise.all(['/ledger/orgs','/admin/users','/curation/skills/unmapped'].map(p=>fetch(p,{credentials:'include'}).then(r=>r.status)))")
-                    checks.check(plane + " browser cannot read any operator surface or render privileged cached state", statuses == [401, 401, 401]
-                        and not await tab.js("document.querySelector('[data-org-record]') || document.querySelector('[data-operator-record]') || document.querySelector('[data-curation-key]') || document.querySelector('input[aria-label=\"Approved alias\"]')"))
+                    statuses = await tab.js("Promise.all(['/ledger/orgs','/admin/users'].map(p=>fetch(p,{credentials:'include'}).then(r=>r.status)))")
+                    checks.check(plane + " browser cannot read any operator surface or render privileged cached state", statuses == [401, 401]
+                        and not await tab.js("document.querySelector('[data-org-record]') || document.querySelector('[data-operator-record]')"))
                     await tab.js("window.VeritasAPI.post('/auth/logout',{}).catch(()=>null)")
                 denied_org = next(o for o in require(admin.get("/ledger/orgs")) if o["name"] == "Combined denied browser org")
                 require(admin.delete(f"/ledger/orgs/{denied_org['id']}"))

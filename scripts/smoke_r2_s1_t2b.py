@@ -1,4 +1,4 @@
-"""Migrated scratch HTTP: shared PDF resource refusal and verification flow."""
+"""Migrated scratch HTTP: shared PDF resource refusal."""
 
 from smoke_r2_s1_t2a import main
 

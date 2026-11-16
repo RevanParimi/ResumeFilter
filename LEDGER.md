@@ -224,7 +224,8 @@ The S3.1 wire values are unchanged — stored grants reference them.
 
 **As of 2026-07-31 this purpose covers verification disclosure generally:**
 identity assurance (S7.1, `GET /verification/candidates/{id}/assurance`) *and*
-employment-claim evidence (S7.2, `GET /verification/candidates/{id}/claims`).
+employment-claim evidence (S7.2; that route and the document intake behind it
+have since been removed).
 As originally written in S7.1 it named identity assurance only.
 
 **Why the widening was permissible, and why the window is now shut.** S7.2

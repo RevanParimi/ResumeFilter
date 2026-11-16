@@ -302,12 +302,6 @@ and a cursor would promise a stability it cannot keep. It keeps `limit`, and
 its OpenAPI description says so — a client author cannot see a decision the
 document does not state.
 
-`GET /curation/skills/unmapped` **is** cursor-paged, with a stated limitation:
-its sort key (`occurrences`, `last_seen`) is *mutable*, so paging there is stable
-against inserts and not against re-observation. Acceptable because it is an
-internal operator queue, not a customer surface — and written down rather than
-discovered.
-
 ---
 
 ## 7. DPDP

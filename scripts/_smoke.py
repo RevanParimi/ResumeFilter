@@ -23,6 +23,7 @@ cannot drift into two half-filled tallies.
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -121,6 +122,13 @@ def wait_healthy(client, tries: int = 60, delay: float = 0.5) -> bool:
             pass
         time.sleep(delay)
     return False
+
+
+def free_port() -> int:
+    """An unused local TCP port for a scratch server or browser."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 def client(base: str, timeout: float = 180, connect: float = 5, **kw) -> httpx.Client:

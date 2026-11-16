@@ -14,9 +14,8 @@ scoring judges answer content, not appearance or inferred emotion.
 | Compensation | Compensation estimate, role compensation band and observed offers. | [Comp](COMP.md) |
 | Ledger and consent | Organisations, API keys, organisation reliability, purpose-scoped consent grants, audit log, interview and coding-round records and cross-company reputation. | [Ledger](LEDGER.md) |
 | Features | Feature registry, materialisation, store, serving and ranking. | [Features](FEATURES.md) |
-| Profile sources and curation | GitHub and LinkedIn-export ingestion and the skill-curation queue. | [Sources](PROFILE_SOURCES.md), [curation](CURATION.md) |
 | Login and portal | Email-code login on every plane, sessions and signed-in devices, the candidate portal (my data, access log, consents, erasure) and the public grievance contact. | [Auth](AUTH.md), [portal](PORTAL.md) |
-| Verification | Contact verification, assurance levels, manual review and employment documents. | [Verification](VERIFICATION.md) |
+| Verification | Contact verification, assurance levels and manual review. | [Verification](VERIFICATION.md) |
 | Interviews | Typed and voice answers, content scoring, the cheating check and consent-permitted employer summaries. | [Interviews](INTERVIEWS.md) |
 | Operator | Organisations screen, operator accounts, retention sweep and metrics. | [Operating](OPERATING.md), [deploy](DEPLOY.md) |
 

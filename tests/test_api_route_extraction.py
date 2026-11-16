@@ -14,7 +14,6 @@ from tests.test_auth_api import _code, capture_path, cfg
 from tests.test_route_table_guard import _walk
 from app.graph.build import EvaluationEngine
 from tests.test_candidates_api import RESUME
-from tests.test_profile_sources_api import _linkedin_b64
 from app.reports.outcomes import build_outcome
 from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
@@ -148,7 +147,7 @@ def candidate_app(services):
     return app
 
 
-def test_candidate_workflow_preserves_versions_sources_ownership_and_erasure(services):
+def test_candidate_workflow_preserves_versions_ownership_and_erasure(services):
     with TestClient(candidate_app(services), raise_server_exceptions=False) as client:
         assert client.post("/candidates", json={"resume_text": RESUME}).status_code == 401
         client.headers.update(ADMIN_HEADERS)
@@ -181,28 +180,15 @@ def test_candidate_workflow_preserves_versions_sources_ownership_and_erasure(ser
         assert client.delete(path + f"/resumes/{updated['resume_id']}").json() == {"resume_id": updated["resume_id"], "deleted": True}
         assert client.get(path).json()["resume_count"] == 1
 
-        assert client.post(path + "/sources/github", json={}).status_code == 400
-        github = client.post(path + "/sources/github", json={"handle": "octocat"})
-        assert github.status_code == 200 and github.json()["method"] == "api"
-        assert any(skill["canonical"] == "python" for skill in github.json()["skills"])
-        assert client.post(path + "/sources/linkedin", json={"export_b64": "!!!"}).json() == {"detail": "invalid_base64"}
-        linkedin = client.post(path + "/sources/linkedin", json={"export_b64": _linkedin_b64()})
-        assert linkedin.status_code == 200 and linkedin.json()["method"] == "export"
-        assert len(client.get(path + "/sources").json()["sources"]) == 2
-        assert client.get(path + "/sources", params={"source_type": "linkedin_export"}).json()["sources"] == [linkedin.json()]
-
         key = client.post(path + "/auth-key").json()["access_key"]
         assert services.candidates.authenticate_candidate(key) == cid
         deleted = client.delete(path)
         assert deleted.status_code == 200 and deleted.json() == {"candidate_id": cid, "deleted": True, "reports_deleted": 1}
         assert services.candidates.authenticate_candidate(key) is None
         assert services.report_store.get(rid) is None
-        assert services.profile_sources._store.signals_for_candidate(cid) == []
-        for suffix in ("", "/resumes", "/reports", "/sources"):
+        for suffix in ("", "/resumes", "/reports"):
             assert client.get(path + suffix).status_code == 404
         assert client.post(path + "/auth-key").status_code == 404
-        assert client.post(path + "/sources/github", json={"handle": "octocat"}).status_code == 404
-        assert client.post(path + "/sources/linkedin", json={"export_b64": _linkedin_b64()}).status_code == 404
         assert client.delete(path).status_code == 404
         assert client.get(f"/candidates/{other['candidate_id']}").json()["resume_count"] == 1
 
@@ -225,7 +211,6 @@ def test_standalone_candidate_admin_cookie_requires_csrf_and_denies_org(cfg, cap
         assert admin.get(path).status_code == 200
         admin.headers.pop("X-CSRF-Token")
         assert admin.post(path + "/auth-key").status_code == 403
-        assert admin.post(path + "/sources/github", json={"handle": "octocat"}).status_code == 403
         assert admin.delete(path).status_code == 403
         org_email = "candidate-router-org@example.in"
         assert org.post("/auth/org/signup", json={"email": org_email, "organization_name": "Synthetic candidate router org"}).status_code == 202
@@ -831,7 +816,29 @@ def test_portal_cookie_precedence_csrf_and_erasure(cfg, capture_path):
         assert two.get("/portal/me").json()["candidate_id"] == subjects[1]
 
 
-# Verification, documents and employer assurance extraction
+# Verification and employer assurance extraction
+
+
+def _profiled_candidate(services, email, name="A Candidate"):
+    """A candidate with a resume on file, as the real portal candidate has."""
+    from app.candidates.hashing import contact_hash, normalize_email
+    from app.candidates.schema import (
+        CandidateProfile, ContactInfo, DateRange, ExperienceEntry, ExtractedStr,
+        ExtractionResult,
+    )
+    store = services.candidates
+    profile = CandidateProfile(
+        full_name=ExtractedStr(value=name),
+        contact=ContactInfo(
+            email_hash=contact_hash(normalize_email(email),
+                                    services.settings.contact_hash_salt),
+        ),
+        experience=[ExperienceEntry(employer="Acme Technologies", title="Senior Software Engineer",
+                                    dates=DateRange(start="2021-03", end="2024-01"))],
+    )
+    outcome = store.ingest(
+        ExtractionResult(profile=profile, method="heuristic"), f"resume for {email}")
+    return outcome.candidate_id, store.issue_access_key(outcome.candidate_id)
 
 
 def verification_app(services):
@@ -848,11 +855,9 @@ def verification_app(services):
 
 
 def test_verification_otp_preserves_ownership_delivery_and_single_use(cfg, capture_path):
-    from tests.test_verification_claim_api import _candidate
-
     services = make_services(cfg)
-    cid, key = _candidate(services, email="verify-one@example.in")
-    other_id, other_key = _candidate(services, email="verify-two@example.in")
+    cid, key = _profiled_candidate(services, email="verify-one@example.in")
+    other_id, other_key = _profiled_candidate(services, email="verify-two@example.in")
     with TestClient(verification_app(services), raise_server_exceptions=False) as one, \
             TestClient(verification_app(services), raise_server_exceptions=False) as two:
         one.headers["X-Candidate-Key"] = key
@@ -883,34 +888,20 @@ def test_verification_otp_preserves_ownership_delivery_and_single_use(cfg, captu
         listed = one.get("/portal/verifications").json()
         assert [row for row in listed["verifications"] if row["status"] == "verified"] == [confirmed.json()]
         assert listed["assurance"]["level"] == 2 and listed["assurance"]["advisory"]
-        assert listed["claims"]["strength"] == 0
         assert two.get("/portal/verifications").json()["verifications"] == []
 
 
-def test_verification_documents_manual_review_consent_audit_and_erasure(services):
+def test_verification_manual_review_consent_audit_and_erasure(services):
     from app.ledger.schema import ConsentPurpose
-    from tests.test_verification_claim_api import _b64, _candidate
-
-    cid, key = _candidate(services, email="document-one@example.in")
-    other_id, other_key = _candidate(services, email="document-two@example.in")
+    cid, key = _profiled_candidate(services, email="document-one@example.in")
+    other_id, other_key = _profiled_candidate(services, email="document-two@example.in")
     orgs = [services.ledger.create_organization(name) for name in ("Verification employer", "Other employer")]
     org_keys = [services.ledger.issue_api_key(org.id) for org in orgs]
     with TestClient(verification_app(services), raise_server_exceptions=False) as client:
         own = {"X-Candidate-Key": key}
         org = {"X-Org-Key": org_keys[0]}
-        document = {"doc_type": "experience_letter", "content_b64": _b64(), "claim_ref": other_id}
         review = f"/candidates/{cid}/verifications/manual-review"
-        assert client.post("/portal/documents", json=document, headers=org).status_code == 401
-        for change, status in (({"content_b64": "!!!"}, 400), ({"doc_type": "unknown"}, 422),
-                               ({"claim_ref": "x" * 129}, 422)):
-            assert client.post("/portal/documents", json={**document, **change}, headers=own).status_code == status
         assert client.get("/portal/verifications", headers=own).json()["verifications"] == []
-        submitted = client.post("/portal/documents", json=document, headers=own)
-        assert submitted.status_code == 200
-        body = submitted.json()
-        assert body["verification"]["candidate_id"] == cid
-        assert body["verification"]["subject"] == "employment_claim" and body["claims"]["strength"] == 2
-        assert "ACME TECHNOLOGIES" not in submitted.text and "hr@acme.com" not in submitted.text
         assert client.get("/portal/verifications", headers=own).json()["assurance"]["level"] == 0
         assert client.get("/portal/verifications", headers={"X-Candidate-Key": other_key}).json()["verifications"] == []
         for headers in ({}, own, org):
@@ -919,8 +910,7 @@ def test_verification_documents_manual_review_consent_audit_and_erasure(services
         assert client.post("/candidates/missing/verifications/manual-review", json={"outcome": "verified"}, headers=ADMIN_HEADERS).status_code == 404
         reviewed = client.post(review, json={"outcome": "verified", "note": "Private human review", "evidence_digest": "a" * 64}, headers=ADMIN_HEADERS)
         assert reviewed.status_code == 200 and reviewed.json()["assurance_level"] == 3
-        assert client.get("/portal/verifications", headers=own).json()["claims"]["strength"] == 2
-        for suffix, field, value in (("assurance", "level", 3), ("claims", "strength", 2)):
+        for suffix, field, value in (("assurance", "level", 3),):
             path = f"/verification/candidates/{cid}/{suffix}"
             assert client.get(path, headers=own).status_code == 401
             assert client.get(path, headers=org).status_code == 403
@@ -934,21 +924,19 @@ def test_verification_documents_manual_review_consent_audit_and_erasure(services
             assert client.get(path, headers=org).status_code == 403
             assert client.get(f"/verification/candidates/missing/{suffix}", headers=org).status_code == 404
         audit = services.portal.access_log(cid)
-        for action in ("verification.query", "claim.query"):
+        for action in ("verification.query",):
             assert {row.allowed for row in audit if row.action == action} == {True, False}
         services.portal.erase(cid)
         assert client.get("/portal/verifications", headers=own).status_code == 401
-        for suffix in ("assurance", "claims"):
+        for suffix in ("assurance",):
             assert client.get(f"/verification/candidates/{cid}/{suffix}", headers=org).status_code == 404
         assert client.get("/portal/verifications", headers={"X-Candidate-Key": other_key}).status_code == 200
 
 
 def test_verification_cookie_precedence_csrf_and_manual_review(cfg, capture_path):
-    from tests.test_verification_claim_api import _b64, _candidate
-
     services = make_services(cfg)
-    cid, _ = _candidate(services, email="verify-cookie@example.in")
-    other_id, other_key = _candidate(services, email="verify-foreign@example.in")
+    cid, _ = _profiled_candidate(services, email="verify-cookie@example.in")
+    _, other_key = _profiled_candidate(services, email="verify-foreign@example.in")
     email = "verify-operator@example.in"
     services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
     with TestClient(verification_app(services), raise_server_exceptions=False) as candidate, \
@@ -958,8 +946,7 @@ def test_verification_cookie_precedence_csrf_and_manual_review(cfg, capture_path
         assert logged.status_code == 200
         candidate.headers["X-Candidate-Key"] = other_key
         assert candidate.get("/portal/verifications").json()["assurance"]["candidate_id"] == cid
-        writes = (("/portal/verifications", {"method": "self_attested"}),
-                  ("/portal/documents", {"doc_type": "experience_letter", "content_b64": _b64(), "claim_ref": other_id}))
+        writes = (("/portal/verifications", {"method": "self_attested"}),)
         for path, body in writes:
             assert candidate.post(path, json=body).status_code == 403
             result = candidate.post(path, json=body, headers={"X-CSRF-Token": logged.json()["csrf_token"]})
@@ -1114,11 +1101,10 @@ def test_interview_asr_refusal_keeps_question_and_allows_typed_recovery(settings
 def test_interview_cookie_ownership_csrf_and_employer_key_precedence(cfg, capture_path):
     from app.ledger.schema import ConsentPurpose
     from tests.test_interview_api import ANSWER
-    from tests.test_verification_claim_api import _candidate
 
     services = make_services(cfg)
-    cid, _ = _candidate(services, email="interview-cookie@example.in")
-    other_id, other_key = _candidate(services, email="interview-foreign@example.in")
+    cid, _ = _profiled_candidate(services, email="interview-cookie@example.in")
+    other_id, other_key = _profiled_candidate(services, email="interview-foreign@example.in")
     with TestClient(interview_app(services), raise_server_exceptions=False) as actor, \
             TestClient(interview_app(services), raise_server_exceptions=False) as employer:
         address = "interview-cookie@example.in"
@@ -1151,138 +1137,16 @@ def test_interview_cookie_ownership_csrf_and_employer_key_precedence(cfg, captur
         assert employer.get(f"/interview/candidates/{cid}/assessments").status_code == 403
 
 
-# Curation extraction
-
-
-def curation_app(services):
-    from app.api.auth import auth_router
-    from app.api.curation import router
-
-    app = FastAPI()
-    app.state.services = services
-    app.include_router(auth_router)
-    app.include_router(router)
-    return app
-
-
-def test_curation_queue_preserves_pagination_status_bounds_and_surviving_sources(settings):
-    from tests.curation_helpers import saved_source
-
-    services = make_services(settings.model_copy(update={"cur_queue_default_limit": 2}))
-    first, source = saved_source(services.session_factory)
-    _, other = saved_source(services.session_factory)
-    for name in ("Alpha raw", "Beta raw", "Gamma raw"):
-        services.curation.record_unmapped(name, source_id=source)
-    services.curation.record_unmapped("Alpha raw", source_id=other)
-    with TestClient(curation_app(services), headers=ADMIN_HEADERS) as client:
-        page = client.get("/curation/skills/unmapped", params={"limit": 999, "status": "pending"})
-        assert page.status_code == 200
-        body = page.json()
-        assert len(body["terms"]) == 2 and body["next_cursor"]
-        assert body["terms"][0]["norm_key"] == "alpha raw" and body["terms"][0]["occurrences"] == 2
-        following = client.get("/curation/skills/unmapped", params={"cursor": body["next_cursor"]})
-        assert following.status_code == 200 and following.json()["next_cursor"] is None
-        terms = body["terms"] + following.json()["terms"]
-        assert len({t["norm_key"] for t in terms}) == len(terms) == 3
-        assert all(len(t["review_revision"]) == 64 for t in terms)
-        assert all(secret not in page.text + following.text for secret in (first, source, other, "candidate_id", "source_id"))
-        assert len(client.get("/curation/skills/unmapped?limit=0").json()["terms"]) == 1
-        for status in ("resolved", "ignored"):
-            assert client.get("/curation/skills/unmapped", params={"status": status}).json() == {"terms": [], "next_cursor": None}
-        for query in ({"cursor": "!!!"}, {"status": "unknown"}, {"limit": "bad"}):
-            assert client.get("/curation/skills/unmapped", params=query).status_code == 422
-        services.portal.erase(first)
-        survivor, = client.get("/curation/skills/unmapped").json()["terms"]
-        assert survivor["norm_key"] == "alpha raw" and survivor["occurrences"] == 1
-        assert survivor["review_revision"] != terms[0]["review_revision"]
-
-
-def test_curation_decisions_preserve_validation_conflicts_receipts_and_overlay(services):
-    from app.candidates.normalize.skills import normalize_skill
-    from tests.curation_helpers import saved_source
-
-    _, source = saved_source(services.session_factory)
-    for name in ("Map raw", "Create raw", "Ignore raw"):
-        services.curation.record_unmapped(name, source_id=source)
-    with TestClient(curation_app(services), headers=ADMIN_HEADERS) as client:
-        before = client.get("/curation/skills/unmapped").json()
-        snapshots = {t["norm_key"]: t for t in before["terms"]}
-        body = dict(norm_key="map raw", action="map", alias="Approved extracted",
-                    canonical="python", category="language", expected_revision=snapshots["map raw"]["review_revision"])
-        for change in ({"expected_revision": None}, {"expected_revision": "x" * 64},
-                       {"canonical": "unknown"}, {"category": "data"}, {"alias": None},
-                       {"admin_user_id": "supplied-identity"}, {"note": "private-note"}):
-            assert client.post("/curation/skills/resolve", json=body | change).status_code == 422
-            assert client.get("/curation/skills/unmapped").json() == before
-        missing = {k: v for k, v in body.items() if k != "expected_revision"}
-        assert client.post("/curation/skills/resolve", json=missing).status_code == 422
-        mapped = client.post("/curation/skills/resolve", json=body)
-        assert mapped.status_code == 200
-        assert mapped.json() == dict(action="map", alias="Approved extracted", canonical="python",
-            category="language", decided_at=mapped.json()["decided_at"], admin_user_id=None)
-        assert "map raw" not in mapped.text and normalize_skill("Approved extracted").canonical == "python"
-        assert normalize_skill("Map raw") is None
-        conflict = client.post("/curation/skills/resolve", json=body | {"norm_key": "create raw",
-            "expected_revision": snapshots["create raw"]["review_revision"]})
-        assert conflict.status_code == 409 and conflict.json() == {"detail": "approved alias already exists"}
-        assert snapshots["create raw"] in client.get("/curation/skills/unmapped").json()["terms"]
-        created = client.post("/curation/skills/resolve", json=body | {"norm_key": "create raw", "action": "create",
-            "alias": "Approved new extracted", "canonical": "extracted_skill", "category": "data",
-            "expected_revision": snapshots["create raw"]["review_revision"]})
-        assert created.status_code == 200 and normalize_skill("Approved new extracted").canonical == "extracted_skill"
-        ignore = dict(norm_key="ignore raw", action="ignore", expected_revision=snapshots["ignore raw"]["review_revision"])
-        assert client.post("/curation/skills/resolve", json=ignore).status_code == 200
-        services.curation.record_unmapped("Ignore raw", source_id=source)
-        fresh = client.get("/curation/skills/unmapped").json()
-        stale = client.post("/curation/skills/resolve", json=ignore)
-        assert stale.status_code == 409 and stale.json() == {"detail": "review snapshot changed; refresh before deciding"}
-        assert client.get("/curation/skills/unmapped").json() == fresh
-        ignored = client.post("/curation/skills/resolve", json=ignore | {"expected_revision": fresh["terms"][0]["review_revision"]})
-        assert ignored.status_code == 200 and ignored.json()["alias"] is None
-        absent = client.post("/curation/skills/resolve", json=ignore)
-        assert absent.status_code == 404 and absent.json() == {"detail": "term not found"}
-        assert client.get("/curation/skills/unmapped").json() == {"terms": [], "next_cursor": None}
-
-
-def test_curation_operator_auth_cookie_csrf_identity_and_revocation(cfg, capture_path):
-    from tests.curation_helpers import saved_source
-
-    services = make_services(cfg)
-    _, source = saved_source(services.session_factory)
-    services.curation.record_unmapped("Operator raw", source_id=source)
-    email = "extracted-reviewer@example.in"
-    operator = services.auth.create_admin_user(email_hash=services.auth.hash_email(email))
-    org = services.ledger.create_organization("Curation employer")
-    org_key = services.ledger.issue_api_key(org.id)
-    candidate_id, _ = saved_source(services.session_factory)
-    candidate_key = services.candidates.issue_access_key(candidate_id)
-    with TestClient(curation_app(services), raise_server_exceptions=False) as client:
-        body = dict(norm_key="operator raw", action="map", alias="Approved operator",
-                    canonical="python", category="language", expected_revision="0" * 64)
-        for headers in ({}, {"X-Org-Key": org_key}, {"X-Candidate-Key": candidate_key}, {"X-API-Key": "invalid"}):
-            assert client.get("/curation/skills/unmapped", headers=headers).status_code == 401
-            assert client.post("/curation/skills/resolve", json=body, headers=headers).status_code == 401
-        before = client.get("/curation/skills/unmapped", headers=ADMIN_HEADERS).json()
-        body["expected_revision"] = before["terms"][0]["review_revision"]
-        assert client.post("/auth/admin/login", json={"email": email}).status_code == 202
-        login = client.post("/auth/admin/verify", json={"email": email, "code": _code(capture_path)})
-        assert login.status_code == 200
-        # Even a valid machine key cannot bypass session CSRF or replace its actor.
-        client.headers.update(ADMIN_HEADERS)
-        assert client.get("/curation/skills/unmapped").json() == before
-        for token in (None, "wrong"):
-            headers = {} if token is None else {"X-CSRF-Token": token}
-            assert client.post("/curation/skills/resolve", json=body, headers=headers).status_code == 403
-            assert client.get("/curation/skills/unmapped").json() == before
-        approved = client.post("/curation/skills/resolve", json=body, headers={"X-CSRF-Token": login.json()["csrf_token"]})
-        assert approved.status_code == 200 and approved.json()["admin_user_id"] == operator.id
-        client.headers.pop("X-API-Key")
-        assert services.auth.delete_admin_user(operator.id)
-        assert client.get("/curation/skills/unmapped").status_code == 401
-        assert client.post("/curation/skills/resolve", json=body).status_code == 401
-
-
 # Operator operations extraction
+
+
+def _synthetic_candidate(factory):
+    from app.candidates.models import CandidateRow
+    with factory.begin() as session:
+        candidate = CandidateRow(full_name="Synthetic contributor")
+        session.add(candidate)
+        session.flush()
+        return candidate.id
 
 
 def operator_app(services):
@@ -1297,12 +1161,11 @@ def operator_app(services):
 
 
 def test_operator_accounts_preserve_planes_cookie_csrf_and_target_session_revocation(cfg, capture_path):
-    from tests.curation_helpers import saved_source
 
     services = make_services(cfg)
     org = services.ledger.create_organization("Operator isolation")
     org_key = services.ledger.issue_api_key(org.id)
-    cid, _ = saved_source(services.session_factory)
+    cid = _synthetic_candidate(services.session_factory)
     candidate_key = services.candidates.issue_access_key(cid)
     reads = ("/admin/users", "/metrics")
     with TestClient(operator_app(services), raise_server_exceptions=False) as root, \
@@ -1460,12 +1323,11 @@ def test_public_surface_preserves_lightweight_health_contact_and_effective_mode(
 
 
 def test_public_domains_preserve_admin_key_session_and_other_plane_refusals(cfg, capture_path):
-    from tests.curation_helpers import saved_source
 
     services = make_services(cfg)
     org = services.ledger.create_organization("Public metadata denial")
     org_key = services.ledger.issue_api_key(org.id)
-    cid, _ = saved_source(services.session_factory)
+    cid = _synthetic_candidate(services.session_factory)
     candidate_key = services.candidates.issue_access_key(cid)
     email = "domain-operator@example.in"
     services.auth.create_admin_user(email_hash=services.auth.hash_email(email))

@@ -30,7 +30,6 @@ from app.ledger.models import (
     ObservedOfferRow,
 )
 from app.portal.retention import RETENTION_KNOBS
-from app.profile_sources.models import ProfileSourceRow
 from app.ratelimit.models import RateLimitCounterRow
 from app.screening.models import BatchItemRow, ScreeningInputRow
 from app.verification.models import VerificationRow
@@ -66,7 +65,6 @@ class SweepTarget:
 
 TARGETS: tuple[SweepTarget, ...] = (
     SweepTarget("resumes", ResumeRow, "created_at", SweepMode.DELETE),
-    SweepTarget("profile_sources", ProfileSourceRow, "created_at", SweepMode.DELETE),
     SweepTarget("verifications", VerificationRow, "created_at", SweepMode.DELETE),
     SweepTarget("interviews", InterviewSessionRow, "created_at", SweepMode.DELETE),
     SweepTarget("interview_records", InterviewRecordRow, "created_at", SweepMode.DELETE),

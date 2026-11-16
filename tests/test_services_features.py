@@ -30,8 +30,7 @@ def production(settings, tmp_path, monkeypatch):
 
 def sql_topology(svc):
     stores = [svc.candidates, svc.ledger, svc.report_store, svc.features, svc.jobs,
-        svc.curation._store, svc.profile_sources._store, svc.auth._store,
-        svc.verification._store, svc.interview._store, svc.screening._store]
+        svc.auth._store, svc.verification._store, svc.interview._store, svc.screening._store]
     stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening"))
     return [store._session_factory for store in stores]
 
@@ -47,7 +46,6 @@ def test_real_and_fake_composition_share_sql_and_service_instances(production, p
         assert svc.dashboard._jobs is svc.jobs
         assert svc.dashboard._comp is svc.comp
         assert svc.dashboard._ledger is svc.ledger
-        assert svc.profile_sources._candidates is svc.candidates
         assert svc.portal._candidates is svc.candidates
         assert svc.portal._ledger is svc.ledger
     finally:
@@ -102,16 +100,16 @@ def test_different_apps_keep_their_databases_and_instances_separate(production, 
 
 def test_failed_composition_disposes_its_runtime_pool(production, monkeypatch):
     import app.core.db as db
-    from app.curation.service import CurationService
+    import app.services as module
     original, created, disposed = db.create_engine, [], []
     def observed(*args, **kwargs):
         engine = original(*args, **kwargs); created.append(engine)
         event.listen(engine, "engine_disposed", lambda engine: disposed.append(engine))
         return engine
-    def fail(self): raise RuntimeError("synthetic overlay startup refusal")
+    def fail(*args, **kwargs): raise RuntimeError("synthetic ledger startup refusal")
     monkeypatch.setattr(db, "create_engine", observed)
-    monkeypatch.setattr(CurationService, "refresh_overlay", fail)
-    with pytest.raises(RuntimeError, match="synthetic overlay"):
+    monkeypatch.setattr(module, "build_ledger_store", fail)
+    with pytest.raises(RuntimeError, match="synthetic ledger"):
         build_default_services(production)
     assert len(created) == len(disposed) == 1
 
@@ -125,6 +123,10 @@ async def test_app_disposes_owned_sql_on_every_lifespan_exit(production, monkeyp
         svc = build_default_services(settings or production); built.append(svc)
         event.listen(svc.session_factory.kw["bind"], "engine_disposed", lambda engine: disposed.append(engine))
         event.listen(svc.session_factory.kw["bind"], "close", lambda conn, record: closed.append(conn))
+        # Warm one pooled DBAPI connection at build time, as startup maintenance
+        # used to, so every exit path has a real connection to close.
+        with svc.session_factory() as session:
+            assert session.scalar(text("SELECT 1")) == 1
         return svc
     monkeypatch.setattr(main, "get_settings", lambda: production)
     monkeypatch.setattr(main, "build_default_services", build)
