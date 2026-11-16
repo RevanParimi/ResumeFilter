@@ -180,6 +180,8 @@ class RightsService:
             raise LookupError(f"unknown request: {request_id}")
         view, candidate_id = found
 
+        if status not in (RequestStatus.RESOLVED, RequestStatus.REJECTED):
+            raise RequestRefused("a decision must resolve or reject the request")
         resolution = (resolution or "").strip()
         if not resolution:
             # DPDP's mechanism is request-review-decide-RECORD-disclose. A
@@ -205,6 +207,18 @@ class RightsService:
             if view.field not in AUTO_APPLIABLE_FIELDS:
                 raise RequestRefused(self._why_not_appliable(view.field))
 
+        def effects(session):
+            if apply and not self._candidates.apply_correction(
+                candidate_id, full_name=view.requested_value, session=session
+            ):
+                raise LookupError("request not found")
+            self._ledger.audit_request_event(
+                candidate_id, request_id=request_id, action="request.resolve",
+                actor_type="system", actor_id=admin_user_id or "platform",
+                details={"status": status.value, "applied": apply,
+                         "resolved_by": resolved_by.value}, session=session,
+            )
+
         if not self._store.resolve(
             request_id,
             status=status,
@@ -213,6 +227,8 @@ class RightsService:
             resolved_by=resolved_by,
             resolved_by_admin_user_id=admin_user_id,
             now=now,
+            candidate_id=candidate_id,
+            before_commit=effects,
         ):
             # VERIFIED AFTER THE FACT rather than assumed from the False: the
             # conditional UPDATE also misses when the row is gone entirely,
@@ -226,30 +242,8 @@ class RightsService:
                 "this request already has a decision recorded"
             )
 
-        if apply and not self._candidates.apply_correction(
-            candidate_id, full_name=view.requested_value
-        ):
-            # The candidate was erased between the decision and the write. The
-            # request row went with them (CASCADE), so 404 is by then simply
-            # true -- the S8.5 posture on a vanished subject.
-            raise LookupError(f"unknown request: {request_id}")
-
-        self._ledger.audit_request_event(
-            candidate_id,
-            request_id=request_id,
-            action="request.resolve",
-            actor_type="system",
-            actor_id=admin_user_id or "platform",
-            details={
-                "status": status.value,
-                "applied": apply,
-                "resolved_by": resolved_by.value,
-            },
-        )
         decided = self._store.get(request_id)
-        # Only reachable if the subject erased themselves in the microseconds
-        # since the audit write; the same 404 applies.
-        if decided is None:  # pragma: no cover - defended, not reachable in tests
+        if decided is None or not self._store.exists_for_candidate(candidate_id, request_id):
             raise LookupError(f"unknown request: {request_id}")
         return decided[0]
 

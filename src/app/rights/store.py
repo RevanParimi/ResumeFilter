@@ -9,12 +9,13 @@ was handed.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.auth.models import AdminUserRow
 from app.candidates.models import CandidateRow
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
@@ -28,7 +29,7 @@ from app.core.db import make_engine, make_session_factory
 from app.ledger.consent import as_utc
 from app.rights.models import DataPrincipalRequestRow
 from app.rights.schema import (
-    CorrectionField, RequestKind, RequestStatus, RequestView, ResolvedBy,
+    CorrectionField, RequestKind, RequestRefused, RequestStatus, RequestView, ResolvedBy,
 )
 
 
@@ -185,6 +186,8 @@ class RightsStore:
         resolved_by: ResolvedBy,
         resolved_by_admin_user_id: Optional[str],
         now: datetime,
+        candidate_id: Optional[str] = None,
+        before_commit: Optional[Callable[[Session], None]] = None,
     ) -> bool:
         """Close an OPEN request. True if this call is the one that closed it.
 
@@ -198,12 +201,39 @@ class RightsStore:
         because a REJECTED request is equally closed: a rejection that could be
         quietly upgraded to an applied correction would make the written reason
         a draft.
+
+        Candidate (and optional actor) parent locks precede the request. Only
+        the winning transition runs before_commit on this Session; callback
+        failure rolls back the entire decision. Without a callback this stays
+        the low-level request-row writer, not an identity/audit operation.
         """
+        if status not in (RequestStatus.RESOLVED, RequestStatus.REJECTED):
+            raise RequestRefused("a decision must resolve or reject the request")
         with self._session_factory() as session:
+            owner = select(DataPrincipalRequestRow.candidate_id).where(
+                DataPrincipalRequestRow.id == request_id).scalar_subquery()
+            scope = CandidateRow.id == owner
+            if candidate_id is not None:
+                scope = scope & (CandidateRow.id == candidate_id)
+            if session.bind.dialect.name == 'sqlite':
+                # Start a writer before reading. Preserve identity timestamps;
+                # CandidateRow.updated_at has an onupdate default.
+                locked = session.execute(update(CandidateRow).where(scope).values(
+                    full_name=CandidateRow.full_name, updated_at=CandidateRow.updated_at)).rowcount == 1
+            else:
+                if resolved_by_admin_user_id is not None:
+                    # Actor deletion SET NULLs requests: parent first too.
+                    session.scalar(select(AdminUserRow.id).where(
+                        AdminUserRow.id == resolved_by_admin_user_id).with_for_update(read=True, key_share=True))
+                # Candidate erasure locks its parent before cascading requests.
+                locked = session.scalar(select(CandidateRow.id).where(scope).with_for_update()) is not None
+            if not locked:
+                return False
             result = session.execute(
                 update(DataPrincipalRequestRow)
                 .where(
                     DataPrincipalRequestRow.id == request_id,
+                    DataPrincipalRequestRow.candidate_id == (candidate_id if candidate_id is not None else owner),
                     DataPrincipalRequestRow.status == RequestStatus.OPEN.value,
                 )
                 .values(
@@ -216,8 +246,12 @@ class RightsStore:
                 )
                 .execution_options(synchronize_session=False)
             )
+            if result.rowcount != 1:
+                return False
+            if before_commit is not None:
+                before_commit(session)
             session.commit()
-            return result.rowcount == 1
+            return True
 
 
 def build_rights_store(

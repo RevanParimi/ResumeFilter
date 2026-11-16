@@ -285,7 +285,7 @@ async def resolve_data_principal_request(
     principal = request.state.principal
     admin_user_id = principal.admin_user_id if principal else None
     try:
-        return services.rights.resolve(
+        return await _portal_write(request, services.rights.resolve,
             request_id,
             status=req.status,
             resolution=req.resolution,

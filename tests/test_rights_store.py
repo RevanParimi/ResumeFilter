@@ -105,6 +105,17 @@ def test_resolving_an_unknown_id_is_False_not_an_exception(store):
     assert store.resolve("nope", **_resolve_kwargs()) is False
 
 
+def test_open_is_not_a_store_decision(store):
+    from app.rights.schema import RequestRefused
+    cid = _candidate(store)
+    view = store.create(cid, kind=RequestKind.GRIEVANCE, field=None,
+                        current_value='', requested_value='', note='Synthetic grievance')
+    with pytest.raises(RequestRefused):
+        store.resolve(view.id, **_resolve_kwargs(status=RequestStatus.OPEN))
+    saved = store.get(view.id)[0]
+    assert saved.status is RequestStatus.OPEN and saved.resolved_at is None
+
+
 def test_get_returns_the_view_and_its_owner(store):
     cid = _candidate(store)
     view = store.create(cid, kind=RequestKind.GRIEVANCE, field=None,

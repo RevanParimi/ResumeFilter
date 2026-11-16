@@ -773,11 +773,13 @@ drain policy above. Their API clients recover with a deliberate fresh GET; no
 dedicated list screen or automatic write/review operation is introduced.
 
 <a id="candidate-consent-write-budget"></a>
+<a id="candidate-portal-write-budget"></a>
 
-### Candidate portal write budget
+### Portal write budget
 
 POST `/portal/consents`, `/portal/consents/{id}/revoke`,
-`/portal/corrections` and `/portal/grievances` share
+`/portal/corrections`, `/portal/grievances` and operator
+`/admin/requests/{id}/resolve` share
 `portal_write_max_concurrent_requests`, default **2 slots** per Services/app
 process, separate from portal reads. `portal_write_wait_seconds` defaults to
 finite positive **20 seconds**. The complete service operation owns candidate/
@@ -831,6 +833,24 @@ success at create/audit/final checks and existing CASCADE prevents resurrection;
 the final existence check is a snapshot, not a later-delivery lock. Raw SQL and
 private request values are excluded from application error logs. The
 [E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns its validation/status.
+
+Operator decisions use this same owner for lookup, policy validation, conditional
+OPEN-to-terminal transition, optional allowed full-name/pin correction, audit and
+fresh final view. Authentication/CSRF precedes admission; named-person versus
+machine-key attribution remains. No decision quota is added. OPEN targets return
+422; an otherwise valid repeat of a decided request returns 409 without reapplying. Other
+correction fields, grievances, extractions and login identity are never applied.
+
+For new service decisions, request, allowed correction and audit commit in one
+transaction or all roll back. Parent locks precede request writes and serialize
+candidate erasure. This does not repair older partial decisions or change the
+separate submission commits above. A timeout/cancellation can precede a whole
+late commit; a failed reply after commit can also leave the whole decision saved.
+Recover through deliberate candidate/operator request, candidate identity and
+access-log GETs without automatic decision replay. Early snapshots can change
+until settlement. Observed final erasure refuses success; snapshots do not lock
+later delivery. There is no operator decision screen. The
+[E3C evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c) owns validation/status.
 
 ### Dual scoping: all scopes counted, any denial denies
 

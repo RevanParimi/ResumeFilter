@@ -4,64 +4,55 @@ Updated: 2026-11-16. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3E3B complete**, started 15 November; baseline `015ff8e`.
-[Contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns pre-code scope,
-red/green, exact validation, completion and separate self-reviews. Both rights
-POSTs now own full limiter/validation/identity/create/audit/final-existence work
-in existing `portal_writes`, shared with consent writes. No new pool/config/schema.
-422/429/404 remain; observed erasure refuses success, and raw SQL/private notes
-are excluded from application failure logs. Human review/identity/extractions remain.
+**R4-S2-T3C3E3C complete**, baseline `4e8b26d`.
+[C contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c) owns pre-code scope,
+red/green, findings/fixes, exact validation, completion and separate self-reviews.
+Complete operator decisions use existing `portal_writes`, shared with four
+candidate writes. New decisions commit request, allowed full-name/pin correction
+and audit together. OPEN targets and observed final erasure refuse; human review,
+actor/CSRF and policy remain. No new pool/config/schema or historical repair.
 
-Request/quota/audit commits remain separate. Pending/cancelled/failed replies may
-follow a commit; retain admission until settlement, recover with deliberate own
-GETs and never auto-replay. Early empty snapshots do not prove rollback; audit
-failure can leave a saved request without its audit. Snapshots do not lock later
-delivery. Global/driver/drain limits remain. Working DB/demo are preserved.
+Pending/cancelled/failed replies may follow a whole decision commit. Admission
+lasts until settlement; recover with deliberate request/identity/audit GETs,
+never automatic decision replay. Submission quota/request/audit remain separate
+commits. Final guards are snapshots; process/global/driver/drain limits remain.
 
-Full pytest **4572 passed / 1321 skipped**. Focused **465 passed / 122 PG skips**;
-PG-enabled **567 passed**, no skips. Actual Chrome write/read compatibility
-**29/29 + 33/33**. Both DBs' HTTP/restart: submissions **50/50**, rights reads
-**49/49**, portal reads/reports **54/54**, consent writes **34/34**. Bindings
-**638/19**, JS/Python compilation pass. Reviewed **616** code/config hashes
-match; owned PG stop **0**, status **3**. All gates ended; no rerun needed.
-Completion review/publication outcome and verified tracking SHA are reported
-with this session. Stop after the scoped final review/publication sequence.
+Full pytest **4599 passed / 1347 skipped**. Focused **568 passed / 180 skips**,
+affected baseline-guard selection **15 passed / 15 PG skips**; fresh PG selection
+**728 passed**, no skips. Actual Chrome **29/29 + 33/33**. Both DBs' six HTTP/
+restart modes pass (decision **54/54**). Bindings **638/19**, JS/Python compilation
+and diff checks pass. Initial browser-readiness and PG baseline-setup failures
+were fixed/reviewed and affected checks rerun; evidence owns details. Latest
+**616** reviewed code/config hashes match after full. Both owned PG attempts
+stopped; latest stop **0**, independent status **3**. No gate is still running.
+Distinct final staged self-review is complete, with no blocking finding; scoped
+publication follows. Final response reports the verified tracking SHA. Working
+DB/demo remain preserved.
 
-**Exact next: R4-S2-T3C3E3C - Bound reviewed-rights decisions**, not started.
-Read/refine its existing decision/late-write contract before code. E3/C/Q and
-broader parents remain open. Only B closes here. No new pool/config/schema/
-scorer; partial commits, snapshot and per-process/global/driver/drain limits
-remain explicit. Working DB/demo and unrelated work are preserved.
+**Exact next: R4-S2-T3C3E3Q - Review combined reviewed-rights acceptance**,
+pending, separate chat. Re-inventory combined reads/submissions/decisions and
+budgets before its fresh integration gates. Only C closes; E3/Q and broader
+parents remain open. Stop after scoped final review/publication, without E4.
 
 ## Reusable validation setup
 
-- Latest C3E3B sequential gate: `.pytest_cache/gates_r4_s2_t3c3e3b.py`; all
-  required checks, including full, are complete.
-  Sanitized runner: `.pytest_cache/run_r4_s2_t3c3e3b.py <tag> <Python args>`;
-  omitted args run full pytest. Owned PG runner/runtime:
-  `run_r4_s2_t3c3e3b_postgres.py` / `r4-s2-t3c3e3b-pg-runtime.json`
-  under `.pytest_cache/`. Reviewed-state/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3e3b.py check` / `preserve`.
-- Git uses per-command `-c credential.username=RevanParimi`; HTTP/1.1 worked
-  for the remote preflight after a transient empty HTTP response.
-- Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
-  --tb=short`. Use fake providers/isolated stores, sanitize inherited DEE
-  configuration/keys and avoid the working `.env`.
-- Portable PG distribution metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
-  Local ignored helpers are not portable setup guarantees. Add `--postgres` only
-  with an explicitly disposable `DEE_TEST_DB_URL`; prior owned E3A/E2 PGs are
-  confirmed stopped. B's owned disposable local cluster is also stopped.
-- The combined evidence owns exact HTTP/Chrome modes and commands. Extend the
-  existing isolated worker, two-process and browser harnesses instead of copying
-  them. Prior D5/D6 setup and results remain in their linked evidence records.
-- UI: `node scripts/check_ui_bindings.js`; `node --check frontend/api.js`,
-  `frontend/support.js`, `frontend/screening.js`. Actual Chrome needs existing
-  CDN internet; bindings/source checks are not browser execution.
-- CPython 3.13.11/current dependencies remain in use. Optional/environment skips
-  do not prove omitted cases. Synthetic providers/media prove mechanics, not live
-  ASR/codec compatibility, factual accuracy or measured quality. Same-agent
-  self-review is not independent review. Historical detailed commands and counts
-  belong to [PI evidence](delivery/EVIDENCE-R4.md).
+- Completed sequential gate: `.pytest_cache/gates_r4_s2_t3c3e3c.py`. Sanitized
+  runner: `.pytest_cache/run_r4_s2_t3c3e3c.py <tag> <Python args>`; omitted args
+  run full. Owned PG runner/runtime: `run_r4_s2_t3c3e3c_postgres.py` /
+  `r4-s2-t3c3e3c-pg-runtime.json` under `.pytest_cache/`.
+  State/preservation helper: `review_state_r4_s2_t3c3e3c.py check` / `preserve`.
+- Windows Python: `.resume/Scripts/python.exe`; full: `-m pytest -q --tb=short`.
+  Clear inherited DEE config/keys and avoid working `.env`. Fake providers and
+  isolated stores only. Add `--postgres` only for explicitly disposable storage.
+  Portable PG distribution: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
+  Ignored local helpers are not portable setup guarantees.
+- Git per-command `-c credential.username=RevanParimi -c http.version=HTTP/1.1`
+  works with configured `origin/main`; never print credentials.
+- UI bindings/source checks are not browser execution. Chrome compatibility
+  uses existing CDN internet with fake/capture providers. Optional skips do not
+  prove omitted cases; fakes prove mechanics, not live-provider delivery/quality.
+  Same-agent self-review is not independent review. Historical exact commands
+  and results belong to [PI evidence](delivery/EVIDENCE-R4.md).
 
 ## Standing constraints and risks
 

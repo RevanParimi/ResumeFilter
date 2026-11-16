@@ -890,8 +890,8 @@ store reads directly; their detached free-text views lack final erasure guards.
 The two submissions additionally charge SQL limiter state, validate/read identity,
 create a request and audit across existing transactions. Resolution conditionally
 closes a request, may apply identity, audits and rereads. These write/decision
-uncertainties need separate acceptance. Split before implementation. A and B
-are complete; C/Q and E3 remain open for their own evidence.
+uncertainties need separate acceptance. Split before implementation. A-C
+are complete; Q and E3 remain open for combined acceptance.
 
 **<a id="r4-s2-t3c3e3a"></a>R4-S2-T3C3E3A - Bound reviewed-rights reads**
 
@@ -921,12 +921,21 @@ in a separate chat. E3/C/Q and broader parents stay open.
 
 **<a id="r4-s2-t3c3e3c"></a>R4-S2-T3C3E3C - Bound reviewed-rights decisions**
 
-Status: pending. Prerequisite: B. Own operator resolution, conditional single
-decision, optional allowed identity application, audit and final saved view.
-Define complete operation/uncertainty contract before code; preserve actor,
-human review, immutable extraction/login policy, erasure and generic refusal.
-Require competing SQL/PG decisions, late recovery, migrated HTTP/restart, full
-regression and reviews. No automatic decision replay.
+Status: done (2026-11-16). Prerequisite: B, published `4e8b26d`.
+[Retained contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3e3c) owns pre-code scope,
+red/green, validation findings/fixes, full/actual PG, both DBs' HTTP/restart,
+actual Chrome compatibility, static/preservation, completion and separate reviews.
+Complete operator decisions use existing `portal_writes`, shared with the four
+candidate writes. New conditional decisions, allowed full-name/pin correction
+and audit commit together; OPEN targets and observed final erasure refuse.
+Policy, attribution/CSRF, immutable extraction/login and generic refusals remain.
+No new pool/config/schema/scorer or historical partial-record repair. Pending/
+failed replies may follow a whole commit; use deliberate saved-state GETs,
+never automatic decision replay. Submission commits remain separate, final
+guards are snapshots, and process/global/driver/drain limits remain. Only C
+closes; exact next E3Q in a separate chat. E3/Q and broader parents stay open.
+Distinct final staged self-review after completion has no blocking finding;
+authorized scoped publication follows. The evidence records review and checks.
 
 **<a id="r4-s2-t3c3e3q"></a>R4-S2-T3C3E3Q - Review combined reviewed-rights acceptance**
 

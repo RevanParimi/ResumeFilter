@@ -95,7 +95,7 @@ Consent grant/revoke use a separate bounded write owner; a pending write or
 failed reply may still have committed. The revoke screen preserves uncertain
 state, requires **Reload consents** before a deliberate retry and rejects stale
 account callbacks. A reload is a snapshot while earlier work can still finish.
-The [operating contract](OPERATING.md#candidate-consent-write-budget) owns limits
+The [operating contract](OPERATING.md#portal-write-budget) owns limits
 and recovery; [E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns status
 and validation. Competing revocations retain the first clock and one audit entry.
 
@@ -108,10 +108,10 @@ pending/refused reads. Candidate missing/erased direct lists remain empty; new
 requests with erased credentials refuse. These snapshots do not lock later
 delivery or refresh decisions. The
 [E3A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns validation/status;
-operator-decision scheduling remains a separate child.
+operator decisions share the write owner described below.
 
 `POST /portal/corrections` and `/portal/grievances` share the existing consent
-[write budget](OPERATING.md#candidate-portal-write-budget) for complete limiter,
+[write budget](OPERATING.md#portal-write-budget) for complete limiter,
 validation, identity snapshot, create, audit and final-existence work. Corrections
 remain unapplied human-review requests. Known validation/quota/erasure refusals
 retain 422/429/404. Pending writes keep admission until settlement; recover through
@@ -121,6 +121,17 @@ both saved, and an early empty snapshot does not prove rollback. A deliberate
 repeat is another request, not idempotent recovery. Final erasure checks are
 snapshots. [E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns validation/status;
 no dedicated submission UI or automatic review action is introduced.
+
+Operator `POST /admin/requests/{id}/resolve` shares that write budget. Human review,
+named-operator/machine attribution and cookie CSRF remain. New decisions commit
+the terminal request, allowed full-name/pin correction and audit together; OPEN
+targets refuse with 422 and valid repeats of terminal decisions with 409. Other identity
+fields and document extractions remain unchanged. Pending/failed replies require
+deliberate saved request, identity and access-log GETs without automatic decision
+replay; late work may still commit after an early snapshot. Older partial records
+are not repaired. Fresh erasure checks are snapshots. No decision UI is added;
+the [operating contract](OPERATING.md#portal-write-budget) owns the limits and
+[E3C evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c) owns validation/status.
 
 ### Why no new `ConsentPurpose`
 

@@ -489,7 +489,8 @@ class CandidateStore:
             cand = session.get(CandidateRow, candidate_id)
             return self._clear_login_state(session, cand) if cand else 0
 
-    def apply_correction(self, candidate_id: str, *, full_name: str) -> bool:
+    def apply_correction(self, candidate_id: str, *, full_name: str,
+                         session: Optional[Session] = None) -> bool:
         """Write a REVIEWED correction onto the candidate's own identity row.
 
         ``full_name`` and nothing else, ever. An ``extractions`` row is a record
@@ -511,14 +512,16 @@ class CandidateStore:
         the customer's next resume for this person.
 
         False means the candidate is gone -- an erasure landing mid-decision.
+        A supplied Session borrows the caller's transaction; never commit it.
         """
-        with self._session_factory() as session:
+        with (nullcontext(session) if session is not None
+              else self._session_factory.begin()) as session:
             row = session.get(CandidateRow, candidate_id)
             if row is None:
                 return False
             row.full_name = full_name
             row.full_name_corrected_at = _utcnow()
-            session.commit()
+            session.flush()
             return True
 
     def delete_resume(self, resume_id: str) -> bool:

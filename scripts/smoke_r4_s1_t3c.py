@@ -332,15 +332,19 @@ def create_rights_write_smoke_app():
     return create_report_read_smoke_app(rights_writes=True)
 
 
-def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rights_reads=False, rights_writes=False, base_factory=None):
+def create_rights_decision_smoke_app():
+    return create_report_read_smoke_app(rights_decisions=True)
+
+
+def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rights_reads=False, rights_writes=False, rights_decisions=False, base_factory=None):
     """Exercise complete owning report/portal operations with controlled SQL holds."""
     from sqlalchemy import event
     from smoke_r4_s1_t1a import create_smoke_app
     app = (base_factory or create_smoke_app)()
     original = app.router.lifespan_context
     scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
-    prefix = 'rights-write' if rights_writes else 'rights-read' if rights_reads else 'portal-write' if portal_writes else 'portal-read' if portal_reads else 'report-read'
-    needles = ('INSERT INTO DATA_PRINCIPAL_REQUESTS', 'INSERT INTO AUDIT_LOG') if rights_writes else ('FROM DATA_PRINCIPAL_REQUESTS',) if rights_reads else ('INSERT INTO CONSENT_GRANTS', 'UPDATE CONSENT_GRANTS') if portal_writes else (
+    prefix = 'rights-decision' if rights_decisions else 'rights-write' if rights_writes else 'rights-read' if rights_reads else 'portal-write' if portal_writes else 'portal-read' if portal_reads else 'report-read'
+    needles = ('UPDATE DATA_PRINCIPAL_REQUESTS', 'INSERT INTO AUDIT_LOG') if rights_decisions else ('INSERT INTO DATA_PRINCIPAL_REQUESTS', 'INSERT INTO AUDIT_LOG') if rights_writes else ('FROM DATA_PRINCIPAL_REQUESTS',) if rights_reads else ('INSERT INTO CONSENT_GRANTS', 'UPDATE CONSENT_GRANTS') if portal_writes else (
         ('FROM RESUMES', 'FROM AUDIT_LOG', 'FROM CONSENT_GRANTS') if portal_reads else ('FROM REPORTS',))
     owner_key = prefix.replace('-', '_') + '_owner'
     state = local()
@@ -348,7 +352,7 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            pool, caller = (services.portal_writes if portal_writes or rights_writes else services.portal_reads if portal_reads or rights_reads else services.report_records), get_ident()
+            pool, caller = (services.portal_writes if portal_writes or rights_writes or rights_decisions else services.portal_reads if portal_reads or rights_reads else services.report_records), get_ident()
             run = pool.run
             async def tracked(operation, *args, **kwargs):
                 def owned():
@@ -358,8 +362,8 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
                         log.write(json.dumps({'operation': operation.__name__, 'thread': get_ident()}) + '\n')
                     try:
                         result = operation(*args, **kwargs)
-                        if rights_writes and (scratch / f'{prefix}-mode').exists() and (scratch / f'{prefix}-mode').read_text() == 'post_commit_failure':
-                            raise RuntimeError('synthetic-private-rights-write-after-commit')
+                        if (rights_writes or rights_decisions) and (scratch / f'{prefix}-mode').exists() and (scratch / f'{prefix}-mode').read_text() == 'post_commit_failure':
+                            raise RuntimeError('synthetic-private-' + prefix + '-after-commit')
                         if rights_reads and getattr(operation, '__self__', None) is services.rights:
                             with (scratch / f'{prefix}-results.jsonl').open('a') as log:
                                 log.write(json.dumps([row.id for row in result]) + '\n')
@@ -380,14 +384,14 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
             def sql(conn, cursor, statement, parameters, context, many):
                 if (scratch / f'{prefix}-mode').exists() and getattr(state, 'active', False) and not state.held and any(needle in statement.upper() for needle in needles):
                     mode = (scratch / f'{prefix}-mode').read_text()
-                    if rights_writes:
-                        if mode == 'post_commit_failure':
+                    if rights_writes or rights_decisions:
+                        if mode in ('post_commit_failure', 'before_lock'):
                             return
-                        expected = 'INSERT INTO AUDIT_LOG' if mode in ('audit', 'audit_failure') else 'INSERT INTO DATA_PRINCIPAL_REQUESTS'
+                        expected = 'INSERT INTO AUDIT_LOG' if mode in ('audit', 'audit_failure') else 'UPDATE DATA_PRINCIPAL_REQUESTS' if rights_decisions else 'INSERT INTO DATA_PRINCIPAL_REQUESTS'
                         if expected not in statement.upper():
                             return
                         if mode in ('failure', 'audit_failure'):
-                            raise RuntimeError('synthetic-private-rights-write-error')
+                            raise RuntimeError('synthetic-private-' + prefix + '-error')
                     if rights_reads and mode == 'materialized':
                         return
                     if (portal_reads or portal_writes or rights_reads) and mode == 'failure':
@@ -403,6 +407,14 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
                 return view
             if rights_reads:
                 rights_store_module._view = materialize
+            original_resolve = services.rights._store.resolve
+            def resolve(*args, **kwargs):
+                mode = scratch / f'{prefix}-mode'
+                if getattr(state, 'active', False) and mode.exists() and mode.read_text() == 'before_lock':
+                    hold()
+                return original_resolve(*args, **kwargs)
+            if rights_decisions:
+                services.rights._store.resolve = resolve
             def begin(session, transaction, connection):
                 assert session.info.setdefault(owner_key, get_ident()) == get_ident()
             def end(session, transaction):
@@ -420,10 +432,140 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
                 pool.run = run
                 if rights_reads:
                     rights_store_module._view = original_view
+                if rights_decisions:
+                    services.rights._store.resolve = original_resolve
                 for target, name, listener in listeners:
                     event.remove(target, name, listener)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_rights_decisions(checks, scratch, base, control, cid, other_id, key):
+    """Real HTTP decisions: uncommitted visibility, whole recovery and erasure."""
+    def require(response, status=200):
+        assert response.status_code == status, response.text
+        return response.json()
+    def wait_file(name):
+        deadline = time.monotonic() + 10
+        while not (scratch / ('rights-decision-' + name)).exists():
+            assert time.monotonic() < deadline, name + ' missing'
+            time.sleep(.01)
+    def prepare(mode):
+        for name in ('entered', 'release', 'completed'):
+            (scratch / ('rights-decision-' + name)).unlink(missing_ok=True)
+        (scratch / 'rights-decision-mode').write_text(mode)
+    def finish():
+        (scratch / 'rights-decision-release').touch()
+        if (scratch / 'rights-decision-entered').exists():
+            wait_file('completed')
+        (scratch / 'rights-decision-mode').unlink(missing_ok=True)
+    ah = {'X-Candidate-Key': key}
+    bh = {'X-Candidate-Key': require(control.post(f'/candidates/{other_id}/auth-key'))['access_key']}
+    operations = scratch / 'rights-decision-operations.jsonl'
+    def audits(http):
+        return [row for row in require(http.get('/portal/access-log')) if row['action'] == 'request.resolve']
+    def decision(http):
+        return require(http.post('/portal/corrections', json={'field':'full_name',
+            'requested_value':'Synthetic reviewed ' + str(time.monotonic_ns()),
+            'note':'Synthetic private rights decision'}))
+    body = {'status':'resolved', 'resolution':'Synthetic private rights decision reason', 'apply':True}
+    with client(base, headers=ah) as a, client(base, headers=bh) as b, client(base) as named:
+        email = 'rights-decision-operator@example.in'
+        require(control.post('/admin/users', json={'email':email}))
+        require(named.post('/auth/admin/login', json={'email':email}), 202)
+        login = require(named.post('/auth/admin/verify', json={'email':email,
+            'code':_code_for(scratch / 'mail.jsonl', email)}))
+        kept = require(b.post('/portal/grievances', json={'note':'Synthetic unrelated decision request'}))
+        grant = require(b.post('/portal/consents', json={'purpose':'ledger_read'}))
+        for phase, actor, kind in [('decision', control, 'operator_key'), ('audit', named, 'admin_user')]:
+            record = decision(a)
+            path = '/admin/requests/' + record['id'] + '/resolve'
+            if actor is named:
+                checks.check('named decision requires CSRF before admission', named.post(path, json=body).status_code == 403)
+                named.headers['X-CSRF-Token'] = login['csrf_token']
+            before_name = require(control.get(f'/candidates/{cid}'))['full_name']
+            before_audits, count = len(audits(a)), len(operations.read_text().splitlines())
+            prepare(phase)
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(actor.post, path, json=body)
+                    try:
+                        wait_file('entered')
+                        checks.check(phase + ': held decision keeps independent auth and reads responsive',
+                            control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                            and b.get('/portal/me').status_code == 200)
+                        early = next(row for row in require(control.get('/admin/requests')) if row['id'] == record['id'])
+                        checks.check(phase + ': request correction and audit remain invisible before commit',
+                            early['status'] == 'open' and not early['applied'] and len(audits(a)) == before_audits
+                            and require(control.get(f'/candidates/{cid}'))['full_name'] == before_name)
+                        for http, target, payload in [(control, '/admin/requests/' + kept['id'] + '/resolve', body),
+                            (b, '/portal/corrections', {'field':'full_name', 'requested_value':'not admitted'}),
+                            (b, '/portal/grievances', {'note':'not admitted'}),
+                            (b, '/portal/consents', {'purpose':'ledger_read'}),
+                            (b, f"/portal/consents/{grant['id']}/revoke", None)]:
+                            refused = http.post(target, json=payload)
+                            checks.check(target + ': shared decision budget refuses without cookies',
+                                require(refused, 503) == {'detail':'portal_write_capacity_exhausted'}
+                                and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                        response = pending.result(timeout=5)
+                        checks.check(phase + ': lost reply requires saved state without disclosing input',
+                            require(response, 503) == {'detail':'portal_write_pending'}
+                            and response.headers.get('retry-after') == '1' and 'set-cookie' not in response.headers)
+                    finally:
+                        (scratch / 'rights-decision-release').touch()
+            finally:
+                finish()
+            saved = next(row for row in require(a.get('/portal/requests')) if row['id'] == record['id'])
+            checks.check(phase + ': deliberate GET recovers one whole decision without replay',
+                saved['status'] == 'resolved' and saved['applied'] and saved['resolved_by'] == kind
+                and require(control.get(f'/candidates/{cid}'))['full_name'] == record['requested_value']
+                and len(audits(a)) == before_audits + 1 and len(operations.read_text().splitlines()) == count + 1)
+            checks.check(phase + ': repeated terminal decision conflicts without another audit',
+                actor.post(path, json=body).status_code == 409 and len(audits(a)) == before_audits + 1)
+        for mode, committed in [('audit_failure', False), ('post_commit_failure', True)]:
+            record = decision(a)
+            before_name = require(control.get(f'/candidates/{cid}'))['full_name']
+            before_audits = len(audits(a))
+            prepare(mode)
+            try:
+                response = control.post('/admin/requests/' + record['id'] + '/resolve', json=body)
+                checks.check(mode + ': generic correlated failure does not imply rollback',
+                    response.status_code == 500 and response.json() == {'detail':'internal_error',
+                        'request_id':response.headers.get('x-request-id')} and 'set-cookie' not in response.headers)
+            finally:
+                finish()
+            saved = next(row for row in require(a.get('/portal/requests')) if row['id'] == record['id'])
+            checks.check(mode + ': request correction and audit agree after failure',
+                saved['status'] == ('resolved' if committed else 'open') and saved['applied'] == committed
+                and len(audits(a)) == before_audits + int(committed)
+                and require(control.get(f'/candidates/{cid}'))['full_name'] == (record['requested_value'] if committed else before_name))
+        record = decision(a)
+        response = control.post('/admin/requests/' + record['id'] + '/resolve', json={**body, 'status':'open'})
+        checks.check('OPEN target refuses a nonterminal decision without effects', response.status_code == 422
+            and next(row for row in require(a.get('/portal/requests')) if row['id'] == record['id']) == record)
+        erased = require(control.post('/candidates', json={'evaluate':False, 'resume_text':
+            'Synthetic decision erasure\nEmail: decision-erasure@example.in\nSkills: Python'}))['candidate_id']
+        erased_key = require(control.post(f'/candidates/{erased}/auth-key'))['access_key']
+        with client(base, headers={'X-Candidate-Key':erased_key}) as subject:
+            record = decision(subject)
+            prepare('before_lock')
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(control.post, '/admin/requests/' + record['id'] + '/resolve', json=body)
+                    try:
+                        wait_file('entered')
+                        require(control.delete('/candidates/' + erased))
+                        require(pending.result(timeout=5), 503)
+                    finally:
+                        (scratch / 'rights-decision-release').touch()
+            finally:
+                finish()
+            checks.check('erasure before decision lock prevents late resurrection and invalidates key',
+                control.get('/candidates/' + erased).status_code == 404 and subject.get('/portal/requests').status_code == 401
+                and all(row['id'] != record['id'] for row in require(control.get('/admin/requests'))))
+        checks.check('unrelated candidate request survives all decisions and failures', require(b.get('/portal/requests')) == [kept])
+        return [(ah, '/portal/requests', require(a.get('/portal/requests'))), (bh, '/portal/requests', [kept]),
+            ({'X-API-Key':ADMIN}, '/admin/requests', require(control.get('/admin/requests')))], (ah, audits(a))
 
 
 def check_rights_writes(checks, scratch, base, control, cid, other_id, key):
@@ -1439,6 +1581,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--rights-decision-workers', 'create_rights_decision_smoke_app'),
         ('--rights-write-workers', 'create_rights_write_smoke_app'),
         ('--rights-read-workers', 'create_rights_read_smoke_app'),
         ('--portal-write-workers', 'create_portal_write_smoke_app'),
@@ -1487,6 +1630,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--rights-write-workers' in sys.argv:
         env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--rights-decision-workers' in sys.argv:
+        env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='1',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--portal-write-workers' in sys.argv:
         env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.3',
@@ -1580,8 +1726,11 @@ def run(scratch, url, pg_options):
             portal_writes = check_portal_writes(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-write-workers' in sys.argv else []
             rights_reads = check_rights_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--rights-read-workers' in sys.argv else []
             rights_audits = None
+            rights_decision_audits = None
             if '--rights-write-workers' in sys.argv:
                 rights_reads, rights_audits = check_rights_writes(checks, scratch, base, control, cid, other['candidate_id'], key)
+            if '--rights-decision-workers' in sys.argv:
+                rights_reads, rights_decision_audits = check_rights_decisions(checks, scratch, base, control, cid, other['candidate_id'], key)
             if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
                     source_reads='--source-read-workers' in sys.argv)
@@ -1614,6 +1763,11 @@ def run(scratch, url, pg_options):
                 with client(base, headers=actor_headers) as actor:
                     checks.check('exact committed submission audits survive restart without repairing failed audit',
                         [row for row in require(actor.get('/portal/access-log')) if row['action'] == 'request.submit'] == expected_audits)
+            if rights_decision_audits is not None:
+                actor_headers, expected_audits = rights_decision_audits
+                with client(base, headers=actor_headers) as actor:
+                    checks.check('exact committed decision audits survive restart without replay or repair',
+                        [row for row in require(actor.get('/portal/access-log')) if row['action'] == 'request.resolve'] == expected_audits)
             if portal_reads or portal_writes:
                 for candidate_key, url, body in portal_reads + portal_writes:
                     with client(base, headers={'X-Candidate-Key': candidate_key}) as candidate:
@@ -1658,6 +1812,9 @@ def run(scratch, url, pg_options):
     if '--rights-write-workers' in sys.argv:
         checks.check('rights write logs omit private input and exception content',
             all(value not in logs for value in ('Synthetic private rights write', 'synthetic-private-rights-write')))
+    if '--rights-decision-workers' in sys.argv:
+        checks.check('decision logs omit private input and exception content',
+            all(value not in logs for value in ('Synthetic private rights decision', 'synthetic-private-rights-decision')))
     return checks.summary()
 
 

@@ -6,6 +6,17 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-16 - R4-S2-T3C3E3C complete; atomic reviewed decisions.**
+  Complete operator decisions reuse the shared portal write owner. Conditional
+  decision, allowed full-name/pin correction and audit commit together; OPEN
+  targets and observed final erasure refuse. Saved-state GETs recover uncertain
+  replies without replay/repair. [C evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c)
+  owns red/green, validation-harness findings/fixes, passing full/actual PG,
+  both DBs' HTTP/restart, actual Chrome compatibility, static/preservation and
+  reviews. Working DB/demo preserved, owned PG stopped. Only C closes; E3/Q and
+  broader parents remain open. Exact next E3Q, separate chat. Distinct final staged
+  self-review after completion has no blocker; authorized scoped publication follows.
+
 - **Session 2026-11-16 - R4-S2-T3C3E3B complete; reviewed rights submissions.**
   Started 15 November. Both POSTs reuse the existing portal write owner for
   complete limiter/validation/identity/create/audit/final-existence work.

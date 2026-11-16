@@ -143,7 +143,8 @@ window.VeritasAPI.post=(path,...args)=>{
         assert await tab.wait("window.__has('Active') && !window.__has('Loading consents')", 15)
     before = await tab.js('performance.timeOrigin')
     await tab.send('Page.reload')
-    assert await tab.wait(f"performance.timeOrigin !== {before} && document.querySelector('#contact-destination')", 60)
+    # The template input can exist before the runtime has mounted navigation.
+    assert await tab.wait(f"performance.timeOrigin !== {before} && document.readyState==='complete' && document.querySelector('#contact-destination') && Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='Consents')", 60)
     await tab.js(browser.HELPERS)
     assert await tab.js("window.__click('button','Consents')")
     checks.check('saved consent state survives actual page reload',

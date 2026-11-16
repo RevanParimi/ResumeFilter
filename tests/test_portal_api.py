@@ -354,7 +354,7 @@ async def test_portal_read_ownership_admission_and_recovery(database, settings, 
     from threading import get_ident, current_thread
     _, factory = database
     settings.portal_read_max_concurrent_requests = 1
-    settings.portal_read_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    settings.portal_read_wait_seconds = 20
     services, headers = _portal_read_setup(settings, factory)
     entered, release = Event(), Event()
     caller, calls, sessions = get_ident(), [], []
@@ -377,7 +377,11 @@ async def test_portal_read_ownership_admission_and_recovery(database, settings, 
         async with app.router.lifespan_context(app):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
                 base_url='http://test', headers=ADMIN_HEADERS) as http:
-                expected = (await http.get(path, headers=headers['a'])).json()
+                baseline = await http.get(path, headers=headers['a'])
+                assert baseline.status_code == 200
+                expected = baseline.json()
+                # Apply the short budget only to the deliberately held read.
+                services.portal_reads._wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
                 monkeypatch.setattr(services.portal, method, observed)
                 event.listen(factory, 'after_begin', begin)
                 event.listen(factory, 'after_transaction_end', end)
