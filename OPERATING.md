@@ -772,9 +772,12 @@ a total-work, JSON-rendering or global-SQL limit. Both direct lists use the same
 drain policy above. Their API clients recover with a deliberate fresh GET; no
 dedicated list screen or automatic write/review operation is introduced.
 
-### Candidate consent write budget
+<a id="candidate-consent-write-budget"></a>
 
-POST `/portal/consents` and `/portal/consents/{id}/revoke` share
+### Candidate portal write budget
+
+POST `/portal/consents`, `/portal/consents/{id}/revoke`,
+`/portal/corrections` and `/portal/grievances` share
 `portal_write_max_concurrent_requests`, default **2 slots** per Services/app
 process, separate from portal reads. `portal_write_wait_seconds` defaults to
 finite positive **20 seconds**. The complete service operation owns candidate/
@@ -808,6 +811,26 @@ whole-request, driver or drain deadline. Direct synchronous callers own their
 scheduling. No schema or scoring change. The
 [E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns validation/status;
 other E children and combined acceptance remain separate tasks.
+
+The rights submissions use this same owner for their complete candidate limiter,
+semantic validation, current identity snapshot, request creation, audit and final
+subject/request existence check. No extra slots/configuration are added. Admitted
+submissions spend the shared candidate quota before semantic validation; a full/
+closed owner spends none. Existing 422/429 (with Retry-After) and generic missing-
+subject 404 remain. Corrections are requests for human review, never identity or
+extraction edits on submission. There is no dedicated rights-submission screen.
+
+Quota, request and audit remain separate commits. A caller timeout/cancellation
+can precede late persistence; an audit error can leave a saved request without
+its audit, and a failed reply after both commits can leave both. Clients recover
+through deliberate own `GET /portal/requests` and `/portal/access-log` reads,
+without automatic POST replay or audit repair. An early empty snapshot can change
+while work still owns admission. Repeating POST deliberately creates a new request
+and spends quota; this is not an idempotency guarantee. Observed erasure refuses
+success at create/audit/final checks and existing CASCADE prevents resurrection;
+the final existence check is a snapshot, not a later-delivery lock. Raw SQL and
+private request values are excluded from application error logs. The
+[E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns its validation/status.
 
 ### Dual scoping: all scopes counted, any denial denies
 

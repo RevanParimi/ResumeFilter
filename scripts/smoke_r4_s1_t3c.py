@@ -328,15 +328,19 @@ def create_rights_read_smoke_app():
     return create_report_read_smoke_app(rights_reads=True)
 
 
-def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rights_reads=False, base_factory=None):
+def create_rights_write_smoke_app():
+    return create_report_read_smoke_app(rights_writes=True)
+
+
+def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rights_reads=False, rights_writes=False, base_factory=None):
     """Exercise complete owning report/portal operations with controlled SQL holds."""
     from sqlalchemy import event
     from smoke_r4_s1_t1a import create_smoke_app
     app = (base_factory or create_smoke_app)()
     original = app.router.lifespan_context
     scratch = Path(os.environ['VERITAS_SQL_SMOKE_EVENTS']).parent
-    prefix = 'rights-read' if rights_reads else 'portal-write' if portal_writes else 'portal-read' if portal_reads else 'report-read'
-    needles = ('FROM DATA_PRINCIPAL_REQUESTS',) if rights_reads else ('INSERT INTO CONSENT_GRANTS', 'UPDATE CONSENT_GRANTS') if portal_writes else (
+    prefix = 'rights-write' if rights_writes else 'rights-read' if rights_reads else 'portal-write' if portal_writes else 'portal-read' if portal_reads else 'report-read'
+    needles = ('INSERT INTO DATA_PRINCIPAL_REQUESTS', 'INSERT INTO AUDIT_LOG') if rights_writes else ('FROM DATA_PRINCIPAL_REQUESTS',) if rights_reads else ('INSERT INTO CONSENT_GRANTS', 'UPDATE CONSENT_GRANTS') if portal_writes else (
         ('FROM RESUMES', 'FROM AUDIT_LOG', 'FROM CONSENT_GRANTS') if portal_reads else ('FROM REPORTS',))
     owner_key = prefix.replace('-', '_') + '_owner'
     state = local()
@@ -344,7 +348,7 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
     async def lifespan(app):
         async with original(app):
             services = app.state.services
-            pool, caller = (services.portal_writes if portal_writes else services.portal_reads if portal_reads or rights_reads else services.report_records), get_ident()
+            pool, caller = (services.portal_writes if portal_writes or rights_writes else services.portal_reads if portal_reads or rights_reads else services.report_records), get_ident()
             run = pool.run
             async def tracked(operation, *args, **kwargs):
                 def owned():
@@ -354,6 +358,8 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
                         log.write(json.dumps({'operation': operation.__name__, 'thread': get_ident()}) + '\n')
                     try:
                         result = operation(*args, **kwargs)
+                        if rights_writes and (scratch / f'{prefix}-mode').exists() and (scratch / f'{prefix}-mode').read_text() == 'post_commit_failure':
+                            raise RuntimeError('synthetic-private-rights-write-after-commit')
                         if rights_reads and getattr(operation, '__self__', None) is services.rights:
                             with (scratch / f'{prefix}-results.jsonl').open('a') as log:
                                 log.write(json.dumps([row.id for row in result]) + '\n')
@@ -374,6 +380,14 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
             def sql(conn, cursor, statement, parameters, context, many):
                 if (scratch / f'{prefix}-mode').exists() and getattr(state, 'active', False) and not state.held and any(needle in statement.upper() for needle in needles):
                     mode = (scratch / f'{prefix}-mode').read_text()
+                    if rights_writes:
+                        if mode == 'post_commit_failure':
+                            return
+                        expected = 'INSERT INTO AUDIT_LOG' if mode in ('audit', 'audit_failure') else 'INSERT INTO DATA_PRINCIPAL_REQUESTS'
+                        if expected not in statement.upper():
+                            return
+                        if mode in ('failure', 'audit_failure'):
+                            raise RuntimeError('synthetic-private-rights-write-error')
                     if rights_reads and mode == 'materialized':
                         return
                     if (portal_reads or portal_writes or rights_reads) and mode == 'failure':
@@ -410,6 +424,109 @@ def create_report_read_smoke_app(*, portal_reads=False, portal_writes=False, rig
                     event.remove(target, name, listener)
     app.router.lifespan_context = lifespan
     return app
+
+
+def check_rights_writes(checks, scratch, base, control, cid, other_id, key):
+    def require(response, status=200):
+        assert response.status_code == status, (response.status_code, response.text)
+        return response.json()
+    def wait_file(name):
+        deadline = time.monotonic() + 12
+        while not (scratch / ('rights-write-' + name)).exists():
+            assert time.monotonic() < deadline, name
+            time.sleep(.01)
+    def prepare(mode):
+        for name in ('entered', 'release', 'completed'):
+            (scratch / ('rights-write-' + name)).unlink(missing_ok=True)
+        (scratch / 'rights-write-mode').write_text(mode)
+    def finish():
+        (scratch / 'rights-write-release').touch()
+        if (scratch / 'rights-write-entered').exists():
+            wait_file('completed')
+        (scratch / 'rights-write-mode').unlink(missing_ok=True)
+    other_key = require(control.post(f'/candidates/{other_id}/auth-key'))['access_key']
+    ah, bh = {'X-Candidate-Key': key}, {'X-Candidate-Key': other_key}
+    operations = scratch / 'rights-write-operations.jsonl'
+    def audits(http):
+        return [row for row in require(http.get('/portal/access-log')) if row['action'] == 'request.submit']
+    with client(base, headers=ah) as a, client(base, headers=bh) as b:
+        kept = require(b.post('/portal/grievances', json={'note': 'Synthetic unrelated rights write'}))
+        grant = require(b.post('/portal/consents', json={'purpose': 'ledger_read'}))
+        name = require(control.get(f'/candidates/{cid}'))['full_name']
+        for phase, path, body in [
+            ('create', '/portal/corrections', {'field': 'full_name', 'requested_value': 'Synthetic reviewed rights write', 'note': 'Synthetic private rights write correction'}),
+            ('audit', '/portal/grievances', {'note': 'Synthetic private rights write grievance'})]:
+            before, before_audits = len(require(a.get('/portal/requests'))), len(audits(a))
+            count = len(operations.read_text().splitlines())
+            prepare(phase)
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(a.post, path, json=body)
+                    try:
+                        wait_file('entered')
+                        checks.check(phase + ': held SQL keeps auth and portal reads responsive',
+                            control.get('/healthz').status_code == control.get('/admin/users').status_code == 200
+                            and b.get('/portal/me').status_code == 200)
+                        early = require(a.get('/portal/requests'))
+                        checks.check(phase + ': early request snapshot reflects existing commit boundary',
+                            len(early) == before + int(phase == 'audit') and len(audits(a)) == before_audits)
+                        for target, payload in [('/portal/corrections', {'field':'full_name', 'requested_value':'not admitted'}),
+                            ('/portal/grievances', {'note':'not admitted'}), ('/portal/consents', {'purpose':'ledger_read'}),
+                            (f"/portal/consents/{grant['id']}/revoke", None)]:
+                            refused = b.post(target, json=payload)
+                            checks.check(target + ': shared write budget refuses without cookies',
+                                require(refused, 503) == {'detail':'portal_write_capacity_exhausted'}
+                                and refused.headers.get('retry-after') == '1' and 'set-cookie' not in refused.headers)
+                        response = pending.result(timeout=5)
+                        checks.check(phase + ': pending exposes no success or private input',
+                            require(response, 503) == {'detail':'portal_write_pending'}
+                            and body['note'] not in response.text and response.headers.get('retry-after') == '1')
+                    finally:
+                        (scratch / 'rights-write-release').touch()
+            finally:
+                finish()
+            saved = require(a.get('/portal/requests'))
+            checks.check(phase + ': deliberate GET recovers one request and audit without replay',
+                len(saved) == before + 1 and len(audits(a)) == before_audits + 1
+                and len(operations.read_text().splitlines()) == count + 1
+                and all(row['status'] == 'open' and not row['applied'] for row in saved)
+                and require(control.get(f'/candidates/{cid}'))['full_name'] == name)
+        for mode, committed, audited in [('failure', False, False), ('audit_failure', True, False), ('post_commit_failure', True, True)]:
+            before, before_audits = len(require(a.get('/portal/requests'))), len(audits(a))
+            prepare(mode)
+            try:
+                response = a.post('/portal/grievances', json={'note':'Synthetic private rights write failure'})
+                checks.check(mode + ': generic correlated failure never implies rollback', response.status_code == 500
+                    and response.json() == {'detail':'internal_error', 'request_id':response.headers.get('x-request-id')}
+                    and 'set-cookie' not in response.headers)
+            finally:
+                finish()
+            checks.check(mode + ': saved request and audit expose actual independent commits',
+                len(require(a.get('/portal/requests'))) == before + int(committed)
+                and len(audits(a)) == before_audits + int(audited))
+        erased = require(control.post('/candidates', json={'evaluate':False, 'resume_text':
+            'Synthetic rights write erasure\nEmail: rights-write-erasure@example.in\nSkills: Python'}))['candidate_id']
+        erased_key = require(control.post(f'/candidates/{erased}/auth-key'))['access_key']
+        with client(base, headers={'X-Candidate-Key':erased_key}) as subject:
+            prepare('create')
+            try:
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    pending = executor.submit(subject.post, '/portal/grievances', json={'note':'Synthetic private rights write erased'})
+                    try:
+                        wait_file('entered')
+                        require(control.delete('/candidates/' + erased))
+                        require(pending.result(timeout=5), 503)
+                    finally:
+                        (scratch / 'rights-write-release').touch()
+            finally:
+                finish()
+            checks.check('erasure before late create prevents resurrection and invalidates credential',
+                control.get('/candidates/' + erased).status_code == 404 and subject.get('/portal/requests').status_code == 401)
+        checks.check('other candidate retains own request throughout failed and late writes', require(b.get('/portal/requests')) == [kept])
+        views = [(ah, '/portal/requests', require(a.get('/portal/requests'))),
+            (bh, '/portal/requests', [kept]),
+            ({'X-API-Key':ADMIN}, '/admin/requests', require(control.get('/admin/requests')))]
+        return views, (ah, audits(a))
 
 
 def check_rights_reads(checks, scratch, base, control, cid, other_id, key):
@@ -1322,6 +1439,7 @@ def run(scratch, url, pg_options):
     stop, events, mailbox = scratch / "stop", scratch / "lifecycle.jsonl", scratch / "mail.jsonl"
     env = {key: value for key, value in base_env().items() if not key.startswith("DEE_")}
     factory = next((f'smoke_r4_s1_t3c:{name}' for flag, name in (
+        ('--rights-write-workers', 'create_rights_write_smoke_app'),
         ('--rights-read-workers', 'create_rights_read_smoke_app'),
         ('--portal-write-workers', 'create_portal_write_smoke_app'),
         ('--portal-read-workers', 'create_portal_read_smoke_app'),
@@ -1366,6 +1484,9 @@ def run(scratch, url, pg_options):
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--rights-read-workers' in sys.argv:
         env.update(DEE_PORTAL_READ_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_READ_WAIT_SECONDS='.3',
+                   DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
+    if '--rights-write-workers' in sys.argv:
+        env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.3',
                    DEE_SESSION_LAST_SEEN_WRITE_SECONDS='3600')
     if '--portal-write-workers' in sys.argv:
         env.update(DEE_PORTAL_WRITE_MAX_CONCURRENT_REQUESTS='1', DEE_PORTAL_WRITE_WAIT_SECONDS='.3',
@@ -1458,6 +1579,9 @@ def run(scratch, url, pg_options):
             portal_reads = check_portal_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-read-workers' in sys.argv else []
             portal_writes = check_portal_writes(checks, scratch, base, control, cid, other['candidate_id'], key) if '--portal-write-workers' in sys.argv else []
             rights_reads = check_rights_reads(checks, scratch, base, control, cid, other['candidate_id'], key) if '--rights-read-workers' in sys.argv else []
+            rights_audits = None
+            if '--rights-write-workers' in sys.argv:
+                rights_reads, rights_audits = check_rights_writes(checks, scratch, base, control, cid, other['candidate_id'], key)
             if any(flag in sys.argv for flag in ('--candidate-record-workers', '--source-read-workers')):
                 key = check_candidate_records(checks, scratch, base, control, operator, cid, other['candidate_id'], key,
                     source_reads='--source-read-workers' in sys.argv)
@@ -1485,6 +1609,11 @@ def run(scratch, url, pg_options):
             for actor_headers, url, body in rights_reads:
                 with client(base, headers=actor_headers) as actor:
                     checks.check('exact rights list survives migrated graceful restart', require(actor.get(url)) == body)
+            if rights_audits is not None:
+                actor_headers, expected_audits = rights_audits
+                with client(base, headers=actor_headers) as actor:
+                    checks.check('exact committed submission audits survive restart without repairing failed audit',
+                        [row for row in require(actor.get('/portal/access-log')) if row['action'] == 'request.submit'] == expected_audits)
             if portal_reads or portal_writes:
                 for candidate_key, url, body in portal_reads + portal_writes:
                     with client(base, headers={'X-Candidate-Key': candidate_key}) as candidate:
@@ -1526,6 +1655,9 @@ def run(scratch, url, pg_options):
         checks.check('rights reads omit private notes and worker exception content from logs',
             all(value not in logs for value in ('Synthetic private request A', 'Synthetic private request B',
                 'Synthetic erased private request', 'synthetic-private-portal-smoke-error')))
+    if '--rights-write-workers' in sys.argv:
+        checks.check('rights write logs omit private input and exception content',
+            all(value not in logs for value in ('Synthetic private rights write', 'synthetic-private-rights-write')))
     return checks.summary()
 
 

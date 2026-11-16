@@ -61,7 +61,7 @@ async def _portal_write(request: Request, operation, *args, **kwargs):
     except ExecutionPending:
         raise HTTPException(status_code=503, detail='portal_write_pending',
                             headers={'Retry-After': '1'}) from None
-    except LookupError:
+    except (LookupError, RequestRefused, RateLimited):
         raise
     except Exception as exc:
         rid = getattr(request.state, 'request_id', '')
@@ -163,7 +163,7 @@ async def portal_submit_correction(
     DPDP requires is the mechanism, and the mechanism starts here.
     """
     try:
-        return _services(request).rights.submit(
+        return await _portal_write(request, _services(request).rights.submit,
             candidate_id,
             kind=RequestKind.CORRECTION,
             field=req.field,
@@ -187,7 +187,7 @@ async def portal_submit_grievance(
     candidate_id: str = Depends(require_candidate),
 ) -> RequestView:
     try:
-        return _services(request).rights.submit(
+        return await _portal_write(request, _services(request).rights.submit,
             candidate_id,
             kind=RequestKind.GRIEVANCE,
             field=None,

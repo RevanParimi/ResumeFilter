@@ -87,12 +87,22 @@ class RightsStore:
             try:
                 session.commit()
             except IntegrityError as exc:
-                _log.info("integrity_race", where="RightsStore.create", error=str(exc))
+                _log.info("integrity_race", where="RightsStore.create", error_type=type(exc).__name__)
                 session.rollback()
-                if session.get(CandidateRow, candidate_id) is None:
+                foreign_key = (getattr(exc.orig, "sqlstate", None) == "23503"
+                    or getattr(exc.orig, "sqlite_errorname", None) == "SQLITE_CONSTRAINT_FOREIGNKEY")
+                if foreign_key and session.get(CandidateRow, candidate_id) is None:
                     return None
                 raise
             return _view(row)
+
+    def exists_for_candidate(self, candidate_id: str, request_id: str) -> bool:
+        """Fresh subject/request snapshot after submission, not a delivery lock."""
+        with self._session_factory() as session:
+            return session.scalar(select(DataPrincipalRequestRow.id).join(CandidateRow).where(
+                DataPrincipalRequestRow.id == request_id,
+                DataPrincipalRequestRow.candidate_id == candidate_id,
+            )) is not None
 
     def for_candidate(self, candidate_id: str) -> list[RequestView]:
         """The subject's own, newest first."""

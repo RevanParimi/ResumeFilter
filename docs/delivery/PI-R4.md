@@ -890,8 +890,8 @@ store reads directly; their detached free-text views lack final erasure guards.
 The two submissions additionally charge SQL limiter state, validate/read identity,
 create a request and audit across existing transactions. Resolution conditionally
 closes a request, may apply identity, audits and rereads. These write/decision
-uncertainties need separate acceptance. Split before implementation; only A runs
-this session. A is complete; B/C/Q and E3 remain open for their own evidence.
+uncertainties need separate acceptance. Split before implementation. A and B
+are complete; C/Q and E3 remain open for their own evidence.
 
 **<a id="r4-s2-t3c3e3a"></a>R4-S2-T3C3E3A - Bound reviewed-rights reads**
 
@@ -907,11 +907,17 @@ B/C/Q, E3 and broader parents remain open.
 
 **<a id="r4-s2-t3c3e3b"></a>R4-S2-T3C3E3B - Bound reviewed-rights submissions**
 
-Status: pending. Prerequisite: A. Own correction/grievance submission including
-limiter charging, validation, current identity, create and audit; preserve review
-without applying corrections. Define bounded write/late-commit recovery contract
-before code; require SQL/PG, erasure/rollback, saved-state HTTP/restart and full
-regression plus reviews. Do not confuse a lost reply with rollback or replay.
+Status: done (2026-11-16), started 2026-11-15. Prerequisite: A, published `015ff8e`.
+[Retained contract/evidence](EVIDENCE-R4.md#r4-s2-t3c3e3b) owns pre-code scope,
+red/green, full/actual PG, both DBs' HTTP/restart, actual Chrome compatibility,
+static/preservation and separate reviews. Both submission POSTs own complete
+limiter/validation/identity/create/audit/final-existence work in existing
+`portal_writes`, shared with consent writes. Known 422/429/404, quota order and
+human review remain; observed erasure refuses success and private SQL details
+are excluded from application logs. Commits stay independent, snapshots retain delivery limits, and
+recovery uses deliberate own GETs without automatic replay/repair. No new
+pool/config/schema/scorer or idempotency claim. Only B closes; exact next C,
+in a separate chat. E3/C/Q and broader parents stay open.
 
 **<a id="r4-s2-t3c3e3c"></a>R4-S2-T3C3E3C - Bound reviewed-rights decisions**
 

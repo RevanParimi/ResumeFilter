@@ -108,7 +108,19 @@ pending/refused reads. Candidate missing/erased direct lists remain empty; new
 requests with erased credentials refuse. These snapshots do not lock later
 delivery or refresh decisions. The
 [E3A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns validation/status;
-submission and operator-decision scheduling remain separate children.
+operator-decision scheduling remains a separate child.
+
+`POST /portal/corrections` and `/portal/grievances` share the existing consent
+[write budget](OPERATING.md#candidate-portal-write-budget) for complete limiter,
+validation, identity snapshot, create, audit and final-existence work. Corrections
+remain unapplied human-review requests. Known validation/quota/erasure refusals
+retain 422/429/404. Pending writes keep admission until settlement; recover through
+own requests/access-log GETs without automatic POST replay. Request and audit
+commits are independent: a failed reply can leave a request without its audit or
+both saved, and an early empty snapshot does not prove rollback. A deliberate
+repeat is another request, not idempotent recovery. Final erasure checks are
+snapshots. [E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns validation/status;
+no dedicated submission UI or automatic review action is introduced.
 
 ### Why no new `ConsentPurpose`
 

@@ -18,6 +18,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy.exc import IntegrityError
+
 from app.candidates.store import CandidateStore
 from app.core.config import Settings, get_settings
 from app.ledger.store import LedgerStore
@@ -126,14 +128,23 @@ class RightsService:
             # the IntegrityError that reached the client as a 500 before the
             # Phase B review.
             raise LookupError(f"unknown candidate: {candidate_id}")
-        self._ledger.audit_request_event(
-            candidate_id,
-            request_id=view.id,
-            action="request.submit",
-            actor_type="candidate",
-            actor_id=candidate_id,
-            details={"kind": kind.value, "field": field.value if field else None},
-        )
+        try:
+            self._ledger.audit_request_event(
+                candidate_id,
+                request_id=view.id,
+                action="request.submit",
+                actor_type="candidate",
+                actor_id=candidate_id,
+                details={"kind": kind.value, "field": field.value if field else None},
+            )
+        except IntegrityError as exc:
+            foreign_key = (getattr(exc.orig, "sqlstate", None) == "23503"
+                or getattr(exc.orig, "sqlite_errorname", None) == "SQLITE_CONSTRAINT_FOREIGNKEY")
+            if foreign_key and self._candidates.get_candidate(candidate_id) is None:
+                raise LookupError("candidate not found") from None
+            raise
+        if not self._store.exists_for_candidate(candidate_id, view.id):
+            raise LookupError("candidate not found")
         return view
 
     def for_candidate(self, candidate_id: str) -> list[RequestView]:

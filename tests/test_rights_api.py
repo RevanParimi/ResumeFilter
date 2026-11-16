@@ -11,6 +11,371 @@ from tests.test_report_erasure_concurrency import database  # noqa: F401
 RIGHTS_READS = [('candidate', '/portal/requests', 'for_candidate'),
     ('operator', '/admin/requests', 'list_by_status')]
 
+RIGHTS_SUBMISSIONS = [
+    ('correction', '/portal/corrections', {'field': 'full_name', 'requested_value': 'Synthetic reviewed name', 'note': 'Synthetic private submission'}),
+    ('grievance', '/portal/grievances', {'note': 'Synthetic private submission'}),
+]
+
+
+@pytest.mark.parametrize('case,path,body', RIGHTS_SUBMISSIONS)
+async def test_rights_submission_sql_keeps_unrelated_requests_responsive(database, settings, case, path, body):
+    import asyncio
+    from threading import Event
+    import httpx
+    from sqlalchemy import event
+    engine, factory = database
+    services, headers, _ = _rights_read_setup(settings, factory)
+    entered, release, finished = Event(), Event(), Event()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if 'insert into data_principal_requests' in statement.lower() and not entered.is_set():
+            entered.set()
+            release.wait(3)
+            finished.set()
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(path, json=body, headers=headers['a']))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert not finished.is_set(), 'rights submission SQL blocked the event loop'
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        await services.aclose()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+
+
+@pytest.mark.parametrize('case,path,body', RIGHTS_SUBMISSIONS)
+@pytest.mark.parametrize('phase', ['before_create', 'before_audit', 'after_audit'])
+def test_rights_submission_observed_erasure_refuses_detached_success(database, settings, monkeypatch, log_output, case, path, body, phase):
+    _, factory = database
+    services, headers, rows = _rights_read_setup(settings, factory)
+    target, method = (services.rights._store, 'create') if phase == 'before_create' else (services.ledger, 'audit_request_event')
+    original = getattr(target, method)
+    def erased(*args, **kwargs):
+        if phase != 'after_audit':
+            assert services.candidates.delete_candidate('a')
+        result = original(*args, **kwargs)
+        if phase == 'after_audit':
+            assert services.candidates.delete_candidate('a')
+        return result
+    monkeypatch.setattr(target, method, erased)
+    with TestClient(create_app(services)) as http:
+        response = http.post(path, json=body, headers=headers['a'])
+        assert response.status_code == 404 and response.json() == {'detail': 'candidate not found'}
+        assert 'Synthetic private' not in response.text
+        assert http.get('/portal/requests', headers=headers['a']).status_code == 401
+        assert http.get('/portal/requests', headers=headers['b']).json() == [rows['b'].model_dump(mode='json')]
+        assert services.rights.for_candidate('a') == []
+    assert body['note'] not in log_output.text and 'INSERT INTO' not in log_output.text
+
+
+@pytest.mark.parametrize('case,path,body', RIGHTS_SUBMISSIONS)
+@pytest.mark.parametrize('ending', ['success', 'timeout', 'cancel', 'failure', 'late_failure',
+    'request_rollback', 'audit_rollback', 'post_commit_failure'])
+async def test_rights_submission_owns_complete_write_and_manual_recovery(database, settings, monkeypatch, log_output, case, path, body, ending):
+    import asyncio
+    from threading import Event, current_thread, get_ident
+    import httpx
+    from sqlalchemy import event
+    engine, factory = database
+    settings.portal_write_max_concurrent_requests = 1
+    settings.portal_write_wait_seconds = .2 if ending in ('timeout', 'late_failure') else 20
+    services, headers, rows = _rights_read_setup(settings, factory)
+    original = services.rights.submit
+    entered, release, owners, sessions = Event(), Event(), [], []
+    caller = get_ident()
+    def begin(session, transaction, connection):
+        if current_thread().name.startswith('portal-write'):
+            sessions.append(get_ident())
+            session.info['submission_owner'] = get_ident()
+    def end(session, transaction):
+        if 'submission_owner' in session.info:
+            assert session.info['submission_owner'] == get_ident()
+    def sql(conn, cursor, statement, parameters, context, many):
+        if current_thread().name.startswith('portal-write'):
+            target = 'insert into data_principal_requests' if ending == 'request_rollback' else 'insert into audit_log'
+            if ending in ('request_rollback', 'audit_rollback') and target in statement.lower():
+                raise RuntimeError('synthetic-private-submission-rollback')
+    def work(*args, **kwargs):
+        owners.append(get_ident())
+        entered.set()
+        assert release.wait(10)
+        if ending in ('failure', 'late_failure'):
+            raise RuntimeError('synthetic-private-submission-failure')
+        result = original(*args, **kwargs)
+        if ending == 'post_commit_failure':
+            raise RuntimeError('synthetic-private-submission-after-commit')
+        return result
+    app = create_app(services)
+    listeners = [(factory, 'after_begin', begin), (factory, 'after_transaction_end', end),
+        (engine, 'before_cursor_execute', sql)]
+    try:
+        async with app.router.lifespan_context(app):
+            for target, event_name, listener in listeners:
+                event.listen(target, event_name, listener)
+            monkeypatch.setattr(services.rights, 'submit', work)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(path, json=body, headers=headers['a']))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert (await http.get('/portal/requests', headers=headers['b'])).json() == [rows['b'].model_dump(mode='json')]
+                    refused = await http.post('/portal/grievances', json={'note': 'not admitted'}, headers=headers['b'])
+                    assert refused.status_code == 503 and refused.json() == {'detail': 'portal_write_capacity_exhausted'}
+                    assert refused.headers['retry-after'] == '1' and 'set-cookie' not in refused.headers
+                    assert (await http.post('/portal/consents', json={'purpose': 'ledger_read'}, headers=headers['b'])).status_code == 503
+                    if ending in ('timeout', 'late_failure'):
+                        response = await asyncio.wait_for(pending, 2)
+                        assert response.status_code == 503 and response.json() == {'detail': 'portal_write_pending'}
+                        assert response.headers['retry-after'] == '1' and 'set-cookie' not in response.headers
+                        # An empty early snapshot is not rollback or permission to replay.
+                        assert (await http.get('/portal/requests', headers=headers['a'])).json() == [rows['a'].model_dump(mode='json')]
+                    elif ending == 'cancel':
+                        pending.cancel()
+                        with pytest.raises(asyncio.CancelledError):
+                            await pending
+                    assert len(services.portal_writes._active) == 1
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.portal_writes._active:
+                            await asyncio.sleep(.01)
+                assert len(owners) == 1 and owners[0] != caller
+                if ending not in ('failure', 'late_failure'):
+                    assert sessions and set(sessions) == set(owners)
+                if ending == 'success':
+                    assert responses[0].status_code == 200 and responses[0].json()['applied'] is False
+                if ending in ('failure', 'request_rollback', 'audit_rollback', 'post_commit_failure'):
+                    response = responses[0]
+                    assert response.status_code == 500
+                    assert response.json() == {'detail': 'internal_error', 'request_id': response.headers['x-request-id']}
+                    assert 'set-cookie' not in response.headers
+                saved = (await http.get('/portal/requests', headers=headers['a'])).json()
+                committed = ending not in ('failure', 'late_failure', 'request_rollback')
+                assert len(saved) == 1 + int(committed)
+                assert all(not row['applied'] and row['status'] == 'open' for row in saved)
+                audits = (await http.get('/portal/access-log', headers=headers['a'])).json()
+                assert sum(row['action'] == 'request.submit' for row in audits) == int(committed and ending != 'audit_rollback')
+                assert services.candidates.get_candidate('a').full_name != body.get('requested_value', 'Synthetic reviewed name')
+                assert len(owners) == 1, 'saved-state GETs replayed a submission'
+                assert (await http.get('/portal/requests', headers=headers['b'])).json() == [rows['b'].model_dump(mode='json')]
+                services.portal_writes.close()
+                closed = await http.post(path, json=body, headers=headers['a'])
+                assert closed.status_code == 503 and closed.json() == {'detail': 'portal_write_executor_closed'}
+    finally:
+        release.set()
+        await services.aclose()
+        for target, event_name, listener in listeners:
+            if event.contains(target, event_name, listener):
+                event.remove(target, event_name, listener)
+    assert body['note'] not in log_output.text and 'synthetic-private-submission' not in log_output.text
+
+
+async def test_rights_submissions_share_default_slots_with_consents_without_spending_refused_quota(database, settings, monkeypatch):
+    import asyncio
+    from threading import Event, Condition, get_ident
+    import httpx
+    _, factory = database
+    services, headers, _ = _rights_read_setup(settings, factory)
+    grant = services.ledger.grant_consent(candidate_id='b', purpose='ledger_read')
+    assert services.portal_writes._capacity == 2 and services.portal_writes._wait_seconds == 20
+    release, condition, owners, charges = Event(), Condition(), set(), []
+    original, enforce = services.rights.submit, services.rights._limiter.enforce
+    def charged(*args, **kwargs):
+        charges.append(kwargs)
+        return enforce(*args, **kwargs)
+    def work(*args, **kwargs):
+        with condition:
+            owners.add(get_ident())
+            condition.notify_all()
+        assert release.wait(12)
+        return original(*args, **kwargs)
+    def occupied():
+        with condition:
+            return condition.wait_for(lambda: len(owners) == 2, timeout=8)
+    app, pending = create_app(services), []
+    try:
+        async with app.router.lifespan_context(app):
+            monkeypatch.setattr(services.rights, 'submit', work)
+            monkeypatch.setattr(services.rights._limiter, 'enforce', charged)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = [asyncio.create_task(http.post(path, json=body, headers=headers[cid]))
+                    for cid, (_, path, body) in zip(('a', 'b'), RIGHTS_SUBMISSIONS)]
+                try:
+                    assert await asyncio.to_thread(occupied)
+                    for path, body in [(path, body) for _, path, body in RIGHTS_SUBMISSIONS] + [
+                        ('/portal/consents', {'purpose': 'ledger_read'}), (f'/portal/consents/{grant.id}/revoke', None)]:
+                        response = await http.post(path, json=body, headers=headers['b'])
+                        assert response.status_code == 503 and response.json() == {'detail': 'portal_write_capacity_exhausted'}
+                    assert not charges
+                    assert (await http.post('/portal/corrections', json={'field': 'unknown'}, headers=headers['b'])).status_code == 422
+                    assert (await http.get('/portal/me', headers=headers['b'])).status_code == 200
+                finally:
+                    release.set()
+                    responses = await asyncio.gather(*pending, return_exceptions=True)
+                assert all(response.status_code == 200 for response in responses) and len(charges) == 2
+                # Semantic validation still spends the shared candidate quota.
+                response = await http.post('/portal/grievances', json={'note': ''}, headers=headers['b'])
+                assert response.status_code == 422 and len(charges) == 3
+    finally:
+        release.set()
+        await asyncio.gather(*pending, return_exceptions=True)
+        await services.aclose()
+
+
+@pytest.mark.parametrize('case,path,body,phase', [
+    (case, path, body, phase) for case, path, body in RIGHTS_SUBMISSIONS
+    for phase in ('limiter', 'identity', 'create', 'audit', 'final')
+    if phase != 'identity' or case == 'correction'])
+async def test_rights_submission_every_sql_boundary_uses_its_worker(database, settings, case, path, body, phase):
+    import asyncio
+    from threading import Event, current_thread, get_ident
+    import httpx
+    from sqlalchemy import event
+    engine, factory = database
+    services, headers, _ = _rights_read_setup(settings, factory)
+    entered, release, owners = Event(), Event(), []
+    caller = get_ident()
+    needle = {'limiter': 'rate_limit_counters', 'identity': 'from candidates',
+        'create': 'insert into data_principal_requests', 'audit': 'insert into audit_log',
+        'final': 'join candidates'}[phase]
+    def sql(conn, cursor, statement, parameters, context, many):
+        if current_thread().name.startswith('portal-write') and needle in statement.lower() and not entered.is_set():
+            owners.append(get_ident())
+            entered.set()
+            assert release.wait(10)
+    app = create_app(services)
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(path, json=body, headers=headers['a']))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    assert (await http.get('/healthz')).status_code == (await http.get('/admin/users')).status_code == 200
+                    assert owners and caller not in owners
+                finally:
+                    release.set()
+                    assert (await pending).status_code == 200
+    finally:
+        release.set()
+        await services.aclose()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+
+
+@pytest.mark.parametrize('case,path,body', RIGHTS_SUBMISSIONS)
+@pytest.mark.parametrize('phase', ['create', 'audit'])
+@pytest.mark.parametrize('ending', ['rollback', 'erase'])
+async def test_rights_submission_real_lock_late_commit_and_erasure(database, settings, log_output, case, path, body, phase, ending):
+    import asyncio
+    from threading import Event, current_thread
+    import httpx
+    from sqlalchemy import event, text
+    engine, factory = database
+    settings.portal_write_max_concurrent_requests = 1
+    # Reach the intended write after limiter/identity SQL before timing out
+    # on the controlled 10s hold. Do not accidentally test an earlier boundary.
+    settings.portal_write_wait_seconds = 1
+    services, headers, rows = _rights_read_setup(settings, factory)
+    entered, proceed, pids = Event(), Event(), []
+    table = 'data_principal_requests' if phase == 'create' else 'audit_log'
+    def sql(conn, cursor, statement, parameters, context, many):
+        if current_thread().name.startswith('portal-write') and ('insert into ' + table) in statement.lower() and not entered.is_set():
+            if engine.dialect.name == 'postgresql':
+                pids.append(conn.scalar(text('SELECT pg_backend_pid()')))
+            entered.set()
+            assert proceed.wait(10)
+    app, blocker = create_app(services), None
+    try:
+        async with app.router.lifespan_context(app):
+            event.listen(engine, 'before_cursor_execute', sql)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers=ADMIN_HEADERS) as http:
+                pending = asyncio.create_task(http.post(path, json=body, headers=headers['a']))
+                try:
+                    assert await asyncio.to_thread(entered.wait, 8)
+                    blocker = engine.connect()
+                    if engine.dialect.name == 'sqlite':
+                        blocker.exec_driver_sql('BEGIN EXCLUSIVE')
+                    else:
+                        # Table is selected only from the two constants above.
+                        blocker.execute(text('LOCK TABLE ' + table + ' IN ACCESS EXCLUSIVE MODE'))
+                    proceed.set()
+                    if engine.dialect.name == 'postgresql':
+                        async with asyncio.timeout(8):
+                            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as observer:
+                                while not observer.scalar(text("SELECT wait_event_type = 'Lock' FROM pg_stat_activity WHERE pid=:pid"), {'pid': pids[0]}):
+                                    await asyncio.sleep(.01)
+                    response = await asyncio.wait_for(pending, 3)
+                    assert response.status_code == 503 and response.json() == {'detail': 'portal_write_pending'}
+                    assert response.headers['retry-after'] == '1'
+                    assert (await http.get('/healthz')).status_code == 200
+                    assert len(services.portal_writes._active) == 1
+                    if ending == 'erase':
+                        blocker.execute(text('DELETE FROM candidates WHERE id=:cid'), {'cid': 'a'})
+                        blocker.commit()
+                finally:
+                    proceed.set()
+                    if blocker is not None:
+                        blocker.rollback()
+                    await asyncio.gather(pending, return_exceptions=True)
+                    async with asyncio.timeout(10):
+                        while services.portal_writes._active:
+                            await asyncio.sleep(.01)
+                recovered = await http.get('/portal/requests', headers=headers['a'])
+                assert recovered.status_code == (401 if ending == 'erase' else 200)
+                if ending == 'rollback':
+                    assert len(recovered.json()) == 2 and all(not row['applied'] for row in recovered.json())
+                    assert [r.action for r in services.ledger.audit_for_candidate('a')].count('request.submit') == 1
+                else:
+                    assert services.rights.for_candidate('a') == [] and services.ledger.audit_for_candidate('a') == []
+                assert (await http.get('/portal/requests', headers=headers['b'])).json() == [rows['b'].model_dump(mode='json')]
+    finally:
+        proceed.set()
+        if blocker is not None:
+            blocker.rollback()
+            blocker.close()
+        await services.aclose()
+        if event.contains(engine, 'before_cursor_execute', sql):
+            event.remove(engine, 'before_cursor_execute', sql)
+    assert body['note'] not in log_output.text and 'INSERT INTO' not in log_output.text
+
+
+@pytest.mark.parametrize('case,path,body', RIGHTS_SUBMISSIONS)
+@pytest.mark.parametrize('phase', ['create', 'audit'])
+@pytest.mark.parametrize('erased', [False, True])
+def test_rights_submission_unrelated_integrity_failure_is_safe_error(database, settings, log_output, case, path, body, phase, erased):
+    from sqlalchemy import event
+    from app.rights.models import DataPrincipalRequestRow
+    from app.ledger.models import AuditLogRow
+    _, factory = database
+    services, headers, rows = _rights_read_setup(settings, factory)
+    def invalidate(session, *_):
+        for row in session.new:
+            if (phase == 'create' and isinstance(row, DataPrincipalRequestRow)
+                    or phase == 'audit' and isinstance(row, AuditLogRow) and row.action == 'request.submit'):
+                setattr(row, 'kind' if phase == 'create' else 'actor_type', None)
+                if erased:
+                    assert services.candidates.delete_candidate('a')
+    event.listen(factory, 'before_flush', invalidate)
+    try:
+        with TestClient(create_app(services)) as http:
+            response = http.post(path, json=body, headers=headers['a'])
+            assert response.status_code == 500
+            assert response.json() == {'detail': 'internal_error', 'request_id': response.headers['x-request-id']}
+            assert http.get('/portal/requests', headers=headers['b']).json() == [rows['b'].model_dump(mode='json')]
+    finally:
+        event.remove(factory, 'before_flush', invalidate)
+    assert body['note'] not in log_output.text and 'INSERT INTO' not in log_output.text
+
 
 def _rights_read_setup(settings, factory):
     from app.candidates.store import CandidateStore

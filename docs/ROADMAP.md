@@ -6,6 +6,16 @@
 
 ## ▶ Current state
 
+- **Session 2026-11-16 - R4-S2-T3C3E3B complete; reviewed rights submissions.**
+  Started 15 November. Both POSTs reuse the existing portal write owner for
+  complete limiter/validation/identity/create/audit/final-existence work.
+  Human review and known refusals remain; observed erasure refuses success.
+  Independent commits require saved-state GETs without automatic replay/repair.
+  [B evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns red/green, full/actual
+  PG, both DBs' HTTP/restart, actual Chrome compatibility, static/preservation,
+  completion and reviews. Only B closes; E3/C/Q and broader parents remain open.
+  Working DB/demo preserved; owned PG stopped. Exact next E3C, separate chat.
+
 - **Session 2026-11-15 - R4-S2-T3C3E3A complete; reviewed rights reads.**
   Candidate/operator request lists reuse the existing portal read owner for
   complete SQL/DTO/final-erasure work. Fresh snapshots omit erased entries

@@ -1,42 +1,47 @@
 # Current handoff
 
-Updated: 2026-11-15. Project: Veritas resume evaluation / talent platform.
+Updated: 2026-11-16. Project: Veritas resume evaluation / talent platform.
 
 ## Start here
 
-**R4-S2-T3C3E3A complete.** Baseline `81ac1fe`.
-[Contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns the pre-code E3
-split, acceptance, red/green, exact validation and separate self-reviews. Only A closes:
-candidate/operator request lists now own full SQL/DTO/final-erasure operations
-in existing `portal_reads`. All five GETs share the existing 2-slot/20s budget.
-Fresh per-chunk snapshots omit erased request text without refilling limits.
-Candidate/queue scope, order, schema and human-review/write behavior remain.
+**R4-S2-T3C3E3B complete**, started 15 November; baseline `015ff8e`.
+[Contract/evidence](delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns pre-code scope,
+red/green, exact validation, completion and separate self-reviews. Both rights
+POSTs now own full limiter/validation/identity/create/audit/final-existence work
+in existing `portal_writes`, shared with consent writes. No new pool/config/schema.
+422/429/404 remain; observed erasure refuses success, and raw SQL/private notes
+are excluded from application failure logs. Human review/identity/extractions remain.
 
-Full pytest **4522 passed / 1271 skipped**; focused **415 passed / 72 PG skips**;
-PG-enabled **467 passed**, no skips. Actual Chrome **33/33**; both DBs'
-HTTP/restart: rights **49/49**, portal reads/reports **54/54**, consent writes
-**34/34**. Bindings **638/19**, JS syntax and Python compilation pass. Initial
-full timing failures, exact unchanged recheck and passing full rerun are retained
-in evidence. Reviewed **616** hashes match; owned PG stop **0**, status **3**.
-Working DB/demo remain preserved. Completion review/publication outcome and
-verified tracking SHA are reported with this session; stop after that sequence.
+Request/quota/audit commits remain separate. Pending/cancelled/failed replies may
+follow a commit; retain admission until settlement, recover with deliberate own
+GETs and never auto-replay. Early empty snapshots do not prove rollback; audit
+failure can leave a saved request without its audit. Snapshots do not lock later
+delivery. Global/driver/drain limits remain. Working DB/demo are preserved.
 
-**Exact next: R4-S2-T3C3E3B - Bound reviewed-rights submissions**, not started.
-Read its existing PI contract and define bounded write/late-commit recovery
-before code. E3/B/C/Q, E4-E8/Q, C3E and broader parents remain open. No new
-pool/config/schema/scorer. Per-chunk snapshots do not lock later delivery or
-refresh decisions; candidate lists remain unbounded in rows/memory and existing
-per-process/global/driver/drain limits remain. Exactly one child completed here.
+Full pytest **4572 passed / 1321 skipped**. Focused **465 passed / 122 PG skips**;
+PG-enabled **567 passed**, no skips. Actual Chrome write/read compatibility
+**29/29 + 33/33**. Both DBs' HTTP/restart: submissions **50/50**, rights reads
+**49/49**, portal reads/reports **54/54**, consent writes **34/34**. Bindings
+**638/19**, JS/Python compilation pass. Reviewed **616** code/config hashes
+match; owned PG stop **0**, status **3**. All gates ended; no rerun needed.
+Completion review/publication outcome and verified tracking SHA are reported
+with this session. Stop after the scoped final review/publication sequence.
+
+**Exact next: R4-S2-T3C3E3C - Bound reviewed-rights decisions**, not started.
+Read/refine its existing decision/late-write contract before code. E3/C/Q and
+broader parents remain open. Only B closes here. No new pool/config/schema/
+scorer; partial commits, snapshot and per-process/global/driver/drain limits
+remain explicit. Working DB/demo and unrelated work are preserved.
 
 ## Reusable validation setup
 
-- Latest C3E3A sequential gate: `.pytest_cache/gates_r4_s2_t3c3e3a.py`; final
-  full rerun uses sanitized runner tag `full-recheck`. All gates are complete.
-  Sanitized runner: `.pytest_cache/run_r4_s2_t3c3e3a.py <tag> <Python args>`;
+- Latest C3E3B sequential gate: `.pytest_cache/gates_r4_s2_t3c3e3b.py`; all
+  required checks, including full, are complete.
+  Sanitized runner: `.pytest_cache/run_r4_s2_t3c3e3b.py <tag> <Python args>`;
   omitted args run full pytest. Owned PG runner/runtime:
-  `run_r4_s2_t3c3e3a_postgres.py` / `r4-s2-t3c3e3a-pg-runtime.json`
+  `run_r4_s2_t3c3e3b_postgres.py` / `r4-s2-t3c3e3b-pg-runtime.json`
   under `.pytest_cache/`. Reviewed-state/preservation helper:
-  `.pytest_cache/review_state_r4_s2_t3c3e3a.py check` / `preserve`.
+  `.pytest_cache/review_state_r4_s2_t3c3e3b.py check` / `preserve`.
 - Git uses per-command `-c credential.username=RevanParimi`; HTTP/1.1 worked
   for the remote preflight after a transient empty HTTP response.
 - Windows Python: `.resume/Scripts/python.exe`; full suite: `-m pytest -q
@@ -44,8 +49,8 @@ per-process/global/driver/drain limits remain. Exactly one child completed here.
   configuration/keys and avoid the working `.env`.
 - Portable PG distribution metadata: `.pytest_cache/r1-s1-t3a-v1-pg-runtime.json`.
   Local ignored helpers are not portable setup guarantees. Add `--postgres` only
-  with an explicitly disposable `DEE_TEST_DB_URL`; owned E3A PG is confirmed
-  stopped. Prior owned E2 PG is stopped.
+  with an explicitly disposable `DEE_TEST_DB_URL`; prior owned E3A/E2 PGs are
+  confirmed stopped. B's owned disposable local cluster is also stopped.
 - The combined evidence owns exact HTTP/Chrome modes and commands. Extend the
   existing isolated worker, two-process and browser harnesses instead of copying
   them. Prior D5/D6 setup and results remain in their linked evidence records.
