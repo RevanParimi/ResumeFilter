@@ -60,7 +60,7 @@ clear the editor and refresh without silently retrying a fresh submission.
 Unknown write outcomes retain a read-only draft until a successful refresh
 checks its revision. Queue/editor state clears on navigation and session loss;
 bounded requests and reply validation settle refusals safely. Evidence belongs
-to [R3-S2-T3B](docs/delivery/EVIDENCE-R3.md#r3-s2-t3b).
+to R3-S2-T3B.
 Revisions are transient hashes, not stored raw-history or authentication tokens.
 Later concurrent capture outside the DELETE snapshot can remain a new queue item.
 
@@ -89,9 +89,9 @@ Legacy `unmapped_terms` content stays classified `legacy_unattributed`. Runtime
 legacy write/list/resolve methods are removed. Ordinary queue responses never
 expose its raw displays, notes or reviewer names. Existing resolved keys still
 provide normalization compatibility; those keys may contain personal text.
-The [legacy disposition evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2c)
+The legacy disposition evidence
 owns validation of the offline procedure below. No ownership is inferred and no
-working-data cleanup has been performed. The [working-data inventory decision](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d4)
+working-data cleanup has been performed. The working-data inventory decision
 verified no legacy rows in the named active database; none required disposition.
 That snapshot does not inventory other databases, backups or OneDrive history.
 Nonempty legacy stores still require explicit review of all raw fields and keys,
@@ -179,6 +179,6 @@ submission can create a new owned observation after a historical alias is remove
   `cur_min_term_len=2`, `cur_max_term_len=64`. Fixed raw bound and review TTL are
   independent of these settings.
 
-[Activation evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d2b2b) owns the runtime,
+Activation evidence owns the runtime,
 API, browser, maintenance, regression and review results. The wider retention
 finding remains open through legacy disposition and combined validation.

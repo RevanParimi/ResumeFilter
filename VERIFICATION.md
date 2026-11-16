@@ -240,7 +240,7 @@ order. Legacy ambiguous candidate/channel sets refuse confirmation until a
 resend replaces them; there is no destructive working-data cleanup or migration.
 
 Email delivery and the candidate portal controls are wired at
-[R3-S1-T2](docs/delivery/EVIDENCE-R3.md#r3-s1-t2). Login and verification share the
+R3-S1-T2. Login and verification share the
 configured email client; contact messages are separate from sign-in messages.
 `NullNotifier` and unavailable email/phone refuse. Send failure rolls back the
 new secret and supersession, preserving an older active code; the new attempt
@@ -250,7 +250,7 @@ apply and SQLite holds its writer lock during send. This is not an atomic
 transaction with the mail provider: an acknowledgment/commit failure can leave
 a delivered but unusable code. Capture/browser/PG tests prove mechanics, not
 live mailbox delivery. Bounded sprint/contact acceptance closes at
-[R3-S1-Q](docs/delivery/EVIDENCE-R3.md#r3-s1-q); other PI-R3/R5 work remains open.
+R3-S1-Q; other PI-R3/R5 work remains open.
 
 Both tables CASCADE from `candidates`: a DPDP delete removes every verification
 and challenge, and the org-plane read then 404s.

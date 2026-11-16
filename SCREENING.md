@@ -22,14 +22,14 @@ the upload rather than returning stale IDs with report=null. Batches use the
 same refusal codes and scrub retry input under the existing policy; distinct
 fresh uploads remain permitted. These reads are snapshots, not locks across
 HTTP delivery. Resume-only deletion does not erase independently retained
-reports. [D3d1 evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d1).
+reports.
 
 Report-only erasure (2026-09-24): after saving, shared ingest and standalone
 `POST /evaluate` also check the report still exists. Observed absence returns
 422 `report_erased`; batches record that failure and clear retry input. Candidate
 and resume records survive report-only deletion. A fresh upload/evaluation remains
 permitted. Deletion after the final read may leave a delivered snapshot, but does
-not restore the deleted report. [Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2a).
+not restore the deleted report.
 
 A rule nobody can look up is a rule the next sprint reinvents differently, so
 every section below states the decision **and the alternative it rejected**.
@@ -177,10 +177,10 @@ Previously committed work remains; a later authorized process call can recover
 the active item through the existing timeout and retained-input rules. Browser
 navigation or HTTP disconnection does not guarantee server cancellation.
 
-[R4-S2-T1A](docs/delivery/EVIDENCE-R4.md#r4-s2-t1a) covers scheduling;
-[R4-S2-T1B1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b1)
+R4-S2-T1A covers scheduling;
+R4-S2-T1B1
 covers terminal acknowledgment.
-[R4-S2-T1B2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2a) fences terminal done/fail
+R4-S2-T1B2a fences terminal done/fail
 and erasure cleanup: check a fresh clock after the row/writer lock and again
 after writes, before commit. A greater age than the configured timeout refuses
 and rolls back the terminal transaction even without another claimant; equality
@@ -188,7 +188,7 @@ remains eligible. Cleanup repeats the checks after rollback releases its lock.
 The last check admits a commit under the held lock; clock reads and commit are
 not atomic, so this is not a physical commit/delivery deadline.
 
-[R4-S2-T1B2b1](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b1) applies fresh expiry
+R4-S2-T1B2b1 applies fresh expiry
 checks to the ingest/private-input and report-save callbacks: after the
 conditional item write acquires its lock, and after private-input operations
 before returning to commit. Refusal rolls back that whole transaction and
@@ -200,7 +200,7 @@ commits can survive later expiry and a refused terminal write. Optional
 fingerprinting keeps its existing separate subject/erasure checks.
 This adds no heartbeat, durable continuation or exactly-once model guarantee.
 
-[R4-S2-T1B2b2a](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2a) adds a prerequisite:
+R4-S2-T1B2b2a adds a prerequisite:
 the private retry reference stores version 1 and the original matched-existing,
 matched-on and duplicate-resume facts in the first ingest transaction. Retries
 and report saves preserve these facts and the original input timestamp. They
@@ -209,7 +209,7 @@ batch responses. Erasure, completion and retention remove them with the private
 reference. Migration 0030 leaves historical facts unknown; downgrade discards
 only this new metadata.
 
-[R4-S2-T1B2b2b](docs/delivery/EVIDENCE-R4.md#r4-s2-t1b2b2b) checks that private
+R4-S2-T1B2b2b checks that private
 checkpoint after claim and before ingestion. An authorized bound report and
 strict original facts complete the item atomically with private-input removal;
 it reuses the same report and flags without extraction, identity/fingerprint
@@ -337,7 +337,7 @@ window; quarantine does not identify and immediately erase unknown personal
 data. A new upload remains permitted. Migration 0026 also pauses historical raw
 input and unfinished references with no report association without guessing
 ownership or deleting their content. Completed anonymous counts/scalars stay
-unchanged. [Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3b2b2).
+unchanged.
 
 * **Completion removes the private retry reference.** The text lives in
   `resumes`, where candidate erasure cascades. The completed anonymous

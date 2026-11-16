@@ -45,7 +45,7 @@ ask.
    is closed (`LEDGER.md`).
 3. **Real ASR API, deferred TTS.** The API accepts audio; questions are
    delivered as text. The browser offers typed and microphone answers;
-   [R3-S3-T3](docs/delivery/EVIDENCE-R3.md#r3-s3-t3) owns capture/fallback evidence. OpenRouter serves no TTS and the local option is a GPU
+   R3-S3-T3 owns capture/fallback evidence. OpenRouter serves no TTS and the local option is a GPU
    dependency the offline suite cannot exercise.
 
 ## 3. Structural DPDP
@@ -58,16 +58,16 @@ duplicate/stale answers, expired sessions and repeated finishes return 409.
 Completed/expired detail responses have no next question. Reload reads saved
 progress; after an uncertain network outcome, read before resubmitting. Provider
 work happens before locking and may be spent on a losing concurrent request.
-See [R3-S3-T2A](docs/delivery/EVIDENCE-R3.md#r3-s3-t2a) for lifecycle validation;
-[T2B](docs/delivery/EVIDENCE-R3.md#r3-s3-t2b) validates the real text browser
+See R3-S3-T2A for lifecycle validation;
+T2B validates the real text browser
 start/list/resume/answer/finish flow, history and saved advisory/version/evidence
 explanations. Conflicts or uncertain writes require a saved-state refresh before
 another submission; no automatic answer replay. Derived abandoned reads are
 labeled expired. Drafts clear on refresh/navigation/account loss.
-[T3](docs/delivery/EVIDENCE-R3.md#r3-s3-t3) connects audio-only microphone capture with
+T3 connects audio-only microphone capture with
 explicit stop/discard/submit, typed fallback and device cleanup. ASR refusals
 leave the question open; audio request rate limits still apply.
-[R3-S3-Q](docs/delivery/EVIDENCE-R3.md#r3-s3-q) closes combined browser text/audio,
+R3-S3-Q closes combined browser text/audio,
 saved-state restart and consent-permitted employer summary acceptance. This
 uses synthetic media/fake ASR; live codec support and assessment quality remain unproved.
 

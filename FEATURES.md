@@ -132,7 +132,7 @@ continues the batch. A failed audit transaction is rolled back before checking
 whether the candidate disappeared; unrelated errors propagate. If the audit
 commits first, candidate erasure cascades it away and the feature-store write
 guard refuses later vector persistence. Allowed/withheld consent rules are
-unchanged. [Concurrency evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c1).
+unchanged.
 
 
 ### Materializer (`materialize.py`)
@@ -250,8 +250,8 @@ empty pool (still 200, `advisory=True`).
   masked in a serving copy; historical materialization stays intact. A new grant
   cannot fill historically withheld values. Existing job rankings use first-party
   and synthetic terms. Consent reads are snapshots, not locks across delivery.
-  [R1-S2-T1 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t1) owns validation and limits;
-  [R1-S2-T2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t2) owns the export/training
+  R1-S2-T1 evidence owns validation and limits;
+  R1-S2-T2 evidence owns the export/training
   extension of the same policy.
 - **Point-in-time**: `as_of` is a cutoff. Search and job matching select each
   candidate's latest snapshot at or before it, so refreshing one candidate does
@@ -357,7 +357,7 @@ subject as a withheld or censored row. Unrelated audit errors still propagate.
 These per-subject reads are snapshot boundaries, not locks across later checks
 or file delivery. A consent-read error propagates without a cached fallback;
 CSV may already contain earlier authorized rows when a later row fails.
-See [D3c2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c2) for the erasure seam.
+See D3c2 evidence for the erasure seam.
 
 Revocation invalidates **present use** through read-time masking; it does not
 rewrite historical feature values or cached materialization evidence.
@@ -367,7 +367,7 @@ or cached label; explicitly materialize/build a fresh cut to use it. Regenerate
 exports and training sets after authorization changes. Already delivered files
 and previously trained models are not recalled by this change. No working-data
 cleanup or schema migration is part of this policy.
-[R1-S2-T2 evidence](docs/delivery/EVIDENCE-R1.md#r1-s2-t2) owns validation and limits.
+R1-S2-T2 evidence owns validation and limits.
 
 ### Testing (S4.4)
 

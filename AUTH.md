@@ -199,7 +199,7 @@ cardinality is a read snapshot, not a global lock across new submissions.
 reports aggregate hints/proof/review counts read-only, with no repair mode or
 configuration loading. Missing proof columns are reported as unknown. The actual
 working-file inventory and preservation evidence are owned by
-[R1-S2-T4B](docs/delivery/EVIDENCE-R1.md#r1-s2-t4b); it authorizes no cleanup or migration.
+R1-S2-T4B; it authorizes no cleanup or migration.
 
 Migration `0029_candidate_login_binding` never infers historical ownership from
 resume hints. It marks candidates with any existing candidate session (including

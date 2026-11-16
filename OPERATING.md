@@ -82,7 +82,7 @@ This bounds raw bytes per request. Server-owned ASGI event buffers, temporary
 copies, JSON/decoded objects and simultaneous requests have separate memory
 costs; this is not an RSS or global concurrent-upload bound. Remaining SQL/SMTP
 work belongs to
-[R4-S2-T3](docs/delivery/PI-R4.md#r4-s2-t3--bound-requests-and-move-blocking-work-off-loop).
+R4-S2-T3.
 
 ### PDF execution budget
 
@@ -143,7 +143,7 @@ timeouts apply, and normal server shutdown first drains HTTP requests. This is
 not a whole-operation/drain deadline, a global RSS budget or a durable mail queue.
 
 Code redemption has its separate budget below; session-management handlers and
-remaining SQL boundaries stay under [T3C](docs/delivery/PI-R4.md#r4-s2-t3c). Direct synchronous auth
+remaining SQL boundaries stay under T3C. Direct synchronous auth
 service callers retain caller-owned scheduling. This does not configure or send
 live email.
 
@@ -219,7 +219,7 @@ deadline. Budgets multiply across Services/processes and do not globally cap
 memory or DB connections. Resolved principals remain authorization snapshots;
 there is no new transaction lock across later revoke/erasure and route execution.
 Direct synchronous auth callers own scheduling. Session-management handlers and
-other SQL have their own budgets below or remain in [C3C-F/Q](docs/delivery/PI-R4.md#r4-s2-t3c3c).
+other SQL have their own budgets below or remain in C3C-F/Q.
 
 ### Code redemption execution budget
 
@@ -253,7 +253,7 @@ writer locks can still delay competing writes. These are per-process admission
 and caller wait budgets, not global memory/connection limits or a hard database/
 shutdown deadline. Direct synchronous service callers own scheduling. Logout,
 session list/revoke have their separate budget below; other SQL remains C3C-F.
-This does not close [combined T3 acceptance](docs/delivery/PI-R4.md#r4-s2-t3c3q).
+This does not close combined T3 acceptance.
 
 ### Session management execution budget
 
@@ -635,7 +635,7 @@ discard recovery references; stale account/unmount callbacks and mutations of
 another batch cannot replace the selected batch or upload drafts. Page reload
 reads persisted results without starting work.
 
-[Combined management acceptance](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d4q)
+Combined management acceptance
 closes D4 across all seven routes: the defaults total eight admitted operations
 per Services/app process across the three separate pools (four reads, two
 registrations and two mutations). This is not a global SQL/auth or whole-request
@@ -688,12 +688,12 @@ row locks can serialize operations across pools/processes. All direct store SQL
 in `ScreeningService.process` now uses this pool; awaited ingestion SQL uses its
 separate existing pool. This is not a bound on every indirect graph/handler
 operation. Durable continuation remains T4. The
-[A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5a) and
-[B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5b) own validation/status;
-the [Q evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d5q) closes combined
+A evidence and
+B evidence own validation/status;
+the Q evidence closes combined
 admission/recovery acceptance and D5 after shared/default capacity and both DBs'
 two-process HTTP/restart, actual Chrome, full regression and source self-review.
-[D6 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3d6) owns terminal/count
+D6 evidence owns terminal/count
 validation. Combined C3D acceptance is recorded below; C3E-F/Q and broader gates
 remain open. No schema or scorer change is introduced.
 
@@ -712,7 +712,7 @@ Evaluation publication admission follows the async graph, so a refused save can
 already have incurred provider work. Late SQL never resumes the abandoned
 request. Saved-state reads remain snapshots and separate human recovery can
 append another judgment or restart an expired claim. The
-[combined evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3dq) owns review/status;
+combined evidence owns review/status;
 direct low-level callers still supply an executor or own scheduling.
 
 Each explicit Start begins a separate screening run in the UI. Older process
@@ -749,12 +749,12 @@ disposal. It adds two slots outside the D1-D6 subtotal above, with separate inta
 auth/other budgets; database locks can still couple them. It does not bound row
 counts, memory, whole requests, JSON rendering or SQL-driver/drain time. Direct
 synchronous callers still own scheduling. The
-[E1 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e1) owns validation/status;
+E1 evidence owns validation/status;
 remaining direct rights/erasure/verification/interview operations are
 E3B/C/Q and E4-E8/Q. Consent writes have the separate budget below. No schema or scorer
 change is introduced.
 
-[Reviewed-rights read acceptance](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a)
+Reviewed-rights read acceptance
 extends that same pool to both request lists without adding slots or configuration.
 The complete existing service/store operation owns initial SQL, detached request
 views and fresh existence checks after materialization. Current request IDs joined
@@ -811,7 +811,7 @@ read slots, outside earlier report/batch/intake/auth budgets. Locks can couple
 these budgets; this is not a global connection/SQL cap, row/memory bound or a
 whole-request, driver or drain deadline. Direct synchronous callers own their
 scheduling. No schema or scoring change. The
-[E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns validation/status;
+E2 evidence owns validation/status;
 other E children and combined acceptance remain separate tasks.
 
 The rights submissions use this same owner for their complete candidate limiter,
@@ -832,7 +832,7 @@ and spends quota; this is not an idempotency guarantee. Observed erasure refuses
 success at create/audit/final checks and existing CASCADE prevents resurrection;
 the final existence check is a snapshot, not a later-delivery lock. Raw SQL and
 private request values are excluded from application error logs. The
-[E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns its validation/status.
+E3B evidence owns its validation/status.
 
 Operator decisions use this same owner for lookup, policy validation, conditional
 OPEN-to-terminal transition, optional allowed full-name/pin correction, audit and
@@ -850,7 +850,7 @@ Recover through deliberate candidate/operator request, candidate identity and
 access-log GETs without automatic decision replay. Early snapshots can change
 until settlement. Observed final erasure refuses success; snapshots do not lock
 later delivery. There is no operator decision screen. The
-[E3C evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c) owns validation/status.
+E3C evidence owns validation/status.
 
 ### Dual scoping: all scopes counted, any denial denies
 

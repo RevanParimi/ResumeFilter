@@ -1,13 +1,11 @@
 # veritas — talent intelligence platform (depth-eval engine core)
 
-Current capabilities, completed safeguards and open gaps:
-[Feature status](FEATURE_STATUS.md). Next development task:
-[Progress handoff](docs/PROGRESS.md).
+Current capabilities: [Feature status](FEATURE_STATUS.md). Current state:
+[docs/PROGRESS.md](docs/PROGRESS.md).
 
 Current feature contracts live in the linked guides. Superseded implementation
 plans and prototype UI documents were retired from the working tree; their
 [original versions remain in Git](https://github.com/RevanParimi/ResumeFilter/tree/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers).
-Use `docs/delivery/` for the active plan, not historical implementation scripts.
 
 
 An Indian-market talent intelligence platform growing around a
@@ -68,8 +66,8 @@ Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 [DASHBOARD.md](DASHBOARD.md) · [PROFILE_SOURCES.md](PROFILE_SOURCES.md) ·
 [CURATION.md](CURATION.md) · [PORTAL.md](PORTAL.md) ·
 [VERIFICATION.md](VERIFICATION.md) · [INTERVIEWS.md](INTERVIEWS.md) ·
-[MODELS.md](MODELS.md) (model choices) · [docs/ROADMAP.md](docs/ROADMAP.md)
-(live sprint status) · [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
+[MODELS.md](MODELS.md) (model choices) ·
+[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
 (original engine requirements).
 
 ---
@@ -413,12 +411,11 @@ alembic/                 shared migrations 0001-0009 (candidate store, fingerpri
                          feature vectors, job requisitions, observed offers)
 tests/                   per-node + API + integration + adversarial fixtures,
                          fully offline (653 tests)
-docs/ROADMAP.md          live PI/sprint status (start here each session)
 Dockerfile               non-root image with /healthz healthcheck
 .github/workflows/ci.yml offline pytest on 3.11/3.12
 ```
 
-## Roadmap (veritas PIs — live status in [docs/ROADMAP.md](docs/ROADMAP.md))
+## Roadmap (historical PI summary)
 
 - **Engine M0/M1 (done):** 7-node pipeline, conservative calibration, SQLite
   report store + outcome loop, API hardening, two domains, Docker + CI.

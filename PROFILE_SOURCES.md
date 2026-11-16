@@ -24,13 +24,11 @@ signals retain their advisory 200 behavior. Curation capture now follows source
 commit; raw observations cascade with source/candidate erasure and expire after
 30 days. Explicitly approved vocabulary has an independent lifecycle described
 in [CURATION.md](CURATION.md).
-[Evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2b).
 
 Source lists also check candidate existence after loading signals. Observed
 erasure returns 404 `candidate not found`, including erasure after the route's
 initial lookup. This final read is a snapshot; it does not lock HTTP delivery or
 promise an atomic view across individual source-row deletions.
-[Aggregate-read evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d1).
 
 ## GitHub pipeline
 

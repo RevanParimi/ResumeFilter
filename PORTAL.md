@@ -96,7 +96,7 @@ failed reply may still have committed. The revoke screen preserves uncertain
 state, requires **Reload consents** before a deliberate retry and rejects stale
 account callbacks. A reload is a snapshot while earlier work can still finish.
 The [operating contract](OPERATING.md#portal-write-budget) owns limits
-and recovery; [E2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e2) owns status
+and recovery; E2 evidence owns status
 and validation. Competing revocations retain the first clock and one audit entry.
 
 The candidate's `GET /portal/requests` and operator-only global
@@ -107,7 +107,7 @@ and limits; omitted rows are not refilled. A fresh GET is explicit recovery afte
 pending/refused reads. Candidate missing/erased direct lists remain empty; new
 requests with erased credentials refuse. These snapshots do not lock later
 delivery or refresh decisions. The
-[E3A evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3a) owns validation/status;
+E3A evidence owns validation/status;
 operator decisions share the write owner described below.
 
 `POST /portal/corrections` and `/portal/grievances` share the existing consent
@@ -119,7 +119,7 @@ own requests/access-log GETs without automatic POST replay. Request and audit
 commits are independent: a failed reply can leave a request without its audit or
 both saved, and an early empty snapshot does not prove rollback. A deliberate
 repeat is another request, not idempotent recovery. Final erasure checks are
-snapshots. [E3B evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3b) owns validation/status;
+snapshots. E3B evidence owns validation/status;
 no dedicated submission UI or automatic review action is introduced.
 
 Operator `POST /admin/requests/{id}/resolve` shares that write budget. Human review,
@@ -131,7 +131,7 @@ deliberate saved request, identity and access-log GETs without automatic decisio
 replay; late work may still commit after an early snapshot. Older partial records
 are not repaired. Fresh erasure checks are snapshots. No decision UI is added;
 the [operating contract](OPERATING.md#portal-write-budget) owns the limits and
-[E3C evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t3c3e3c) owns validation/status.
+E3C evidence owns validation/status.
 
 ### Why no new `ConsentPurpose`
 
@@ -320,14 +320,13 @@ An already-reserved send cannot activate after cleanup, including after process
 restart. Fresh signup is still allowed; sent emails cannot be recalled.
 Redemption commits consumption, principal and session/audit together under the
 same address lock; interrupted transactions restore the uncommitted challenge.
-[Login ordering](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2c).
+Login ordering.
 
 The access view, access log and consent list check candidate existence after
 assembling their results. If erasure is observed after authentication but before
 that final check, these GETs return **404** `candidate not found`. Later requests
 with the erased credential return **401**. The check is a snapshot, not a lock
 across HTTP delivery or an atomic view of independently deleted child rows.
-[Aggregate-read evidence](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3d2d1).
 
 ## Endpoint contract
 
@@ -367,7 +366,7 @@ Added by S7.1 (contracts in `VERIFICATION.md`):
   method, or a declared-but-unimplemented one (`government_id`) · **429**
   resend inside the cooldown (scoped per candidate + channel, so restarting a
   verification does not reset it) · **503** email/phone delivery unavailable or
-  email send failed. [R3-S1-T2](docs/delivery/EVIDENCE-R3.md#r3-s1-t2) owns the captured
+  email send failed. R3-S1-T2 owns the captured
   delivery, rollback and browser evidence. (A non-null `debug_code` appears only when
   `env == "local"` **and**
   `verif_otp_debug_echo` is true — it exists so the sprint smoke can drive the

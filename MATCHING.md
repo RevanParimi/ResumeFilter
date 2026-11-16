@@ -92,7 +92,6 @@ v1 refinement.)
   snapshots (large pools use bounded query batches), not locks across response
   delivery or revocation of previously returned matches. This applies to both
   match and board routes; consent policy is unchanged.
-  [Validation](docs/delivery/EVIDENCE-R1.md#r1-s1-t3b-d3c3).
 - **Point-in-time.** One `as_of` drives both the vector cut and the profile read,
   so skill coverage and scalar features describe the same instant — no leakage.
 

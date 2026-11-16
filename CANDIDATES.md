@@ -132,8 +132,7 @@ submissions. Candidate writes serialize resume deduplication and candidate-wide
 version allocation: organization uploads reuse their own identical-text resume,
 while another tenant gets its own version. The operator plane keeps its existing
 ability to reuse an available text row. Every ingest records a new extraction.
-Report/provider work uses separate operations; historical duplicates remain. See
-[R4-S2-T2 evidence](docs/delivery/EVIDENCE-R4.md#r4-s2-t2).
+Report/provider work uses separate operations; historical duplicates remain.
 
 Only unproved subjects without a legacy review flag accept missing contact
 backfills. Proved/review subjects keep their top-level contact hints; extraction
@@ -156,7 +155,7 @@ Read-only anomaly inventory: project Python
 `scripts/inventory_candidate_contacts.py --database <explicit SQLite file>`.
 It reports aggregate counts and missing proof-schema coverage without identifiers,
 hash values, configuration loading or a repair mode. Actual inventory evidence:
-[R1-S2-T4B](docs/delivery/EVIDENCE-R1.md#r1-s2-t4b).
+R1-S2-T4B.
 
 ## Database schema (ER, ASCII)
 
@@ -287,7 +286,7 @@ The text cap applies before trimming, including after PDF extraction; raw
 base64 size is also capped. Text takes precedence when both sources are sent.
 Sparse readable resumes remain valid and can yield advisory insufficient-data
 results. PDF page/work/expansion containment is still pending in
-[R2-S1-T2B](docs/delivery/EVIDENCE-R2.md#r2-s1-t2b).
+R2-S1-T2B.
 
 ## Extraction coverage (S9.2)
 
