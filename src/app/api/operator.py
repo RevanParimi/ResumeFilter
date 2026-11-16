@@ -1,4 +1,4 @@
-"""Admin accounts, retention, metrics and advisory signal-quality reports.
+"""Admin accounts, retention and metrics.
 
 Shared principal/CSRF dependencies guard every operation. Separate router
 segments preserve the existing API registration order around other areas.
@@ -6,7 +6,6 @@ segments preserve the existing API registration order around other areas.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
@@ -16,9 +15,6 @@ from app.api.dependencies import _services, require_api_key
 from app.auth.schema import AdminUser
 from app.retention.schema import SweepReport
 from app.retention.sweep import run_sweep
-from app.signal_quality.labels import LedgerLabelSource, OutcomesLabelSource
-from app.signal_quality.schema import SignalQualityReport
-from app.signal_quality.service import measure
 
 
 metrics_router = APIRouter(dependencies=[Depends(require_api_key)])
@@ -106,39 +102,6 @@ async def create_admin_user(req: AdminUserRequest, request: Request) -> AdminUse
     return services.auth.create_admin_user(
         email_hash=email_hash, label=req.label
     ).model_dump(mode="json")
-
-
-@router.get("/admin/signal-quality", response_model=SignalQualityReport)
-async def signal_quality_report(
-    request: Request,
-    source: Literal["outcomes", "ledger"] = "outcomes",
-    include_operator_labels: bool = False,
-) -> SignalQualityReport:
-    """Do the advisory numbers predict what a human concluded? Admin plane.
-
-    ADMIN ONLY, AND THERE IS NO ORG-PLANE VARIANT. This report is cross-tenant
-    by construction: an organisation must not be able to learn how well the
-    fraud screen performs against other organisations' candidates. The honest
-    per-org version ("how is it doing on MY pipeline") is a different question
-    with its own sample-size problem, and inventing it here would ship a number
-    computed from a handful of rows.
-
-    Expect refusals. Below the sample floor, on a one-class sample, or for a
-    signal this source cannot score, each signal says so and carries no numbers
-    at all -- see app/signal_quality/service.py.
-    """
-    services = _services(request)
-    if source == "ledger":
-        label_source = LedgerLabelSource(services.report_store, services.ledger)
-    else:
-        label_source = OutcomesLabelSource(
-            services.report_store, include_operator_labels=include_operator_labels
-        )
-    return measure(
-        label_source,
-        min_samples=services.settings.min_signal_quality_samples,
-        bins=services.settings.signal_quality_curve_bins,
-    )
 
 
 @router.get("/admin/users", response_model=list[AdminUser])

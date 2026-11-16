@@ -58,7 +58,6 @@ def main():
     from app.candidates.store import CandidateStore
     from app.ledger.store import LedgerStore
     from app.reports.models import ReportRow
-    from app.reports.schema import OutcomeLabel, OutcomeRecord, OutcomeSource
     from app.reports.store import SqlReportStore
 
     checks = Smoke("R2-S2-T1 style exclusion / historical semantics / persistence")
@@ -210,18 +209,6 @@ def main():
             checks.check("historical HTTP read preserves score and style-inclusive version",
                          old_response["fabrication_risk"] == {**historical_body["fabrication_risk"], "scorer_version": 1})
             saved[hrid] = old_response
-            for rid in (hrid, elevated[-1]["report"]["id"]):
-                report = rs.get(rid)
-                from datetime import timedelta
-                rs.add_outcome(OutcomeRecord(report_id=rid, outcome=OutcomeLabel.INCONCLUSIVE,
-                    recorded_by=OutcomeSource.ORGANIZATION, recorded_at=report.created_at + timedelta(days=1)))
-                rs.add_outcome(OutcomeRecord(report_id=rid, outcome=OutcomeLabel.VERIFIED_GENUINE,
-                    recorded_by=OutcomeSource.ORGANIZATION, recorded_at=report.created_at + timedelta(days=2)))
-            quality = require(http.get("/admin/signal-quality"))
-            checks.check("HTTP measurement keeps population but excludes historical risk sample",
-                         quality["population"]["labels_usable"] == 2 and all(
-                item["n"] == 1 and not item["sufficient"] for item in quality["signals"]
-                if item["signal"] in ("fabrication_risk.score", "fabrication_risk.band")))
 
             legacy = replace(view, version=1, members=tuple(
                 (name, 1 if name in ("fabrication.risk_score", "fabrication.risk_band") else version)

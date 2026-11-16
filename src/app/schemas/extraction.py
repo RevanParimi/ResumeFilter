@@ -55,7 +55,7 @@ class CoverageGap(BaseModel):
 class ExtractionCoverage(BaseModel):
     """Did the extractor read what the resume actually says?
 
-    A refusal (INSUFFICIENT_DATA) carries NO gaps -- see S9.1's SIGNALS.md: a
+    A refusal (INSUFFICIENT_DATA) carries NO gaps: a
     measurement that could not be taken must not be readable as one that was.
     """
 

@@ -1405,7 +1405,7 @@ def test_operator_accounts_preserve_planes_cookie_csrf_and_target_session_revoca
     org_key = services.ledger.issue_api_key(org.id)
     cid, _ = saved_source(services.session_factory)
     candidate_key = services.candidates.issue_access_key(cid)
-    reads = ("/admin/users", "/metrics", "/admin/signal-quality")
+    reads = ("/admin/users", "/metrics")
     with TestClient(operator_app(services), raise_server_exceptions=False) as root, \
             TestClient(operator_app(services)) as actor, TestClient(operator_app(services)) as other:
         for headers in ({}, {"X-API-Key": "invalid"}, {"X-Org-Key": org_key}, {"X-Candidate-Key": candidate_key}):
@@ -1509,39 +1509,6 @@ def test_operator_retention_preserves_safe_preview_refusal_cap_and_metrics(servi
         assert metrics.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
         assert 'veritas_retention_deleted_total{data_class="resumes"} 2' in metrics.text
         assert all(value not in metrics.text for value in (*expired, recent, "private retention fixture"))
-
-
-def test_operator_signal_quality_preserves_label_opt_in_floor_refusals_and_privacy(services):
-    from tests.test_signal_quality_labels import _saved, _judge
-
-    services.settings.min_signal_quality_samples = 3
-    store = services.report_store
-    genuine, fabricated, inconclusive = [_saved(store) for _ in range(3)]
-    _judge(store, genuine, OutcomeLabel.VERIFIED_GENUINE)
-    _judge(store, fabricated, OutcomeLabel.VERIFIED_FABRICATED, source=OutcomeSource.OPERATOR)
-    _judge(store, inconclusive, OutcomeLabel.INCONCLUSIVE)
-    with TestClient(operator_app(services), headers=ADMIN_HEADERS) as client:
-        response = client.get("/admin/signal-quality")
-        assert response.status_code == 200
-        default = response.json()
-        assert default["population"]["label_source"] == "outcomes"
-        assert default["population"]["label_kind"] == "fraud"
-        assert default["population"]["include_operator_labels"] is False
-        assert default["population"]["labels_usable"] == 1
-        opted = client.get("/admin/signal-quality?include_operator_labels=true").json()
-        assert opted["population"]["include_operator_labels"] is True and opted["population"]["labels_usable"] == 2
-        for body in (default, opted):
-            assert len(body["signals"]) == 12 and all(not s["sufficient"] for s in body["signals"])
-            fraud = next(s for s in body["signals"] if s["signal"] == "fabrication_risk.score")
-            assert fraud["reason"] == "insufficient_samples" and fraud["detail"].endswith("need 3")
-            assert set(fraud) == {"signal", "sufficient", "reason", "n", "detail"}
-        ledger = client.get("/admin/signal-quality?source=ledger").json()
-        assert ledger["population"]["label_source"] == "ledger" and ledger["population"]["label_kind"] == "hire"
-        fraud = next(s for s in ledger["signals"] if s["signal"] == "fabrication_risk.score")
-        assert fraud["reason"] == "label_kind_mismatch" and "auc" not in fraud
-        assert client.get("/admin/signal-quality?source=unknown").status_code == 422
-        assert client.get("/admin/signal-quality?include_operator_labels=invalid").status_code == 422
-        assert all(report.id not in response.text for report in (genuine, fabricated, inconclusive))
 
 
 # Public surface and final composition

@@ -157,18 +157,6 @@ def main():
                     report = require(admin.post("/evaluate", json={"domain": "genai",
                         "resume_text": "Synthetic signal report\nSkills: Python SQL\nBuilt an API and tested its behavior."}))
                     require(a.post(f"/report/{report['id']}/outcome", json={"outcome": "verified_genuine"}))
-                    quality = require(a.get("/admin/signal-quality"))
-                    opted = require(a.get("/admin/signal-quality?include_operator_labels=true"))
-                    ledger_quality = require(a.get("/admin/signal-quality?source=ledger"))
-                    checks.check("signal HTTP report retains operator-label opt-in and insufficient-sample refusals",
-                        quality["population"]["labels_usable"] == 0 and opted["population"]["labels_usable"] == 1
-                        and opted["population"]["include_operator_labels"] is True
-                        and len(opted["signals"]) == 12 and all(not s["sufficient"] for s in opted["signals"]))
-                    checks.check("ledger signal source keeps hire labels and mismatch refusal; malformed queries refuse",
-                        ledger_quality["population"]["label_kind"] == "hire"
-                        and next(s for s in ledger_quality["signals"] if s["signal"] == "fabrication_risk.score")["reason"] == "label_kind_mismatch"
-                        and a.get("/admin/signal-quality?source=unknown").status_code == 422
-                        and a.get("/admin/signal-quality?include_operator_labels=invalid").status_code == 422)
                     metrics = a.get("/metrics")
                     checks.check("metrics HTTP response retains Prometheus media type and omits source identities",
                         metrics.status_code == 200 and metrics.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
@@ -274,7 +262,7 @@ def main():
                                            ("candidate", {"X-Candidate-Key": key})):
                         checks.check(label + " cannot inspect/mutate operator surfaces",
                             all(stranger.get(path, headers=headers).status_code == 401
-                                for path in ("/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality"))
+                                for path in ("/ledger/orgs", "/admin/users", "/metrics"))
                             and stranger.post("/admin/retention/sweep", json={}, headers=headers).status_code == 401
                             and stranger.post(f"/ledger/orgs/{oid}/reliability", json={"weight": 99}, headers=headers).status_code == 401
                             and stranger.delete(f"/admin/users/{operators[1]['id']}", headers=headers).status_code == 401)
@@ -301,8 +289,6 @@ def main():
                         checks.check("retention preserves the active candidate resume and clears the expired one",
                             not list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == retained)))
                             and bool(list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == second)))))
-                    checks.check("operator label and signal refusal survive graceful restart",
-                        require(b.get("/admin/signal-quality?include_operator_labels=true"))["population"] == opted["population"])
                     checks.check("queue revision survives real app restart", queue(b) == [restart])
                     checks.check("combined restart preserves sessions/accounts/org settings and keys",
                         len(require(b.get("/admin/users"))) == 2
@@ -331,9 +317,9 @@ def main():
                         and {o["id"] for o in require(b.get("/ledger/orgs"))} == {org_b["org"]["id"]})
                     require(b.delete(f"/admin/users/{operators[0]['id']}"))
                     checks.check("revoked operator cannot reuse revision and other operator remains",
-                        all(a.get(p).status_code == 401 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality"))
+                        all(a.get(p).status_code == 401 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics"))
                         and a.post("/admin/retention/sweep", json={}).status_code == 401
-                        and all(b.get(p).status_code == 200 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics", "/admin/signal-quality")))
+                        and all(b.get(p).status_code == 200 for p in ("/curation/skills/unmapped", "/ledger/orgs", "/admin/users", "/metrics")))
             logged = (scratch / "server.log").read_text(encoding="utf-8")
             checks.check("HTTP logs omit captured codes and operator emails", all(value not in logged for value in [*emails, *codes]))
         finally:

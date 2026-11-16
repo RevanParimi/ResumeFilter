@@ -18,7 +18,7 @@ scoring judges answer content, not appearance or inferred emotion.
 | Login and portal | Email-code login on every plane, sessions and signed-in devices, the candidate portal (my data, access log, consents, erasure), data-rights requests and the public grievance contact. | [Auth](AUTH.md), [portal](PORTAL.md) |
 | Verification | Contact verification, assurance levels, manual review and employment documents. | [Verification](VERIFICATION.md) |
 | Interviews | Typed and voice answers, content scoring, the cheating check and consent-permitted employer summaries. | [Interviews](INTERVIEWS.md) |
-| Operator | Organisations screen, operator accounts, retention sweep, metrics and the signal-quality report. | [Operating](OPERATING.md), [signals](SIGNALS.md), [deploy](DEPLOY.md) |
+| Operator | Organisations screen, operator accounts, retention sweep and metrics. | [Operating](OPERATING.md), [deploy](DEPLOY.md) |
 
 Model choices are in [MODELS.md](MODELS.md); the original engine requirements
 are in [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).

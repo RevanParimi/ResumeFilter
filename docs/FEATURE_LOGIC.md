@@ -108,9 +108,8 @@ v1/v2 definitions; an extractor returns missing for another or unknown version.
 The default feature view keeps its configured name (`core_v1`) and uses bundle
 version 2. Existing v1 vectors remain accessible by explicit version; default
 search/matching uses v2 and needs a fresh operator materialization. No automatic
-data rewrite occurs. Current signal-quality risk samples omit v1/unknown scores;
-the labeled population still counts those reports. This is version isolation,
-not evidence of measured detection accuracy.
+data rewrite occurs. This is version isolation, not evidence of measured
+detection accuracy.
 
 ## Employer screening outcomes
 
@@ -119,11 +118,9 @@ not evidence of measured detection accuracy.
 It can apply to a report or one claim and records notes, actor/provenance and
 time. Employer access is scoped to the organization's screening reports.
 
-The outcome preserves the reviewer's resolution and supplies feedback for
-signal-quality analysis. It does not rerun the report, automatically retrain
-models, or mean the person was hired/rejected. Only qualifying genuine/fabricated
-labels supply binary signal-quality ground truth; clarification/inconclusive
-are excluded. Hiring-stage outcomes belong to the separate interview ledger.
+The outcome preserves the reviewer's resolution. It does not rerun the report,
+automatically retrain models, or mean the person was hired/rejected.
+Hiring-stage outcomes belong to the separate interview ledger.
 
 R1-S1-T1 retention update: reports/outcomes remain in SQL, including reviewer
 notes. The production observer no longer writes JSONL copies of claims, probes,

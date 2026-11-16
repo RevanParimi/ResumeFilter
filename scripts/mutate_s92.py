@@ -4,7 +4,7 @@ The checks ARE the deliverable. A suite that survives mutating a refusal
 direction or a severity is not testing them -- and a wrong coverage band still
 returns a plausible-looking enum, which is the failure mode that hides longest.
 
-Modelled on scripts/mutate_s91.py. Run from the repo root:
+Run from the repo root:
     python scripts/mutate_s92.py
 Exit 0 means every mutant died. A SURVIVOR MEANS A TEST IS MISSING.
 
