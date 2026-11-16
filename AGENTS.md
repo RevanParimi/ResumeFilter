@@ -1,65 +1,38 @@
-# Veritas project handoff
+# Veritas agent guide
 
-Read `docs/PROGRESS.md` first at the start of every chat. If the user says
-"continue", resume its next incomplete task without repeating the audit or
-asking whether the already-authorized fixes should proceed.
+The remediation queue (the R1-R4 PI, sprint and session-task records) is closed
+by owner decision of 16 November 2026. Do not resume any open remediation task.
+There is no standing "next task": work starts from an explicit owner request.
+The closed delivery records remain in Git history.
 
-Execution structure is in `docs/delivery/README.md`: remediation PI -> sprint
--> session task. Read `docs/delivery/WORKFLOW.md` and the current task brief/PI
-section before implementing. Each task requires acceptance criteria, meaningful
-regressions, full pytest for code changes, relevant API/browser journeys and a
-recorded diff review. Follow the workflow's database/migration gates where
-applicable. Do not equate source/binding checks with browser execution, fakes
-with live-provider validation, or self-review with independent review.
-Missing required evidence leaves the task awaiting validation, not done.
+## Repository conventions
 
-The user wants exactly one task per chat session (confirmed 9 September 2026).
-Complete and test the next task, update the handoff, then stop. Do not start
-another backlog task in the same chat unless the user explicitly requests it.
-If an item is too large for a focused session, define bounded child sections
-in its existing task record and name the next one in the handoff. Complete only
-that subtask. Record unfinished work
-honestly; do not mark the parent task complete until all its subtasks are done.
-Read only the source, tests, and design notes relevant to that task; the long
-`docs/ROADMAP.md` is historical reference, not required reading end to end.
+- FastAPI backend in `src/app`, plain-JavaScript UI in `frontend/`, Alembic
+  migrations in `alembic/`, pytest suite in `tests/`.
+- Domain rules live in `src/app/domains/`; the evaluation pipeline does not
+  import a concrete domain.
+- Tunables live in `config.yaml` and `src/app/core/config.py`, secrets in
+  `.env`. Schema changes are new Alembic revisions; never edit an existing one.
+- Use first-party data only. A new table needs explicit consent and erasure
+  ownership.
+- Preserve deterministic model fallbacks, advisory human review, tenant
+  isolation and consent/erasure semantics.
+- Never equate polished or AI-assisted writing with fabricated experience.
+  Interview scoring judges answer content, not appearance or inferred emotion.
+- Keep secrets out of output and documentation. Do not open, migrate or
+  overwrite `data/veritas.db`; use scratch databases.
 
-Standing authorization (7 September 2026): fix the findings in
-`docs/CODEBASE_REVIEW_2026-09-07.md`, complete the unfinished feature flows, and
-simplify unnecessary code. Prefer small direct fixes over new abstraction
-layers. This does not authorize deployment, sending messages, or discarding
-existing user data.
+## Validation
 
-Standing completion workflow (20 October 2026): after the task's implementation,
-required validation and completion record, perform a distinct final review of the
-completed work. Resolve blocking findings and rerun affected checks, then commit
-and push the scoped reviewed changes to the configured tracking branch. The user
-authorizes this commit/push sequence for completed tasks without another routine
-permission request. Verify the remote commit and report it. Preserve unrelated
-work and exclude secrets, working data and local artifacts. This final review is
-separate from implementation review; call it self-review unless another reviewer
-actually performed it. Do not start another backlog task as part of publication.
-
-Use `.resume/Scripts/python.exe` on Windows for Python commands. System Python
-is not the project environment. Tests: `.resume/Scripts/python.exe -m pytest -q`.
-Add meaningful regression tests for correctness/security fixes; tests must run
-offline using the existing fake providers and isolated stores. UI checks:
-`node scripts/check_ui_bindings.js`, plus relevant browser/contract tests.
-
-Preserve advisory/human-review behavior, tenant isolation, consent/erasure
-semantics, domain-independent evaluation, and deterministic model fallbacks.
-Never equate polished/AI-assisted writing with fabricated experience. Video
-interview scoring must judge answer content, not appearance or inferred emotion.
-Keep secrets out of output and documentation. Do not overwrite the existing
-modified `data/veritas.db` or previously uncommitted work.
-
-Before finishing a chat, update `docs/PROGRESS.md` with completed task IDs,
-tests actually run, changed behavior, remaining risks, and the exact next task.
-Update the task's PI status and its existing evidence section. Active tasks live
-in `docs/delivery/tasks/`; completed records use PI evidence anchors. Keep the
-handoff short. Add detailed evidence to the relevant existing record and
-a brief session entry to `docs/ROADMAP.md` when appropriate.
-
-Avoid documentation duplication: parents link to child evidence instead of
-copying test logs. Reuse the existing audit/task record for maintenance reviews;
-new task files require a distinct acceptance/validation contract. See the
-documentation ownership rules in `docs/delivery/WORKFLOW.md`.
+- Python: `.resume/Scripts/python.exe` on Windows (system Python is not the
+  project environment). On Linux export `PYTHONPATH=src` first.
+- Clear inherited `DEE_*` variables before running tests. Set
+  `DEE_TEST_DB_URL` only to a database you may destroy: the Postgres variants
+  run migrations against it.
+- Full suite: `python -m pytest -q --tb=short`. Tests run offline with the
+  existing fake providers and isolated stores. Correctness and security fixes
+  need a regression test.
+- UI: `node scripts/check_ui_bindings.js`, `node --check` on each touched
+  frontend file and the matching `node scripts/test_ui_*.js`. Binding and
+  source checks are not browser execution, and fakes are not live-provider
+  validation.
