@@ -4,13 +4,12 @@ The **feature registry** is a versioned, in-code catalog of ML *feature
 definitions* over the data three subsystems already produce — candidate
 profiles, depth-evaluation reports, and the consent-gated evaluation ledger
 (interview records, coding rounds, reputation). It is the definition/compute
-layer the rest of PI-4 consumes: **S4.2** materializes registered features into a
-wide `ml_features` table + export; **S4.3** ranks/searches over them; **S4.4**
-exports features ⋈ outcomes as a training set.
+layer the rest of PI-4 consumes: **S4.2** materializes registered features into
+`ml_feature_vectors`; **S4.3** adds the ranking engine that job matching uses.
 
 S4.1 defines *what features exist and how each is computed from one candidate's
-point-in-time snapshot*. It does **not** persist feature values (S4.2), serve
-them over HTTP (S4.3), or join labels/outcomes (S4.4).
+point-in-time snapshot*. It does **not** persist feature values (S4.2) or rank
+them (S4.3).
 
 ## Model (`src/app/features/`)
 
@@ -34,7 +33,7 @@ Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
   category) so an out-of-contract value is a loud bug, never a silent clamp.
 - **`FeatureView`** — a named, versioned bundle pinning exact `(name, version)`
   pairs; the default view **`core_v1`** (config knob `feat_default_view`) pins
-  every seed feature at its latest version, making a materialization/training run
+  every seed feature at its latest version, making a materialization run
   reproducible. `compute_view` yields a **`FeatureVector`** (values + `missing`).
   Since R2-S2-T1, this bundle uses version **2**, retaining the configured name.
   Its risk score/band members use factual-risk v2 and exclude writing style.
@@ -93,8 +92,8 @@ Fully offline. Contracts + registry validation + each seed feature (incl.
 
 ## S4.2 — Materialization
 
-S4.2 turns the S4.1 *definitions* into persisted, point-in-time-correct rows +
-a wide export. Nothing here scores or ranks (S4.3) or joins labels (S4.4).
+S4.2 turns the S4.1 *definitions* into persisted, point-in-time-correct rows.
+Nothing here scores or ranks (S4.3).
 
 ### Point-in-time slicer (`context.py`)
 
@@ -110,7 +109,7 @@ a wide export. Nothing here scores or ranks (S4.3) or joins labels (S4.4).
 `build_context` stays a **raw platform-internal assembler**: it reads the full
 ledger snapshot and applies **no consent policy** — that is the materializer's
 job. A vector at `as_of=T` reflects only data timestamped `<= T`, even when newer
-rows exist now (the no-leakage guarantee S4.4's label-join depends on).
+rows exist now.
 
 ### Consent gate (`consent.has_any_active` + `LedgerStore.materialization_consent`)
 
@@ -151,17 +150,6 @@ naive-UTC so the equality lookup round-trips on SQLite. The `candidate_id` FK is
 `ondelete=CASCADE`, so **DPDP erasure sweeps materialized rows with the
 candidate** — no new erasure path (proven by the cascade test + drift guard).
 
-### Export (`export.py`)
-
-The **wide** deliverable is an export-time pivot: header `candidate_id, as_of,
-view_name, view_version` then one column per feature **in `view.members` order**.
-`export_view_csv` (stdlib `csv`) is always available; null / consent-withheld →
-empty cell. `export_view_parquet` types each column from `spec.dtype` and raises
-`ParquetUnavailable` when `pyarrow` is not installed (an optional extra, **not**
-in core requirements). Exports require an explicit registry/ledger store and
-recheck current permission before serializing gated values, retaining the
-historical snapshot. See the S4.4 export policy below for timing and scope.
-
 ### S4.3 seam
 
 The JSON `feature_values` column keeps S4.2 migration-free as the catalog grows.
@@ -172,13 +160,12 @@ materialized wide view) without changing how S4.2 writes.
 
 Slicer (`profile_as_of`, point-in-time `build_context`), `has_any_active`,
 `materialization_consent` (allowed/withheld + audit), materializer masking,
-`FeatureStore` (upsert idempotency + cascade-on-erase), export (wide CSV shape +
-guarded parquet), migration drift guard extended to `ml_feature_vectors`.
+`FeatureStore` (upsert idempotency + cascade-on-erase), migration drift guard extended to `ml_feature_vectors`.
 
-## S4.3 — Talent search / ranking
+## S4.3 — Ranking engine
 
-S4.3 adds the **read/rank/serve** layer over the S4.2 rows: an advisory engine
-that filters and ranks the materialized candidate pool by a caller-supplied
+S4.3 adds the **rank** layer over the S4.2 rows that job matching uses: an
+advisory engine that filters and ranks the materialized candidate pool by a
 composite score, with per-feature explainability. It **narrows and orders** — it
 never auto-rejects, and a candidate is **never penalized for consent-withheld or
 absent data**. No new table, no migration, no LLM.
@@ -192,8 +179,7 @@ Two pure modules (no I/O, no store, no clock — the `fabrication/risk.py` patte
   `exists`/`missing`; list only for `in_`/`not_in`); `RankingTerm{feature,
   weight>0, direction}`; `RankingSpec{terms}` (non-empty); `Contribution` (the
   per-feature explanation); `RankedCandidate{candidate_id, score, coverage,
-  contributions, missing}`; `SearchResult{advisory=True, as_of, view_name/version,
-  pool_size, filtered_size, ranked}`.
+  contributions, missing}`.
 - **`ranking.py`** — `apply_filters` (dtype-aware predicate eval; null fails every
   comparison, only `missing`/`exists` handle it; ordinal ordered ops use the
   category index; unknown feature → `KeyError`, ordered op on a non-orderable
@@ -221,147 +207,26 @@ fraction (share of ranking weight that had data — the `reputation.py`/`risk.py
 confidence pattern). Missing consent adds no score penalty or automatic rejection.
 Relative rank can still change when terms drop or normalization pools change.
 
-### Serving (`POST /talent/search`, admin plane)
-
-One endpoint on the admin `router` (`X-API-Key`). Body: `ranking` (required,
-non-empty), `filters` (optional), `view_name`/`view_version` (default the
-materialized `core_v1`/v1), `as_of` (default the view's newest cut via
-`FeatureStore.latest_as_of`), `limit` (default `search_default_limit`, 50). The
-handler resolves specs **per referenced feature** from the registry (unknown name
-→ 400), loads the pool via `FeatureStore.latest_vectors_for_view`, applies current
-consent via `current_consent_vectors`, then filter → score →
-sort → limit. Errors: unknown feature / dtype-invalid op → 400; empty `ranking` →
-422; no admin key → 401. An unmaterialized view is not an error — it yields an
-empty pool (still 200, `advisory=True`).
-
 ### Consent, point-in-time, DPDP
 
 - **Current consent** is checked before filters, normalization and scoring.
-  Admin search requires any currently active `ledger_read` grant; `JobStore`
-  requires a grant for the requesting org or a wildcard. Historical `as_of` and
+  `JobStore` requires a grant for the requesting org or a wildcard. Historical `as_of` and
   cached `consent_state.allowed` cannot authorize current use. Gated values are
   masked in a serving copy; historical materialization stays intact. A new grant
   cannot fill historically withheld values. Existing job rankings use first-party
   and synthetic terms. Consent reads are snapshots, not locks across delivery.
-  R1-S2-T1 evidence owns validation and limits;
-  R1-S2-T2 evidence owns the export/training
-  extension of the same policy.
-- **Point-in-time**: `as_of` is a cutoff. Search and job matching select each
+- **Point-in-time**: `as_of` is a cutoff. Job matching selects each
   candidate's latest snapshot at or before it, so refreshing one candidate does
   not remove the others from the pool. Matching reads each profile at its own
-  vector's timestamp. Exact-cut exports still use `vectors_for_view`.
+  vector's timestamp.
 - **Batch refresh**: omitted `as_of` is resolved once per run, shared across all
   candidates, and returned by `POST /features/materialize`.
-- **DPDP**: no new candidate-linked table ⇒ no new erasure path; search reads
+- **DPDP**: no new candidate-linked table ⇒ no new erasure path; matching reads
   `ml_feature_vectors`, which already CASCADE-deletes with the candidate.
-
-### Config
-
-One knob: **`search_default_limit`** (int, default 50, `ge=1`). No numeric scoring
-knobs — weights/directions are per-request; normalization is code + spec driven.
 
 ### Testing (S4.3)
 
 Fully offline: filter ops per dtype (incl. null/exists/missing, ordinal-index
 comparisons, dtype-invalid op), normalization per dtype + `lower_better` +
 range-less fallback, scoring math (renormalization, coverage, tie-break, and the
-consent-withheld-not-penalized invariant asserted directly), `latest_as_of`,
-`Services.features` wiring, and endpoint 200/400/401/422 + `advisory=True` + limit
-+ `as_of` selection + empty pool.
-
-## S4.4 — Training-set export (features ⋈ outcomes)
-
-S4.4 adds the **label-join / training-set export** layer: each stored
-`ml_feature_vectors` row (features at `as_of=T`) joined to a **ground-truth label
-derived only from ledger outcomes strictly after T** — the point-in-time-correct,
-leakage-free training set. Read-side only: **no new table, no migration, no HTTP,
-no LLM, no config knob** (mirrors S4.3).
-
-### No-leakage seam
-
-Features come from data timestamped `≤ T`; the label from `interview_records`
-with `interviewed_at > T` and `coding_round_results` with `taken_at > T`. The
-**strict `>`** is the guarantee — a record at exactly `T` fed the features and can
-never be a label (asserted directly in tests + smoke).
-
-### Label (`training_schema.py` + `training.py`)
-
-`build_label` is pure (no store/clock — the `risk.py`/`reputation.py` pattern).
-Per vector it emits a `TrainingLabel`:
-
-- `outcome` — **terminal-best** post-cut interview outcome, ranked
-  `hired>offer>advanced>rejected>no_show`; **`withdrawn` excluded** (non-signal,
-  per S3.4). `hired` = terminal ∈ `{hired, offer}`.
-- `event_at` / `lag_days` — earliest `interviewed_at` carrying that outcome, and
-  its distance from `as_of` in days (lets a modeler window/censor).
-- `coding_best_percentile` — max post-cut coding percentile (independent of the
-  interview label).
-- `observed` — a post-cut non-withdrawn interview record exists. When False the
-  example is **right-censored** (`hired`/`outcome` null) — *not* a negative.
-- `withheld` — historical or current consent denied use; every label value is
-  null. Denied outcomes are not fetched; permission is rechecked after reads.
-
-### Consent (historical ceiling plus current permission)
-
-`build_training_set` requires both the historical S4.2 permission stored in
-`MaterializedVector.consent_state` and current `ledger_read`. Platform use needs
-any active grant; an explicit `org_id` needs that org or a wildcard. Other
-purposes, future, revoked and expired grants cannot authorize use at an older
-`as_of`. Denied outcomes are never fetched. Permission is rechecked after the
-outcome reads and for each assembled example before returning the set. The
-metrics `LedgerLabelSource` also requires historical and present permission.
-
-Each join is audited as `training.label` (allowed/withheld at its check);
-`audit=False` suppresses audit writes without bypassing authorization. A later
-revocation may make the final output withheld after an earlier allowed audit.
-Pure `build_label`/`build_training_example` reducers use explicitly supplied
-decisions; they do not authorize store reads. `build_training_example` additionally
-enforces the stored historical ceiling and masks gated features in a copy.
-
-### Export (`export.py`)
-
-`export_training_csv` / `export_training_parquet` = the S4.2 wide feature pivot
-(shared `feature_columns` / `vector_cells` helpers) **plus** appended
-`label_hired, label_outcome, label_coding_best_percentile, label_event_at,
-label_lag_days, label_observed, label_withheld`. All four feature/training
-writers require explicit `registry` and `ledger_store` arguments, with optional
-`org_id` for scoped use. They recheck current permission for cached inputs and
-omit erased subjects. Denial masks gated features and every label value,
-including coding percentile, event time and lag; first-party features survive.
-CSV checks each yielded row before writing. Parquet collects inputs first, then
-checks each row while assembling columns. Column order, null tokens and dtypes
-remain unchanged. Parquet stays guarded (`ParquetUnavailable` without pyarrow),
-before input iteration or file creation.
-
-### DPDP
-
-No new candidate-linked table ⇒ no new erasure path; labels recompute from ledger
-rows that already CASCADE on erasure, and the `training.label` audit rows are
-candidate-linked and CASCADE too.
-
-The training builder skips subjects erased before their audit commits and checks
-each assembled example's candidate existence again before returning, including
-with `audit=False`. It continues surviving subjects without exporting an erased
-subject as a withheld or censored row. Unrelated audit errors still propagate.
-These per-subject reads are snapshot boundaries, not locks across later checks
-or file delivery. A consent-read error propagates without a cached fallback;
-CSV may already contain earlier authorized rows when a later row fails.
-See D3c2 evidence for the erasure seam.
-
-Revocation invalidates **present use** through read-time masking; it does not
-rewrite historical feature values or cached materialization evidence.
-Re-materializing an old cut retains its point-in-time consent semantics and
-still cannot authorize current use. A new grant cannot fill a withheld old cut
-or cached label; explicitly materialize/build a fresh cut to use it. Regenerate
-exports and training sets after authorization changes. Already delivered files
-and previously trained models are not recalled by this change. No working-data
-cleanup or schema migration is part of this policy.
-R1-S2-T2 evidence owns validation and limits.
-
-### Testing (S4.4)
-
-Pure `build_label` (no-leakage boundary, terminal-best + withdrawn-excluded,
-event_at/lag, hire-positive set, censoring, coding-best, consent-withheld),
-`audit_training_label`, `build_training_set` over a mix (labeled / censored /
-withheld) proving no ledger read when withheld + every join audited, and labeled
-export shape (CSV header + values, guarded parquet).
+consent-withheld-not-penalized invariant asserted directly) and `latest_as_of`.

@@ -147,9 +147,6 @@ rep_coding_weight: 1.0           # coding-round evidence type weight
 # --- ML feature store (PI-4) - S4.1 feature registry --------------------------
 feat_default_view: core_v1      # default FeatureView name (all seed features)
 
-# --- ML feature store (PI-4) - S4.3 talent search / ranking -------------------
-search_default_limit: 50        # default page size for POST /talent/search
-
 # --- Demand side (PI-5) - S5.1 job requisition + role-conditioned matching -----
 match_default_limit: 25          # default shortlist size for POST /jobs/{id}/match
 match_skill_weight: 3.0          # dominant term: job-relative skill coverage

@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import csv
 
 import pytest
 from app.features.schema import FeatureContext
@@ -70,12 +69,11 @@ def test_risk_feature_versions_never_relabel_stored_scores(scorer_version):
     assert vector.values["fabrication.risk_score"] == (0.42 if scorer_version == 2 else None)
 
 
-def test_materialized_csv_keeps_historical_and_current_semantics_separate(services, tmp_path):
+def test_materialized_vectors_keep_historical_and_current_semantics_separate(services):
     from dataclasses import replace
     from app.candidates.extractor import heuristic_profile
     from app.candidates.schema import ExtractionResult
     from app.features import default_view, get_feature_registry
-    from app.features.export import export_view_csv
     from app.features.materialize import materialize_candidate
     from tests.conftest import set_extraction_created_at
 
@@ -98,11 +96,7 @@ def test_materialized_csv_keeps_historical_and_current_semantics_separate(servic
         rows = [materialize_candidate(cid, view=view, registry=reg, as_of=AS_OF,
             candidate_store=services.candidates, report_store=services.report_store,
             ledger_store=services.ledger) for cid in ids]
-        path = tmp_path / (str(view.version) + ".csv")
-        export_view_csv(rows, view=view, registry=reg, ledger_store=services.ledger, path=str(path))
-        with path.open(newline="", encoding="utf-8") as handle:
-            exported = list(csv.DictReader(handle))
-        for index, row in enumerate(exported, start=1):
-            assert row["view_version"] == str(view.version)
-            assert row["fabrication.risk_score"] == ("0.42" if index == view.version else "")
-            assert row["fabrication.risk_band"] == ("moderate" if index == view.version else "")
+        for index, row in enumerate(rows, start=1):
+            assert row.vector.view_version == view.version
+            assert row.vector.values["fabrication.risk_score"] == (0.42 if index == view.version else None)
+            assert row.vector.values["fabrication.risk_band"] == ("moderate" if index == view.version else None)

@@ -32,8 +32,8 @@ Around that engine, the platform currently ships:
   coding-round records with purpose-scoped, revocable, audited DPDP consent, plus
   advisory Bayesian cross-company reputation → [LEDGER.md](LEDGER.md)
 - **ML feature store & ranking** (PI-4, done) — a versioned feature registry,
-  point-in-time materialization + CSV/parquet export, an admin talent-search /
-  ranking API, and leakage-free training-set export → [FEATURES.md](FEATURES.md)
+  point-in-time materialization and the ranking engine job matching uses →
+  [FEATURES.md](FEATURES.md)
 - **Demand side** (PI-5, done) — job requisitions + advisory role-conditioned
   match-ranking, advisory comp intelligence (static bands blended with
   consent-gated ledger-observed offers), and a read-only employer dashboard →
@@ -209,7 +209,7 @@ in the linked docs:
 | Surface | Plane | Key endpoints | Doc |
 |---------|-------|---------------|-----|
 | Evaluation ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/records` · `/coding-rounds` · `/offers`; `GET …/records` · `…/coding-rounds` · `…/reputation` (query-time consent, every access audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
-| Talent search / feature store | admin `X-API-Key` | `POST /talent/search` — filter + composite-score ranking over materialized feature vectors (advisory) | [FEATURES.md](FEATURES.md) |
+| Feature store | admin `X-API-Key` | `POST /features/materialize` — point-in-time feature vectors for matching | [FEATURES.md](FEATURES.md) |
 | Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) · `GET /dashboard/overview` · `GET /jobs/{id}/board` · `GET /candidates/{id}/card` | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md) |
 | Profile sources & curation | admin `X-API-Key` | `POST /candidates/{id}/sources/github` · `…/sources/linkedin` · `GET /candidates/{id}/sources`; `GET /curation/skills/unmapped` · `POST /curation/skills/resolve` | [PROFILE_SOURCES.md](PROFILE_SOURCES.md) · [CURATION.md](CURATION.md) |
 | Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
@@ -373,7 +373,7 @@ src/app/
   features/              PI-4 feature store & ranking → FEATURES.md
     registry.py, definitions/  @register_feature catalog (code-versioned)
     materialize.py, store.py   point-in-time vectors → ml_feature_vectors
-    ranking.py, export.py      composite-score ranking · CSV/parquet · training set
+    ranking.py                 composite-score ranking
   matching/              PI-5 demand side → MATCHING.md
     match.py, store.py   compile-to-ranking + skill coverage; JobStore
   comp/                  PI-5 comp intelligence → COMP.md
@@ -427,8 +427,7 @@ Dockerfile               non-root image with /healthz healthcheck
 - **PI-3 Evaluation ledger (done):** schema + DPDP consent · ledger APIs ·
   coding-round results · Bayesian cross-company reputation.
 - **PI-4 ML feature store & ranking (done):** feature registry ·
-  point-in-time materialization + export · talent search/ranking API ·
-  training-set export.
+  point-in-time materialization · ranking engine.
 - **PI-5 Demand side (in progress):** S5.1 job requisitions + role-conditioned
   matching ✓ · S5.2 comp intelligence v0 ✓ · S5.3 thin employer dashboard (next).
 - **PI-6 candidate side & intake · PI-7 verification & assessment depth ·

@@ -5,7 +5,6 @@ schema, and drops only that schema. All providers are disabled.
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
 import os
 from pathlib import Path
 import socket
@@ -22,7 +21,6 @@ from _smoke import Smoke, base_env, client, uvicorn_argv, wait_healthy
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-feature-timestamp-admin"
-RANKING = {"terms": [{"feature": "candidate.years_experience", "weight": 1.0}]}
 
 
 @contextmanager
@@ -110,28 +108,8 @@ def main():
             checks.check("batch materializes both candidates", first["materialized"] == 2)
             refreshed = require(http.post("/features/materialize", json={"candidate_ids": ids[:1]}))
             checks.check("partial refresh materializes one", refreshed["materialized"] == 1)
-            ranked = require(http.post("/talent/search", json={"ranking": RANKING}))
-            checks.check("newest cut retains both candidates", ranked["pool_size"] == 2)
-            checks.check("advisory ranking keeps senior first",
-                         ranked["advisory"] and [r["candidate_id"] for r in ranked["ranked"]] == ids)
-            checks.check("returned newest instant matches materialization",
-                         datetime.fromisoformat(ranked["as_of"]) == datetime.fromisoformat(refreshed["as_of"]))
-            cutoff = datetime.fromisoformat(first["as_of"])
-            offset_cut = cutoff.astimezone(timezone(timedelta(hours=5, minutes=30)))
-            historical = require(http.post("/talent/search", json={
-                "ranking": RANKING, "as_of": offset_cut.isoformat(),
-            }))
-            checks.check("offset historical cut preserves pool", historical["pool_size"] == 2)
-            before = require(http.post("/talent/search", json={
-                "ranking": RANKING, "as_of": (cutoff - timedelta(microseconds=1)).isoformat(),
-            }))
-            checks.check("earlier cut excludes future snapshots", before["pool_size"] == 0)
             board = require(http.get(f"/jobs/{job['id']}/board", headers=org_headers))
             checks.check("board sees materialized pool", board["match"]["pool_size"] == 2)
-            require(http.post("/talent/search", json={"ranking": RANKING, "filters": [{
-                "feature": "candidate.years_experience", "op": "gte", "value": "invalid",
-            }]}), 400)
-            checks.check("malformed numeric filter returns 400", True)
             require(http.delete(f"/candidates/{ids[0]}"))
             retried = require(http.post("/features/materialize", json={
                 "candidate_ids": ids, "as_of": first["as_of"],
@@ -144,10 +122,6 @@ def main():
             checks.check("new-cut retry cannot recreate erased vector",
                          refused["materialized"] == 0 and refused["skipped"] == 1)
         with server() as http:
-            ranked = require(http.post("/talent/search", json={"ranking": RANKING}))
-            checks.check("restart preserves only unerased candidate",
-                         ranked["pool_size"] == 1 and
-                         [r["candidate_id"] for r in ranked["ranked"]] == ids[1:])
             board = require(http.get(f"/jobs/{job['id']}/board", headers=org_headers))
             checks.check("board agrees after restart", board["match"]["pool_size"] == 1)
             retried = require(http.post("/features/materialize", json={"candidate_ids": ids}))

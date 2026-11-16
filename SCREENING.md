@@ -296,10 +296,10 @@ Keyset, opaque, and **carrying no authority**.
   ownership claim — that would make a client-supplied string load-bearing for
   tenancy, the opposite of Phase A's whole argument.
 
-**`POST /jobs/{id}/match` and `POST /talent/search` deliberately get no cursor.**
-Both re-rank their pool on every request, so there is no stored key to page on
-and a cursor would promise a stability they cannot keep. They keep `limit`, and
-their OpenAPI descriptions say so — a client author cannot see a decision the
+**`POST /jobs/{id}/match` deliberately gets no cursor.**
+It re-ranks its pool on every request, so there is no stored key to page on
+and a cursor would promise a stability it cannot keep. It keeps `limit`, and
+its OpenAPI description says so — a client author cannot see a decision the
 document does not state.
 
 `GET /curation/skills/unmapped` **is** cursor-paged, with a stated limitation:

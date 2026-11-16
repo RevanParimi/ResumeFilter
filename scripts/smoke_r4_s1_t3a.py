@@ -503,9 +503,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 101 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 99 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 101)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 99)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -652,36 +652,21 @@ def run(scratch, url, pg_options):
                 "title": "Synthetic Backend Role", "must_have_skills": ["Python"],
                 "comp_band": {"ctc_min": 1500000, "ctc_max": 2500000}}}))
             materialized = require(control.post("/features/materialize", json={}))
-            # T3G: actual feature/search composition, historical reads and CSRF.
-            search_body = {"as_of": materialized["as_of"], "ranking": {"terms": [
-                {"feature": "candidate.num_skills", "weight": 1},
-                {"feature": "reputation.score", "weight": 1}]}}
-            gated_search = {**search_body, "filters": [{"feature": "reputation.score", "op": "exists"}]}
+            # T3G: actual feature composition and CSRF.
             checks.check("feature routes refuse other planes and preserve admin session CSRF",
-                all(http.post(path, json=body).status_code == 401
-                    for http in (org, other_org, sibling) for path, body in (
-                        ("/features/materialize", {}), ("/talent/search", search_body))))
+                all(http.post("/features/materialize", json={}).status_code == 401
+                    for http in (org, other_org, sibling)))
             operator.headers.pop("X-CSRF-Token")
             operator.headers["X-API-Key"] = ADMIN
-            checks.check("valid admin key alongside a cookie cannot bypass feature CSRF", all(
-                operator.post(path, json=body).status_code == 403 for path, body in (
-                    ("/features/materialize", {}), ("/talent/search", search_body))))
+            checks.check("valid admin key alongside a cookie cannot bypass feature CSRF",
+                operator.post("/features/materialize", json={}).status_code == 403)
             operator.headers.pop("X-API-Key")
             operator.headers["X-CSRF-Token"] = admin_csrf
-            saved_search = require(operator.post("/talent/search", json=gated_search))
-            checks.check("historical platform search serves consented advisory contributions",
-                saved_search["advisory"] and saved_search["filtered_size"] == 1
-                and saved_search["ranked"][0]["candidate_id"] == subject
-                and any(term["feature"] == "reputation.score" for term in saved_search["ranked"][0]["contributions"]))
             refreshed = require(operator.post("/features/materialize", json={"candidate_ids": [subject, "missing"]}))
-            checks.check("partial feature refresh skips unknown IDs and keeps the full pool",
-                refreshed["materialized"] == refreshed["skipped"] == 1
-                and require(control.post("/talent/search", json=gated_search)) == saved_search
-                and require(control.post("/talent/search", json={"ranking": search_body["ranking"]}))["pool_size"] == materialized["materialized"])
-            checks.check("feature view and search input errors retain their HTTP contracts",
-                operator.post("/features/materialize", json={"view_name": "unknown-view"}).status_code == 422
-                and operator.post("/talent/search", json={"ranking": {"terms": []}}).status_code == 422
-                and operator.post("/talent/search", json={"ranking": {"terms": [{"feature": "unknown.feature", "weight": 1}]}}).status_code == 400)
+            checks.check("partial feature refresh skips unknown IDs",
+                refreshed["materialized"] == refreshed["skipped"] == 1)
+            checks.check("feature view errors retain their HTTP contracts",
+                operator.post("/features/materialize", json={"view_name": "unknown-view"}).status_code == 422)
             match_body = {"as_of": materialized["as_of"]}
             employer_match = require(org.post(f"/jobs/{job['id']}/match", json=match_body))
             employer_comp = require(org.get(f"/jobs/{job['id']}/comp"))
@@ -783,8 +768,6 @@ def run(scratch, url, pg_options):
                 and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
                 and require(org.get(f"/jobs/{job['id']}/board")) == employer_board
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
-            checks.check("historical feature search survives graceful restart exactly",
-                require(operator.post("/talent/search", json=gated_search)) == saved_search)
             checks.check("subject requests and grants survive graceful restart exactly",
                 require(sibling.get("/portal/requests")) == [correction]
                 and portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
@@ -807,12 +790,6 @@ def run(scratch, url, pg_options):
                 org.get(ledger_path + suffix).status_code == 403 for suffix in ("/records", "/coding-rounds", "/reputation"))
                 and org.post("/ledger/records", json=record_body).status_code == 403
                 and org.post("/ledger/coding-rounds", json=coding_body).status_code == 403)
-            revoked_search = require(control.post("/talent/search", json=search_body))
-            revoked_subject = next(row for row in revoked_search["ranked"] if row["candidate_id"] == subject)
-            checks.check("revocation masks historical search before filtering and preserves first party values",
-                require(operator.post("/talent/search", json=gated_search))["filtered_size"] == 0
-                and revoked_subject["missing"] == ["reputation.score"]
-                and [term["feature"] for term in revoked_subject["contributions"]] == ["candidate.num_skills"])
             revoked_card = require(org.get(f"/candidates/{subject}/card"))
             require(operator.post(f"/ledger/consent/{employer_write['id']}/revoke"))
             checks.check("employer card and offer honor consent revocation after restart", all(

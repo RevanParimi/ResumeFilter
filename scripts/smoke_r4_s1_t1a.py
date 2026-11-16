@@ -23,8 +23,6 @@ from smoke_r1_s1_t3a_v1 import database
 
 ROOT = Path(__file__).resolve().parents[1]
 ADMIN = "synthetic-shared-sql-admin"
-RANKING = {"terms": [{"feature": "candidate.num_skills", "weight": 1},
-    {"feature": "reputation.score", "weight": 1}]}
 
 
 def create_smoke_app():
@@ -142,15 +140,11 @@ def main(*, provider_checks=False, composition_checks=False):
                         and response.content==(ROOT/"frontend"/source.removeprefix("./")).read_bytes())
                 checks.check("production HTTP refuses anonymous access to protected planes",
                     all(public.get(path).status_code==401 for path in
-                        ("/portal/me", "/admin/users", "/ledger/orgs", "/curation/skills/unmapped"))
-                    and public.post("/talent/search", json={"ranking":RANKING}).status_code==401)
+                        ("/portal/me", "/admin/users", "/ledger/orgs", "/curation/skills/unmapped")))
                 checks.check("production HTTP refuses private and retired UI assets",
                     all(public.get("/ui/"+name).status_code==404 for name in
                         (".env", "config.yaml", "src/app/main.py", "design-system.js")))
                 return schema
-        def search(admin,cut):
-            return require(admin.post("/talent/search",json={"as_of":cut,"ranking":RANKING,
-                "filters":[{"feature":"reputation.score","op":"exists"}]}))
         def exercise_providers(admin, actor):
             report = require(admin.post("/evaluate", json={"resume_text":document,
                 "domain":"data_eng", "github_url":"https://github.com/synthetic/repo"}))
@@ -186,8 +180,7 @@ def main(*, provider_checks=False, composition_checks=False):
                 require(org_a.post("/ledger/records",json={"candidate_id":cid,"stage":"hm","outcome":"hired",
                     "interviewed_at":(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()}))
                 batch = require(admin.post("/features/materialize",json={}))
-                cut = batch["as_of"]
-                checks.check("materialization and consent-gated search see shared saved data", batch["materialized"]==2 and search(admin,cut)["filtered_size"]==1)
+                checks.check("materialization sees shared saved data", batch["materialized"]==2)
                 job = require(org_a.post("/jobs",json={"title":"Shared SQL Engineer","must_have_skills":["python"]}))
                 checks.check("job service works and refuses another employer", org_a.post(f"/jobs/{job['id']}/match",json={}).status_code==200
                     and org_b.post(f"/jobs/{job['id']}/match",json={}).status_code==404)
@@ -197,11 +190,10 @@ def main(*, provider_checks=False, composition_checks=False):
             with server() as admin:
                 if composition_checks:
                     checks.check("graceful restart preserves the complete HTTP OpenAPI document", surface()==initial_schema)
-                checks.check("graceful process restart preserves report, portal and search", require(org_a.get(f"/screening/reports/{rid}"))==saved_report
-                    and require(actor.get("/portal/me"))["candidate_id"]==cid and search(admin,cut)["filtered_size"]==1)
+                checks.check("graceful process restart preserves report and portal", require(org_a.get(f"/screening/reports/{rid}"))==saved_report
+                    and require(actor.get("/portal/me"))["candidate_id"]==cid)
                 if provider_checks: exercise_providers(admin, actor)
                 require(actor.post(f"/portal/consents/{grant['id']}/revoke"))
-                checks.check("current consent revocation still masks historical search", search(admin,cut)["filtered_size"]==0)
                 require(actor.delete("/portal/me"))
                 checks.check("erasure revokes subject and report without affecting survivor", actor.get("/portal/me").status_code==401
                     and org_a.get(f"/screening/reports/{rid}").status_code==404

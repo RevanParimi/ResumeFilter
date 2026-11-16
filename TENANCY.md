@@ -329,16 +329,11 @@ cross-corpus object whose `resume_farm.matches[]` leaked in Phase A — is ever
 on the org-plane read path. Nothing below changed.
 
 
-`POST /evaluate` and `POST /talent/search` remain **admin-only** this sprint.
-Both are named non-goals in the spec (§8), not oversights:
-
-- **`POST /evaluate` is candidate-less** — it scores ad-hoc resume text with no
-  candidate or resume row behind it, so there is no upload to stamp an owner
-  on. Org-scoping it raises the tenancy question in a form nothing in the UI
-  needs yet.
-- **`POST /talent/search` reads the global feature store** — a genuinely
-  cross-corpus surface, which wants its own scoping decision rather than
-  inheriting this sprint's per-upload model by default.
+`POST /evaluate` remains **admin-only** this sprint. It is a named non-goal in
+the spec (§8), not an oversight: it is **candidate-less** — it scores ad-hoc
+resume text with no candidate or resume row behind it, so there is no upload to
+stamp an owner on. Org-scoping it raises the tenancy question in a form nothing
+in the UI needs yet.
 
 **Two org-plane routes are in the same category and are already reachable by a
 customer**, which is why they are named here rather than left to be
@@ -351,8 +346,7 @@ and it does not leak anything §7 redacts — but it means the org plane has mor
 than one cross-corpus data surface, and only the screening one is scoped by this
 sprint. The guard in §5 cannot see it either, since it watches `report_store`
 and `candidates` and this reads `features`. Scoping the marketplace surfaces is
-the same open decision as `/talent/search`, and it should be taken once, for all
-three.
+one open decision, and it should be taken once, for both.
 
 Also out of scope, by the same spec section: a worker/queue/scheduler (no
 background execution exists anywhere in `src/app/` yet — that is S8.3's), rate

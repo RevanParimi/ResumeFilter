@@ -390,10 +390,6 @@ class Settings(BaseSettings):
     # their latest version). Feature LOGIC is code-versioned, not config.
     feat_default_view: str = "core_v1"
 
-    # --- ML feature store (PI-4, S4.3): talent search / ranking ---------------
-    # Default page size for POST /talent/search when the caller omits `limit`.
-    search_default_limit: int = Field(default=50, ge=1)
-
     # --- Demand side (PI-5, S5.1): job requisition + role-conditioned matching -
     # Advisory role-match ranking over the S4.2 pool. Weights are the default
     # RankingTerm weights; a requisition may override any of them. skill coverage

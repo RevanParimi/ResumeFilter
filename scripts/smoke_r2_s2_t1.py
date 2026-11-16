@@ -7,7 +7,6 @@ report persistence and materialization remain in the app composition.
 
 from contextlib import contextmanager
 from copy import deepcopy
-import csv
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
@@ -52,7 +51,6 @@ def create_smoke_app():
 def main():
     from app.core.db import make_session_factory
     from app.features import default_view, get_feature_registry
-    from app.features.export import export_view_csv
     from app.features.materialize import materialize_candidate
     from app.features.store import FeatureStore
     from app.candidates.store import CandidateStore
@@ -228,19 +226,6 @@ def main():
             pair_id = low[0]["candidate_id"]
             checks.check("new materialization carries current factual score", current_by_id[pair_id].vector.values[
                 "fabrication.risk_score"] == elevated[-1]["report"]["fabrication_risk"]["score"])
-            for label, bundle, rows in (("historical", legacy, [historical_vector]), ("current", view, current)):
-                path = scratch / (label + ".csv")
-                export_view_csv(rows, view=bundle, registry=reg, ledger_store=ls, path=str(path))
-                with path.open(newline="", encoding="utf-8") as handle:
-                    exported = {row["candidate_id"]: row for row in csv.DictReader(handle)}
-                checks.check(label + " CSV preserves separate interpretation",
-                             exported[hcid]["fabrication.risk_score"] == ("0.75" if bundle.version == 1 else "") and
-                             exported[hcid]["view_version"] == str(bundle.version))
-            ranking = {"terms": [{"feature": "fabrication.risk_score", "weight": 1.0}]}
-            checks.check("default search selects current view", require(http.post(
-                "/talent/search", json={"ranking": ranking}))["view_version"] == 2)
-            checks.check("explicit historical search remains available", require(http.post(
-                "/talent/search", json={"ranking": ranking, "view_version": 1}))["view_version"] == 1)
             require(http.post("/features/materialize", headers={"X-API-Key": "wrong", **headers[1]}, json={}), 401)
             checks.check("org cannot materialize platform features", True)
         with server() as http:

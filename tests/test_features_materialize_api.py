@@ -124,8 +124,3 @@ def test_default_batch_and_partial_refresh_keep_all_candidates_searchable(servic
             match = c.post(f"/jobs/{job_id}/match", headers={"X-Org-Key": key}, json={})
             assert match.status_code == 200, match.text
             assert match.json()["pool_size"] == 2
-            search = c.post("/talent/search", json={"ranking": {"terms": [
-                {"feature": "candidate.years_experience", "weight": 1.0},
-            ]}})
-            assert search.status_code == 200, search.text
-            assert search.json()["pool_size"] == 2

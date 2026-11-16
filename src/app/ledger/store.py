@@ -81,10 +81,6 @@ class MaterializationCandidateMissingError(LookupError):
     """The subject disappeared before its materialization audit could commit."""
 
 
-class TrainingCandidateMissingError(LookupError):
-    """The subject disappeared before its training-label audit could commit."""
-
-
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -1035,46 +1031,6 @@ class LedgerStore:
                 raise
             return decision
 
-    def candidate_exists(self, candidate_id: str) -> bool:
-        """Fresh existence check for the training builder's snapshot handoff.
-
-        This is not a consent check or a lock across subsequent file delivery.
-        """
-        with self._session_factory() as session:
-            return session.get(CandidateRow, candidate_id) is not None
-
-    def audit_training_label(
-        self, candidate_id: str, *, allowed: bool, as_of: datetime
-    ) -> None:
-        """S4.4 training-set export: audit that the platform used (allowed) or
-        withheld (not allowed) this candidate's consent-gated outcomes as a
-        training label. Audit-only — it records the S4.2 materialization decision
-        reused at export time (single source of truth), does not recompute
-        consent. Missing/erased subjects raise TrainingCandidateMissingError;
-        unrelated persistence failures propagate. The candidate-linked row
-        CASCADEs on erasure."""
-        with self._session_factory() as session:
-            self._audit(
-                session,
-                actor_type="system",
-                actor_id="platform",
-                action="training.label",
-                entity_type="candidate",
-                entity_id=candidate_id,
-                candidate_id=candidate_id,
-                details={
-                    "allowed": allowed,
-                    "as_of": consent_logic.as_utc(as_of).isoformat(),
-                },
-            )
-            try:
-                session.commit()
-            except IntegrityError:
-                session.rollback()
-                if session.get(CandidateRow, candidate_id) is None:
-                    raise TrainingCandidateMissingError("candidate_unavailable") from None
-                raise
-
     def audit_request_event(
         self,
         candidate_id: str,
@@ -1088,9 +1044,8 @@ class LedgerStore:
     ) -> None:
         """S8.3 Phase B: a DPDP correction/grievance request changed state.
 
-        Named rather than a general `audit(...)` door, matching
-        `audit_training_label` above: every audit writer in this store says what
-        it is recording, so `_audit` stays private and no caller can invent an
+        Named rather than a general `audit(...)` door: every audit writer in
+        this store says what it is recording, so `_audit` stays private and no caller can invent an
         entity_type the candidate's own access log has never seen.
 
         The candidate_id is what puts this on the SUBJECT's access log --

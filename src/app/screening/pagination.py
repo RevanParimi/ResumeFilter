@@ -11,10 +11,9 @@ another merely positions inside the second. Nothing here should ever grow an
 ownership claim -- that would make a client-supplied string load-bearing for
 tenancy, which is the opposite of Phase A's whole argument.
 
-Deliberately NOT applied to ``POST /jobs/{id}/match`` or
-``POST /talent/search``: both re-rank their pool on every request, so there is
-no stored key to page on and a cursor would promise a stability it cannot keep.
-They keep ``limit``, and their OpenAPI descriptions say so.
+Deliberately NOT applied to ``POST /jobs/{id}/match``: it re-ranks its pool on
+every request, so there is no stored key to page on and a cursor would promise a
+stability it cannot keep. It keeps ``limit``, and its OpenAPI description says so.
 """
 
 from __future__ import annotations

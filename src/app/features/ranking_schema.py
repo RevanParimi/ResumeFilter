@@ -1,4 +1,4 @@
-"""Talent-search / ranking contracts (PI-4 / S4.3).
+"""Ranking contracts (PI-4 / S4.3).
 
 Pure, serializable request/result models + enums for the advisory ranking
 engine. No I/O, no callables. The engine lives in ranking.py.
@@ -6,7 +6,6 @@ engine. No I/O, no callables. The engine lives in ranking.py.
 
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Optional, Union
 
@@ -89,13 +88,3 @@ class RankedCandidate(BaseModel):
     coverage: float
     contributions: tuple[Contribution, ...] = ()
     missing: tuple[str, ...] = ()
-
-
-class SearchResult(BaseModel):
-    advisory: bool = True
-    as_of: Optional[datetime] = None
-    view_name: str
-    view_version: int
-    pool_size: int
-    filtered_size: int
-    ranked: tuple[RankedCandidate, ...] = ()
