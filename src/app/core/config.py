@@ -95,21 +95,16 @@ class Settings(BaseSettings):
     # SDK-level retries with backoff; provider blips degrade to rules, not 500s.
     llm_max_retries: int = 2
 
-    # --- Future model slots (PI-7 interviews / PI-8 embeddings) ----------------
-    # INERT until their sprint lands — declared now so model choices are
-    # business-tunable config, not code (research + direction: MODELS.md).
+    # --- Interview model slots (S7.3) ------------------------------------------
+    # Model choices are business-tunable config, not code (MODELS.md).
     #   scoring        → decisive interview-scoring calls (S7.3); advisory +
     #                    human-reviewed, so the value tier is the right default
     #   speech_provider→ openrouter (existing account, cheapest dev path) |
     #                    sarvam (India-hosted DPDP residency, prod) | local (PI-8)
-    #   asr/tts        → Indian-accented English first (Hinglish deferred)
-    #   embedding/reranker → PI-8 semantic match + PI-5/8 search quality
+    #   asr            → Indian-accented English first (Hinglish deferred)
     model_scoring: str = "deepseek/deepseek-v3.2"
     speech_provider: Literal["openrouter", "sarvam", "local"] = "openrouter"
     asr_model: str = "mistralai/voxtral-small-24b-2507"
-    tts_model: str = "kokoro-82m"
-    embedding_model: str = "qwen/qwen3-embedding-0.6b"
-    reranker_model: str = "qwen/qwen3-reranker-0.6b"
 
     # --- GitHub (provenance) --------------------------------------------------
     github_token: SecretStr = Field(default=SecretStr(""))

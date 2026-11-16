@@ -291,7 +291,7 @@ them would make two stored assessments incomparable.
 
 ## 11. Non-goals (S7.3)
 
-- TTS / spoken question delivery — `tts_model` stays inert.
+- TTS / spoken question delivery.
 - Video, liveness, **voice biometrics** — §6.
 - Org-invited, requisition-targeted interviews — needs an invite flow and a
   third-party-initiated DPDP basis.

@@ -24,15 +24,12 @@ verticals. Accented-English ASR is an easier, cheaper target than code-switch.
 | `asr_model` | **mistralai/voxtral-small-24b-2507** | $0.10 / $0.30 + audio | **ACTIVE since S7.3** via `speech_provider: openrouter`. Live-verified 2026-08-01 (see log) |
 | watch | moonshotai/kimi-k3 | $3.000 / $15.000 | Flagship; open weights 2026-07-27 — re-check for cheaper third-party hosting ~2 weeks after before considering for decisive calls |
 
-## Future slots (inert until their sprint; keys live in config.yaml today)
+## Speech slots (active since S7.3; keys live in config.yaml)
 
 | Slot (key) | Needed by | Default | Alternates | Notes |
 |---|---|---|---|---|
 | ~~`speech_provider`~~ (now active) | S7.3 | **openrouter** | sarvam · local | **Key finding: OpenRouter serves audio models on the EXISTING account — no new signup for v0.** Sarvam (₹30/hr ASR) is the *India data-residency* option for production DPDP posture, not a dev necessity. `local` = self-host GPU at PI-8 scale |
 | ~~`asr_model`~~ (now active) | S7.3 | **mistralai/voxtral-small-24b-2507** ($0.10/$0.30 + audio; open-weights → same model self-hostable later; **live-pinged OK**) | google/gemini-2.5-flash-lite (≈$0.03–0.10/hr audio, cheapest hosted); nemotron-3-nano-omni **:free** for dev; local: Qwen3-ASR 1.7B (Apache 2.0); Sarvam "saarika"; deferred Hinglish: Srota fine-tune | Evaluate on Indian-accented English samples, not just benchmarks |
-| `tts_model` | **still inert** (S7.3 deferred TTS: OpenRouter has none and local is a GPU dependency the offline suite cannot exercise) | **kokoro-82m** (local, near-free, Indian-English preset) | Orpheus-3B (richer, ~200ms); hosted: Sarvam "bulbul" ₹15–30/10K chars | OpenRouter has **no TTS** — TTS is local-first |
-| `embedding_model` | PI-8 (helps PI-4/5) | **qwen/qwen3-embedding-0.6b** | 8B variant (quality); BGE-M3 | Top open family on MTEB v2; NOT on OpenRouter — self-host or provider TBD at S8.1 |
-| `reranker_model` | PI-5/8 search | **qwen/qwen3-reranker-0.6b** | — | Adopt only if ranking quality demands |
 
 ## Verification log
 

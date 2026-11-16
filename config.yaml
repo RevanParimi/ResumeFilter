@@ -45,10 +45,6 @@ asr_model: "mistralai/voxtral-small-24b-2507"  # $0.10/$0.30, open-weights ASR o
                                       # OpenRouter; alt google/gemini-2.5-flash-lite
                                       # (~$0.03-0.10/hr audio); local = qwen3-asr-1.7b;
                                       # sarvam = "saarika" family
-tts_model: "kokoro-82m"               # local, free, Indian-English preset (OpenRouter
-                                      # has no TTS); hosted alt = sarvam "bulbul"
-embedding_model: "qwen/qwen3-embedding-0.6b"   # PI-8; 8B variant = quality bump
-reranker_model: "qwen/qwen3-reranker-0.6b"     # optional PI-5/8 search quality
 
 # --- GitHub (provenance; first-party URLs the candidate shares only) ----------
 # NOTE: the TOKEN is a secret and lives in .env, not here.
