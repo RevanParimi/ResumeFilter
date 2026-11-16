@@ -10,9 +10,7 @@ evaluation, no LLM, no scoring: this is data access and consent self-service,
 not a new signal. It changes no verdict, depth, or score.
 
 Login changes, contact aliases and profile merges are explicitly unsupported.
-The existing contact correction routes support a reviewed refusal, never an
-identity write; `apply=true` returns 422, while `apply=false` records the decision
-without changing hints, proof, sessions or review flags. [AUTH.md](AUTH.md) owns
+[AUTH.md](AUTH.md) owns
 the full proof/refusal policy. An upload preserves proved ownership and stores
 contact values as document claims; it grants no identity assurance.
 
@@ -98,40 +96,6 @@ account callbacks. A reload is a snapshot while earlier work can still finish.
 The [operating contract](OPERATING.md#portal-write-budget) owns limits
 and recovery; E2 evidence owns status
 and validation. Competing revocations retain the first clock and one audit entry.
-
-The candidate's `GET /portal/requests` and operator-only global
-`GET /admin/requests` share the existing
-[portal read budget](OPERATING.md#candidate-portal-view-read-budget). Complete
-reads filter erased requests after materialization while retaining original order
-and limits; omitted rows are not refilled. A fresh GET is explicit recovery after
-pending/refused reads. Candidate missing/erased direct lists remain empty; new
-requests with erased credentials refuse. These snapshots do not lock later
-delivery or refresh decisions. The
-E3A evidence owns validation/status;
-operator decisions share the write owner described below.
-
-`POST /portal/corrections` and `/portal/grievances` share the existing consent
-[write budget](OPERATING.md#portal-write-budget) for complete limiter,
-validation, identity snapshot, create, audit and final-existence work. Corrections
-remain unapplied human-review requests. Known validation/quota/erasure refusals
-retain 422/429/404. Pending writes keep admission until settlement; recover through
-own requests/access-log GETs without automatic POST replay. Request and audit
-commits are independent: a failed reply can leave a request without its audit or
-both saved, and an early empty snapshot does not prove rollback. A deliberate
-repeat is another request, not idempotent recovery. Final erasure checks are
-snapshots. E3B evidence owns validation/status;
-no dedicated submission UI or automatic review action is introduced.
-
-Operator `POST /admin/requests/{id}/resolve` shares that write budget. Human review,
-named-operator/machine attribution and cookie CSRF remain. New decisions commit
-the terminal request, allowed full-name/pin correction and audit together; OPEN
-targets refuse with 422 and valid repeats of terminal decisions with 409. Other identity
-fields and document extractions remain unchanged. Pending/failed replies require
-deliberate saved request, identity and access-log GETs without automatic decision
-replay; late work may still commit after an early snapshot. Older partial records
-are not repaired. Fresh erasure checks are snapshots. No decision UI is added;
-the [operating contract](OPERATING.md#portal-write-budget) owns the limits and
-E3C evidence owns validation/status.
 
 ### Why no new `ConsentPurpose`
 

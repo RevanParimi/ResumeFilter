@@ -259,14 +259,6 @@ class Settings(BaseSettings):
     # loop. Bounded per CALL is not bounded per CALLER.
     rate_limit_process_per_hour_per_org: int = Field(default=400, ge=1)
     rate_limit_asr_per_hour_per_candidate: int = Field(default=60, ge=1)
-    # S8.3 Phase B. NOTE THE NAME: the spec's §10 sketch called this
-    # rate_limit_grievance_per_hour_per_candidate, and it is deliberately
-    # broader here. The candidate plane gained TWO new authenticated writes,
-    # not one, and limiting the grievance while leaving the correction
-    # unlimited is precisely the "a rule applied at one entry point and not the
-    # other" defect this repo has shipped in S7.1, S7.2, S7.3 and S8.4 Phase B.
-    # One rule, one shared budget, named for what it covers.
-    rate_limit_request_per_hour_per_candidate: int = Field(default=10, ge=1)
 
     # --- Cursor pagination (PI-8, S8.4 Phase B) -------------------------------
     page_default_limit: int = Field(default=50, ge=1)
@@ -418,13 +410,7 @@ class Settings(BaseSettings):
     comp_benchmark_tolerance: float = Field(default=0.10, ge=0.0)
     comp_bands_path: str | None = None   # optional operator-supplied static table
 
-    # --- DPDP rights (PI-8, S8.3 Phase B) -------------------------------------
-    # A correction is a REVIEWED REQUEST, never a self-service edit (spec 0.3):
-    # on a fraud screen, a subject write path onto the scored data is an edit
-    # box over the evidence. Only full_name is ever auto-applied.
-    # The same bound and the same reason as max_outcome_notes_chars (S8.5):
-    # free text about a named person, typed into an unbounded Text column.
-    max_request_note_chars: int = Field(default=2_000, ge=1)
+    # --- Grievance contact (PI-8, S8.3 Phase B) -------------------------------
     # PROD REFUSES TO BOOT with an empty officer email (app/core/boot.py -- the
     # seventh refusal). DPDP requires the grievance mechanism to be PUBLISHED,
     # GET /grievance would answer 200 with an empty contact (worse than a 404,

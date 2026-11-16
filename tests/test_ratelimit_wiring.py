@@ -43,7 +43,7 @@ def real_services(settings, tmp_path):
 #: The services that MUST have a limiter. A floor, not the whole list: a
 #: service that silently STOPPED having one has to fail here, and discovery
 #: alone would simply stop looking at it.
-LIMITED = ("auth", "screening", "interview", "rights")
+LIMITED = ("auth", "screening", "interview")
 
 
 def _limited_services(services) -> list[str]:

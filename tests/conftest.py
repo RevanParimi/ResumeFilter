@@ -248,7 +248,6 @@ def make_services(
     auth=None,
     screening_scope=None,
     screening=None,
-    rights=None,
     metrics=None,
 ) -> Services:
     # Real, per-app, and never disabled here: a fixture that cannot enforce
@@ -329,24 +328,6 @@ def make_services(
             settings, candidates=candidates, ledger=ledger, email=email,
             metrics=metrics,
         )
-    # Also built BEFORE the portal, which reads it for MyData.requests. The
-    # limiter is the REAL one on the container's own factory -- a permissive
-    # stand-in would let every rate-limit test pass while the service ran
-    # unbounded, which is the failure mode itself (S8.3 Phase A).
-    if rights is None:
-        from app.ratelimit.service import build_rate_limiter as _rights_limiter
-        from app.rights.service import RightsService
-        from app.rights.store import RightsStore
-
-        rights = RightsService(
-            RightsStore(candidates._session_factory),
-            candidates,
-            ledger,
-            limiter=_rights_limiter(
-                settings, candidates._session_factory, metrics=metrics
-            ),
-            settings=settings,
-        )
     # Built BEFORE the portal, which composes it for MyData.sessions and
     # for erasing login challenges (they carry no FK and cannot cascade).
     if portal is None:
@@ -354,7 +335,7 @@ def make_services(
         portal = PortalService(
             candidates, ledger, report_store, profile_sources,
             verification=verification, interview=interview, auth=auth,
-            rights=rights, settings=settings,
+            settings=settings,
         )
     if screening_scope is None:
         from app.screening.scope import build_org_scoped_access
@@ -401,7 +382,6 @@ def make_services(
         auth=auth,
         screening_scope=screening_scope,
         screening=screening,
-        rights=rights,
         metrics=metrics,
         # The SAME factory every store in this fixture shares, exactly as the
         # production container does it. A separate engine here would give the

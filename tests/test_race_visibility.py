@@ -1,4 +1,4 @@
-"""Six IntegrityError handlers do correct race handling and say nothing.
+"""Five IntegrityError handlers do correct race handling and say nothing.
 
 Each one is right: somebody else won the insert, so roll back and take their
 row. But a race going from one a day to a thousand a minute is currently
@@ -82,4 +82,4 @@ def test_every_where_label_names_its_real_enclosing_method():
                         f"{path.name}: label {m.group(1)!r} does not name its "
                         f"enclosing method {cls.name}.{fn.name!r}"
                     )
-    assert checked == 6, f"expected 6 race labels, found {checked}"
+    assert checked == 5, f"expected 5 race labels, found {checked}"

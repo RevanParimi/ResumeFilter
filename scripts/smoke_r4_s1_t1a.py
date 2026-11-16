@@ -39,8 +39,8 @@ def create_smoke_app():
             svc = app.state.services
             stores = [svc.candidates, svc.ledger, svc.report_store, svc.features, svc.jobs,
                 svc.profile_sources._store, svc.curation._store, svc.auth._store,
-                svc.verification._store, svc.interview._store, svc.screening._store, svc.rights._store]
-            stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening", "rights"))
+                svc.verification._store, svc.interview._store, svc.screening._store]
+            stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening"))
             engine = svc.session_factory.kw["bind"]
             event.listen(engine, "engine_disposed", lambda engine: record("disposed"))
             event.listen(engine, "close", lambda connection, row: record("connection_closed"))

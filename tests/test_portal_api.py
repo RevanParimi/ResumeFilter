@@ -445,9 +445,6 @@ async def test_portal_default_read_pool_shares_two_slots_and_keeps_auth_independ
     engine, factory = database
     services, headers = _portal_read_setup(settings, factory)
     assert services.portal_reads._capacity == 2 and services.portal_reads._wait_seconds == 20
-    from app.rights.schema import RequestKind
-    request_b = services.rights.submit('b', kind=RequestKind.GRIEVANCE, field=None,
-        requested_value='', note='Synthetic B request', now=datetime.now(timezone.utc))
     release, condition, owners = Event(), Condition(), set()
     def sql(conn, cursor, statement, parameters, context, many):
         if current_thread().name.startswith('portal-read'):
@@ -471,7 +468,7 @@ async def test_portal_default_read_pool_shares_two_slots_and_keeps_auth_independ
                 try:
                     assert await asyncio.to_thread(occupied)
                     assert len(services.portal_reads._active) == 2
-                    peer = await http.get('/portal/requests', headers=headers['b'])
+                    peer = await http.get('/portal/access-log', headers=headers['b'])
                     assert peer.status_code == 503 and peer.json() == {'detail': 'portal_read_capacity_exhausted'}
                     assert (await http.get('/candidates/b')).status_code == 200
                     for _, path, _, _ in PORTAL_READS:
@@ -483,8 +480,9 @@ async def test_portal_default_read_pool_shares_two_slots_and_keeps_auth_independ
                 a, b = responses
                 assert a.status_code == b.status_code == 200
                 assert a.json() == expected_a and b.json() == expected_b
-                peer = await http.get('/portal/requests', headers=headers['b'])
-                assert peer.status_code == 200 and [row['id'] for row in peer.json()] == [request_b.id]
+                expected_peer = [row.model_dump(mode='json') for row in services.portal.access_log('b')]
+                peer = await http.get('/portal/access-log', headers=headers['b'])
+                assert peer.status_code == 200 and peer.json() == expected_peer
                 assert {r['report_id'] for r in a.json()['reports']} == {r.id for r in services.report_store.for_candidate('a')}
     finally:
         release.set()

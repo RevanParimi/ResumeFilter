@@ -23,7 +23,6 @@ session produced them.
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 
 import hashlib
 import secrets
@@ -1030,42 +1029,6 @@ class LedgerStore:
                     raise MaterializationCandidateMissingError("candidate_unavailable") from None
                 raise
             return decision
-
-    def audit_request_event(
-        self,
-        candidate_id: str,
-        *,
-        request_id: str,
-        action: str,
-        actor_type: str,
-        actor_id: Optional[str] = None,
-        details: Optional[dict] = None,
-        session: Optional[Session] = None,
-    ) -> None:
-        """S8.3 Phase B: a DPDP correction/grievance request changed state.
-
-        Named rather than a general `audit(...)` door: every audit writer in
-        this store says what it is recording, so `_audit` stays private and no caller can invent an
-        entity_type the candidate's own access log has never seen.
-
-        The candidate_id is what puts this on the SUBJECT's access log --
-        S3.1's rule that surveillance is itself observable, applied to the
-        handling of their own complaint, which is where it matters most.
-        A supplied Session borrows the caller's transaction and only flushes.
-        """
-        with (nullcontext(session) if session is not None
-              else self._session_factory.begin()) as session:
-            self._audit(
-                session,
-                actor_type=actor_type,
-                actor_id=actor_id,
-                action=action,
-                entity_type="data_principal_request",
-                entity_id=request_id,
-                candidate_id=candidate_id,
-                details=details or {},
-            )
-            session.flush()
 
 
 def build_ledger_store(

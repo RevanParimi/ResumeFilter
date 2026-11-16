@@ -321,7 +321,7 @@ class CandidateStore:
         Without that exception the rule reverts corrections: a subject asks for
         their name to be fixed, an operator verifies it against an ID and
         applies it, and the customer's very next upload puts the extractor's
-        guess back -- while `/portal/requests` goes on saying `applied: true`.
+        guess back.
         A human decision about a person's own name outranks an extractor's, and
         this is the narrowest place to say so.
         """
@@ -488,41 +488,6 @@ class CandidateStore:
         with self._session_factory.begin() as session:
             cand = session.get(CandidateRow, candidate_id)
             return self._clear_login_state(session, cand) if cand else 0
-
-    def apply_correction(self, candidate_id: str, *, full_name: str,
-                         session: Optional[Session] = None) -> bool:
-        """Write a REVIEWED correction onto the candidate's own identity row.
-
-        ``full_name`` and nothing else, ever. An ``extractions`` row is a record
-        of what a DOCUMENT said, and rewriting it destroys the evidence the
-        fraud screen is computed from -- on this product that is not
-        hypothetical, because the subject of a correction request is exactly the
-        person with an incentive to edit a claim that got flagged (S8.3 spec
-        §8.2).
-
-        email/phone are refused one layer up, in RightsService, and refused BY
-        NAME: both are hashed into the dedup keys ``_resolve_candidate`` matches
-        on. The proved login address is separate, but contact changes/profile
-        merges still require a dedicated proof/review operation this release
-        does not implement. A correction decision cannot authorize such writes.
-
-        It also PINS the column: `full_name_corrected_at` stops
-        `_refresh_identity` from overwriting a verified correction with the next
-        upload's extracted guess. Without that, the write survives exactly until
-        the customer's next resume for this person.
-
-        False means the candidate is gone -- an erasure landing mid-decision.
-        A supplied Session borrows the caller's transaction; never commit it.
-        """
-        with (nullcontext(session) if session is not None
-              else self._session_factory.begin()) as session:
-            row = session.get(CandidateRow, candidate_id)
-            if row is None:
-                return False
-            row.full_name = full_name
-            row.full_name_corrected_at = _utcnow()
-            session.flush()
-            return True
 
     def delete_resume(self, resume_id: str) -> bool:
         """DPDP erasure of ONE resume version + its extractions; candidate stays."""

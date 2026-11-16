@@ -180,10 +180,6 @@ OTP alone cannot authorize moving an old subject, its history, keys or consents.
 `candidate_id` supplied at login is ignored. A supported future change would
 need proof of the existing principal and both relevant mailboxes, collision and
 consent review, audit and session invalidation; those checks are not implemented.
-Contact corrections may be submitted and reviewed through the existing rights
-routes. `apply=true` refuses with 422, leaving the request open; an operator may
-record the refusal with `apply=false`. That decision changes no identity fields
-and never clears `login_binding_review_required`.
 
 Uploads dedup only against one compatible asserted email hint. Duplicate hints
 or a hint inconsistent with its proved mailbox create a separate submission.

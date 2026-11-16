@@ -1,4 +1,4 @@
-"""Two candidate sessions, two org uploads and reviewed change refusal."""
+"""Two candidate sessions and two org uploads."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -59,34 +59,6 @@ def test_two_orgs_reupload_proved_candidate_owns_distinct_resume_rows(client, ca
             assert own.status_code == 200
             assert uploader.get(f"/screening/reports/{response['report']['id']}", headers=headers[1-index]).status_code == 404
         assert len(client.get('/portal/me').json()['resumes']) == 3
-
-
-@pytest.mark.parametrize('field,value', [('email', 'bob@example.in'), ('phone', '+91 9876543210')])
-def test_contact_correction_refuses_apply_and_records_review_without_mutation(client, capture_path, field, value):
-    aid = upload(client, 'Synthetic Alice\nEmail: alice@example.in\nSKILLS\nPython\n')['candidate_id']
-    csrf = _signup_candidate(client, capture_path, 'alice@example.in')
-    services = client.app_services
-    with services.session_factory() as session:
-        row = session.get(CandidateRow, aid)
-        before = (row.email_hash, row.phone_hash, row.login_email_hash, row.login_email_verified_at,
-                  row.login_binding_review_required)
-    submitted = client.post('/portal/corrections', headers={'X-CSRF-Token': csrf},
-        json={'field': field, 'requested_value': value, 'candidate_id': 'foreign-target'})
-    assert submitted.status_code == 200
-    request_id = submitted.json()['id']
-    decision = {'status': 'resolved', 'resolution': 'Reviewed: change/merge unsupported.', 'apply': True}
-    refused = client.post(f'/admin/requests/{request_id}/resolve', headers=ADMIN_HEADERS, json=decision)
-    assert refused.status_code == 422 and 'unsupported' in refused.json()['detail']
-    pending = client.get('/portal/requests').json()
-    assert pending[0]['status'] == 'open' and not pending[0]['applied']
-    decision['apply'] = False
-    resolved = client.post(f'/admin/requests/{request_id}/resolve', headers=ADMIN_HEADERS, json=decision)
-    assert resolved.status_code == 200 and not resolved.json()['applied']
-    with services.session_factory() as session:
-        row = session.get(CandidateRow, aid)
-        assert (row.email_hash, row.phone_hash, row.login_email_hash, row.login_email_verified_at,
-                row.login_binding_review_required) == before
-    assert client.get('/portal/me').json()['candidate_id'] == aid
 
 
 @pytest.mark.parametrize('door', ['/candidates', '/screening/candidates'])

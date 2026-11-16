@@ -43,8 +43,6 @@ def test_the_stale_entries_are_gone_because_it_is_derived(services):
     listed = " ".join(_endpoints(services))
     assert "/screening/batches" in listed
     assert "/metrics" in listed
-    assert "/portal/grievances" in listed
-    assert "/admin/requests" in listed
 
 
 def test_documentation_paths_are_excluded(services):

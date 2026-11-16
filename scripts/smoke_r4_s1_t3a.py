@@ -503,9 +503,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 99 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 94 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 99)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 94)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -689,8 +689,6 @@ def run(scratch, url, pg_options):
             sibling.headers.pop("X-CSRF-Token")
             checks.check("portal cookie plus another key cannot bypass write CSRF", all(
                 sibling.request(method, path, json=body).status_code == 403 for method, path, body in (
-                    ("POST", "/portal/corrections", {"field": "full_name", "requested_value": "Refused"}),
-                    ("POST", "/portal/grievances", {"note": "Refused"}),
                     ("POST", "/portal/consents", {"purpose": "verification_read"}),
                     ("DELETE", "/portal/me", None))))
             sibling.headers["X-CSRF-Token"] = sibling_csrf
@@ -731,19 +729,6 @@ def run(scratch, url, pg_options):
                 and saved_assessments["assurance"]["level"] == 3)
             checks.check("verification consent is employer scoped and other subject stays private", all(
                 other_org.get(path).status_code == 403 for path in verification_paths.values()))
-            correction = require(sibling.post("/portal/corrections", json={
-                "field": "full_name", "requested_value": "Reviewed Portal Name"}))
-            complaint = require(control.post("/portal/grievances", headers={"X-Candidate-Key": other_portal_key},
-                json={"note": "Synthetic other subject request"}))
-            checks.check("portal requests await review and stay isolated by subject",
-                correction["status"] == "open" and not correction["applied"]
-                and [row["id"] for row in require(sibling.get("/portal/requests"))] == [correction["id"]]
-                and [row["id"] for row in require(control.get("/portal/requests", headers={"X-Candidate-Key": other_portal_key}))] == [complaint["id"]]
-                and {row["id"] for row in require(operator.get("/admin/requests"))} == {correction["id"], complaint["id"]})
-            checks.check("portal operator queue validates limit and auth plane",
-                operator.get("/admin/requests", params={"limit": -1}).status_code == 422
-                and sibling.get("/admin/requests").status_code == 401
-                and org.get("/admin/requests").status_code == 401)
         with server():
             if workers or redemption_workers or session_workers:
                 for cookies, me in worker_sessions:
@@ -768,19 +753,11 @@ def run(scratch, url, pg_options):
                 and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
                 and require(org.get(f"/jobs/{job['id']}/board")) == employer_board
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
-            checks.check("subject requests and grants survive graceful restart exactly",
-                require(sibling.get("/portal/requests")) == [correction]
-                and portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
+            checks.check("subject grants survive graceful restart exactly",
+                portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
             checks.check("verification documents manual review and employer summaries survive graceful restart exactly",
                 require(sibling.get("/portal/verifications")) == saved_verifications
                 and all(require(org.get(path)) == saved_assessments[kind] for kind, path in verification_paths.items()))
-            decision_path = f"/admin/requests/{correction['id']}/resolve"
-            decision = require(operator.post(decision_path, json={"status": "resolved", "resolution": "Human checked", "apply": True}))
-            checks.check("named operator can apply only reviewed correction and repeat is conflict",
-                decision["applied"] and decision["resolved_by"] == "admin_user"
-                and require(control.get(f"/candidates/{subject}"))["full_name"] == "Reviewed Portal Name"
-                and require(sibling.get("/portal/requests")) == [decision]
-                and operator.post(decision_path, json={"status": "resolved", "resolution": "Again"}).status_code == 409)
             require(sibling.post(f"/portal/consents/{portal_grant['id']}/revoke"))
             checks.check("revoked verification consent refuses both employer summaries", all(
                 org.get(path).status_code == 403 for path in verification_paths.values()))
@@ -817,11 +794,10 @@ def run(scratch, url, pg_options):
                 assert http.get("/auth/me").status_code == 401
             checks.check("logout clears all four sessions across planes", True)
             erased = require(control.delete("/portal/me", headers={"X-Candidate-Key": own_portal_key}))
-            checks.check("portal erasure removes own requests and credential while another subject survives",
+            checks.check("portal erasure removes own credential while another subject survives",
                 erased["deleted"] and erased["candidate_id"] == subject
                 and control.get("/portal/me", headers={"X-Candidate-Key": own_portal_key}).status_code == 401
-                and require(control.get("/portal/me", headers={"X-Candidate-Key": other_portal_key}))["candidate_id"] == employer_candidate
-                and require(control.get("/admin/requests")) == [complaint])
+                and require(control.get("/portal/me", headers={"X-Candidate-Key": other_portal_key}))["candidate_id"] == employer_candidate)
             checks.check("erasure removes verification access while another subject survives",
                 control.get("/portal/verifications", headers={"X-Candidate-Key": own_portal_key}).status_code == 401
                 and control.get("/portal/verifications", headers={"X-Candidate-Key": other_portal_key}).status_code == 200

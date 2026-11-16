@@ -31,8 +31,8 @@ def production(settings, tmp_path, monkeypatch):
 def sql_topology(svc):
     stores = [svc.candidates, svc.ledger, svc.report_store, svc.features, svc.jobs,
         svc.curation._store, svc.profile_sources._store, svc.auth._store,
-        svc.verification._store, svc.interview._store, svc.screening._store, svc.rights._store]
-    stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening", "rights"))
+        svc.verification._store, svc.interview._store, svc.screening._store]
+    stores.extend(getattr(svc, name)._limiter._store for name in ("auth", "interview", "screening"))
     return [store._session_factory for store in stores]
 
 

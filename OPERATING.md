@@ -5,8 +5,8 @@
 **Audience:** whoever runs this service for a paying customer.
 
 §§1–7 are Phase A: what is limited, how it is counted, the 429 and the runbook.
-§§8–10 are Phase B: the retention sweep, the DPDP request queue and the
-published grievance officer. §11 is what was deliberately left out of both.
+§8 and §10 are Phase B: the retention sweep and the published grievance
+officer. §11 is what was deliberately left out of both.
 
 **Everything in this document is live.** Where a section describes something
 that has to be *invoked* rather than something that runs on its own, it says so
@@ -722,16 +722,13 @@ use saved-state reads and deliberate recovery when a result is uncertain.
 
 ### Candidate portal view read budget
 
-GET `/portal/me`, `/portal/access-log`, `/portal/consents`, `/portal/requests`
-and operator-only `/admin/requests` share separate
+GET `/portal/me`, `/portal/access-log` and `/portal/consents` share separate
 `portal_read_max_concurrent_requests` admission, default **2 slots** per Services/
 app process. `portal_read_wait_seconds` defaults to finite positive **20 seconds**.
 The complete service read owns SQL sessions, detached view values and existing
 final existence checks. MyData's source/ledger/report/verification/interview/
-session/rights composition stays on that owner. First-party access uses the
+session composition stays on that owner. First-party access uses the
 candidate identity; it does not require an organization consent grant.
-The operator request queue uses the existing platform operator gate and remains
-global across candidates; candidate request lists use only their resolved subject.
 
 Full/closed admission returns 503 `portal_read_capacity_exhausted` or
 `portal_read_executor_closed`; an admitted read that outlasts its caller wait
@@ -750,36 +747,16 @@ auth/other budgets; database locks can still couple them. It does not bound row
 counts, memory, whole requests, JSON rendering or SQL-driver/drain time. Direct
 synchronous callers still own scheduling. The
 E1 evidence owns validation/status;
-remaining direct rights/erasure/verification/interview operations are
+remaining direct erasure/verification/interview operations are
 E3B/C/Q and E4-E8/Q. Consent writes have the separate budget below. No schema or scorer
 change is introduced.
-
-Reviewed-rights read acceptance
-extends that same pool to both request lists without adding slots or configuration.
-The complete existing service/store operation owns initial SQL, detached request
-views and fresh existence checks after materialization. Current request IDs joined
-to current candidates are checked in chunks of at most 500 SQL binds. Erased
-entries are omitted; original candidate-newest/operator-oldest order and the
-operator's clamped limit remain, without refilling omitted rows. Missing/erased
-direct candidate lists retain empty-list semantics; newly authenticated erased
-credentials still refuse. The same store guard also protects MyData composition.
-
-These are per-chunk snapshots. Later erasure/delivery races remain possible,
-and a concurrently changed decision is not refreshed by an existence guard.
-Candidate request lists still have no row/memory cap. SQL bind chunking is not
-a total-work, JSON-rendering or global-SQL limit. Both direct lists use the same
-503/Retry-After, retained admission, generic correlated failure, cancellation and
-drain policy above. Their API clients recover with a deliberate fresh GET; no
-dedicated list screen or automatic write/review operation is introduced.
 
 <a id="candidate-consent-write-budget"></a>
 <a id="candidate-portal-write-budget"></a>
 
 ### Portal write budget
 
-POST `/portal/consents`, `/portal/consents/{id}/revoke`,
-`/portal/corrections`, `/portal/grievances` and operator
-`/admin/requests/{id}/resolve` share
+POST `/portal/consents` and `/portal/consents/{id}/revoke` share
 `portal_write_max_concurrent_requests`, default **2 slots** per Services/app
 process, separate from portal reads. `portal_write_wait_seconds` defaults to
 finite positive **20 seconds**. The complete service operation owns candidate/
@@ -813,44 +790,6 @@ whole-request, driver or drain deadline. Direct synchronous callers own their
 scheduling. No schema or scoring change. The
 E2 evidence owns validation/status;
 other E children and combined acceptance remain separate tasks.
-
-The rights submissions use this same owner for their complete candidate limiter,
-semantic validation, current identity snapshot, request creation, audit and final
-subject/request existence check. No extra slots/configuration are added. Admitted
-submissions spend the shared candidate quota before semantic validation; a full/
-closed owner spends none. Existing 422/429 (with Retry-After) and generic missing-
-subject 404 remain. Corrections are requests for human review, never identity or
-extraction edits on submission. There is no dedicated rights-submission screen.
-
-Quota, request and audit remain separate commits. A caller timeout/cancellation
-can precede late persistence; an audit error can leave a saved request without
-its audit, and a failed reply after both commits can leave both. Clients recover
-through deliberate own `GET /portal/requests` and `/portal/access-log` reads,
-without automatic POST replay or audit repair. An early empty snapshot can change
-while work still owns admission. Repeating POST deliberately creates a new request
-and spends quota; this is not an idempotency guarantee. Observed erasure refuses
-success at create/audit/final checks and existing CASCADE prevents resurrection;
-the final existence check is a snapshot, not a later-delivery lock. Raw SQL and
-private request values are excluded from application error logs. The
-E3B evidence owns its validation/status.
-
-Operator decisions use this same owner for lookup, policy validation, conditional
-OPEN-to-terminal transition, optional allowed full-name/pin correction, audit and
-fresh final view. Authentication/CSRF precedes admission; named-person versus
-machine-key attribution remains. No decision quota is added. OPEN targets return
-422; an otherwise valid repeat of a decided request returns 409 without reapplying. Other
-correction fields, grievances, extractions and login identity are never applied.
-
-For new service decisions, request, allowed correction and audit commit in one
-transaction or all roll back. Parent locks precede request writes and serialize
-candidate erasure. This does not repair older partial decisions or change the
-separate submission commits above. A timeout/cancellation can precede a whole
-late commit; a failed reply after commit can also leave the whole decision saved.
-Recover through deliberate candidate/operator request, candidate identity and
-access-log GETs without automatic decision replay. Early snapshots can change
-until settlement. Observed final erasure refuses success; snapshots do not lock
-later delivery. There is no operator decision screen. The
-E3C evidence owns validation/status.
 
 ### Dual scoping: all scopes counted, any denial denies
 
@@ -1167,58 +1106,6 @@ is no longer a literal, and it must never become one again: the portal would
 keep telling every data principal that no mechanical purge runs while the cron
 ran one.
 
-## 9. The DPDP request queue
-
-`data_principal_requests` holds two kinds — `correction` and `grievance` — with
-one lifecycle: filed by the subject, reviewed by an operator, decided with a
-written reason, disclosed back.
-
-| Route | Plane |
-|---|---|
-| `POST /portal/corrections` | candidate |
-| `POST /portal/grievances` | candidate |
-| `GET /portal/requests` | candidate (their own, both kinds) |
-| `GET /admin/requests?status=open` | admin |
-| `POST /admin/requests/{id}/resolve` | admin |
-
-**`status` and `applied` are two facts.** `status` is what the operator decided
-(`resolved` | `rejected`); `applied` is whether that decision changed stored
-data — false for every grievance, false for an `email` correction handled out of
-band, true only when a value moved.
-
-**A CORRECTION NEVER REWRITES AN EXTRACTION.** An `extractions` row records what
-a document said, and the subject of a correction request is exactly the person
-with an incentive to edit a claim that got flagged. A resolved correction may
-touch the candidate's own identity columns and nothing else.
-
-**Only `full_name` is auto-appliable.** `email` and `phone` are refused for
-auto-apply, and the refusal names the consequence: both are hashed into the
-candidate dedup keys, and `email_hash` is additionally the portal login
-credential, so changing either can merge two people's records or move an
-account's login address. `other` names no single stored field. All four can
-still be **resolved** with a written explanation — the mechanism is complete for
-every field; auto-apply is a convenience for the one where it is safe.
-
-**Every decision needs a reason.** A blank `resolution` is a 422, including on a
-rejection: DPDP's mechanism is request-review-decide-**record**-disclose, and a
-refusal the subject cannot act on is the one thing a grievance process must
-never be.
-
-**Resolving twice is a 409, not a 422.** The store's conditional `UPDATE` on
-`status = 'open'` is the guard, so two operators clicking Resolve at the same
-moment produce one decision.
-
-Both the submission and the decision are audited onto the **subject's own**
-`GET /portal/access-log`, with `entity_type="data_principal_request"`. The
-subject is told the *kind* of decider (`operator_key` / `admin_user`), never a
-person's identity.
-
-Submissions are rate-limited by `request_submit` (10/hour per candidate),
-covering **both** candidate writes on one budget. The limit is charged *before*
-validation: a typo costs one of ten complaints an hour, which is the smaller
-harm than an endpoint a stuck client can hammer forever with a body that never
-validates.
-
 ## 10. The grievance officer
 
 ```yaml
@@ -1240,8 +1127,7 @@ unpublished contact would make `GET /grievance` a 200 that says nothing, which
 is worse than a 404 because it looks answered.
 
 `grievance_response_days` is the promise on that page. Nothing enforces it
-mechanically; it is what an operator has committed to, and `GET
-/admin/requests?status=open` ordered oldest-first is how they keep it.
+mechanically; it is what an operator has committed to.
 
 ## 10b. Dependencies: the lock, and the refresh ritual
 

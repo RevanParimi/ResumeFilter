@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app import __version__
 from app.api.dependencies import _services, require_api_key
 from app.domains.base import get_domain, list_domains
-from app.rights.schema import GrievanceContact, build_grievance_contact
+from app.portal.schema import GrievanceContact, build_grievance_contact
 from app.services.llm import NullLLM
 
 

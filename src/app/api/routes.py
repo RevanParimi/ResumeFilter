@@ -18,7 +18,7 @@ from app.api.verification import (
 )
 from app.api.employer import org_router as employer_router
 from app.api.features import router as feature_router
-from app.api.portal import candidate_router as portal_candidate_router, router as portal_admin_router
+from app.api.portal import candidate_router as portal_candidate_router
 from app.api.ledger import (
     router as ledger_admin_router, org_router as ledger_org_router,
 )
@@ -52,7 +52,6 @@ router.routes.extend(verification_admin_router.routes)
 router.routes.extend(feature_router.routes)
 router.routes.extend(report_router.routes)
 router.routes.extend(operator_metrics_router.routes)
-router.routes.extend(portal_admin_router.routes)
 router.routes.extend(operator_retention_router.routes)
 router.routes.extend(domain_router.routes)
 router.routes.extend(operator_router.routes)

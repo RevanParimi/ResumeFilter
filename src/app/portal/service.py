@@ -16,9 +16,8 @@ from app.ledger.schema import ConsentGrant, ConsentPurpose
 from app.ledger.store import LedgerStore
 from app.portal.retention import build_retention_policy
 from app.portal.schema import (
-    AccessLogEntry, ConsentState, ConsentView, MyData, ReportRef,
+    AccessLogEntry, ConsentState, ConsentView, MyData, ReportRef, build_grievance_contact,
 )
-from app.rights.schema import build_grievance_contact
 
 
 def _utcnow() -> datetime:
@@ -41,7 +40,6 @@ class PortalService:
         verification=None,
         interview=None,
         auth=None,
-        rights=None,
         settings: Optional[Settings] = None,
     ) -> None:
         self._candidates = candidates
@@ -57,11 +55,6 @@ class PortalService:
         # Optional for the same reason (S8.2); used for the session view.
         # CandidateStore owns atomic candidate/challenge erasure.
         self._auth = auth
-        # Optional for the same reason (S8.3 Phase B): the portal stays
-        # constructible without the rights package, and `requests` is simply
-        # omitted from MyData. It is never the writer -- filing goes through
-        # RightsService, which owns the bound and the audit.
-        self._rights = rights
         self._settings = settings or get_settings()
 
     def _require_candidate(self, candidate_id: str) -> None:
@@ -117,11 +110,6 @@ class PortalService:
             if self._auth is not None
             else []
         )
-        requests = (
-            self._rights.for_candidate(candidate_id)
-            if self._rights is not None
-            else []
-        )
         result = MyData(
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
@@ -135,7 +123,6 @@ class PortalService:
             claims=claims,
             interviews=interviews,
             sessions=sessions,
-            requests=requests,
             grievance=build_grievance_contact(self._settings),
             retention=build_retention_policy(oldest, self._settings),
         )
@@ -237,10 +224,9 @@ def build_portal_service(
     verification=None,
     interview=None,
     auth=None,
-    rights=None,
 ) -> PortalService:
     return PortalService(
         candidates, ledger, report_store, profile_sources,
         verification=verification, interview=interview, auth=auth,
-        rights=rights, settings=settings or get_settings(),
+        settings=settings or get_settings(),
     )
