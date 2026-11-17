@@ -1140,7 +1140,7 @@ def run(scratch, url, pg_options):
                 and require(org_a.get(f"/screening/reports/{employer_rid}"))["id"] == employer_rid)
 
     lifecycle = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
-    checks.check("both starts use migrated shared SQL and graceful cleanup", len([row for row in lifecycle if row["event"] == "started" and row["revision"] == "0030_screening_ingest_facts" and row["one_factory"]]) == 2
+    checks.check("both starts use migrated shared SQL and graceful cleanup", len([row for row in lifecycle if row["event"] == "started" and row["revision"] == "0031_cut_unused_tables" and row["one_factory"]]) == 2
         and sum(row["event"] == "disposed" for row in lifecycle) == 2
         and sum(row["event"] == "stopped" and row["detached"] for row in lifecycle) == 2)
     logs = (scratch / "server.log").read_text(encoding="utf-8")

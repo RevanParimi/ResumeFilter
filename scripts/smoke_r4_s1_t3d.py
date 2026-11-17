@@ -1702,7 +1702,7 @@ def run(scratch, url, pg_options):
                 and actor.get(path).status_code == 404 and actor.get(report_path).status_code == 200)
     lifecycle = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
     starts = (3 if leases else 2) + len(admissions)
-    checks.check("all migrated workers share SQL topology and shut down gracefully", sum(row["event"] == "started" and row["revision"] == "0030_screening_ingest_facts" and row["one_factory"] for row in lifecycle) == starts
+    checks.check("all migrated workers share SQL topology and shut down gracefully", sum(row["event"] == "started" and row["revision"] == "0031_cut_unused_tables" and row["one_factory"] for row in lifecycle) == starts
         and sum(row["event"] == "disposed" for row in lifecycle) == starts
         and sum(row["event"] == "stopped" and row["detached"] for row in lifecycle) == starts)
     return checks.summary()

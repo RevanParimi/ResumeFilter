@@ -58,7 +58,7 @@ def test_the_scan_finds_something():
     """Guards the two tests below from passing by matching nothing."""
     found = _modules_on_disk()
     assert "app.candidates.models" in found
-    assert "app.rights.models" in found
+    assert "app.screening.models" in found
     assert len(found) >= 10
 
 

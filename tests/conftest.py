@@ -22,8 +22,6 @@ from sqlalchemy import create_engine, text
 import app.ledger.models  # noqa: F401 — populate Base.metadata with ledger tables
 import app.features.models  # noqa: F401 — populate Base.metadata with feature tables
 import app.matching.models  # noqa: F401 — populate Base.metadata with matching tables
-import app.profile_sources.models  # noqa: F401 — populate Base.metadata with profile-source table
-import app.curation.models  # noqa: F401 — populate Base.metadata with the curation table
 import app.verification.models  # noqa: F401 — populate Base.metadata with verification tables
 import app.interview.models  # noqa: F401 — populate Base.metadata with interview tables
 import app.reports.models  # noqa: F401 — populate Base.metadata with report tables
@@ -33,7 +31,6 @@ import app.reports.models  # noqa: F401 — populate Base.metadata with report t
 import app.auth.models  # noqa: F401 — populate Base.metadata with auth tables
 import app.screening.models  # noqa: F401 — populate Base.metadata with screening tables
 import app.ratelimit.models  # noqa: F401 — populate Base.metadata with the counter table
-import app.rights.models  # noqa: F401 — populate Base.metadata with the request queue
 from sqlalchemy import select as _select
 
 from app.candidates.models import ExtractionRow as _ExtractionRow

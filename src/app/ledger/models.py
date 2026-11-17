@@ -1,6 +1,6 @@
 """ORM rows for the evaluation ledger (S3.1). Postgres-shaped on SQLite.
 
-``audit_log`` and ``evaluation_events`` are append-only by convention (the
+``audit_log`` is append-only by convention (the
 store never updates or deletes them); consent revocation is an UPDATE of
 ``revoked_at`` so the fact of having consented survives for audit. DPDP
 erasure is the one exception that trumps append-only: every candidate-linked
@@ -79,7 +79,7 @@ class ConsentGrantRow(Base):
     ``org_id`` NULL = any member organization. Revocation sets ``revoked_at``;
     the row is deleted by DPDP erasure (candidate cascade) or by
     ``LedgerStore.delete_organization`` cascading grants scoped to that org
-    (and, transitively, their interview records and events)."""
+    ."""
 
     __tablename__ = "consent_grants"
 
@@ -96,107 +96,6 @@ class ConsentGrantRow(Base):
     revoked_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class InterviewRecordRow(Base):
-    """One interview outcome one org submitted about one candidate."""
-
-    __tablename__ = "interview_records"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
-    )
-    candidate_id: Mapped[str] = mapped_column(
-        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
-    )
-    consent_id: Mapped[str] = mapped_column(
-        ForeignKey("consent_grants.id", ondelete="CASCADE"), index=True
-    )
-    stage: Mapped[str] = mapped_column(String(16))  # screen | tech | coding | hm
-    outcome: Mapped[str] = mapped_column(String(16))
-    interviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class EvaluationEventRow(Base):
-    """Append-only detail attached to an interview record (scores, notes)."""
-
-    __tablename__ = "evaluation_events"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    record_id: Mapped[str] = mapped_column(
-        ForeignKey("interview_records.id", ondelete="CASCADE"), index=True
-    )
-    candidate_id: Mapped[str] = mapped_column(
-        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
-    )
-    event_type: Mapped[str] = mapped_column(String(32))
-    payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class CodingRoundResultRow(Base):
-    """One structured coding-assessment result one org submitted about one
-    candidate (S3.3). A peer of ``interview_records`` — same consent / audit /
-    DPDP machinery, but typed platform-assessment fields (platform, score,
-    percentile, tags) instead of a coarse pipeline-stage outcome. Append-only;
-    candidate-linked so DPDP erasure cascades it."""
-
-    __tablename__ = "coding_round_results"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), index=True
-    )
-    candidate_id: Mapped[str] = mapped_column(
-        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
-    )
-    consent_id: Mapped[str] = mapped_column(
-        ForeignKey("consent_grants.id", ondelete="CASCADE"), index=True
-    )
-    platform: Mapped[str] = mapped_column(String(32))  # CodingPlatform value
-    platform_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    assessment_name: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    score: Mapped[float] = mapped_column(Float)
-    max_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    percentile: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    problem_tags: Mapped[list] = mapped_column(JSON, default=list)
-    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    raw: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-
-
-class ObservedOfferRow(Base):
-    """One compensation offer one org extended to one candidate (S5.2). Peer of
-    coding_round_results: same consent/audit/DPDP machinery. Candidate-linked so
-    erasure cascades it; org-linked so org deletion cascades it. The composite
-    index serves the comp aggregation query (role_family, seniority, city_tier)."""
-
-    __tablename__ = "observed_offers"
-    __table_args__ = (
-        Index("ix_observed_offers_role_signal", "role_family", "seniority", "city_tier"),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(
-        ForeignKey("organizations.id", ondelete="CASCADE"), index=False
-    )
-    candidate_id: Mapped[str] = mapped_column(
-        ForeignKey("candidates.id", ondelete="CASCADE"), index=True
-    )
-    consent_id: Mapped[str] = mapped_column(
-        ForeignKey("consent_grants.id", ondelete="CASCADE"), index=False
-    )
-    role_family: Mapped[str] = mapped_column(String(32))
-    seniority: Mapped[str] = mapped_column(String(16))
-    city_tier: Mapped[str] = mapped_column(String(16))
-    ctc_fixed: Mapped[float] = mapped_column(Float)
-    ctc_variable: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    currency: Mapped[str] = mapped_column(String(8), default="INR")
-    offered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

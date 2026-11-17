@@ -13,10 +13,8 @@ from sqlalchemy import engine_from_config, pool
 import app.candidates.models  # noqa: F401 — register tables on Base.metadata
 import app.ledger.models  # noqa: F401 — register ledger tables on Base.metadata
 import app.features.models  # noqa: F401 — register feature tables on Base.metadata
-import app.curation.models  # noqa: F401 — register curation table on Base.metadata
 import app.reports.models  # noqa: F401 — register report tables on Base.metadata
 import app.ratelimit.models  # noqa: F401 — register the counter table on Base.metadata
-import app.rights.models  # noqa: F401 — register the request queue on Base.metadata
 # These six were MISSING until S8.3 Phase B's review. `upgrade` never reads
 # target_metadata, so migrations always ran correctly -- but `alembic revision
 # --autogenerate` compared against a metadata that did not contain them, and
@@ -26,7 +24,6 @@ import app.rights.models  # noqa: F401 — register the request queue on Base.me
 import app.auth.models  # noqa: F401
 import app.interview.models  # noqa: F401
 import app.matching.models  # noqa: F401
-import app.profile_sources.models  # noqa: F401
 import app.screening.models  # noqa: F401
 import app.verification.models  # noqa: F401
 from app.core.config import get_settings

@@ -81,7 +81,7 @@ def main(*, parser_limits=False):
         with server() as http:
             with engine.connect() as conn:
                 checks.check("actual startup migrated scratch to head", conn.scalar(
-                    text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
+                    text("SELECT version_num FROM alembic_version")) == "0031_cut_unused_tables")
             orgs = [require(http.post("/ledger/orgs", json={"name": f"Synthetic Input {name}"}))
                     for name in ("A", "B")]
             headers = [{"X-Org-Key": org["api_key"]} for org in orgs]

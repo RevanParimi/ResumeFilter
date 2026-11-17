@@ -196,7 +196,7 @@ def main(*, provider_checks=False, composition_checks=False):
             rows = [json.loads(line) for line in events.read_text().splitlines()]
             starts = [r for r in rows if r["event"]=="started"]
             checks.check("each migrated production lifespan shares factory and store/service instances", len(starts)==2
-                and all(r["one_factory"] and r["reused"] and r["revision"]=="0030_screening_ingest_facts" for r in starts))
+                and all(r["one_factory"] and r["reused"] and r["revision"]=="0031_cut_unused_tables" for r in starts))
             checks.check("both graceful lifespans dispose and detach owned SQL resources", sum(r["event"]=="disposed" for r in rows)==2
                 and sum(r["event"]=="stopped" and r["detached"] for r in rows)==2)
             if provider_checks:

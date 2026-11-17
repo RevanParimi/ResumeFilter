@@ -13,8 +13,6 @@ import app.candidates.models  # noqa: F401 — populate Base.metadata
 import app.ledger.models  # noqa: F401 — populate Base.metadata
 import app.features.models  # noqa: F401 — populate Base.metadata
 import app.matching.models  # noqa: F401 — populate Base.metadata
-import app.profile_sources.models  # noqa: F401 — populate Base.metadata
-import app.curation.models  # noqa: F401 — populate Base.metadata
 import app.verification.models  # noqa: F401 — populate Base.metadata
 import app.interview.models  # noqa: F401 — populate Base.metadata
 import app.reports.models  # noqa: F401 — populate Base.metadata
@@ -49,17 +47,10 @@ def test_upgrade_head_creates_candidate_tables(tmp_path):
     assert {
         "organizations",
         "consent_grants",
-        "interview_records",
-        "evaluation_events",
         "audit_log",
-        "coding_round_results",
-        "observed_offers",
     } <= names
     assert "ml_feature_vectors" in names  # S4.2 migration 0007
     assert "job_requisitions" in names  # S5.1 migration 0008
-    assert "observed_offers" in names  # S5.2 migration 0009
-    assert "profile_sources" in names  # S6.1 migration 0010
-    assert "unmapped_terms" in names  # S6.3 migration 0011
     assert "candidate_credentials" in names  # S6.4 migration 0012
     assert "verifications" in names  # S7.1 migration 0013
     assert "verification_challenges" in names  # S7.1 migration 0013
@@ -98,17 +89,12 @@ def test_migrated_schema_matches_orm_models(tmp_path):
 CANDIDATE_TABLES = ("candidates", "resumes", "extractions", "resume_fingerprints")
 
 LEDGER_TABLES = (
-    "organizations", "consent_grants", "interview_records",
-    "evaluation_events", "audit_log", "coding_round_results", "observed_offers",
+    "organizations", "consent_grants", "audit_log",
 )
 
 FEATURE_TABLES = ("ml_feature_vectors",)  # S4.2
 
 MATCHING_TABLES = ("job_requisitions",)  # S5.1
-
-PROFILE_SOURCE_TABLES = ("profile_sources",)  # S6.1
-
-CURATION_TABLES = ("unmapped_terms", "curation_observations", "curation_aliases")
 
 CANDIDATE_AUTH_TABLES = ("candidate_credentials",)  # S6.4 — candidate CASCADE
 
@@ -139,7 +125,7 @@ def test_migrated_indexes_match_orm(tmp_path):
     schema (name + column set + uniqueness)."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
         migrated = {
             ix["name"]: (tuple(ix["column_names"]), bool(ix["unique"]))
             for ix in insp.get_indexes(table)
@@ -203,7 +189,7 @@ def test_migrated_fks_and_nullability_match_orm(tmp_path):
     the DPDP CASCADE contract must survive on the real migrated schema."""
     engine = _migrated_engine(tmp_path)
     insp = inspect(engine)
-    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + PROFILE_SOURCE_TABLES + CURATION_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
+    for table in CANDIDATE_TABLES + LEDGER_TABLES + FEATURE_TABLES + MATCHING_TABLES + CANDIDATE_AUTH_TABLES + VERIFICATION_TABLES + REPORT_TABLES + AUTH_TABLES + SCREENING_TABLES:
         migrated_cols = {c["name"]: c["nullable"] for c in insp.get_columns(table)}
         orm_cols = {c.name: c.nullable for c in Base.metadata.tables[table].columns}
         for name, nullable in orm_cols.items():
@@ -387,3 +373,76 @@ def test_0020_an_outcome_still_dies_with_its_candidate(tmp_path):
         ))
         conn.execute(sa.text("DELETE FROM candidates WHERE id = 'c1'"))
         assert conn.execute(sa.text("SELECT COUNT(*) FROM outcomes")).scalar() == 0
+
+
+RETIRED_TABLES = {
+    "interview_records", "evaluation_events", "coding_round_results", "observed_offers",
+    "profile_sources", "unmapped_terms", "curation_aliases", "curation_observations",
+    "data_principal_requests",
+}
+
+
+def test_retired_tables_upgrade_downgrade_and_upgrade_preserve_surviving_data(tmp_path):
+    """Drop populated dependent tables, restore their empty schema, retain live data."""
+    from sqlalchemy import text
+
+    url, cfg = _scratch_config(tmp_path, "retired.db")
+    command.upgrade(cfg, "0030_screening_ingest_facts")
+    engine = make_engine(url)
+
+    def schema(table):
+        inspector = inspect(engine)
+        return {
+            "columns": [(c["name"], str(c["type"]), c["nullable"], c["default"])
+                        for c in inspector.get_columns(table)],
+            "pk": inspector.get_pk_constraint(table)["constrained_columns"],
+            "unique": sorted((u["name"] or "", tuple(u["column_names"]))
+                             for u in inspector.get_unique_constraints(table)),
+            "indexes": sorted((i["name"], tuple(i["column_names"]), bool(i["unique"]))
+                              for i in inspector.get_indexes(table)),
+            "foreign_keys": sorted((tuple(f["constrained_columns"]), f["referred_table"],
+                                    tuple(f["referred_columns"]), f.get("options", {}).get("ondelete", ""))
+                                   for f in inspector.get_foreign_keys(table)),
+            "checks": sorted((c["name"], c["sqltext"]) for c in inspector.get_check_constraints(table)),
+        }
+
+    try:
+        before = {table: schema(table) for table in RETIRED_TABLES}
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO candidates (id, full_name, created_at, updated_at) "
+                                    "VALUES ('c1', 'Kept candidate', '2026-01-01', '2026-01-01')"))
+            connection.execute(text(_ORG_INSERT), {"id": "o1", "name": "Kept organization"})
+            connection.execute(text("INSERT INTO consent_grants "
+                "(id, candidate_id, org_id, purpose, granted_at, expires_at, created_at) VALUES "
+                "('g1', 'c1', 'o1', 'ledger_write', '2026-01-01', '2027-01-01', '2026-01-01')"))
+            connection.execute(text("INSERT INTO interview_records "
+                "(id, org_id, candidate_id, consent_id, stage, outcome, interviewed_at, created_at) "
+                "VALUES ('r1', 'o1', 'c1', 'g1', 'tech', 'advanced', '2026-01-01', '2026-01-01')"))
+            connection.execute(text("INSERT INTO evaluation_events "
+                "(id, record_id, candidate_id, event_type, payload, created_at) "
+                "VALUES ('e1', 'r1', 'c1', 'score', '{}', '2026-01-01')"))
+            connection.execute(text("INSERT INTO profile_sources "
+                "(id, candidate_id, source_type, identifier, signal, method, fetched_at, created_at) "
+                "VALUES ('s1', 'c1', 'github', 'synthetic', '{}', 'heuristic', '2026-01-01', '2026-01-01')"))
+            connection.execute(text("INSERT INTO curation_observations "
+                "(id, source_id, norm_key, display_name, created_at) "
+                "VALUES ('ob1', 's1', 'synthetic', 'Synthetic', '2026-01-01')"))
+
+        command.upgrade(cfg, "head")
+        assert not RETIRED_TABLES.intersection(inspect(engine).get_table_names())
+        command.downgrade(cfg, "0030_screening_ingest_facts")
+        assert {table: schema(table) for table in RETIRED_TABLES} == before
+        with engine.connect() as connection:
+            assert all(connection.scalar(text(f'SELECT count(*) FROM "{table}"')) == 0
+                       for table in RETIRED_TABLES)
+            assert connection.scalar(text("SELECT full_name FROM candidates WHERE id='c1'")) == "Kept candidate"
+            assert connection.scalar(text("SELECT name FROM organizations WHERE id='o1'")) == "Kept organization"
+            assert connection.scalar(text("SELECT count(*) FROM consent_grants")) == 1
+
+        command.upgrade(cfg, "head")
+        assert not RETIRED_TABLES.intersection(inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0031_cut_unused_tables"
+            assert connection.scalar(text("SELECT count(*) FROM candidates")) == 1
+    finally:
+        engine.dispose()

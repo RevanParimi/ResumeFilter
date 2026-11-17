@@ -16,9 +16,8 @@ Same database and metadata root as candidates (`candidates_db_url`):
 | `consent_grants` | purpose-scoped, org-scoped, expiring, revocable consent | CASCADE from `candidates.id` |
 | `audit_log` | append-only audit of every mutation and consent-gated read | candidate-linked rows CASCADE; org-only rows survive |
 
-`interview_records`, `evaluation_events`, `coding_round_results` and `observed_offers` are still in
-the schema, but no code reads or writes them since the cross-company records and
-reputation were removed.
+Migration `0031_cut_unused_tables` drops the nine tables left behind by retired
+features. Its downgrade recreates their schema empty; it does not restore data.
 
 ## Consent model (`src/app/ledger/consent.py`, pure)
 

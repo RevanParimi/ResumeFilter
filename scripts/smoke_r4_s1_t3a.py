@@ -726,7 +726,7 @@ def run(scratch, url, pg_options):
         rows = [json.loads(line) for line in events.read_text().splitlines()]
         checks.check("two migrated lifespans close and detach owned SQL", sum(row["event"] == "stopped" for row in rows) == 2
             and sum(row["event"] == "disposed" for row in rows) == 2
-            and all(row["revision"] == "0030_screening_ingest_facts" for row in rows if row["event"] == "started"))
+            and all(row["revision"] == "0031_cut_unused_tables" for row in rows if row["event"] == "started"))
     return checks.summary()
 
 

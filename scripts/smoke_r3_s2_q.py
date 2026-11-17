@@ -118,7 +118,7 @@ def main():
                     public_ui()
                     with engine.connect() as conn:
                         checks.check("scratch schema is migrated to current head", conn.scalar(
-                            text("SELECT version_num FROM alembic_version")) == "0030_screening_ingest_facts")
+                            text("SELECT version_num FROM alembic_version")) == "0031_cut_unused_tables")
                     operators = [require(admin.post("/admin/users", json={"email": email})) for email in emails]
                     login(a, emails[0]); login(b, emails[1])
                     candidates = [require(admin.post("/candidates", json={"evaluate": False,
