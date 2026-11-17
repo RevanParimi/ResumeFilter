@@ -52,7 +52,7 @@ def _materialize(services, candidate_id):
     services.features.upsert_vector(mv)
 
 
-def test_all_dashboard_routes_require_org_key(services):
+def test_board_requires_org_key(services):
     with _client(services) as c:
         assert c.get("/jobs/x/board").status_code == 401
 
@@ -85,6 +85,5 @@ def test_board_200_with_materialized_pool(services):
         assert r.status_code == 200
         body = r.json()
         assert body["requisition"]["id"] == req["id"]
-        assert body["comp"]["advisory"] is True
         assert body["match"]["pool_size"] == 1
         assert body["match"]["ranked"][0]["candidate_id"]

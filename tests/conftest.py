@@ -245,8 +245,6 @@ def make_services(
     ledger: LedgerStore | None = None,
     features: FeatureStore | None = None,
     jobs=None,
-    comp=None,
-    dashboard=None,
     portal=None,
     verification=None,
     speech=None,
@@ -274,12 +272,6 @@ def make_services(
             candidates._session_factory,
             candidate_store=candidates, feature_store=features, settings=settings,
         )
-    if comp is None:
-        from app.comp.service import CompService
-        comp = CompService(ledger, settings=settings)
-    if dashboard is None:
-        from app.dashboard.service import DashboardService
-        dashboard = DashboardService(jobs, comp, ledger, settings=settings)
     report_store = SqlReportStore(candidates._session_factory)
     # Match production: auth and verification share the explicitly selected
     # email capability, including its refusing default.
@@ -364,8 +356,6 @@ def make_services(
         ledger=ledger,
         features=features,
         jobs=jobs,
-        comp=comp,
-        dashboard=dashboard,
         portal=portal,
         verification=verification,
         interview=interview,

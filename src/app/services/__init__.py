@@ -48,8 +48,6 @@ def _cleanup_failed_build(close, resource: str) -> None:
 
 if TYPE_CHECKING:  # avoid a features.store -> features.context -> services cycle
     from app.auth.service import AuthService
-    from app.comp.service import CompService
-    from app.dashboard.service import DashboardService
     from app.features.store import FeatureStore
     from app.interview.service import InterviewService
     from app.matching.store import JobStore
@@ -69,8 +67,6 @@ class Services:
     ledger: LedgerStore
     features: FeatureStore
     jobs: JobStore
-    comp: CompService
-    dashboard: DashboardService
     portal: PortalService
     verification: VerificationService
     interview: InterviewService
@@ -338,8 +334,6 @@ def build_default_services(
     # Function-local import: at call time every module is fully loaded, so this
     # sidesteps the import cycle the top-level import would create.
     from app.auth.service import build_auth_service
-    from app.comp.service import build_comp_service
-    from app.dashboard.service import build_dashboard_service
     from app.features.store import build_feature_store
     from app.interview.service import build_interview_service
     from app.matching.store import build_job_store
@@ -369,7 +363,6 @@ def build_default_services(
         report_store = build_report_store(settings, session_factory=session_factory)
         features = build_feature_store(settings, session_factory=session_factory)
         jobs = build_job_store(settings, candidates=candidates, features=features, session_factory=session_factory)
-        comp = build_comp_service(settings, ledger=ledger)
         # Built BEFORE the portal (whose my_data view reads identity assurance).
         email = build_email(settings)
         verification = build_verification_service(
@@ -412,8 +405,6 @@ def build_default_services(
             ledger=ledger,
             features=features,
             jobs=jobs,
-            comp=comp,
-            dashboard=build_dashboard_service(settings, jobs=jobs, comp=comp, ledger=ledger),
             portal=build_portal_service(
                 settings, candidates=candidates, ledger=ledger,
                 report_store=report_store,

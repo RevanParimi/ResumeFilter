@@ -45,8 +45,7 @@ def create_smoke_app():
             with svc.session_factory() as session:
                 revision = session.scalar(text("SELECT version_num FROM alembic_version"))
             record("started", one_factory=all(s._session_factory is svc.session_factory for s in stores),
-                reused=svc.dashboard._jobs is svc.jobs and svc.dashboard._comp is svc.comp
-                and svc.comp._ledger is svc.ledger and svc.jobs._features is svc.features
+                reused=svc.jobs._features is svc.features
                 and svc.jobs._candidates is svc.candidates, revision=revision)
             yield
         record("stopped", detached=app.state.services is None and app.state.engine is None)
@@ -178,8 +177,8 @@ def main(*, provider_checks=False, composition_checks=False):
                 batch = require(admin.post("/features/materialize",json={}))
                 checks.check("materialization sees shared saved data", batch["materialized"]==2)
                 job = require(org_a.post("/jobs",json={"title":"Shared SQL Engineer","must_have_skills":["python"]}))
-                checks.check("job service works and refuses another employer", org_a.post(f"/jobs/{job['id']}/match",json={}).status_code==200
-                    and org_b.post(f"/jobs/{job['id']}/match",json={}).status_code==404)
+                checks.check("job service works and refuses another employer", org_a.get(f"/jobs/{job['id']}/board").status_code==200
+                    and org_b.get(f"/jobs/{job['id']}/board").status_code==404)
             rows = [json.loads(line) for line in events.read_text().splitlines()]
             checks.check("first real shutdown disposes one owned pool and its DBAPI connection", sum(r["event"]=="disposed" for r in rows)==1
                 and any(r["event"]=="connection_closed" for r in rows) and rows[-1]=={"event":"stopped","detached":True})

@@ -18,7 +18,7 @@ from app.reports.outcomes import build_outcome
 from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
 from tests.test_ledger_api import _ingest_candidate
-from tests.test_dashboard_api import _candidate as dashboard_candidate, _materialize, AS_OF
+from tests.test_job_board_api import _candidate as board_candidate, _materialize, AS_OF
 
 
 # Api route extraction
@@ -455,7 +455,7 @@ def test_ledger_admin_and_org_cookies_preserve_csrf_and_auth_planes(cfg, capture
         assert services.jobs.list_requisitions(oid) == []
 
 
-# Employer jobs, compensation and dashboard extraction
+# Employer jobs and role board extraction
 
 def employer_app(services):
     from app.api.auth import auth_router
@@ -468,14 +468,12 @@ def employer_app(services):
     return app
 
 
-def test_employer_workflow_preserves_tenancy_ranking_compensation_and_consent(services):
-    cid = dashboard_candidate(services, skills=("python", "django"))
+def test_employer_workflow_preserves_tenancy_ranking(services):
+    cid = board_candidate(services, skills=("python", "django"))
     organizations = [services.ledger.create_organization(name) for name in ("Employer A", "Employer B")]
     keys = [services.ledger.issue_api_key(org.id) for org in organizations]
     spec = {"title": "Senior Backend Engineer", "must_have_skills": ["Python", "Django"],
             "min_years_experience": 5, "comp_band": {"ctc_min": 1500000, "ctc_max": 2500000}}
-    offer = {"candidate_id": cid, "role_family": "backend_engineer", "seniority": "senior",
-             "city_tier": "metro", "ctc_fixed": 2000000, "offered_at": datetime.now(timezone.utc).isoformat()}
     with TestClient(employer_app(services), raise_server_exceptions=False) as a, \
             TestClient(employer_app(services), raise_server_exceptions=False) as b:
         assert a.get("/jobs").status_code == 401
@@ -488,59 +486,34 @@ def test_employer_workflow_preserves_tenancy_ranking_compensation_and_consent(se
         assert job["org_id"] == organizations[0].id and job["must_have_skills"] == ["python", "django"]
         assert a.get(path).json() == job
         assert a.get("/jobs").json() == [job] and b.get("/jobs").json() == []
-        for suffix in ("", "/comp", "/board"):
+        for suffix in ("", "/board"):
             denied, missing = b.get(path + suffix), b.get("/jobs/missing" + suffix)
             assert denied.status_code == missing.status_code == 404
             assert denied.json() == missing.json() == {"detail": "requisition not found"}
         assert b.patch(path, json={"status": "closed"}).status_code == 404
-        assert b.post(path + "/match", json={}).status_code == 404
-        for response in (a.post(path + "/match", json={}), a.get(path + "/board")):
+        for response in (a.get(path + "/board"),):
             assert response.status_code == 200
-            match = response.json().get("match", response.json())
+            match = response.json()["match"]
             assert match["advisory"] and match["pool_size"] == 0
             assert match["reason"] == "no_materialized_candidates"
-        assert a.post(path + "/match", json={"limit": 0}).status_code == 422
-        assert a.post("/comp/estimate", json={"role_family": "astronaut"}).status_code == 400
-        estimate = a.post("/comp/estimate", json={"title": spec["title"], "years_experience": 5})
-        assert estimate.status_code == 200
-        value = estimate.json()
-        assert value["advisory"] and value["estimate"]["advisory"]
-        assert value["estimate"]["sources"] == ["static"]
-        assert all(value[field] is None for field in ("requisition_band", "position", "delta_pct"))
-        benchmark = a.get(path + "/comp")
-        assert benchmark.status_code == 200 and benchmark.json()["advisory"]
-        assert benchmark.json()["requisition_band"] == spec["comp_band"] | {"currency": "INR", "variable_max": None, "notes": None}
-        assert a.post("/ledger/offers", json=offer).status_code == 403
-        assert a.post("/ledger/offers", json={**offer, "city_tier": "moon"}).status_code == 400
-        assert a.post("/ledger/offers", json={**offer, "ctc_fixed": -1}).status_code == 422
-        assert a.post("/ledger/offers", json={**offer, "candidate_id": "missing"}).status_code == 404
-        read = services.ledger.grant_consent(candidate_id=cid, purpose="ledger_read", org_id=organizations[0].id)
-        write = services.ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=organizations[0].id)
-        submitted = a.post("/ledger/offers", json=offer)
-        assert submitted.status_code == 200, submitted.text
-        assert submitted.json()["org_id"] == organizations[0].id and submitted.json()["consent_id"] == write.id
-        assert b.post("/ledger/offers", json=offer).status_code == 403
         _materialize(services, cid)
-        matched = a.post(path + "/match", json={"as_of": AS_OF.isoformat()})
+        matched = a.get(path + "/board")
         assert matched.status_code == 200, matched.text
-        assert matched.json()["advisory"] and matched.json()["pool_size"] == 1
-        assert matched.json()["ranked"][0]["candidate_id"] == cid
-        assert matched.json()["ranked"][0]["skill"]["coverage"] == 1
+        assert matched.json()["match"]["advisory"] and matched.json()["match"]["pool_size"] == 1
+        assert matched.json()["match"]["ranked"][0]["candidate_id"] == cid
+        assert matched.json()["match"]["ranked"][0]["skill"]["coverage"] == 1
         board = a.get(path + "/board")
         assert board.status_code == 200
-        assert board.json()["advisory"] and board.json()["comp"]["advisory"]
+        assert board.json()["advisory"]
         assert board.json()["match"]["ranked"][0]["candidate_id"] == cid
         assert a.patch(path, json={"status": "closed"}).json()["status"] == "closed"
         updated = a.patch(path, json={"spec": {**spec, "title": "Revised Backend Engineer"}})
         assert updated.status_code == 200 and updated.json()["title"] == "Revised Backend Engineer"
-        services.ledger.revoke_consent(read.id)
-        services.ledger.revoke_consent(write.id)
-        assert a.post("/ledger/offers", json=offer).status_code == 403
 
 
 def test_employer_cookie_requires_csrf_and_retains_tenant_precedence(cfg, capture_path):
     services = make_services(cfg)
-    cid = dashboard_candidate(services)
+    cid = board_candidate(services)
     other = services.ledger.create_organization("Employer header tenant")
     key = services.ledger.issue_api_key(other.id)
     with TestClient(employer_app(services), raise_server_exceptions=False) as actor:
@@ -558,12 +531,7 @@ def test_employer_cookie_requires_csrf_and_retains_tenant_precedence(cfg, captur
         job = created.json()
         oid, path = job["org_id"], f"/jobs/{job['id']}"
         assert oid != other.id
-        services.ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=oid)
-        writes = [("POST", "/jobs", spec), ("PATCH", path, {"status": "closed"}),
-                  ("POST", path + "/match", {}), ("POST", "/comp/estimate", {"title": "Engineer"}),
-                  ("POST", "/ledger/offers", {"candidate_id": cid, "role_family": "backend_engineer",
-                    "seniority": "senior", "city_tier": "metro", "ctc_fixed": 1000000,
-                    "offered_at": datetime.now(timezone.utc).isoformat()})]
+        writes = [("POST", "/jobs", spec), ("PATCH", path, {"status": "closed"})]
         actor.headers.pop("X-CSRF-Token")
         for method, target, body in writes:
             assert actor.request(method, target, json=body).status_code == 403
@@ -595,7 +563,7 @@ def feature_app(services):
 
 
 def test_feature_workflow_preserves_cuts_partial_refresh_errors_and_erasure(services):
-    ids = [dashboard_candidate(services, name=name, email=name + "@example.in", skills=skills)
+    ids = [board_candidate(services, name=name, email=name + "@example.in", skills=skills)
            for name, skills in (("FeatureOne", ("python",)), ("FeatureTwo", ("python", "sql")))]
     with TestClient(feature_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as client:
         for path, body, status in (
@@ -681,7 +649,7 @@ def portal_app(services):
 def test_portal_workflow_preserves_subject_consent_audit_and_erasure(services):
     from app.ledger.store import ConsentError
 
-    ids = [dashboard_candidate(services, name=name, email=name + "@example.in")
+    ids = [board_candidate(services, name=name, email=name + "@example.in")
            for name in ("PortalOne", "PortalTwo")]
     keys = [services.candidates.issue_access_key(cid) for cid in ids]
     org = services.ledger.create_organization("Portal disclosure employer")
@@ -716,7 +684,7 @@ def test_portal_workflow_preserves_subject_consent_audit_and_erasure(services):
 
 def test_portal_erasure_errors_preserve_http_contract(settings, monkeypatch):
     services = make_services(settings)
-    cid = dashboard_candidate(services)
+    cid = board_candidate(services)
     key = services.candidates.issue_access_key(cid)
     with TestClient(portal_app(services), headers={"X-Candidate-Key": key}, raise_server_exceptions=False) as actor:
         from app.portal.service import PortalSubjectErasedError

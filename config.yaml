@@ -131,7 +131,7 @@ ledger_api_key_bytes: 32
 feat_default_view: core_v1      # default FeatureView name (all seed features)
 
 # --- Demand side (PI-5) - S5.1 job requisition + role-conditioned matching -----
-match_default_limit: 25          # default shortlist size for POST /jobs/{id}/match
+match_default_limit: 25          # default shortlist size for internal matching
 match_skill_weight: 3.0          # dominant term: job-relative skill coverage
 match_years_weight: 1.0          # candidate.years_experience (higher better)
 match_degree_weight: 1.0         # candidate.highest_degree_level (higher better)
@@ -139,21 +139,7 @@ match_notice_weight: 1.0         # candidate.notice_period_days (lower better)
 match_location_weight: 1.0       # match.location_fit (candidate city tier in target)
 match_nice_to_have_fraction: 0.3 # nice-to-have share of skill coverage
 
-# --- Comp intelligence (PI-5) - S5.2 advisory static bands + observed offers ----
-comp_currency_default: INR
-comp_min_observations: 5         # min observed offers before the observed blend applies
-comp_recency_halflife_days: 365  # observed-offer recency half-life
-comp_prior_strength: 8.0         # static-prior pseudo-count (k0)
-comp_confidence_floor: 0.30      # static-only confidence (and blend floor)
-comp_confidence_cap: 0.90        # confidence ceiling
-comp_confidence_k: 4.0           # evidence mass where confidence gains half its range
-comp_mid_years: 2.0              # seniority junior->mid threshold (years)
-comp_senior_years: 5.0           # seniority mid->senior threshold
-comp_lead_years: 9.0             # seniority senior->lead threshold
-comp_benchmark_tolerance: 0.10   # +/- band around p50 counted as "at market"
-# comp_bands_path:               # optional path to an operator static-band JSON
-
-# --- Employer dashboard (PI-5) - S5.3 read-only composition over jobs/comp/ledger --
+# --- Employer dashboard (PI-5) - S5.3 role board over requisitions and matching --
 dash_board_top_n: 20             # max ranked candidates returned per GET /jobs/{id}/board
 
 # --- Identity verification (PI-7) - S7.1 spine + consent-first identity -------

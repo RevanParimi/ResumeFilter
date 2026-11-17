@@ -33,10 +33,8 @@ Around that engine, the platform currently ships:
 - **ML feature store & ranking** (PI-4, done) — a versioned feature registry,
   point-in-time materialization and the ranking engine job matching uses →
   [FEATURES.md](FEATURES.md)
-- **Demand side** (PI-5, done) — job requisitions + advisory role-conditioned
-  match-ranking, advisory comp intelligence (static bands blended with
-  consent-gated ledger-observed offers), and a read-only employer dashboard →
-  [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md)
+- **Demand side** — job requisitions, advisory role ranking and the role board →
+  [MATCHING.md](MATCHING.md)
 - **Candidate side** (PI-6, done) — a candidate auth plane + DPDP portal
   (access, transparency, consent control, erasure) → [PORTAL.md](PORTAL.md)
 - **Verification & assessment depth** (PI-7) — a verification spine with
@@ -200,10 +198,10 @@ in the linked docs:
 
 | Surface | Plane | Key endpoints | Doc |
 |---------|-------|---------------|-----|
-| Ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/offers` (consent-gated, audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
+| Ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
 | Feature store | admin `X-API-Key` | `POST /features/materialize` — point-in-time feature vectors for matching | [FEATURES.md](FEATURES.md) |
-| Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) · `GET /jobs/{id}/board` | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md) |
 | Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
+| Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `GET /jobs/{id}/board` (advisory shortlist) | [MATCHING.md](MATCHING.md) |
 | Verification: identity | candidate `X-Candidate-Key` + org `X-Org-Key` + admin `X-API-Key` | `POST /portal/verifications` · `…/{id}/confirm` · `GET /portal/verifications` (assurance); `GET /verification/candidates/{id}/assurance` (consent-gated, every attempt audited allowed *and* denied); `POST /candidates/{id}/verifications/manual-review` | [VERIFICATION.md](VERIFICATION.md) |
 
 Every one of these is **advisory** and **consent-aware**: consent-gated writes,
@@ -296,12 +294,8 @@ in [genai.py](src/app/domains/genai.py) (fine-tuning, RAG, multi-agent) and
 
 Only **first-party** data is used: the candidate-provided resume and any
 GitHub/portfolio URLs **they** share. The engine never scrapes third-party
-profiles. Cross-company signals in the ledger (interview outcomes, coding
-rounds, offers) are an organization's record of **its own** interaction with a
-candidate, ingested only under a purpose-scoped, revocable, audited consent
-grant — and every candidate-linked row cascades on DPDP erasure. Comp
-aggregation reads only de-identified, k-anonymized offer data
-([LEDGER.md](LEDGER.md) · [COMP.md](COMP.md)).
+profiles. Purpose-scoped consent grants are revocable and audited; every
+candidate-linked row cascades on erasure ([LEDGER.md](LEDGER.md)).
 
 Identity verification stores **outcomes only** — never a document, image, or
 biometric. That posture is structural rather than procedural: no column on
@@ -357,7 +351,7 @@ src/app/
     similarity.py        S2.3 MinHash fingerprints + farm banding
     risk.py              S2.4 fused advisory fabrication_risk
   ledger/                PI-3 evaluation ledger → LEDGER.md
-    schema.py, models.py contracts + ORM (orgs, consent, offers, audit)
+    schema.py, models.py contracts + ORM (orgs, consent, audit)
     consent.py           pure purpose-scoped/expiring/revocable consent logic
     store.py             LedgerStore (consent-gated writes, audited reads)
   features/              PI-4 feature store & ranking → FEATURES.md
@@ -366,11 +360,6 @@ src/app/
     ranking.py                 composite-score ranking
   matching/              PI-5 demand side → MATCHING.md
     match.py, store.py   compile-to-ranking + skill coverage; JobStore
-  comp/                  PI-5 comp intelligence → COMP.md
-    bands.py, estimate.py  static prior + observed-offer blend (advisory)
-    service.py           CompService (reads ledger-observed offers)
-  dashboard/             PI-5 employer read-models → DASHBOARD.md
-    schema.py, service.py  pure composition over jobs/comp/ledger (owns no tables)
   portal/                PI-6 candidate DPDP portal → PORTAL.md
     schema.py, retention.py  read-shapes + pure retention posture
     service.py           PortalService (composition; owns no tables)
@@ -387,13 +376,13 @@ src/app/
     data_eng.py          Data Engineering domain (ETL · streaming · warehouse)
   schemas/               claims.py, report.py, fabrication.py (Pydantic v2)
   services/              Services container (candidates · ledger · features · jobs
-                         · comp · dashboard · portal
+                         · portal
                          · verification; injected, never global) + llm (OpenRouter) ·
                          github (evaluation-local provenance) · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)
 alembic/                 shared migrations 0001-0009 (candidate store, fingerprints,
                          ledger, consent/api-keys, coding rounds, reputation weight,
-                         feature vectors, job requisitions, observed offers)
+                         feature vectors and job requisitions)
 tests/                   per-node + API + integration + adversarial fixtures,
                          fully offline (653 tests)
 Dockerfile               non-root image with /healthz healthcheck
@@ -414,7 +403,7 @@ Dockerfile               non-root image with /healthz healthcheck
   rounds and reputation since removed).
 - **PI-4 ML feature store & ranking (done):** feature registry ·
   point-in-time materialization · ranking engine.
-- **PI-5 Demand side (in progress):** S5.1 job requisitions + role-conditioned
-  matching ✓ · S5.2 comp intelligence v0 ✓ · S5.3 thin employer dashboard (next).
+- **PI-5 Demand side (in progress):** job requisitions, role-conditioned
+  matching and role board; compensation intelligence has been removed.
 - **PI-6 candidate side & intake · PI-7 verification & assessment depth ·
   PI-8 scale & learning** — shaped, not started.

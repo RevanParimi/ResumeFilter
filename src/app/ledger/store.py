@@ -6,8 +6,7 @@ delegate to the pure ``app.ledger.consent`` module; the store only loads the
 candidate's grant rows and converts them to contracts.
 
 Actor model (S3.1, pre-auth): consent mutations are attributed to the
-candidate (the DPDP data principal), offer submissions to the org, and
-org management to "system". Org-scoped API keys arrive in S3.2.
+candidate (the DPDP data principal), and org management to "system". Org-scoped API keys arrive in S3.2.
 
 DPDP: erasure is NOT this store's job — every candidate-linked ledger row
 cascades away when ``CandidateStore.delete_candidate`` deletes the candidate
@@ -47,7 +46,6 @@ from app.ledger import consent as consent_logic
 from app.ledger.models import (
     AuditLogRow,
     ConsentGrantRow,
-    ObservedOfferRow,
     OrganizationRow,
 )
 from app.ledger.schema import (
@@ -55,8 +53,6 @@ from app.ledger.schema import (
     ConsentDecision,
     ConsentGrant,
     ConsentPurpose,
-    ObservedOffer,
-    ObservedOfferPoint,
     Organization,
 )
 
@@ -98,17 +94,6 @@ def _grant(row: ConsentGrantRow) -> ConsentGrant:
         granted_at=consent_logic.as_utc(row.granted_at),
         expires_at=consent_logic.as_utc(row.expires_at),
         revoked_at=consent_logic.as_utc(row.revoked_at) if row.revoked_at else None,
-    )
-
-
-def _observed_offer(row: ObservedOfferRow) -> ObservedOffer:
-    return ObservedOffer(
-        id=row.id, org_id=row.org_id, candidate_id=row.candidate_id,
-        consent_id=row.consent_id, role_family=row.role_family,
-        seniority=row.seniority, city_tier=row.city_tier,
-        ctc_fixed=row.ctc_fixed, ctc_variable=row.ctc_variable, currency=row.currency,
-        offered_at=consent_logic.as_utc(row.offered_at),
-        created_at=consent_logic.as_utc(row.created_at),
     )
 
 
@@ -423,107 +408,6 @@ class LedgerStore:
             row = session.get(ConsentGrantRow, consent_id)
             return _grant(row) if row else None
 
-    # -- observed offers (S5.2, consent-gated) ----------------------------------
-
-    def submit_observed_offer(
-        self,
-        *,
-        org_id: str,
-        candidate_id: str,
-        role_family: str,
-        seniority: str,
-        city_tier: str,
-        ctc_fixed: float,
-        ctc_variable: Optional[float] = None,
-        currency: str = "INR",
-        offered_at: datetime,
-        now: Optional[datetime] = None,
-    ) -> ObservedOffer:
-        """Write-time DPDP gate: refuses without an active ledger_write grant.
-        role_family/seniority/city_tier are validated at the API boundary."""
-        moment = consent_logic.as_utc(now) if now else _utcnow()
-        offered_at = consent_logic.as_utc(offered_at)
-        with self._session_factory() as session:
-            if session.get(OrganizationRow, org_id) is None:
-                raise LookupError(f"unknown organization: {org_id}")
-            if session.get(CandidateRow, candidate_id) is None:
-                raise LookupError(f"unknown candidate: {candidate_id}")
-            grants = self._grants_for(session, candidate_id, ConsentPurpose.LEDGER_WRITE)
-            decision = consent_logic.check_consent(
-                grants, org_id=org_id, purpose=ConsentPurpose.LEDGER_WRITE, at=moment
-            )
-            if not decision.allowed:
-                raise ConsentError(decision.reason)
-            row = ObservedOfferRow(
-                org_id=org_id, candidate_id=candidate_id, consent_id=decision.grant_id,
-                role_family=role_family, seniority=seniority, city_tier=city_tier,
-                ctc_fixed=ctc_fixed, ctc_variable=ctc_variable, currency=currency,
-                offered_at=offered_at,
-            )
-            session.add(row)
-            session.flush()
-            self._audit(
-                session, actor_type="org", actor_id=org_id, action="offer.submit",
-                entity_type="observed_offer", entity_id=row.id, candidate_id=candidate_id,
-                details={
-                    "role_family": role_family, "seniority": seniority,
-                    "city_tier": city_tier, "ctc_fixed": ctc_fixed,
-                    "consent_id": decision.grant_id,
-                },
-            )
-            session.commit()
-            return _observed_offer(row)
-
-    def observed_offers_for_comp(
-        self,
-        *,
-        requesting_org_id: str,
-        role_family: str,
-        seniority: str,
-        city_tier: str,
-        at: Optional[datetime] = None,
-    ) -> list[ObservedOfferPoint]:
-        """Cross-candidate comp aggregation read (S5.2). Returns DE-IDENTIFIED
-        points (total_ctc + offered_at only) for offers matching the role signal
-        whose stamped ledger_write grant is still active at `at` -- so a
-        candidate's revocation/expiry removes their offer. Audits comp.aggregate
-        (candidate_id=None: the aggregate is about a role, not a person). The
-        k-anonymity floor is applied by the comp engine, not here."""
-        moment = consent_logic.as_utc(at) if at else _utcnow()
-        with self._session_factory() as session:
-            rows = (
-                session.execute(
-                    select(ObservedOfferRow).where(
-                        ObservedOfferRow.role_family == role_family,
-                        ObservedOfferRow.seniority == seniority,
-                        ObservedOfferRow.city_tier == city_tier,
-                    )
-                ).scalars().all()
-            )
-            points: list[ObservedOfferPoint] = []
-            for r in rows:
-                grant_row = session.get(ConsentGrantRow, r.consent_id)
-                if grant_row is None:
-                    continue
-                if consent_logic.is_grant_active(
-                    _grant(grant_row), org_id=r.org_id,
-                    purpose=ConsentPurpose.LEDGER_WRITE, at=moment,
-                ):
-                    points.append(ObservedOfferPoint(
-                        total_ctc=r.ctc_fixed + (r.ctc_variable or 0.0),
-                        offered_at=consent_logic.as_utc(r.offered_at),
-                    ))
-            self._audit(
-                session, actor_type="org", actor_id=requesting_org_id,
-                action="comp.aggregate", entity_type="role_signal",
-                entity_id=f"{role_family}:{seniority}:{city_tier}", candidate_id=None,
-                details={
-                    "matched": len(rows), "active": len(points),
-                    "excluded": len(rows) - len(points),
-                },
-            )
-            session.commit()
-            return points
 
     # -- feature materialization consent (S4.2, platform-internal gate) ---------
 

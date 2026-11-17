@@ -337,7 +337,7 @@ in the UI needs yet.
 
 **Two org-plane routes are in the same category and are already reachable by a
 customer**, which is why they are named here rather than left to be
-rediscovered: `POST /jobs/{req_id}/match` and `GET /jobs/{req_id}/board` are
+rediscovered: `GET /jobs/{req_id}/board` is
 both `@org_router`, and the ranking underneath them reads
 `features.vectors_for_view(...)` with **no org filter**
 (`src/app/matching/store.py:188`), returning `candidate_id`s drawn from the whole
@@ -346,7 +346,7 @@ and it does not leak anything §7 redacts — but it means the org plane has mor
 than one cross-corpus data surface, and only the screening one is scoped by this
 sprint. The guard in §5 cannot see it either, since it watches `report_store`
 and `candidates` and this reads `features`. Scoping the marketplace surfaces is
-one open decision, and it should be taken once, for both.
+one open decision, and it should be taken for the board.
 
 Also out of scope, by the same spec section: a worker/queue/scheduler (no
 background execution exists anywhere in `src/app/` yet — that is S8.3's), rate

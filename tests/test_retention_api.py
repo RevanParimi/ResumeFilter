@@ -17,7 +17,7 @@ from app.retention.sweep import main
 
 ALL_CLASSES = {
     "resumes", "verifications", "interviews",
-    "observed_offers", "audit_log",
+    "audit_log",
     "batch_item_text", "rate_limit_counters", "login_state",
 }
 

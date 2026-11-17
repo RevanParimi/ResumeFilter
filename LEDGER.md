@@ -14,10 +14,9 @@ Same database and metadata root as candidates (`candidates_db_url`):
 |---|---|---|
 | `organizations` | member companies (`active`/`suspended`), API-key hash, `reliability_weight` | none — survives erasure |
 | `consent_grants` | purpose-scoped, org-scoped, expiring, revocable consent | CASCADE from `candidates.id` |
-| `observed_offers` | compensation offers an org submitted under `ledger_write` ([COMP.md](COMP.md)) | CASCADE |
 | `audit_log` | append-only audit of every mutation and consent-gated read | candidate-linked rows CASCADE; org-only rows survive |
 
-`interview_records`, `evaluation_events` and `coding_round_results` are still in
+`interview_records`, `evaluation_events`, `coding_round_results` and `observed_offers` are still in
 the schema, but no code reads or writes them since the cross-company records and
 reputation were removed.
 
@@ -36,8 +35,8 @@ reputation were removed.
   grants and candidate-linked audit rows.
 
 Every mutation in `src/app/ledger/store.py` writes its `audit_log` row in the
-same transaction. Consent actions are attributed to the candidate, offer
-submissions to the org, and org management to `system`.
+same transaction. Consent actions are attributed to the candidate and
+org management to `system`.
 
 **Org deletion is a hard cascade, deliberately.** `delete_organization`
 cascades through that org's consent grants and the rows stamped with them. This
@@ -71,7 +70,7 @@ taxonomy. Stored grants reference these wire values, so none is removed:
 
 | Purpose | Added | Authorizes |
 |---|---|---|
-| `ledger_write` | S3.1 | an org may submit ledger evidence about the candidate (today: observed offers) |
+| `ledger_write` | S3.1 | an org may submit ledger evidence about the candidate (retained purpose; submission routes have been removed) |
 | `ledger_read` | S3.1 | consent-gated ledger reads; also the basis for including consent-tagged features in materialisation and serving ([FEATURES.md](FEATURES.md)) |
 | `identity_verify` | S7.1 | the platform may verify the candidate's identity or employment via an **external** source |
 | `verification_read` | S7.1 | an org may see the candidate's verification disclosure — identity assurance **and** employment-claim evidence (**redefined 2026-07-31, S7.2** — see below) |
@@ -110,8 +109,7 @@ and it stays shut. A test pins the distinction: an org holding
 **Nothing in `src/app/ledger/` reads the three purposes added by PI-7.** They are
 enforced in `src/app/verification/` and (for `interview_read`)
 `src/app/interview/store.py`, which import the ledger for consent checking and
-audit; the ledger never imports either (the same layering rule S5.2 established
-for comp). `VerificationStore` reuses
+audit; the ledger never imports either . `VerificationStore` reuses
 `LedgerStore._grants_for` / `_audit` and `consent.check_consent` /
 `has_any_active` unchanged, and its audit rows (`verification.start`,
 `verification.complete`, `verification.query`) land in the shared `audit_log`. Both org reads audit **every** attempt, allowed *and*

@@ -197,7 +197,6 @@
             <button onClick="{{ goEvaluate }}" style="{{ navEvaluate }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/zap.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/zap.svg) center/contain no-repeat;"></span><span>Instant check</span></button>
             <div style="{{ navGroup }}">Demand</div>
             <button onClick="{{ goRoles }}" style="{{ navRoles }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/briefcase.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/briefcase.svg) center/contain no-repeat;"></span><span>Roles</span></button>
-            <button onClick="{{ goComp }}" style="{{ navComp }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/indian-rupee.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/indian-rupee.svg) center/contain no-repeat;"></span><span>Comp intelligence</span></button>
             <div style="{{ navGroup }}">Account</div>
             <button onClick="{{ goDevices }}" style="{{ navDevices }}" style-hover="background:var(--hover)"><span style="width:15px; height:15px; flex:none; display:inline-block; background:currentColor; -webkit-mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat; mask:url(https://unpkg.com/lucide-static@0.460.0/icons/monitor-smartphone.svg) center/contain no-repeat;"></span><span>Signed-in devices</span></button>
           </div>
@@ -1072,65 +1071,6 @@
             </sc-if>
           </sc-if>
 
-          <sc-if value="{{ isComp }}" hint-placeholder-val="{{ false }}">
-            <h1 style="{{ h1 }}">Comp intelligence</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:66ch;">A static market prior blended with de-identified, k-anonymised offers observed in the ledger. Advisory, like everything else.</p>
-
-            <sc-if value="{{ compError }}" hint-placeholder-val="{{ false }}">
-              <div style="{{ authErrorBox }}">{{ compErrorText }}</div>
-            </sc-if>
-
-            <sc-if value="{{ noComp }}" hint-placeholder-val="{{ false }}">
-              <div style="max-width:640px; padding:16px; border-radius:10px; background:var(--panel); border:1px dashed var(--border);">
-                <div style="font-size:13px; font-weight:600; color:var(--heading);">No requisition to benchmark</div>
-                <p style="font-size:12.5px; line-height:1.6; color:var(--muted); margin:6px 0 0 0;">{{ noCompReason }}</p>
-              </div>
-            </sc-if>
-
-            <sc-if value="{{ hasComp }}" hint-placeholder-val="{{ true }}">
-            <div style="max-width:720px; padding:18px; border-radius:10px; background:var(--panel); border:1px solid var(--border);">
-              <div style="display:flex; justify-content:space-between; align-items:baseline;">
-                <div>
-                  <div style="font-size:13px; font-weight:600; color:var(--heading);">{{ compRole }}</div>
-                  <div style="font-size:11px; color:var(--muted); margin-top:2px;">{{ compObservedLabel }}</div>
-                </div>
-                <div style="font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:22px; color:var(--heading);">{{ compP50Label }}</div>
-              </div>
-
-              <div style="position:relative; height:6px; border-radius:99px; background:var(--track); margin-top:18px;">
-                <div style="{{ compBandBar }}"></div>
-                <div style="{{ compMedianMark }}"></div>
-              </div>
-              <div style="position:relative; height:16px; margin-top:7px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted);">
-                <span style="position:absolute; left:15%; transform:translateX(-50%); white-space:nowrap;">{{ compP25Label }} · p25</span>
-                <span style="{{ compMedianLabelPos }}">{{ compP50Label }} · p50</span>
-                <span style="position:absolute; left:85%; transform:translateX(-50%); white-space:nowrap;">{{ compP75Label }} · p75</span>
-              </div>
-
-              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px;">
-                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
-                  <div style="font-size:11px; color:var(--muted);">Observed offers</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compObserved }}</div>
-                </div>
-                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
-                  <div style="font-size:11px; color:var(--muted);">Confidence</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compConfidenceLabel }}</div>
-                </div>
-                <div style="padding:11px 13px; border-radius:8px; background:var(--panel2); border:1px solid var(--border);">
-                  <div style="font-size:11px; color:var(--muted);">This requisition</div>
-                  <div style="font-size:14px; font-weight:600; color:var(--heading); margin-top:3px;">{{ compPositionLabel }}</div>
-                </div>
-              </div>
-
-              <sc-if value="{{ compPriorOnly }}" hint-placeholder-val="{{ true }}">
-                <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:14px 0 0 0;">No observed offers clear the k-anonymity floor for this role, so this band is the <strong style="color:var(--heading);">static prior alone</strong> — nothing has been learned from the ledger yet. Nothing in the product submits an offer today.</p>
-              </sc-if>
-            </div>
-            </sc-if>
-
-            <p style="font-size:11.5px; line-height:1.6; color:var(--muted); margin:14px 0 0 0; max-width:84ch;">Offer data is aggregated only at or above the k-anonymity floor of five observations. Below it the observed term is dropped entirely and the band falls back to the static prior, rather than reporting a thinner number. p25 and p75 preserve the static band\u2019s relative spread around the blended p50.</p>
-          </sc-if>
-
           <sc-if value="{{ isAdminOrgs }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Organisations</h1>
             <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:76ch;">Create an organisation, inspect its saved details or manage reliability and access. New organisations are active immediately. Reliability is an operator-set multiplier, not a measured accuracy score.</p>
@@ -1560,7 +1500,7 @@ const TITLES = {
   upload: "Upload", batches: "Batches", portal: "Your data", accesslog: "Access log",
   consents: "Consents", devices: "Signed-in devices", erasure: "Delete everything",
   adminorgs: "Organisations", adminusers: "Operator accounts",
-  roles: "Roles", comp: "Comp intelligence", evaluate: "Instant check", interview: "Your interview"
+  roles: "Roles", evaluate: "Instant check", interview: "Your interview"
 };
 
 const H1 = {
@@ -1757,7 +1697,7 @@ class Component extends window.VeritasEmployerRoles(
     me: null,
     // remote resources
     portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE, sessionNeedsRefresh: false,
-    jobList: IDLE, board: IDLE, comp: IDLE,
+    jobList: IDLE, board: IDLE,
     batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
     outcomes: IDLE,
     selectedJob: null, busyId: null, erasureConfirm: "", consentNeedsRefresh: false, consentUncertain: false, consentWriteError: false,
@@ -1868,7 +1808,7 @@ class Component extends window.VeritasEmployerRoles(
       authNotice: "Your session ended. Sign in again to continue.",
       portal: IDLE, accessLog: IDLE, consentList: IDLE, sessionList: IDLE, sessionNeedsRefresh: false,
       consentNeedsRefresh: false, consentUncertain: false, consentWriteError: false, busyId: null,
-      jobList: IDLE, board: IDLE, comp: IDLE,
+      jobList: IDLE, board: IDLE,
       batchList: IDLE, batch: IDLE, queue: IDLE, summary: IDLE, report: IDLE,
       outcomes: IDLE, outcomeNotes: "", outcomeBusy: null, outcomeError: null, outcomeNeedsRefresh: false, outcomeHistoryReloaded: false,
       selectedBatch: null, moreBusy: null, driving: false, driveError: null
@@ -1883,7 +1823,6 @@ class Component extends window.VeritasEmployerRoles(
     else if (screen === "consents") this.loadConsents();
     else if (screen === "devices") this.loadSessions();
     else if (screen === "roles") this.loadJobs();
-    else if (screen === "comp") this.loadComp();
     else if (screen === "queue" || screen === "summary") this.loadScreening();
     else if (screen === "batches") this.loadBatches();
     else if (screen === "adminorgs") this.loadOrgAdmin();
@@ -1949,7 +1888,6 @@ class Component extends window.VeritasEmployerRoles(
   goInterview = this.nav("interview");
   goRoles = this.nav("roles");
 
-  goComp = this.nav("comp");
   goAdminOrgs = this.nav("adminorgs");
   goAdminUsers = this.nav("adminusers");
   // Goes through nav() like every other door onto the queue. It used to set

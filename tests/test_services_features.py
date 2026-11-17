@@ -42,10 +42,6 @@ def test_real_and_fake_composition_share_sql_and_service_instances(production, p
         assert all(factory is svc.session_factory for factory in sql_topology(svc))
         assert svc.jobs._candidates is svc.candidates
         assert svc.jobs._features is svc.features
-        assert svc.comp._ledger is svc.ledger
-        assert svc.dashboard._jobs is svc.jobs
-        assert svc.dashboard._comp is svc.comp
-        assert svc.dashboard._ledger is svc.ledger
         assert svc.portal._candidates is svc.candidates
         assert svc.portal._ledger is svc.ledger
     finally:
@@ -168,22 +164,16 @@ async def test_injected_bundle_remains_owned_by_its_caller(production):
     finally: engine.dispose()
 
 
-@pytest.mark.parametrize("kind", ["jobs", "dashboard"])
-def test_standalone_builders_create_only_one_factory(production, monkeypatch, kind):
+def test_standalone_builders_create_only_one_factory(production, monkeypatch):
     import app.core.db as db
-    from app.dashboard.service import build_dashboard_service
     from app.matching.store import build_job_store
     original, engines = db.create_engine, []
     def observed(*args, **kwargs):
         engine = original(*args, **kwargs); engines.append(engine); return engine
     monkeypatch.setattr(db, "create_engine", observed)
     try:
-        service = build_job_store(production) if kind == "jobs" else build_dashboard_service(production)
-        jobs = service if kind == "jobs" else service._jobs
+        jobs = build_job_store(production)
         assert len(engines) == 1
         assert jobs._session_factory is jobs._candidates._session_factory is jobs._features._session_factory
-        if kind == "dashboard":
-            assert service._ledger._session_factory is jobs._session_factory
-            assert service._comp._ledger is service._ledger
     finally:
         for engine in engines: engine.dispose()

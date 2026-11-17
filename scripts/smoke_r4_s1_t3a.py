@@ -502,9 +502,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 79 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 75 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 79)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 75)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -597,25 +597,14 @@ def run(scratch, url, pg_options):
                 require(operator.get(ledger_path + "/consent", params={"org_id": org_id, "purpose": purpose}))["grant_id"] == grant["id"]
                 for purpose, grant in grants.items()))
             # T3F employer composition shares this existing restart harness.
-            checks.check("employer match and board explain the empty feature pool",
-                require(org.post(f"/jobs/{job['id']}/match", json={}))["reason"] == "no_materialized_candidates"
-                and require(org.get(f"/jobs/{job['id']}/board"))["match"]["reason"] == "no_materialized_candidates")
-            checks.check("employer job compensation and board hide other tenant", all(
-                other_org.get(f"/jobs/{job['id']}" + suffix).status_code == 404 for suffix in ("", "/comp", "/board"))
+            checks.check("employer board explains the empty feature pool",
+                require(org.get(f"/jobs/{job['id']}/board"))["match"]["reason"] == "no_materialized_candidates")
+            checks.check("employer job and board hide other tenant", all(
+                other_org.get(f"/jobs/{job['id']}" + suffix).status_code == 404 for suffix in ("", "/board"))
                 and other_org.patch(f"/jobs/{job['id']}", json={"status": "closed"}).status_code == 404
-                and other_org.post(f"/jobs/{job['id']}/match", json={}).status_code == 404)
+                )
             employer_candidate = require(control.post("/candidates", json={"evaluate": False, "resume_text":
                 "Synthetic Employer Candidate\nEmail: employer-flow@example.in\nEXPERIENCE\nEngineer at Example, 2020 - 2025\nSKILLS\nPython, Django"}))["candidate_id"]
-            offer_body = {"candidate_id": employer_candidate, "role_family": "backend_engineer", "seniority": "senior",
-                "city_tier": "metro", "ctc_fixed": 2000000, "offered_at": "2026-10-01T10:00:00Z"}
-            checks.check("employer offers refuse missing consent", org.post("/ledger/offers", json=offer_body).status_code == 403)
-            employer_write = require(operator.post(f"/ledger/candidates/{employer_candidate}/consent", json={"purpose": "ledger_write", "org_id": org_id}))
-            employer_offer = require(org.post("/ledger/offers", json=offer_body))
-            checks.check("employer offer is stamped with cookie tenant and grant", employer_offer["org_id"] == org_id
-                and employer_offer["consent_id"] == employer_write["id"] and other_org.post("/ledger/offers", json=offer_body).status_code == 403)
-            ad_hoc = require(org.post("/comp/estimate", json={"title": "Senior Backend Engineer", "years_experience": 7}))
-            checks.check("ad hoc compensation remains advisory with null positioning", ad_hoc["advisory"] and ad_hoc["estimate"]["advisory"]
-                and all(ad_hoc[field] is None for field in ("requisition_band", "position", "delta_pct")))
             updated_job = require(org.patch(f"/jobs/{job['id']}", json={"spec": {
                 "title": "Synthetic Backend Role", "must_have_skills": ["Python"],
                 "comp_band": {"ctc_min": 1500000, "ctc_max": 2500000}}}))
@@ -635,14 +624,11 @@ def run(scratch, url, pg_options):
                 refreshed["materialized"] == refreshed["skipped"] == 1)
             checks.check("feature view errors retain their HTTP contracts",
                 operator.post("/features/materialize", json={"view_name": "unknown-view"}).status_code == 422)
-            match_body = {"as_of": materialized["as_of"]}
-            employer_match = require(org.post(f"/jobs/{job['id']}/match", json=match_body))
-            employer_comp = require(org.get(f"/jobs/{job['id']}/comp"))
             employer_board = require(org.get(f"/jobs/{job['id']}/board"))
-            checks.check("materialized employer board returns saved advisory data", employer_match["advisory"]
-                and employer_match["ranked"][0]["candidate_id"] == employer_candidate
+            checks.check("materialized employer board returns saved advisory data", employer_board["match"]["advisory"]
+                and employer_board["match"]["ranked"][0]["candidate_id"] == employer_candidate
                 and employer_board["match"]["pool_size"] >= 1
-                and employer_comp["advisory"])
+                and employer_board["advisory"])
             # T3H: subject-owned requests and operator review across restart.
             sibling.headers["X-CSRF-Token"] = sibling_csrf
             own_portal_key = require(control.post(f"/candidates/{subject}/auth-key"))["access_key"]
@@ -694,11 +680,9 @@ def run(scratch, url, pg_options):
             checks.check("all planes and tenant data survive graceful restart", operator.get("/admin/users").status_code == 200
                 and org.get(f"/jobs/{job['id']}").status_code == 200 and sibling.get("/portal/me").status_code == 200
                 and other_org.get(f"/jobs/{job['id']}").status_code == 404)
-            checks.check("employer job match and compensation survive restart",
+            checks.check("employer job and board survive restart",
                 require(org.get(f"/jobs/{job['id']}")) == updated_job
-                and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
-                and require(org.get(f"/jobs/{job['id']}/board")) == employer_board
-                and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
+                and require(org.get(f"/jobs/{job['id']}/board")) == employer_board)
             checks.check("subject grants survive graceful restart exactly",
                 portal_grant["id"] in {row["grant"]["id"] for row in require(sibling.get("/portal/consents"))})
             checks.check("verification manual review and employer summaries survive graceful restart exactly",
@@ -712,9 +696,6 @@ def run(scratch, url, pg_options):
             checks.check("revoked persisted consent is immediately reported as not allowed", not any(
                 require(operator.get(ledger_path + "/consent", params={"org_id": org_id, "purpose": purpose}))["allowed"]
                 for purpose in grants))
-            require(operator.post(f"/ledger/consent/{employer_write['id']}/revoke"))
-            checks.check("employer offer honors consent revocation after restart",
-                org.post("/ledger/offers", json=offer_body).status_code == 403)
             access_log = require(sibling.get("/portal/access-log"))
             checks.check("verification audit retains allowed and denied employer access", all(
                 {row["allowed"] for row in access_log if row["action"] == action} == {True, False}

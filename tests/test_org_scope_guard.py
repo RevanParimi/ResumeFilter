@@ -52,9 +52,9 @@ honesty about its own reach:
 
 * Exactly TWO attributes, ``report_store`` and ``candidates``.
   ``services.features`` / ``.jobs`` / ``.ledger`` / ``.portal`` /
-  ``.verification`` / ``.interview`` / ``.dashboard`` / ``.comp`` are invisible
-  to it. That matters: ``POST /jobs/{id}/match`` and ``GET /jobs/{id}/board``
-  are org-plane routes reading the global feature store unfiltered (TENANCY.md
+  ``.verification`` / ``.interview`` are invisible
+  to it. That matters: ``GET /jobs/{id}/board``
+  is org-plane routes reading the global feature store unfiltered (TENANCY.md
   §8), and this guard would not notice.
 * ONE hop, within each endpoint's module only -- helpers in other modules are skipped
   outright. A read two hops of delegation deep passes unseen.

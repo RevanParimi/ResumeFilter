@@ -10,8 +10,7 @@ scoring judges answer content, not appearance or inferred emotion.
 | Resume evaluation | Domain-independent claim extraction, GitHub repository evidence, follow-up probes, timeline and duplicate-resume checks, risk band, writing-style observations and conservative advisory scoring with deterministic model fallbacks. Instant check (text or PDF) and saved reports with recorded outcomes. | [README](README.md), [FLOW](FLOW.md), [fabrication](FABRICATION.md), [logic](docs/FEATURE_LOGIC.md) |
 | Candidate records | Extraction, contact-hash identity, versioned resumes, duplicate detection, extraction coverage and erasure. | [Candidates](CANDIDATES.md) |
 | Screening | Batch upload, queue, processing, retry, summary, report view and outcomes, tenant-scoped. | [Screening](SCREENING.md), [tenancy](TENANCY.md) |
-| Roles and matching | Roles (requisitions), role board and role match. | [Matching](MATCHING.md), [dashboard](DASHBOARD.md) |
-| Compensation | Compensation estimate, role compensation band and observed offers. | [Comp](COMP.md) |
+| Roles and matching | Roles (requisitions) and advisory role board. | [Matching](MATCHING.md) |
 | Ledger and consent | Organisations, API keys, organisation reliability, purpose-scoped consent grants and the audit log. | [Ledger](LEDGER.md) |
 | Features | Feature registry, materialisation, store, serving and ranking. | [Features](FEATURES.md) |
 | Login and portal | Email-code login on every plane, sessions and signed-in devices, the candidate portal (my data, access log, consents, erasure) and the public grievance contact. | [Auth](AUTH.md), [portal](PORTAL.md) |

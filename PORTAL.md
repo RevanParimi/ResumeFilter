@@ -192,7 +192,7 @@ match — the same posture as everything else in this document.
   in that class.
 - `oldest_item_at` / `retained_until` (`= oldest + ttl_days`) are populated
   only for the classes `my_data` already materializes in full — `resumes`
-  and `interviews` (the oldest timestamp is free from those reads). `observed_offers`, `audit_log`
+  and `interviews` (the oldest timestamp is free from those reads). `audit_log`
   and `verifications` are **policy-only** rows (`retained_until=None`) — the
   portal does not materialize per-candidate reads for those classes, and this
   keeps the retention view honest rather than fabricating a timestamp it
@@ -213,7 +213,6 @@ parametrize the surfaced `retained_until` only):
 |---|---|---|
 | `candidate_access_key_bytes` | 32 (`ge=16`) | entropy of a minted candidate key — mirrors `ledger_api_key_bytes` |
 | `ret_resume_days` | 1095 (3y) | resumes |
-| `ret_observed_offer_days` | 1825 (5y) | observed offers (policy-only) |
 | `ret_audit_log_days` | 2555 (7y) | audit trail — deliberately longest; accountability outlives content |
 | `ret_verification_days` | 1095 (3y) | identity verifications (policy-only; added S7.1) |
 
@@ -293,7 +292,7 @@ Added by S7.1 (contracts in `VERIFICATION.md`):
 
 ## Architecture (for reference)
 
-Mirrors `src/app/dashboard/` (`DASHBOARD.md`): a pure `src/app/portal/` package that
+The `src/app/portal/` package
 owns no tables/state, composing `CandidateStore` + `LedgerStore` +
 `ReportStore`:
 

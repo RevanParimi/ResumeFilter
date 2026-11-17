@@ -25,7 +25,6 @@ from app.core.config import Settings
 from app.interview.models import InterviewSessionRow
 from app.ledger.models import (
     AuditLogRow,
-    ObservedOfferRow,
 )
 from app.portal.retention import RETENTION_KNOBS
 from app.ratelimit.models import RateLimitCounterRow
@@ -65,7 +64,6 @@ TARGETS: tuple[SweepTarget, ...] = (
     SweepTarget("resumes", ResumeRow, "created_at", SweepMode.DELETE),
     SweepTarget("verifications", VerificationRow, "created_at", SweepMode.DELETE),
     SweepTarget("interviews", InterviewSessionRow, "created_at", SweepMode.DELETE),
-    SweepTarget("observed_offers", ObservedOfferRow, "created_at", SweepMode.DELETE),
     SweepTarget("audit_log", AuditLogRow, "created_at", SweepMode.DELETE),
     # The ROW SURVIVES: an organisation's record of what it screened must
     # outlive the text it screened, exactly as batch_items.candidate_id is SET

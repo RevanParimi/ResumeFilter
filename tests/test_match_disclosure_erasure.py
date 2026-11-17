@@ -151,14 +151,13 @@ def test_unrelated_lookup_failure_is_not_erasure(database, monkeypatch):
         jobs.run_match(org.id, req.id, as_of=AS_OF)
 
 
-@pytest.mark.parametrize("route", ["match", "board"])
+@pytest.mark.parametrize("route", ["board"])
 @pytest.mark.parametrize("boundary", ["before_flush", "after_commit"])
 def test_api_all_erased_at_audit_returns_existing_empty_contract(services, monkeypatch, route, boundary):
     factory = services.candidates._session_factory
     candidates, ledger, jobs, org, req, ids, _ = seed(factory)
     key = ledger.issue_api_key(org.id)
     monkeypatch.setattr(services, "jobs", jobs)
-    monkeypatch.setattr(services.dashboard, "_jobs", jobs)
 
     def erase(*_):
         for cid in ids:
@@ -166,9 +165,9 @@ def test_api_all_erased_at_audit_returns_existing_empty_contract(services, monke
     event.listen(jobs._session_factory, boundary, erase, once=True)
     with TestClient(create_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as client:
         url, headers = f"/jobs/{req.id}/{route}", {"X-Org-Key": key}
-        response = client.post(url, headers=headers, json={}) if route == "match" else client.get(url, headers=headers)
+        response = client.get(url, headers=headers)
         assert response.status_code == 200, response.text
-        body = response.json() if route == "match" else response.json()["match"]
+        body = response.json()["match"]
         assert (body["ranked"], body["pool_size"], body["filtered_size"], body["reason"]) == (
             [], 0, 0, "no_materialized_candidates")
     assert all(ledger.audit_for_candidate(cid) == [] for cid in ids)
@@ -197,7 +196,7 @@ def test_competing_audit_and_erasure_connections(database, boundary):
     assert all(len(disclosures(ledger, cid)) == 1 for cid in ids[1:])
 
 
-@pytest.mark.parametrize("route", ["match", "board"])
+@pytest.mark.parametrize("route", ["board"])
 @pytest.mark.parametrize("boundary", ["before_flush", "after_commit"])
 @pytest.mark.parametrize("door", ["admin", "portal"])
 def test_api_omits_erased_disclosure_and_preserves_ownership(services, monkeypatch, route, boundary, door):
@@ -207,7 +206,6 @@ def test_api_omits_erased_disclosure_and_preserves_ownership(services, monkeypat
     other = ledger.create_organization("Other owner")
     other_key = ledger.issue_api_key(other.id)
     monkeypatch.setattr(services, "jobs", jobs)
-    monkeypatch.setattr(services.dashboard, "_jobs", jobs)
 
     def erase(*_):
         if door == "portal":
@@ -218,7 +216,7 @@ def test_api_omits_erased_disclosure_and_preserves_ownership(services, monkeypat
     with TestClient(create_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as client:
         def call(headers):
             url = f"/jobs/{req.id}/{route}"
-            return client.post(url, headers=headers, json={}) if route == "match" else client.get(url, headers=headers)
+            return client.get(url, headers=headers)
         assert call({}).status_code == 401
         assert call({"X-Org-Key": other_key}).status_code == 404
         assert candidates.get_candidate(ids[0]) is not None  # unauthorized calls never reached audit
@@ -226,7 +224,7 @@ def test_api_omits_erased_disclosure_and_preserves_ownership(services, monkeypat
         for _ in range(2):
             response = call({"X-Org-Key": key})
             assert response.status_code == 200, response.text
-            body = response.json() if route == "match" else response.json()["match"]
+            body = response.json()["match"]
             assert [m["candidate_id"] for m in body["ranked"]] == ids[1:]
             assert body["pool_size"] == body["filtered_size"] == 2
             assert body["advisory"] is True

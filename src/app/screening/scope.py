@@ -19,7 +19,7 @@ deliberately unchanged, so the guard needed no edit and keeps covering routes
 that do not exist yet.
 
 Owns no tables and holds no state -- pure composition over the two stores, in
-the ``app/dashboard/`` style.
+a composition over existing stores.
 """
 
 from __future__ import annotations

@@ -18,8 +18,8 @@ missing or consent-withheld value **drops its term, never the candidate**.
 | Contracts | `src/app/matching/schema.py` | Pydantic models + StrEnums (pure) |
 | Pure engine | `src/app/matching/match.py` | compile + skill/location + `match` (no I/O, no clock) |
 | ORM | `src/app/matching/models.py` | `JobRequisitionRow` |
-| Store | `src/app/matching/store.py` | `JobStore`: CRUD + `run_match` orchestrator |
-| HTTP | `src/app/api/routes.py` (`org_router`) | `POST/GET/PATCH /jobs`, `POST /jobs/{id}/match` |
+| Store | `src/app/matching/store.py` | `JobStore`: CRUD, board and `run_match` orchestrator |
+| HTTP | `src/app/api/employer.py` (`org_router`) | `POST/GET/PATCH /jobs`, `GET /jobs/{id}/board` |
 
 ### The requisition (`JobRequisitionInput` → stored `JobRequisition`)
 
@@ -32,8 +32,7 @@ that **at least one skill** (must-have or nice-to-have) is required:
 - `min_years_experience`, `min_degree_level` (an ordinal degree level),
   `max_notice_days`, `location_tiers` (⊆ `{metro, tier_2}`) + `remote`.
 - `min_skill_coverage` ∈ [0,1] — the **one opt-in hard gate**.
-- `comp_band` — **advisory metadata only, not matched on** (S5.2 consumes it;
-  carried now so S5.2 needs no migration — the S3.3 "considered field set" pattern).
+- `comp_band` — optional advisory metadata stored on the requisition; not used in matching.
 - `weights` — optional per-term overrides of the `match_*` defaults.
 
 ### Compile rules (`compile_ranking` / `compile_filters`)
@@ -90,8 +89,8 @@ v1 refinement.)
   After-commit erasure may shorten the shortlist; no unaudited replacement is
   added, and surviving audits retain their committed rank. These reads are
   snapshots (large pools use bounded query batches), not locks across response
-  delivery or revocation of previously returned matches. This applies to both
-  match and board routes; consent policy is unchanged.
+  delivery or revocation of previously returned matches. This applies to the
+  board route; consent policy is unchanged.
 - **Point-in-time.** One `as_of` drives both the vector cut and the profile read,
   so skill coverage and scalar features describe the same instant — no leakage.
 
@@ -105,15 +104,8 @@ selection reuses `feat_default_view` (`core_v1`).
 ### HTTP
 
 `POST /jobs` (create) · `GET /jobs` (list) · `GET /jobs/{id}` · `PATCH /jobs/{id}`
-(status and/or full spec replace) · `POST /jobs/{id}/match` →
-`MatchResult{advisory=True}`. Cross-org → 404; empty/unmaterialized pool → 200
+(status and/or full spec replace) · `GET /jobs/{id}/board` →
+`RequisitionBoard{requisition, match, advisory=True}`. The board uses the latest
+materialized cut and `dash_board_top_n` (20), with no request limit or as-of parameter. Cross-org → 404; empty/unmaterialized pool → 200
 with `reason="no_materialized_candidates"`;
-malformed match request → 400; missing/invalid `X-Org-Key` → 401.
-
-### Seams
-
-- **S5.2 (comp intelligence):** consumes the stored `comp_band` (no migration) +
-  ledger-observed offers; may add a comp-fit term — `MatchWeights`/
-  `compile_ranking` leave room.
-- **S5.3 (employer dashboard):** a thin read-only surface over `GET /jobs` +
-  `POST /jobs/{id}/match` + linked `Report`s; the API stays the primary contract.
+missing/invalid `X-Org-Key` → 401.

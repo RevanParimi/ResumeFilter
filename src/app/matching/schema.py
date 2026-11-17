@@ -27,7 +27,7 @@ class RequisitionStatus(StrEnum):
 
 class CompBand(BaseModel):
     """Advisory compensation band. Stored on the requisition; NOT a matching
-    term in S5.1 (comp intelligence is S5.2)."""
+    term."""
 
     currency: str = "INR"
     ctc_min: Optional[float] = Field(default=None, ge=0.0)
@@ -127,3 +127,9 @@ class MatchResult(BaseModel):
     #: is why this is a 200 with a reason rather than a 422 blaming the caller
     #: (S8.4 Phase B §1.11). None on every successful match.
     reason: Optional[str] = None
+
+
+class RequisitionBoard(BaseModel):
+    requisition: JobRequisition
+    match: MatchResult
+    advisory: bool = True

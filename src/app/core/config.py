@@ -117,7 +117,6 @@ class Settings(BaseSettings):
     # mechanical retention sweep is PI-8. Illustrative windows.
     candidate_access_key_bytes: int = Field(default=32, ge=16)
     ret_resume_days: int = Field(default=1095, ge=1)            # 3y
-    ret_observed_offer_days: int = Field(default=1825, ge=1)    # 5y
     ret_audit_log_days: int = Field(default=2555, ge=1)         # 7y — longest
 
     # --- Identity verification (PI-7, S7.1) -----------------------------------
@@ -337,22 +336,6 @@ class Settings(BaseSettings):
     match_location_weight: float = Field(default=1.0, gt=0.0)
     match_nice_to_have_fraction: float = Field(default=0.3, ge=0.0, le=1.0)
 
-    # --- Comp intelligence (PI-5, S5.2): advisory static bands + observed offers -
-    # A curated static prior (bands.py) blended with consent-gated ledger-observed
-    # offers (reputation.py-style shrinkage). Advisory only; no LLM.
-    comp_currency_default: str = "INR"
-    comp_min_observations: int = Field(default=5, ge=1)   # k-anonymity floor
-    comp_recency_halflife_days: float = Field(default=365.0, gt=0.0)
-    comp_prior_strength: float = Field(default=8.0, gt=0.0)   # static-prior pseudo-count
-    comp_confidence_floor: float = Field(default=0.30, ge=0.0, le=1.0)
-    comp_confidence_cap: float = Field(default=0.90, ge=0.0, le=1.0)
-    comp_confidence_k: float = Field(default=4.0, gt=0.0)
-    comp_mid_years: float = Field(default=2.0, ge=0.0)
-    comp_senior_years: float = Field(default=5.0, ge=0.0)
-    comp_lead_years: float = Field(default=9.0, ge=0.0)
-    comp_benchmark_tolerance: float = Field(default=0.10, ge=0.0)
-    comp_bands_path: str | None = None   # optional operator-supplied static table
-
     # --- Grievance contact (PI-8, S8.3 Phase B) -------------------------------
     # PROD REFUSES TO BOOT with an empty officer email (app/core/boot.py -- the
     # seventh refusal). DPDP requires the grievance mechanism to be PUBLISHED,
@@ -365,7 +348,7 @@ class Settings(BaseSettings):
     #: The promise made to a data principal on the public page.
     grievance_response_days: int = Field(default=30, ge=1)
 
-    # --- Employer dashboard (PI-5, S5.3): read-only composition over jobs/comp/ledger.
+    # --- Employer dashboard (PI-5, S5.3): role board over requisitions and matching.
     # Max ranked candidates returned per GET /jobs/{id}/board (passed as run_match limit).
     dash_board_top_n: int = Field(default=20, ge=1)
 

@@ -1,7 +1,7 @@
 """Screening batches: the service (S8.4 Phase B).
 
 Composition over the store and the ingest core. Owns no tables directly -- the
-store does -- and holds no state, in the ``app/dashboard/`` style.
+store does -- and holds no state, as a composition over existing stores.
 
 EVERY method takes ``org_id`` first, and the store it calls does too, so
 tenancy is a property of the type signatures rather than of anybody's memory.

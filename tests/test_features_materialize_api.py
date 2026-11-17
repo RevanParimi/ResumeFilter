@@ -39,11 +39,11 @@ def test_an_empty_feature_store_gives_200_with_a_reason_not_422(services):
         assert job.status_code == 200, job.text
         req_id = job.json()["id"]
 
-        match = c.post(f"/jobs/{req_id}/match", headers={"X-Org-Key": key}, json={})
+        match = c.get(f"/jobs/{req_id}/board", headers={"X-Org-Key": key})
         assert match.status_code == 200
-        assert match.json()["pool_size"] == 0
-        assert match.json()["ranked"] == []
-        assert match.json()["reason"] == "no_materialized_candidates"
+        assert match.json()["match"]["pool_size"] == 0
+        assert match.json()["match"]["ranked"] == []
+        assert match.json()["match"]["reason"] == "no_materialized_candidates"
 
         board = c.get(f"/jobs/{req_id}/board", headers={"X-Org-Key": key})
         assert board.status_code == 200
@@ -64,9 +64,9 @@ def test_materialize_route_fills_the_pool(services, genuine_resume):
         req_id = c.post("/jobs", headers={"X-Org-Key": key},
                         json={"title": "Senior Engineer",
                               "must_have_skills": ["python"]}).json()["id"]
-        match = c.post(f"/jobs/{req_id}/match", headers={"X-Org-Key": key}, json={})
-        assert match.json()["pool_size"] >= 1
-        assert match.json()["reason"] is None, "a successful match states no reason"
+        match = c.get(f"/jobs/{req_id}/board", headers={"X-Org-Key": key})
+        assert match.json()["match"]["pool_size"] >= 1
+        assert match.json()["match"]["reason"] is None, "a successful match states no reason"
 
 
 def test_materialize_accepts_an_explicit_candidate_list(services, genuine_resume):
@@ -121,6 +121,6 @@ def test_default_batch_and_partial_refresh_keep_all_candidates_searchable(servic
             assert run.status_code == 200, run.text
             assert run.json()["as_of"] is not None
             assert run.json()["materialized"] == len(candidates)
-            match = c.post(f"/jobs/{job_id}/match", headers={"X-Org-Key": key}, json={})
+            match = c.get(f"/jobs/{job_id}/board", headers={"X-Org-Key": key})
             assert match.status_code == 200, match.text
-            assert match.json()["pool_size"] == 2
+            assert match.json()["match"]["pool_size"] == 2

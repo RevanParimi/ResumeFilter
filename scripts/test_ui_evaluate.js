@@ -303,7 +303,7 @@ test("shared shell preserves every screen flag, plane, search and advisory place
     portal: ["isPortal", "Your data"], accesslog: ["isAccessLog", "Access log"], consents: ["isConsents", "Consents"],
     devices: ["isDevices", "Signed-in devices"], erasure: ["isErasure", "Delete everything"],
     adminorgs: ["isAdminOrgs", "Organisations"], adminusers: ["isAdminUsers", "Operator accounts"],
-    roles: ["isRoles", "Roles"], comp: ["isComp", "Comp intelligence"],
+    roles: ["isRoles", "Roles"],
     evaluate: ["isEvaluate", "Instant check"], interview: ["isInterview", "Your interview"]
   };
   for (const kind of ["org", "candidate", "admin"]) {
@@ -475,51 +475,10 @@ test("same-class employer instances isolate pending reads, selected roles and de
   pending.get("/jobs/owned-a/board")({ match: { ranked: [{ candidate_id: "candidate-a" }] } });
   await settle();
   assert.equal(c.renderVals().shortlist[0].name, "candidate-a");
-  for (const actor of [c, other]) actor.state.jobList = { loading: false, error: null,
-    data: [{ id: actor.state.selectedJob, title: actor.state.selectedJob }] };
-  const loadComp = c.loadComp, loadOtherComp = other.loadComp;
-  loadComp(); loadOtherComp();
-  pending.get("/jobs/owned-b/comp")({ estimate: { p50: 2200000 } }); await settle();
-  assert.equal(c.state.comp.loading, true);
-  assert.equal(other.renderVals().compP50Label, "\u20b922.0 LPA");
-  pending.get("/jobs/owned-a/comp")({ estimate: { p50: 1100000 } }); await settle();
-  assert.equal(c.renderVals().compP50Label, "\u20b911.0 LPA");
+
 });
 
-test("direct compensation navigation loads roles first, uses selection or first fallback and handles no roles", async () => {
-  const { c, window } = component();
-  const paths = [];
-  const jobs = [{ id: "first", title: "First role" }, { id: "selected", title: "Selected role" }];
-  window.VeritasAPI.get = async path => { paths.push(path); return path === "/jobs" ? jobs : { estimate: { p50: 0 } }; };
-  c.state.selectedJob = "selected";
-  const go = c.goComp;
-  go(); await settle();
-  assert.equal(c.state.screen, "comp");
-  assert.deepEqual(paths, ["/jobs", "/jobs/selected/comp"]);
-  assert.match(c.renderVals().compRole, /^Selected role/);
-  c.state.selectedJob = "removed";
-  const load = c.loadCompFor;
-  load(); await settle();
-  assert.equal(paths.at(-1), "/jobs/first/comp");
-  c.state.jobList.data = [];
-  c.loadComp(); await settle();
-  assert.equal(c.renderVals().hasComp, false);
-  assert.equal(c.renderVals().noComp, true);
-  assert.match(c.renderVals().noCompReason, /Create one on the Roles screen/);
-  assert.equal(paths.length, 3);
-});
 
-test("failed role discovery settles compensation without inventing requisitions or issuing writes", async () => {
-  const { c, window } = component();
-  const paths = [];
-  window.VeritasAPI.get = async path => { paths.push(path); throw { kind: "network", detail: "Synthetic read failure" }; };
-  c.loadComp(); await settle();
-  assert.deepEqual(paths, ["/jobs"]);
-  assert.equal(c.state.jobList.error.detail, "Synthetic read failure");
-  assert.equal(c.renderVals().noComp, true);
-  assert.deepEqual(c.renderVals().jobs, []);
-  assert.equal(c.renderVals().compRole, "No requisition selected");
-});
 
 test("board missing values differ from zero and unknown risk remains insufficient evidence", () => {
   const { c } = component();
@@ -535,53 +494,7 @@ test("board missing values differ from zero and unknown risk remains insufficien
   assert.equal(rows[1].cover, "coverage 0.00");
 });
 
-test("wrapped and legacy compensation retain prior, zero, missing-data and skewed-band rendering", () => {
-  const { c } = component();
-  const estimate = { p25: 1000000, p50: 1500000, p75: 3000000, n_observed: 0, confidence: 0 };
-  for (const body of [estimate, { estimate }]) {
-    c.state.comp = { loading: false, error: null, data: body };
-    const view = c.renderVals();
-    assert.equal(view.compP50Label, "\u20b915.0 LPA");
-    assert.equal(view.compMedianMark.left, "32.50%");
-    assert.equal(view.compPriorOnly, true);
-    assert.match(view.compObservedLabel, /No observed offers/);
-    assert.match(view.compConfidenceLabel, /^0.00/);
-    assert.equal(view.compPositionLabel, "No band set");
-  }
-  for (const bounds of [{ p25: 10, p75: 10, p50: 10 }, { p25: null, p75: 10, p50: 5 }]) {
-    c.state.comp = { loading: false, error: null,
-      data: { estimate: { ...bounds, n_observed: 5, confidence: null }, position: "above", delta_pct: 0 } };
-    const view = c.renderVals();
-    assert.equal(view.compMedianMark.left, "50%");
-    assert.equal(view.compPositionLabel, "above +0%");
-    assert.equal(view.compPriorOnly, false);
-    assert.match(view.compObservedLabel, /5 observed offers/);
-    assert.equal(view.compConfidenceLabel, "\u2014");
-  }
-  c.state.comp = { loading: false, error: null, data: { p25: 0, p50: null, p75: null } };
-  assert.equal(c.renderVals().compP25Label, "\u20b90.0 LPA");
-  assert.equal(c.renderVals().compP50Label, "\u2014");
-});
 
-test("compensation read failure clears stale data and explicit retry restores saved benchmark", async () => {
-  const { c, window } = component();
-  c.state.jobList = { loading: false, error: null, data: [{ id: "owned", title: "Owned role" }] };
-  c.state.comp = { loading: false, error: null, data: { p50: 9000000 } };
-  let finish;
-  window.VeritasAPI.get = () => new Promise((_resolve, reject) => { finish = reject; });
-  c.loadComp();
-  assert.equal(c.renderVals().compLoading, true);
-  assert.equal(c.renderVals().noComp, false);
-  finish({ status: 503, kind: "http", detail: "Synthetic comp failure" }); await settle();
-  assert.equal(c.renderVals().compErrorText, "Synthetic comp failure");
-  assert.equal(c.renderVals().hasComp, false);
-  assert.match(c.renderVals().noCompReason, /benchmark.*did not load/);
-  window.VeritasAPI.get = async () => ({ estimate: { p50: 2500000 }, position: "below", delta_pct: -0.1 });
-  c.loadComp(); await settle();
-  assert.equal(c.renderVals().compError, false);
-  assert.equal(c.renderVals().compP50Label, "\u20b925.0 LPA");
-  assert.equal(c.renderVals().compPositionLabel, "below -10%");
-});
 
 test("organisation submits once to its own plane and opens the saved server report", async () => {
   let resolve;

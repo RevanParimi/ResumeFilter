@@ -62,10 +62,10 @@ def test_crud_and_match_flow(services, settings):
         # feature store is a SERVER-side state, and until this sprint there was
         # no HTTP route a caller could use to fix it -- a 422 blamed the client
         # for something only an operator could change.
-        m0 = c.post(f"/jobs/{req['id']}/match", headers=hdr, json={"as_of": AS_OF.isoformat()})
+        m0 = c.get(f"/jobs/{req['id']}/board", headers=hdr)
         assert m0.status_code == 200
-        assert m0.json()["pool_size"] == 0
-        assert m0.json()["reason"] == "no_materialized_candidates"
+        assert m0.json()["match"]["pool_size"] == 0
+        assert m0.json()["match"]["reason"] == "no_materialized_candidates"
 
 
 def test_cross_org_match_404(services):
@@ -75,8 +75,7 @@ def test_cross_org_match_404(services):
     with _client(services) as c:
         req = c.post("/jobs", headers={"X-Org-Key": key_a},
                      json={"title": "BE", "must_have_skills": ["python"]}).json()
-        r = c.post(f"/jobs/{req['id']}/match", headers={"X-Org-Key": key_b},
-                   json={"as_of": AS_OF.isoformat()})
+        r = c.get(f"/jobs/{req['id']}/board", headers={"X-Org-Key": key_b})
         assert r.status_code == 404
 
 
@@ -104,9 +103,9 @@ def test_match_ranks_materialized_pool(services, settings):
     with _client(services) as c:
         req = c.post("/jobs", headers=hdr,
                      json={"title": "BE", "must_have_skills": ["python", "django"]}).json()
-        m = c.post(f"/jobs/{req['id']}/match", headers=hdr, json={"as_of": AS_OF.isoformat()})
+        m = c.get(f"/jobs/{req['id']}/board", headers=hdr)
         assert m.status_code == 200
-        body = m.json()
+        body = m.json()["match"]
         assert body["advisory"] is True
         assert body["ranked"][0]["skill"]["coverage"] == 1.0
         assert body["pool_size"] == 2

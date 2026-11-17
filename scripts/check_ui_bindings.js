@@ -219,12 +219,11 @@ const STATES = {
     consentList: held([{ state: "active", grant: { id: "con_1", organization_name: "Sampoorna Staffing", org_id: "org_1", purpose: "ledger_read", expires_at: null } }]),
     sessionList: held([{ id: "ses_11111111", issued_at: "2026-08-10T08:00:00Z", expires_at: "2026-08-10T20:00:00Z", last_seen_at: "2026-08-10T09:00:00Z", status: "active", user_agent: "Chrome 128 · Windows", current: true }]),
   },
-  "org, roles + comp loaded": {
+  "org, roles loaded": {
     screen: "roles", plane: "org", me: { kind: "org", organization_id: "org_1" },
     selectedJob: "job_1",
     jobList: held([{ id: "job_1", title: "Sr. Data Engineer", location: "Pune", domain: "data_eng", status: "open", must_have_skills: ["spark"], nice_to_have_skills: [] }]),
     board: held({ match: { ranked: [{ candidate_id: "can_2222", score: 0.71, coverage: 0.9, skill: { coverage: 0.8, matched: ["spark"], missing_must_have: [] } }], pool_size: 1, reason: null } }),
-    comp: held({ estimate: { p25: 1800000, p50: 2400000, p75: 3200000, n_observed: 7, confidence: 0.62 }, position: "at_market", delta_pct: 0.03 }),
   },
   "operator plane": { screen: "adminorgs", plane: "operator", me: { kind: "admin" } },
   "operator org details": { screen: "adminorgs", plane: "operator", me: { kind: "admin" },

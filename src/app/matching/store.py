@@ -31,7 +31,7 @@ from app.matching.match import compile_ranking, match as _match_engine
 from app.matching.models import JobRequisitionRow
 from app.matching.schema import (
     CompBand, JobRequisition, JobRequisitionInput, MatchResult, MatchWeights,
-    RequisitionStatus,
+    RequisitionBoard, RequisitionStatus,
 )
 
 
@@ -176,6 +176,18 @@ class JobStore:
                     CandidateRow.id.in_(ids[start:start + 500])
                 )))
         return existing
+
+    def board(self, org_id: str, req_id: str) -> Optional[RequisitionBoard]:
+        req = self.get_requisition(org_id, req_id)
+        if req is None:
+            return None
+        match = self.run_match(
+            org_id, req_id, as_of=None, limit=self._settings.dash_board_top_n
+        )
+        if match is None:  # req is owned, so run_match found it — defensive only
+            return None
+        return RequisitionBoard(requisition=req, match=match)
+
 
     def run_match(
         self,

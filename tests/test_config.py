@@ -1,25 +1,8 @@
-"""Config knob presence + env-override sanity (S5.2 comp_* additions)."""
+"""Config defaults and environment overrides."""
 
 from app.core.config import Settings
 import pytest
 from pydantic import ValidationError
-
-
-def test_comp_defaults_present():
-    s = Settings()
-    assert s.comp_min_observations == 5
-    assert s.comp_prior_strength == 8.0
-    assert s.comp_confidence_floor == 0.30
-    assert s.comp_confidence_cap == 0.90
-    assert (s.comp_mid_years, s.comp_senior_years, s.comp_lead_years) == (2.0, 5.0, 9.0)
-    assert s.comp_benchmark_tolerance == 0.10
-    assert s.comp_currency_default == "INR"
-    assert s.comp_bands_path is None
-
-
-def test_comp_env_override(monkeypatch):
-    monkeypatch.setenv("DEE_COMP_MIN_OBSERVATIONS", "3")
-    assert Settings().comp_min_observations == 3
 
 
 def test_auth_code_execution_defaults_yaml_and_env(monkeypatch):
@@ -110,5 +93,4 @@ def test_s64_portal_config_defaults():
     s = Settings(_env_file=None, openrouter_api_key="")
     assert s.candidate_access_key_bytes == 32
     assert s.ret_resume_days == 1095
-    assert s.ret_observed_offer_days == 1825
     assert s.ret_audit_log_days == 2555
