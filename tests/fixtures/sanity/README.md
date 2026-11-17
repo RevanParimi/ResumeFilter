@@ -23,9 +23,8 @@ everywhere. These files exist so a sanity run exercises the populated path.
 | `profile.education` | a line matching `_DEGREE` — `B.Tech`, `M.Tech`, `B.E`, `MCA`, `MBA`, `Bachelors`… (note: `BS`/`MS` are deliberately NOT in the pattern — S9.2 ruling R14, they match `MS Office`) | `extractor.py:50` |
 | `profile.skills` | a `Skills` / `Technical Skills` / `Technologies` header over a comma-separated list | `sections.py:29` |
 | `cross_field` | needs DATED experience entries. With none it returns `insufficient_data` — honestly, but it means the check never ran | `nodes/cross_field.py:29` |
-| `ai_generation` | **≥60 words AND ≥6 bullets**, and ≥3 job entries for the structural check. Below any of these: `insufficient_text` | `fabrication/ai_text.py:36-38` |
 | `resume_farm` | ≥40 three-word shingles after contact-masking, ≥0.60 Jaccard for `similar` / ≥0.80 for `near_duplicate` — **and the compared resumes must belong to DIFFERENT candidates** | `config.py:339-343`, `screening/ingest.py:121` |
-| `fabrication_risk` | fuses whichever of the three above produced a signal; with none it is `insufficient_data` | `fabrication/risk.py:148` |
+| `fabrication_risk` | combines assessable timeline and content-overlap checks only; with none it is `insufficient_data` | `fabrication/risk.py:148` |
 
 ## THE TRAP that costs an afternoon
 
@@ -42,7 +41,7 @@ with distinct phones produced `near_duplicate` with 1, 2 and 3 matches.
 |---|---|
 | `senior_complete.txt` | 2 experience · **2 education** · 6 skills · coverage `complete` · cross_field `consistent` · fabrication `low` (2 components). The happy path. |
 | `fresher.txt` | **2 education** · 5 skills · 0 experience · coverage `complete` · cross_field `insufficient_data` · depth `insufficient_signal`. Proves an education-only resume is not a parse failure. |
-| `ai_signals_three_roles.txt` | 3 roles · 9 bullets · 187 words. The only fixture that clears the AI gates: `ai_generation` = **`possible`** on `template_phrases`, `uniform_bullets`, `symmetric_structure`, and fabrication fuses **all three** components. |
+| `ai_signals_three_roles.txt` | 3 roles and 9 bullets; retained for pure style-helper and interview tests. New resume reports leave `ai_generation` null and use only factual components. |
 | `farm_clone_{1,2,3}_*.txt` | Near-duplicates of `senior_complete.txt` with distinct identities. Upload all four in order: farm goes `unique` → `near_duplicate` (1) → (2) → (3) and fabrication rises to `moderate`. |
 
 ## Order matters for the farm cohort

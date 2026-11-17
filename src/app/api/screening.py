@@ -139,7 +139,7 @@ async def screening_list_outcomes(
 # The wedge at volume: register what you have, process it in bounded calls,
 # read a ranked queue. Registration is a row insert; PROCESSING is the slow
 # part and the client drives it, because there is no worker anywhere in app/
-# (spec §0.3) and 500 nine-node graph runs cannot happen inside one request.
+# (spec §0.3) and 500 eight-node graph runs cannot happen inside one request.
 
 
 class BatchItemInput(BaseModel):

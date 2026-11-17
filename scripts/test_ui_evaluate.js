@@ -825,6 +825,7 @@ test("report values retain advisory versions, withheld identities and cached pro
   assert.match(view.reportVersionNote, /writing style is excluded/);
   assert.match(view.reportRiskExplanation, /not the probability of dishonesty/);
   assert.match(view.reportStyleSignals[0], /unverified/);
+  assert.equal(view.hasReportStyle, true);
   assert.equal(view.reportScore, "0.10");
   assert(!JSON.stringify(view.reportFarmMatches).includes("private-"));
   assert.match(view.reportFarmLine, /Match identities are withheld/);
@@ -839,6 +840,9 @@ test("report values retain advisory versions, withheld identities and cached pro
   saved.fabrication_risk.scorer_version = 99;
   assert.equal(c.renderVals().reportBandLabel, "Unsupported version");
   assert.equal(c.renderVals().reportIndexLabel, "Review index unavailable");
+  saved.ai_generation = null;
+  assert.equal(c.renderVals().hasReportStyle, false);
+  assert(!c.renderVals().reportComponentHelp.includes("Writing-style observations"));
   saved.fabrication_risk = null;
   assert.equal(c.renderVals().reportScore, "—");
   assert.match(c.renderVals().reportVersionNote, /No factual review assessment/);

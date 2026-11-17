@@ -6,7 +6,6 @@ import json
 import pytest
 
 from app.candidates.extractor import extract_profile
-from app.graph.nodes.ai_signals import make_ai_signals_node
 from app.graph.nodes.claim_extraction import make_claim_extraction_node
 from app.graph.nodes.plausibility import make_plausibility_node
 from app.graph.nodes.probe_generation import make_probe_generation_node
@@ -36,8 +35,6 @@ COMMON = [None, [], ["x"], "wrong", 42, True, {},
 BAD_NUMBERS = ["0.9", True, float("nan"), float("inf"), float("-inf"), -0.1, 1.1]
 PLAUS = dict(coherence=0.9, confidence=0.9, reasoning="model-only detail",
              expected_signals=["model-only expected"], missing_signals=[])
-AI = dict(likelihood=0.9, confidence=0.9, reasoning="model-only detail",
-          indicators=["model-only indicator"])
 
 
 def malformed_scores(valid, numeric_keys, list_keys):
@@ -63,15 +60,6 @@ async def test_invalid_plausibility_is_exact_rule_baseline(services, payload):
     actual = (await make_plausibility_node(services)(state))["verdicts"][0]
     assert actual == baseline
     assert all(e.source.value != "llm" for e in actual.evidence)
-
-
-@pytest.mark.parametrize("payload", malformed_scores(
-    AI, ("likelihood", "confidence"), ("indicators",)))
-async def test_invalid_style_is_exact_deterministic_baseline(services, ai_resume, payload):
-    state = EvaluationState(resume_text=ai_resume)
-    baseline = await make_ai_signals_node(services)(state)
-    services.llm = ReplyLLM(services.settings, payload)
-    assert await make_ai_signals_node(services)(state) == baseline
 
 
 @pytest.mark.parametrize("payload", COMMON + [
@@ -198,7 +186,7 @@ async def test_valid_unknown_interview_axis_cannot_introduce_a_dimension(setting
     assert "llm_adjusted" in result.codes
 
 
-@pytest.mark.parametrize("consumer", ["claims", "profile", "plausibility", "style", "probes", "interview"])
+@pytest.mark.parametrize("consumer", ["claims", "profile", "plausibility", "probes", "interview"])
 async def test_fallback_logs_do_not_include_provider_payload(services, log_events, consumer):
     services.llm = ReplyLLM(services.settings, RuntimeError("synthetic-sensitive-provider-detail"))
     state = EvaluationState(resume_text="Built production RAG at scale", claims=[Claim(text="Generic claim")])
@@ -209,8 +197,6 @@ async def test_fallback_logs_do_not_include_provider_payload(services, log_event
         assert "synthetic-sensitive-provider-detail" not in json.dumps(result.warnings)
     elif consumer == "plausibility":
         await make_plausibility_node(services)(state)
-    elif consumer == "style":
-        await make_ai_signals_node(services)(state)
     elif consumer == "probes":
         state.verdicts = [CoherenceVerdict(claim_id="claim-test", claim_text="Claim",
             claim_type="generic", coherence_score=0.1, confidence=0.8)]

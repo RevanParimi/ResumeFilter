@@ -100,6 +100,7 @@ async def main():
             assert await tab.js(f"window.__click('button', {json.dumps(plane)})")
             if signup:
                 assert await tab.js("window.__click('button', 'Create account')")
+                assert await tab.wait("window.__q('button', 'Create account and send code')", 20, "signup form")
                 if plane == "Organisation":
                     await tab.js("window.__type('input[placeholder=\"Sampoorna Staffing\"]', 'Synthetic Instant Reviewer')")
             await tab.js(f"window.__type('input[type=email]', {json.dumps(email)})")
@@ -318,7 +319,7 @@ window.VeritasAPI.get=(p,o)=>p.endsWith('/outcomes') ? Promise.reject({status:50
         rendered = await tab.text()
         checks.check("real report ID, summary and factual/style advisory presentation match server",
             actual["id"] == rid and actual["summary"] in rendered and rid in rendered
-            and "Writing-style observations" in rendered and "writing style is excluded" in rendered)
+            and "Writing-style observations" not in rendered and actual["ai_generation"] is None and "writing style is excluded" in rendered)
         (scratch / "org-report.txt").write_text(rendered, encoding="utf-8")
         shot = await tab.send("Page.captureScreenshot")
         (scratch / "org-report.png").write_bytes(base64.b64decode(shot["data"]))

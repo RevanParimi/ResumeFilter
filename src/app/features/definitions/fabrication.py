@@ -7,7 +7,6 @@ from app.features.schema import FeatureContext, FeatureDType, FeatureSource
 from app.schemas.fabrication import FindingSeverity
 
 _RISK_BANDS = ("insufficient_data", "low", "moderate", "elevated")
-_AI_BANDS = ("insufficient_text", "unlikely", "possible", "likely")
 _FARM_BANDS = ("insufficient_data", "unique", "similar", "near_duplicate")
 
 
@@ -61,19 +60,6 @@ def factual_risk_band(ctx: FeatureContext) -> str | None:
     if r is None or r.fabrication_risk is None or r.fabrication_risk.scorer_version != 2:
         return None
     return r.fabrication_risk.band.value
-
-
-@register_feature(
-    name="fabrication.ai_generation_band", version=1,
-    dtype=FeatureDType.ORDINAL, source=FeatureSource.FABRICATION,
-    description="Writing-style pattern band (legacy values); cannot establish authorship or dishonesty. Excluded from factual-risk v2.",
-    categories=_AI_BANDS,
-)
-def ai_generation_band(ctx: FeatureContext) -> str | None:
-    r = ctx.report
-    if r is None or r.ai_generation is None:
-        return None
-    return r.ai_generation.band.value
 
 
 @register_feature(

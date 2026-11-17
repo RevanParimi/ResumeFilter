@@ -74,7 +74,7 @@ class ScreeningService:
         batch_id: Optional[str] = None,
     ) -> Optional[BatchDetail]:
         """Register items. NO evaluation -- see spec §0.3: there is no worker
-        anywhere in app/, and 500 nine-node graph runs cannot happen inside one
+        anywhere in app/, and 500 eight-node graph runs cannot happen inside one
         request."""
         if not texts:
             raise ValueError("a batch needs at least one item")

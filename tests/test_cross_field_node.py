@@ -51,6 +51,6 @@ async def test_genuine_resume_is_not_major(services, genuine_resume):
     assert out["cross_field"].band is not ConsistencyBand.MAJOR_ISSUES
 
 
-def test_pipeline_wires_cross_field_after_ai_signals():
+def test_pipeline_wires_cross_field_after_ingest():
     names = [name for name, _ in _PIPELINE]
-    assert names.index("cross_field") == names.index("ai_signals") + 1
+    assert names.index("cross_field") == names.index("ingest") + 1

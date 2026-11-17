@@ -216,7 +216,7 @@
   };
 
   // POST .../process does at most `screening_max_items_per_call` items, each a
-  // full nine-node graph run, so the client loops. Sequential by construction:
+  // full eight-node graph run, so the client loops. Sequential by construction:
   // the server's conditional claim stops two callers double-billing the SAME
   // item. Server rate limits and per-call caps bound each request; SQL worker
   // admission does not bound concurrent provider work across different items.

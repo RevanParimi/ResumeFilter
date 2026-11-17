@@ -33,21 +33,22 @@ Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
   every seed feature at its latest version, making a materialization run
   reproducible. `compute_view` yields a **`FeatureVector`** (values + `missing`).
   Since R2-S2-T1 its risk score/band members use factual-risk v2 and exclude
-  writing style. The bundle is now version **3**, retaining the configured name:
-  v3 dropped the ledger and reputation members, so vectors stored under an older
+  writing style. The bundle is now version **4**, retaining the configured name:
+  v3 dropped the ledger and reputation members; v4 drops the writing-style member.
+  Vectors stored under an older
   member set are never served under it.
   Historical v1 reports/vectors remain distinct; opposite/unknown report
   semantics yield missing risk features. See [current risk logic](docs/FEATURE_LOGIC.md#combined-advisory-risk).
 - **`build_context`** (`context.py`) — the only store-touching helper; assembles
   a snapshot from the candidate and report stores. See point-in-time below.
 
-## Seed catalog (24 features)
+## Seed catalog (23 features)
 
 | Source | Consent | Examples |
 |---|---|---|
 | `candidate.*` (12) | no | `years_experience` (non-overlapping tenure), `highest_degree_level` (ordinal), `top_institution_tier`, `max_cgpa_10`, `notice_period_days`, `location_tier`, `has_github`, `num_skills`/`num_canonical_skills`/`num_experiences`/`num_projects`/`num_certifications` |
 | `depth.*` (7) | no | `depth_score`, `depth_band` (ordinal), `overall_confidence`, `verdict_count`, `flagged_claim_count`, `deferred_claim_count`, `coherent_claim_ratio` |
-| `fabrication.*` (5) | no | `risk_score`, `risk_band` (ordinal), `ai_generation_band`, `cross_field_major_count`, `resume_farm_band` |
+| `fabrication.*` (4) | no | `risk_score`, `risk_band` (ordinal), `cross_field_major_count`, `resume_farm_band` |
 
 **Ordinal categories** are ordered least→greatest with the subsystem's
 insufficient/unknown sentinel at index 0; the extractor returns the band string

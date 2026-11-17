@@ -13,7 +13,7 @@ def test_default_view_covers_every_registered_feature():
     view = default_view(reg, settings=_settings())
     assert view.name == "core_v1"
     assert {n for n, _ in view.members} == set(reg.names())
-    assert len(reg.names()) >= 24          # seed catalog breadth
+    assert len(reg.names()) >= 23          # seed catalog breadth
 
 
 def test_consent_flag_matches_source():

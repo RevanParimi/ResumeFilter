@@ -67,7 +67,7 @@ def test_claim_is_bounded_and_marks_items_processing(store, services):
 
 def test_an_item_cannot_be_claimed_twice(store, services):
     """The whole reason the claim is a conditional UPDATE: each item is a full
-    nine-node graph run, and on a live model a double claim is double money."""
+    eight-node graph run, and on a live model a double claim is double money."""
     org = _org(services)
     bid = store.create_batch(org, name="x", domain="genai",
                              created_by_org_user_id=None, texts=["only one"])

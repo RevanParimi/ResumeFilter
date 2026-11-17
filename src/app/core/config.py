@@ -165,7 +165,7 @@ class Settings(BaseSettings):
     # --- Screening batches (PI-8, S8.4 Phase B) -------------------------------
     # Registration is a row insert, so the batch bound is a sanity limit rather
     # than a performance one. The per-call bound is the real cost control: each
-    # item is a full nine-node graph run, and there is no worker -- the client
+    # item is a full eight-node graph run, and there is no worker -- the client
     # drives processing a few items at a time (spec §0.3).
     screening_max_batch_items: int = Field(default=500, ge=1)
     screening_max_items_per_call: int = Field(default=5, ge=1)
@@ -261,7 +261,6 @@ class Settings(BaseSettings):
     ai_likely_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
     ai_possible_threshold: float = Field(default=0.40, ge=0.0, le=1.0)
     ai_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
-    ai_llm_excerpt_chars: int = 6000
 
     # --- Fabrication defense (PI-2, S2.2): cross-field forensics ----------------
     # Deterministic date/structure checks over the extracted profile. ADVISORY:

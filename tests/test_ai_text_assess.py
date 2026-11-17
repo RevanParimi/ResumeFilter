@@ -75,4 +75,3 @@ def test_settings_expose_ai_knobs(settings):
     assert settings.ai_likely_threshold == 0.65
     assert settings.ai_possible_threshold == 0.40
     assert settings.ai_min_confidence == 0.50
-    assert settings.ai_llm_excerpt_chars == 6000

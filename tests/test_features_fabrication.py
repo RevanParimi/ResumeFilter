@@ -27,7 +27,6 @@ def test_risk_score_and_band():
 def test_none_when_subsystem_absent():
     r = Report(candidate_id="c1")
     assert fab.risk_score(_ctx(r)) is None
-    assert fab.ai_generation_band(_ctx(r)) is None
     assert fab.resume_farm_band(_ctx(r)) is None
     assert fab.cross_field_major_count(_ctx(r)) is None
     assert fab.risk_score(_ctx(None)) is None
@@ -44,7 +43,6 @@ def test_ai_farm_bands_and_major_count():
         ]),
     )
     ctx = _ctx(r)
-    assert fab.ai_generation_band(ctx) == "possible"
     assert fab.resume_farm_band(ctx) == "near_duplicate"
     assert fab.cross_field_major_count(ctx) == 1
 
@@ -63,7 +61,7 @@ def test_risk_feature_versions_never_relabel_stored_scores(scorer_version):
         assert reg.compute_one("fabrication.risk_band", ctx, version=version) == (
             "moderate" if scorer_version == version else None)
     view = default_view(reg, settings=Settings(_env_file=None, openrouter_api_key=""))
-    assert view.version == 3
+    assert view.version == 4
     assert dict(view.members)["fabrication.risk_score"] == dict(view.members)["fabrication.risk_band"] == 2
     vector = reg.compute_view(view, ctx)
     assert vector.values["fabrication.risk_score"] == (0.42 if scorer_version == 2 else None)

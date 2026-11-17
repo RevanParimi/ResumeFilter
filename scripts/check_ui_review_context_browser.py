@@ -103,10 +103,9 @@ async def main():
 
             clean_batch, clean_rows = batch("Plain and polished truthful", [body(t, "paired@example.com") for t in texts.values()])
             clean_reports = [require(org.get(f'/screening/reports/{r["report_id"]}')) for r in clean_rows]
-            plain = next(r for r in clean_reports if r["ai_generation"]["band"] != "likely")
-            polished = next(r for r in clean_reports if r["ai_generation"]["band"] == "likely")
+            plain, polished = clean_reports
             checks.check("paired API reports have identical low factual risk", plain["fabrication_risk"] == polished["fabrication_risk"] and plain["fabrication_risk"]["band"] == "low")
-            checks.check("API retains style wire fields with descriptive summary", "likelihood" in polished["ai_generation"] and "Writing-style observations" in polished["summary"] and "likelihood" not in polished["summary"].lower())
+            checks.check("new API reports omit writing-style assessment", all(r["ai_generation"] is None and "Writing-style observations" not in r["summary"] for r in clean_reports))
 
             overlap = texts["polished"].replace("Jan 2019 - Dec 2021", "Jan 2021 - Dec 2023")
             for text in (texts["plain"], overlap):
@@ -133,6 +132,7 @@ async def main():
             with Session(engine) as session:
                 historical = session.get(ReportRow, reports["historical"]["id"])
                 old = deepcopy(historical.body)
+                old["ai_generation"] = {"band": "possible", "likelihood": .5, "confidence": .5, "signals": [], "advisory": True, "reasoning": "Stored style observation"}
                 old["summary"] = "Synthetic stored historical summary; original wording retained."
                 old["fabrication_risk"] = {"score": .72, "confidence": .6, "band": "moderate", "advisory": True,
                     "reasoning": "Historical style-inclusive fusion", "components": [{"id": "ai_generation", "band": "likely", "risk": .75, "confidence": .8, "weight": .8, "flagged": True}]}
@@ -149,11 +149,13 @@ async def main():
                 session.commit()
 
             async def show(b, report, label):
-                await tab.js("window.__click('button', 'Batches')")
-                assert await tab.wait(f"window.__has({json.dumps(b['name'])})", 20, "batch list")
-                await tab.js(f"window.__click('[role=button]', {json.dumps(b['name'])})")
+                # Read the expected rows before triggering the UI's parallel batch reads.
                 rows = require(org.get(f'/screening/batches/{b["id"]}/queue'))["rows"]
                 index = next(i for i, r in enumerate(rows) if r["report_id"] == report["id"])
+                await tab.js("window.__click('button', 'Batches')")
+                assert await tab.wait(f"window.__has({json.dumps(b['name'])})", 20, "batch list")
+                assert await tab.wait(f"window.__q('[role=button]', {json.dumps(b['name'])})", 20, "batch card")
+                assert await tab.js(f"window.__click('[role=button]', {json.dumps(b['name'])})")
                 assert await tab.wait(browser.ROW_SELECTOR + f".length === {len(rows)}", 20, "queue rows")
                 await tab.js("(" + browser.ROW_SELECTOR + f")[{index}].click()")
                 assert await tab.wait("window.__has('Claim by claim')", 20, label)
@@ -164,7 +166,7 @@ async def main():
             ptext = await show(clean_batch, plain, "plain")
             low_ring = await tab.js("({label:document.querySelector('[data-review-index]').getAttribute('aria-label'), background:getComputedStyle(document.querySelector('[data-review-index]')).backgroundImage})")
             qtext = await show(clean_batch, polished, "polished")
-            checks.check("plain and polished UI separates style without authorship likelihood", all("Writing-style observations" in t and "writing style is excluded" in t and "likelihood" not in t.lower() and "AI generation" not in t for t in (ptext, qtext)) and "Text observation:" in qtext)
+            checks.check("plain and polished UI separates style without authorship likelihood", all("Writing-style observations" not in t and "writing style is excluded" in t and "likelihood" not in t.lower() and "AI generation" not in t for t in (ptext, qtext)))
             checks.check("low UI has a numeric index and explained coverage", "low" in ptext.lower() and "Low means few concerns" in ptext and "0.10" in low_ring["label"] and "conic-gradient" in low_ring["background"])
             otext = await show(detail_batch, reports["overlap"], "overlap")
             checks.check("UI renders exact timeline finding with candidate clarification", all(f["detail"] in otext for f in reports["overlap"]["cross_field"]["findings"]) and "concurrent, contract or part-time" in otext)
@@ -174,9 +176,9 @@ async def main():
             missing_ring = await tab.js("({label:document.querySelector('[data-review-index]').getAttribute('aria-label'), background:getComputedStyle(document.querySelector('[data-review-index]')).backgroundImage})")
             checks.check("insufficient coverage is a refusal distinct from low", "Cannot assess factual risk" in mtext and "This is not a low score" in mtext and "insufficient data" in mtext.lower() and missing_ring["label"] == "Review index unavailable" and missing_ring["background"] == "none")
             htext = await show(detail_batch, reports["historical"], "historical")
-            checks.check("historical v1 UI preserves original score and identifies style inclusion", "Historical assessment" in htext and "v1" in htext and "0.72" in htext and "included writing style" in htext and old["summary"] in htext)
+            checks.check("historical v1 UI preserves original score and identifies style inclusion", "Historical assessment" in htext and "v1" in htext and "Writing-style observations" in htext and "0.72" in htext and "included writing style" in htext and old["summary"] in htext)
             atext = await show(detail_batch, reports["absent"], "absent")
-            checks.check("absent fields render missing-check and style states", "No factual review assessment" in atext and "No style assessment was recorded" in atext and "Excluded from index: check unavailable" in atext)
+            checks.check("absent fields render missing-check and style states", "No factual review assessment" in atext and "Writing-style observations" not in atext and "Excluded from index: check unavailable" in atext)
             utext = await show(detail_batch, reports["unknown"], "unknown")
             checks.check("unsupported version does not present an interpretable score", "Unsupported scorer version 9" in utext and "unsupported version" in utext.lower() and "0.99" not in utext)
             with Session(engine) as session:

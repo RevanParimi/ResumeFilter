@@ -109,8 +109,8 @@ def main():
 
     def check_pair(label, pair, expected):
         plain, polished = pair
-        checks.check(label + " changes descriptive style", polished["ai_generation"]["band"] == "likely" and
-                     plain["ai_generation"]["likelihood"] < polished["ai_generation"]["likelihood"])
+        checks.check(label + " omits writing-style assessments",
+                     plain["ai_generation"] is polished["ai_generation"] is None)
         risks = [r["fabrication_risk"] for r in pair]
         checks.check(label + " retains identical factual risk", risks[0] == risks[1])
         checks.check(label + " has expected v2 factual band", risks[0]["band"] == expected and
@@ -216,7 +216,7 @@ def main():
                 candidate_store=cs, report_store=rs, ledger_store=ls)
             fs.upsert_vector(historical_vector)
             run = require(http.post("/features/materialize", json={}))
-            checks.check("HTTP materializes new view version", run["view_version"] == 3)
+            checks.check("HTTP materializes new view version", run["view_version"] == 4)
             current = fs.latest_vectors_for_view(view.name, view.version,
                                                  as_of=datetime.fromisoformat(run["as_of"]))
             current_by_id = {item.vector.candidate_id: item for item in current}

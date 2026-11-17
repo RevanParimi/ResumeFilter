@@ -32,8 +32,8 @@ Sources: `src/app/api/reports.py`, `src/app/api/candidates.py`,
 The deterministic score averages all detectors with enough input, including
 zero for detectors that did not fire. Confidence increases with coverage:
 `min(0.9, 0.30 + 0.15 * evaluated_detector_count)`. This is a heuristic coverage
-score, not a measured probability of AI authorship. An optional LLM style
-assessment is fused with it in `src/app/graph/nodes/ai_signals.py`.
+score, not a measured probability of AI authorship. New resume evaluations do not run these detectors or an LLM style pass.
+The pure helper remains in use by the interview cheating check.
 
 **Yes, a truthful resume polished with AI can trigger these rules.** A human
 using a resume template can too. The code observes patterns in the final text;
@@ -42,7 +42,7 @@ it has no evidence of who wrote it or whether the underlying experience is true.
 New risk assessments exclude these observations from the mean, maximum,
 confidence coverage and corroboration gates. `fr_weight_ai` remains accepted
 for configuration compatibility and is ignored by v2. Descriptive style data
-remains optional on reports; UI explanations are the separate R2-S2-T2 task.
+remains optional on stored reports and appears in the UI only when present.
 
 ## Timeline checks
 
@@ -106,8 +106,8 @@ including their original style component, score, confidence and reasoning.
 Reads never recompute or rewrite them. The risk feature score/band have separate
 v1/v2 definitions; an extractor returns missing for another or unknown version.
 The default feature view keeps its configured name (`core_v1`) and uses bundle
-version 2. Existing v1 vectors remain accessible by explicit version; default
-search/matching uses v2 and needs a fresh operator materialization. No automatic
+version 4. Existing older vectors remain accessible by explicit version; default
+matching uses v4 and needs a fresh operator materialization. No automatic
 data rewrite occurs. This is version isolation, not evidence of measured
 detection accuracy.
 
@@ -120,7 +120,7 @@ time. Employer access is scoped to the organization's screening reports.
 
 The outcome preserves the reviewer's resolution. It does not rerun the report,
 automatically retrain models, or mean the person was hired/rejected.
-Hiring-stage outcomes belong to the separate interview ledger.
+
 
 R1-S1-T1 retention update: reports/outcomes remain in SQL, including reviewer
 notes. The production observer no longer writes JSONL copies of claims, probes,

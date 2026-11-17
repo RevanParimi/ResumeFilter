@@ -34,10 +34,11 @@ def default_view(registry: FeatureRegistry | None = None, *, settings=None) -> F
     settings = settings or get_settings()
     reg = registry or get_feature_registry()
     # v2 pinned factual-risk features that exclude style; v3 drops the
-    # cross-company ledger and reputation features. Vectors persisted under an
+    # cross-company ledger and reputation features; v4 drops the style feature.
+    # Vectors persisted under an
     # older member set remain available by explicit version, never mixed into
     # this view.
-    return latest_view(reg, name=settings.feat_default_view, version=3)
+    return latest_view(reg, name=settings.feat_default_view, version=4)
 
 
 __all__ = [

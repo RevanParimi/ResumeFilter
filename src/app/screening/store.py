@@ -212,7 +212,7 @@ class ScreeningStore:
         The read that CHOOSES an item can be stale -- two browser tabs both hit
         ``POST .../process``. The write that CLAIMS it cannot: it re-asserts
         claimability in its own WHERE clause and counts only if it changed a
-        row. Each item is a full nine-node graph run, so a double claim is a
+        row. Each item is a full eight-node graph run, so a double claim is a
         double bill.
         """
         with self._session_factory() as s:

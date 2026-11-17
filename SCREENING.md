@@ -45,7 +45,7 @@ bounded call the client drives.
 **Why not evaluate on upload?** Because it is not physically possible.
 Measured, not assumed: there is **no worker, no scheduler and no
 `BackgroundTasks` anywhere in `src/app/`**, and `POST /candidates` awaits the whole
-nine-node graph inline. 500 resumes in one request is a request that times out.
+eight-node graph inline. 500 resumes in one request is a request that times out.
 
 **Rejected: a background worker.** It would need a queue, a supervisor and
 somewhere to put failures — none of which exist, and all of which want S8.3's
@@ -149,7 +149,7 @@ status corrected by a read would be a fact that depends on who looked at it
 last.
 
 **The claim is a conditional UPDATE**, not a select-then-write. Two browser tabs
-can both `POST .../process`, and each item is a full nine-node graph run — on a
+can both `POST .../process`, and each item is a full eight-node graph run — on a
 live model, a double claim is a double bill. The `UPDATE` re-asserts
 claimability in its own `WHERE` clause and counts only if `rowcount == 1`.
 

@@ -1,6 +1,6 @@
 """Fabrication defense (PI-2) — pure analysis helpers, no I/O, no LLM.
 
-The graph node in app/graph/nodes/ai_signals.py orchestrates these. Keeping
-the detectors pure keeps them offline-testable and reusable (S2.4 fusion).
+The pure style helpers remain in use by the interview cheating check.
+New resume evaluations use timeline and content-overlap checks.
 S2.3 similarity.py is orchestrated by the API layer (POST /candidates), not a node.
 """

@@ -1,13 +1,13 @@
 # Veritas feature status
 
-Updated: 2026-11-16. The capabilities in the code today, with the guide that
+Updated: 2026-11-17. The capabilities in the code today, with the guide that
 describes each. All scoring is advisory and needs human review. Polished or
 AI-assisted writing is not proof of fabricated experience, and interview
 scoring judges answer content, not appearance or inferred emotion.
 
 | Area | What exists | Guide |
 |---|---|---|
-| Resume evaluation | Domain-independent claim extraction, GitHub repository evidence, follow-up probes, timeline and duplicate-resume checks, risk band, writing-style observations and conservative advisory scoring with deterministic model fallbacks. Instant check (text or PDF) and saved reports with recorded outcomes. | [README](README.md), [FLOW](FLOW.md), [fabrication](FABRICATION.md), [logic](docs/FEATURE_LOGIC.md) |
+| Resume evaluation | Domain-independent claim extraction, GitHub repository evidence, follow-up probes, timeline and duplicate-resume checks, risk band, historical writing-style display and conservative advisory scoring with deterministic model fallbacks. Instant check (text or PDF) and saved reports with recorded outcomes. | [README](README.md), [FLOW](FLOW.md), [fabrication](FABRICATION.md), [logic](docs/FEATURE_LOGIC.md) |
 | Candidate records | Extraction, contact-hash identity, versioned resumes, duplicate detection, extraction coverage and erasure. | [Candidates](CANDIDATES.md) |
 | Screening | Batch upload, queue, processing, retry, summary, report view and outcomes, tenant-scoped. | [Screening](SCREENING.md), [tenancy](TENANCY.md) |
 | Roles and matching | Roles (requisitions) and advisory role board. | [Matching](MATCHING.md) |

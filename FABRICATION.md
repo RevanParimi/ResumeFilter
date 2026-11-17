@@ -1,113 +1,26 @@
-# veritas — Fabrication Defense 2.0 (PI-2: S2.1 + S2.2 + S2.3 + S2.4)
+# Veritas factual review context
 
-How the platform detects signs of resume fabrication *around* the depth-eval
-pipeline: AI-generated text, internally contradictory timelines, and
-resume-farm near-duplicates — fused into one unified advisory
-`fabrication_risk` band (S2.4). This documents the *fabrication* subsystem;
-the depth-eval pipeline it decorates is in [FLOW.md](FLOW.md), the candidate
-store it reads in [CANDIDATES.md](CANDIDATES.md). Source of truth is the
-code; file refs are clickable.
+Timeline and structure findings plus content overlap form an advisory factual
+review index. It never establishes fabricated experience or changes claim
+verdicts or depth scores. Polished or AI-assisted writing is not evidence of
+fabricated experience. Review the candidate's work and first-party evidence.
 
----
+## Where checks run
 
-## Design principles (non-negotiable)
+The `cross_field` evaluation step checks the supplied or heuristically extracted
+profile. Candidate intake compares fingerprints with other stored candidates
+before evaluation and passes `resume_farm` into the engine. Ad-hoc `/evaluate`
+has no corpus assessment. The scoring step combines the assessable factual
+components and the report step retains the result through the SQL report store.
+Production uses `NullFlywheel`; test observers remain available.
 
-1. **Advisory only, always.** No fabrication signal changes a claim's
-   `VerdictStatus`, the `depth_score`, or the `depth_band`. Every assessment
-   carries `advisory: true` and reviewer-facing copy that says "never a
-   rejection signal". Fusion into calibration is S2.4 — and even then stays
-   advisory.
-2. **Conservative by construction.** False positives are the existential
-   risk. Each subsystem has a structural safeguard that makes it *under*-fire:
-   AI banding needs multiple independent tells, date math rounds against the
-   finding, farm matching masks identity churn but demands high content
-   overlap.
-3. **Deterministic first, LLM optional.** Every signal has a pure,
-   offline-computable core. The only LLM involvement anywhere in PI-2 is the
-   S2.1 stylometry pass — cheap tier, confidence-capped, and never able to
-   drive a band on its own. S2.2 and S2.3 use **no LLM at all**.
-4. **Assessments and outcomes are retained in SQL.** Quality analysis reads
-   these erasable records. Observer events remain available to offline tests;
-   production writes no duplicate JSONL stream (R1-S1-T1).
+## Historical writing-style data
 
-## Where each signal is computed
-
-```
-POST /evaluate                     POST /candidates
-      │                                  │ extract → ingest (store)
-      │                                  │ fingerprint → compare corpus   ← S2.3 (API layer)
-      ▼                                  ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ LANGGRAPH PIPELINE                                                  │
-│  ingest ─► ai_signals ─► cross_field ─► claim_extraction ─► …       │
-│              ▲ S2.1        ▲ S2.2                                   │
-│              │             │                                        │
-│   stylometry over raw     date/structure math over the extracted    │
-│   resume text             CandidateProfile (explicit or heuristic)  │
-│                                                                     │
-│  … ─► scoring ─► report ── attaches all three assessments to the    │
-│                            Report + logs flywheel records           │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-Why S2.3 is **not** a graph node: cross-candidate comparison must exclude
-the uploader's *own* other resumes (re-uploads and new versions are
-legitimate), which requires knowing the uploader's `candidate_id` — and the
-graph is deliberately candidate-blind (see [FLOW.md](FLOW.md)). So POST
-/candidates computes the assessment in the API layer and passes it into
-`engine.evaluate(resume_farm=...)` as an input, exactly like it passes the
-extracted `candidate_profile`. POST /evaluate has no identity and no store,
-so its reports carry `resume_farm: null`.
-
----
-
-## S2.1 — AI-generated-resume signals (`ai_signals` node)
-
-[app/fabrication/ai_text.py](src/app/fabrication/ai_text.py) ·
-[app/graph/nodes/ai_signals.py](src/app/graph/nodes/ai_signals.py) ·
-contracts in [app/schemas/fabrication.py](src/app/schemas/fabrication.py)
-
-AI-assisted resume *writing* is common and legitimate — the band is
-stylistic context for a reviewer, not an accusation. Four deterministic
-detectors each measure one tell; each is gated on having enough text to
-measure honestly:
-
-| Detector | Fires when | Score |
-|---|---|---|
-| `template_phrases` | ≥ 3 hits from a stock-phrase list ("spearheaded", "results-driven", …) in ≥ 60 words | `min(1, density_per_100_words / 3)` |
-| `uniform_bullets` | ≥ 6 bullets with length CV < 0.22 **and** ≥ 85% opening with a past-tense verb | blend of shape uniformity + verb fraction |
-| `metric_saturation` | ≥ 70% of bullets carry a %/x metric | fraction × (0.7 + 0.3 · share of %s divisible by 5) |
-| `symmetric_structure` | ≥ 3 experience entries with *identical* bullet counts (≥ 3 each) | `0.55 + 0.10 · entries` |
-
-The deterministic pass averages the scores of every detector that *could*
-run (non-fired ones count 0.0) and derives confidence from coverage:
-`min(0.9, 0.30 + 0.15 · evaluated)`.
-
-**LLM stylometry (optional):** one call on the `parsing` (FAST) tier over a
-6 000-char excerpt. Its confidence is **capped at 0.75**, and it degrades to
-nothing on no key / garbage output. Deterministic and LLM pairs are fused
-confidence-weighted (same math as plausibility's `_fuse`).
-
-**Banding** ([band_for](src/app/fabrication/ai_text.py)) is where the
-conservatism is structural:
-
-```
-confidence < ai_min_confidence (0.50)      → INSUFFICIENT_TEXT
-likelihood ≥ ai_likely_threshold (0.65)    → LIKELY  only if ≥ 2 deterministic
-                                             tells fired; else POSSIBLE
-likelihood ≥ ai_possible_threshold (0.40)  → POSSIBLE
-else                                        → UNLIKELY
-```
-
-**The LLM alone can never produce LIKELY.** Output:
-`AIGenerationAssessment {likelihood, confidence, band, signals[], reasoning,
-advisory=true}` → `Report.ai_generation`; summary note only on
-POSSIBLE/LIKELY.
-
-Config: `ai_likely_threshold`, `ai_possible_threshold`, `ai_min_confidence`,
-`ai_llm_excerpt_chars` ([config.yaml](config.yaml)).
-
----
+New resume evaluations do not compute writing-style assessments. The optional
+`Report.ai_generation` contract remains so stored reports load unchanged; the
+report screen shows writing-style observations only when that field is present.
+`fabrication/ai_text.py` and `AIGenerationAssessment` remain in use by the
+interview cheating check. Style patterns cannot establish authorship or dishonesty.
 
 ## S2.2 — Cross-field forensics (`cross_field` node)
 
@@ -241,88 +154,24 @@ legitimate.
 
 ---
 
-## S2.4 — Unified fabrication_risk (calibration stage)
+## Advisory factual review index (`fabrication_risk`, scorer version 2)
 
-[app/fabrication/risk.py](src/app/fabrication/risk.py) ·
-[app/graph/nodes/scoring.py](src/app/graph/nodes/scoring.py) ·
-contracts in [app/schemas/fabrication.py](src/app/schemas/fabrication.py)
+`fabrication/risk.py` combines only assessable timeline/structure and content
+overlap components. Each configured weight is multiplied by component confidence.
+Missing components contribute neither value nor coverage. The default score is
+`0.70 * weighted_mean + 0.30 * maximum`; confidence is
+`min(0.90, 0.30 + 0.15 * usable_components)`.
 
-Fuses `ai_generation ⊕ cross_field ⊕ resume_farm` into one advisory
-`fabrication_risk` — a single number and band for a reviewer who doesn't
-want to cross-reference three separate assessments. Still advisory, still
-never auto-reject: fusion happens **inside the scoring node**, because
-scoring is the calibration stage, but it only ever *adds* a field to the
-returned state — it never reads or rewrites `verdicts`, `depth_score`, or
-`depth_band`.
+The default confidence floor is 0.50. One component alone therefore returns
+insufficient data. Moderate requires a score at least 0.30 and either one high
+component or two non-low components. Elevated requires at least 0.60 and two
+high components. These are heuristic review thresholds, not fraud probabilities.
+Depth and claim verdicts remain separate and human review is required.
 
-Each subsystem's band maps to a component risk; INSUFFICIENT_* bands are
-excluded from fusion entirely (absence of signal is not evidence of risk):
-
-| Component | Low band → risk | Mid band → risk | High band → risk |
-|---|---|---|---|
-| `ai_generation` | unlikely → 0.10 | possible → 0.45 | likely → 0.75 |
-| `cross_field` | consistent → 0.10 | minor_issues → 0.40 | major_issues → 0.75 |
-| `resume_farm` | unique → 0.10 | similar → 0.45 | near_duplicate → 0.80 |
-
-Only assessed (non-insufficient) subsystems produce a `RiskComponent`, each
-carrying its own `weight = fr_weight_<subsystem> · confidence` and a
-`flagged` bit set at that subsystem's top band (LIKELY / MAJOR_ISSUES /
-NEAR_DUPLICATE).
-
-**Score** blends a confidence-weighted mean across components with the max
-component risk, 70/30:
-
-```
-score = 0.7 · (Σ risk·weight / Σ weight) + 0.3 · max(risk)
-```
-
-A pure mean would let clean subsystems dilute one strong signal; a pure max
-would ignore corroboration. The 70/30 blend keeps a single strong signal
-visible (it can still reach MODERATE) while ELEVATED separately requires
-corroboration — see the gate below. Weights scale the weighted-mean term only;
-a zero weight does not fully mute a subsystem — its risk still feeds the 30%
-max term, coverage confidence, and the flag gate.
-
-**Confidence** follows coverage, the same shape as S2.1/S2.2:
-`min(0.9, 0.30 + 0.15 · evaluated)`. One assessed subsystem → confidence
-0.45, which sits *below* `fr_min_confidence` (0.50) — **fusion over a
-single subsystem can never assert; it always lands INSUFFICIENT_DATA.**
-That is deliberate: a unified score is only meaningful once it is actually
-uniting more than one signal.
-
-**Banding** ([band_for_risk](src/app/fabrication/risk.py)):
-
-```
-confidence < fr_min_confidence (0.50)                     → INSUFFICIENT_DATA
-score ≥ fr_elevated_threshold (0.60) AND ≥ 2 components
-  flagged at their top band                                → ELEVATED
-score ≥ fr_moderate_threshold (0.30) AND (≥ 1 flagged
-  component OR ≥ 2 non-clean components)                   → MODERATE
-else                                                        → LOW
-```
-
-The `≥ 2 flags` gate mirrors S2.1's "LIKELY needs ≥ 2 deterministic tells":
-one strong signal (e.g. a lone `near_duplicate` sitting inside the MinHash
-stderr's false-positive tail — see S2.3's residuals) can drive the score
-into MODERATE but is capped there; ELEVATED needs corroborating evidence
-from a second subsystem. MODERATE has its own weaker gate for the same
-reason: a single soft signal (one component just above its clean band, no
-flags) must never lift the unified band above LOW on its own — it needs
-either a flagged component or a second non-clean signal corroborating it.
-Output: `FabricationRiskAssessment {score,
-confidence, band, components[], reasoning, advisory=true}` →
-`Report.fabrication_risk`; summary note fires on **MODERATE and ELEVATED**
-(deliberately — three soft signals converging on MODERATE is exactly the
-case where fusion adds information no single per-component note carries),
-and its copy reiterates: never changes the depth evaluation, never a
-rejection signal. Every assessment also logs a `fabrication_risk` flywheel
-record with the per-component bands, `outcome: null`.
-
-Config: `fr_moderate_threshold`, `fr_elevated_threshold`, `fr_min_confidence`,
-`fr_weight_ai`, `fr_weight_cross_field`, `fr_weight_farm`
-([config.yaml](config.yaml)).
-
----
+Historical unversioned/v1 assessments retain their original style-inclusive
+score and explanation. Reads do not recompute them. `fr_weight_ai` remains an
+ignored compatibility setting for v2. See [FEATURES.md](FEATURES.md) for versioned
+risk features and the current `core_v1` view (version 4).
 
 ## What lands on the Report and in the flywheel
 
@@ -333,7 +182,6 @@ cleanup work, not erased automatically.
 
 | Sprint | Report field | Band values | Summary note fires on | Flywheel `record_type` |
 |---|---|---|---|---|
-| S2.1 | `ai_generation` | insufficient_text / unlikely / possible / likely | possible, likely | `ai_signals` |
 | S2.2 | `cross_field` | insufficient_data / consistent / minor_issues / major_issues | major_issues | `cross_field` |
 | S2.3 | `resume_farm` | insufficient_data / unique / similar / near_duplicate | near_duplicate | `resume_farm` |
 | S2.4 | `fabrication_risk` | insufficient_data / low / moderate / elevated | moderate, elevated | `fabrication_risk` |
@@ -350,8 +198,8 @@ operator's would be measuring these thresholds against their own author.
 ## Config quick reference ([config.yaml](config.yaml), env override `DEE_*`)
 
 ```
-S2.1  ai_likely_threshold 0.65 · ai_possible_threshold 0.40
-      ai_min_confidence 0.50   · ai_llm_excerpt_chars 6000
+Interview style helper: ai_likely_threshold 0.65 · ai_possible_threshold 0.40
+      ai_min_confidence 0.50
 S2.2  xf_min_confidence 0.50   · xf_overlap_months_min 3 · xf_gap_months_min 12
       xf_edu_overlap_months_min 12 · xf_senior_min_months 24 · xf_lead_min_months 48
 S2.3  rf_shingle_words 3 · rf_num_permutations 128 · rf_min_shingles 40
@@ -369,8 +217,7 @@ at 24) are code, not config — change deliberately.
 
 ```
 tests/
-├── test_fabrication_schema.py, test_ai_text.py, test_ai_signals_node.py,
-│   test_report_ai_signals.py, test_ai_integration.py            S2.1
+├── test_fabrication_schema.py, test_ai_text_assess.py, test_ai_integration.py
 ├── test_cross_field_{schema,timeline,coherence,assess,node}.py,
 │   test_report_cross_field.py, test_cross_field_integration.py  S2.2
 ├── test_resume_farm_{schema,assess,api}.py, test_similarity.py,

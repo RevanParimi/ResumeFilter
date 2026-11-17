@@ -51,8 +51,8 @@ class EvaluationState(BaseModel):
     # --- ingest ---------------------------------------------------------------
     resume_text: Optional[str] = None  # normalized, parsed text
 
-    # --- ai_signals (S2.1) ------------------------------------------------------
-    # Advisory AI-generation assessment; None when resume text never arrived.
+    # --- historical style data ------------------------------------------------------
+    # Optional compatibility input; new evaluations do not compute style.
     ai_generation: Optional[AIGenerationAssessment] = None
 
     # --- cross_field (S2.2) -----------------------------------------------------

@@ -81,8 +81,7 @@ async def test_same_truthful_resume_plain_and_polished_has_identical_factual_ris
     reports = [await EvaluationEngine(make_services(settings, llm=FakeLLM(script, settings))).evaluate(
         resume_text=text, domain=domain, candidate_profile=profile, resume_farm=farm) for text in texts]
     plain, polished = reports
-    assert polished.ai_generation.band.value == "likely"
-    assert plain.ai_generation.likelihood < polished.ai_generation.likelihood
+    assert polished.ai_generation is plain.ai_generation is None
     assert plain.fabrication_risk == polished.fabrication_risk
     assert plain.cross_field == polished.cross_field
     assert plain.resume_farm == polished.resume_farm == farm

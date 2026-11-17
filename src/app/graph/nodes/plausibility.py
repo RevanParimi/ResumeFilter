@@ -22,7 +22,7 @@ from app.schemas.claims import CandidateContext, Claim
 from app.schemas.report import CoherenceVerdict, Evidence, EvidenceSource, Polarity
 from app.services import Services
 
-# MODULE level; see ai_signals.py for why the node's own local logger is not in
+# MODULE level because the node's own local logger is not in
 # scope at the swallow below.
 _log = get_logger("node.plausibility")
 

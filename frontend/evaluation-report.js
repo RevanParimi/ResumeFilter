@@ -375,7 +375,7 @@
         : "This advisory index is based on the checks available when the report was created. Low means few concerns were observed, not verified experience. Confidence describes available check coverage, not the probability of dishonesty.",
       reportComponentHelp: version === 1
         ? "Historical fusion contributors: " + (fab.components || []).map((c) => SIGNAL_LABEL[c.id] || c.id).join(", ") + ". The original index is preserved; these factual observations and style notes are shown separately for clarification."
-        : "Timeline and content-overlap checks contribute only when assessable. Missing coverage can prevent an assessment. Writing-style observations are shown separately and never supply factual evidence.",
+        : "Timeline and content-overlap checks contribute only when assessable. Missing coverage can prevent an assessment." + (style ? " Writing-style observations are shown separately and never supply factual evidence." : ""),
       reportDepth: rep
         ? (DEPTH_LABEL[rep.depth_band] || rep.depth_band) + " · depth " + num(rep.depth_score)
         : "—",
@@ -393,6 +393,7 @@
       reportConfLabel: assessable ? num(fab.confidence) + " · " + confWord(fab.confidence) : "insufficient coverage",
       reportComponents,
       reportTimelineFindings,
+      hasReportStyle: !!style,
       reportStyleStatus: !style ? "No style assessment was recorded."
         : style.band === "insufficient_text" ? "Insufficient text for style observations."
           : styleSignals.length ? styleSignals.length + " text pattern(s) recorded." : "No deterministic style patterns were recorded; this does not verify authorship.",

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.graph.nodes.ai_signals import _llm_assessment as ai_assess
 from app.graph.nodes.plausibility import _llm_assessment as plaus_assess
 from app.schemas.claims import CandidateContext, Claim
 
@@ -21,14 +20,6 @@ class _BoomLLM:
 
     async def acomplete_json(self, **kw):
         raise RuntimeError("vendor outage")
-
-
-@pytest.mark.asyncio
-async def test_ai_signals_logs_when_the_llm_fails(services, log_events):
-    services.llm = _BoomLLM()
-    result = await ai_assess(services, "some resume text")
-    assert result == (None, [], ""), "the degradation itself must not change"
-    assert any(e["event"] == "ai_signals_llm_failed" for e in log_events)
 
 
 @pytest.mark.asyncio

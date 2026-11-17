@@ -3,16 +3,6 @@
 How a request actually moves through the system, what each node computes, and the
 exact math/decision rules. Source of truth is the code; file refs are clickable.
 
-> **veritas update (PI-1/PI-2).** This engine is now the *vetting subsystem* of
-> the veritas talent platform. Two peer docs cover what grew around it:
-> [CANDIDATES.md](CANDIDATES.md) — the candidate data backbone (extraction,
-> store, identity resolution, India normalization, POST /candidates) — and
-> [FABRICATION.md](FABRICATION.md) — the fabrication-defense signals
-> (`ai_signals` + `cross_field` nodes, resume-farm detection, and the unified
-> `fabrication_risk` fused in scoring, S2.4). The pipeline is
-> now **9 nodes**: two advisory fabrication nodes sit between `ingest` and
-> `claim_extraction`. The stage numbering below retains the original seven stages plus 1a/1b.
-
 ---
 
 ## Architecture and source map
@@ -21,12 +11,12 @@ The report workflow in [reports.py](src/app/api/reports.py), candidate workflow
 in [candidates.py](src/app/api/candidates.py), employer screening in
 [screening.py](src/app/api/screening.py), and remaining product handlers
 in [routes.py](src/app/api/routes.py) call shared services or
-[EvaluationEngine](src/app/graph/build.py). The compiled graph runs nine nodes
+[EvaluationEngine](src/app/graph/build.py). The compiled graph runs eight nodes
 in a fixed sequence; nodes return updates to [EvaluationState](src/app/graph/state.py).
 
 ```mermaid
 flowchart LR
-    ingest --> ai_signals --> cross_field --> claim_extraction --> provenance
+    ingest --> cross_field --> claim_extraction --> provenance
     provenance --> plausibility --> probe_generation --> scoring --> report
 ```
 
@@ -37,7 +27,7 @@ flowchart LR
 | Provenance | [provenance.py](src/app/graph/nodes/provenance.py): anchored GitHub facts cached within one evaluation and attached to the corresponding claims. No vector-store writes or queries. |
 | Durable reports/outcomes | [reports/store.py](src/app/reports/store.py): SQLAlchemy storage on the configured candidate database, with migrations and erasure constraints. |
 | Runtime observation | [flywheel.py](src/app/services/flywheel.py): non-retaining production observer; in-memory event capture for tests. Legacy JSONL cleanup is separate. |
-| Service construction | [services](src/app/services/__init__.py): currently still constructs unused vector-store infrastructure and repeated SQL resources; simplification remains R4-S1-T1/T2. |
+| Service construction | [services](src/app/services/__init__.py): shares one per-app SQL factory and explicitly owned provider resources. |
 | Schemas/configuration | [schemas](src/app/schemas), [core](src/app/core), [migrations](alembic/versions). |
 | Intake and UI | [screening](src/app/screening), [frontend](frontend); workflow contracts are in [SCREENING.md](SCREENING.md). |
 
@@ -49,88 +39,9 @@ No LLM key means deterministic fallbacks; it does not establish model accuracy.
 
 ## Data flow (input → output)
 
-`EvaluationState` grows field-by-field. Legend: `+` field added · `~` field mutated
-· `ext` external call · `side-effect` write-out.
-
-```
-INPUT  (POST /evaluate)
-  { resume_text | resume_pdf_b64 (one required), github_url?, portfolio_url?, domain="genai" }
-   │
-   ▼
-┌─ ① ingest ──────────────────────────────────────────────────────────────────┐
-│  in : raw_resume_text | resume_pdf_b64                                        │
-│  out: + resume_text  (normalized)   + errors[] (if PDF/empty)                │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ resume_text
-   ▼
-┌─ ⑴ ai_signals · ⑵ cross_field  (advisory, PI-2 → FABRICATION.md) ───────────┐
-│  in : resume_text (+ candidate_profile input when POST /candidates set it)   │
-│  out: + ai_generation (AIGenerationAssessment)                               │
-│       + cross_field   (CrossFieldAssessment)                                 │
-│  never touch claims / verdicts / depth — attached to the Report at ⑦         │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ resume_text
-   ▼
-┌─ ② claim_extraction ────────────────────────────────────────────────────────┐
-│  in : resume_text, github_url, portfolio_url                                 │
-│  out: + claims[]  Claim{ text, claim_type, specificity, external_anchor? }   │
-│       + candidate_context { role, employer_type, github_url, … }             │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ claims[]
-   ▼
-┌─ ③ provenance ──────────────────────────────────────────────────────────────┐
-│  in : claims[].external_anchor, github_url                                   │
-│  ext: GitHub API -> evaluation-local repo cache -> anchored claims       │
-│  out: + provenance{ claim_id -> [evidence strings] }                         │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ claims[] + provenance{}
-   ▼
-┌─ ④ plausibility (THE CORE) ─────────────────────────────────────────────────┐
-│  in : per claim → domain.rules ⊕ LLM(reasoning) ⊕ provenance                 │
-│       rule: coherence = 0.30 + 0.55·fraction (− penalties / ± 'tells')       │
-│       llm : {coherence, confidence, missing_signals} (conf ≤ 0.85)           │
-│       fuse: confidence-weighted blend → (coherence, confidence)              │
-│  out: + verdicts[] CoherenceVerdict{ coherence_score, confidence, reasoning, │
-│              evidence[], expected/missing_signals, probes(seed) } (no status)│
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ verdicts[] (scored, unclassified)
-   ▼
-┌─ ⑤ probe_generation ────────────────────────────────────────────────────────┐
-│  in : verdicts where coherence_score < 0.35                                  │
-│  ext: LLM(reasoning) scoped to missing_signals                               │
-│  out: ~ verdicts[].probes  (augmented; coherent claims untouched)            │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ verdicts[] (+ probes)
-   ▼
-┌─ ⑥ scoring (calibration) ───────────────────────────────────────────────────┐
-│  classify(): coh<0.35 AND conf≥0.70 → INCOHERENT │ conf<0.50 → DEFER         │
-│              coh≥0.35 → COHERENT │ no evidence → UNVERIFIED                   │
-│  out: ~ verdicts[].status                                                    │
-│       + depth_score, overall_confidence, depth_band                          │
-│         (DEEP≥.80 SOLID≥.60 EMERGING≥.40 else SUPERFICIAL; conf<.50 → INSUFFICIENT)│
-│       + fabrication_risk (S2.4: fuses ai_generation ⊕ cross_field ⊕          │
-│         resume_farm → advisory band; never touches verdicts/depth)           │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │ verdicts[] (classified) + aggregates
-   ▼
-┌─ ⑦ report ──────────────────────────────────────────────────────────────────┐
-│  observer: flywheel.log() is non-retaining in production                    │
-│  out: + report (Report)                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
-   │
-   ▼
-OUTPUT  (Report)
-  { id, domain, verdicts[]{coherence_score, confidence, status, reasoning,
-    evidence[], probes[]}, depth_score, depth_band, overall_confidence,
-    flagged_claim_ids[] (INCOHERENT), deferred_claim_ids[] (DEFER),
-    advisory=true, human_review_required=true, summary,
-    ai_generation?, cross_field?, resume_farm?, fabrication_risk? }
-```
-
-Status is assigned **only at ⑥** — plausibility produces scores without labels so
-the conservative decision lives in exactly one place.
-
----
+Text or PDF enters the eight-step evaluation chain below. Candidate intake also
+passes the extracted profile, extraction coverage and corpus-overlap assessment
+into the same engine. Every assessment is advisory.
 
 ## 0. Entry
 
@@ -141,7 +52,7 @@ creates an [EvaluationState](src/app/graph/state.py) and invokes the compiled gr
 The graph is a **linear chain** (no branches), wired in [build.py](src/app/graph/build.py#L34):
 
 ```
-START → ingest → ai_signals → cross_field → claim_extraction → provenance
+START → ingest → cross_field → claim_extraction → provenance
       → plausibility → probe_generation → scoring → report → END
 ```
 
@@ -169,23 +80,14 @@ deterministic path. This is why the test suite is fully offline.
 **In:** `raw_resume_text` *or* `resume_pdf_b64`, plus optional `github_url` / `portfolio_url`.
 **Logic:**
 - If text present → use it. Else base64-decode the PDF and extract text with `pypdf`.
-- PDF parse error → record `errors:["pdf_parse_failed: …"]`, return empty text (no crash).
-- Empty after strip → `errors:["empty_resume"]`.
+- Malformed or empty PDF and blank text are refused through the shared resume-input boundary.
+- PDF work uses the existing bounded execution pool and refusal codes.
 
 **Out:** `resume_text` (normalized). LLM-free, deterministic.
 
 ---
 
-## 1a. ai_signals — [ai_signals.py](src/app/graph/nodes/ai_signals.py)  *(S2.1, advisory)*
-
-Stylometry over the raw resume text: four deterministic detectors (template
-phrases, uniform bullets, metric saturation, symmetric structure) fused with
-an optional confidence-capped LLM pass on the `parsing` tier. Produces
-`state.ai_generation` (`AIGenerationAssessment`), later attached to the
-Report. **Never touches claims, scores, or bands.** Full detector math,
-banding rules, and config knobs (`ai_*`): [FABRICATION.md](FABRICATION.md).
-
-## 1b. cross_field — [cross_field.py](src/app/graph/nodes/cross_field.py)  *(S2.2, advisory)*
+## 1a. cross_field — [cross_field.py](src/app/graph/nodes/cross_field.py)  *(S2.2, advisory)*
 
 Deterministic timeline/coherence forensics over the extracted
 `CandidateProfile` — **no LLM**. Uses `state.candidate_profile` when POST
@@ -349,7 +251,7 @@ Assembles the advisory `Report` and feeds the flywheel.
   confidence, status, probes, evidence_count, outcome:null}`.
   `outcome` is left open, closed later by a human/hiring signal — the training loop (constraint #6).
   Plus one record per present fabrication assessment
-  (`record_type: "ai_signals" | "cross_field" | "resume_farm" |
+  (`record_type: "cross_field" | "resume_farm" |
   "fabrication_risk"`), also with `outcome: null`.
   Production uses `NullFlywheel`: these events are not persisted. Durable
   reports and labels remain in SQL; `flywheel_path` no longer opens a file.

@@ -63,7 +63,7 @@ async def main():
                                      "factual risk component cards")
             body = await originals[2](tab)
             browser.S.check("v2 report renders factual component cards without a style fusion card", visible and
-                            "AI generation" not in body and "Writing-style observations" in body and
+                            "AI generation" not in body and "Writing-style observations" not in body and
                             "likelihood" not in body.lower() and "writing style is excluded" in body.lower())
             (scratch / "rendered-report.txt").write_text(body, encoding="utf-8")
             checked = True

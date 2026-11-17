@@ -1,10 +1,10 @@
 """Assemble the LangGraph pipeline.
 
-The graph is DOMAIN-AGNOSTIC: it wires the nine nodes in order and never
+The graph is DOMAIN-AGNOSTIC: it wires the eight nodes in order and never
 references GenAI. Domain selection happens at runtime via ``state.domain`` and
 the registry. Importing ``app.domains`` registers the built-in domains.
 
-    ingest → ai_signals → cross_field → claim_extraction → provenance
+    ingest → cross_field → claim_extraction → provenance
            → plausibility → probe_generation → scoring → report
 """
 
@@ -20,7 +20,6 @@ from app.core.logging import get_logger
 from app.schemas.extraction import ExtractionCoverage
 from app.schemas.fabrication import ResumeFarmAssessment
 from app.graph.nodes import (
-    make_ai_signals_node,
     make_claim_extraction_node,
     make_cross_field_node,
     make_ingest_node,
@@ -38,7 +37,6 @@ log = get_logger("graph.build")
 
 _PIPELINE = [
     ("ingest", make_ingest_node),
-    ("ai_signals", make_ai_signals_node),
     ("cross_field", make_cross_field_node),
     ("claim_extraction", make_claim_extraction_node),
     ("provenance", make_provenance_node),

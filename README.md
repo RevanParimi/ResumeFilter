@@ -65,14 +65,13 @@ Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 ## How it works
 
 ```
-ingest → ai_signals → cross_field → claim_extraction → provenance
+ingest → cross_field → claim_extraction → provenance
        → plausibility → probe_generation → scoring → report
 ```
 
 | Node | Responsibility |
 |------|----------------|
 | `ingest` | Parse resume (PDF/text); capture first-party github/portfolio URLs. |
-| `ai_signals` | **Advisory** AI-generated-text band: 4 deterministic stylometry detectors ⊕ optional capped LLM pass. Never touches scores ([FABRICATION.md](FABRICATION.md)). |
 | `cross_field` | **Advisory** timeline forensics over the extracted profile (overlaps, gaps, education↔employment, seniority-vs-tenure). Pure date math, no LLM. |
 | `claim_extraction` | LLM extracts atomic claims tagged `{domain, claim_type, specificity, anchor?}` + candidate context. Deterministic heuristic fallback when no API key. |
 | `provenance` | Fetch GitHub signals for each claim's linked repo (or the candidate's shared repo). Evidence stays within the evaluation; repeated links share a local fetch cache. **First-party links only.** |
