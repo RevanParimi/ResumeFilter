@@ -1,4 +1,4 @@
-# MATCHING.md — demand side: job requisitions + role-conditioned matching (PI-5)
+# Roles and matching
 
 The demand-side subsystem (`src/app/matching/`). An organization describes a role as
 a **job requisition**; the platform compiles it into a **role-conditioned
@@ -9,7 +9,7 @@ and returns an advisory, explainable shortlist. Peer of `LEDGER.md` /
 **Advisory, always.** Matching narrows and orders — it never auto-rejects, and a
 missing or consent-withheld value **drops its term, never the candidate**.
 
-## S5.1 — job requisition schema + match-ranking
+## Requisitions and ranking
 
 ### Layering (mirrors `src/app/ledger/`)
 
@@ -23,8 +23,8 @@ missing or consent-withheld value **drops its term, never the candidate**.
 
 ### The requisition (`JobRequisitionInput` → stored `JobRequisition`)
 
-`title`, `status` (`draft|open|closed`), and role criteria — all optional except
-that **at least one skill** (must-have or nice-to-have) is required:
+`title` and **at least one skill** (must-have or nice-to-have) are required.
+`status` defaults to `open` (`draft|open|closed`); other role criteria are optional:
 
 - `must_have_skills` / `nice_to_have_skills` — free-text at the API, **normalized
   to canonical S1.4 taxonomy keys at create time** (`normalize_skill`; unknown
@@ -54,7 +54,7 @@ and per-feature `Contribution` explainability come for free.
 **Skill coverage** = fraction of must-haves the candidate has, blended with the
 nice-to-have fraction by `match_nice_to_have_fraction` (0.3) when both sets exist;
 computed from the candidate's canonical skills read **point-in-time**
-(`profile_as_of`) at the match `as_of`. **Location fit** = 1.0 in-tier / 0.0
+(`profile_as_of`) at each candidate vector's timestamp. **Location fit** = 1.0 in-tier / 0.0
 out-of-tier / `None` (term drops) when remote, no target tiers, or unknown tier.
 
 **The `min_*`/`max_notice` fields are soft in v0:** they *select* which scalar
@@ -62,17 +62,16 @@ dimensions enter the ranking; within each, scoring is monotonic (more experience
 higher degree, shorter notice = better). The threshold **value is not a cutoff** —
 no candidate is dropped for falling below it. The **only** hard gate is
 `min_skill_coverage`, which compiles to one `FeatureFilter` on
-`match.skill_coverage`. (Per-value threshold curves + hard experience floors are a
-v1 refinement.)
+`match.skill_coverage`.
 
 ### Plane, consent, DPDP
 
-- **Org plane (`X-Org-Key`).** Requisitions are org-owned; CRUD and match are
+- **Org plane (`X-Org-Key` or an org session).** Requisitions are org-owned; CRUD and match are
   org-scoped (cross-org access → 404). This is the "employers query" surface.
-- **No new consent gate.** Any consent-tagged features (none ship today) are
-  **masked to null at S4.2 materialization**; a withheld feature is
-  already absent and simply drops out of scoring. Skills read from the profile are
-  first-party candidate data. `ConsentPurpose` is unchanged.
+- **Consent.** No shipped feature is consent-tagged. The retained mechanism masks
+  withheld values at materialization and checks current org/wildcard consent
+  again before serving. A missing term drops out of scoring. Skills come from
+  the first-party profile. See [FEATURES.md](FEATURES.md).
 - **Disclosure audit.** Each **returned** candidate is audited as one
   `match.surface` row in the shared `audit_log` (`actor=org`, candidate-linked,
   CASCADE) — bounded by the shortlist limit; mirrors the ledger's "audit every
@@ -91,8 +90,8 @@ v1 refinement.)
   snapshots (large pools use bounded query batches), not locks across response
   delivery or revocation of previously returned matches. This applies to the
   board route; consent policy is unchanged.
-- **Point-in-time.** One `as_of` drives both the vector cut and the profile read,
-  so skill coverage and scalar features describe the same instant — no leakage.
+- **Point-in-time.** The cutoff selects each candidate's latest eligible vector;
+  that candidate's profile is read at the vector's timestamp.
 
 ### Config (`match_*`)
 
@@ -108,4 +107,4 @@ selection reuses `feat_default_view` (`core_v1`).
 `RequisitionBoard{requisition, match, advisory=True}`. The board uses the latest
 materialized cut and `dash_board_top_n` (20), with no request limit or as-of parameter. Cross-org → 404; empty/unmaterialized pool → 200
 with `reason="no_materialized_candidates"`;
-missing/invalid `X-Org-Key` → 401.
+Missing/invalid authentication is 401; cookie writes also require CSRF protection.

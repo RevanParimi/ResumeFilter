@@ -20,14 +20,12 @@ here. A runbook that lists a variable the code ignores is worse than no runbook.
 
 | Claim | Proven by | Where |
 |---|---|---|
-| The app boots, serves and refuses correctly | 1854 unit tests + 20 smoke scripts | local, every sprint |
+| The app boots, serves and refuses correctly | offline pytest suite and scratch-app/browser smokes | local, every sprint |
 | The image **builds** and contains the app | the `image` job | GitHub Actions, **on push only** |
-| Migrations run up/down/up on Postgres | the `postgres` job | GitHub Actions |
+| Postgres migration checks are configured | the `postgres` job | GitHub Actions; this removal was validated locally on scratch SQLite |
 | The app runs **on Railway** | nothing | — |
 
-The development machine has **no Docker and no psql** (measured). The image is
-therefore unproven until something is pushed and the `image` job runs. Push
-first; do not learn about a broken `COPY` from a failed deploy.
+Local source, API and browser checks do not establish container runtime or deployed-host behavior. Run the image and Postgres CI jobs before a deployment.
 
 **S8.7 raised the stakes on that sentence.** The package moved to `src/app/`,
 and the image now depends on two things nothing local can execute:
@@ -43,8 +41,7 @@ and the image now depends on two things nothing local can execute:
 
 `tests/test_image_contents.py` proves the Dockerfile and `.dockerignore` agree
 about `src/app`, and `tests/test_src_layout.py` proves the package resolves
-from `src/` locally. **Neither proves the container imports.** Only the `image`
-CI job does, and it has not run since S8.4a.
+from `src/` locally. **Neither proves the container imports.** The `image` CI job provides that check.
 
 ---
 
@@ -52,7 +49,7 @@ CI job does, and it has not run since S8.4a.
 
 The app **refuses to start** on any of these. That is the design: each one
 produces a service that *looks* healthy while being unsafe or unusable, which
-is precisely what a boot check is for. A configuration that satisfies all nine
+is precisely what a boot check is for. A configuration that satisfies all ten
 is a bootable one, so this table doubles as the checklist.
 
 | # | Refused when | Set | Failure it prevents |

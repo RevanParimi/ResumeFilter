@@ -627,7 +627,7 @@
       // No paging WHILE screening runs. The queue's sort key is
       // COALESCE(risk_score, -1) and processing an item moves it from null to
       // a score, so during a run the key is MUTABLE — the same limitation
-      // SCREENING.md §6 states for the curation queue, and keyset paging is
+      // SCREENING.md §6 states for the screening queue, and keyset paging is
       // stable against inserts, not against re-observation. Each tick reloads
       // page one anyway.
       hasMoreQueue: !!(queue && queue.next_cursor) && !st.driving && !st.queue.loading,

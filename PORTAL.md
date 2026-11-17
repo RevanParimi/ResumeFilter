@@ -184,37 +184,27 @@ match — the same posture as everything else in this document.
 
 ## Retention posture
 
-`GET /portal/me` surfaces `MyData.retention: RetentionPolicy`
-(`src/app/portal/schema.py`, `src/app/portal/retention.py` — pure, no I/O):
+`GET /portal/me` returns `MyData.retention`. Every configured data class appears;
+oldest-item and retained-until timestamps appear only when the portal has an
+oldest timestamp from its existing resume/interview reads. Other rows disclose
+policy without inventing a timestamp.
 
-- **Every** data class always appears as a `RetentionWindow`, with its
-  `ttl_days` (the policy) shown regardless of whether the candidate has data
-  in that class.
-- `oldest_item_at` / `retained_until` (`= oldest + ttl_days`) are populated
-  only for the classes `my_data` already materializes in full — `resumes`
-  and `interviews` (the oldest timestamp is free from those reads). `audit_log`
-  and `verifications` are **policy-only** rows (`retained_until=None`) — the
-  portal does not materialize per-candidate reads for those classes, and this
-  keeps the retention view honest rather than fabricating a timestamp it
-  didn't compute. (`verifications` joined the policy in S7.1; `my_data` reads
-  assurance, not the underlying rows' timestamps, so it has no oldest-item
-  timestamp to report.)
-- **`RetentionPolicy.sweep_active = False`, always.** The portal *shows* the
-  policy; it does not enforce it. There is no scheduler in this platform yet,
-  and cron/observability is explicitly **PI-8**'s remit — a deterministic
-  sweep is cheap in isolation but would strand an un-triggered function if
-  built now. The mechanical purge job lands with PI-8's scheduler work.
+`retention_sweep_enabled` controls the reported `sweep_active` flag. The sweep
+is available through the operator route and CLI; it has no built-in scheduler.
+See [OPERATING.md](OPERATING.md) and [DEPLOY.md](DEPLOY.md) for execution/cron.
 
-Config knobs (`config.yaml` / `src/app/core/config.py`), all illustrative
-retention windows — **not enforced deletion** (no sweep this sprint; they
-parametrize the surfaced `retained_until` only):
-
-| knob | default | data class |
+| Data class | Setting | Default days |
 |---|---|---|
-| `candidate_access_key_bytes` | 32 (`ge=16`) | entropy of a minted candidate key — mirrors `ledger_api_key_bytes` |
-| `ret_resume_days` | 1095 (3y) | resumes |
-| `ret_audit_log_days` | 2555 (7y) | audit trail — deliberately longest; accountability outlives content |
-| `ret_verification_days` | 1095 (3y) | identity verifications (policy-only; added S7.1) |
+| Resumes | `ret_resume_days` | 1095 |
+| Verifications | `ret_verification_days` | 1095 |
+| Interviews | `ret_interview_session_days` | 1095 |
+| Audit log | `ret_audit_log_days` | 2555 |
+| Batch text/retry references | `ret_batch_item_days` | 90 |
+| Rate-limit counters | `ret_rate_limit_days` | 7 |
+| Login state | `ret_login_state_days` | 7 |
+
+Seven classes map to ten sweep targets. Candidate-key entropy remains controlled
+by `candidate_access_key_bytes` (32 by default).
 
 ## DPDP erasure completeness
 

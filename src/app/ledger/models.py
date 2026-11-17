@@ -1,7 +1,7 @@
 """ORM rows for the evaluation ledger (S3.1). Postgres-shaped on SQLite.
 
 ``audit_log`` is append-only by convention (the
-store never updates or deletes them); consent revocation is an UPDATE of
+store never updates or deletes it); consent revocation is an UPDATE of
 ``revoked_at`` so the fact of having consented survives for audit. DPDP
 erasure is the one exception that trumps append-only: every candidate-linked
 row carries an ``ondelete="CASCADE"`` FK to ``candidates.id`` and vanishes

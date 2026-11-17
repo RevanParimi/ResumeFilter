@@ -1,5 +1,7 @@
 # OPERATING.md — limits, metrics, retention and the runbook
 
+Reviewed after feature removal on 2026-11-17. Retention covers seven classes and ten targets.
+
 **Sprint:** S8.3, Phase A (2026-08-10) + Phase B (2026-08-11) · **Spec:**
 [historical design in Git](https://github.com/RevanParimi/ResumeFilter/blob/54804988f3ead83d727754e4361266a4322655c4/docs/superpowers/specs/2026-08-10-s83-operating-safely-design.md)
 **Audience:** whoever runs this service for a paying customer.

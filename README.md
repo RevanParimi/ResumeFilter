@@ -25,8 +25,8 @@ Around that engine, the platform currently ships:
 - **Candidate data backbone** (PI-1, done) — production extraction into a
   versioned, deduplicated, India-normalized candidate store with DPDP delete
   paths → [CANDIDATES.md](CANDIDATES.md)
-- **Fabrication defense 2.0** (PI-2, done) — advisory AI-generated-text signals,
-  cross-field timeline forensics, resume-farm near-duplicate detection, and a
+- **Factual review context** — cross-field timeline forensics,
+  content-overlap detection and a
   fused advisory `fabrication_risk` score → [FABRICATION.md](FABRICATION.md)
 - **Ledger and consent** (PI-3) — member organisations, API keys and
   purpose-scoped, revocable, audited DPDP consent grants → [LEDGER.md](LEDGER.md)
@@ -53,8 +53,8 @@ Ships with two evaluation domains (**GenAI engineering**, **Data
 Engineering**). Adding more is one file. Docs map: [FLOW.md](FLOW.md)
 (pipeline internals) · [CANDIDATES.md](CANDIDATES.md) ·
 [FABRICATION.md](FABRICATION.md) · [LEDGER.md](LEDGER.md) ·
-[FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) ·
-[DASHBOARD.md](DASHBOARD.md) · [PORTAL.md](PORTAL.md) ·
+[FEATURES.md](FEATURES.md) · [MATCHING.md](MATCHING.md) ·
+[PORTAL.md](PORTAL.md) ·
 [VERIFICATION.md](VERIFICATION.md) · [INTERVIEWS.md](INTERVIEWS.md) ·
 [MODELS.md](MODELS.md) (model choices) ·
 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)
@@ -197,7 +197,7 @@ in the linked docs:
 
 | Surface | Plane | Key endpoints | Doc |
 |---------|-------|---------------|-----|
-| Ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
+| Ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status | [LEDGER.md](LEDGER.md) |
 | Feature store | admin `X-API-Key` | `POST /features/materialize` — point-in-time feature vectors for matching | [FEATURES.md](FEATURES.md) |
 | Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
 | Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `GET /jobs/{id}/board` (advisory shortlist) | [MATCHING.md](MATCHING.md) |
@@ -336,7 +336,7 @@ src/app/
   api/dependencies.py    shared principal resolution, CSRF and request helpers
   graph/
     state.py             EvaluationState (Pydantic)
-    build.py             evaluation pipeline assembly + EvaluationEngine
+    build.py             fixed pipeline + EvaluationEngine
     nodes/               one module per pipeline node (9 stages)
   candidates/            PI-1 backbone → CANDIDATES.md
     schema.py            CandidateProfile (confidence + SourceSpan provenance)
@@ -345,7 +345,7 @@ src/app/
     normalize/           India normalization (skills/degrees/orgs/location)
     models.py, store.py  ORM rows + CandidateStore (identity, fingerprints)
   fabrication/           PI-2 signals → FABRICATION.md
-    ai_text.py           S2.1 AI-text detectors + fusion/banding
+    ai_text.py           pure style helpers retained for interview cheating checks
     cross_field.py       S2.2 interval math + timeline/coherence checks
     similarity.py        S2.3 MinHash fingerprints + farm banding
     risk.py              S2.4 fused advisory fabrication_risk
@@ -379,30 +379,10 @@ src/app/
                          · verification; injected, never global) + llm (OpenRouter) ·
                          github (evaluation-local provenance) · flywheel · report_store
   core/                  config · calibration · logging · db (shared SQLAlchemy)
-alembic/                 shared migrations 0001-0009 (candidate store, fingerprints,
-                         ledger, consent/api-keys, coding rounds, reputation weight,
-                         feature vectors and job requisitions)
+alembic/                 migrations through 0031_cut_unused_tables; shared
+                         candidate, consent, auth, screening and report schema
 tests/                   per-node + API + integration + adversarial fixtures,
-                         fully offline (653 tests)
+                         offline providers and isolated stores
 Dockerfile               non-root image with /healthz healthcheck
 .github/workflows/ci.yml offline pytest on 3.11/3.12
 ```
-
-## Roadmap (historical PI summary)
-
-- **Engine M0/M1 (done):** 7-node pipeline, conservative calibration, SQLite
-  report store + outcome loop, API hardening, two domains, Docker + CI.
-- **PI-1 Candidate data backbone (done):** extraction schema + extractor,
-  candidate store (SQLAlchemy/Alembic), API + engine wiring, India
-  normalization.
-- **PI-2 Fabrication defense (done):** AI-text signals · cross-field forensics ·
-  resume-farm detection · fused advisory `fabrication_risk`.
-- **PI-3 Evaluation ledger (done):** schema + DPDP consent · ledger APIs ·
-  coding-round results · Bayesian cross-company reputation (records, coding
-  rounds and reputation since removed).
-- **PI-4 ML feature store & ranking (done):** feature registry ·
-  point-in-time materialization · ranking engine.
-- **PI-5 Demand side (in progress):** job requisitions, role-conditioned
-  matching and role board; compensation intelligence has been removed.
-- **PI-6 candidate side & intake · PI-7 verification & assessment depth ·
-  PI-8 scale & learning** — shaped, not started.

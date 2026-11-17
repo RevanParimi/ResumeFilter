@@ -26,14 +26,13 @@ everywhere. These files exist so a sanity run exercises the populated path.
 | `resume_farm` | ≥40 three-word shingles after contact-masking, ≥0.60 Jaccard for `similar` / ≥0.80 for `near_duplicate` — **and the compared resumes must belong to DIFFERENT candidates** | `config.py:339-343`, `screening/ingest.py:121` |
 | `fabrication_risk` | combines assessable timeline and content-overlap checks only; with none it is `insufficient_data` | `fabrication/risk.py:148` |
 
-## THE TRAP that costs an afternoon
+## Keep clone identities distinct
 
-Resume-farm clones must differ in **BOTH email and phone**. Identity resolution
-dedups on email+phone hash, so clones sharing a phone number resolve to ONE
-candidate — and the farm check excludes a candidate's own resumes
-(`ingest.py:132 exclude_candidate_id`). Measured: four clones differing only in
-name and email produced `farm=unique, matches=0` on every one. The same four
-with distinct phones produced `near_duplicate` with 1, 2 and 3 matches.
+The farm check excludes the candidate's own resumes. Give each synthetic clone
+a distinct email and phone so identity resolution cannot merge the cohort.
+Current resolution tries a unique compatible email first; an unmatched email
+does not fall back to a phone match. Phone-only input may match only an
+unbound, unambiguous candidate. See [CANDIDATES.md](../../../CANDIDATES.md).
 
 ## The files, and what each one is for
 

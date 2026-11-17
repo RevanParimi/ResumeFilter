@@ -220,10 +220,10 @@ In order:
 
 ### Unified fabrication risk (S2.4) — [risk.py](src/app/fabrication/risk.py)
 After the depth aggregate, scoring fuses whatever PI-2 assessments are on the
-state (`ai_generation`, `cross_field`, `resume_farm`) into one advisory
+state (`cross_field`, `resume_farm`) into one advisory
 `fabrication_risk` band — the fusion lives here because this *is* the
 calibration stage, but it never touches verdicts, `depth_score`, or
-`depth_band`. `None` when none of the three was ever assessed. Math and
+`depth_band`. `None` when neither factual check was assessed. Math and
 banding in [FABRICATION.md](FABRICATION.md).
 
 **Out:** finalized `verdicts`, `depth_score`, `overall_confidence`,

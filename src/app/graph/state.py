@@ -78,8 +78,8 @@ class EvaluationState(BaseModel):
     overall_confidence: float = 0.0
     depth_band: DepthBand = DepthBand.INSUFFICIENT_SIGNAL
     # S2.4: unified advisory fabrication risk, fused in the calibration stage
-    # (scoring node) from ai_generation + cross_field + resume_farm. None when
-    # none of the three was ever assessed. Never affects depth or verdicts.
+    # (scoring node) from cross_field + resume_farm. None when
+    # neither factual check was assessed. Never affects depth or verdicts.
     fabrication_risk: Optional[FabricationRiskAssessment] = None
 
     # --- report ---------------------------------------------------------------

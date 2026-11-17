@@ -381,7 +381,7 @@ def _experience(lines: list[tuple[int, str]]) -> list[ExperienceEntry]:
 def _strip_skill_label(content: str) -> str:
     """"Programming Languages: Python, Java" -- the label is a CATEGORY, not a
     skill, and left in place it also poisons S1.4 normalization and floods
-    S6.3's curation queue with terms that can never map (S9.2).
+    the skill list with terms that can never map.
 
     But "Python: 5 years" is a per-skill proficiency annotation, a common
     Indian-resume shape, and "Python:" is the skill's own NAME -- stripping it

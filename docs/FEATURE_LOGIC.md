@@ -1,16 +1,16 @@
 # Feature logic and current limits
 
-Risk fusion updated on 2026-10-12; other sections reviewed on 2026-09-07.
+Reviewed on 2026-11-17 after unused-feature removal.
 Numbers below are code defaults;
 configuration can override them. This document describes implemented behavior.
-Proposed changes are explicitly marked and tracked in [PROGRESS.md](PROGRESS.md).
+The remediation queue is closed; current capabilities are in [FEATURE_STATUS.md](../FEATURE_STATUS.md).
 
 ## Resume input
 
 The API accepts `resume_text` or `resume_pdf_b64`. The batch browser input accepts
 PDF, TXT and Markdown (`.md`); TXT/Markdown are read as plain text. PDFs use pypdf
 text extraction. There is no DOC/DOCX parser, image input or OCR for scanned PDFs.
-The current malformed/empty PDF refusal gap is tracked as F07.
+Malformed or unreadable PDFs are refused through the shared bounded PDF/input boundary.
 
 Sources: `src/app/api/reports.py`, `src/app/api/candidates.py`,
 `src/app/api/screening.py`, `src/app/graph/nodes/ingest.py`,
@@ -125,8 +125,7 @@ automatically retrain models, or mean the person was hired/rejected.
 R1-S1-T1 retention update: reports/outcomes remain in SQL, including reviewer
 notes. The production observer no longer writes JSONL copies of claims, probes,
 signals or outcomes. Candidate deletion reaches their SQL reports/outcomes;
-standalone reports retain their separate report lifecycle. Existing JSONL files
-are untouched and require the upcoming legacy-cleanup task.
+standalone reports retain their separate report lifecycle. Existing JSONL files are untouched; [legacy cleanup](LEGACY_FLYWHEEL.md) is a separate operator action.
 
 ## Authentication: CSRF and rate limiting
 
@@ -143,11 +142,10 @@ Sources: `src/app/auth/csrf.py`, `src/app/api/dependencies.py`,
 
 Rate limiting counts requests within time windows using SQL-backed counters.
 Keys depend on the operation: email/IP for login, organization for screening,
-candidate for transcription/corrections. When a configured budget is exhausted,
+candidate for transcription. When a configured budget is exhausted,
 the API returns 429 with retry guidance. OTP wrong-attempt limits and resend
 cooldowns are additional controls. They reduce automated guessing, spam and
-provider-cost abuse. F04 addresses the separately identified concurrent OTP
-consumption/attempt-update defect; existing limits do not fix that race.
+provider-cost abuse.
 
 ## Assessment, interviews and ML
 
@@ -172,19 +170,12 @@ Confidence uses frozen content evidence and coverage rather than answer length.
 Completed historical scores remain unchanged; mixed/unknown turn versions
 produce an insufficient assessment. See [INTERVIEWS.md](../INTERVIEWS.md#5-scoring-scoringpy)
 for formulas, additive version metadata and the bounded English heuristic's
-limitations. R3-S3-T1 addresses the known exploit with synthetic development
-regressions; F11's integration/video gates and empirical effectiveness remain open.
+limitations. These safeguards have synthetic development regressions; empirical effectiveness has not been established.
 
 There is no camera/video session, streaming conversational interview, or
 answer-adaptive follow-up loop in this implementation. The existing feature
-store, ranking, label/export and experiment infrastructure does not establish
+store and ranking infrastructure does not establish
 that a trained, validated interview model exists.
-
-Video is a proposed feature requiring a candidate UI, session transport,
-speech input/output, interruption/reconnection handling, and explicit recording
-retention/consent behavior. Score answer content, not facial appearance,
-expressions or inferred emotion. Conversational video is the working
-recommendation; the user has not yet answered the optional format question.
 
 ## Foundations changes completed in this batch
 
@@ -194,12 +185,9 @@ recommendation; the user has not yet answered the optional format question.
   identity mistakes need a separate reviewed repair; this is not proof that
   arbitrary resume contact data belongs to the uploader.
 - GitHub evidence now stays with the selected claim/candidate repo inside one
-  evaluation. Removed shared vector-store add/query from provenance. The wider
-  vector-store service remains wired pending F12/F13 cleanup. GitHub fetch-error
-  polarity is a separate remaining evidence-quality issue.
-- Materialization uses one snapshot timestamp per run and returns it. Search
-  and matching read the latest eligible vector per candidate, retaining others
-  after a partial refresh. Historical cutoffs exclude later vectors; exact-cut
-  exports keep their existing semantics.
+  evaluation. Removed shared vector-store add/query from provenance.
+- Materialization uses one snapshot timestamp per run and returns it.
+  Matching reads the latest eligible vector per candidate, retaining others
+  after a partial refresh. Historical cutoffs exclude later vectors.
 
-See [PROGRESS.md](PROGRESS.md) for test results and the next implementation batch.
+See [PROGRESS.md](PROGRESS.md) for current state. No remediation task is resumed by this cleanup.
