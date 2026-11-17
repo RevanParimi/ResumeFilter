@@ -1,6 +1,6 @@
 """The domain boundary. Everything domain-specific lives behind this.
 
-The LangGraph core knows only:
+The evaluation pipeline core knows only:
   * how to ask the active :class:`DomainModel` for its rules,
   * how to ask it for prompt fragments (extraction / plausibility / probes).
 

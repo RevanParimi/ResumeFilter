@@ -1,4 +1,4 @@
-"""Assemble the LangGraph pipeline.
+"""Run the fixed evaluation pipeline.
 
 The graph is DOMAIN-AGNOSTIC: it wires the eight nodes in order and never
 references GenAI. Domain selection happens at runtime via ``state.domain`` and
@@ -11,8 +11,6 @@ the registry. Importing ``app.domains`` registers the built-in domains.
 from __future__ import annotations
 
 from typing import Optional
-
-from langgraph.graph import END, START, StateGraph
 
 import app.domains  # noqa: F401  (registers domains on import)
 from app.candidates.schema import CandidateProfile
@@ -47,28 +45,14 @@ _PIPELINE = [
 ]
 
 
-def build_graph(services: Services):
-    """Compile the LangGraph for the given service bundle."""
-    g = StateGraph(EvaluationState)
-    names = [name for name, _ in _PIPELINE]
-    for name, factory in _PIPELINE:
-        g.add_node(name, factory(services))
-
-    g.add_edge(START, names[0])
-    for prev, nxt in zip(names, names[1:]):
-        g.add_edge(prev, nxt)
-    g.add_edge(names[-1], END)
-    return g.compile()
-
-
 class EvaluationEngine:
-    """Compiled graph + services; the API and tests run evaluations through this."""
+    """Fixed steps + services; the API and tests run evaluations through this."""
 
     def __init__(self, services: Services) -> None:
         if services is None:
             raise ValueError("EvaluationEngine requires an explicit Services bundle; its caller owns cleanup")
         self.services = services
-        self.graph = build_graph(self.services)
+        self._steps = [factory(self.services) for _, factory in _PIPELINE]
 
     async def evaluate(
         self,
@@ -92,9 +76,10 @@ class EvaluationEngine:
             resume_farm=resume_farm,
             extraction_coverage=extraction_coverage,
         )
-        result = await self.graph.ainvoke(initial)
-        # LangGraph returns the final state (dict-like or model depending on version).
-        final = result if isinstance(result, EvaluationState) else EvaluationState(**result)
+        final = initial
+        for step in self._steps:
+            updates = await step(final)
+            final = EvaluationState(**{**final.__dict__, **updates})
         if final.report is None:  # defensive: never return nothing
             raise RuntimeError(f"pipeline produced no report; errors={final.errors}")
         return final.report

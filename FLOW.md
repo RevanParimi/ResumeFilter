@@ -11,7 +11,7 @@ The report workflow in [reports.py](src/app/api/reports.py), candidate workflow
 in [candidates.py](src/app/api/candidates.py), employer screening in
 [screening.py](src/app/api/screening.py), and remaining product handlers
 in [routes.py](src/app/api/routes.py) call shared services or
-[EvaluationEngine](src/app/graph/build.py). The compiled graph runs eight nodes
+[EvaluationEngine](src/app/graph/build.py). The fixed pipeline runs eight nodes
 in a fixed sequence; nodes return updates to [EvaluationState](src/app/graph/state.py).
 
 ```mermaid
@@ -47,7 +47,7 @@ into the same engine. Every assessment is advisory.
 
 `POST /evaluate` enters [reports.py](src/app/api/reports.py) and calls
 `EvaluationEngine.evaluate()` ([build.py](src/app/graph/build.py)). The engine
-creates an [EvaluationState](src/app/graph/state.py) and invokes the compiled graph.
+creates an [EvaluationState](src/app/graph/state.py) and runs the fixed steps.
 
 The graph is a **linear chain** (no branches), wired in [build.py](src/app/graph/build.py#L34):
 
@@ -65,9 +65,9 @@ assessment in as inputs (`candidate_profile`, `resume_farm` on
 itself stays candidate-store-blind. Full flow in
 [CANDIDATES.md](CANDIDATES.md) and [FABRICATION.md](FABRICATION.md).
 
-Each node returns a *partial dict*; LangGraph merges it into the single
+Each node returns a *partial dict*; evaluation pipeline merges it into the single
 `EvaluationState` threaded through the chain. Every field is written at most once,
-so default LastValue channel semantics are correct (no reducers).
+so each step replaces the fields it returns while retaining the other fields.
 
 The whole pipeline runs **with or without an LLM key**. No key → `build_llm`
 returns `NullLLM` (abstains, returns `""`/`{}`) and every node falls back to its

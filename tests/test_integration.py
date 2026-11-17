@@ -1,5 +1,5 @@
 """End-to-end: the fabricated resume must be flagged WITH evidence; the genuine
-one must not be flagged. Runs the full LangGraph with offline fake services."""
+one must not be flagged. Runs the full evaluation pipeline with offline fake services."""
 
 from app.graph.build import EvaluationEngine
 

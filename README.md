@@ -250,7 +250,7 @@ of them there, or per-deploy via the matching `DEE_MODEL_*` env var (e.g. point
 
 ## Adding a new domain (the M2 path)
 
-The LangGraph core has **zero** domain-specific logic — all of it lives behind
+The evaluation pipeline core has **zero** domain-specific logic — all of it lives behind
 the [`DomainModel`](src/app/domains/base.py) interface.
 [app/domains/data_eng.py](src/app/domains/data_eng.py) is the proof: the second
 domain landed as one module with zero graph changes. To add, say, a cloud-infra
@@ -336,7 +336,7 @@ src/app/
   api/dependencies.py    shared principal resolution, CSRF and request helpers
   graph/
     state.py             EvaluationState (Pydantic)
-    build.py             LangGraph assembly + EvaluationEngine
+    build.py             evaluation pipeline assembly + EvaluationEngine
     nodes/               one module per pipeline node (9 stages)
   candidates/            PI-1 backbone → CANDIDATES.md
     schema.py            CandidateProfile (confidence + SourceSpan provenance)

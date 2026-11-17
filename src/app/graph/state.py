@@ -1,8 +1,7 @@
-"""``EvaluationState`` — the single object threaded through the LangGraph.
+"""``EvaluationState`` — the single object threaded through the evaluation pipeline.
 
 Each node reads what it needs and returns a partial dict of updates. The
-pipeline is linear and every field is written at most once, so default
-LastValue channel semantics are correct (no custom reducers needed).
+pipeline is linear; later updates replace earlier values of the same field.
 
 This state is DOMAIN-AGNOSTIC: ``domain`` selects a DomainModel at runtime;
 no GenAI specifics appear here.

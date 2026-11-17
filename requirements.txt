@@ -18,7 +18,7 @@
 #   1. relax the pin(s) you want to move, or all of them
 #   2. pip install -U -r requirements.txt
 #   3. pytest -q                     <- must be green
-#   4. run the CI smoke and the checks you touched <- python scripts/smoke_r2_s1_t2b.py
+#   4. run the CI smoke and the checks you touched <- python scripts/smoke_r2_s1_t2a.py
 #   5. re-pin to whatever step 2 resolved, in ONE commit that changes nothing
 #      else, so `git log` shows the upgrade as its own reviewable act
 # tests/test_requirements_pinned.py fails the build if a pin goes unbounded or
@@ -32,10 +32,6 @@
 # run against it before this pin landed), so that upgrade is low-risk whenever
 # you want it. It is left for a deliberate bump rather than bundled into the
 # CI fix that discovered the problem.
-
-# --- Orchestration ---
-langgraph==1.2.6
-langchain-core==1.4.8
 
 # --- API ---
 fastapi==0.138.0

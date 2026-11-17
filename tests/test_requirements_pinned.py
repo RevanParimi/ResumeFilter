@@ -57,7 +57,7 @@ def _declared() -> dict[str, Requirement]:
 def test_the_lock_is_not_empty():
     """A parser that silently matched nothing would make every test below
     vacuous -- they are all `for x in <collection>` and pass on empty."""
-    assert len(_locked()) >= 15, f"only parsed {len(_locked())} requirements"
+    assert len(_locked()) >= 14, f"only parsed {len(_locked())} requirements"
 
 
 def test_every_dependency_is_pinned_to_an_exact_version():
