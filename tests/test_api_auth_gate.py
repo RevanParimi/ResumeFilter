@@ -77,7 +77,7 @@ def test_every_admin_route_carries_the_gate():
     added outside the gate without failing here."""
     from app.api.routes import router
 
-    assert len(router.routes) >= 27
+    assert len(router.routes) >= 26
     for route in router.routes:
         assert require_api_key in _gates(route), (
             f"{route.path} is not behind require_api_key"

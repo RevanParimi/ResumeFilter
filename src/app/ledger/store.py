@@ -255,28 +255,6 @@ class LedgerStore:
             ).scalar_one_or_none()
             return row.id if row else None
 
-    def set_org_reliability(self, org_id: str, weight: float) -> Organization:
-        """Admin: set an org's reliability multiplier for S3.4 reputation.
-        weight >= 0 (0 mutes the org's evidence); audited as org.set_reliability."""
-        if weight < 0:
-            raise ValueError(f"reliability weight must be >= 0, got {weight}")
-        with self._session_factory() as session:
-            row = session.get(OrganizationRow, org_id)
-            if row is None:
-                raise LookupError(f"unknown organization: {org_id}")
-            row.reliability_weight = float(weight)
-            self._audit(
-                session,
-                actor_type="system",
-                actor_id=None,
-                action="org.set_reliability",
-                entity_type="organization",
-                entity_id=org_id,
-                details={"reliability_weight": float(weight)},
-            )
-            session.commit()
-            return _org(row)
-
     # -- consent lifecycle ----------------------------------------------------
 
     def grant_consent(

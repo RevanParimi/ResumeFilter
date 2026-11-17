@@ -116,7 +116,7 @@ window.fetch=async (url,init)=>{
         async def inspect(oid):
             assert await tab.wait(f"document.querySelector('[data-org-record=\"{oid}\"] button')", 15)
             await tab.js(f"document.querySelector('[data-org-record=\"{oid}\"] button').click()")
-            assert await tab.wait("document.querySelector('#org-weight')", 10)
+            assert await tab.wait("window.__has('Selected:')", 10)
 
         await login(); await install()
         checks.check("operator landing uses actual empty list without sample counts",
@@ -158,31 +158,20 @@ window.fetch=async (url,init)=>{
             and len(require(admin.get("/ledger/orgs"))) == 1)
         await tab.js("document.cookie=window.__savedCsrf+'; Path=/; SameSite=Lax'")
         await inspect(org_a["id"])
-        await tab.js("window.__type('#org-weight','-1')")
-        before = await tab.js("window.__orgPosts")
-        assert await tab.js("window.__click('button','Save reliability')")
-        checks.check("negative reliability refuses without a mutation",
-            await tab.wait("window.__has('Enter a finite reliability multiplier')", 10)
-            and await tab.js("window.__orgPosts") == before)
-        await tab.js("window.__type('#org-weight','1.75')")
-        assert await tab.js("window.__click('button','Save reliability')")
-        checks.check("reliability update uses the actual selected server record",
-            await tab.wait("window.__has('Reliability saved.') && window.__has('Saved reliability 1.75')", 15)
-            and next(o for o in require(admin.get("/ledger/orgs")) if o["id"] == org_a["id"])["reliability_weight"] == 1.75)
-        await tab.js("window.__orgFault='403'")
-        assert await tab.js("window.__click('button','Save reliability')")
+        await tab.js("window.__type('#org-name','Synthetic Refused Create'); window.__orgFault='403'")
+        assert await tab.js("window.__click('button','Create organisation')")
         checks.check("non-CSRF policy refusal is an admin denial rather than candidate consent copy",
             await tab.wait("window.__has('not permitted to administer organisations')", 15)
             and not await tab.js("window.__has('This candidate has not shared')"))
         await tab.js("window.__orgFault='503'")
-        assert await tab.js("window.__click('button','Save reliability')")
+        assert await tab.js("window.__click('button','Create organisation')")
         checks.check("service failure settles with explicit refresh advice",
             await tab.wait("window.__has('Refresh organisations before retrying')", 15))
         await tab.js("window.__originalPost=window.VeritasAPI.post; window.VeritasAPI.post=(p,b,o)=>window.__originalPost(p,b,o ? {timeoutMs:30}:undefined); window.__orgFault='timeout'")
-        assert await tab.js("window.__click('button','Save reliability')")
-        checks.check("stalled mutation deadline retains weight and warns about a possible commit",
+        assert await tab.js("window.__click('button','Create organisation')")
+        checks.check("stalled mutation deadline retains input and warns about a possible commit",
             await tab.wait("window.__has('Request timed out')", 10)
-            and await tab.js("document.querySelector('#org-weight').value") == "1.75")
+            and await tab.js("document.querySelector('#org-name').value") == "Synthetic Refused Create")
         await tab.js("window.VeritasAPI.post=window.__originalPost")
         before = await tab.js("window.__orgPosts")
         assert await tab.js("window.__click('button','Rotate organisation key')")
@@ -222,7 +211,7 @@ window.fetch=async (url,init)=>{
                 and org_a["id"] not in [o["id"] for o in require(admin.get("/ledger/orgs"))])
             checks.check("wrong-plane org cannot list or mutate admin state",
                 other.get("/ledger/orgs").status_code == 401
-                and other.post(f'/ledger/orgs/{org_b["org"]["id"]}/reliability', json={"weight": 0}).status_code == 401)
+                and other.post(f'/ledger/orgs/{org_b["org"]["id"]}/api-key', json={}).status_code == 401)
         cid = require(admin.post("/candidates", json={"resume_text": "Synthetic Denied Candidate\nEmail: denied-org-admin@example.com\nSkills: Python", "evaluate": False}))["candidate_id"]
         candidate_key = require(admin.post(f"/candidates/{cid}/auth-key"))["access_key"]
         with browser.httpx.Client(base_url=browser.API_BASE, headers={"X-Candidate-Key": candidate_key}) as candidate:
@@ -230,10 +219,6 @@ window.fetch=async (url,init)=>{
                 candidate.get("/ledger/orgs").status_code == 401 and candidate.delete(f'/ledger/orgs/{org_b["org"]["id"]}').status_code == 401)
         await tab.js("window.__type('#org-filter','Synthetic Browser Agency B')")
         await inspect(org_b["org"]["id"])
-        await tab.js("window.__type('#org-weight','2.25')")
-        assert await tab.js("window.__click('button','Save reliability')")
-        checks.check("second org reliability is saved before restart",
-            await tab.wait("window.__has('Saved reliability 2.25')", 15))
         await reload()
         checks.check("document reload restores server rows with no retained key/draft",
             await tab.wait("document.querySelectorAll('[data-org-record]').length === 20", 15)
@@ -244,10 +229,9 @@ window.fetch=async (url,init)=>{
         assert wait_healthy(admin), "restarted scratch app failed"
         assert await tab.js("window.__click('button','Refresh organisations')")
         with browser.httpx.Client(base_url=browser.API_BASE, headers={"X-Org-Key": org_b["api_key"]}) as other:
-            checks.check("backend restart preserves org state, reliability, operator session and second org key",
+            checks.check("backend restart preserves org state, operator session and second org key",
                 await tab.wait("document.querySelectorAll('[data-org-record]').length === 20 && !window.__has('Loading organisations')", 15)
                 and len(require(admin.get("/ledger/orgs"))) == 24
-                and next(o for o in require(admin.get("/ledger/orgs")) if o["id"] == org_b["org"]["id"])["reliability_weight"] == 2.25
                 and other.get("/screening/batches").status_code == 200)
         shot = await tab.send("Page.captureScreenshot")
         (scratch / "org-list.png").write_bytes(base64.b64decode(shot["data"]))

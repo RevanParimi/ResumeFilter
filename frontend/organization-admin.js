@@ -24,15 +24,13 @@
     }), current).then(rows => {
       if (!rows || !current()) return;
       const selected = rows.find(o => o.id === this.state.orgSelection);
-      if (!selected) this.setState({ orgSelection: null, orgWeight: "", orgConfirm: null });
-      else this.setState({ orgWeight: String(selected.reliability_weight) });
+      if (!selected) this.setState({ orgSelection: null, orgConfirm: null });
       const count = rows.filter(o => (o.name + " " + o.id).toLowerCase().includes(this.state.orgFilter.toLowerCase())).length;
       this.setState({ orgPage: Math.min(this.state.orgPage, Math.max(0, Math.ceil(count / 20) - 1)) });
     });
   };
   reloadOrgs = () => { if (!this._orgAction) { this.dismissOrgKey(); this.setState({ orgConfirm: null }); return this.loadOrgAdmin(); } };
   setOrgName = (e) => { if (!this._orgAction) this.setState({ orgName: e.target.value, orgError: null, orgNotice: "" }); };
-  setOrgWeight = (e) => { if (!this._orgAction) this.setState({ orgWeight: e.target.value, orgError: null, orgNotice: "" }); };
   setOrgFilter = (e) => this.setState({ orgFilter: e.target.value, orgPage: 0 });
   prevOrgs = () => this.setState(s => ({ orgPage: Math.max(0, s.orgPage - 1) }));
   nextOrgs = () => { if (!this.renderVals().orgNextDisabled) this.setState(s => ({ orgPage: s.orgPage + 1 })); };
@@ -43,7 +41,7 @@
     const row = (this.state.orgList.data || []).find(o => o.id === id);
     if (!row) return;
     this.dismissOrgKey();
-    this.setState({ orgSelection: id, orgWeight: String(row.reliability_weight), orgConfirm: null,
+    this.setState({ orgSelection: id, orgConfirm: null,
       orgError: null, orgNotice: "" });
   };
   armOrgRotate = () => this.armOrgAction("rotate");
@@ -58,18 +56,14 @@
     if (choice && choice.id === this.state.orgSelection) return this.changeOrg(choice.action);
   };
   createOrg = () => this.changeOrg("create");
-  saveOrgReliability = () => this.changeOrg("reliability");
   changeOrg = async (action) => {
     const st = this.state, me = st.me;
     if (this._gone || this._orgAction || me?.kind !== "admin" || st.screen !== "adminorgs") return;
-    const name = st.orgName.trim(), weight = Number(st.orgWeight);
+    const name = st.orgName.trim();
     const target = (st.orgList.data || []).find(o => o.id === st.orgSelection);
     if (action !== "create" && (!target || st.orgList.loading || st.orgList.error)) return;
     if (action === "create" && (!name || name.length > 200)) {
       this.setState({ orgError: { detail: "Enter an organisation name of 1 to 200 characters." } }); return;
-    }
-    if (action === "reliability" && (!st.orgWeight.trim() || !Number.isFinite(weight) || weight < 0)) {
-      this.setState({ orgError: { detail: "Enter a finite reliability multiplier of 0 or greater." } }); return;
     }
     if (["rotate", "delete"].includes(action) && (st.orgConfirm?.id !== target.id || st.orgConfirm?.action !== action)) return;
     const token = this._orgAction = {};
@@ -81,16 +75,15 @@
       const path = "/ledger/orgs" + (target && action !== "create" ? "/" + encodeURIComponent(target.id) : "");
       const opts = { timeoutMs: EVAL_TIMEOUT_MS };
       const result = action === "delete" ? await API.del(path, opts)
-        : await API.post(path + (action === "rotate" ? "/api-key" : action === "reliability" ? "/reliability" : ""),
-            action === "create" ? { name } : action === "reliability" ? { weight } : {}, opts);
+        : await API.post(path + (action === "rotate" ? "/api-key" : ""),
+            action === "create" ? { name } : {}, opts);
       if (!visible()) return;
       if (action === "create" && (!this.validOrg(result?.org) || typeof result.api_key !== "string" || !result.api_key)
-          || action === "reliability" && (!this.validOrg(result) || result.id !== target.id)
           || action === "rotate" && (result?.org_id !== target.id || typeof result.api_key !== "string" || !result.api_key)
           || action === "delete" && (result?.org_id !== target.id || result.deleted !== true))
         throw { detail: "The server returned an unexpected change result. Refresh before retrying; the change may have completed." };
       const id = action === "create" ? result.org.id : target.id;
-      this.setState({ orgNotice: action === "create" ? "Organisation created." : action === "reliability" ? "Reliability saved."
+      this.setState({ orgNotice: action === "create" ? "Organisation created."
           : action === "rotate" ? "Organisation key rotated. The previous key no longer works." : "Organisation offboarded.",
         orgSelection: action === "delete" ? null : id,
         ...(action === "create" ? { orgName: "", orgFilter: "", orgPage: 0 } : {}),
@@ -119,9 +112,9 @@
       adminOrgs: orgFiltered.slice(orgPage * 20, (orgPage + 1) * 20).map(o => ({ ...o,
         created: fmtDate(o.created_at), chip: stateChip(o.status === "active"), inspect: this.selectOrg(o.id) })),
       orgSelected: orgSelected ? { ...orgSelected, created: fmtDate(orgSelected.created_at) } : null,
-      orgName: st.orgName, orgWeight: st.orgWeight, orgFilter: st.orgFilter,
-      setOrgName: this.setOrgName, setOrgWeight: this.setOrgWeight, setOrgFilter: this.setOrgFilter,
-      createOrg: this.createOrg, saveOrgReliability: this.saveOrgReliability, reloadOrgs: this.reloadOrgs,
+      orgName: st.orgName, orgFilter: st.orgFilter,
+      setOrgName: this.setOrgName, setOrgFilter: this.setOrgFilter,
+      createOrg: this.createOrg, reloadOrgs: this.reloadOrgs,
       orgBusy: st.orgBusy, orgControlsDisabled: orgDisabled,
       orgNotice: st.orgNotice, orgActionError: !!st.orgError,
       orgActionErrorText: this.orgErrorCopy(st.orgError) + (st.orgError &&

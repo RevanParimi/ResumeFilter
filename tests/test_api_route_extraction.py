@@ -372,8 +372,6 @@ def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(se
         assert a.get("/ledger/orgs").status_code == 401
         assert control.get("/jobs").status_code == 401
         org_path = f"/ledger/orgs/{oid}"
-        assert control.post(org_path + "/reliability", json={"weight": -1}).status_code == 422
-        assert control.post(org_path + "/reliability", json={"weight": 1.75}).json()["reliability_weight"] == 1.75
         assert a.get("/jobs").status_code == 200
         grants = {}
         for purpose in ("ledger_read", "ledger_write"):
@@ -401,7 +399,6 @@ def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(se
         assert a.get("/jobs").status_code == 401
         assert control.delete(org_path).status_code == 404
         assert control.post(org_path + "/api-key").status_code == 404
-        assert control.post(org_path + "/reliability", json={"weight": 1}).status_code == 404
         assert control.post("/ledger/candidates/missing/consent", json={"purpose": "ledger_read"}).status_code == 404
 
 
@@ -428,7 +425,6 @@ def test_ledger_admin_and_org_cookies_preserve_csrf_and_auth_planes(cfg, capture
             ("POST", "/ledger/orgs", {"name": "Refused"}),
             ("POST", f"/ledger/orgs/{oid}/api-key", None),
             ("DELETE", f"/ledger/orgs/{oid}", None),
-            ("POST", f"/ledger/orgs/{oid}/reliability", {"weight": 0}),
             ("POST", consent_path, {"purpose": "ledger_read"}),
             ("POST", f"/ledger/consent/{grant['id']}/revoke", None),
         ):

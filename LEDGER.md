@@ -12,7 +12,7 @@ Same database and metadata root as candidates (`candidates_db_url`):
 
 | Table | What | DPDP linkage |
 |---|---|---|
-| `organizations` | member companies (`active`/`suspended`), API-key hash, `reliability_weight` | none — survives erasure |
+| `organizations` | member companies (`active`/`suspended`), API-key hash, `reliability_weight` (retained metadata) | none — survives erasure |
 | `consent_grants` | purpose-scoped, org-scoped, expiring, revocable consent | CASCADE from `candidates.id` |
 | `audit_log` | append-only audit of every mutation and consent-gated read | candidate-linked rows CASCADE; org-only rows survive |
 
@@ -51,8 +51,6 @@ Admin plane (`X-API-Key` or an admin session):
   its sha256 hash is stored); duplicate name → 409.
 - `GET /ledger/orgs` · `POST /ledger/orgs/{id}/api-key` (rotate) ·
   `DELETE /ledger/orgs/{id}` (hard-cascade offboarding).
-- `POST /ledger/orgs/{id}/reliability` — sets `reliability_weight` (≥ 0; 422
-  for a negative weight, 404 for an unknown org); audited `org.set_reliability`.
 - `POST /ledger/candidates/{id}/consent` (grant) ·
   `POST /ledger/consent/{id}/revoke` · `GET /ledger/candidates/{id}/consent`
   (status; 404 for an unknown candidate or org, 200 with `allowed:false` when

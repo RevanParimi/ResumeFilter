@@ -11,7 +11,7 @@ scoring judges answer content, not appearance or inferred emotion.
 | Candidate records | Extraction, contact-hash identity, versioned resumes, duplicate detection, extraction coverage and erasure. | [Candidates](CANDIDATES.md) |
 | Screening | Batch upload, queue, processing, retry, summary, report view and outcomes, tenant-scoped. | [Screening](SCREENING.md), [tenancy](TENANCY.md) |
 | Roles and matching | Roles (requisitions) and advisory role board. | [Matching](MATCHING.md) |
-| Ledger and consent | Organisations, API keys, organisation reliability, purpose-scoped consent grants and the audit log. | [Ledger](LEDGER.md) |
+| Ledger and consent | Organisations, API keys, purpose-scoped consent grants and the audit log. | [Ledger](LEDGER.md) |
 | Features | Feature registry, materialisation, store, serving and ranking. | [Features](FEATURES.md) |
 | Login and portal | Email-code login on every plane, sessions and signed-in devices, the candidate portal (my data, access log, consents, erasure) and the public grievance contact. | [Auth](AUTH.md), [portal](PORTAL.md) |
 | Verification | Contact verification, assurance levels and manual review. | [Verification](VERIFICATION.md) |

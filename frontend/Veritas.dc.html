@@ -1073,7 +1073,7 @@
 
           <sc-if value="{{ isAdminOrgs }}" hint-placeholder-val="{{ false }}">
             <h1 style="{{ h1 }}">Organisations</h1>
-            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:76ch;">Create an organisation, inspect its saved details or manage reliability and access. New organisations are active immediately. Reliability is an operator-set multiplier, not a measured accuracy score.</p>
+            <p style="font-size:13px; line-height:1.55; color:var(--muted); margin:6px 0 16px 0; max-width:76ch;">Create an organisation, inspect its saved details or manage access. New organisations are active immediately.</p>
             <sc-if value="{{ orgAdminDenied }}"><p role="alert">An operator account is required.</p></sc-if>
             <sc-if value="{{ orgAdminAllowed }}">
             <div style="display:flex; gap:8px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
@@ -1104,7 +1104,6 @@
                     <div style="font-size:12.5px; font-weight:600; color:var(--heading);">{{ o.name }}</div>
                     <div style="font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--muted); margin-top:2px;">{{ o.id }}</div>
                   </div>
-                  <span style="font-size:11.5px; color:var(--muted);">Reliability {{ o.reliability_weight }}</span>
                   <span style="font-size:11.5px; color:var(--muted);">{{ o.created }}</span>
                   <span style="{{ o.chip }}">{{ o.status }}</span>
                   <button onClick="{{ o.inspect }}" disabled="{{ orgControlsDisabled }}" style="{{ smallGhost }}">Inspect</button>
@@ -1119,11 +1118,7 @@
             <sc-if value="{{ orgSelected }}">
               <div style="{{ listCard }}">
                 <h2 style="{{ h2 }}">Selected: {{ orgSelected.name }}</h2>
-                <p style="font-size:12px;">ID {{ orgSelected.id }} · Status {{ orgSelected.status }} · Created {{ orgSelected.created }} · Saved reliability {{ orgSelected.reliability_weight }}</p>
-                <label for="org-weight" style="font-size:12px;">Reliability multiplier (0 or greater)</label>
-                <input id="org-weight" type="number" min="0" step="any" value="{{ orgWeight }}" onInput="{{ setOrgWeight }}" disabled="{{ orgControlsDisabled }}" style="{{ field }}">
-                <p style="font-size:11.5px; color:var(--muted);">1 is neutral. 0 mutes this organisation's evidence in reputation aggregation; it does not suspend its accounts.</p>
-                <button onClick="{{ saveOrgReliability }}" disabled="{{ orgControlsDisabled }}" style="{{ smallPrimary }}">Save reliability</button>
+                <p style="font-size:12px;">ID {{ orgSelected.id }} · Status {{ orgSelected.status }} · Created {{ orgSelected.created }}</p>
                 <button onClick="{{ armOrgRotate }}" disabled="{{ orgControlsDisabled }}" style="{{ smallGhost }}">Rotate organisation key</button>
                 <button onClick="{{ armOrgDelete }}" disabled="{{ orgControlsDisabled }}" style="{{ dangerBtn }}">Offboard organisation</button>
                 <sc-if value="{{ orgConfirm }}">
@@ -1685,7 +1680,7 @@ class Component extends window.VeritasEmployerRoles(
     evalBusy: false, evalProgress: "", evalError: null, evalReportId: null, evalPublicationPending: false,
     contactList: IDLE, contactMethod: "otp_email", contactDestination: "", contactCode: "",
     contactId: null, contactBusy: false, contactError: null, contactNotice: "",
-    orgList: IDLE, orgSelection: null, orgName: "", orgWeight: "", orgFilter: "", orgPage: 0,
+    orgList: IDLE, orgSelection: null, orgName: "", orgFilter: "", orgPage: 0,
     orgBusy: false, orgError: null, orgNotice: "", orgConfirm: null,
     orgKey: "", orgKeyOwner: "", orgKeyVisible: false,
     usersList: IDLE, usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0,
@@ -1798,7 +1793,7 @@ class Component extends window.VeritasEmployerRoles(
       evalBusy: false, evalProgress: "", evalError: null, evalReportId: null, evalPublicationPending: false,
       contactList: IDLE, contactMethod: "otp_email", contactDestination: "", contactCode: "",
       contactId: null, contactBusy: false, contactError: null, contactNotice: "",
-      orgList: IDLE, orgSelection: null, orgName: "", orgWeight: "", orgFilter: "", orgPage: 0,
+      orgList: IDLE, orgSelection: null, orgName: "", orgFilter: "", orgPage: 0,
       orgBusy: false, orgError: null, orgNotice: "", orgConfirm: null,
       orgKey: "", orgKeyOwner: "", orgKeyVisible: false,
       usersList: IDLE, usersEmail: "", usersLabel: "", usersFilter: "", usersPage: 0,

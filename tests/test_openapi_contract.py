@@ -84,4 +84,4 @@ def test_the_schema_covers_every_route(app):
     everything. 90 routes existed when this was written."""
     spec = app.openapi()
     operations = sum(len(m) for m in spec["paths"].values())
-    assert operations >= 76, f"only {operations} operations inspected"
+    assert operations >= 75, f"only {operations} operations inspected"

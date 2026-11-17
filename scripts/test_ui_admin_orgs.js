@@ -13,7 +13,6 @@ function setup(kind = "admin") {
   window.VeritasAPI.post = async (p, body, opts) => {
     calls.push(["POST", p, body, opts]);
     if (p === "/ledger/orgs") { const created = { ...org("new"), name: body.name }; rows.push(created); return { org: created, api_key: "synthetic-new-key" }; }
-    if (p.endsWith("/reliability")) { const id = p.split("/")[3]; rows = rows.map(o => o.id === id ? { ...o, reliability_weight: body.weight } : o); return rows.find(o => o.id === id); }
     return { org_id: p.split("/")[3], api_key: "synthetic-rotated-key" };
   };
   window.VeritasAPI.del = async (p, opts) => { calls.push(["DELETE", p, opts]); const id = p.split("/")[3]; rows = rows.filter(o => o.id !== id); return { org_id: id, deleted: true }; };
@@ -27,7 +26,6 @@ test("operator landing loads actual orgs and inspects server fields", async () =
   assert.deepEqual(c.renderVals().adminOrgs.map(o => o.id), ["a", "b"]);
   c.selectOrg("b")();
   assert.equal(c.renderVals().orgSelected.id, "b");
-  assert.equal(c.state.orgWeight, "1");
 });
 
 test("empty/loading/refused list never shows fixtures; local filtering paginates real rows", async () => {
@@ -52,7 +50,7 @@ test("empty/loading/refused list never shows fixtures; local filtering paginates
   assert(c.renderVals().orgListErrorText);
 });
 
-test("create and reliability show saved results; one-time key is cleared on selection/navigation", async () => {
+test("create shows saved results; one-time key is cleared on selection/navigation", async () => {
   const { c, calls } = setup();
   c.loadOrgAdmin(); await settle();
   c.setOrgName({ target: { value: " Synthetic Created " } });
@@ -62,19 +60,15 @@ test("create and reliability show saved results; one-time key is cleared on sele
   assert.equal(c.renderVals().orgKeyType, "password");
   c.toggleOrgKey(); assert.equal(c.renderVals().orgKeyType, "text");
   c.selectOrg("b")(); assert.equal(c.state.orgKey, "");
-  c.setOrgWeight({ target: { value: "1.5" } });
-  c.saveOrgReliability(); await settle(); await settle();
-  assert.equal(c.renderVals().orgSelected.reliability_weight, 1.5);
   c.state.orgKey = "synthetic-key"; c.nav("devices")();
   assert.equal(c.state.orgKey, "");
 });
 
-test("invalid names/weights and wrong account planes cannot mutate", async () => {
+test("invalid names and wrong account planes cannot mutate", async () => {
   for (const kind of ["org", "candidate", "admin"]) {
     const { c, calls } = setup(kind);
     if (kind === "admin") { c.loadOrgAdmin(); await settle(); c.selectOrg("a")(); }
     c.state.orgName = " "; c.createOrg();
-    for (const value of ["", "-1", "NaN", "Infinity"]) { c.state.orgWeight = value; c.saveOrgReliability(); }
     if (kind !== "admin") { c.state.orgName = "Unauthorized"; c.createOrg(); c.loadOrgAdmin(); }
     await settle();
     assert.equal(calls.filter(x => x[0] !== "GET").length, 0);
@@ -169,9 +163,6 @@ test("detached org callbacks keep their receiver, saved values and one-time key 
   assert.equal(first.c.renderVals().orgSelected.id, "b");
   assert.equal(first.c.state.orgKey, "");
   const selectedView = first.c.renderVals();
-  selectedView.setOrgWeight({ target: { value: "0" } });
-  await selectedView.saveOrgReliability();
-  assert.equal(first.c.renderVals().orgSelected.reliability_weight, 0);
   assert.equal(second.c.state.orgSelection, null);
 });
 

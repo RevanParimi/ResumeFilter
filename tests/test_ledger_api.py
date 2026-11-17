@@ -126,14 +126,3 @@ def test_consent_endpoints_404_on_unknown_candidate(api):
 def _org_with_key(client):
     body = client.post("/ledger/orgs", json={"name": f"Org {id(client)}"}).json()
     return body["org"]["id"], body["api_key"]
-
-
-def test_set_org_reliability_admin_endpoint(api):
-    client = api[0]
-    org_id, _ = _org_with_key(client)
-    ok = client.post(f"/ledger/orgs/{org_id}/reliability", json={"weight": 1.5})
-    assert ok.status_code == 200 and ok.json()["reliability_weight"] == 1.5
-    assert client.post(f"/ledger/orgs/{org_id}/reliability",
-                       json={"weight": -1.0}).status_code == 422
-    assert client.post("/ledger/orgs/nope/reliability",
-                       json={"weight": 1.0}).status_code == 404

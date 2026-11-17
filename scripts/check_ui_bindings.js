@@ -228,7 +228,7 @@ const STATES = {
   "operator plane": { screen: "adminorgs", plane: "operator", me: { kind: "admin" } },
   "operator org details": { screen: "adminorgs", plane: "operator", me: { kind: "admin" },
     orgList: held([{ id: "synthetic_org", name: "Synthetic Org", status: "active", reliability_weight: 1,
-      created_at: "2026-10-13T10:00:00Z" }]), orgSelection: "synthetic_org", orgWeight: "1",
+      created_at: "2026-10-13T10:00:00Z" }]), orgSelection: "synthetic_org",
     orgKey: "synthetic-key", orgKeyOwner: "Synthetic Org", orgConfirm: { id: "synthetic_org", action: "rotate" } },
   "operator accounts": { screen: "adminusers", plane: "operator", me: { kind: "admin" },
     usersList: held([{ id: "synthetic_operator", label: "Synthetic Operator", created_at: "2026-10-13T10:00:00Z",

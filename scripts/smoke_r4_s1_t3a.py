@@ -502,9 +502,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 75 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 74 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 75)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 74)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))

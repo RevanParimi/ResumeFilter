@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from app.api.dependencies import _services, require_api_key
 from app.ledger.schema import (
@@ -75,23 +75,6 @@ async def delete_org(org_id: str, request: Request) -> OrgDeletedResponse:
     if not _services(request).ledger.delete_organization(org_id):
         raise HTTPException(status_code=404, detail="organization not found")
     return {"org_id": org_id, "deleted": True}
-
-
-class ReliabilityRequest(BaseModel):
-    weight: float = Field(ge=0.0)
-
-
-@router.post("/ledger/orgs/{org_id}/reliability", response_model=Organization)
-async def set_org_reliability(
-    org_id: str, req: ReliabilityRequest, request: Request
-) -> Organization:
-    """Admin: set an org's per-org reliability multiplier for S3.4 reputation
-    aggregation (neutral default 1.0). A negative weight is a 422 at the
-    boundary."""
-    try:
-        return _services(request).ledger.set_org_reliability(org_id, req.weight)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 class ConsentGrantRequest(BaseModel):

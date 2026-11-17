@@ -169,10 +169,9 @@ def main():
                     csrf = a.headers.pop("X-CSRF-Token")
                     try:
                         checks.check("org and user changes require session CSRF",
-                            a.post(f"/ledger/orgs/{oid}/reliability", json={"weight": 99}).status_code == 403
+                            a.post(f"/ledger/orgs/{oid}/api-key", json={}).status_code == 403
                             and a.post("/admin/users", json={"email": "refused@example.com"}).status_code == 403)
                     finally: a.headers["X-CSRF-Token"] = csrf
-                    require(a.post(f"/ledger/orgs/{oid}/reliability", json={"weight": 1.75}))
                     rotated = require(a.post(f"/ledger/orgs/{oid}/api-key"))["api_key"]
                     checks.check("actual org rotation revokes old credential and preserves second org",
                         stranger.get("/screening/batches", headers={"X-Org-Key": org_a["api_key"]}).status_code == 401
@@ -186,10 +185,10 @@ def main():
                             all(stranger.get(path, headers=headers).status_code == 401
                                 for path in ("/ledger/orgs", "/admin/users", "/metrics"))
                             and stranger.post("/admin/retention/sweep", json={}, headers=headers).status_code == 401
-                            and stranger.post(f"/ledger/orgs/{oid}/reliability", json={"weight": 99}, headers=headers).status_code == 401
+                            and stranger.post(f"/ledger/orgs/{oid}/api-key", json={}, headers=headers).status_code == 401
                             and stranger.delete(f"/admin/users/{operators[1]['id']}", headers=headers).status_code == 401)
-                    checks.check("refused requests leave org weight and accounts unchanged",
-                        next(o for o in require(a.get("/ledger/orgs")) if o["id"] == oid)["reliability_weight"] == 1.75
+                    checks.check("refused requests leave org and accounts unchanged",
+                        any(o["id"] == oid for o in require(a.get("/ledger/orgs")))
                         and len(require(a.get("/admin/users"))) == 2)
                     if "--browser" in sys.argv:
                         import asyncio
@@ -211,7 +210,6 @@ def main():
                             and bool(list(conn.scalars(select(ResumeRow.id).where(ResumeRow.candidate_id == second)))))
                     checks.check("combined restart preserves sessions/accounts/org settings and keys",
                         len(require(b.get("/admin/users"))) == 2
-                        and next(o for o in require(b.get("/ledger/orgs")) if o["id"] == oid)["reliability_weight"] == 1.75
                         and stranger.get("/screening/batches", headers={"X-Org-Key": rotated}).status_code == 200)
 
                     require(b.delete(f"/ledger/orgs/{oid}"))

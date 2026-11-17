@@ -91,9 +91,6 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                 first = await tab.js("document.querySelector('#org-key').value"); keys.append(first)
                 checks.check("combined create displays concealed one-time key from actual response", bool(first)
                     and await tab.js("document.querySelector('#org-key').type") == "password")
-                await type_field("#org-weight", "2.5")
-                await click("Save reliability")
-                assert await tab.wait("window.__has('Saved reliability 2.5')", 15)
                 await click("Rotate organisation key")
                 await click("Confirm key rotation")
                 assert await tab.wait("document.querySelector('#org-key') && window.__has('Organisation key rotated')", 15)
@@ -125,7 +122,7 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                 assert await tab.wait(f"document.querySelector('[data-org-record=\"{oid}\"] button')", 15)
                 await tab.js(f"document.querySelector('[data-org-record=\"{oid}\"] button').click()")
                 checks.check("combined browser reload after backend restart preserves org settings without key",
-                    await tab.wait("window.__has('Saved reliability 2.5')", 15) and not await tab.js("document.querySelector('#org-key')"))
+                    await tab.wait("window.__has('Combined Browser Agency')", 15) and not await tab.js("document.querySelector('#org-key')"))
                 await screen("Operator accounts", "document.querySelector('#operator-email') && !window.__has('Loading operator accounts')")
                 checks.check("restart preserves browser-created operator and clears unsaved input", await tab.js(
                     f"!!document.querySelector('[data-operator-record=\"{account_b['id']}\"]') && document.querySelector('#operator-email').value===''"))
@@ -139,7 +136,6 @@ async def run_browser(base, scratch, admin, checks, restart_app):
                     and all(actor_b.get(p).status_code == 401 for p in ("/ledger/orgs", "/admin/users")))
                 await screen("Organisations", "document.querySelector('#org-name') && !window.__has('Loading organisations')")
                 await tab.js(f"document.querySelector('[data-org-record=\"{oid}\"] button').click()")
-                assert await tab.wait("document.querySelector('#org-weight')", 10)
                 await click("Offboard organisation"); await click("Confirm offboarding")
                 with client(base) as stranger:
                     checks.check("combined browser offboarding revokes target key and preserves other orgs", await tab.wait("window.__has('Organisation offboarded.')", 15)
