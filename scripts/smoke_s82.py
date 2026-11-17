@@ -140,12 +140,12 @@ def main() -> int:
 
             # 5-6. CSRF is live, not merely written.
             checks["csrf_without_token_403"] = org.post(
-                "/ledger/records",
-                json={"candidate_id": "x", "stage": "screening", "outcome": "pass"},
+                "/jobs",
+                json={"title": "CSRF probe", "must_have_skills": ["python"]},
             ).status_code == 403
             checks["csrf_with_token_not_403"] = org.post(
-                "/ledger/records",
-                json={"candidate_id": "x", "stage": "screening", "outcome": "pass"},
+                "/jobs",
+                json={"title": "CSRF probe", "must_have_skills": ["python"]},
                 headers={"X-CSRF-Token": org_csrf},
             ).status_code != 403
 

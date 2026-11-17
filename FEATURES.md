@@ -1,9 +1,8 @@
 # FEATURES.md — ML feature registry (PI-4, S4.1)
 
 The **feature registry** is a versioned, in-code catalog of ML *feature
-definitions* over the data three subsystems already produce — candidate
-profiles, depth-evaluation reports, and the consent-gated evaluation ledger
-(interview records, coding rounds, reputation). It is the definition/compute
+definitions* over the data two subsystems already produce — candidate
+profiles and depth-evaluation reports. It is the definition/compute
 layer the rest of PI-4 consumes: **S4.2** materializes registered features into
 `ml_feature_vectors`; **S4.3** adds the ranking engine that job matching uses.
 
@@ -22,10 +21,8 @@ Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
   coherence (range only on numerics, categories only on categorical/ordinal,
   `requires_consent` ↔ ledger/reputation source) is validated at construction.
 - **`FeatureContext`** (`schema.py`) — the read-only per-candidate snapshot an
-  extractor computes over: `candidate_id`, `as_of`, `profile`, `report`,
-  `interview_records`, `coding_rounds`. Exposes a cached `reputation` accessor
-  (`assess_reputation` over the snapshot, dated to `as_of`). **Extractors read
-  only the context** — never a store, never the wall clock.
+  extractor computes over: `candidate_id`, `as_of`, `profile`, `report`.
+  **Extractors read only the context** — never a store, never the wall clock.
 - **`@register_feature`** + **`FeatureRegistry`** (`registry.py`) — the decorator
   registers a pure `FeatureContext -> FeatureValue` extractor into the
   module-global registry (the `@register_domain` pattern). `compute_one`
@@ -35,22 +32,22 @@ Pure package, LLM-free, hand-testable — mirrors `src/app/domains/`.
   pairs; the default view **`core_v1`** (config knob `feat_default_view`) pins
   every seed feature at its latest version, making a materialization run
   reproducible. `compute_view` yields a **`FeatureVector`** (values + `missing`).
-  Since R2-S2-T1, this bundle uses version **2**, retaining the configured name.
-  Its risk score/band members use factual-risk v2 and exclude writing style.
+  Since R2-S2-T1 its risk score/band members use factual-risk v2 and exclude
+  writing style. The bundle is now version **3**, retaining the configured name:
+  v3 dropped the ledger and reputation members, so vectors stored under an older
+  member set are never served under it.
   Historical v1 reports/vectors remain distinct; opposite/unknown report
   semantics yield missing risk features. See [current risk logic](docs/FEATURE_LOGIC.md#combined-advisory-risk).
 - **`build_context`** (`context.py`) — the only store-touching helper; assembles
-  a snapshot from the candidate/report/ledger stores. See point-in-time below.
+  a snapshot from the candidate and report stores. See point-in-time below.
 
-## Seed catalog (31 features)
+## Seed catalog (24 features)
 
 | Source | Consent | Examples |
 |---|---|---|
 | `candidate.*` (12) | no | `years_experience` (non-overlapping tenure), `highest_degree_level` (ordinal), `top_institution_tier`, `max_cgpa_10`, `notice_period_days`, `location_tier`, `has_github`, `num_skills`/`num_canonical_skills`/`num_experiences`/`num_projects`/`num_certifications` |
 | `depth.*` (7) | no | `depth_score`, `depth_band` (ordinal), `overall_confidence`, `verdict_count`, `flagged_claim_count`, `deferred_claim_count`, `coherent_claim_ratio` |
 | `fabrication.*` (5) | no | `risk_score`, `risk_band` (ordinal), `ai_generation_band`, `cross_field_major_count`, `resume_farm_band` |
-| `ledger.*` (4) | **yes** | `interview_record_count`, `coding_round_count`, `distinct_orgs`, `best_coding_percentile` |
-| `reputation.*` (3) | **yes** | `score`, `confidence`, `band` (ordinal) |
 
 **Ordinal categories** are ordered least→greatest with the subsystem's
 insufficient/unknown sentinel at index 0; the extractor returns the band string
@@ -60,21 +57,20 @@ verbatim (S4.2 owns the numeric encoding, e.g. sentinel→null).
 
 Label leakage is a PI-4-wide non-negotiable. S4.1's contribution: `as_of` is a
 first-class context field; extractors read only the (already-consistent)
-context; reputation decays relative to `as_of`. `build_context` assembles the
+context. `build_context` assembles the
 *current* snapshot with a coarse `created_at <= as_of` cutoff. The full
 historical **slicer** (versioned resumes/reports, consent-validity-at-`as_of`) is
 S4.2's materialization job — `as_of` is already the seam.
 
 ## Consent (`requires_consent`)
 
-`ledger.*` and `reputation.*` features are derived from consent-gated
-cross-company data, so their specs carry `requires_consent=True`. **Enforcement
-is a serving-time concern (S4.2/S4.3):** whoever materializes or serves a
-`requires_consent` feature for an org must hold an active `ledger_read` grant.
-Definition-time carries no consent obligation, and S4.1 adds no new disclosure
-surface — `build_context`'s ledger reads are platform-internal (the same raw
-internal reads `reputation_for_org` performs after its gate). No new table ⇒ no
-new erasure path; after `delete_candidate`, `build_context` returns `None`.
+A spec from a `ledger` or `reputation` source must carry
+`requires_consent=True`. **Enforcement is a serving-time concern (S4.2/S4.3):**
+whoever materializes or serves a `requires_consent` feature for an org must hold
+an active `ledger_read` grant. The shipped catalog has no consent-tagged feature
+since the cross-company ledger was removed, so this path is dormant; tests keep
+it exercised with probe features. No new table ⇒ no new erasure path; after
+`delete_candidate`, `build_context` returns `None`.
 
 ## Adding a feature
 
@@ -102,20 +98,17 @@ Nothing here scores or ranks (S4.3).
 - **profile** — `CandidateStore.profile_as_of(candidate_id, as_of)`: the newest
   extraction with `created_at <= as_of` (tie-break newest resume version, then
   newest created_at); `None` if the candidate had no extraction by `as_of`.
-- **report / interview records / coding rounds** — cut at their own
-  `created_at` / `interviewed_at` / `taken_at` `<= as_of`.
-- **reputation** — decays relative to `as_of` (S4.1 cached accessor).
+- **report** — cut at its own `created_at <= as_of`.
 
-`build_context` stays a **raw platform-internal assembler**: it reads the full
-ledger snapshot and applies **no consent policy** — that is the materializer's
-job. A vector at `as_of=T` reflects only data timestamped `<= T`, even when newer
+`build_context` stays a **raw platform-internal assembler**: it applies **no
+consent policy** — that is the materializer's job. A vector at `as_of=T` reflects only data timestamped `<= T`, even when newer
 rows exist now.
 
 ### Consent gate (`consent.has_any_active` + `LedgerStore.materialization_consent`)
 
-Materialization is a platform-internal batch use of cross-company data, so the
-basis is org-agnostic: **the candidate has opted into the reputation network** =
-any active `ledger_read` grant at `as_of` (org-specific or org=NULL).
+Materialization is a platform-internal batch use, so the basis is
+org-agnostic: any active `ledger_read` grant at `as_of` (org-specific or
+org=NULL).
 `has_any_active` is the pure org-agnostic check; `materialization_consent`
 resolves it against the candidate's grants and **audits `feature.materialize`**
 (actor `system`/`platform`, allowed *and* withheld) in the same transaction. It
@@ -203,8 +196,8 @@ categorical is not rankable (`ValueError`).
 A missing term (null value — absent data or a feature withheld at materialization
 or by current serving authorization) is **dropped**, the candidate's remaining weights are
 **renormalized**, and the result surfaces both a `missing` list and a `coverage`
-fraction (share of ranking weight that had data — the `reputation.py`/`risk.py`
-confidence pattern). Missing consent adds no score penalty or automatic rejection.
+fraction (share of ranking weight that had data — the `risk.py` confidence
+pattern). Missing consent adds no score penalty or automatic rejection.
 Relative rank can still change when terms drop or normalization pools change.
 
 ### Consent, point-in-time, DPDP

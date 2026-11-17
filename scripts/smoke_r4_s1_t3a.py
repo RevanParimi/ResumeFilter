@@ -502,9 +502,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 85 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 79 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 85)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 79)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -596,37 +596,6 @@ def run(scratch, url, pg_options):
             checks.check("admin cookie grants exact-purpose employer consent", all(
                 require(operator.get(ledger_path + "/consent", params={"org_id": org_id, "purpose": purpose}))["grant_id"] == grant["id"]
                 for purpose, grant in grants.items()))
-            record_body = {"candidate_id": subject, "stage": "hm", "outcome": "hired",
-                "interviewed_at": "2026-10-01T10:00:00Z", "summary": "Synthetic human assessment"}
-            coding_body = {"candidate_id": subject, "platform": "hackerrank", "score": 80,
-                "max_score": 100, "percentile": 88, "taken_at": "2026-10-01T10:00:00Z"}
-            checks.check("ledger wrong-plane writes and unconsented employer refuse",
-                operator.post("/ledger/records", json=record_body).status_code == 401
-                and candidate.post("/ledger/records", json=record_body).status_code == 401
-                and other_org.post("/ledger/records", json=record_body).status_code == 403
-                and other_org.post("/ledger/coding-rounds", json=coding_body).status_code == 403)
-            record = require(org.post("/ledger/records", json=record_body))
-            coding = require(org.post("/ledger/coding-rounds", json=coding_body))
-            event_path = f"/ledger/records/{record['id']}/events"
-            event = require(org.post(event_path, json={"event_type": "human_reviewed", "payload": {"confirmed": True}}))
-            checks.check("ledger writes use cookie tenant and original consent despite other key",
-                record["org_id"] == coding["org_id"] == org_id
-                and record["consent_id"] == coding["consent_id"] == grants["ledger_write"]["id"]
-                and event["record_id"] == record["id"])
-            checks.check("ledger event ownership hides other-tenant and missing records",
-                other_org.post(event_path, json={"event_type": "refused"}).status_code == 404
-                and other_org.post("/ledger/records/missing/events", json={"event_type": "refused"}).json() == {"detail": "record not found"})
-            saved_ledger = {suffix: require(org.get(ledger_path + suffix)) for suffix in ("/records", "/coding-rounds")}
-            reputation = require(org.get(ledger_path + "/reputation"))
-            checks.check("ledger record coding and advisory reputation reads persist", saved_ledger["/records"] == [record]
-                and saved_ledger["/coding-rounds"] == [coding] and reputation["advisory"] and reputation["total_observations"] == 2)
-            checks.check("other employer cannot read any ledger section without consent", all(
-                other_org.get(ledger_path + suffix).status_code == 403 for suffix in ("/records", "/coding-rounds", "/reputation")))
-            org.headers.pop("X-CSRF-Token")
-            checks.check("ledger cookie plus valid other key still requires CSRF", all(
-                org.post(path, json=body).status_code == 403 for path, body in (
-                    ("/ledger/records", record_body), ("/ledger/coding-rounds", coding_body), (event_path, {"event_type": "refused"}))))
-            org.headers["X-CSRF-Token"] = org_csrf
             # T3F employer composition shares this existing restart harness.
             checks.check("employer match and board explain the empty feature pool",
                 require(org.post(f"/jobs/{job['id']}/match", json={}))["reason"] == "no_materialized_candidates"
@@ -725,11 +694,6 @@ def run(scratch, url, pg_options):
             checks.check("all planes and tenant data survive graceful restart", operator.get("/admin/users").status_code == 200
                 and org.get(f"/jobs/{job['id']}").status_code == 200 and sibling.get("/portal/me").status_code == 200
                 and other_org.get(f"/jobs/{job['id']}").status_code == 404)
-            checks.check("ledger record and coding bodies survive graceful restart exactly", all(
-                require(org.get(ledger_path + suffix)) == body for suffix, body in saved_ledger.items()))
-            checks.check("restarted reputation stays advisory with both observations",
-                (assessment := require(org.get(ledger_path + "/reputation")))["advisory"] and assessment["total_observations"] == 2)
-            checks.check("restarted other employer still cannot append events", other_org.post(event_path, json={"event_type": "refused"}).status_code == 404)
             checks.check("employer job match and compensation survive restart",
                 require(org.get(f"/jobs/{job['id']}")) == updated_job
                 and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
@@ -745,10 +709,9 @@ def run(scratch, url, pg_options):
                 org.get(path).status_code == 403 for path in verification_paths.values()))
             for purpose, grant in grants.items():
                 require(operator.post(f"/ledger/consent/{grant['id']}/revoke"))
-            checks.check("revoked persisted consent immediately denies reads and new writes", all(
-                org.get(ledger_path + suffix).status_code == 403 for suffix in ("/records", "/coding-rounds", "/reputation"))
-                and org.post("/ledger/records", json=record_body).status_code == 403
-                and org.post("/ledger/coding-rounds", json=coding_body).status_code == 403)
+            checks.check("revoked persisted consent is immediately reported as not allowed", not any(
+                require(operator.get(ledger_path + "/consent", params={"org_id": org_id, "purpose": purpose}))["allowed"]
+                for purpose in grants))
             require(operator.post(f"/ledger/consent/{employer_write['id']}/revoke"))
             checks.check("employer offer honors consent revocation after restart",
                 org.post("/ledger/offers", json=offer_body).status_code == 403)
@@ -756,18 +719,15 @@ def run(scratch, url, pg_options):
             checks.check("verification audit retains allowed and denied employer access", all(
                 {row["allowed"] for row in access_log if row["action"] == action} == {True, False}
                 for action in ("verification.query",)))
-            checks.check("subject sees allowed and denied audited ledger queries", all(
-                {row["allowed"] for row in access_log if row["action"] == action} == {True, False}
-                for action in ("record.query", "coding_round.query", "reputation.query")))
             machine_org = require(operator.post("/ledger/orgs", json={"name": "Synthetic ledger key lifecycle"}))
             machine_id = machine_org["org"]["id"]
             with client(base, headers={"X-Org-Key": machine_org["api_key"]}) as machine:
                 rotated = require(operator.post(f"/ledger/orgs/{machine_id}/api-key"))
-                checks.check("ledger key rotation invalidates original credential", machine.get(ledger_path + "/records").status_code == 401)
+                checks.check("ledger key rotation invalidates original credential", machine.get("/jobs").status_code == 401)
                 machine.headers["X-Org-Key"] = rotated["api_key"]
-                checks.check("rotated credential resolves but consent remains required", machine.get(ledger_path + "/records").status_code == 403)
+                checks.check("rotated credential resolves on the employer plane", machine.get("/jobs").status_code == 200)
                 require(operator.delete(f"/ledger/orgs/{machine_id}"))
-                checks.check("organization offboarding invalidates rotated credential", machine.get(ledger_path + "/records").status_code == 401)
+                checks.check("organization offboarding invalidates rotated credential", machine.get("/jobs").status_code == 401)
             for http, token in ((operator, admin_csrf), (org, org_csrf), (other_org, other_csrf), (sibling, sibling_csrf)):
                 http.headers["X-CSRF-Token"] = token
                 assert require(http.post("/auth/logout")) == {"logged_out": True}

@@ -28,9 +28,8 @@ Around that engine, the platform currently ships:
 - **Fabrication defense 2.0** (PI-2, done) — advisory AI-generated-text signals,
   cross-field timeline forensics, resume-farm near-duplicate detection, and a
   fused advisory `fabrication_risk` score → [FABRICATION.md](FABRICATION.md)
-- **Evaluation ledger** (PI-3, done) — consent-first cross-company interview and
-  coding-round records with purpose-scoped, revocable, audited DPDP consent, plus
-  advisory Bayesian cross-company reputation → [LEDGER.md](LEDGER.md)
+- **Ledger and consent** (PI-3) — member organisations, API keys and
+  purpose-scoped, revocable, audited DPDP consent grants → [LEDGER.md](LEDGER.md)
 - **ML feature store & ranking** (PI-4, done) — a versioned feature registry,
   point-in-time materialization and the ranking engine job matching uses →
   [FEATURES.md](FEATURES.md)
@@ -201,7 +200,7 @@ in the linked docs:
 
 | Surface | Plane | Key endpoints | Doc |
 |---------|-------|---------------|-----|
-| Evaluation ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/records` · `/coding-rounds` · `/offers`; `GET …/records` · `…/coding-rounds` · `…/reputation` (query-time consent, every access audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
+| Ledger | admin `X-API-Key` + org `X-Org-Key` | orgs + consent grant/revoke/status; `POST /ledger/offers` (consent-gated, audited) | [LEDGER.md](LEDGER.md) · [COMP.md](COMP.md) |
 | Feature store | admin `X-API-Key` | `POST /features/materialize` — point-in-time feature vectors for matching | [FEATURES.md](FEATURES.md) |
 | Demand side | org `X-Org-Key` | `POST/GET/PATCH /jobs` · `POST /jobs/{id}/match` (role-conditioned shortlist) · `POST /comp/estimate` · `GET /jobs/{id}/comp` (advisory comp band + benchmark) · `GET /jobs/{id}/board` | [MATCHING.md](MATCHING.md) · [COMP.md](COMP.md) · [DASHBOARD.md](DASHBOARD.md) |
 | Candidate DPDP portal | candidate `X-Candidate-Key` (key minted admin-side) | `GET /portal/me` · `GET /portal/access-log` · `GET/POST /portal/consents` · `POST /portal/consents/{id}/revoke` · `DELETE /portal/me` | [PORTAL.md](PORTAL.md) |
@@ -358,9 +357,8 @@ src/app/
     similarity.py        S2.3 MinHash fingerprints + farm banding
     risk.py              S2.4 fused advisory fabrication_risk
   ledger/                PI-3 evaluation ledger → LEDGER.md
-    schema.py, models.py contracts + ORM (orgs, consent, records, offers, audit)
+    schema.py, models.py contracts + ORM (orgs, consent, offers, audit)
     consent.py           pure purpose-scoped/expiring/revocable consent logic
-    reputation.py        S3.4 Bayesian cross-company reputation (advisory)
     store.py             LedgerStore (consent-gated writes, audited reads)
   features/              PI-4 feature store & ranking → FEATURES.md
     registry.py, definitions/  @register_feature catalog (code-versioned)
@@ -412,7 +410,8 @@ Dockerfile               non-root image with /healthz healthcheck
 - **PI-2 Fabrication defense (done):** AI-text signals · cross-field forensics ·
   resume-farm detection · fused advisory `fabrication_risk`.
 - **PI-3 Evaluation ledger (done):** schema + DPDP consent · ledger APIs ·
-  coding-round results · Bayesian cross-company reputation.
+  coding-round results · Bayesian cross-company reputation (records, coding
+  rounds and reputation since removed).
 - **PI-4 ML feature store & ranking (done):** feature registry ·
   point-in-time materialization · ranking engine.
 - **PI-5 Demand side (in progress):** S5.1 job requisitions + role-conditioned

@@ -216,7 +216,7 @@ def main():
                 candidate_store=cs, report_store=rs, ledger_store=ls)
             fs.upsert_vector(historical_vector)
             run = require(http.post("/features/materialize", json={}))
-            checks.check("HTTP materializes new view version", run["view_version"] == 2)
+            checks.check("HTTP materializes new view version", run["view_version"] == 3)
             current = fs.latest_vectors_for_view(view.name, view.version,
                                                  as_of=datetime.fromisoformat(run["as_of"]))
             current_by_id = {item.vector.candidate_id: item for item in current}

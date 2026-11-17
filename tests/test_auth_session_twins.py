@@ -156,20 +156,20 @@ def test_twin_consent_is_enforced_identically_for_a_session(
         candidate_id = created.json()["candidate_id"]
 
     csrf = _org_session(client, capture_path)
-    denied = client.get(f"/ledger/candidates/{candidate_id}/records")
-    assert denied.status_code == 403      # no ledger_read grant
+    denied = client.get(f"/verification/candidates/{candidate_id}/assurance")
+    assert denied.status_code == 403      # no verification_read grant
 
     # Grant it, then the SAME session is allowed.
     org_id = client.get("/auth/me").json()["organization_id"]
     with TestClient(create_app(services), raise_server_exceptions=False) as admin:
         assert admin.post(
             f"/ledger/candidates/{candidate_id}/consent",
-            json={"purpose": ConsentPurpose.LEDGER_READ.value, "org_id": org_id},
+            json={"purpose": ConsentPurpose.VERIFICATION_READ.value, "org_id": org_id},
             headers=ADMIN_HEADERS,
         ).status_code == 200
 
     assert client.get(
-        f"/ledger/candidates/{candidate_id}/records"
+        f"/verification/candidates/{candidate_id}/assurance"
     ).status_code == 200
 
 

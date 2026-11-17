@@ -6,7 +6,6 @@ from threading import Event
 
 import pytest
 
-from app.features import get_feature_registry
 from app.features.materialize import MaterializedVector
 from app.features.ranking import apply_filters, score
 from app.features.ranking_schema import FeatureFilter, FilterOp, RankingSpec, RankingTerm
@@ -15,6 +14,7 @@ from app.features.serving import current_consent_vectors
 from app.features.store import FeatureStore
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import LedgerStore
+from tests.conftest import consent_probe_registry
 from tests.test_report_erasure_concurrency import database  # noqa: F401
 
 CUT = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -45,7 +45,7 @@ def test_present_scope_is_per_candidate_not_cached(database, monkeypatch, scope)
                          now=CUT, expires_at=NOW + timedelta(days=1))
     org_id = b.id if scope in {"org_b", "wildcard"} else a.id if scope == "org_a" else None
     raw = features.latest_vectors_for_view("core_v1", 1, as_of=CUT)
-    vectors = current_consent_vectors([mv.vector for mv in raw], registry=get_feature_registry(),
+    vectors = current_consent_vectors([mv.vector for mv in raw], registry=consent_probe_registry(),
                                       ledger_store=ledger, org_id=org_id)
     by_id = {v.candidate_id: v for v in vectors}
     assert by_id["a"].values["reputation.score"] == (None if scope == "org_b" else 0.9)
@@ -63,7 +63,7 @@ def test_revoke_committed_after_vector_read_is_seen_by_serving(database, monkeyp
     ledger.grant_consent(candidate_id="b", org_id=b.id, purpose=ConsentPurpose.LEDGER_READ,
                          now=CUT, expires_at=NOW + timedelta(days=1))
     ready, release = Event(), Event()
-    registry = get_feature_registry()
+    registry = consent_probe_registry()
     specs = {"reputation.score": registry.get("reputation.score").spec}
 
     def serve():
@@ -94,7 +94,7 @@ def test_permission_storage_failure_does_not_authorize_cached_values(database, m
     monkeypatch.setattr(ledger, "consents_for_candidate", fail)
     raw = features.latest_vectors_for_view("core_v1", 1, as_of=CUT)
     with pytest.raises(RuntimeError, match="unavailable consent store"):
-        current_consent_vectors([mv.vector for mv in raw], registry=get_feature_registry(), ledger_store=ledger)
+        current_consent_vectors([mv.vector for mv in raw], registry=consent_probe_registry(), ledger_store=ledger)
 
 
 def test_expiry_is_checked_after_permission_read(database, monkeypatch):
@@ -112,7 +112,7 @@ def test_expiry_is_checked_after_permission_read(database, monkeypatch):
         return grants
     monkeypatch.setattr(ledger, "consents_for_candidate", read)
     raw = features.latest_vectors_for_view("core_v1", 1, as_of=CUT)
-    vectors = current_consent_vectors([mv.vector for mv in raw], registry=get_feature_registry(), ledger_store=ledger)
+    vectors = current_consent_vectors([mv.vector for mv in raw], registry=consent_probe_registry(), ledger_store=ledger)
     assert all(v.values["reputation.score"] is None for v in vectors)
 
 

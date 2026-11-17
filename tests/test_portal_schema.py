@@ -35,5 +35,5 @@ def test_consent_view_wraps_grant_and_state():
 
 def test_my_data_defaults_are_empty_collections():
     md = MyData(candidate_id="cand1", retention=RetentionPolicy(windows=[]))
-    assert md.resumes == [] and md.interview_records == [] and md.reports == []
+    assert md.resumes == [] and md.reports == []
     assert md.profile is None

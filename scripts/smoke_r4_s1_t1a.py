@@ -6,7 +6,6 @@ disposal events are actual lifespan evidence. No provider-client cleanup claim.
 """
 import asyncio
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -176,8 +175,6 @@ def main(*, provider_checks=False, composition_checks=False):
                 oid = orgs[0]["org"]["id"]
                 require(admin.post(f"/ledger/candidates/{cid}/consent",json={"purpose":"ledger_write","org_id":oid}))
                 grant = require(actor.post("/portal/consents",json={"purpose":"ledger_read","org_id":oid}))
-                require(org_a.post("/ledger/records",json={"candidate_id":cid,"stage":"hm","outcome":"hired",
-                    "interviewed_at":(datetime.now(timezone.utc)-timedelta(days=1)).isoformat()}))
                 batch = require(admin.post("/features/materialize",json={}))
                 checks.check("materialization sees shared saved data", batch["materialized"]==2)
                 job = require(org_a.post("/jobs",json={"title":"Shared SQL Engineer","must_have_skills":["python"]}))

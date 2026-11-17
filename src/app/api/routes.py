@@ -18,9 +18,7 @@ from app.api.verification import (
 from app.api.employer import org_router as employer_router
 from app.api.features import router as feature_router
 from app.api.portal import candidate_router as portal_candidate_router
-from app.api.ledger import (
-    router as ledger_admin_router, org_router as ledger_org_router,
-)
+from app.api.ledger import router as ledger_admin_router
 from app.api.screening import org_router as screening_router
 from app.api.candidates import (
     router as candidate_admin_router,
@@ -56,7 +54,6 @@ router.routes.extend(operator_router.routes)
 
 # Employer and candidate planes retain their original order and own guards.
 org_router.routes.extend(screening_router.routes)
-org_router.routes.extend(ledger_org_router.routes)
 org_router.routes.extend(employer_router.routes)
 org_router.routes.extend(verification_org_router.routes)
 org_router.routes.extend(interview_org_router.routes)

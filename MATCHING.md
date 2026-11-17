@@ -70,8 +70,8 @@ v1 refinement.)
 
 - **Org plane (`X-Org-Key`).** Requisitions are org-owned; CRUD and match are
   org-scoped (cross-org access → 404). This is the "employers query" surface.
-- **No new consent gate.** The pool's consent-tagged (`ledger.*`/`reputation.*`)
-  features were **masked to null at S4.2 materialization**; a withheld feature is
+- **No new consent gate.** Any consent-tagged features (none ship today) are
+  **masked to null at S4.2 materialization**; a withheld feature is
   already absent and simply drops out of scoring. Skills read from the profile are
   first-party candidate data. `ConsentPurpose` is unchanged.
 - **Disclosure audit.** Each **returned** candidate is audited as one

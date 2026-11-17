@@ -1,6 +1,6 @@
 """Feature-registry contracts (PI-4 / S4.1).
 
-Pure, serializable definitions of ML features over candidate + eval + ledger
+Pure, serializable definitions of ML features over candidate + eval
 data. No I/O, no LLM. A FeatureSpec is metadata; the extractor callable lives
 beside it in the registry (registry.py).
 """
@@ -11,14 +11,11 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from functools import cached_property
 from typing import TYPE_CHECKING, Optional, Union
 
 from pydantic import BaseModel, Field
 
 from app.candidates.schema import CandidateProfile
-from app.ledger.reputation import assess_reputation
-from app.ledger.schema import CodingRoundResult, InterviewRecord, ReputationAssessment
 from app.schemas.report import Report
 
 if TYPE_CHECKING:  # avoid a schema<-registry import cycle
@@ -127,18 +124,6 @@ class FeatureContext:
     as_of: datetime
     profile: Optional[CandidateProfile] = None
     report: Optional[Report] = None
-    interview_records: tuple[InterviewRecord, ...] = ()
-    coding_rounds: tuple[CodingRoundResult, ...] = ()
-
-    @cached_property
-    def reputation(self) -> ReputationAssessment:
-        """Advisory reputation over this snapshot, dated to ``as_of`` (neutral
-        reliability in S4.1). Shared by all reputation.* features."""
-        return assess_reputation(
-            list(self.interview_records),
-            list(self.coding_rounds),
-            now=self.as_of,
-        )
 
 
 @dataclass(frozen=True)

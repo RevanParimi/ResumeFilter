@@ -1,8 +1,8 @@
 """Materialize a FeatureView over a point-in-time context (PI-4 / S4.2).
 
 Pure orchestration: slice the context (build_context), compute the view, then
-apply the per-candidate consent decision -- consent-tagged features (ledger.* /
-reputation.*, i.e. spec.requires_consent) are nulled unless an active ledger_read
+apply the per-candidate consent decision -- consent-tagged features
+(spec.requires_consent) are nulled unless an active ledger_read
 grant governs the candidate at as_of. First-party features always survive. The
 consent decision itself is audited in LedgerStore.materialization_consent.
 """
@@ -44,7 +44,6 @@ def materialize_candidate(
         candidate_id,
         candidate_store=candidate_store,
         report_store=report_store,
-        ledger_store=ledger_store,
         as_of=as_of,
     )
     if ctx is None:

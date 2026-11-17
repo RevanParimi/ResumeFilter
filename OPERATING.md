@@ -970,15 +970,13 @@ portal keeps promising a window that nothing enforces.
 | `resumes` | `ret_resume_days` (1095) | `resumes` | `created_at` | delete |
 | `verifications` | `ret_verification_days` (1095) | `verifications` | `created_at` | delete |
 | `interviews` | `ret_interview_session_days` (1095) | `interview_sessions` | `created_at` | delete |
-| `interview_records` | `ret_interview_record_days` (1825) | `interview_records` | `created_at` | delete |
-| `coding_rounds` | `ret_coding_round_days` (1825) | `coding_round_results` | `created_at` | delete |
 | `observed_offers` | `ret_observed_offer_days` (1825) | `observed_offers` | `created_at` | delete |
 | `audit_log` | `ret_audit_log_days` (2555) | `audit_log` | `created_at` | delete |
 | `batch_item_text` | `ret_batch_item_days` (90) | `batch_items` + `screening_item_inputs` | original item `created_at` | **clear** unlinked `raw_text`; **delete** private retry reference |
 | `rate_limit_counters` | `ret_rate_limit_days` (7) | `rate_limit_counters` | `expires_at` | delete |
 | `login_state` | `ret_login_state_days` (7) | `login_challenges` + `login_issuances` + `auth_sessions` | `expires_at` | delete |
 
-**Eleven classes, fourteen targets.** `login_state` covers expired challenges,
+**Eight classes, eleven targets.** `login_state` covers expired challenges,
 abandoned send reservations and expired sessions. Migration 0027 adds reservations
 containing only an opaque ID, hashed address, scope and expiry; normal completion,
 failure or erasure deletes them, and later requests purge expired reservations

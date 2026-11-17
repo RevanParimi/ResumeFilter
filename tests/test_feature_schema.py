@@ -3,7 +3,6 @@
 import pytest
 from datetime import datetime, timezone
 from app.features.schema import (
-    FeatureContext,
     FeatureDType,
     FeatureSource,
     FeatureSpec,
@@ -77,14 +76,6 @@ def test_consent_source_coherence():
         _spec(requires_consent=True)
     ok = _spec(source=FeatureSource.REPUTATION, requires_consent=True)
     assert ok.requires_consent is True
-
-
-def test_context_reputation_is_cached_and_uses_as_of():
-    ctx = FeatureContext(candidate_id="c1", as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))
-    rep_a = ctx.reputation
-    rep_b = ctx.reputation
-    assert rep_a is rep_b                      # memoized
-    assert rep_a.band.value == "insufficient_data"   # no records -> prior
 
 
 def test_feature_vector_shape():

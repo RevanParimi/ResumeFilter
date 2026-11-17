@@ -526,9 +526,9 @@ void 0;
         organization = portal_response(admin.post("/ledger/orgs", json={"name": "Synthetic Portal Browser"}))
         oid = organization["org"]["id"]
         grant = await tab.js("window.VeritasAPI.post('/portal/consents'," + json.dumps({
-            "purpose": "ledger_read", "org_id": oid}) + ")")
+            "purpose": "verification_read", "org_id": oid}) + ")")
         assert grant["candidate_id"] == subject
-        ledger_path = f"/ledger/candidates/{subject}/records"
+        ledger_path = f"/verification/candidates/{subject}/assurance"
         org_headers = {"X-Org-Key": organization["api_key"]}
         portal_response(admin.get(ledger_path, headers=org_headers))
         assert await tab.js("window.__click('button', 'Consents')")
@@ -540,7 +540,7 @@ void 0;
             and admin.get(ledger_path, headers=org_headers).status_code == 403)
         assert await tab.js("window.__click('button', 'Who accessed it')")
         checks.check("portal browser shows allowed and refused access with the actor", await tab.wait(
-            "window.__has('Synthetic Portal Browser') && window.__has('record.query') && window.__has('Allowed') && window.__has('Refused')", 20))
+            "window.__has('Synthetic Portal Browser') && window.__has('verification.query') && window.__has('Allowed') && window.__has('Refused')", 20))
         await reload()
         assert await tab.wait("window.__has('Sign out')", 20)
         assert await tab.js("window.__click('button', 'Consents')")

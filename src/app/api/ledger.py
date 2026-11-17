@@ -1,7 +1,7 @@
-"""Ledger organization/consent administration and employer evidence routes.
+"""Ledger organization and consent administration routes.
 
-Admin authentication is router-scoped; employer handlers resolve their own org.
-Both use the shared principal and cookie/CSRF boundary.
+Admin authentication is router-scoped and uses the shared principal and
+cookie/CSRF boundary.
 """
 from __future__ import annotations
 
@@ -11,17 +11,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.api.dependencies import _services, require_api_key, require_org
+from app.api.dependencies import _services, require_api_key
 from app.ledger.schema import (
-    CodingPlatform, CodingRoundResult, ConsentDecision, ConsentGrant,
-    ConsentPurpose, EvaluationEvent, InterviewOutcome, InterviewRecord,
-    InterviewStage, Organization, ReputationAssessment,
+    ConsentDecision, ConsentGrant, ConsentPurpose, Organization,
 )
-from app.ledger.store import ConsentError
 
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
-org_router = APIRouter()
 
 
 class OrgDeletedResponse(BaseModel):
@@ -134,143 +130,5 @@ async def consent_status(
         return _services(request).ledger.consent_status(
             candidate_id, org_id=org_id, purpose=purpose
         )
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class RecordSubmitRequest(BaseModel):
-    candidate_id: str
-    stage: InterviewStage
-    outcome: InterviewOutcome
-    interviewed_at: datetime
-    summary: Optional[str] = None
-
-
-@org_router.post("/ledger/records", response_model=InterviewRecord)
-async def submit_record(
-    req: RecordSubmitRequest, request: Request, org_id: str = Depends(require_org)
-) -> InterviewRecord:
-    ledger = _services(request).ledger
-    try:
-        return ledger.submit_interview_record(
-            org_id=org_id,
-            candidate_id=req.candidate_id,
-            stage=req.stage,
-            outcome=req.outcome,
-            interviewed_at=req.interviewed_at,
-            summary=req.summary,
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class EventAppendRequest(BaseModel):
-    event_type: str
-    payload: dict = Field(default_factory=dict)
-
-
-@org_router.post("/ledger/records/{record_id}/events", response_model=EvaluationEvent)
-async def append_event(
-    record_id: str,
-    req: EventAppendRequest,
-    request: Request,
-    org_id: str = Depends(require_org),
-) -> EvaluationEvent:
-    ledger = _services(request).ledger
-    record = ledger.get_record(record_id)
-    if record is None or record.org_id != org_id:
-        raise HTTPException(status_code=404, detail="record not found")
-    return ledger.append_event(record_id, event_type=req.event_type, payload=req.payload)
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/records", response_model=list[InterviewRecord]
-)
-async def query_records(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> list[InterviewRecord]:
-    """Query-time ledger_read enforcement. The store audits every attempt."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.query_records_for_org(org_id=org_id, candidate_id=candidate_id)
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-class CodingRoundSubmitRequest(BaseModel):
-    candidate_id: str
-    platform: CodingPlatform
-    score: float = Field(ge=0)
-    taken_at: datetime
-    assessment_name: Optional[str] = None
-    platform_name: Optional[str] = None
-    max_score: Optional[float] = Field(default=None, ge=0)
-    percentile: Optional[float] = Field(default=None, ge=0, le=100)
-    problem_tags: list[str] = Field(default_factory=list)
-    raw: dict = Field(default_factory=dict)
-
-
-@org_router.post("/ledger/coding-rounds", response_model=CodingRoundResult)
-async def submit_coding_round(
-    req: CodingRoundSubmitRequest, request: Request, org_id: str = Depends(require_org)
-) -> CodingRoundResult:
-    ledger = _services(request).ledger
-    try:
-        return ledger.submit_coding_round(
-            org_id=org_id,
-            candidate_id=req.candidate_id,
-            platform=req.platform,
-            score=req.score,
-            taken_at=req.taken_at,
-            assessment_name=req.assessment_name,
-            platform_name=req.platform_name,
-            max_score=req.max_score,
-            percentile=req.percentile,
-            problem_tags=req.problem_tags,
-            raw=req.raw,
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/coding-rounds",
-    response_model=list[CodingRoundResult],
-)
-async def query_coding_rounds(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> list[CodingRoundResult]:
-    """Query-time ledger_read enforcement. The store audits every attempt."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.query_coding_rounds_for_org(
-            org_id=org_id, candidate_id=candidate_id
-        )
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@org_router.get(
-    "/ledger/candidates/{candidate_id}/reputation",
-    response_model=ReputationAssessment,
-)
-async def candidate_reputation(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> ReputationAssessment:
-    """Advisory cross-company reputation. Query-time ledger_read enforcement;
-    the store audits every attempt. Never a rejection signal."""
-    ledger = _services(request).ledger
-    try:
-        return ledger.reputation_for_org(org_id=org_id, candidate_id=candidate_id)
-    except ConsentError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

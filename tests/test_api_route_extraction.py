@@ -17,7 +17,7 @@ from tests.test_candidates_api import RESUME
 from app.reports.outcomes import build_outcome
 from app.reports.schema import OutcomeLabel, OutcomeSource
 from app.schemas.report import Report
-from tests.test_ledger_api import _coding_payload, _ingest_candidate
+from tests.test_ledger_api import _ingest_candidate
 from tests.test_dashboard_api import _candidate as dashboard_candidate, _materialize, AS_OF
 
 
@@ -341,7 +341,8 @@ def test_screening_cookie_csrf_and_human_provenance(cfg, capture_path, genuine_r
 
 def ledger_app(services):
     from app.api.auth import auth_router
-    from app.api.ledger import router, org_router
+    from app.api.employer import org_router
+    from app.api.ledger import router
 
     app = FastAPI()
     app.state.services = services
@@ -353,9 +354,6 @@ def ledger_app(services):
 
 def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(services):
     cid = asyncio.run(_ingest_candidate(services))
-    record_body = {"candidate_id": cid, "stage": "hm", "outcome": "hired",
-                   "interviewed_at": "2026-10-01T10:00:00+00:00", "summary": "Human assessment"}
-    coding_body = _coding_payload(cid)
     root = f"/ledger/candidates/{cid}"
     with TestClient(ledger_app(services), raise_server_exceptions=False) as control, \
             TestClient(ledger_app(services), raise_server_exceptions=False) as a, \
@@ -372,15 +370,11 @@ def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(se
         assert control.post("/ledger/orgs", json={"name": "Ledger A"}).status_code == 409
         assert control.get("/ledger/orgs").json() == [item["org"] for item in created]
         assert a.get("/ledger/orgs").status_code == 401
-        assert control.post("/ledger/records", json=record_body).status_code == 401
+        assert control.get("/jobs").status_code == 401
         org_path = f"/ledger/orgs/{oid}"
         assert control.post(org_path + "/reliability", json={"weight": -1}).status_code == 422
         assert control.post(org_path + "/reliability", json={"weight": 1.75}).json()["reliability_weight"] == 1.75
-        for suffix in ("records", "coding-rounds", "reputation"):
-            assert a.get(root + "/" + suffix).status_code == 403
-        for target, body in (("/ledger/records", record_body), ("/ledger/coding-rounds", coding_body)):
-            assert a.post(target, json=body).status_code == 403
-            assert a.post(target, json={**body, "candidate_id": "missing"}).status_code == 404
+        assert a.get("/jobs").status_code == 200
         grants = {}
         for purpose in ("ledger_read", "ledger_write"):
             response = control.post(root + "/consent", json={"purpose": purpose, "org_id": oid})
@@ -388,36 +382,7 @@ def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(se
             grants[purpose] = response.json()["id"]
             assert control.get(root + "/consent", params={"org_id": oid, "purpose": purpose}).json() == {
                 "allowed": True, "reason": f"active grant {grants[purpose]} covers purpose '{purpose}'", "grant_id": grants[purpose]}
-        record = a.post("/ledger/records", json=record_body)
-        assert record.status_code == 200, record.text
-        row = record.json()
-        assert row["org_id"] == oid and row["consent_id"] == grants["ledger_write"]
-        event_path = f"/ledger/records/{row['id']}/events"
-        event_body = {"event_type": "reviewed", "payload": {"decision": "human"}}
-        event = a.post(event_path, json=event_body)
-        assert event.status_code == 200 and event.json()["record_id"] == row["id"]
-        assert event.json()["payload"] == event_body["payload"]
-        refused = b.post(event_path, json=event_body)
-        missing = b.post("/ledger/records/missing/events", json=event_body)
-        assert refused.status_code == missing.status_code == 404
-        assert refused.json() == missing.json() == {"detail": "record not found"}
-        assert len(services.ledger.events_for_record(row["id"])) == 1
-        assert a.post("/ledger/coding-rounds", json={**coding_body, "percentile": 101}).status_code == 422
-        coding = a.post("/ledger/coding-rounds", json=coding_body)
-        assert coding.status_code == 200, coding.text
-        assert coding.json()["consent_id"] == grants["ledger_write"]
-        assert a.get(root + "/records").json() == [row]
-        assert a.get(root + "/coding-rounds").json() == [coding.json()]
-        reputation = a.get(root + "/reputation")
-        assert reputation.status_code == 200
-        assert reputation.json()["advisory"] and reputation.json()["total_observations"] == 2
-        for suffix in ("records", "coding-rounds", "reputation"):
-            assert b.get(root + "/" + suffix).status_code == 403
-            assert a.get("/ledger/candidates/missing/" + suffix).status_code == 404
-        assert b.post("/ledger/records", json=record_body).status_code == 403
-        # Reads are cross-company when the subject explicitly grants that org.
         read_b = control.post(root + "/consent", json={"purpose": "ledger_read", "org_id": created[1]["org"]["id"]}).json()
-        assert b.get(root + "/records").json() == [row]
         assert control.post(f"/ledger/consent/{read_b['id']}/revoke").json()["revoked"]
         for purpose, grant_id in grants.items():
             path = f"/ledger/consent/{grant_id}/revoke"
@@ -427,20 +392,13 @@ def test_ledger_workflow_preserves_key_lifecycle_consent_ownership_and_audits(se
         for purpose in ("ledger_read", "ledger_write"):
             assert control.post(root + "/consent", json={"purpose": purpose, "org_id": oid,
                 "expires_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()}).status_code == 200
-        for suffix in ("records", "coding-rounds", "reputation"):
-            assert a.get(root + "/" + suffix).status_code == 403
-        assert a.post("/ledger/records", json=record_body).status_code == 403
-        assert a.post("/ledger/coding-rounds", json=coding_body).status_code == 403
-        audits = services.ledger.audit_for_candidate(cid)
-        for action in ("record.query", "coding_round.query", "reputation.query"):
-            assert {item.details["allowed"] for item in audits if item.action == action} == {True, False}
         rotated = control.post(org_path + "/api-key")
         assert rotated.status_code == 200 and rotated.json()["api_key"] != created[0]["api_key"]
-        assert a.get(root + "/records").status_code == 401
+        assert a.get("/jobs").status_code == 401
         a.headers["X-Org-Key"] = rotated.json()["api_key"]
-        assert a.get(root + "/records").status_code == 403
+        assert a.get("/jobs").status_code == 200
         assert control.delete(org_path).json() == {"org_id": oid, "deleted": True}
-        assert a.get(root + "/records").status_code == 401
+        assert a.get("/jobs").status_code == 401
         assert control.delete(org_path).status_code == 404
         assert control.post(org_path + "/api-key").status_code == 404
         assert control.post(org_path + "/reliability", json={"weight": 1}).status_code == 404
@@ -484,24 +442,17 @@ def test_ledger_admin_and_org_cookies_preserve_csrf_and_auth_planes(cfg, capture
         verified = org.post("/auth/org/verify", json={"email": org_email, "code": _code(capture_path)})
         assert verified.status_code == 200
         org.headers["X-CSRF-Token"] = verified.json()["csrf_token"]
-        body = {"candidate_id": cid, "stage": "screen", "outcome": "advanced", "interviewed_at": "2026-10-01T10:00:00Z"}
-        record = org.post("/ledger/records", json=body)
-        assert record.status_code == 200
-        event_path = f"/ledger/records/{record.json()['id']}/events"
-        writes = [("/ledger/records", body), (event_path, {"event_type": "reviewed"}),
-                  ("/ledger/coding-rounds", _coding_payload(cid))]
-        for path, payload in writes[1:]:
-            assert org.post(path, json=payload).status_code == 200
+        body = {"title": "Cookie ledger role", "must_have_skills": ["python"]}
+        job = org.post("/jobs", json=body)
+        assert job.status_code == 200
         assert org.get("/ledger/orgs").status_code == 401
         assert org.post(consent_path, json={"purpose": "ledger_read"}).status_code == 401
-        assert admin.post("/ledger/records", json=body).status_code == 401
+        assert admin.get("/jobs").status_code == 401
         org.headers.pop("X-CSRF-Token")
         org.headers["X-Org-Key"] = created["api_key"]
-        for path, payload in writes:
-            assert org.post(path, json=payload).status_code == 403
-        assert len(services.ledger.records_for_candidate(cid)) == 1
-        assert len(services.ledger.coding_rounds_for_candidate(cid)) == 1
-        assert len(services.ledger.events_for_record(record.json()["id"])) == 1
+        assert org.post("/jobs", json=body).status_code == 403
+        assert len(services.jobs.list_requisitions(job.json()["org_id"])) == 1
+        assert services.jobs.list_requisitions(oid) == []
 
 
 # Employer jobs, compensation and dashboard extraction
@@ -739,7 +690,7 @@ def test_portal_workflow_preserves_subject_consent_audit_and_erasure(services):
             TestClient(portal_app(services), headers=ADMIN_HEADERS, raise_server_exceptions=False) as admin:
         assert one.get("/portal/me", params={"candidate_id": ids[1]}).json()["candidate_id"] == ids[0]
         assert admin.get("/portal/me").status_code == 401
-        grant = one.post("/portal/consents", json={"candidate_id": ids[1], "purpose": "ledger_read", "org_id": org.id})
+        grant = one.post("/portal/consents", json={"candidate_id": ids[1], "purpose": "verification_read", "org_id": org.id})
         assert grant.status_code == 200 and grant.json()["candidate_id"] == ids[0]
         gid = grant.json()["id"]
         assert one.get("/portal/consents").json()[0]["state"] == "active"
@@ -749,12 +700,12 @@ def test_portal_workflow_preserves_subject_consent_audit_and_erasure(services):
         foreign, absent = [two.post(f"/portal/consents/{value}/revoke") for value in (gid, "missing")]
         assert foreign.status_code == absent.status_code == 404
         assert foreign.json() == absent.json() == {"detail": "consent grant not found"}
-        assert services.ledger.query_records_for_org(org_id=org.id, candidate_id=ids[0]) == []
+        assert services.verification.assurance_for_org(org_id=org.id, candidate_id=ids[0]).candidate_id == ids[0]
         assert one.post(f"/portal/consents/{gid}/revoke").json() == {"consent_id": gid, "revoked": True}
         assert one.get("/portal/consents").json()[0]["state"] == "revoked"
         with pytest.raises(ConsentError):
-            services.ledger.query_records_for_org(org_id=org.id, candidate_id=ids[0])
-        queries = [row for row in one.get("/portal/access-log").json() if row["action"] == "record.query"]
+            services.verification.assurance_for_org(org_id=org.id, candidate_id=ids[0])
+        queries = [row for row in one.get("/portal/access-log").json() if row["action"] == "verification.query"]
         assert {row["allowed"] for row in queries} == {True, False}
         assert all(row["actor_name"] == org.name for row in queries)
         erased = one.delete("/portal/me")

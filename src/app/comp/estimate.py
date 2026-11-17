@@ -1,6 +1,6 @@
 """Comp blend engine (S5.2) -- pure, no I/O, no clock (caller passes `now`).
 
-Mirrors app/ledger/reputation.py: a static prior shrunk by observed evidence.
+A static prior shrunk by observed evidence.
 Everything blends on a TOTAL-CTC basis (observed offers already carry total;
 the static cell's FIXED figures are grossed up by the variable fraction first).
 Advisory only.

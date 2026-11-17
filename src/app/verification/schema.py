@@ -2,7 +2,7 @@
 
 Taxonomies here are code constants, not config: the assurance ladder is a
 reviewed schema decision, never a deploy-time tunable (same stance as
-InterviewStage/ConsentPurpose). AssuranceLevel is an IntEnum because ordering
+ConsentPurpose). AssuranceLevel is an IntEnum because ordering
 is genuinely semantic -- "the highest level a candidate currently holds" is an
 ordinary max().
 

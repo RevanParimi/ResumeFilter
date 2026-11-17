@@ -20,9 +20,8 @@ scoring, or rejection.
 
 ## 1. Why a spine and not just "identity verification"
 
-Every signal Veritas collects — depth evaluations, coding rounds, cross-company
-interview records, reputation — silently assumes the person evaluated is the
-person on the record. Proxy interviewing is the single most common Indian
+Every signal Veritas collects — depth evaluations, interviews, screening
+outcomes — silently assumes the person evaluated is the person on the record. Proxy interviewing is the single most common Indian
 hiring fraud, so that assumption is exactly the one worth testing.
 
 S7.1 does not close that gap on its own; no v0 can without a KYC vendor. What
@@ -131,7 +130,7 @@ Two new `ConsentPurpose` members — the first taxonomy addition since S3.1.
 |---|---|
 | Candidate self-attests, or OTPs their **own** contact | **No grant.** Identity of the subject *is* the authorization — the S6.4 principle: acting on your own data is a data-principal right, not a disclosure. |
 | Platform verifies via an **external** source | Active **`IDENTITY_VERIFY`** grant. Enforced by the spine on any `third_party` adapter; the authorizing grant id is stamped on the row. |
-| Org **reads** a candidate's assurance | Active **`VERIFICATION_READ`** grant. Query-time enforcement + audit of every attempt, allowed **or** denied. Mirrors `query_records_for_org`. |
+| Org **reads** a candidate's assurance | Active **`VERIFICATION_READ`** grant. Query-time enforcement + audit of every attempt, allowed **or** denied. |
 | Operator records a manual review | Admin plane (`X-API-Key`) **only** — `manual_review` is not self-service, so the candidate plane refuses it with 403. Platform-internal, audited. |
 
 `VERIFICATION_READ` is deliberately its own purpose rather than a reuse of

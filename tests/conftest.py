@@ -203,6 +203,38 @@ def set_extraction_created_at(store, candidate_id, when):
         s.commit()
 
 
+def consent_probe_registry():
+    """The shipped feature catalog plus three consent-gated probe features.
+
+    The catalog no longer ships a consent-tagged feature, but materialisation
+    and serving still mask any that a registry declares. These probes keep
+    that path observable with the names and values it used to carry.
+    """
+    from app.features import get_feature_registry
+    from app.features.registry import FeatureRegistry
+    from app.features.schema import FeatureDType, FeatureSource, FeatureSpec
+
+    base = get_feature_registry()
+    registry = FeatureRegistry()
+    for spec in base.specs():
+        registry.register(spec, base.get(spec.name, version=spec.version).fn)
+    probes = [
+        (FeatureSpec(name="ledger.interview_record_count", version=1, dtype=FeatureDType.INTEGER,
+                     source=FeatureSource.LEDGER, description="consent probe",
+                     nullable=False, requires_consent=True), 0),
+        (FeatureSpec(name="reputation.score", version=1, dtype=FeatureDType.NUMERIC,
+                     source=FeatureSource.REPUTATION, description="consent probe",
+                     valid_range=(0.0, 1.0), nullable=False, requires_consent=True), 0.5),
+        (FeatureSpec(name="reputation.band", version=1, dtype=FeatureDType.ORDINAL,
+                     source=FeatureSource.REPUTATION, description="consent probe",
+                     categories=("insufficient_data", "guarded", "mixed", "favorable", "strong"),
+                     nullable=False, requires_consent=True), "insufficient_data"),
+    ]
+    for spec, value in probes:
+        registry.register(spec, lambda _ctx, value=value: value)
+    return registry
+
+
 def make_services(
     settings: Settings,
     *,

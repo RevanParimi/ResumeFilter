@@ -63,16 +63,12 @@ class PortalService:
     def my_data(self, candidate_id: str) -> MyData:
         self._require_candidate(candidate_id)
         resumes = self._candidates.list_resumes(candidate_id)
-        records = self._ledger.records_for_candidate(candidate_id)
-        coding = self._ledger.coding_rounds_for_candidate(candidate_id)
         reports = [
             ReportRef(report_id=r.id, domain=r.domain, created_at=r.created_at)
             for r in self._report_store.for_candidate(candidate_id)
         ]
         oldest = {
             "resumes": min((r.created_at for r in resumes), default=None),
-            "interview_records": min((r.created_at for r in records), default=None),
-            "coding_rounds": min((c.created_at for c in coding), default=None),
         }
         identity = (
             self._verification.assurance_for_candidate(candidate_id)
@@ -105,8 +101,6 @@ class PortalService:
             candidate_id=candidate_id,
             profile=self._candidates.latest_profile(candidate_id),
             resumes=resumes,
-            interview_records=records,
-            coding_rounds=coding,
             reports=reports,
             consents=self._ledger.consents_for_candidate(candidate_id),
             identity=identity,

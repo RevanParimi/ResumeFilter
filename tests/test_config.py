@@ -110,7 +110,5 @@ def test_s64_portal_config_defaults():
     s = Settings(_env_file=None, openrouter_api_key="")
     assert s.candidate_access_key_bytes == 32
     assert s.ret_resume_days == 1095
-    assert s.ret_interview_record_days == 1825
-    assert s.ret_coding_round_days == 1825
     assert s.ret_observed_offer_days == 1825
     assert s.ret_audit_log_days == 2555

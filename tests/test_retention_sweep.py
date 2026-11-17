@@ -21,7 +21,7 @@ NOW = datetime(2026, 8, 11, 12, 0, tzinfo=timezone.utc)
 
 ALL_CLASSES = {
     "resumes", "verifications", "interviews",
-    "interview_records", "coding_rounds", "observed_offers", "audit_log",
+    "observed_offers", "audit_log",
     "batch_item_text", "rate_limit_counters", "login_state",
 }
 

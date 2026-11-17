@@ -149,40 +149,6 @@ cooldowns are additional controls. They reduce automated guessing, spam and
 provider-cost abuse. F04 addresses the separately identified concurrent OTP
 consumption/attempt-update defect; existing limits do not fix that race.
 
-## Talent reputation
-
-`src/app/ledger/reputation.py` aggregates consented cross-company interview
-records and coding results. It does not infer reputation from resume style.
-
-| Interview outcome | Value |
-|---|---:|
-| Hired | 1.00 |
-| Offer | 0.90 |
-| Advanced | 0.65 |
-| Rejected | 0.15 |
-| No-show | 0.10 |
-| Withdrawn | Excluded |
-
-Coding uses percentile/100, otherwise score/max_score. Unnormalizable coding
-scores are excluded. Each observation has weight:
-
-```text
-weight = type_weight * organization_reliability * 0.5 ** (age_days / 365)
-reputation = (2 + sum(weight * value)) / (4 + sum(weight))
-confidence = min(0.90, round(sum(weight) / (sum(weight) + 4), 2))
-```
-
-These are defaults: neutral prior 0.5 with strength four, one-year half-life,
-and default organization/type weights of one. Sparse evidence stays close to
-neutral. One recent hired outcome gives score 0.60 and confidence 0.20, therefore
-`insufficient_data`, not a strong reputation.
-
-Confidence must reach 0.50 to assign a substantive band. Strong >= 0.75 and
-guarded <= 0.35 require at least two organizations; favorable >= 0.60, otherwise
-mixed. A rejection may reflect job fit or process issues, so these numerical
-choices require validation and must remain advisory. Current-consent handling
-for cached derived vectors is an outstanding F06 issue.
-
 ## Assessment, interviews and ML
 
 `src/app/interview/questions.py` builds a question plan at session creation:

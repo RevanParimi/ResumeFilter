@@ -43,7 +43,7 @@ vertical, and is the **deterministic no-observed fallback**.
 
 ## The blend (`src/app/comp/estimate.py`)
 
-`reputation.py`-style shrinkage toward the prior, **all on a total-CTC basis**
+Shrinkage toward the prior, **all on a total-CTC basis**
 (observed offers carry total; the static cell's fixed figures are grossed up by
 its variable fraction first):
 
@@ -56,7 +56,7 @@ its variable fraction first):
 5. `confidence` saturates with `W` up to `comp_confidence_cap`.
 
 `CompBandEstimate.sources`/`reasoning` are **de-identified** — never a candidate
-or org id, mirroring the reputation aggregate's "does not re-leak identities".
+or org id.
 
 **Benchmark:** `CompBenchmark` compares a requisition's stored `comp_band`
 midpoint to the estimate p50 → `position` (`below`/`at`/`above`, where `at` is
@@ -65,7 +65,7 @@ within `±comp_benchmark_tolerance`) + `delta_pct`. No `comp_band` on the req �
 
 ## Consent & DPDP posture
 
-`observed_offers` is a peer of `coding_round_results`: candidate-linked with
+`observed_offers` is candidate-linked with
 `ondelete="CASCADE"` FKs (erasure sweeps it), org-linked (org delete cascades),
 `consent_id`-stamped, submit **`ledger_write`-gated** → `ConsentError`, audited
 `offer.submit`. **No new `ConsentPurpose`.**

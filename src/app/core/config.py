@@ -117,8 +117,6 @@ class Settings(BaseSettings):
     # mechanical retention sweep is PI-8. Illustrative windows.
     candidate_access_key_bytes: int = Field(default=32, ge=16)
     ret_resume_days: int = Field(default=1095, ge=1)            # 3y
-    ret_interview_record_days: int = Field(default=1825, ge=1)  # 5y
-    ret_coding_round_days: int = Field(default=1825, ge=1)      # 5y
     ret_observed_offer_days: int = Field(default=1825, ge=1)    # 5y
     ret_audit_log_days: int = Field(default=2555, ge=1)         # 7y — longest
 
@@ -321,24 +319,6 @@ class Settings(BaseSettings):
     # Byte length of generated org API keys (secrets.token_urlsafe). Floor keeps
     # keys high-entropy; the plaintext is returned once and only its hash stored.
     ledger_api_key_bytes: int = Field(default=32, ge=16)
-
-    # --- Cross-company reputation (PI-3, S3.4) --------------------------------
-    # Advisory Beta-Binomial aggregation of interview_records + coding_round
-    # results, shrunk toward a neutral prior, recency-decayed, per-org
-    # reliability weighted. Never auto-rejects; GUARDED (the only negative band)
-    # and STRONG both require >= rep_corroboration_orgs distinct orgs.
-    rep_prior_mean: float = Field(default=0.5, ge=0.0, le=1.0)
-    rep_prior_strength: float = Field(default=4.0, gt=0.0)
-    rep_recency_halflife_days: float = Field(default=365.0, gt=0.0)
-    rep_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
-    rep_confidence_k: float = Field(default=4.0, gt=0.0)
-    rep_confidence_cap: float = Field(default=0.90, ge=0.0, le=1.0)
-    rep_corroboration_orgs: int = Field(default=2, ge=1)
-    rep_strong_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
-    rep_favorable_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
-    rep_guarded_threshold: float = Field(default=0.35, ge=0.0, le=1.0)
-    rep_interview_weight: float = Field(default=1.0, ge=0.0)
-    rep_coding_weight: float = Field(default=1.0, ge=0.0)
 
     # --- ML feature store (PI-4, S4.1): feature registry -----------------------
     # Default FeatureView the materializer/smoke resolve (all seed features at

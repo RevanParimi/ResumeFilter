@@ -3,14 +3,14 @@ from datetime import datetime, timezone
 from app.candidates.extractor import heuristic_profile
 from app.candidates.schema import ExtractionResult
 from app.core.config import Settings
-from app.features import default_view, get_feature_registry
+from app.features import default_view
 from app.features.materialize import MaterializedVector, materialize_candidate
 from app.features.serving import current_consent_vectors
 from app.features.store import FeatureStore
 from app.ledger.schema import ConsentPurpose
 from app.ledger.store import LedgerStore
 from app.reports.store import SqlReportStore
-from tests.conftest import make_candidate_store, set_extraction_created_at
+from tests.conftest import consent_probe_registry, make_candidate_store, set_extraction_created_at
 
 RESUME = "Jane Rao\nSenior ML Engineer\nSkills: Python, Spark, SQL\nEmail: jane@example.com\n"
 T = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -31,7 +31,7 @@ def _setup():
 
 
 def _view_reg():
-    reg = get_feature_registry()
+    reg = consent_probe_registry()
     return reg, default_view(reg, settings=_settings())
 
 

@@ -17,7 +17,7 @@ from app.candidates.schema import CandidateProfile
 from app.candidates.store import ResumeSummary
 from app.auth.schema import SessionView
 from app.interview.schema import InterviewSummary
-from app.ledger.schema import CodingRoundResult, ConsentGrant, InterviewRecord
+from app.ledger.schema import ConsentGrant
 from app.verification.schema import IdentityAssurance
 
 
@@ -107,8 +107,6 @@ class MyData(BaseModel):
     candidate_id: str
     profile: Optional[CandidateProfile] = None
     resumes: list[ResumeSummary] = Field(default_factory=list)
-    interview_records: list[InterviewRecord] = Field(default_factory=list)
-    coding_rounds: list[CodingRoundResult] = Field(default_factory=list)
     reports: list[ReportRef] = Field(default_factory=list)
     consents: list[ConsentGrant] = Field(default_factory=list)
     identity: Optional[IdentityAssurance] = None  # S7.1 advisory assurance

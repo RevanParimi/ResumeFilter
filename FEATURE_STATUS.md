@@ -12,7 +12,7 @@ scoring judges answer content, not appearance or inferred emotion.
 | Screening | Batch upload, queue, processing, retry, summary, report view and outcomes, tenant-scoped. | [Screening](SCREENING.md), [tenancy](TENANCY.md) |
 | Roles and matching | Roles (requisitions), role board and role match. | [Matching](MATCHING.md), [dashboard](DASHBOARD.md) |
 | Compensation | Compensation estimate, role compensation band and observed offers. | [Comp](COMP.md) |
-| Ledger and consent | Organisations, API keys, organisation reliability, purpose-scoped consent grants, audit log, interview and coding-round records and cross-company reputation. | [Ledger](LEDGER.md) |
+| Ledger and consent | Organisations, API keys, organisation reliability, purpose-scoped consent grants and the audit log. | [Ledger](LEDGER.md) |
 | Features | Feature registry, materialisation, store, serving and ranking. | [Features](FEATURES.md) |
 | Login and portal | Email-code login on every plane, sessions and signed-in devices, the candidate portal (my data, access log, consents, erasure) and the public grievance contact. | [Auth](AUTH.md), [portal](PORTAL.md) |
 | Verification | Contact verification, assurance levels and manual review. | [Verification](VERIFICATION.md) |

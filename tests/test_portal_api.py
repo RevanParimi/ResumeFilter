@@ -9,7 +9,6 @@ from sqlalchemy import event
 
 from app.main import create_app
 from app.candidates.store import CandidateStore
-from app.ledger.schema import InterviewOutcome, InterviewStage
 from tests.conftest import ADMIN_HEADERS, make_services
 from tests.test_report_erasure_concurrency import database  # noqa: F401
 
@@ -639,18 +638,13 @@ def test_portal_access_log_shows_org_disclosure(_setup):
     client, services = _setup
     cid, h = _candidate_with_key(client)
     org = services.ledger.create_organization("Acme")
-    services.ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=org.id)
-    services.ledger.grant_consent(candidate_id=cid, purpose="ledger_read", org_id=org.id)
-    services.ledger.submit_interview_record(
-        org_id=org.id, candidate_id=cid, stage=InterviewStage.TECH,
-        outcome=InterviewOutcome.ADVANCED, interviewed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    services.ledger.query_records_for_org(org_id=org.id, candidate_id=cid)
+    services.ledger.grant_consent(candidate_id=cid, purpose="verification_read", org_id=org.id)
+    services.verification.assurance_for_org(org_id=org.id, candidate_id=cid)
     r = client.get("/portal/access-log", headers=h)
     assert r.status_code == 200
     actions = {e["action"] for e in r.json()}
-    assert "record.query" in actions and "record.submit" in actions
-    q = next(e for e in r.json() if e["action"] == "record.query")
+    assert "verification.query" in actions and "consent.grant" in actions
+    q = next(e for e in r.json() if e["action"] == "verification.query")
     assert q["actor_name"] == "Acme" and q["allowed"] is True
 
 

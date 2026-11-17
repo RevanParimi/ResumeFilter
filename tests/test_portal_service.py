@@ -1,11 +1,7 @@
-from datetime import datetime, timezone
-
 import pytest
 
 from app.candidates.models import CandidateRow
-from app.ledger.schema import (
-    ConsentPurpose, InterviewOutcome, InterviewStage,
-)
+from app.ledger.schema import ConsentPurpose
 from app.portal.schema import ConsentState
 from app.portal.service import PortalService
 from app.schemas.report import Report
@@ -50,19 +46,14 @@ def test_access_log_projects_audit_with_org_name_newest_first(settings):
     services = make_services(settings)
     cid = _cid(services)
     org = services.ledger.create_organization("Acme")
-    # write + read consent so a disclosure gets audited
-    services.ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_WRITE, org_id=org.id)
-    services.ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.LEDGER_READ, org_id=org.id)
-    services.ledger.submit_interview_record(
-        org_id=org.id, candidate_id=cid, stage=InterviewStage.TECH,
-        outcome=InterviewOutcome.ADVANCED, interviewed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    services.ledger.query_records_for_org(org_id=org.id, candidate_id=cid)  # allowed read
+    # read consent so a disclosure gets audited
+    services.ledger.grant_consent(candidate_id=cid, purpose=ConsentPurpose.VERIFICATION_READ, org_id=org.id)
+    services.verification.assurance_for_org(org_id=org.id, candidate_id=cid)  # allowed read
     log = _portal(services).access_log(cid)
     assert log, "expected audit entries"
     actions = {e.action for e in log}
-    assert "record.query" in actions and "record.submit" in actions
-    q = next(e for e in log if e.action == "record.query")
+    assert "verification.query" in actions and "consent.grant" in actions
+    q = next(e for e in log if e.action == "verification.query")
     assert q.actor_type == "org" and q.actor_name == "Acme" and q.allowed is True
     # newest first
     ats = [e.at for e in log]

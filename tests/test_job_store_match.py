@@ -120,6 +120,9 @@ def test_direct_match_authorizes_gated_ranking_for_asking_org(monkeypatch, denia
         return RankingSpec(terms=(*base.terms, RankingTerm(feature="reputation.score", weight=1.0)))
     monkeypatch.setattr(engine, "compile_ranking", ranking)
     monkeypatch.setattr("app.matching.store.compile_ranking", ranking)
+    from tests.conftest import consent_probe_registry
+    probes = consent_probe_registry()
+    monkeypatch.setattr("app.matching.store.get_feature_registry", lambda: probes)
     if filter_gated:
         monkeypatch.setattr(engine, "compile_filters", lambda req: [
             FeatureFilter(feature="reputation.score", op=FilterOp.GTE, value=0.1),

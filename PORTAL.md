@@ -108,12 +108,7 @@ principal grants to *others*, not to themselves — and would dirty the
 taxonomy for nothing. So every portal read/mutation is gated purely by
 `require_candidate`; no consent row is checked or created for self-access.
 
-Two things this does **not** change:
-- **Self-access needs no org consent either.** `MyData.interview_records` /
-  `coding_rounds` come from `LedgerStore.records_for_candidate` /
-  `coding_rounds_for_candidate` — the same raw, ungated reads PI-4/internal
-  code already used — not the `ledger_read`-gated org query path. A candidate
-  does not need an org's consent to see what that org wrote about them.
+One thing this does **not** change:
 - **First-party consent is additive, not a replacement.** `POST
   /portal/consents` writes to the *same* `consent_grants` rows the admin
   plane's `POST /ledger/candidates/{id}/consent` writes to
@@ -196,9 +191,8 @@ match — the same posture as everything else in this document.
   `ttl_days` (the policy) shown regardless of whether the candidate has data
   in that class.
 - `oldest_item_at` / `retained_until` (`= oldest + ttl_days`) are populated
-  only for the classes `my_data` already materializes in full this sprint —
-  `resumes`, `interview_records`, `coding_rounds` (the
-  oldest timestamp is free from those reads). `observed_offers`, `audit_log`
+  only for the classes `my_data` already materializes in full — `resumes`
+  and `interviews` (the oldest timestamp is free from those reads). `observed_offers`, `audit_log`
   and `verifications` are **policy-only** rows (`retained_until=None`) — the
   portal does not materialize per-candidate reads for those classes, and this
   keeps the retention view honest rather than fabricating a timestamp it
@@ -219,8 +213,6 @@ parametrize the surfaced `retained_until` only):
 |---|---|---|
 | `candidate_access_key_bytes` | 32 (`ge=16`) | entropy of a minted candidate key — mirrors `ledger_api_key_bytes` |
 | `ret_resume_days` | 1095 (3y) | resumes |
-| `ret_interview_record_days` | 1825 (5y) | interview records |
-| `ret_coding_round_days` | 1825 (5y) | coding rounds |
 | `ret_observed_offer_days` | 1825 (5y) | observed offers (policy-only) |
 | `ret_audit_log_days` | 2555 (7y) | audit trail — deliberately longest; accountability outlives content |
 | `ret_verification_days` | 1095 (3y) | identity verifications (policy-only; added S7.1) |
@@ -322,9 +314,8 @@ owns no tables/state, composing `CandidateStore` + `LedgerStore` +
 
 Small store additions this sprint (`src/app/ledger/store.py`, nothing existing
 changed): `consents_for_candidate(candidate_id)` — all grants for a candidate
-(active + revoked + expired), ordered by `granted_at`, a raw read like
-`records_for_candidate` with no consent gate (it is the candidate's own
-consent ledger); `get_grant(consent_id)` — needed for the ownership check in
+(active + revoked + expired), ordered by `granted_at`, a raw read with no
+consent gate (it is the candidate's own consent ledger); `get_grant(consent_id)` — needed for the ownership check in
 `PortalService.revoke`.
 
 ## What's deferred (non-goals, v0)

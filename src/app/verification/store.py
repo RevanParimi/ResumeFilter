@@ -395,7 +395,7 @@ class VerificationStore:
     def assurance_for_org(
         self, *, org_id: str, candidate_id: str, at: Optional[datetime] = None
     ) -> IdentityAssurance:
-        """Query-time DPDP gate, mirroring LedgerStore.query_records_for_org: an
+        """Query-time DPDP gate: an
         org sees assurance only under an active VERIFICATION_READ grant, and
         EVERY attempt -- allowed or denied -- is audited in the same
         transaction, because surveillance must itself be observable.

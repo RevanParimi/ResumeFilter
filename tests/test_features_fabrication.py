@@ -63,7 +63,7 @@ def test_risk_feature_versions_never_relabel_stored_scores(scorer_version):
         assert reg.compute_one("fabrication.risk_band", ctx, version=version) == (
             "moderate" if scorer_version == version else None)
     view = default_view(reg, settings=Settings(_env_file=None, openrouter_api_key=""))
-    assert view.version == 2
+    assert view.version == 3
     assert dict(view.members)["fabrication.risk_score"] == dict(view.members)["fabrication.risk_band"] == 2
     vector = reg.compute_view(view, ctx)
     assert vector.values["fabrication.risk_score"] == (0.42 if scorer_version == 2 else None)
@@ -96,7 +96,8 @@ def test_materialized_vectors_keep_historical_and_current_semantics_separate(ser
         rows = [materialize_candidate(cid, view=view, registry=reg, as_of=AS_OF,
             candidate_store=services.candidates, report_store=services.report_store,
             ledger_store=services.ledger) for cid in ids]
+        risk_version = dict(view.members)["fabrication.risk_score"]
         for index, row in enumerate(rows, start=1):
             assert row.vector.view_version == view.version
-            assert row.vector.values["fabrication.risk_score"] == (0.42 if index == view.version else None)
-            assert row.vector.values["fabrication.risk_band"] == ("moderate" if index == view.version else None)
+            assert row.vector.values["fabrication.risk_score"] == (0.42 if index == risk_version else None)
+            assert row.vector.values["fabrication.risk_band"] == ("moderate" if index == risk_version else None)

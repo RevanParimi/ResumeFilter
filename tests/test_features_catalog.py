@@ -13,7 +13,7 @@ def test_default_view_covers_every_registered_feature():
     view = default_view(reg, settings=_settings())
     assert view.name == "core_v1"
     assert {n for n, _ in view.members} == set(reg.names())
-    assert len(reg.names()) >= 25          # seed catalog breadth
+    assert len(reg.names()) >= 24          # seed catalog breadth
 
 
 def test_consent_flag_matches_source():
@@ -37,9 +37,7 @@ def test_compute_view_on_empty_context_is_well_formed():
     view = default_view(reg, settings=_settings())
     ctx = FeatureContext(candidate_id="c1", as_of=datetime(2026, 1, 1, tzinfo=timezone.utc))
     fv = reg.compute_view(view, ctx)         # raises if any output violates its spec
-    # ledger counts default to 0 (nullable=False); candidate/depth features missing
-    assert fv.values["ledger.interview_record_count"] == 0
-    assert fv.values["reputation.band"] == "insufficient_data"
+    # candidate/depth features are missing on an empty context
     assert "candidate.years_experience" in fv.missing
 
 
