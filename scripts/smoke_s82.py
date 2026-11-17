@@ -135,7 +135,7 @@ def main() -> int:
             checks["session_cookie_set"] = "dee_session" in org.cookies
 
             # 4. THE claim of the sprint: an org-plane call with NO X-Org-Key.
-            board = org.get("/dashboard/overview")
+            board = org.get("/jobs")
             checks["org_session_reaches_the_org_plane"] = board.status_code == 200
 
             # 5-6. CSRF is live, not merely written.

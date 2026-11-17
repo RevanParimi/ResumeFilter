@@ -559,17 +559,12 @@ def test_employer_workflow_preserves_tenancy_ranking_compensation_and_consent(se
         benchmark = a.get(path + "/comp")
         assert benchmark.status_code == 200 and benchmark.json()["advisory"]
         assert benchmark.json()["requisition_band"] == spec["comp_band"] | {"currency": "INR", "variable_max": None, "notes": None}
-        card_path = f"/candidates/{cid}/card"
-        sections = ("records", "coding_rounds", "reputation")
-        assert a.get("/candidates/missing/card").status_code == 404
-        assert all(a.get(card_path).json()[section]["status"] == "consent_required" for section in sections)
         assert a.post("/ledger/offers", json=offer).status_code == 403
         assert a.post("/ledger/offers", json={**offer, "city_tier": "moon"}).status_code == 400
         assert a.post("/ledger/offers", json={**offer, "ctc_fixed": -1}).status_code == 422
         assert a.post("/ledger/offers", json={**offer, "candidate_id": "missing"}).status_code == 404
         read = services.ledger.grant_consent(candidate_id=cid, purpose="ledger_read", org_id=organizations[0].id)
         write = services.ledger.grant_consent(candidate_id=cid, purpose="ledger_write", org_id=organizations[0].id)
-        assert all(a.get(card_path).json()[section]["status"] == "no_data" for section in sections)
         submitted = a.post("/ledger/offers", json=offer)
         assert submitted.status_code == 200, submitted.text
         assert submitted.json()["org_id"] == organizations[0].id and submitted.json()["consent_id"] == write.id
@@ -587,11 +582,8 @@ def test_employer_workflow_preserves_tenancy_ranking_compensation_and_consent(se
         assert a.patch(path, json={"status": "closed"}).json()["status"] == "closed"
         updated = a.patch(path, json={"spec": {**spec, "title": "Revised Backend Engineer"}})
         assert updated.status_code == 200 and updated.json()["title"] == "Revised Backend Engineer"
-        assert a.get("/dashboard/overview").json()["total_requisitions"] == 1
-        assert b.get("/dashboard/overview").json()["total_requisitions"] == 0
         services.ledger.revoke_consent(read.id)
         services.ledger.revoke_consent(write.id)
-        assert all(a.get(card_path).json()[section]["status"] == "consent_required" for section in sections)
         assert a.post("/ledger/offers", json=offer).status_code == 403
 
 
@@ -633,7 +625,7 @@ def test_employer_cookie_requires_csrf_and_retains_tenant_precedence(cfg, captur
                 TestClient(employer_app(services), headers=ADMIN_HEADERS) as admin:
             assert machine.get(path).status_code == 404
             assert machine.get("/jobs").json() == []
-            assert admin.get("/dashboard/overview").status_code == 401
+            assert admin.get("/jobs").status_code == 401
             assert admin.post("/jobs", json=spec).status_code == 401
 
 

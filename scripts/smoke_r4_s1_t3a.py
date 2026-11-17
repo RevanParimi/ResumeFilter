@@ -502,9 +502,9 @@ def run(scratch, url, pg_options):
             advertised = sorted((f"{method.upper()} {path}" for path, methods in schema["paths"].items()
                 for method in methods if path != "/" and method in {"get", "post", "put", "patch", "delete"}),
                 key=lambda e: (e.split(" ", 1)[1], e))
-            checks.check("service stays advisory and advertises all 87 other operations without docs or UI",
+            checks.check("service stays advisory and advertises all 85 other operations without docs or UI",
                 service == {"service": "depth-eval-engine", "advisory": True,
-                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 87)
+                    "human_review_required": True, "endpoints": advertised} and len(advertised) == 85)
             checks.check("invalid machine credentials do not gate the three public reads", all(
                 require(anonymous.get(path, headers={"X-API-Key": "invalid"})) == body
                 for path, body in (("/healthz", health), ("/grievance", contact), ("/", service))))
@@ -670,14 +670,10 @@ def run(scratch, url, pg_options):
             employer_match = require(org.post(f"/jobs/{job['id']}/match", json=match_body))
             employer_comp = require(org.get(f"/jobs/{job['id']}/comp"))
             employer_board = require(org.get(f"/jobs/{job['id']}/board"))
-            employer_overview = require(org.get("/dashboard/overview"))
-            employer_card = require(org.get(f"/candidates/{subject}/card"))
-            checks.check("materialized employer board and overview return saved advisory data", employer_match["advisory"]
+            checks.check("materialized employer board returns saved advisory data", employer_match["advisory"]
                 and employer_match["ranked"][0]["candidate_id"] == employer_candidate
                 and employer_board["match"]["pool_size"] >= 1
-                and employer_comp["advisory"] and employer_overview["total_requisitions"] == 1)
-            checks.check("consented employer card exposes saved record coding and reputation", all(
-                employer_card[section]["status"] == "available" for section in ("records", "coding_rounds", "reputation")))
+                and employer_comp["advisory"])
             # T3H: subject-owned requests and operator review across restart.
             sibling.headers["X-CSRF-Token"] = sibling_csrf
             own_portal_key = require(control.post(f"/candidates/{subject}/auth-key"))["access_key"]
@@ -734,9 +730,8 @@ def run(scratch, url, pg_options):
             checks.check("restarted reputation stays advisory with both observations",
                 (assessment := require(org.get(ledger_path + "/reputation")))["advisory"] and assessment["total_observations"] == 2)
             checks.check("restarted other employer still cannot append events", other_org.post(event_path, json={"event_type": "refused"}).status_code == 404)
-            checks.check("employer job overview match and compensation survive restart",
+            checks.check("employer job match and compensation survive restart",
                 require(org.get(f"/jobs/{job['id']}")) == updated_job
-                and require(org.get("/dashboard/overview")) == employer_overview
                 and require(org.post(f"/jobs/{job['id']}/match", json=match_body)) == employer_match
                 and require(org.get(f"/jobs/{job['id']}/board")) == employer_board
                 and require(org.get(f"/jobs/{job['id']}/comp")) == employer_comp)
@@ -754,11 +749,9 @@ def run(scratch, url, pg_options):
                 org.get(ledger_path + suffix).status_code == 403 for suffix in ("/records", "/coding-rounds", "/reputation"))
                 and org.post("/ledger/records", json=record_body).status_code == 403
                 and org.post("/ledger/coding-rounds", json=coding_body).status_code == 403)
-            revoked_card = require(org.get(f"/candidates/{subject}/card"))
             require(operator.post(f"/ledger/consent/{employer_write['id']}/revoke"))
-            checks.check("employer card and offer honor consent revocation after restart", all(
-                revoked_card[section]["status"] == "consent_required" for section in ("records", "coding_rounds", "reputation"))
-                and org.post("/ledger/offers", json=offer_body).status_code == 403)
+            checks.check("employer offer honors consent revocation after restart",
+                org.post("/ledger/offers", json=offer_body).status_code == 403)
             access_log = require(sibling.get("/portal/access-log"))
             checks.check("verification audit retains allowed and denied employer access", all(
                 {row["allowed"] for row in access_log if row["action"] == action} == {True, False}

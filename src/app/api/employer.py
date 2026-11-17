@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from app.api.dependencies import _services, require_org
 from app.comp import bands
 from app.comp.schema import CITY_TIERS, ROLE_FAMILIES, CompBenchmark, SeniorityBand
-from app.dashboard.schema import CandidateCard, DashboardOverview, RequisitionBoard
+from app.dashboard.schema import RequisitionBoard
 from app.ledger.schema import ObservedOffer
 from app.ledger.store import ConsentError
 from app.matching.schema import (
@@ -99,8 +99,7 @@ async def match_job(
         raise HTTPException(status_code=404, detail="requisition not found")
     if result.pool_size == 0:
         # 200, not 422: an empty feature store is a server-side state and the
-        # caller cannot fix it. Mirrors GET /candidates/{id}/card's
-        # 200-with-status pattern (SCREENING.md (batch processing)).
+        # caller cannot fix it (SCREENING.md (batch processing)).
         return result.model_copy(update={"reason": "no_materialized_candidates"})
     return result
 
@@ -190,17 +189,9 @@ async def job_comp(
     return services.comp.benchmark(req, org_id=org_id)
 
 
-# ── Employer dashboard (S5.3) ────────────────────────────────────────────────
-# Org plane (X-Org-Key). Read-only composition over jobs/comp/ledger. Advisory;
-# no new state, no new consent purpose, no new audit path (the card reuses the
-# ledger's already-audited reads and degrades per section on missing consent).
-
-
-@org_router.get("/dashboard/overview", response_model=DashboardOverview)
-async def dashboard_overview(
-    request: Request, org_id: str = Depends(require_org)
-) -> DashboardOverview:
-    return _services(request).dashboard.overview(org_id)
+# ── Employer role board (S5.3) ───────────────────────────────────────────────
+# Org plane (X-Org-Key). Read-only composition over jobs/comp. Advisory; no new
+# state, no new consent purpose, no new audit path.
 
 
 @org_router.get("/jobs/{req_id}/board", response_model=RequisitionBoard)
@@ -219,13 +210,3 @@ async def job_board(
             )
         })
     return board
-
-
-@org_router.get("/candidates/{candidate_id}/card", response_model=CandidateCard)
-async def candidate_card(
-    candidate_id: str, request: Request, org_id: str = Depends(require_org)
-) -> CandidateCard:
-    try:
-        return _services(request).dashboard.card(org_id, candidate_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc

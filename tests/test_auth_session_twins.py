@@ -133,7 +133,7 @@ def test_twin_a_candidate_session_cannot_reach_the_admin_plane(
 
 def test_twin_a_candidate_session_cannot_reach_the_org_plane(client, capture_path):
     _candidate_session(client, capture_path)
-    assert client.get("/dashboard/overview").status_code == 401
+    assert client.get("/jobs").status_code == 401
 
 
 # ── 2. consent-gated org read, by session ───────────────────────────────────
@@ -180,9 +180,9 @@ def test_twin_a_revoked_session_is_refused_on_a_consent_gated_route(
     client, capture_path
 ):
     csrf = _org_session(client, capture_path)
-    assert client.get("/dashboard/overview").status_code == 200
+    assert client.get("/jobs").status_code == 200
     client.post("/auth/logout", headers={"X-CSRF-Token": csrf})
-    assert client.get("/dashboard/overview").status_code == 401
+    assert client.get("/jobs").status_code == 401
 
 
 # ── 4. erasure ──────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +8,6 @@ from app.candidates.schema import (
 )
 from app.features import default_view, get_feature_registry
 from app.features.materialize import materialize_candidate
-from app.ledger.schema import ConsentPurpose
 from app.main import create_app
 from tests.conftest import ADMIN_HEADERS, set_extraction_created_at
 
@@ -55,22 +54,7 @@ def _materialize(services, candidate_id):
 
 def test_all_dashboard_routes_require_org_key(services):
     with _client(services) as c:
-        assert c.get("/dashboard/overview").status_code == 401
         assert c.get("/jobs/x/board").status_code == 401
-        assert c.get("/candidates/x/card").status_code == 401
-
-
-def test_overview_endpoint(services):
-    _, key = _org_key(services)
-    hdr = {"X-Org-Key": key}
-    with _client(services) as c:
-        c.post("/jobs", headers=hdr, json={"title": "BE", "must_have_skills": ["python"]})
-        r = c.get("/dashboard/overview", headers=hdr)
-        assert r.status_code == 200
-        body = r.json()
-        assert body["total_requisitions"] == 1
-        assert body["by_status"] == {"open": 1}
-        assert body["advisory"] is True
 
 
 def test_board_404_cross_org_and_empty_pool_reason(services):
@@ -104,26 +88,3 @@ def test_board_200_with_materialized_pool(services):
         assert body["comp"]["advisory"] is True
         assert body["match"]["pool_size"] == 1
         assert body["match"]["ranked"][0]["candidate_id"]
-
-
-def test_card_consent_flow(services, monkeypatch):
-    monkeypatch.setattr('app.ledger.store._utcnow', lambda: NOW)
-    org_id, key = _org_key(services)
-    hdr = {"X-Org-Key": key}
-    cand_id = _candidate(services)
-    with _client(services) as c:
-        # unknown candidate -> 404
-        assert c.get("/candidates/nope/card", headers=hdr).status_code == 404
-        # known candidate, no grant -> 200, all sections consent_required
-        r0 = c.get(f"/candidates/{cand_id}/card", headers=hdr)
-        assert r0.status_code == 200
-        b0 = r0.json()
-        assert b0["reputation"]["status"] == "consent_required"
-        assert b0["records"]["status"] == "consent_required"
-        # grant read -> sections resolve (no data submitted -> no_data)
-        services.ledger.grant_consent(
-            candidate_id=cand_id, purpose=ConsentPurpose.LEDGER_READ, org_id=org_id,
-            expires_at=NOW + timedelta(days=90))
-        b1 = c.get(f"/candidates/{cand_id}/card", headers=hdr).json()
-        assert b1["records"]["status"] == "no_data"
-        assert b1["coding_rounds"]["status"] == "no_data"
